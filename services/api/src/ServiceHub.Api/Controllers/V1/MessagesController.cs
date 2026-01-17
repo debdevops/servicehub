@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using ServiceHub.Api.Authorization;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
@@ -51,6 +52,7 @@ public sealed class MessagesController : ApiControllerBase
     /// <response code="400">Invalid request parameters.</response>
     /// <response code="404">Namespace or queue not found.</response>
     /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.MessagesSend)]
     [HttpPost("queue/{queueName}")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -97,6 +99,7 @@ public sealed class MessagesController : ApiControllerBase
     /// <response code="400">Invalid request parameters.</response>
     /// <response code="404">Namespace or topic not found.</response>
     /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.MessagesSend)]
     [HttpPost("topic/{topicName}")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -145,6 +148,7 @@ public sealed class MessagesController : ApiControllerBase
     /// <response code="400">Invalid request parameters.</response>
     /// <response code="404">Namespace or queue not found.</response>
     /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.MessagesPeek)]
     [HttpGet("queue/{queueName}")]
     [ProducesResponseType(typeof(IReadOnlyList<MessageResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -195,6 +199,7 @@ public sealed class MessagesController : ApiControllerBase
     /// <response code="400">Invalid request parameters.</response>
     /// <response code="404">Namespace, topic, or subscription not found.</response>
     /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.MessagesPeek)]
     [HttpGet("topic/{topicName}/subscription/{subscriptionName}")]
     [ProducesResponseType(typeof(IReadOnlyList<MessageResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

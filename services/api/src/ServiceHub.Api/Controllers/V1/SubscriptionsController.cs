@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using ServiceHub.Api.Authorization;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Shared.Constants;
@@ -47,6 +48,7 @@ public sealed class SubscriptionsController : ApiControllerBase
     /// <response code="200">Subscriptions retrieved successfully.</response>
     /// <response code="404">Namespace or topic not found.</response>
     /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.SubscriptionsRead)]
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<SubscriptionRuntimePropertiesDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

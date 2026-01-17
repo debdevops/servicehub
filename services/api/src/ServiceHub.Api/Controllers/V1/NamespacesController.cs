@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using ServiceHub.Api.Authorization;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
@@ -55,6 +56,7 @@ public sealed class NamespacesController : ApiControllerBase
     /// <response code="400">Invalid request parameters.</response>
     /// <response code="409">Namespace with the same name already exists.</response>
     [HttpPost]
+    [RequireScope(ApiKeyScopes.NamespacesWrite)]
     [ProducesResponseType(typeof(NamespaceResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
@@ -137,6 +139,7 @@ public sealed class NamespacesController : ApiControllerBase
     /// <returns>A list of namespace responses.</returns>
     /// <response code="200">Namespaces retrieved successfully.</response>
     [HttpGet]
+    [RequireScope(ApiKeyScopes.NamespacesRead)]
     [ProducesResponseType(typeof(IReadOnlyList<NamespaceResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<NamespaceResponse>>> GetAll(
         CancellationToken cancellationToken = default)

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using ServiceHub.Api.Authorization;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Shared.Constants;
@@ -44,6 +45,7 @@ public sealed class AnomaliesController : ApiControllerBase
     /// <response code="200">Anomalies detected successfully.</response>
     /// <response code="404">Namespace not found.</response>
     /// <response code="503">AI service unavailable.</response>
+    [RequireScope(ApiKeyScopes.AnomaliesRead)]
     [HttpPost("detect")]
     [ProducesResponseType(typeof(AnomalyDetectionResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

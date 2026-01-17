@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using ServiceHub.Api.Authorization;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Shared.Constants;
@@ -46,6 +47,7 @@ public sealed class QueuesController : ApiControllerBase
     /// <response code="200">Queues retrieved successfully.</response>
     /// <response code="404">Namespace not found.</response>
     /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.QueuesRead)]
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<QueueRuntimePropertiesDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
