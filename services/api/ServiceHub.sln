@@ -1,0 +1,64 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{B39AC1DE-BB9B-4C75-AA2E-23C50CCEE1B4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServiceHub.Api", "src\ServiceHub.Api\ServiceHub.Api.csproj", "{02415F63-1D4C-40A4-A011-385AC7F59FF0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServiceHub.Core", "src\ServiceHub.Core\ServiceHub.Core.csproj", "{5DFE9003-83F8-401E-8B4C-156B1FA53FA7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServiceHub.Infrastructure", "src\ServiceHub.Infrastructure\ServiceHub.Infrastructure.csproj", "{F4BF3A71-2007-4665-BDED-83B29A7ED4A9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServiceHub.Shared", "src\ServiceHub.Shared\ServiceHub.Shared.csproj", "{0CDF62DA-7814-4646-BDBB-B4C39FFE80E0}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0D4DA073-7AB1-41F2-AC44-0A3B936911BA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServiceHub.UnitTests", "tests\ServiceHub.UnitTests\ServiceHub.UnitTests.csproj", "{0E5832E8-0787-4C53-BBB7-E0A5EA4CB7C6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServiceHub.IntegrationTests", "tests\ServiceHub.IntegrationTests\ServiceHub.IntegrationTests.csproj", "{060C7381-6BB2-42D9-90D0-A4B192CB1702}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{02415F63-1D4C-40A4-A011-385AC7F59FF0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{02415F63-1D4C-40A4-A011-385AC7F59FF0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{02415F63-1D4C-40A4-A011-385AC7F59FF0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{02415F63-1D4C-40A4-A011-385AC7F59FF0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5DFE9003-83F8-401E-8B4C-156B1FA53FA7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5DFE9003-83F8-401E-8B4C-156B1FA53FA7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5DFE9003-83F8-401E-8B4C-156B1FA53FA7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5DFE9003-83F8-401E-8B4C-156B1FA53FA7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F4BF3A71-2007-4665-BDED-83B29A7ED4A9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F4BF3A71-2007-4665-BDED-83B29A7ED4A9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F4BF3A71-2007-4665-BDED-83B29A7ED4A9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F4BF3A71-2007-4665-BDED-83B29A7ED4A9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0CDF62DA-7814-4646-BDBB-B4C39FFE80E0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0CDF62DA-7814-4646-BDBB-B4C39FFE80E0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0CDF62DA-7814-4646-BDBB-B4C39FFE80E0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0CDF62DA-7814-4646-BDBB-B4C39FFE80E0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0E5832E8-0787-4C53-BBB7-E0A5EA4CB7C6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0E5832E8-0787-4C53-BBB7-E0A5EA4CB7C6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0E5832E8-0787-4C53-BBB7-E0A5EA4CB7C6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0E5832E8-0787-4C53-BBB7-E0A5EA4CB7C6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{060C7381-6BB2-42D9-90D0-A4B192CB1702}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{060C7381-6BB2-42D9-90D0-A4B192CB1702}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{060C7381-6BB2-42D9-90D0-A4B192CB1702}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{060C7381-6BB2-42D9-90D0-A4B192CB1702}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{02415F63-1D4C-40A4-A011-385AC7F59FF0} = {B39AC1DE-BB9B-4C75-AA2E-23C50CCEE1B4}
+		{5DFE9003-83F8-401E-8B4C-156B1FA53FA7} = {B39AC1DE-BB9B-4C75-AA2E-23C50CCEE1B4}
+		{F4BF3A71-2007-4665-BDED-83B29A7ED4A9} = {B39AC1DE-BB9B-4C75-AA2E-23C50CCEE1B4}
+		{0CDF62DA-7814-4646-BDBB-B4C39FFE80E0} = {B39AC1DE-BB9B-4C75-AA2E-23C50CCEE1B4}
+		{0E5832E8-0787-4C53-BBB7-E0A5EA4CB7C6} = {0D4DA073-7AB1-41F2-AC44-0A3B936911BA}
+		{060C7381-6BB2-42D9-90D0-A4B192CB1702} = {0D4DA073-7AB1-41F2-AC44-0A3B936911BA}
+	EndGlobalSection
+EndGlobal
