@@ -55,11 +55,20 @@ public static partial class LogRedactor
         // Redact Bearer tokens
         result = BearerTokenRegex().Replace(result, $"Bearer {MaskedValue}");
 
-        // Redact encrypted values (our own format)
-        result = EncryptedValueRegex().Replace(result, "[ENCRYPTED]");
+        // Redact encrypted values (current versioned format)
+        result = EncryptedValueV1Regex().Replace(result, "[ENCRYPTED:v1]");
+
+        // Redact encrypted values (legacy V2 format)
+        result = EncryptedValueV2Regex().Replace(result, "[ENCRYPTED:V2]");
 
         // Redact Base64-encoded protected values (legacy format)
         result = LegacyProtectedRegex().Replace(result, "[PROTECTED]");
+
+        // Redact Authorization headers (in case full headers are logged)
+        result = AuthorizationHeaderRegex().Replace(result, "Authorization: [REDACTED]");
+
+        // Redact X-API-Key headers
+        result = ApiKeyHeaderRegex().Replace(result, "X-API-Key: [REDACTED]");
 
         return result;
     }
@@ -158,9 +167,18 @@ public static partial class LogRedactor
     [GeneratedRegex(@"Bearer\s+[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+", RegexOptions.Compiled)]
     private static partial Regex BearerTokenRegex();
 
+    [GeneratedRegex(@"ENC\[v1\]:[A-Za-z0-9+/=]+", RegexOptions.Compiled)]
+    private static partial Regex EncryptedValueV1Regex();
+
     [GeneratedRegex(@"ENC:V2:[A-Za-z0-9+/=]+", RegexOptions.Compiled)]
-    private static partial Regex EncryptedValueRegex();
+    private static partial Regex EncryptedValueV2Regex();
 
     [GeneratedRegex(@"PROTECTED:[A-Za-z0-9+/=]+", RegexOptions.Compiled)]
     private static partial Regex LegacyProtectedRegex();
+
+    [GeneratedRegex(@"Authorization:\s*[^\r\n]+", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex AuthorizationHeaderRegex();
+
+    [GeneratedRegex(@"X-API-Key:\s*[^\r\n]+", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex ApiKeyHeaderRegex();
 }

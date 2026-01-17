@@ -10,13 +10,20 @@ using ServiceHub.Shared.Results;
 namespace ServiceHub.Infrastructure.Security;
 
 /// <summary>
-/// Provides AES-GCM encryption for connection strings.
+/// Provides AES-GCM encryption for connection strings with key versioning support.
 /// Uses authenticated encryption to ensure both confidentiality and integrity.
+/// Format: ENC[v1]:{base64-ciphertext} for versioned encryption.
 /// </summary>
 public sealed partial class ConnectionStringProtector : IConnectionStringProtector
 {
-    private const string EncryptedPrefixV2 = "ENC:V2:";
+    // Current encryption version - increment when changing encryption algorithm
+    private const string CurrentVersion = "v1";
+    private const string EncryptedPrefix = "ENC[v1]:";
+    
+    // Legacy formats for backward compatibility
+    private const string LegacyV2Prefix = "ENC:V2:";
     private const string LegacyProtectedPrefix = "PROTECTED:";
+    
     private const string MaskPattern = "SharedAccessKey=***MASKED***";
     private const int KeySizeBytes = 32; // 256 bits
     private const int NonceSizeBytes = 12; // 96 bits for AES-GCM
@@ -64,10 +71,21 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
                 "Connection string is required."));
         }
 
-        // Already encrypted with V2
-        if (connectionString.StartsWith(EncryptedPrefixV2, StringComparison.Ordinal))
+        // Already encrypted with current version
+        if (connectionString.StartsWith(EncryptedPrefix, StringComparison.Ordinal))
         {
             return Result.Success(connectionString);
+        }
+
+        // Handle legacy V2 format - re-encrypt with new versioned format
+        if (connectionString.StartsWith(LegacyV2Prefix, StringComparison.Ordinal))
+        {
+            var legacyResult = UnprotectLegacyV2(connectionString);
+            if (legacyResult.IsSuccess)
+            {
+                connectionString = legacyResult.Value;
+                // Re-encrypt with new format below
+            }
         }
 
         // Handle legacy protected strings - decrypt first if needed
@@ -90,7 +108,7 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
         try
         {
             var encrypted = EncryptAesGcm(connectionString);
-            return Result.Success($"{EncryptedPrefixV2}{encrypted}");
+            return Result.Success($"{EncryptedPrefix}{encrypted}");
         }
         catch (CryptographicException ex)
         {
@@ -111,10 +129,17 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
                 "Protected connection string is required."));
         }
 
-        // V2 encrypted format
-        if (protectedConnectionString.StartsWith(EncryptedPrefixV2, StringComparison.Ordinal))
+        // Current versioned format
+        if (protectedConnectionString.StartsWith(EncryptedPrefix, StringComparison.Ordinal))
         {
-            return DecryptAesGcm(protectedConnectionString);
+            return DecryptAesGcm(protectedConnectionString, EncryptedPrefix);
+        }
+
+        // Legacy V2 format (backward compatibility)
+        if (protectedConnectionString.StartsWith(LegacyV2Prefix, StringComparison.Ordinal))
+        {
+            _logger.LogDebug("Decrypting legacy V2 format. Consider re-encrypting with versioned format.");
+            return DecryptAesGcm(protectedConnectionString, LegacyV2Prefix);
         }
 
         // Legacy Base64 format (backward compatibility)
@@ -124,7 +149,7 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
             if (result.IsSuccess)
             {
                 _logger.LogDebug(
-                    "Decrypted legacy protected connection string. Consider re-encrypting with V2 format.");
+                    "Decrypted legacy protected connection string. Consider re-encrypting with versioned format.");
             }
             return result;
         }
@@ -141,10 +166,15 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
             return string.Empty;
         }
 
-        // For encrypted strings, just indicate they're encrypted
-        if (connectionString.StartsWith(EncryptedPrefixV2, StringComparison.Ordinal))
+        // For encrypted strings, just indicate they're encrypted with version
+        if (connectionString.StartsWith(EncryptedPrefix, StringComparison.Ordinal))
         {
-            return "[ENCRYPTED]";
+            return $"[ENCRYPTED:{CurrentVersion}]";
+        }
+
+        if (connectionString.StartsWith(LegacyV2Prefix, StringComparison.Ordinal))
+        {
+            return "[ENCRYPTED:V2-LEGACY]";
         }
 
         // Remove protection prefix if present for masking
@@ -198,13 +228,13 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
     }
 
     /// <summary>
-    /// Decrypts AES-GCM encrypted data.
+    /// Decrypts AES-GCM encrypted data with specified prefix.
     /// </summary>
-    private Result<string> DecryptAesGcm(string encryptedString)
+    private Result<string> DecryptAesGcm(string encryptedString, string prefix)
     {
         try
         {
-            var payload = encryptedString[EncryptedPrefixV2.Length..];
+            var payload = encryptedString[prefix.Length..];
             var combined = Convert.FromBase64String(payload);
 
             if (combined.Length < NonceSizeBytes + TagSizeBytes + 1)
@@ -243,6 +273,15 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
                 ErrorCodes.Namespace.ConnectionStringInvalid,
                 "Failed to decrypt connection string. The data may be corrupted or the encryption key may have changed."));
         }
+    }
+
+    /// <summary>
+    /// Decrypts legacy ENC:V2: formatted connection strings for backward compatibility.
+    /// </summary>
+    private Result<string> UnprotectLegacyV2(string protectedConnectionString)
+    {
+        _logger.LogInformation("Decrypting legacy V2 format connection string - consider re-encrypting to new format");
+        return DecryptAesGcm(protectedConnectionString, LegacyV2Prefix);
     }
 
     /// <summary>

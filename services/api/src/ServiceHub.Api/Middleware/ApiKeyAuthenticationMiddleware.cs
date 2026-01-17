@@ -1,8 +1,10 @@
+using ServiceHub.Api.Authorization;
+
 namespace ServiceHub.Api.Middleware;
 
 /// <summary>
-/// Middleware for API Key authentication.
-/// Validates the X-API-KEY header against configured API keys.
+/// Middleware for API Key authentication with scope-based authorization.
+/// Validates the X-API-KEY header and enforces endpoint-level scope requirements.
 /// </summary>
 public sealed class ApiKeyAuthenticationMiddleware
 {
@@ -10,7 +12,7 @@ public sealed class ApiKeyAuthenticationMiddleware
 
     private readonly RequestDelegate _next;
     private readonly ILogger<ApiKeyAuthenticationMiddleware> _logger;
-    private readonly HashSet<string> _validApiKeys;
+    private readonly Dictionary<string, ApiKeyConfiguration> _apiKeyLookup;
     private readonly bool _authenticationEnabled;
 
     private static readonly HashSet<string> BypassPaths = new(StringComparer.OrdinalIgnoreCase)
@@ -36,15 +38,15 @@ public sealed class ApiKeyAuthenticationMiddleware
     {
         _next = next;
         _logger = logger;
+        _apiKeyLookup = new Dictionary<string, ApiKeyConfiguration>(StringComparer.Ordinal);
 
         // Load authentication settings
         _authenticationEnabled = configuration.GetValue("Security:Authentication:Enabled", false);
 
-        // Load valid API keys from configuration
-        var apiKeys = configuration.GetSection("Security:Authentication:ApiKeys").Get<string[]>() ?? [];
-        _validApiKeys = new HashSet<string>(apiKeys, StringComparer.Ordinal);
+        // Load API keys with scope support
+        LoadApiKeys(configuration);
 
-        if (_authenticationEnabled && _validApiKeys.Count == 0)
+        if (_authenticationEnabled && _apiKeyLookup.Count == 0)
         {
             _logger.LogWarning(
                 "API Key authentication is enabled but no API keys are configured. " +
@@ -54,13 +56,50 @@ public sealed class ApiKeyAuthenticationMiddleware
         if (_authenticationEnabled)
         {
             _logger.LogInformation(
-                "API Key authentication enabled with {KeyCount} configured keys",
-                _validApiKeys.Count);
+                "API Key authentication enabled with {KeyCount} configured keys (scope-aware)",
+                _apiKeyLookup.Count);
         }
         else
         {
             _logger.LogWarning(
                 "API Key authentication is DISABLED. Set Security:Authentication:Enabled=true in production.");
+        }
+    }
+
+    private void LoadApiKeys(IConfiguration configuration)
+    {
+        // Support both simple string array (backward compatible) and scoped keys
+        var simpleKeys = configuration.GetSection("Security:Authentication:ApiKeys").Get<string[]>();
+        if (simpleKeys != null && simpleKeys.Length > 0)
+        {
+            foreach (var key in simpleKeys)
+            {
+                if (!string.IsNullOrWhiteSpace(key))
+                {
+                    // Simple keys have admin scope (backward compatibility)
+                    _apiKeyLookup[key] = new ApiKeyConfiguration
+                    {
+                        Key = key,
+                        Scopes = null, // null = admin
+                        Description = "Legacy admin key"
+                    };
+                }
+            }
+        }
+
+        // Load scoped keys from ScopedApiKeys section
+        var scopedKeys = configuration.GetSection("Security:Authentication:ScopedApiKeys")
+            .Get<ApiKeyConfiguration[]>();
+
+        if (scopedKeys != null)
+        {
+            foreach (var keyConfig in scopedKeys)
+            {
+                if (!string.IsNullOrWhiteSpace(keyConfig.Key))
+                {
+                    _apiKeyLookup[keyConfig.Key] = keyConfig;
+                }
+            }
         }
     }
 
@@ -113,28 +152,28 @@ public sealed class ApiKeyAuthenticationMiddleware
             return;
         }
 
-        // Validate API key
-        if (!_validApiKeys.Contains(apiKey))
+        // Validate API key exists
+        if (!_apiKeyLookup.TryGetValue(apiKey, out var keyConfig))
         {
             _logger.LogWarning(
-                "Authentication failed: Invalid API key for {Method} {Path}. Key prefix: {KeyPrefix}",
+                "Authentication failed: Invalid API key for {Method} {Path}",
                 context.Request.Method,
-                path,
-                apiKey.Length > 8 ? $"{apiKey[..8]}..." : "***");
+                path);
 
             await WriteForbiddenResponse(context, "Invalid API key.");
             return;
         }
 
-        // API key is valid - continue
-        _logger.LogDebug(
-            "Authentication successful for {Method} {Path}",
-            context.Request.Method,
-            path);
-
-        // Store authentication info in HttpContext for potential downstream use
+        // API key is valid - store config for scope checking
         context.Items["Authenticated"] = true;
         context.Items["AuthMethod"] = "ApiKey";
+        context.Items["ApiKeyConfig"] = keyConfig;
+
+        _logger.LogDebug(
+            "Authentication successful for {Method} {Path} with key {KeyPrefix}",
+            context.Request.Method,
+            path,
+            keyConfig.GetSafeKey());
 
         await _next(context);
     }
