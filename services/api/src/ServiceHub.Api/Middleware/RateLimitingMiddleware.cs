@@ -11,6 +11,9 @@ namespace ServiceHub.Api.Middleware;
 /// </summary>
 public sealed class RateLimitingMiddleware
 {
+    // CRITICAL FIX: Bound dictionary size to prevent DoS via memory exhaustion
+    private const int MaxTrackedClients = 10_000;
+
     private readonly RequestDelegate _next;
     private readonly ILogger<RateLimitingMiddleware> _logger;
     private readonly RateLimitOptions _options;
@@ -55,44 +58,64 @@ public sealed class RateLimitingMiddleware
 
         CleanupExpiredEntries(now);
 
-        var entry = _clients.GetOrAdd(clientId, _ => new RateLimitEntry(now));
-
-        lock (entry)
+        // CRITICAL FIX: Enforce max clients to prevent unbounded memory growth
+        var entry = _clients.GetOrAdd(clientId, id =>
         {
-            // Reset window if expired
-            if (now - entry.WindowStart > _options.WindowDuration)
+            // If at capacity, evict 10% oldest entries before adding new one
+            if (_clients.Count >= MaxTrackedClients)
             {
-                entry.WindowStart = now;
-                entry.RequestCount = 0;
-            }
+                var toRemove = _clients
+                    .OrderBy(kvp => kvp.Value.WindowStartTicks)
+                    .Take(MaxTrackedClients / 10)
+                    .Select(kvp => kvp.Key)
+                    .ToList();
 
-            entry.RequestCount++;
-
-            if (entry.RequestCount > _options.MaxRequests)
-            {
-                var retryAfter = _options.WindowDuration - (now - entry.WindowStart);
+                foreach (var key in toRemove)
+                {
+                    _clients.TryRemove(key, out _);
+                }
 
                 _logger.LogWarning(
-                    "Rate limit exceeded for client {ClientId}. Requests: {RequestCount}/{MaxRequests}",
-                    clientId,
-                    entry.RequestCount,
-                    _options.MaxRequests);
-
-                context.Response.StatusCode = (int)HttpStatusCode.TooManyRequests;
-                context.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString();
-                context.Response.Headers[_headersOptions.RateLimitLimit] = _options.MaxRequests.ToString();
-                context.Response.Headers[_headersOptions.RateLimitRemaining] = "0";
-                context.Response.Headers[_headersOptions.RateLimitReset] = entry.WindowStart.Add(_options.WindowDuration).ToString("O");
-
-                return;
+                    "Rate limiter evicted {Count} oldest entries to maintain capacity",
+                    toRemove.Count);
             }
 
-            // Add rate limit headers
-            var remaining = _options.MaxRequests - entry.RequestCount;
+            return new RateLimitEntry(now);
+        });
+
+        // CRITICAL FIX: Replace lock with async-safe operations to prevent deadlocks
+        // Try to reset window if expired
+        entry.TryResetIfExpired(_options.WindowDuration, now);
+
+        // Increment request count atomically
+        var currentCount = entry.IncrementAndGetCount();
+
+        if (currentCount > _options.MaxRequests)
+        {
+            var windowStart = entry.WindowStart;
+            var retryAfter = _options.WindowDuration - (now - windowStart);
+
+            _logger.LogWarning(
+                "Rate limit exceeded for client {ClientId}. Requests: {RequestCount}/{MaxRequests}",
+                clientId,
+                currentCount,
+                _options.MaxRequests);
+
+            context.Response.StatusCode = (int)HttpStatusCode.TooManyRequests;
+            context.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString();
             context.Response.Headers[_headersOptions.RateLimitLimit] = _options.MaxRequests.ToString();
-            context.Response.Headers[_headersOptions.RateLimitRemaining] = remaining.ToString();
-            context.Response.Headers[_headersOptions.RateLimitReset] = entry.WindowStart.Add(_options.WindowDuration).ToString("O");
+            context.Response.Headers[_headersOptions.RateLimitRemaining] = "0";
+            context.Response.Headers[_headersOptions.RateLimitReset] = windowStart.Add(_options.WindowDuration).ToString("O");
+
+            return;
         }
+
+        // Add rate limit headers
+        var remaining = _options.MaxRequests - currentCount;
+        var resetTime = entry.WindowStart;
+        context.Response.Headers[_headersOptions.RateLimitLimit] = _options.MaxRequests.ToString();
+        context.Response.Headers[_headersOptions.RateLimitRemaining] = remaining.ToString();
+        context.Response.Headers[_headersOptions.RateLimitReset] = resetTime.Add(_options.WindowDuration).ToString("O");
 
         await _next(context);
     }
@@ -128,15 +151,64 @@ public sealed class RateLimitingMiddleware
         }
     }
 
+    /// <summary>
+    /// Thread-safe rate limit entry using Interlocked operations.
+    /// CRITICAL FIX: Eliminates async lock to prevent deadlocks under load.
+    /// </summary>
     private sealed class RateLimitEntry
     {
-        public DateTime WindowStart { get; set; }
-        public int RequestCount { get; set; }
+        private long _windowStartTicks;
+        private int _requestCount;
 
         public RateLimitEntry(DateTime windowStart)
         {
-            WindowStart = windowStart;
-            RequestCount = 0;
+            _windowStartTicks = windowStart.Ticks;
+            _requestCount = 0;
+        }
+
+        /// <summary>
+        /// Gets the window start time. Thread-safe read.
+        /// </summary>
+        public DateTime WindowStart => new(Interlocked.Read(ref _windowStartTicks));
+
+        /// <summary>
+        /// Exposed for sorting/eviction. Thread-safe read.
+        /// </summary>
+        public long WindowStartTicks => Interlocked.Read(ref _windowStartTicks);
+
+        /// <summary>
+        /// Atomically increments request count and returns new value.
+        /// </summary>
+        public int IncrementAndGetCount() => Interlocked.Increment(ref _requestCount);
+
+        /// <summary>
+        /// Attempts to reset the window if expired. Thread-safe.
+        /// Returns true if reset occurred.
+        /// </summary>
+        public bool TryResetIfExpired(TimeSpan windowDuration, DateTime now)
+        {
+            var currentWindowStart = new DateTime(Interlocked.Read(ref _windowStartTicks));
+
+            // Check if window has expired
+            if (now - currentWindowStart <= windowDuration)
+            {
+                return false;
+            }
+
+            // Try to reset (another thread may have already reset)
+            var originalTicks = Interlocked.CompareExchange(
+                ref _windowStartTicks,
+                now.Ticks,
+                currentWindowStart.Ticks);
+
+            // If we successfully updated the window start, reset count
+            if (originalTicks == currentWindowStart.Ticks)
+            {
+                Interlocked.Exchange(ref _requestCount, 0);
+                return true;
+            }
+
+            return false;
         }
     }
 }
