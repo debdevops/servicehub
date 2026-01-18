@@ -20,6 +20,10 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
     private readonly ILogger<ServiceBusClientWrapper> _logger;
     private volatile bool _disposed;
 
+    // CRITICAL FIX: Cache admin client to prevent per-request creation and socket exhaustion
+    private ServiceBusAdministrationClient? _adminClient;
+    private readonly SemaphoreSlim _adminClientLock = new(1, 1);
+
     /// <inheritdoc/>
     public Guid NamespaceId { get; }
 
@@ -277,6 +281,42 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         }
     }
 
+    /// <summary>
+    /// Gets or creates the cached ServiceBusAdministrationClient.
+    /// CRITICAL FIX: Ensures only ONE admin client per namespace to prevent socket exhaustion.
+    /// </summary>
+    private async ValueTask<ServiceBusAdministrationClient> GetOrCreateAdminClientAsync()
+    {
+        // Fast path: return existing client without locking
+        if (_adminClient != null)
+        {
+            return _adminClient;
+        }
+
+        // Slow path: create client with lock
+        await _adminClientLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            // Double-check after acquiring lock
+            if (_adminClient == null)
+            {
+                _adminClient = new ServiceBusAdministrationClient(
+                    _client.FullyQualifiedNamespace,
+                    new Azure.Identity.DefaultAzureCredential());
+
+                _logger.LogDebug(
+                    "Created ServiceBusAdministrationClient for namespace {NamespaceId}",
+                    NamespaceId);
+            }
+
+            return _adminClient;
+        }
+        finally
+        {
+            _adminClientLock.Release();
+        }
+    }
+
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
@@ -296,6 +336,9 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         {
             _logger.LogWarning(ex, "Error disposing ServiceBusClient for namespace {NamespaceId}", NamespaceId);
         }
+
+        // CRITICAL FIX: Dispose admin client to release resources
+        _adminClientLock.Dispose();
     }
 
     /// <inheritdoc/>
@@ -310,7 +353,8 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
         try
         {
-            var adminClient = new ServiceBusAdministrationClient(_client.FullyQualifiedNamespace, new Azure.Identity.DefaultAzureCredential());
+            // CRITICAL FIX: Reuse cached admin client instead of creating new one per request
+            var adminClient = await GetOrCreateAdminClientAsync().ConfigureAwait(false);
             var queues = new List<QueueRuntimePropertiesDto>();
 
             await foreach (var queue in adminClient.GetQueuesRuntimePropertiesAsync(cancellationToken))
@@ -353,7 +397,8 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
         try
         {
-            var adminClient = new ServiceBusAdministrationClient(_client.FullyQualifiedNamespace, new Azure.Identity.DefaultAzureCredential());
+            // CRITICAL FIX: Reuse cached admin client instead of creating new one per request
+            var adminClient = await GetOrCreateAdminClientAsync().ConfigureAwait(false);
             var queueResponse = await adminClient.GetQueueRuntimePropertiesAsync(queueName, cancellationToken);
             var propsResponse = await adminClient.GetQueueAsync(queueName, cancellationToken);
 
@@ -399,7 +444,8 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
         try
         {
-            var adminClient = new ServiceBusAdministrationClient(_client.FullyQualifiedNamespace, new Azure.Identity.DefaultAzureCredential());
+            // CRITICAL FIX: Reuse cached admin client instead of creating new one per request
+            var adminClient = await GetOrCreateAdminClientAsync().ConfigureAwait(false);
             var topics = new List<TopicRuntimePropertiesDto>();
 
             await foreach (var topic in adminClient.GetTopicsRuntimePropertiesAsync(cancellationToken))
@@ -442,7 +488,8 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
         try
         {
-            var adminClient = new ServiceBusAdministrationClient(_client.FullyQualifiedNamespace, new Azure.Identity.DefaultAzureCredential());
+            // CRITICAL FIX: Reuse cached admin client instead of creating new one per request
+            var adminClient = await GetOrCreateAdminClientAsync().ConfigureAwait(false);
             var topicResponse = await adminClient.GetTopicRuntimePropertiesAsync(topicName, cancellationToken);
             var propsResponse = await adminClient.GetTopicAsync(topicName, cancellationToken);
 
@@ -488,7 +535,8 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
         try
         {
-            var adminClient = new ServiceBusAdministrationClient(_client.FullyQualifiedNamespace, new Azure.Identity.DefaultAzureCredential());
+            // CRITICAL FIX: Reuse cached admin client instead of creating new one per request
+            var adminClient = await GetOrCreateAdminClientAsync().ConfigureAwait(false);
             var subscriptions = new List<SubscriptionRuntimePropertiesDto>();
 
             await foreach (var subscription in adminClient.GetSubscriptionsRuntimePropertiesAsync(topicName, cancellationToken))
@@ -539,7 +587,8 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
         try
         {
-            var adminClient = new ServiceBusAdministrationClient(_client.FullyQualifiedNamespace, new Azure.Identity.DefaultAzureCredential());
+            // CRITICAL FIX: Reuse cached admin client instead of creating new one per request
+            var adminClient = await GetOrCreateAdminClientAsync().ConfigureAwait(false);
             var subscriptionResponse = await adminClient.GetSubscriptionRuntimePropertiesAsync(topicName, subscriptionName, cancellationToken);
             var propsResponse = await adminClient.GetSubscriptionAsync(topicName, subscriptionName, cancellationToken);
 
