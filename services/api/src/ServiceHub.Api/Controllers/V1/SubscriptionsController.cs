@@ -54,8 +54,8 @@ public sealed class SubscriptionsController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<IReadOnlyList<SubscriptionRuntimePropertiesDto>>> GetAll(
-        [FromQuery] Guid namespaceId,
-        [FromQuery] string topicName,
+        [FromRoute] Guid namespaceId,
+        [FromRoute] string topicName,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
@@ -113,8 +113,8 @@ public sealed class SubscriptionsController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<SubscriptionRuntimePropertiesDto>> GetByName(
-        [FromQuery] Guid namespaceId,
-        [FromQuery] string topicName,
+        [FromRoute] Guid namespaceId,
+        [FromRoute] string topicName,
         [FromRoute] string subscriptionName,
         CancellationToken cancellationToken = default)
     {

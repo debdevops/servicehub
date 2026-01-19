@@ -311,7 +311,7 @@ public sealed class Namespace
                 ErrorCodes.Namespace.ConnectionStringRequired,
                 "Connection string is required."));
         }
-        else if (!IsValidConnectionString(connectionString))
+        else if (!IsValidConnectionString(connectionString) && !IsEncryptedConnectionString(connectionString))
         {
             errors.Add(Error.Validation(
                 ErrorCodes.Namespace.ConnectionStringInvalid,
@@ -432,5 +432,21 @@ public sealed class Namespace
                       connectionString.Contains("SharedAccessSignature=", StringComparison.OrdinalIgnoreCase);
 
         return hasEndpoint && hasAuth;
+    }
+
+    /// <summary>
+    /// Checks if the connection string is encrypted.
+    /// </summary>
+    private static bool IsEncryptedConnectionString(string connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return false;
+        }
+
+        // Check for encrypted connection string formats
+        return connectionString.StartsWith("ENC[v1]:", StringComparison.Ordinal) ||
+               connectionString.StartsWith("ENC:V2:", StringComparison.Ordinal) ||
+               connectionString.StartsWith("PROTECTED:", StringComparison.Ordinal);
     }
 }
