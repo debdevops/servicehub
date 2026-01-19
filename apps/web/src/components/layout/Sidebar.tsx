@@ -7,10 +7,14 @@ import {
   AlertCircle,
   Clock,
   Database,
+  Newspaper,
+  RefreshCw,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues } from '@/hooks/useQueues';
+import { useTopics } from '@/hooks/useTopics';
+import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useInsightsSummary } from '@/hooks/useInsights';
 
 interface NamespaceItemProps {
@@ -31,6 +35,24 @@ interface QueueItemProps {
   namespaceId: string;
 }
 
+interface TopicItemProps {
+  topic: {
+    name: string;
+    subscriptionCount: number;
+  };
+  namespaceId: string;
+}
+
+interface SubscriptionItemProps {
+  subscription: {
+    name: string;
+    activeMessageCount: number;
+    deadLetterMessageCount: number;
+  };
+  namespaceId: string;
+  topicName: string;
+}
+
 function QueueItem({ queue, namespaceId }: QueueItemProps) {
   // Fetch AI insights summary for this queue
   const { data: insightsSummary } = useInsightsSummary(namespaceId, queue.name);
@@ -43,38 +65,141 @@ function QueueItem({ queue, namespaceId }: QueueItemProps) {
       className={({ isActive }) =>
         `flex items-center justify-between px-3 py-1.5 rounded text-sm transition-colors ${
           isActive
-            ? 'bg-primary-500 text-white'
-            : 'text-gray-700 hover:bg-gray-100'
+            ? 'bg-primary-600 text-white shadow-sm'
+            : 'bg-gray-50 text-gray-700 hover:bg-primary-50 hover:text-primary-700'
         }`
       }
     >
-      <span className="truncate flex items-center gap-1.5">
-        {queue.name}
-        {hasAIInsight && (
-          <span 
-            className="w-2 h-2 bg-primary-500 rounded-full animate-pulse"
-            title="AI patterns detected"
-          />
-        )}
-      </span>
-      <div className="flex items-center gap-1 shrink-0">
-        <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded">
-          {queue.activeMessageCount}
-        </span>
-        {queue.deadLetterMessageCount > 0 && (
-          <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-xs font-medium rounded">
-            {queue.deadLetterMessageCount}
+      {({ isActive }) => (
+        <>
+          <span className="truncate flex items-center gap-1.5">
+            {queue.name}
+            {hasAIInsight && (
+              <span 
+                className={`w-2 h-2 rounded-full animate-pulse ${
+                  isActive ? 'bg-white' : 'bg-primary-500'
+                }`}
+                title="AI patterns detected"
+              />
+            )}
           </span>
-        )}
-      </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+              isActive 
+                ? 'bg-green-500 text-white' 
+                : 'bg-green-100 text-green-700'
+            }`}>
+              {queue.activeMessageCount}
+            </span>
+            {queue.deadLetterMessageCount > 0 && (
+              <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+                isActive 
+                  ? 'bg-red-500 text-white' 
+                  : 'bg-red-100 text-red-700'
+              }`}>
+                {queue.deadLetterMessageCount}
+              </span>
+            )}
+          </div>
+        </>
+      )}
+    </NavLink>
+  );
+}
+
+function TopicItem({ topic, namespaceId }: TopicItemProps) {
+  const [showSubscriptions, setShowSubscriptions] = useState(false);
+  const { data: subscriptions, isLoading: subsLoading } = useSubscriptions(
+    namespaceId,
+    topic.name
+  );
+
+  return (
+    <div>
+      <button
+        onClick={() => setShowSubscriptions(!showSubscriptions)}
+        className="w-full flex items-center justify-between px-3 py-1.5 rounded text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+      >
+        <span className="truncate flex items-center gap-1.5">
+          {showSubscriptions ? (
+            <ChevronDown className="w-3 h-3 shrink-0" />
+          ) : (
+            <ChevronRight className="w-3 h-3 shrink-0" />
+          )}
+          {topic.name}
+        </span>
+        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded shrink-0">
+          {topic.subscriptionCount}
+        </span>
+      </button>
+
+      {showSubscriptions && (
+        <div className="ml-4 mt-0.5 space-y-0.5">
+          {subsLoading ? (
+            <div className="px-3 py-1 text-xs text-gray-500">Loading...</div>
+          ) : subscriptions && subscriptions.length > 0 ? (
+            subscriptions.map((sub) => (
+              <SubscriptionItem
+                key={sub.name}
+                subscription={sub}
+                namespaceId={namespaceId}
+                topicName={topic.name}
+              />
+            ))
+          ) : (
+            <div className="px-3 py-1 text-xs text-gray-500">No subscriptions</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SubscriptionItem({ subscription, namespaceId, topicName }: SubscriptionItemProps) {
+  return (
+    <NavLink
+      to={`/messages?namespace=${namespaceId}&topic=${topicName}&subscription=${subscription.name}`}
+      className={({ isActive }) =>
+        `flex items-center justify-between px-3 py-1.5 rounded text-sm transition-colors ${
+          isActive
+            ? 'bg-primary-600 text-white shadow-sm'
+            : 'bg-gray-50 text-gray-600 hover:bg-primary-50 hover:text-primary-700'
+        }`
+      }
+    >
+      {({ isActive }) => (
+        <>
+          <span className="truncate">{subscription.name}</span>
+          <div className="flex items-center gap-1 shrink-0">
+            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+              isActive 
+                ? 'bg-green-500 text-white' 
+                : 'bg-green-100 text-green-700'
+            }`}>
+              {subscription.activeMessageCount}
+            </span>
+            {subscription.deadLetterMessageCount > 0 && (
+              <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+                isActive 
+                  ? 'bg-red-500 text-white' 
+                  : 'bg-red-100 text-red-700'
+              }`}>
+                {subscription.deadLetterMessageCount}
+              </span>
+            )}
+          </div>
+        </>
+      )}
     </NavLink>
   );
 }
 
 function NamespaceSection({ namespace }: NamespaceItemProps) {
   const { data: queues, isLoading: queuesLoading } = useQueues(namespace.id);
+  const { data: topics, isLoading: topicsLoading } = useTopics(namespace.id);
   const [isExpanded, setIsExpanded] = useState(namespace.isActive);
   const [showQueues, setShowQueues] = useState(true);
+  const [showTopics, setShowTopics] = useState(true);
 
   return (
     <div className="mb-2">
@@ -139,6 +264,38 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
               )}
             </div>
           )}
+
+          {/* Topics Section */}
+          <button
+            onClick={() => setShowTopics(!showTopics)}
+            className="w-full flex items-center gap-2 px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wider hover:text-gray-700"
+          >
+            {showTopics ? (
+              <ChevronDown className="w-3 h-3" />
+            ) : (
+              <ChevronRight className="w-3 h-3" />
+            )}
+            <Newspaper className="w-3 h-3" />
+            Topics ({topics?.length || 0})
+          </button>
+
+          {showTopics && (
+            <div className="space-y-0.5">
+              {topicsLoading ? (
+                <div className="px-3 py-2 text-xs text-gray-500">Loading...</div>
+              ) : topics && topics.length > 0 ? (
+                topics.map((topic) => (
+                  <TopicItem 
+                    key={topic.name} 
+                    topic={topic} 
+                    namespaceId={namespace.id} 
+                  />
+                ))
+              ) : (
+                <div className="px-3 py-2 text-xs text-gray-500">No topics found</div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -146,7 +303,7 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
 }
 
 export function Sidebar() {
-  const { data: namespaces, isLoading } = useNamespaces();
+  const { data: namespaces, isLoading, refetch } = useNamespaces();
 
   return (
     <aside className="w-[260px] bg-white border-r border-gray-200 flex flex-col overflow-hidden">
@@ -156,13 +313,22 @@ export function Sidebar() {
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
             Namespaces
           </h2>
-          <NavLink
-            to="/connect"
-            className="p-1 hover:bg-gray-100 rounded transition-colors"
-            title="Add Connection"
-          >
-            <Plus className="w-4 h-4 text-gray-500" />
-          </NavLink>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => refetch()}
+              className="p-1 hover:bg-primary-50 rounded transition-colors group"
+              title="Refresh Namespaces"
+            >
+              <RefreshCw className="w-4 h-4 text-primary-500 group-hover:rotate-180 transition-transform duration-300" />
+            </button>
+            <NavLink
+              to="/connect"
+              className="p-1 hover:bg-gray-100 rounded transition-colors"
+              title="Add Connection"
+            >
+              <Plus className="w-4 h-4 text-gray-500" />
+            </NavLink>
+          </div>
         </div>
 
         {isLoading ? (
@@ -217,9 +383,6 @@ export function Sidebar() {
           >
             <AlertCircle className="w-4 h-4 text-red-500" />
             Dead-Letter
-            <span className="ml-auto px-1.5 py-0.5 bg-red-100 text-red-700 text-xs font-medium rounded">
-              7
-            </span>
           </NavLink>
           <NavLink
             to="/messages?filter=scheduled"

@@ -53,7 +53,7 @@ public sealed class QueuesController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<IReadOnlyList<QueueRuntimePropertiesDto>>> GetAll(
-        [FromQuery] Guid namespaceId,
+        [FromRoute] Guid namespaceId,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting all queues for namespace {NamespaceId}", namespaceId);
@@ -106,7 +106,7 @@ public sealed class QueuesController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<QueueRuntimePropertiesDto>> GetByName(
-        [FromQuery] Guid namespaceId,
+        [FromRoute] Guid namespaceId,
         [FromRoute] string queueName,
         CancellationToken cancellationToken = default)
     {

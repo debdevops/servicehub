@@ -86,6 +86,13 @@ public sealed class NamespacesController : ApiControllerBase
                 return BadRequest("Connection string is required for connection string authentication.");
             }
 
+            // Validate the connection string format BEFORE encryption
+            var validationResult = _clientFactory.ValidateConnectionString(request.ConnectionString);
+            if (validationResult.IsFailure)
+            {
+                return ToActionResult<NamespaceResponse>(validationResult.Error);
+            }
+
             // Protect the connection string before storing
             var protectedConnectionStringResult = _connectionStringProtector.Protect(request.ConnectionString);
             if (protectedConnectionStringResult.IsFailure)

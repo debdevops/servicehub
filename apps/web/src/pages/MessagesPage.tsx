@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search, Filter, RefreshCw, Sparkles, X } from 'lucide-react';
 import { MessageList, MessageDetailPanel, type QueueTab } from '@/components/messages';
-import { MessageSendFAB } from '@/components/fab';
 import { AIFindingsDropdown } from '@/components/ai';
 import { MessageListSkeleton } from '@/components/messages/MessageListSkeleton';
 import { useMessages } from '@/hooks/useMessages';
@@ -130,11 +129,6 @@ export function MessagesPage() {
   const clearEvidenceFilter = () => {
     setEvidenceFilter(null);
     toast.success('Filter cleared');
-  };
-
-  // Handle message sent from FAB
-  const handleMessageSent = () => {
-    refetch(); // Refresh message list after sending
   };
 
   // Handle refresh button
@@ -289,13 +283,6 @@ export function MessagesPage() {
           onViewPattern={handleViewEvidence}
         />
       </div>
-
-      {/* FAB for sending messages */}
-      <MessageSendFAB 
-        onMessageSent={handleMessageSent}
-        namespaceId={namespaceId}
-        queueName={queueName}
-      />
     </div>
   );
 }

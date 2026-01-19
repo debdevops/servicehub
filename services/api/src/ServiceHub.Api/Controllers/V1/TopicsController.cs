@@ -53,7 +53,7 @@ public sealed class TopicsController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<IReadOnlyList<TopicRuntimePropertiesDto>>> GetAll(
-        [FromQuery] Guid namespaceId,
+        [FromRoute] Guid namespaceId,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Getting all topics for namespace {NamespaceId}", namespaceId);
@@ -106,7 +106,7 @@ public sealed class TopicsController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<TopicRuntimePropertiesDto>> GetByName(
-        [FromQuery] Guid namespaceId,
+        [FromRoute] Guid namespaceId,
         [FromRoute] string topicName,
         CancellationToken cancellationToken = default)
     {
