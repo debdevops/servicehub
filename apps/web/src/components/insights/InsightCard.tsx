@@ -33,10 +33,10 @@ const SEVERITY_CONFIG: Record<InsightSeverity, {
   },
   low: {
     label: 'LOW SEVERITY',
-    textColor: 'text-blue-600',
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-l-blue-500',
-    dotColor: 'bg-blue-500',
+    textColor: 'text-primary-600',
+    bgColor: 'bg-primary-50',
+    borderColor: 'border-l-primary-500',
+    dotColor: 'bg-primary-500',
   },
 };
 
@@ -44,7 +44,7 @@ const SEVERITY_CONFIG: Record<InsightSeverity, {
 const PRIORITY_LABELS: Record<string, { label: string; color: string }> = {
   immediate: { label: 'Immediate', color: 'bg-red-100 text-red-700' },
   'short-term': { label: 'Short-term', color: 'bg-amber-100 text-amber-700' },
-  'long-term': { label: 'Long-term', color: 'bg-blue-100 text-blue-700' },
+  'long-term': { label: 'Long-term', color: 'bg-primary-100 text-primary-700' },
   prevention: { label: 'Prevention', color: 'bg-green-100 text-green-700' },
 };
 

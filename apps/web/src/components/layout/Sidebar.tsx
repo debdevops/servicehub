@@ -128,7 +128,7 @@ function TopicItem({ topic, namespaceId }: TopicItemProps) {
           )}
           {topic.name}
         </span>
-        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded shrink-0">
+        <span className="px-1.5 py-0.5 bg-primary-100 text-primary-700 text-xs font-medium rounded shrink-0">
           {topic.subscriptionCount}
         </span>
       </button>
@@ -318,6 +318,7 @@ export function Sidebar() {
               onClick={() => refetch()}
               className="p-1 hover:bg-primary-50 rounded transition-colors group"
               title="Refresh Namespaces"
+              aria-label="Refresh namespaces list"
             >
               <RefreshCw className="w-4 h-4 text-primary-500 group-hover:rotate-180 transition-transform duration-300" />
             </button>
@@ -325,6 +326,7 @@ export function Sidebar() {
               to="/connect"
               className="p-1 hover:bg-gray-100 rounded transition-colors"
               title="Add Connection"
+              aria-label="Add new connection"
             >
               <Plus className="w-4 h-4 text-gray-500" />
             </NavLink>

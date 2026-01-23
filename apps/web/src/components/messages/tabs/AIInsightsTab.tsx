@@ -16,7 +16,7 @@ interface AIInsightsTabProps {
 const PRIORITY_COLORS: Record<string, string> = {
   immediate: 'bg-red-100 text-red-700',
   'short-term': 'bg-amber-100 text-amber-700',
-  investigative: 'bg-blue-100 text-blue-700',
+  investigative: 'bg-primary-100 text-primary-700',
 };
 
 function PatternCard({ 

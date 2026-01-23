@@ -44,7 +44,7 @@ const CATEGORY_META: Record<InsightCategory, { label: string; description: strin
   },
 };
 
-// Category colors
+// Category colors - Using Sky Blue (primary) palette for consistency
 const CATEGORY_COLORS: Record<InsightCategory, { text: string; bg: string; count: string }> = {
   critical: {
     text: 'text-red-600',
@@ -57,14 +57,14 @@ const CATEGORY_COLORS: Record<InsightCategory, { text: string; bg: string; count
     count: 'bg-amber-100 text-amber-700',
   },
   patterns: {
-    text: 'text-blue-600',
-    bg: 'bg-blue-50',
-    count: 'bg-blue-100 text-blue-700',
+    text: 'text-primary-600',
+    bg: 'bg-primary-50',
+    count: 'bg-primary-100 text-primary-700',
   },
   performance: {
-    text: 'text-sky-700',
-    bg: 'bg-sky-50',
-    count: 'bg-sky-100 text-sky-700',
+    text: 'text-primary-700',
+    bg: 'bg-primary-50',
+    count: 'bg-primary-100 text-primary-700',
   },
   security: {
     text: 'text-green-600',

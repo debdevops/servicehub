@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Trash2 } from 'lucide-react';
 import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@/hooks/useNamespaces';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 /**
  * Connection Setup Page
@@ -14,6 +15,13 @@ export function ConnectPage() {
   const [connectionName, setConnectionName] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [connectionString, setConnectionString] = useState('');
+  
+  // Delete confirmation dialog state
+  const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; id: string; name: string }>({
+    isOpen: false,
+    id: '',
+    name: '',
+  });
 
   const { data: namespaces, isLoading } = useNamespaces();
   const createNamespace = useCreateNamespace();
@@ -43,10 +51,17 @@ export function ConnectPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Are you sure you want to delete this connection?')) {
-      await deleteNamespace.mutateAsync(id);
-    }
+  const openDeleteConfirm = (id: string, name: string) => {
+    setDeleteConfirm({ isOpen: true, id, name });
+  };
+
+  const handleDeleteConfirm = async () => {
+    await deleteNamespace.mutateAsync(deleteConfirm.id);
+    setDeleteConfirm({ isOpen: false, id: '', name: '' });
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteConfirm({ isOpen: false, id: '', name: '' });
   };
 
   const CloudHero = () => (
@@ -228,16 +243,17 @@ export function ConnectPage() {
 
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => navigate('/messages', { state: { namespaceId: ns.id } })}
+                          onClick={() => navigate(`/messages?namespace=${ns.id}`)}
                           className="px-3 py-1.5 text-white text-sm font-medium rounded-lg transition-colors bg-primary-500 hover:bg-primary-600"
+                          aria-label={`Open ${ns.displayName || ns.name} namespace`}
                         >
                           Open
                         </button>
                         <button
-                          onClick={() => handleDelete(ns.id)}
+                          onClick={() => openDeleteConfirm(ns.id, ns.displayName || ns.name)}
                           className="p-1.5 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
                           type="button"
-                          aria-label="Delete connection"
+                          aria-label={`Delete ${ns.displayName || ns.name} connection`}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -258,6 +274,17 @@ export function ConnectPage() {
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={deleteConfirm.isOpen}
+        title="Delete Connection"
+        message={`Are you sure you want to delete the connection "${deleteConfirm.name}"?\n\nThis will remove the saved connection but will not affect your Azure Service Bus namespace.`}
+        variant="danger"
+        confirmLabel="Delete"
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
     </div>
   );
 }

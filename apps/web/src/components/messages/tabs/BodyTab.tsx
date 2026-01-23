@@ -54,7 +54,7 @@ function highlightJSON(json: string): React.ReactNode[] {
         );
       } else if (/true|false|null/.test(valueContent)) {
         elements.push(
-          <span key={`val-${keyIndex++}`} className="text-purple-400">
+          <span key={`val-${keyIndex++}`} className="text-primary-400">
             {valueContent}
           </span>
         );
