@@ -11,7 +11,11 @@ import type { Message as APIMessage } from '@/lib/api/types';
 import toast from 'react-hot-toast';
 
 // Transform API message to UI message format
-function transformMessage(apiMessage: APIMessage, insightMessageIds: string[] = []): Message {
+function transformMessage(
+  apiMessage: APIMessage, 
+  insightMessageIds: string[] = [],
+  queueType: 'active' | 'deadletter' = 'active'
+): Message {
   return {
     ...apiMessage,
     enqueuedTime: new Date(apiMessage.enqueuedTime),
@@ -22,6 +26,7 @@ function transformMessage(apiMessage: APIMessage, insightMessageIds: string[] = 
     sequenceNumber: apiMessage.sequenceNumber || 0,
     timeToLive: apiMessage.timeToLive || '',
     lockToken: apiMessage.lockToken || '',
+    queueType, // Pass through the current queue tab filter
   };
 }
 
@@ -87,7 +92,7 @@ export function MessagesPage() {
 
   // Get messages from API or empty array
   const messages: Message[] = (messagesData?.items || []).map(msg => 
-    transformMessage(msg, insightMessageIds)
+    transformMessage(msg, insightMessageIds, queueTab)
   );
 
   // Find selected message
@@ -204,6 +209,7 @@ export function MessagesPage() {
         <button 
           disabled
           className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-400 bg-gray-50 cursor-not-allowed"
+          aria-label="Filter messages - Coming soon"
         >
           <Filter className="w-4 h-4" />
           Filter
@@ -236,6 +242,7 @@ export function MessagesPage() {
         <button 
           onClick={handleRefresh}
           className="flex items-center gap-2 px-3 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors"
+          aria-label="Refresh message list"
         >
           <RefreshCw className="w-4 h-4" />
           Refresh

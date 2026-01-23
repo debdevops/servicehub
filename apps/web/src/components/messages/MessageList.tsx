@@ -90,7 +90,10 @@ function MessageCard({ message, isSelected, onClick }: MessageCardProps) {
         <span className="font-mono text-sm font-medium text-gray-900">
           {shortId}
         </span>
-        <span className="text-xs text-gray-500">
+        <span 
+          className="text-xs text-gray-500 cursor-help"
+          title={message.enqueuedTime.toISOString()}
+        >
           {formatRelativeTime(message.enqueuedTime)}
         </span>
       </div>

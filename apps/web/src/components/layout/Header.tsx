@@ -1,14 +1,23 @@
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Settings, User, Search, Cloud } from 'lucide-react';
+import { useNamespaces } from '@/hooks/useNamespaces';
 
 export function Header() {
+  const [searchParams] = useSearchParams();
+  const namespaceId = searchParams.get('namespace');
+  const { data: namespaces } = useNamespaces();
+  
+  // Find the current namespace from URL params
+  const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
+  const isConnected = !!currentNamespace;
+
   return (
     <header
       className="h-14 bg-primary-500 text-white flex items-center justify-between px-4 shadow-sm"
     >
       {/* Logo & Brand */}
       <div className="flex items-center gap-3">
-        <Link to="/" className="flex items-center gap-2 font-semibold text-lg">
+        <Link to="/" className="flex items-center gap-2 font-semibold text-lg" aria-label="ServiceHub Home">
           <div className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center border border-white/25">
             <Cloud className="w-4 h-4" />
           </div>
@@ -21,19 +30,28 @@ export function Header() {
 
       {/* Connection Status */}
       <div className="flex items-center gap-2 text-sm">
-        <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full">
-          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-          <span className="text-white/90">Connected:</span>
-          <span className="font-medium">Prod-SB-01</span>
-        </div>
+        {isConnected ? (
+          <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full">
+            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" aria-hidden="true" />
+            <span className="text-white/90">Connected:</span>
+            <span className="font-medium">{currentNamespace.displayName || currentNamespace.name}</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full">
+            <div className="w-2 h-2 bg-gray-400 rounded-full" aria-hidden="true" />
+            <span className="text-white/70">No namespace selected</span>
+          </div>
+        )}
       </div>
 
       {/* Actions */}
       <div className="flex items-center gap-2">
-        {/* Global Search */}
+        {/* Global Search - Disabled placeholder */}
         <button
-          className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg text-sm transition-colors"
-          title="Search (⌘K)"
+          className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg text-sm transition-colors opacity-50 cursor-not-allowed"
+          title="Search (Coming soon)"
+          disabled
+          aria-label="Search - Coming soon"
         >
           <Search className="w-4 h-4" />
           <span className="text-white/70">Search...</span>
@@ -44,12 +62,16 @@ export function Header() {
         <button
           className="p-2 hover:bg-white/10 rounded-lg transition-colors"
           title="Settings"
+          aria-label="Settings"
         >
           <Settings className="w-5 h-5" />
         </button>
 
         {/* User Menu */}
-        <button className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors">
+        <button 
+          className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
+          aria-label="User menu"
+        >
           <User className="w-4 h-4" />
         </button>
       </div>

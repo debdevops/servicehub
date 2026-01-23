@@ -95,20 +95,24 @@ export function SendMessageModal({
     });
 
     try {
-      // Send message via API
-      await sendMessage.mutateAsync({
-        namespaceId: selectedNamespace,
-        queueOrTopicName: entity,
-        message: {
-          body,
-          contentType,
-          properties: propsObject,
-          correlationId: correlationId || undefined,
-          sessionId: sessionId || undefined,
-          timeToLive: timeToLive ? parseInt(timeToLive) : undefined,
-          scheduledEnqueueTime: scheduledEnqueueTime || undefined,
-        },
-      });
+      // Send messages (supports multiple copies)
+      const count = sendMultiple ? messageCount : 1;
+      
+      for (let i = 0; i < count; i++) {
+        await sendMessage.mutateAsync({
+          namespaceId: selectedNamespace,
+          queueOrTopicName: entity,
+          message: {
+            body,
+            contentType,
+            properties: propsObject,
+            correlationId: correlationId || undefined,
+            sessionId: sessionId || undefined,
+            timeToLive: timeToLive ? parseInt(timeToLive) : undefined,
+            scheduledEnqueueTime: scheduledEnqueueTime || undefined,
+          },
+        });
+      }
 
       // Call parent callback with payload for UI update
       onSend({
@@ -121,7 +125,7 @@ export function SendMessageModal({
         sessionId,
         timeToLive,
         scheduledEnqueueTime,
-        messageCount,
+        messageCount: count,
       });
     } catch (error) {
       // Error handled by mutation hook

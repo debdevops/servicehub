@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { FileText, Code, Bot, List, Inbox } from 'lucide-react';
 import { Play, Clipboard, Zap, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { useTabPersistence, type DetailTab } from '@/hooks/useTabPersistence';
 import { PropertiesTab, BodyTab, AIInsightsTab, HeadersTab } from './tabs';
 import { useReplayMessage, usePurgeMessage } from '@/hooks/useMessages';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import type { Message } from '@/lib/mockData';
 import toast from 'react-hot-toast';
 
@@ -78,23 +80,69 @@ interface ActionButtonsProps {
   namespaceId: string | null;
 }
 
+interface ConfirmState {
+  isOpen: boolean;
+  title: string;
+  message: string;
+  variant: 'default' | 'danger';
+  action: 'replay' | 'purge' | null;
+}
+
 function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
   const replayMessage = useReplayMessage();
   const purgeMessage = usePurgeMessage();
+  
+  const [confirmState, setConfirmState] = useState<ConfirmState>({
+    isOpen: false,
+    title: '',
+    message: '',
+    variant: 'default',
+    action: null,
+  });
 
-  const handleReplay = async () => {
+  const openConfirm = (action: 'replay' | 'purge') => {
+    const shortId = message.id.split('-').slice(0, 2).join('-');
+    
+    if (action === 'replay') {
+      setConfirmState({
+        isOpen: true,
+        title: 'Replay Message',
+        message: `Are you sure you want to replay message ${shortId}?\n\nThis will re-send the message to the queue for processing.`,
+        variant: 'default',
+        action: 'replay',
+      });
+    } else if (action === 'purge') {
+      setConfirmState({
+        isOpen: true,
+        title: 'Permanently Delete Message',
+        message: `Are you sure you want to permanently delete message ${shortId}?\n\nThis action cannot be undone.`,
+        variant: 'danger',
+        action: 'purge',
+      });
+    }
+  };
+
+  const handleConfirm = async () => {
     if (!namespaceId) {
       toast.error('Namespace context missing');
       return;
     }
 
-    if (confirm(`Replay message ${message.id}?`)) {
-      try {
+    try {
+      if (confirmState.action === 'replay') {
         await replayMessage.mutateAsync({ namespaceId, messageId: message.id });
-      } catch (error) {
-        // Error handled by mutation hook
+      } else if (confirmState.action === 'purge') {
+        await purgeMessage.mutateAsync({ namespaceId, messageId: message.id });
       }
+    } catch (error) {
+      // Error handled by mutation hook
+    } finally {
+      setConfirmState(prev => ({ ...prev, isOpen: false, action: null }));
     }
+  };
+
+  const handleCancel = () => {
+    setConfirmState(prev => ({ ...prev, isOpen: false, action: null }));
   };
 
   const handleCopyId = async () => {
@@ -106,71 +154,47 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
     }
   };
 
-  const handleResubmit = async () => {
-    if (!namespaceId) {
-      toast.error('Namespace context missing');
-      return;
-    }
-
-    if (confirm(`Resubmit message ${message.id}?`)) {
-      try {
-        await replayMessage.mutateAsync({ namespaceId, messageId: message.id });
-        toast.success(`Message ${message.id} resubmitted successfully`);
-      } catch (error) {
-        // Error handled by mutation hook
-      }
-    }
-  };
-
-  const handlePurge = async () => {
-    if (!namespaceId) {
-      toast.error('Namespace context missing');
-      return;
-    }
-
-    if (confirm(`⚠️ Permanently delete message ${message.id}?\n\nThis action cannot be undone.`)) {
-      try {
-        await purgeMessage.mutateAsync({ namespaceId, messageId: message.id });
-      } catch (error) {
-        // Error handled by mutation hook
-      }
-    }
-  };
-
   return (
-    <div className="flex items-center gap-3 p-4 border-t border-gray-200 bg-white">
-      <button
-        className="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition-colors disabled:bg-primary-300 disabled:cursor-not-allowed"
-        onClick={handleReplay}
-        disabled={replayMessage.isPending || !namespaceId}
-      >
-        <Play size={16} />
-        {replayMessage.isPending ? 'Replaying...' : 'Replay'}
-      </button>
-      <button
-        className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-lg font-medium transition-colors"
-        onClick={handleCopyId}
-      >
-        <Clipboard size={16} />
-        Copy ID
-      </button>
-      <button
-        className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-lg font-medium transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
-        onClick={handleResubmit}
-        disabled={replayMessage.isPending || !namespaceId}
-      >
-        <Zap size={16} />
-        Resubmit
-      </button>
-      <button
-        className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-red-50 text-gray-700 hover:text-red-600 border border-gray-200 hover:border-red-200 rounded-lg font-medium transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
-        onClick={handlePurge}
-        disabled={purgeMessage.isPending || !namespaceId}
-      >
-        <Trash2 size={16} />
-        {purgeMessage.isPending ? 'Purging...' : 'Purge'}
-      </button>
-    </div>
+    <>
+      <div className="flex items-center gap-3 p-4 border-t border-gray-200 bg-white">
+        <button
+          className="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition-colors disabled:bg-primary-300 disabled:cursor-not-allowed"
+          onClick={() => openConfirm('replay')}
+          disabled={replayMessage.isPending || !namespaceId}
+          aria-label="Replay message"
+        >
+          <Play size={16} />
+          {replayMessage.isPending ? 'Replaying...' : 'Replay'}
+        </button>
+        <button
+          className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-lg font-medium transition-colors"
+          onClick={handleCopyId}
+          aria-label="Copy message ID to clipboard"
+        >
+          <Clipboard size={16} />
+          Copy ID
+        </button>
+        <button
+          className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-red-50 text-gray-700 hover:text-red-600 border border-gray-200 hover:border-red-200 rounded-lg font-medium transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
+          onClick={() => openConfirm('purge')}
+          disabled={purgeMessage.isPending || !namespaceId}
+          aria-label="Permanently delete message"
+        >
+          <Trash2 size={16} />
+          {purgeMessage.isPending ? 'Purging...' : 'Purge'}
+        </button>
+      </div>
+
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        variant={confirmState.variant}
+        confirmLabel={confirmState.action === 'purge' ? 'Delete' : 'Confirm'}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
+    </>
   );
 }
 

@@ -232,12 +232,12 @@ export function MessageGeneratorModal({
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* Info Banner */}
-          <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-            <div className="text-sm text-blue-800">
+          <div className="flex items-start gap-3 p-4 bg-primary-50 border border-primary-200 rounded-lg">
+            <Info className="w-5 h-5 text-primary-600 shrink-0 mt-0.5" />
+            <div className="text-sm text-primary-800">
               <p className="font-medium mb-1">About Generated Messages</p>
-              <p className="text-blue-700">
-                All generated messages are tagged with <code className="bg-blue-100 px-1 rounded">{GENERATOR_PROPERTY_KEY}</code> property 
+              <p className="text-primary-700">
+                All generated messages are tagged with <code className="bg-primary-100 px-1 rounded">{GENERATOR_PROPERTY_KEY}</code> property 
                 for easy identification. Messages include realistic business scenarios with structured JSON bodies, 
                 headers, and configurable anomalies for AI Insights testing.
               </p>
