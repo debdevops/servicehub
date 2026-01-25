@@ -72,7 +72,12 @@ interface MessageCardProps {
 }
 
 function MessageCard({ message, isSelected, onClick }: MessageCardProps) {
-  const shortId = message.id.split('-').slice(0, 2).join('-');
+  // Safely handle message ID - it may not be a hyphenated UUID
+  const shortId = message.id 
+    ? (message.id.includes('-') 
+        ? message.id.split('-').slice(0, 2).join('-') 
+        : message.id.substring(0, 16))
+    : `#${message.sequenceNumber}`;
 
   return (
     <div

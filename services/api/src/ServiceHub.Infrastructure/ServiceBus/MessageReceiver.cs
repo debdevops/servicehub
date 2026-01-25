@@ -17,6 +17,7 @@ public sealed class MessageReceiver : IMessageReceiver
 {
     private readonly IServiceBusClientCache _clientCache;
     private readonly INamespaceRepository _namespaceRepository;
+    private readonly IConnectionStringProtector _connectionStringProtector;
     private readonly ILogger<MessageReceiver> _logger;
     private readonly ResiliencePipeline _resiliencePipeline;
 
@@ -25,14 +26,17 @@ public sealed class MessageReceiver : IMessageReceiver
     /// </summary>
     /// <param name="clientCache">The Service Bus client cache.</param>
     /// <param name="namespaceRepository">The namespace repository.</param>
+    /// <param name="connectionStringProtector">The connection string protector.</param>
     /// <param name="logger">The logger instance.</param>
     public MessageReceiver(
         IServiceBusClientCache clientCache,
         INamespaceRepository namespaceRepository,
+        IConnectionStringProtector connectionStringProtector,
         ILogger<MessageReceiver> logger)
     {
         _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
+        _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         _resiliencePipeline = new ResiliencePipelineBuilder()
@@ -210,6 +214,71 @@ public sealed class MessageReceiver : IMessageReceiver
             "Message count retrieval is not yet implemented. This feature requires the Service Bus Administration API.")));
     }
 
+    /// <inheritdoc/>
+    public async Task<Result<int>> DeadLetterMessagesAsync(
+        DeadLetterRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.NamespaceId == Guid.Empty)
+        {
+            return Result.Failure<int>(Error.Validation(
+                ErrorCodes.Namespace.NotFound,
+                "Namespace ID is required."));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.EntityName))
+        {
+            return Result.Failure<int>(Error.Validation(
+                ErrorCodes.Message.QueueNameRequired,
+                "Queue or topic name is required."));
+        }
+
+        var clientResult = await GetClientWrapperAsync(request.NamespaceId, cancellationToken).ConfigureAwait(false);
+        if (clientResult.IsFailure)
+        {
+            return Result.Failure<int>(clientResult.Error);
+        }
+
+        try
+        {
+            var messageCount = request.ValidatedMessageCount;
+            var deadLetteredCount = await clientResult.Value.DeadLetterMessagesAsync(
+                request.EntityName,
+                request.SubscriptionName,
+                messageCount,
+                request.Reason,
+                request.ErrorDescription,
+                cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Dead-lettered {Count} messages from {EntityName} in namespace {NamespaceId} with reason: {Reason}",
+                deadLetteredCount,
+                request.EntityName,
+                request.NamespaceId,
+                request.Reason);
+
+            return Result.Success(deadLetteredCount);
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogError(ex,
+                "Failed to dead-letter messages from {EntityName}",
+                request.EntityName);
+
+            return Result.Failure<int>(Error.ExternalService(
+                ErrorCodes.Message.ReceiveFailed,
+                $"Failed to dead-letter messages: {ex.Message}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error dead-lettering messages");
+
+            return Result.Failure<int>(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while dead-lettering messages."));
+        }
+    }
+
     private async Task<Result<IServiceBusClientWrapper>> GetClientWrapperAsync(
         Guid namespaceId,
         CancellationToken cancellationToken)
@@ -231,7 +300,13 @@ public sealed class MessageReceiver : IMessageReceiver
                 "Namespace connection string is not configured."));
         }
 
-        var clientWrapper = _clientCache.GetOrCreate(@namespace.Id, @namespace.ConnectionString);
+        var unprotectResult = _connectionStringProtector.Unprotect(@namespace.ConnectionString);
+        if (unprotectResult.IsFailure)
+        {
+            return Result.Failure<IServiceBusClientWrapper>(unprotectResult.Error);
+        }
+
+        var clientWrapper = _clientCache.GetOrCreate(@namespace.Id, unprotectResult.Value);
         return Result.Success(clientWrapper);
     }
 
@@ -262,5 +337,121 @@ public sealed class MessageReceiver : IMessageReceiver
         }
 
         return errors.Count > 0 ? Result.Failure(errors) : Result.Success();
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result> ReplayMessageAsync(
+        Guid namespaceId,
+        string entityName,
+        string? subscriptionName,
+        long sequenceNumber,
+        CancellationToken cancellationToken = default)
+    {
+        if (namespaceId == Guid.Empty)
+        {
+            return Result.Failure(Error.Validation(
+                ErrorCodes.Namespace.NotFound,
+                "Namespace ID is required."));
+        }
+
+        if (string.IsNullOrWhiteSpace(entityName))
+        {
+            return Result.Failure(Error.Validation(
+                ErrorCodes.Message.QueueNameRequired,
+                "Queue or topic name is required."));
+        }
+
+        var clientResult = await GetClientWrapperAsync(namespaceId, cancellationToken).ConfigureAwait(false);
+        if (clientResult.IsFailure)
+        {
+            return Result.Failure(clientResult.Error);
+        }
+
+        try
+        {
+            var result = await clientResult.Value.ReplayMessageAsync(
+                entityName,
+                subscriptionName,
+                sequenceNumber,
+                cancellationToken).ConfigureAwait(false);
+
+            if (result.IsSuccess)
+            {
+                _logger.LogInformation(
+                    "Replayed message {SequenceNumber} from {EntityName} in namespace {NamespaceId}",
+                    sequenceNumber,
+                    entityName,
+                    namespaceId);
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error replaying message");
+            return Result.Failure(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while replaying the message."));
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result> PurgeMessageAsync(
+        Guid namespaceId,
+        string entityName,
+        string? subscriptionName,
+        long sequenceNumber,
+        bool fromDeadLetter,
+        CancellationToken cancellationToken = default)
+    {
+        if (namespaceId == Guid.Empty)
+        {
+            return Result.Failure(Error.Validation(
+                ErrorCodes.Namespace.NotFound,
+                "Namespace ID is required."));
+        }
+
+        if (string.IsNullOrWhiteSpace(entityName))
+        {
+            return Result.Failure(Error.Validation(
+                ErrorCodes.Message.QueueNameRequired,
+                "Queue or topic name is required."));
+        }
+
+        var clientResult = await GetClientWrapperAsync(namespaceId, cancellationToken).ConfigureAwait(false);
+        if (clientResult.IsFailure)
+        {
+            return Result.Failure(clientResult.Error);
+        }
+
+        try
+        {
+            var result = await clientResult.Value.PurgeMessageAsync(
+                entityName,
+                subscriptionName,
+                sequenceNumber,
+                fromDeadLetter,
+                cancellationToken).ConfigureAwait(false);
+
+            if (result.IsSuccess)
+            {
+                var queueType = fromDeadLetter ? "dead-letter queue" : "queue";
+                _logger.LogInformation(
+                    "Purged message {SequenceNumber} from {EntityName} {QueueType} in namespace {NamespaceId}",
+                    sequenceNumber,
+                    entityName,
+                    queueType,
+                    namespaceId);
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error purging message");
+            return Result.Failure(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while purging the message."));
+        }
     }
 }

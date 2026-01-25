@@ -63,13 +63,18 @@ public sealed class MessagesController : ApiControllerBase
         [FromBody] SendMessageRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (request.NamespaceId is null || request.NamespaceId.Value == Guid.Empty)
+        {
+            return BadRequest("Namespace ID is required.");
+        }
+
         _logger.LogInformation(
             "Sending message to queue {QueueName} in namespace {NamespaceId}",
             queueName,
             request.NamespaceId);
 
         // Verify namespace exists
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(request.NamespaceId, cancellationToken);
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(request.NamespaceId.Value, cancellationToken);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult(Shared.Results.Result.Failure(namespaceResult.Error));
@@ -110,13 +115,18 @@ public sealed class MessagesController : ApiControllerBase
         [FromBody] SendMessageRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (request.NamespaceId is null || request.NamespaceId.Value == Guid.Empty)
+        {
+            return BadRequest("Namespace ID is required.");
+        }
+
         _logger.LogInformation(
             "Sending message to topic {TopicName} in namespace {NamespaceId}",
             topicName,
             request.NamespaceId);
 
         // Verify namespace exists
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(request.NamespaceId, cancellationToken);
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(request.NamespaceId.Value, cancellationToken);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult(Shared.Results.Result.Failure(namespaceResult.Error));
@@ -373,5 +383,69 @@ public sealed class MessagesController : ApiControllerBase
             EntityName: message.EntityName,
             SubscriptionName: message.SubscriptionName,
             IsFromDeadLetter: message.IsFromDeadLetter);
+    }
+
+    [RequireScope(ApiKeyScopes.MessagesSend)]
+    [HttpPost("replay")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    public async Task<IActionResult> ReplayMessage(
+        [FromQuery] Guid namespaceId,
+        [FromQuery] long sequenceNumber,
+        [FromQuery] string entityName,
+        [FromQuery] string? subscriptionName = null,
+        CancellationToken cancellationToken = default)
+    {
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult(Shared.Results.Result.Failure(namespaceResult.Error));
+        }
+
+        var result = await _messageReceiver.ReplayMessageAsync(
+            namespaceId,
+            entityName,
+            subscriptionName,
+            sequenceNumber,
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ToActionResult(result);
+        }
+
+        return Accepted();
+    }
+
+    [RequireScope(ApiKeyScopes.MessagesSend)]
+    [HttpDelete("purge")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> PurgeMessage(
+        [FromQuery] Guid namespaceId,
+        [FromQuery] long sequenceNumber,
+        [FromQuery] string entityName,
+        [FromQuery] string? subscriptionName = null,
+        [FromQuery] bool fromDeadLetter = false,
+        CancellationToken cancellationToken = default)
+    {
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult(Shared.Results.Result.Failure(namespaceResult.Error));
+        }
+
+        var result = await _messageReceiver.PurgeMessageAsync(
+            namespaceId,
+            entityName,
+            subscriptionName,
+            sequenceNumber,
+            fromDeadLetter,
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ToActionResult(result);
+        }
+
+        return NoContent();
     }
 }

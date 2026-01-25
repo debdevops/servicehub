@@ -18,9 +18,9 @@ namespace ServiceHub.Core.DTOs.Requests;
 /// <param name="ScheduledEnqueueTimeUtc">Optional scheduled enqueue time for delayed delivery.</param>
 /// <param name="ApplicationProperties">Optional application-specific properties.</param>
 public sealed record SendMessageRequest(
-    Guid NamespaceId,
-    string EntityName,
-    string Body,
+    Guid? NamespaceId = null,
+    string? EntityName = null,
+    string Body = "",
     string? ContentType = null,
     string? CorrelationId = null,
     string? SessionId = null,

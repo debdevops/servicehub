@@ -16,6 +16,7 @@ public sealed class MessageSender : IMessageSender
 {
     private readonly IServiceBusClientCache _clientCache;
     private readonly INamespaceRepository _namespaceRepository;
+    private readonly IConnectionStringProtector _connectionStringProtector;
     private readonly ILogger<MessageSender> _logger;
     private readonly ResiliencePipeline _resiliencePipeline;
 
@@ -24,14 +25,17 @@ public sealed class MessageSender : IMessageSender
     /// </summary>
     /// <param name="clientCache">The Service Bus client cache.</param>
     /// <param name="namespaceRepository">The namespace repository.</param>
+    /// <param name="connectionStringProtector">The connection string protector.</param>
     /// <param name="logger">The logger instance.</param>
     public MessageSender(
         IServiceBusClientCache clientCache,
         INamespaceRepository namespaceRepository,
+        IConnectionStringProtector connectionStringProtector,
         ILogger<MessageSender> logger)
     {
         _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
+        _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         _resiliencePipeline = new ResiliencePipelineBuilder()
@@ -69,7 +73,7 @@ public sealed class MessageSender : IMessageSender
             return validationResult;
         }
 
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(request.NamespaceId, cancellationToken)
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(request.NamespaceId!.Value, cancellationToken)
             .ConfigureAwait(false);
 
         if (namespaceResult.IsFailure)
@@ -88,7 +92,13 @@ public sealed class MessageSender : IMessageSender
 
         try
         {
-            var clientWrapper = _clientCache.GetOrCreate(@namespace.Id, @namespace.ConnectionString);
+            var unprotectResult = _connectionStringProtector.Unprotect(@namespace.ConnectionString);
+            if (unprotectResult.IsFailure)
+            {
+                return Result.Failure(unprotectResult.Error);
+            }
+
+            var clientWrapper = _clientCache.GetOrCreate(@namespace.Id, unprotectResult.Value);
 
             await _resiliencePipeline.ExecuteAsync(async ct =>
             {
@@ -171,7 +181,7 @@ public sealed class MessageSender : IMessageSender
     {
         var errors = new List<Error>();
 
-        if (request.NamespaceId == Guid.Empty)
+        if (request.NamespaceId is null || request.NamespaceId.Value == Guid.Empty)
         {
             errors.Add(Error.Validation(
                 ErrorCodes.Namespace.NotFound,

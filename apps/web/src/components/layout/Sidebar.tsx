@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   ChevronDown,
   ChevronRight,
@@ -10,6 +10,7 @@ import {
   Newspaper,
   RefreshCw,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useState } from 'react';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues } from '@/hooks/useQueues';
@@ -62,39 +63,52 @@ function QueueItem({ queue, namespaceId }: QueueItemProps) {
     <NavLink
       key={queue.name}
       to={`/messages?namespace=${namespaceId}&queue=${queue.name}`}
-      className={({ isActive }) =>
-        `flex items-center justify-between px-3 py-1.5 rounded text-sm transition-colors ${
-          isActive
-            ? 'bg-primary-600 text-white shadow-sm'
-            : 'bg-gray-50 text-gray-700 hover:bg-primary-50 hover:text-primary-700'
-        }`
-      }
+      className={({ isActive }) => {
+        // Only show selected state if this exact queue is in the route (not just namespace)
+        const searchParams = new URLSearchParams(window.location.search);
+        const queueParam = searchParams.get('queue');
+        const topicParam = searchParams.get('topic');
+        const isExactMatch = isActive && queueParam === queue.name && !topicParam;
+        
+        return `flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${
+          isExactMatch
+            ? 'bg-sky-600 text-white shadow-xl border-2 border-sky-400 font-bold transform scale-[1.02] -ml-1 mr-1'
+            : 'bg-white text-gray-700 hover:bg-sky-50 hover:text-sky-700 border border-gray-200 hover:border-sky-300'
+        }`;
+      }}
     >
-      {({ isActive }) => (
+      {() => {
+        const searchParams = new URLSearchParams(window.location.search);
+        const queueParam = searchParams.get('queue');
+        const topicParam = searchParams.get('topic');
+        const isExactMatch = queueParam === queue.name && !topicParam;
+        
+        return (
         <>
           <span className="truncate flex items-center gap-1.5">
+            {isExactMatch && <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />}
             {queue.name}
             {hasAIInsight && (
               <span 
                 className={`w-2 h-2 rounded-full animate-pulse ${
-                  isActive ? 'bg-white' : 'bg-primary-500'
+                  isExactMatch ? 'bg-yellow-300' : 'bg-primary-500'
                 }`}
                 title="AI patterns detected"
               />
             )}
           </span>
           <div className="flex items-center gap-1 shrink-0">
-            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
-              isActive 
-                ? 'bg-green-500 text-white' 
+            <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${
+              isExactMatch 
+                ? 'bg-white text-sky-700' 
                 : 'bg-green-100 text-green-700'
             }`}>
               {queue.activeMessageCount}
             </span>
             {queue.deadLetterMessageCount > 0 && (
-              <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
-                isActive 
-                  ? 'bg-red-500 text-white' 
+              <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${
+                isExactMatch 
+                  ? 'bg-red-200 text-red-800' 
                   : 'bg-red-100 text-red-700'
               }`}>
                 {queue.deadLetterMessageCount}
@@ -102,7 +116,8 @@ function QueueItem({ queue, namespaceId }: QueueItemProps) {
             )}
           </div>
         </>
-      )}
+        );
+      }}
     </NavLink>
   );
 }
@@ -159,37 +174,53 @@ function SubscriptionItem({ subscription, namespaceId, topicName }: Subscription
   return (
     <NavLink
       to={`/messages?namespace=${namespaceId}&topic=${topicName}&subscription=${subscription.name}`}
-      className={({ isActive }) =>
-        `flex items-center justify-between px-3 py-1.5 rounded text-sm transition-colors ${
-          isActive
-            ? 'bg-primary-600 text-white shadow-sm'
-            : 'bg-gray-50 text-gray-600 hover:bg-primary-50 hover:text-primary-700'
-        }`
-      }
+      className={({ isActive }) => {
+        // Only show selected state if this exact subscription is in the route
+        const searchParams = new URLSearchParams(window.location.search);
+        const subscriptionParam = searchParams.get('subscription');
+        const topicParam = searchParams.get('topic');
+        const isExactMatch = isActive && subscriptionParam === subscription.name && topicParam === topicName;
+        
+        return `flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${
+          isExactMatch
+            ? 'bg-sky-600 text-white shadow-xl border-2 border-sky-400 font-bold transform scale-[1.02] -ml-1 mr-1'
+            : 'bg-white text-gray-600 hover:bg-sky-50 hover:text-sky-700 border border-gray-200 hover:border-sky-300'
+        }`;
+      }}
     >
-      {({ isActive }) => (
-        <>
-          <span className="truncate">{subscription.name}</span>
-          <div className="flex items-center gap-1 shrink-0">
-            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
-              isActive 
-                ? 'bg-green-500 text-white' 
-                : 'bg-green-100 text-green-700'
-            }`}>
-              {subscription.activeMessageCount}
+      {() => {
+        const searchParams = new URLSearchParams(window.location.search);
+        const subscriptionParam = searchParams.get('subscription');
+        const topicParam = searchParams.get('topic');
+        const isExactMatch = subscriptionParam === subscription.name && topicParam === topicName;
+        
+        return (
+          <>
+            <span className="truncate flex items-center gap-1.5">
+              {isExactMatch && <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />}
+              {subscription.name}
             </span>
-            {subscription.deadLetterMessageCount > 0 && (
-              <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
-                isActive 
-                  ? 'bg-red-500 text-white' 
-                  : 'bg-red-100 text-red-700'
+            <div className="flex items-center gap-1 shrink-0">
+              <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${
+                isExactMatch 
+                  ? 'bg-white text-sky-700' 
+                  : 'bg-green-100 text-green-700'
               }`}>
-                {subscription.deadLetterMessageCount}
+                {subscription.activeMessageCount}
               </span>
-            )}
-          </div>
-        </>
-      )}
+              {subscription.deadLetterMessageCount > 0 && (
+                <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${
+                  isExactMatch 
+                    ? 'bg-red-200 text-red-800' 
+                    : 'bg-red-100 text-red-700'
+                }`}>
+                  {subscription.deadLetterMessageCount}
+                </span>
+              )}
+            </div>
+          </>
+        );
+      }}
     </NavLink>
   );
 }
@@ -303,7 +334,15 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
 }
 
 export function Sidebar() {
+  const navigate = useNavigate();
   const { data: namespaces, isLoading, refetch } = useNamespaces();
+  
+  // Get active namespace for Quick Access
+  const activeNamespace = namespaces?.find(ns => ns.isActive);
+  
+  // Fetch queues and topics for Quick Access buttons
+  const { data: queues } = useQueues(activeNamespace?.id || '');
+  const { data: topics } = useTopics(activeNamespace?.id || '');
 
   return (
     <aside className="w-[260px] bg-white border-r border-gray-200 flex flex-col overflow-hidden">
@@ -355,58 +394,92 @@ export function Sidebar() {
       </div>
 
       {/* Quick Filters */}
-      <div className="border-t border-gray-200 p-3 bg-gray-50">
-        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+      <div className="border-t border-gray-200 p-3 bg-gradient-to-b from-sky-50 to-white">
+        <h2 className="text-xs font-semibold text-sky-700 uppercase tracking-wider mb-2">
           Quick Access
         </h2>
         <nav className="space-y-1">
-          <NavLink
-            to="/messages?filter=active"
-            className={({ isActive }) =>
-              `flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                isActive
-                  ? 'bg-primary-100 text-primary-700'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`
-            }
+          <button
+            onClick={() => {
+              const activeNamespace = namespaces?.find(ns => ns.isActive);
+              if (!activeNamespace) {
+                toast.error('No active namespace selected');
+                return;
+              }
+              
+              // Navigate to first queue if available
+              const firstQueue = queues?.[0];
+              if (firstQueue) {
+                navigate(`/messages?namespace=${activeNamespace.id}&queue=${firstQueue.name}&queueType=active`);
+                return;
+              }
+              
+              // If no queues, check for topics (user will need to select subscription)
+              const firstTopic = topics?.[0];
+              if (firstTopic) {
+                toast('Select a subscription from the topic to view messages', { icon: 'ℹ️' });
+                return;
+              }
+              
+              toast('No queues or topics available', { icon: 'ℹ️' });
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border border-gray-200 hover:border-sky-300 shadow-sm"
           >
-            <Database className="w-4 h-4" />
-            Active Messages
-          </NavLink>
-          <NavLink
-            to="/messages?filter=dlq"
-            className={({ isActive }) =>
-              `flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                isActive
-                  ? 'bg-primary-100 text-primary-700'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`
-            }
+            <Database className="w-4 h-4 text-sky-500" />
+            <span className="flex-1 text-left">Active Messages</span>
+            <span className="text-xs text-sky-600 font-medium">View All</span>
+          </button>
+          <button
+            onClick={() => {
+              const activeNamespace = namespaces?.find(ns => ns.isActive);
+              if (!activeNamespace) {
+                toast.error('No active namespace selected');
+                return;
+              }
+              
+              // Navigate to first queue's DLQ if available
+              const firstQueue = queues?.[0];
+              if (firstQueue) {
+                navigate(`/messages?namespace=${activeNamespace.id}&queue=${firstQueue.name}&queueType=deadletter`);
+                return;
+              }
+              
+              // If no queues, check for topics
+              const firstTopic = topics?.[0];
+              if (firstTopic) {
+                toast('Select a subscription from the topic to view DLQ', { icon: '⚠️' });
+                return;
+              }
+              
+              toast('No queues or topics available for DLQ view', { icon: '⚠️' });
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-red-50 text-gray-700 hover:text-red-700 border border-gray-200 hover:border-red-300 shadow-sm"
           >
             <AlertCircle className="w-4 h-4 text-red-500" />
-            Dead-Letter
-          </NavLink>
-          <NavLink
-            to="/messages?filter=scheduled"
-            className={({ isActive }) =>
-              `flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                isActive
-                  ? 'bg-primary-50 text-primary-700'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`
-            }
+            <span className="flex-1 text-left">Dead-Letter</span>
+            <span className="text-xs text-red-600 font-medium">DLQ</span>
+          </button>
+          <button
+            onClick={() => {
+              toast('Scheduled messages feature coming soon!', {
+                icon: '⏰',
+                duration: 2000
+              });
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border border-gray-200 hover:border-sky-300 shadow-sm opacity-75"
           >
-            <Clock className="w-4 h-4" />
-            Scheduled
-          </NavLink>
+            <Clock className="w-4 h-4 text-sky-500" />
+            <span className="flex-1 text-left">Scheduled</span>
+            <span className="text-xs text-gray-400 font-medium">Soon</span>
+          </button>
         </nav>
       </div>
 
       {/* Add Connection CTA */}
-      <div className="border-t border-gray-200 p-3">
+      <div className="border-t border-gray-200 p-3 bg-white">
         <NavLink
           to="/connect"
-          className="flex items-center justify-center gap-2 w-full px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors"
+          className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-sm font-medium transition-all shadow-md hover:shadow-lg"
         >
           <Plus className="w-4 h-4" />
           Add Connection
