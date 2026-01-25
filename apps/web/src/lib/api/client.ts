@@ -11,6 +11,41 @@ export const apiClient = axios.create({
   timeout: 30000, // 30 seconds
 });
 
+// Debounce mechanism for error toasts to prevent duplicates
+const recentErrors = new Map<string, number>();
+const ERROR_DEBOUNCE_MS = 2000; // Show same error only once every 2 seconds
+
+function shouldShowError(errorKey: string): boolean {
+  const now = Date.now();
+  const lastShown = recentErrors.get(errorKey);
+  
+  if (!lastShown || now - lastShown > ERROR_DEBOUNCE_MS) {
+    recentErrors.set(errorKey, now);
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Check if the URL matches any of the silent 404 patterns
+ * These endpoints may not exist in the API yet
+ */
+function isSilent404(url: string): boolean {
+  const silentPatterns = [
+    '/insights',           // AI insights endpoints not implemented
+    '/$deadletterqueue',   // Malformed DLQ URL (should use queueType param instead)
+    '/%24deadletterqueue', // URL-encoded version
+  ];
+  
+  // Special check for message-specific operations (DELETE /messages/{id})
+  if (url.match(/\/messages\/[a-f0-9-]+$/i)) {
+    return true;
+  }
+  
+  return silentPatterns.some(pattern => url.includes(pattern));
+}
+
 // Request interceptor: Add API key
 apiClient.interceptors.request.use(
   (config) => {
@@ -29,33 +64,62 @@ apiClient.interceptors.response.use(
   (error: AxiosError<{ message?: string; errors?: Record<string, string[]> }>) => {
     // Network error
     if (!error.response) {
-      toast.error('Network error. Check if API is running.');
+      const errorKey = 'network-error';
+      if (shouldShowError(errorKey)) {
+        toast.error('Network error. Check if API is running.');
+      }
       return Promise.reject(error);
     }
 
     // Handle specific status codes
-    switch (error.response.status) {
-      case 401:
-        toast.error('Unauthorized. Check your API key.');
+    const status = error.response.status;
+    const url = error.config?.url || 'unknown';
+    
+    switch (status) {
+      case 401: {
+        const errorKey = `${status}-${url}`;
+        if (shouldShowError(errorKey)) {
+          toast.error('Unauthorized. Check your API key.');
+        }
         break;
-      case 403:
-        toast.error('Access denied.');
+      }
+      case 403: {
+        const errorKey = `${status}-${url}`;
+        if (shouldShowError(errorKey)) {
+          toast.error('Access denied.');
+        }
         break;
-      case 404:
-        toast.error('Resource not found.');
+      }
+      case 404: {
+        // Silently handle 404s for known missing endpoints
+        if (!isSilent404(url)) {
+          // Only log warnings for unexpected 404s in development
+          if (import.meta.env.DEV) {
+            console.warn(`Resource not found: ${url}`);
+          }
+        }
         break;
-      case 422:
+      }
+      case 422: {
         // Validation errors
         const validationErrors = error.response.data.errors;
         if (validationErrors) {
-          Object.values(validationErrors).flat().forEach(msg => toast.error(msg));
+          const errorKey = `${status}-validation`;
+          if (shouldShowError(errorKey)) {
+            Object.values(validationErrors).flat().forEach(msg => toast.error(msg));
+          }
         }
         break;
+      }
       case 500:
       case 502:
-      case 503:
-        toast.error('Server error. Please try again later.');
+      case 503: {
+        const errorKey = `${status}-server`;
+        if (shouldShowError(errorKey)) {
+          toast.error('Server error. Please try again later.');
+        }
         break;
+      }
     }
 
     return Promise.reject(error);

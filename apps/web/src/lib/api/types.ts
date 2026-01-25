@@ -19,26 +19,32 @@ export interface CreateNamespaceRequest {
 
 // Message DTOs (match your backend MessageResponse)
 export interface Message {
-  id: string;
-  messageId: string;
+  messageId: string;  // Primary identifier from Service Bus
+  sequenceNumber: number;
   enqueuedTime: string;
   deliveryCount: number;
   state: 'Active' | 'Scheduled' | 'Deferred';
-  queueType: 'active' | 'deadletter';
-  contentType: string;
-  body: string; // JSON string or text
-  properties: Record<string, any>;
-  headers: Record<string, string>;
-  timeToLive?: string;
-  lockToken?: string;
-  sequenceNumber?: number;
-  deadLetterReason?: string;
-  deadLetterErrorDescription?: string;
-  
-  // UI-specific properties
-  status?: string;
-  preview?: string;
-  hasAIInsight?: boolean;
+  contentType: string | null;
+  body: string | null; // JSON string or text
+  correlationId?: string | null;
+  sessionId?: string | null;
+  partitionKey?: string | null;
+  subject?: string | null;
+  replyTo?: string | null;
+  replyToSessionId?: string | null;
+  to?: string | null;
+  timeToLive?: string | null;
+  scheduledEnqueueTime?: string | null;
+  expiresAt?: string | null;
+  lockedUntil?: string | null;
+  deadLetterSource?: string | null;
+  deadLetterReason?: string | null;
+  deadLetterErrorDescription?: string | null;
+  applicationProperties?: Record<string, any> | null;
+  sizeInBytes?: number;
+  entityName?: string | null;
+  subscriptionName?: string | null;
+  isFromDeadLetter?: boolean;
 }
 
 export interface PaginatedResponse<T> {
@@ -53,6 +59,7 @@ export interface PaginatedResponse<T> {
 export interface GetMessagesParams {
   namespaceId: string;
   queueOrTopicName: string;
+  entityType?: 'queue' | 'topic'; // Support both queues and topics
   queueType?: 'active' | 'deadletter';
   skip?: number;
   take?: number;

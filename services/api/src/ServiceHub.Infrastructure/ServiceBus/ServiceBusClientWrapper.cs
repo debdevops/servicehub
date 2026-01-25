@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using Microsoft.Extensions.Logging;
@@ -339,6 +340,100 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
         // CRITICAL FIX: Dispose admin client to release resources
         _adminClientLock.Dispose();
+    }
+
+    /// <inheritdoc/>
+    public async Task<int> DeadLetterMessagesAsync(
+        string entityName,
+        string? subscriptionName,
+        int messageCount,
+        string reason,
+        string? errorDescription,
+        CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            _logger.LogWarning("Attempted to dead-letter messages on a disposed client");
+            return 0;
+        }
+
+        ServiceBusReceiver? receiver = null;
+        var deadLetteredCount = 0;
+
+        try
+        {
+            // Create receiver for the entity (queue or subscription)
+            var receiverOptions = new ServiceBusReceiverOptions
+            {
+                ReceiveMode = ServiceBusReceiveMode.PeekLock, // Required for dead-lettering
+            };
+
+            if (!string.IsNullOrEmpty(subscriptionName))
+            {
+                receiver = _client.CreateReceiver(entityName, subscriptionName, receiverOptions);
+            }
+            else
+            {
+                receiver = _client.CreateReceiver(entityName, receiverOptions);
+            }
+
+            // Receive messages and dead-letter them
+            for (var i = 0; i < messageCount; i++)
+            {
+                var message = await receiver.ReceiveMessageAsync(
+                    TimeSpan.FromSeconds(5),
+                    cancellationToken).ConfigureAwait(false);
+
+                if (message == null)
+                {
+                    _logger.LogDebug("No more messages to dead-letter in {EntityName}", entityName);
+                    break;
+                }
+
+                await receiver.DeadLetterMessageAsync(
+                    message,
+                    reason,
+                    errorDescription ?? $"Manually dead-lettered for testing purposes at {DateTime.UtcNow:O}",
+                    cancellationToken).ConfigureAwait(false);
+
+                deadLetteredCount++;
+
+                _logger.LogDebug(
+                    "Dead-lettered message {MessageId} from {EntityName} with reason: {Reason}",
+                    message.MessageId,
+                    entityName,
+                    reason);
+            }
+
+            _logger.LogInformation(
+                "Successfully dead-lettered {Count} messages from {EntityName} in namespace {NamespaceId}",
+                deadLetteredCount,
+                entityName,
+                NamespaceId);
+
+            return deadLetteredCount;
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex,
+                "Entity {EntityName} not found when attempting to dead-letter messages",
+                entityName);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error dead-lettering messages from {EntityName}",
+                entityName);
+            throw;
+        }
+        finally
+        {
+            if (receiver != null)
+            {
+                await receiver.DisposeAsync().ConfigureAwait(false);
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -719,11 +814,43 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         {
             foreach (var (key, value) in request.ApplicationProperties)
             {
-                message.ApplicationProperties[key] = value;
+                var converted = ConvertApplicationPropertyValue(value);
+                if (converted is not null)
+                {
+                    message.ApplicationProperties[key] = converted;
+                }
             }
         }
 
         return message;
+    }
+
+    private static object? ConvertApplicationPropertyValue(object? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value is JsonElement jsonElement)
+        {
+            return jsonElement.ValueKind switch
+            {
+                JsonValueKind.String => jsonElement.GetString(),
+                JsonValueKind.Number => jsonElement.TryGetInt64(out var longValue)
+                    ? longValue
+                    : jsonElement.TryGetDecimal(out var decimalValue)
+                        ? decimalValue
+                        : jsonElement.GetDouble(),
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Null => null,
+                JsonValueKind.Undefined => null,
+                _ => jsonElement.GetRawText()
+            };
+        }
+
+        return value;
     }
 
     private Message MapToMessage(ServiceBusReceivedMessage sbMessage, GetMessagesRequest request)
@@ -854,5 +981,258 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             AutoDeleteOnIdle: props?.AutoDeleteOnIdle ?? TimeSpan.MaxValue,
             ForwardTo: props?.ForwardTo,
             ForwardDeadLetteredMessagesTo: props?.ForwardDeadLetteredMessagesTo);
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result> ReplayMessageAsync(
+        string entityName,
+        string? subscriptionName,
+        long sequenceNumber,
+        CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        ServiceBusReceiver? dlqReceiver = null;
+        ServiceBusSender? sender = null;
+
+        try
+        {
+            // Create receiver for dead-letter queue
+            var receiverOptions = new ServiceBusReceiverOptions
+            {
+                ReceiveMode = ServiceBusReceiveMode.PeekLock,
+                SubQueue = SubQueue.DeadLetter
+            };
+
+            if (!string.IsNullOrEmpty(subscriptionName))
+            {
+                dlqReceiver = _client.CreateReceiver(entityName, subscriptionName, receiverOptions);
+            }
+            else
+            {
+                dlqReceiver = _client.CreateReceiver(entityName, receiverOptions);
+            }
+
+            // Peek messages to find the one with the matching sequence number
+            var messages = await dlqReceiver.PeekMessagesAsync(maxMessages: 100, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var targetMessage = messages.FirstOrDefault(m => m.SequenceNumber == sequenceNumber);
+
+            if (targetMessage == null)
+            {
+                return Result.Failure(Error.NotFound(
+                    ErrorCodes.Message.NotFound,
+                    $"Message with sequence number {sequenceNumber} not found in dead-letter queue."));
+            }
+
+            // Receive and complete the message from DLQ
+            var receivedMessage = await dlqReceiver.ReceiveMessageAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+            
+            // Find the exact message by iterating if needed
+            while (receivedMessage != null && receivedMessage.SequenceNumber != sequenceNumber)
+            {
+                // Complete and discard messages that don't match
+                await dlqReceiver.AbandonMessageAsync(receivedMessage, cancellationToken: cancellationToken).ConfigureAwait(false);
+                receivedMessage = await dlqReceiver.ReceiveMessageAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+            }
+
+            if (receivedMessage == null)
+            {
+                return Result.Failure(Error.NotFound(
+                    ErrorCodes.Message.NotFound,
+                    $"Could not receive message with sequence number {sequenceNumber} from dead-letter queue."));
+            }
+
+            // Create a new message with the same content
+            var replayMessage = new ServiceBusMessage(receivedMessage.Body)
+            {
+                ContentType = receivedMessage.ContentType,
+                CorrelationId = receivedMessage.CorrelationId,
+                MessageId = Guid.NewGuid().ToString(), // New message ID
+                PartitionKey = receivedMessage.PartitionKey,
+                SessionId = receivedMessage.SessionId,
+                ReplyTo = receivedMessage.ReplyTo,
+                ReplyToSessionId = receivedMessage.ReplyToSessionId,
+                Subject = receivedMessage.Subject,
+                TimeToLive = receivedMessage.TimeToLive,
+                To = receivedMessage.To
+            };
+
+            // Copy application properties
+            foreach (var prop in receivedMessage.ApplicationProperties)
+            {
+                replayMessage.ApplicationProperties[prop.Key] = prop.Value;
+            }
+
+            // Add replay metadata
+            replayMessage.ApplicationProperties["Replayed"] = true;
+            replayMessage.ApplicationProperties["ReplayedAt"] = DateTime.UtcNow.ToString("O");
+            replayMessage.ApplicationProperties["OriginalSequenceNumber"] = sequenceNumber;
+
+            // Send to main queue/topic
+            sender = _client.CreateSender(entityName);
+            await sender.SendMessageAsync(replayMessage, cancellationToken).ConfigureAwait(false);
+
+            // Complete (remove) the message from DLQ
+            await dlqReceiver.CompleteMessageAsync(receivedMessage, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Successfully replayed message {SequenceNumber} from {EntityName} DLQ to main queue",
+                sequenceNumber,
+                entityName);
+
+            return Result.Success();
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex, "Entity {EntityName} not found", entityName);
+            return Result.Failure(Error.NotFound(
+                ErrorCodes.Queue.NotFound,
+                $"The queue or topic '{entityName}' was not found."));
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogError(ex, "Service Bus error replaying message from {EntityName}", entityName);
+            return Result.Failure(Error.ExternalService(
+                ErrorCodes.Message.SendFailed,
+                $"Failed to replay message: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error replaying message from {EntityName}", entityName);
+            return Result.Failure(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while replaying the message."));
+        }
+        finally
+        {
+            if (dlqReceiver != null)
+            {
+                await dlqReceiver.DisposeAsync().ConfigureAwait(false);
+            }
+            if (sender != null)
+            {
+                await sender.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result> PurgeMessageAsync(
+        string entityName,
+        string? subscriptionName,
+        long sequenceNumber,
+        bool fromDeadLetter,
+        CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        ServiceBusReceiver? receiver = null;
+
+        try
+        {
+            // Create receiver options
+            var receiverOptions = new ServiceBusReceiverOptions
+            {
+                ReceiveMode = ServiceBusReceiveMode.PeekLock
+            };
+
+            if (fromDeadLetter)
+            {
+                receiverOptions.SubQueue = SubQueue.DeadLetter;
+            }
+
+            // Create receiver
+            if (!string.IsNullOrEmpty(subscriptionName))
+            {
+                receiver = _client.CreateReceiver(entityName, subscriptionName, receiverOptions);
+            }
+            else
+            {
+                receiver = _client.CreateReceiver(entityName, receiverOptions);
+            }
+
+            // Receive messages until we find the one with matching sequence number
+            ServiceBusReceivedMessage? receivedMessage = null;
+            var attempts = 0;
+            const int maxAttempts = 100; // Prevent infinite loop
+
+            while (attempts < maxAttempts)
+            {
+                receivedMessage = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+                
+                if (receivedMessage == null)
+                {
+                    return Result.Failure(Error.NotFound(
+                        ErrorCodes.Message.NotFound,
+                        $"Message with sequence number {sequenceNumber} not found."));
+                }
+
+                if (receivedMessage.SequenceNumber == sequenceNumber)
+                {
+                    break;
+                }
+
+                // Not the right message, abandon it and try next
+                await receiver.AbandonMessageAsync(receivedMessage, cancellationToken: cancellationToken).ConfigureAwait(false);
+                attempts++;
+            }
+
+            if (receivedMessage == null || receivedMessage.SequenceNumber != sequenceNumber)
+            {
+                return Result.Failure(Error.NotFound(
+                    ErrorCodes.Message.NotFound,
+                    $"Message with sequence number {sequenceNumber} not found after {maxAttempts} attempts."));
+            }
+
+            // Complete (delete) the message
+            await receiver.CompleteMessageAsync(receivedMessage, cancellationToken).ConfigureAwait(false);
+
+            var queueType = fromDeadLetter ? "dead-letter queue" : "queue";
+            _logger.LogInformation(
+                "Successfully purged message {SequenceNumber} from {EntityName} {QueueType}",
+                sequenceNumber,
+                entityName,
+                queueType);
+
+            return Result.Success();
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex, "Entity {EntityName} not found", entityName);
+            return Result.Failure(Error.NotFound(
+                ErrorCodes.Queue.NotFound,
+                $"The queue or topic '{entityName}' was not found."));
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogError(ex, "Service Bus error purging message from {EntityName}", entityName);
+            return Result.Failure(Error.ExternalService(
+                ErrorCodes.Message.ReceiveFailed,
+                $"Failed to purge message: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error purging message from {EntityName}", entityName);
+            return Result.Failure(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while purging the message."));
+        }
+        finally
+        {
+            if (receiver != null)
+            {
+                await receiver.DisposeAsync().ConfigureAwait(false);
+            }
+        }
     }
 }

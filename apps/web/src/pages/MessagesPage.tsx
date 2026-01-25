@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Search, Filter, RefreshCw, Sparkles, X } from 'lucide-react';
 import { MessageList, MessageDetailPanel, type QueueTab } from '@/components/messages';
 import { AIFindingsDropdown } from '@/components/ai';
@@ -16,17 +17,39 @@ function transformMessage(
   insightMessageIds: string[] = [],
   queueType: 'active' | 'deadletter' = 'active'
 ): Message {
+  // Use messageId as the primary identifier
+  const id = apiMessage.messageId || `seq-${apiMessage.sequenceNumber}`;
+  const body = apiMessage.body || '';
+  
+  // Derive status from state
+  let status: 'success' | 'warning' | 'error' = 'success';
+  if (apiMessage.isFromDeadLetter || apiMessage.deadLetterReason) {
+    status = 'error';
+  } else if ((apiMessage.deliveryCount || 0) > 1) {
+    status = 'warning';
+  }
+  
   return {
-    ...apiMessage,
+    id,
     enqueuedTime: new Date(apiMessage.enqueuedTime),
-    status: apiMessage.state.toLowerCase() as any,
-    preview: apiMessage.body.substring(0, 100),
-    hasAIInsight: insightMessageIds.includes(apiMessage.id),
+    status,
+    preview: body.substring(0, 100),
     contentType: (apiMessage.contentType || 'application/json') as any,
+    deliveryCount: apiMessage.deliveryCount || 0,
+    hasAIInsight: insightMessageIds.includes(id),
     sequenceNumber: apiMessage.sequenceNumber || 0,
+    properties: apiMessage.applicationProperties || {},
+    queueType,
+    body,
+    headers: {
+      'Content-Type': apiMessage.contentType || 'application/json',
+      ...(apiMessage.correlationId ? { 'Correlation-Id': apiMessage.correlationId } : {}),
+      ...(apiMessage.sessionId ? { 'Session-Id': apiMessage.sessionId } : {}),
+    },
     timeToLive: apiMessage.timeToLive || '',
-    lockToken: apiMessage.lockToken || '',
-    queueType, // Pass through the current queue tab filter
+    lockToken: '',
+    deadLetterReason: apiMessage.deadLetterReason || undefined,
+    deadLetterSource: apiMessage.deadLetterSource || undefined,
   };
 }
 
@@ -43,39 +66,81 @@ function transformMessage(
  */
 export function MessagesPage() {
   const [searchParams] = useSearchParams();
+  const queryClient = useQueryClient();
   const namespaceId = searchParams.get('namespace');
   const queueName = searchParams.get('queue');
+  const topicName = searchParams.get('topic');
+  const subscriptionName = searchParams.get('subscription');
+  const queueTypeParam = searchParams.get('queueType'); // Get queueType from URL
+
+  // Determine entity type and name
+  const entityType: 'queue' | 'topic' = topicName ? 'topic' : 'queue';
+  const entityName = queueName || (topicName && subscriptionName ? `${topicName}/subscriptions/${subscriptionName}` : topicName) || '';
 
   // Selected message for detail panel
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   
-  // Queue tab: active or deadletter
+  // Queue tab: active or deadletter (sync with URL parameter)
   const [queueTab, setQueueTab] = useState<QueueTab>('active');
 
-  // Fetch messages from API
+  // Sync queueTab with URL parameter on mount and when it changes
+  useEffect(() => {
+    if (queueTypeParam === 'deadletter') {
+      setQueueTab('deadletter');
+    } else if (queueTypeParam === 'active') {
+      setQueueTab('active');
+    }
+  }, [queueTypeParam]);
+
+  // Fetch messages from API for current tab
   const { data: messagesData, isLoading, error, refetch } = useMessages({
     namespaceId: namespaceId || '',
-    queueOrTopicName: queueName || '',
+    queueOrTopicName: entityName,
+    entityType,
     queueType: queueTab,
     skip: 0,
     take: 1000,
   });
 
-  // Fetch AI insights for this queue
+  // Fetch counts for both tabs (active and deadletter)
+  const { data: activeMessagesData } = useMessages({
+    namespaceId: namespaceId || '',
+    queueOrTopicName: entityName,
+    entityType,
+    queueType: 'active',
+    skip: 0,
+    take: 1, // Just get the count, not all messages
+  });
+
+  const { data: dlqMessagesData } = useMessages({
+    namespaceId: namespaceId || '',
+    queueOrTopicName: entityName,
+    entityType,
+    queueType: 'deadletter',
+    skip: 0,
+    take: 1, // Just get the count, not all messages
+  });
+
+  // Fetch AI insights for this queue/topic
   const { data: insights } = useInsights({
     namespaceId: namespaceId || '',
-    queueOrTopicName: queueName || undefined,
+    queueOrTopicName: entityName || undefined,
     status: 'active',
   });
 
   // Fetch AI insights summary for badge
   const { data: insightsSummary } = useInsightsSummary(
     namespaceId || '',
-    queueName || ''
+    entityName || ''
   );
 
   // AI dropdown visibility
   const [showAIDropdown, setShowAIDropdown] = useState(false);
+
+  // Search functionality
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'warning' | 'error'>('all');
 
   // Evidence filter (when viewing AI pattern affected messages)
   const [evidenceFilter, setEvidenceFilter] = useState<string[] | null>(null);
@@ -90,10 +155,10 @@ export function MessagesPage() {
     return Array.from(ids);
   }, [insights]);
 
-  // Get messages from API or empty array
-  const messages: Message[] = (messagesData?.items || []).map(msg => 
-    transformMessage(msg, insightMessageIds, queueTab)
-  );
+  // Get messages from API or empty array - sort by enqueued time descending (newest first)
+  const messages: Message[] = (messagesData?.items || [])
+    .map(msg => transformMessage(msg, insightMessageIds, queueTab))
+    .sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime());
 
   // Find selected message
   const selectedMessage = useMemo(
@@ -101,13 +166,33 @@ export function MessagesPage() {
     [messages, selectedMessageId]
   );
 
-  // Filter messages by evidence filter
+  // Filter messages by evidence filter, search query, and status
   const filteredMessages = useMemo(() => {
+    let result = messages;
+    
+    // Apply evidence filter first
     if (evidenceFilter) {
-      return messages.filter(m => evidenceFilter.includes(m.id));
+      result = result.filter(m => evidenceFilter.includes(m.id));
     }
-    return messages;
-  }, [messages, evidenceFilter]);
+    
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(m => 
+        m.id.toLowerCase().includes(query) ||
+        m.preview.toLowerCase().includes(query) ||
+        (typeof m.body === 'string' && m.body.toLowerCase().includes(query)) ||
+        JSON.stringify(m.properties).toLowerCase().includes(query)
+      );
+    }
+    
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      result = result.filter(m => m.status === statusFilter);
+    }
+    
+    return result;
+  }, [messages, evidenceFilter, searchQuery, statusFilter]);
 
   // Active AI insights count from summary
   const activeInsightsCount = insightsSummary?.activeCount || 0;
@@ -136,9 +221,13 @@ export function MessagesPage() {
     toast.success('Filter cleared');
   };
 
-  // Handle refresh button
+  // Handle refresh button - refresh messages and queue/topic counts
   const handleRefresh = () => {
     refetch();
+    // Also refresh queue/topic counts in sidebar
+    queryClient.invalidateQueries({ queryKey: ['queues'] });
+    queryClient.invalidateQueries({ queryKey: ['topics'] });
+    queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
     toast.success('Messages refreshed');
   };
 
@@ -176,14 +265,14 @@ export function MessagesPage() {
   }
 
   // Empty state (no namespace/queue selected)
-  if (!namespaceId || !queueName) {
+  if (!namespaceId || !entityName) {
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md p-8">
           <div className="text-6xl mb-4">📬</div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">No queue selected</h2>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">No entity selected</h2>
           <p className="text-gray-600">
-            Select a queue from the sidebar to view its messages
+            Select a queue or topic subscription from the sidebar to view messages
           </p>
         </div>
       </div>
@@ -194,26 +283,69 @@ export function MessagesPage() {
     <div className="flex-1 flex flex-col overflow-hidden relative">
       {/* Toolbar */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shrink-0">
-        {/* Search - Placeholder only (API-driven later) */}
+        {/* Search */}
         <div className="flex-1 max-w-md relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
             placeholder="Search messages by ID, properties, or content..."
-            disabled
-            className="w-full pl-10 pr-4 py-2.5 rounded-lg text-sm bg-gray-50 border border-gray-200 text-gray-400 cursor-not-allowed"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 rounded-lg text-sm bg-white border border-gray-300 text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-all"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
-        {/* Filter Button - Disabled for now */}
-        <button 
-          disabled
-          className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-400 bg-gray-50 cursor-not-allowed"
-          aria-label="Filter messages - Coming soon"
-        >
-          <Filter className="w-4 h-4" />
-          Filter
-        </button>
+        {/* Filter Button */}
+        <div className="relative">
+          <button 
+            onClick={() => setShowFilterPanel(!showFilterPanel)}
+            className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm transition-colors ${
+              statusFilter !== 'all' || showFilterPanel
+                ? 'border-sky-300 bg-sky-50 text-sky-700'
+                : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+            }`}
+          >
+            <Filter className="w-4 h-4" />
+            Filter
+            {statusFilter !== 'all' && (
+              <span className="w-2 h-2 bg-sky-500 rounded-full" />
+            )}
+          </button>
+          
+          {/* Filter Dropdown */}
+          {showFilterPanel && (
+            <div className="absolute top-full right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+              <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Status</div>
+              {(['all', 'success', 'warning', 'error'] as const).map((status) => (
+                <button
+                  key={status}
+                  onClick={() => {
+                    setStatusFilter(status);
+                    setShowFilterPanel(false);
+                  }}
+                  className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 ${
+                    statusFilter === status ? 'bg-sky-50 text-sky-700' : 'text-gray-700'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${
+                    status === 'all' ? 'bg-gray-400' :
+                    status === 'success' ? 'bg-green-500' :
+                    status === 'warning' ? 'bg-amber-500' : 'bg-red-500'
+                  }`} />
+                  {status === 'all' ? 'All Messages' : status.charAt(0).toUpperCase() + status.slice(1)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* AI Findings Button */}
         <div className="relative">
@@ -279,8 +411,8 @@ export function MessagesPage() {
           queueTab={queueTab}
           onQueueTabChange={handleQueueTabChange}
           activeCounts={{
-            active: queueTab === 'active' ? messagesData?.totalCount || 0 : 0,
-            deadletter: queueTab === 'deadletter' ? messagesData?.totalCount || 0 : 0,
+            active: activeMessagesData?.totalCount || 0,
+            deadletter: dlqMessagesData?.totalCount || 0,
           }}
         />
 

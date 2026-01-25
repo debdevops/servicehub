@@ -90,4 +90,53 @@ public interface IServiceBusClientWrapper : IAsyncDisposable
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A result containing the subscription runtime properties.</returns>
     Task<Result<SubscriptionRuntimePropertiesDto>> GetSubscriptionAsync(string topicName, string subscriptionName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Receives messages from a queue or subscription and moves them to the dead-letter queue.
+    /// This is used for testing DLQ functionality.
+    /// </summary>
+    /// <param name="entityName">The queue or topic name.</param>
+    /// <param name="subscriptionName">Optional subscription name for topics.</param>
+    /// <param name="messageCount">Number of messages to dead-letter.</param>
+    /// <param name="reason">The dead-letter reason.</param>
+    /// <param name="errorDescription">Optional error description.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of messages successfully dead-lettered.</returns>
+    Task<int> DeadLetterMessagesAsync(
+        string entityName,
+        string? subscriptionName,
+        int messageCount,
+        string reason,
+        string? errorDescription,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Replays a message by receiving it from the dead-letter queue and resending it to the main queue.
+    /// </summary>
+    /// <param name="entityName">The queue or topic name.</param>
+    /// <param name="subscriptionName">Optional subscription name for topics.</param>
+    /// <param name="sequenceNumber">The sequence number of the message to replay.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A result indicating success or failure.</returns>
+    Task<Result> ReplayMessageAsync(
+        string entityName,
+        string? subscriptionName,
+        long sequenceNumber,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Purges (permanently deletes) a message from a queue or subscription.
+    /// </summary>
+    /// <param name="entityName">The queue or topic name.</param>
+    /// <param name="subscriptionName">Optional subscription name for topics.</param>
+    /// <param name="sequenceNumber">The sequence number of the message to purge.</param>
+    /// <param name="fromDeadLetter">Whether to purge from the dead-letter queue.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A result indicating success or failure.</returns>
+    Task<Result> PurgeMessageAsync(
+        string entityName,
+        string? subscriptionName,
+        long sequenceNumber,
+        bool fromDeadLetter,
+        CancellationToken cancellationToken = default);
 }

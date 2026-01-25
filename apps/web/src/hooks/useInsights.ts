@@ -8,6 +8,10 @@ export function useInsights(params: GetInsightsParams) {
     queryKey: ['insights', params],
     queryFn: () => insightsApi.list(params),
     enabled: !!params.namespaceId,
+    retry: false, // Don't retry 404 errors for missing endpoint
+    meta: {
+      errorMessage: false, // Suppress automatic error toasts
+    },
   });
 }
 
@@ -16,6 +20,10 @@ export function useInsight(namespaceId: string, insightId: string) {
     queryKey: ['insights', namespaceId, insightId],
     queryFn: () => insightsApi.get(namespaceId, insightId),
     enabled: !!namespaceId && !!insightId,
+    retry: false,
+    meta: {
+      errorMessage: false,
+    },
   });
 }
 
@@ -24,6 +32,10 @@ export function useInsightsSummary(namespaceId: string, queueOrTopicName: string
     queryKey: ['insights', 'summary', namespaceId, queueOrTopicName],
     queryFn: () => insightsApi.getSummary(namespaceId, queueOrTopicName),
     enabled: !!namespaceId && !!queueOrTopicName,
+    retry: false,
+    meta: {
+      errorMessage: false,
+    },
   });
 }
 

@@ -138,6 +138,9 @@ export function MessageGeneratorModal({
     }
 
     setIsGenerating(true);
+    
+    // Show initial toast with progress
+    const toastId = toast.loading('Generating messages...');
 
     try {
       const config: GenerationConfig = {
@@ -155,29 +158,45 @@ export function MessageGeneratorModal({
       // Send messages to the API
       let successCount = 0;
       let errorCount = 0;
+      const errors: string[] = [];
 
       // Send in batches to avoid overwhelming the API
       const batchSize = 10;
       for (let i = 0; i < messages.length; i += batchSize) {
         const batch = messages.slice(i, i + batchSize);
         
-        await Promise.all(
+        // Update progress
+        const progress = Math.round((i / messages.length) * 100);
+        toast.loading(`Generating messages... ${progress}%`, { id: toastId });
+        
+        const results = await Promise.allSettled(
           batch.map(async (msg) => {
-            try {
-              await messagesApi.send(selectedNamespace, selectedEntity, {
+            await messagesApi.send(
+              selectedNamespace, 
+              selectedEntity, 
+              {
                 body: msg.body,
                 contentType: msg.contentType,
                 properties: msg.properties,
                 correlationId: msg.correlationId,
                 sessionId: msg.sessionId,
-              });
-              successCount++;
-            } catch (error) {
-              errorCount++;
-              console.error('Failed to send message:', error);
-            }
+              },
+              targetType
+            );
           })
         );
+
+        // Count successes and failures
+        results.forEach((result) => {
+          if (result.status === 'fulfilled') {
+            successCount++;
+          } else {
+            errorCount++;
+            const error = result.reason;
+            const errorMsg = error?.response?.data?.message || error?.message || 'Unknown error';
+            errors.push(errorMsg);
+          }
+        });
 
         // Small delay between batches
         if (i + batchSize < messages.length) {
@@ -185,17 +204,42 @@ export function MessageGeneratorModal({
         }
       }
 
+      // Dismiss loading toast
+      toast.dismiss(toastId);
+
+      // Show final result
       if (errorCount === 0) {
-        toast.success(`Generated ${successCount} messages successfully!`);
+        toast.success(`✅ Generated ${successCount} messages successfully!`, {
+          duration: 4000,
+        });
+      } else if (successCount > 0) {
+        toast.success(
+          `Generated ${successCount} messages (${errorCount} failed).\nCheck console for details.`,
+          { duration: 5000 }
+        );
+        console.error('Message generation errors:', errors);
       } else {
-        toast.success(`Generated ${successCount} messages (${errorCount} failed)`);
+        toast.error(
+          `Failed to generate messages. ${errors[0] || 'Unknown error'}`,
+          { duration: 5000 }
+        );
+        console.error('All messages failed:', errors);
       }
 
-      onGenerated?.();
-      onClose();
+      // Only call onGenerated if at least some messages succeeded
+      if (successCount > 0) {
+        onGenerated?.();
+      }
+      
+      // Close modal on success
+      if (errorCount === 0 || successCount > 0) {
+        onClose();
+      }
     } catch (error) {
+      toast.dismiss(toastId);
       console.error('Generation failed:', error);
-      toast.error('Failed to generate messages. Check console for details.');
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Failed to generate messages: ${errorMsg}`, { duration: 5000 });
     } finally {
       setIsGenerating(false);
     }

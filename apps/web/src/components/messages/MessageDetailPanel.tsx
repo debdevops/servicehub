@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { FileText, Code, Bot, List, Inbox } from 'lucide-react';
-import { Play, Clipboard, Zap, Trash2 } from 'lucide-react';
+import { Play, Clipboard, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { useTabPersistence, type DetailTab } from '@/hooks/useTabPersistence';
 import { PropertiesTab, BodyTab, AIInsightsTab, HeadersTab } from './tabs';
@@ -91,6 +91,7 @@ interface ConfirmState {
 function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
   const replayMessage = useReplayMessage();
   const purgeMessage = usePurgeMessage();
+  const [searchParams] = useSearchParams();
   
   const [confirmState, setConfirmState] = useState<ConfirmState>({
     isOpen: false,
@@ -100,8 +101,17 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
     action: null,
   });
 
+  // Get entity information from URL params
+  const queueName = searchParams.get('queue');
+  const topicName = searchParams.get('topic');
+  const subscriptionName = searchParams.get('subscription');
+  
+  // Determine entity name and type
+  const entityName = topicName || queueName || '';
+  const isFromDeadLetter = message.queueType === 'deadletter' || !!message.deadLetterReason;
+
   const openConfirm = (action: 'replay' | 'purge') => {
-    const shortId = message.id.split('-').slice(0, 2).join('-');
+    const shortId = message.id?.split('-').slice(0, 2).join('-') || `#${message.sequenceNumber}`;
     
     if (action === 'replay') {
       setConfirmState({
@@ -128,11 +138,27 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
       return;
     }
 
+    if (!entityName) {
+      toast.error('Queue or topic name is missing');
+      return;
+    }
+
     try {
       if (confirmState.action === 'replay') {
-        await replayMessage.mutateAsync({ namespaceId, messageId: message.id });
+        await replayMessage.mutateAsync({ 
+          namespaceId, 
+          sequenceNumber: message.sequenceNumber,
+          entityName,
+          subscriptionName: subscriptionName || undefined
+        });
       } else if (confirmState.action === 'purge') {
-        await purgeMessage.mutateAsync({ namespaceId, messageId: message.id });
+        await purgeMessage.mutateAsync({ 
+          namespaceId, 
+          sequenceNumber: message.sequenceNumber,
+          entityName,
+          subscriptionName: subscriptionName || undefined,
+          fromDeadLetter: isFromDeadLetter
+        });
       }
     } catch (error) {
       // Error handled by mutation hook
@@ -160,7 +186,8 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
         <button
           className="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition-colors disabled:bg-primary-300 disabled:cursor-not-allowed"
           onClick={() => openConfirm('replay')}
-          disabled={replayMessage.isPending || !namespaceId}
+          disabled={replayMessage.isPending || !namespaceId || !isFromDeadLetter}
+          title={!isFromDeadLetter ? 'Replay is only available for dead-letter messages' : 'Replay message to main queue'}
           aria-label="Replay message"
         >
           <Play size={16} />
@@ -202,6 +229,54 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
 // Main Component
 // ============================================================================
 
+// Helper to extract meaningful title from message
+function extractMessageTitle(message: Message): { title: string; subtitle: string } {
+  // Try to parse body as JSON to extract meaningful info
+  try {
+    const body = typeof message.body === 'string' ? JSON.parse(message.body) : message.body;
+    
+    // Common patterns for extracting meaningful titles
+    const eventType = body?.eventType || body?.type || body?.event;
+    const orderId = body?.data?.orderId || body?.orderId;
+    const transactionId = body?.data?.transactionId || body?.transactionId;
+    const notificationId = body?.data?.notificationId || body?.notificationId;
+    const userId = body?.data?.userId || body?.userId;
+    const errorCode = body?.data?.error?.code || body?.error?.code || body?.errorCode;
+    const status = body?.data?.status || body?.status;
+    
+    // Build meaningful title based on available data
+    if (eventType) {
+      const formattedEvent = eventType.replace(/([A-Z])/g, ' $1').trim();
+      let subtitle = '';
+      
+      if (orderId) subtitle = `Order: ${orderId}`;
+      else if (transactionId) subtitle = `Transaction: ${transactionId}`;
+      else if (notificationId) subtitle = `Notification: ${notificationId}`;
+      else if (errorCode) subtitle = `Error: ${errorCode}`;
+      else if (status) subtitle = `Status: ${status}`;
+      
+      return { title: formattedEvent, subtitle };
+    }
+    
+    // Fallback to any identifiable field
+    if (orderId) return { title: 'Order Message', subtitle: orderId };
+    if (transactionId) return { title: 'Payment Transaction', subtitle: transactionId };
+    if (notificationId) return { title: 'Notification', subtitle: notificationId };
+    if (errorCode) return { title: 'Error Event', subtitle: errorCode };
+    if (userId) return { title: 'User Activity', subtitle: `User: ${userId}` };
+  } catch {
+    // Body is not valid JSON
+  }
+  
+  // Use message ID or sequence number
+  const shortId = message.id 
+    ? (message.id.includes('-') 
+        ? message.id.split('-').slice(0, 2).join('-') 
+        : message.id.substring(0, 12))
+    : `#${message.sequenceNumber}`;
+  return { title: 'Message', subtitle: shortId };
+}
+
 export function MessageDetailPanel({ message, onViewPattern }: MessageDetailPanelProps) {
   const [activeTab, setActiveTab] = useTabPersistence();
   const [searchParams] = useSearchParams();
@@ -211,15 +286,29 @@ export function MessageDetailPanel({ message, onViewPattern }: MessageDetailPane
     return <EmptyState />;
   }
 
-  const shortId = message.id.split('-').slice(0, 2).join('-');
+  const { title, subtitle } = extractMessageTitle(message);
+  const isDLQ = message.queueType === 'deadletter' || !!message.deadLetterReason;
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header */}
-      <div className="shrink-0 px-6 py-4 border-b border-gray-200 bg-white">
+      <div className={`shrink-0 px-6 py-4 border-b border-gray-200 ${isDLQ ? 'bg-red-50' : 'bg-white'}`}>
         <h2 className="text-xl font-semibold text-gray-900">
-          Message: {shortId}
+          {title}
         </h2>
+        {subtitle && (
+          <p className="text-sm text-gray-500 mt-1 font-mono">{subtitle}</p>
+        )}
+        {isDLQ && (
+          <div className="mt-2 flex items-center gap-2 text-red-600">
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 rounded text-xs font-medium">
+              ⚠️ Dead-Letter Queue
+            </span>
+            {message.deadLetterReason && (
+              <span className="text-sm">{message.deadLetterReason}</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Tab Bar */}
@@ -238,9 +327,6 @@ export function MessageDetailPanel({ message, onViewPattern }: MessageDetailPane
           >
             <Icon size={16} />
             {label}
-            {id === 'ai' && message.hasAIInsight && (
-              <span className="ml-1 w-2 h-2 rounded-full bg-primary-500" />
-            )}
           </button>
         ))}
       </div>

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Send, X, Plus, Trash2 } from 'lucide-react';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues } from '@/hooks/useQueues';
+import { useTopics } from '@/hooks/useTopics';
 import { useSendMessage } from '@/hooks/useMessages';
 
 // ============================================================================
@@ -44,8 +45,10 @@ export function SendMessageModal({
   const { data: namespaces } = useNamespaces();
   const [selectedNamespace, setSelectedNamespace] = useState(defaultNamespaceId || '');
   const { data: queues } = useQueues(selectedNamespace);
+  const { data: topics } = useTopics(selectedNamespace);
   const sendMessage = useSendMessage();
 
+  const [entityType, setEntityType] = useState<'queue' | 'topic'>('queue');
   const [entity, setEntity] = useState(defaultQueueName || '');
   const [body, setBody] = useState('{\n  "orderId": "ORD-2026-12345",\n  "amount": 99.99,\n  "currency": "USD"\n}');
   const [contentType, setContentType] = useState('application/json');
@@ -102,6 +105,7 @@ export function SendMessageModal({
         await sendMessage.mutateAsync({
           namespaceId: selectedNamespace,
           queueOrTopicName: entity,
+          entityType,
           message: {
             body,
             contentType,
@@ -117,7 +121,7 @@ export function SendMessageModal({
       // Call parent callback with payload for UI update
       onSend({
         entity,
-        entityType: 'queue',
+        entityType,
         body,
         contentType,
         properties: propsObject,
@@ -189,20 +193,49 @@ export function SendMessageModal({
           {/* Queue Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Queue
+              Entity Type
             </label>
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => { setEntityType('queue'); setEntity(''); }}
+                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  entityType === 'queue'
+                    ? 'bg-primary-500 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                📥 Queue
+              </button>
+              <button
+                onClick={() => { setEntityType('topic'); setEntity(''); }}
+                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  entityType === 'topic'
+                    ? 'bg-primary-500 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                📢 Topic
+              </button>
+            </div>
             <select
               value={entity}
               onChange={(e) => setEntity(e.target.value)}
               disabled={!selectedNamespace}
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300 disabled:bg-gray-50 disabled:cursor-not-allowed"
             >
-              <option value="">Select queue...</option>
-              {queues?.map((q) => (
-                <option key={q.name} value={q.name}>
-                  📥 {q.name}
-                </option>
-              ))}
+              <option value="">Select {entityType}...</option>
+              {entityType === 'queue' 
+                ? queues?.map((q) => (
+                    <option key={q.name} value={q.name}>
+                      📥 {q.name}
+                    </option>
+                  ))
+                : topics?.map((t) => (
+                    <option key={t.name} value={t.name}>
+                      📢 {t.name}
+                    </option>
+                  ))
+              }
             </select>
           </div>
 
