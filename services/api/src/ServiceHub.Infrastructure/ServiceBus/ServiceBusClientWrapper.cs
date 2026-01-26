@@ -999,6 +999,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
         ServiceBusReceiver? dlqReceiver = null;
         ServiceBusSender? sender = null;
+        var messagesToAbandon = new List<ServiceBusReceivedMessage>();
 
         try
         {
@@ -1006,7 +1007,8 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             var receiverOptions = new ServiceBusReceiverOptions
             {
                 ReceiveMode = ServiceBusReceiveMode.PeekLock,
-                SubQueue = SubQueue.DeadLetter
+                SubQueue = SubQueue.DeadLetter,
+                PrefetchCount = 0 // Disable prefetch for more control
             };
 
             if (!string.IsNullOrEmpty(subscriptionName))
@@ -1018,9 +1020,35 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
                 dlqReceiver = _client.CreateReceiver(entityName, receiverOptions);
             }
 
-            // Peek messages to find the one with the matching sequence number
-            var messages = await dlqReceiver.PeekMessagesAsync(maxMessages: 100, cancellationToken: cancellationToken).ConfigureAwait(false);
-            var targetMessage = messages.FirstOrDefault(m => m.SequenceNumber == sequenceNumber);
+            // Receive messages in batches to find the target message more efficiently
+            ServiceBusReceivedMessage? targetMessage = null;
+            const int maxAttempts = 10;
+            const int batchSize = 50;
+            
+            for (int attempt = 0; attempt < maxAttempts && targetMessage == null; attempt++)
+            {
+                var messages = await dlqReceiver.ReceiveMessagesAsync(
+                    maxMessages: batchSize, 
+                    maxWaitTime: TimeSpan.FromSeconds(3),
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                if (messages == null || messages.Count == 0)
+                {
+                    break; // No more messages available
+                }
+
+                foreach (var msg in messages)
+                {
+                    if (msg.SequenceNumber == sequenceNumber)
+                    {
+                        targetMessage = msg;
+                    }
+                    else
+                    {
+                        messagesToAbandon.Add(msg);
+                    }
+                }
+            }
 
             if (targetMessage == null)
             {
@@ -1029,56 +1057,44 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
                     $"Message with sequence number {sequenceNumber} not found in dead-letter queue."));
             }
 
-            // Receive and complete the message from DLQ
-            var receivedMessage = await dlqReceiver.ReceiveMessageAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
-            
-            // Find the exact message by iterating if needed
-            while (receivedMessage != null && receivedMessage.SequenceNumber != sequenceNumber)
-            {
-                // Complete and discard messages that don't match
-                await dlqReceiver.AbandonMessageAsync(receivedMessage, cancellationToken: cancellationToken).ConfigureAwait(false);
-                receivedMessage = await dlqReceiver.ReceiveMessageAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
-            }
-
-            if (receivedMessage == null)
-            {
-                return Result.Failure(Error.NotFound(
-                    ErrorCodes.Message.NotFound,
-                    $"Could not receive message with sequence number {sequenceNumber} from dead-letter queue."));
-            }
-
             // Create a new message with the same content
-            var replayMessage = new ServiceBusMessage(receivedMessage.Body)
+            var replayMessage = new ServiceBusMessage(targetMessage.Body)
             {
-                ContentType = receivedMessage.ContentType,
-                CorrelationId = receivedMessage.CorrelationId,
+                ContentType = targetMessage.ContentType,
+                CorrelationId = targetMessage.CorrelationId,
                 MessageId = Guid.NewGuid().ToString(), // New message ID
-                PartitionKey = receivedMessage.PartitionKey,
-                SessionId = receivedMessage.SessionId,
-                ReplyTo = receivedMessage.ReplyTo,
-                ReplyToSessionId = receivedMessage.ReplyToSessionId,
-                Subject = receivedMessage.Subject,
-                TimeToLive = receivedMessage.TimeToLive,
-                To = receivedMessage.To
+                PartitionKey = targetMessage.PartitionKey,
+                SessionId = targetMessage.SessionId,
+                ReplyTo = targetMessage.ReplyTo,
+                ReplyToSessionId = targetMessage.ReplyToSessionId,
+                Subject = targetMessage.Subject,
+                TimeToLive = targetMessage.TimeToLive,
+                To = targetMessage.To
             };
 
-            // Copy application properties
-            foreach (var prop in receivedMessage.ApplicationProperties)
+            // Copy application properties, filtering out DLQ-specific ones
+            foreach (var prop in targetMessage.ApplicationProperties)
             {
-                replayMessage.ApplicationProperties[prop.Key] = prop.Value;
+                // Skip DLQ-specific properties that shouldn't be replayed
+                if (!prop.Key.Equals("DeadLetterReason", StringComparison.OrdinalIgnoreCase) &&
+                    !prop.Key.Equals("DeadLetterErrorDescription", StringComparison.OrdinalIgnoreCase))
+                {
+                    replayMessage.ApplicationProperties[prop.Key] = prop.Value;
+                }
             }
 
             // Add replay metadata
             replayMessage.ApplicationProperties["Replayed"] = true;
             replayMessage.ApplicationProperties["ReplayedAt"] = DateTime.UtcNow.ToString("O");
             replayMessage.ApplicationProperties["OriginalSequenceNumber"] = sequenceNumber;
+            replayMessage.ApplicationProperties["OriginalDeadLetterReason"] = targetMessage.DeadLetterReason ?? "Unknown";
 
             // Send to main queue/topic
             sender = _client.CreateSender(entityName);
             await sender.SendMessageAsync(replayMessage, cancellationToken).ConfigureAwait(false);
 
             // Complete (remove) the message from DLQ
-            await dlqReceiver.CompleteMessageAsync(receivedMessage, cancellationToken).ConfigureAwait(false);
+            await dlqReceiver.CompleteMessageAsync(targetMessage, cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation(
                 "Successfully replayed message {SequenceNumber} from {EntityName} DLQ to main queue",
@@ -1110,8 +1126,20 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         }
         finally
         {
+            // Abandon all messages we didn't need so they become available again
             if (dlqReceiver != null)
             {
+                foreach (var msg in messagesToAbandon)
+                {
+                    try
+                    {
+                        await dlqReceiver.AbandonMessageAsync(msg, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // Best effort - ignore errors during cleanup
+                    }
+                }
                 await dlqReceiver.DisposeAsync().ConfigureAwait(false);
             }
             if (sender != null)
@@ -1137,13 +1165,15 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         }
 
         ServiceBusReceiver? receiver = null;
+        var messagesToAbandon = new List<ServiceBusReceivedMessage>();
 
         try
         {
             // Create receiver options
             var receiverOptions = new ServiceBusReceiverOptions
             {
-                ReceiveMode = ServiceBusReceiveMode.PeekLock
+                ReceiveMode = ServiceBusReceiveMode.PeekLock,
+                PrefetchCount = 0 // Disable prefetch for more control
             };
 
             if (fromDeadLetter)
@@ -1161,47 +1191,67 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
                 receiver = _client.CreateReceiver(entityName, receiverOptions);
             }
 
-            // Receive messages until we find the one with matching sequence number
-            ServiceBusReceivedMessage? receivedMessage = null;
-            var attempts = 0;
-            const int maxAttempts = 100; // Prevent infinite loop
+            // Receive messages in batches to find the target message more efficiently
+            // For active subscriptions with many messages, we need to scan more messages
+            ServiceBusReceivedMessage? targetMessage = null;
+            const int maxAttempts = 20; // Increased from 10 to handle larger queues
+            const int batchSize = 100; // Increased from 50 for faster scanning
 
-            while (attempts < maxAttempts)
+            _logger.LogDebug(
+                "Starting purge scan for sequence {SequenceNumber} in {EntityName}/{SubscriptionName}",
+                sequenceNumber,
+                entityName,
+                subscriptionName ?? "N/A");
+
+            for (int attempt = 0; attempt < maxAttempts && targetMessage == null; attempt++)
             {
-                receivedMessage = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
-                
-                if (receivedMessage == null)
+                var messages = await receiver.ReceiveMessagesAsync(
+                    maxMessages: batchSize, 
+                    maxWaitTime: TimeSpan.FromSeconds(2),
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                if (messages == null || messages.Count == 0)
                 {
-                    return Result.Failure(Error.NotFound(
-                        ErrorCodes.Message.NotFound,
-                        $"Message with sequence number {sequenceNumber} not found."));
+                    _logger.LogDebug("No more messages available after {Attempt} attempts", attempt + 1);
+                    break; // No more messages available
                 }
 
-                if (receivedMessage.SequenceNumber == sequenceNumber)
-                {
-                    break;
-                }
+                _logger.LogDebug("Received {Count} messages in batch {Attempt}", messages.Count, attempt + 1);
 
-                // Not the right message, abandon it and try next
-                await receiver.AbandonMessageAsync(receivedMessage, cancellationToken: cancellationToken).ConfigureAwait(false);
-                attempts++;
+                foreach (var msg in messages)
+                {
+                    if (msg.SequenceNumber == sequenceNumber)
+                    {
+                        targetMessage = msg;
+                        _logger.LogDebug("Found target message at sequence {SequenceNumber}", sequenceNumber);
+                    }
+                    else
+                    {
+                        messagesToAbandon.Add(msg);
+                    }
+                }
             }
 
-            if (receivedMessage == null || receivedMessage.SequenceNumber != sequenceNumber)
+            if (targetMessage == null)
             {
+                _logger.LogWarning(
+                    "Message with sequence {SequenceNumber} not found after scanning {MaxAttempts} batches", 
+                    sequenceNumber,
+                    maxAttempts);
                 return Result.Failure(Error.NotFound(
                     ErrorCodes.Message.NotFound,
-                    $"Message with sequence number {sequenceNumber} not found after {maxAttempts} attempts."));
+                    $"Message with sequence number {sequenceNumber} not found after scanning {maxAttempts * batchSize} messages."));
             }
 
             // Complete (delete) the message
-            await receiver.CompleteMessageAsync(receivedMessage, cancellationToken).ConfigureAwait(false);
+            await receiver.CompleteMessageAsync(targetMessage, cancellationToken).ConfigureAwait(false);
 
-            var queueType = fromDeadLetter ? "dead-letter queue" : "queue";
+            var queueType = fromDeadLetter ? "dead-letter queue" : (string.IsNullOrEmpty(subscriptionName) ? "queue" : "subscription");
             _logger.LogInformation(
-                "Successfully purged message {SequenceNumber} from {EntityName} {QueueType}",
+                "Successfully purged message {SequenceNumber} from {EntityName}/{SubscriptionName} {QueueType}",
                 sequenceNumber,
                 entityName,
+                subscriptionName ?? "N/A",
                 queueType);
 
             return Result.Success();
@@ -1229,8 +1279,20 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         }
         finally
         {
+            // Abandon all messages we didn't need so they become available again
             if (receiver != null)
             {
+                foreach (var msg in messagesToAbandon)
+                {
+                    try
+                    {
+                        await receiver.AbandonMessageAsync(msg, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // Best effort - ignore errors during cleanup
+                    }
+                }
                 await receiver.DisposeAsync().ConfigureAwait(false);
             }
         }

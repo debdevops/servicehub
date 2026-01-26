@@ -26,8 +26,8 @@ export const namespacesApi = {
   },
 
   // POST /api/v1/namespaces/{id}/test-connection
-  testConnection: async (id: string): Promise<{ success: boolean; message: string }> => {
-    const response = await apiClient.post<{ success: boolean; message: string }>(
+  testConnection: async (id: string): Promise<{ isConnected: boolean; message: string; testedAt: string }> => {
+    const response = await apiClient.post<{ isConnected: boolean; message: string; testedAt: string }>(
       `/namespaces/${id}/test-connection`
     );
     return response.data;

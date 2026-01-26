@@ -103,6 +103,11 @@ export function useReplayMessage() {
   });
 }
 
+/* PURGE HOOK DISABLED - Azure Service Bus Limitation
+ * The Service Bus SDK doesn't support direct access to messages by sequence number.
+ * Scanning through messages times out for large queues.
+ * Re-enable if Microsoft adds targeted message deletion support.
+ *
 export function usePurgeMessage() {
   const queryClient = useQueryClient();
 
@@ -139,3 +144,4 @@ export function usePurgeMessage() {
     },
   });
 }
+*/

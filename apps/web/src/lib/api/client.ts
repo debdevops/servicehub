@@ -14,9 +14,20 @@ export const apiClient = axios.create({
 // Debounce mechanism for error toasts to prevent duplicates
 const recentErrors = new Map<string, number>();
 const ERROR_DEBOUNCE_MS = 2000; // Show same error only once every 2 seconds
+const MAX_ERROR_ENTRIES = 50; // Limit map size to prevent memory leak
 
 function shouldShowError(errorKey: string): boolean {
   const now = Date.now();
+  
+  // Clean up old entries periodically to prevent memory leak
+  if (recentErrors.size > MAX_ERROR_ENTRIES) {
+    for (const [key, timestamp] of recentErrors) {
+      if (now - timestamp > ERROR_DEBOUNCE_MS * 5) {
+        recentErrors.delete(key);
+      }
+    }
+  }
+  
   const lastShown = recentErrors.get(errorKey);
   
   if (!lastShown || now - lastShown > ERROR_DEBOUNCE_MS) {

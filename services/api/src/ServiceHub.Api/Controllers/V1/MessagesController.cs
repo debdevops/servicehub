@@ -261,6 +261,7 @@ public sealed class MessagesController : ApiControllerBase
     /// <response code="400">Invalid request parameters.</response>
     /// <response code="404">Namespace or queue not found.</response>
     /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.MessagesPeek)]
     [HttpGet("queue/{queueName}/deadletter")]
     [ProducesResponseType(typeof(IReadOnlyList<MessageResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -311,6 +312,7 @@ public sealed class MessagesController : ApiControllerBase
     /// <response code="400">Invalid request parameters.</response>
     /// <response code="404">Namespace, topic, or subscription not found.</response>
     /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.MessagesPeek)]
     [HttpGet("topic/{topicName}/subscription/{subscriptionName}/deadletter")]
     [ProducesResponseType(typeof(IReadOnlyList<MessageResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -416,6 +418,22 @@ public sealed class MessagesController : ApiControllerBase
         return Accepted();
     }
 
+    /* PURGE ENDPOINT DISABLED - Azure Service Bus Limitation
+     * 
+     * The Azure Service Bus SDK does not support direct access to messages by sequence number
+     * for active queues/subscriptions. The only way to delete a specific message is to:
+     * 1. Receive messages in batches (which locks them)
+     * 2. Scan through each batch looking for the target sequence number
+     * 3. Complete (delete) the target and abandon all others
+     * 
+     * This approach is fundamentally flawed because:
+     * - It's extremely slow for large queues (O(n) complexity)
+     * - It locks messages during scanning, affecting other consumers
+     * - It times out for queues with many messages (>100 messages)
+     * - Race conditions with concurrent consumers
+     * 
+     * This feature can be re-enabled if Microsoft adds support for targeted message deletion.
+     * 
     [RequireScope(ApiKeyScopes.MessagesSend)]
     [HttpDelete("purge")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -448,4 +466,5 @@ public sealed class MessagesController : ApiControllerBase
 
         return NoContent();
     }
+    */
 }

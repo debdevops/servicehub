@@ -98,6 +98,10 @@ export const messagesApi = {
     });
   },
 
+  /* PURGE API DISABLED - Azure Service Bus Limitation
+   * The Service Bus SDK doesn't support direct message deletion by sequence number.
+   * Re-enable if Microsoft adds targeted message deletion support.
+   *
   // DELETE /api/v1/messages/purge
   purge: async (
     namespaceId: string, 
@@ -116,6 +120,7 @@ export const messagesApi = {
       }
     });
   },
+  */
 
   // POST /api/v1/namespaces/{namespaceId}/queues/{queueName}/deadletter
   // Moves messages to the dead-letter queue for testing
