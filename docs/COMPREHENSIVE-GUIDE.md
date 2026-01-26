@@ -66,26 +66,26 @@ But what happens when something goes wrong?
 ServiceHub consists of three main components working together:
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'18px', 'primaryColor':'#0ea5e9', 'primaryTextColor':'#fff', 'primaryBorderColor':'#0369a1', 'lineColor':'#64748b', 'secondaryColor':'#f59e0b', 'tertiaryColor':'#10b981'}}}%%
+%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px', 'primaryColor':'#0ea5e9', 'primaryTextColor':'#fff', 'primaryBorderColor':'#0369a1', 'lineColor':'#64748b', 'secondaryColor':'#f59e0b', 'tertiaryColor':'#10b981'}}}%%
 graph TB
     subgraph "🌐 User Interface"
-        UI["<b>React Frontend</b><br/>Port 3000<br/>━━━━━━━━━<br/>• Message browsing<br/>• Queue inspection<br/>• AI insights view<br/>• Dead-letter management"]
+        UI["React Frontend<br/>Port 3000<br/>━━━━━━━━━<br/>• Message browsing<br/>• Queue inspection<br/>• AI insights view<br/>• Dead-letter management"]
     end
 
     subgraph "🔧 Backend API"
-        API["<b>.NET 8 API</b><br/>Port 5153<br/>━━━━━━━━━<br/>• REST endpoints<br/>• Authentication<br/>• Data transformation<br/>• Business logic"]
+        API[".NET 8 API<br/>Port 5153<br/>━━━━━━━━━<br/>• REST endpoints<br/>• Authentication<br/>• Data transformation<br/>• Business logic"]
     end
 
     subgraph "☁️ Azure Cloud"
-        ASB["<b>Azure Service Bus</b><br/>━━━━━━━━━<br/>• Message queues<br/>• Topics & subscriptions<br/>• Dead-letter queues<br/>• Message metadata"]
+        ASB["Azure Service Bus<br/>━━━━━━━━━<br/>• Message queues<br/>• Topics & subscriptions<br/>• Dead-letter queues<br/>• Message metadata"]
         
-        AI["<b>AI Service (Optional)</b><br/>━━━━━━━━━<br/>• Pattern detection<br/>• Anomaly identification<br/>• Insights generation"]
+        AI["AI Service (Optional)<br/>━━━━━━━━━<br/>• Pattern detection<br/>• Anomaly identification<br/>• Insights generation"]
     end
 
     subgraph "💾 Local Storage"
-        CACHE["<b>In-Memory Cache</b><br/>━━━━━━━━━<br/>• Connection strings<br/>• Client instances<br/>• Message cache"]
+        CACHE["In-Memory Cache<br/>━━━━━━━━━<br/>• Connection strings<br/>• Client instances<br/>• Message cache"]
         
-        DB["<b>SQLite Database</b><br/>━━━━━━━━━<br/>• Namespace configs<br/>• API keys<br/>• Settings"]
+        DB["SQLite Database<br/>━━━━━━━━━<br/>• Namespace configs<br/>• API keys<br/>• Settings"]
     end
 
     UI -->|HTTP/REST| API
@@ -111,7 +111,7 @@ This diagram shows how all components interact at a detailed level:
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': { 'fontSize':'16px', 'primaryColor':'#0ea5e9', 'primaryTextColor':'#fff', 'primaryBorderColor':'#0369a1', 'lineColor':'#64748b'}}}%%
 graph TB
-    subgraph Frontend["<b>Frontend Application (React + TypeScript)</b>"]
+    subgraph Frontend["Frontend Application (React + TypeScript)"]
         direction TB
         
         subgraph Pages["📄 Pages"]
@@ -134,7 +134,7 @@ graph TB
         end
     end
     
-    subgraph Backend["<b>Backend API (.NET 8 Clean Architecture)</b>"]
+    subgraph Backend["Backend API (.NET 8 Clean Architecture)"]
         direction TB
         
         subgraph API_Layer["🎯 API Layer"]
@@ -158,7 +158,7 @@ graph TB
         end
     end
     
-    subgraph Azure["<b>Azure Services</b>"]
+    subgraph Azure["Azure Services"]
         ASB_NS["Service Bus Namespace"]
         ASB_Q["Queues"]
         ASB_T["Topics"]
@@ -166,7 +166,7 @@ graph TB
         AI_API["AI API Endpoint"]
     end
     
-    subgraph Storage["<b>Local Storage</b>"]
+    subgraph Storage["Local Storage"]
         SQLITE["SQLite DB<br/><i>namespaces.db</i>"]
         MEM_CACHE["In-Memory Cache<br/><i>ConcurrentDictionary</i>"]
     end
@@ -381,7 +381,7 @@ sequenceDiagram
     Azure-->>API: Dead-letter messages with:<br/>• Original message data<br/>• DeadLetterReason<br/>• DeadLetterErrorDescription<br/>• DeliveryCount
     
     API->>API: Classify severity
-    Note over API: <b>Severity Logic:</b><br/>• Test: Reason contains "test"/"demo"<br/>• Critical: DeliveryCount > 5<br/>• Warning: All others
+    Note over API: Severity Logic:<br/>• Test: Reason contains "test"/"demo"<br/>• Critical: DeliveryCount > 5<br/>• Warning: All others
     
     API-->>UI: Messages with severity classification
     
@@ -391,7 +391,7 @@ sequenceDiagram
     User->>UI: Clicks on dead-letter message
     
     UI->>UI: Show detailed panel with sections:
-    Note over UI: <b>Section 1: Azure Data</b><br/>DeadLetterReason: "MaxDeliveryCountExceeded"<br/>DeadLetterSource: "myqueue"<br/>DeliveryCount: 10<br/><br/><b>Section 2: ServiceHub Analysis</b><br/>"This message failed 10 times..."<br/><br/><b>Section 3: Suggested Actions</b><br/>• Check app logs<br/>• Verify downstream service<br/>• Review error details
+    Note over UI: Section 1: Azure Data<br/>DeadLetterReason: "MaxDeliveryCountExceeded"<br/>DeadLetterSource: "myqueue"<br/>DeliveryCount: 10<br/><br/>Section 2: ServiceHub Analysis<br/>"This message failed 10 times..."<br/><br/>Section 3: Suggested Actions<br/>• Check app logs<br/>• Verify downstream service<br/>• Review error details
     
     User->>UI: Clicks "Replay" button
     Note over User: This will send the message<br/>back to the main queue
@@ -519,27 +519,27 @@ ServiceHub's backend follows **Clean Architecture** principles:
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': { 'fontSize':'16px'}}}%%
 graph TB
-    subgraph External["<b>External World</b>"]
+    subgraph External["External World"]
         HTTP["HTTP Requests"]
         AZURE["Azure Service Bus"]
         AI_EXT["AI API"]
     end
     
-    subgraph API["<b>API Layer</b><br/>(ServiceHub.Api)"]
+    subgraph API["API Layer<br/>(ServiceHub.Api)"]
         direction LR
         CTRL["Controllers"]
         MW["Middleware"]
         FILT["Filters"]
     end
     
-    subgraph Core["<b>Core Layer</b><br/>(ServiceHub.Core)"]
+    subgraph Core["Core Layer<br/>(ServiceHub.Core)"]
         direction LR
         INT["Interfaces"]
         ENT["Entities"]
         DTO["DTOs"]
     end
     
-    subgraph Infra["<b>Infrastructure Layer</b><br/>(ServiceHub.Infrastructure)"]
+    subgraph Infra["Infrastructure Layer<br/>(ServiceHub.Infrastructure)"]
         direction LR
         IMPL["Implementations"]
         SB["ServiceBus Wrapper"]
@@ -547,7 +547,7 @@ graph TB
         REPO["Repositories"]
     end
     
-    subgraph Shared["<b>Shared Layer</b><br/>(ServiceHub.Shared)"]
+    subgraph Shared["Shared Layer<br/>(ServiceHub.Shared)"]
         direction LR
         CONST["Constants"]
         HELP["Helpers"]
@@ -596,51 +596,51 @@ graph TB
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': { 'fontSize':'16px'}}}%%
 graph TB
-    subgraph App["<b>App.tsx</b><br/>(Root Component)"]
+    subgraph App["App.tsx<br/>(Root Component)"]
         ROUTER["React Router"]
         QUERY_PROV["QueryClientProvider"]
         ERROR["ErrorBoundary"]
     end
     
-    subgraph Pages["<b>Pages</b><br/>(Route Components)"]
+    subgraph Pages["Pages<br/>(Route Components)"]
         CONNECT["ConnectPage<br/><i>Manage namespaces</i>"]
         MESSAGES["MessagesPage<br/><i>Message browser</i>"]
         INSIGHTS["InsightsPage<br/><i>AI patterns</i>"]
     end
     
-    subgraph Layout["<b>Layout Components</b>"]
+    subgraph Layout["Layout Components"]
         SIDEBAR["Sidebar<br/><i>Queue navigation</i>"]
         HEADER["Header<br/><i>Namespace selector</i>"]
     end
     
-    subgraph MessageComponents["<b>Message Components</b>"]
+    subgraph MessageComponents["Message Components"]
         MSG_LIST["MessageList<br/><i>Virtualized list</i>"]
         MSG_DETAIL["MessageDetailPanel<br/><i>Tabbed view</i>"]
         MSG_CARD["MessageCard<br/><i>List item</i>"]
     end
     
-    subgraph Tabs["<b>Detail Tabs</b>"]
+    subgraph Tabs["Detail Tabs"]
         PROPS["PropertiesTab"]
         BODY["BodyTab"]
         AI_TAB["AIInsightsTab"]
         HEADERS["HeadersTab"]
     end
     
-    subgraph Actions["<b>Action Components</b>"]
+    subgraph Actions["Action Components"]
         FAB["MessageFAB<br/><i>Floating actions</i>"]
         SEND["SendMessageModal"]
         GEN["GenerateMessagesModal"]
         CONFIRM["ConfirmDialog"]
     end
     
-    subgraph Hooks["<b>Custom Hooks</b>"]
+    subgraph Hooks["Custom Hooks"]
         USE_NS["useNamespaces"]
         USE_Q["useQueues"]
         USE_MSG["useMessages"]
         USE_INS["useInsights"]
     end
     
-    subgraph State["<b>State Management</b>"]
+    subgraph State["State Management"]
         REACT_Q["React Query<br/><i>Server state cache</i>"]
         URL["URL Params<br/><i>Navigation state</i>"]
         LOCAL["Local State<br/><i>UI state</i>"]
@@ -976,28 +976,28 @@ export function useSendMessage() {
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': { 'fontSize':'16px'}}}%%
 graph TB
-    subgraph Users["<b>Users</b>"]
+    subgraph Users["Users"]
         DEV["Developers"]
         SRE["SREs"]
         SUPPORT["Support Teams"]
     end
     
-    subgraph Frontend["<b>Frontend Deployment</b>"]
+    subgraph Frontend["Frontend Deployment"]
         CF["Cloudflare Pages<br/><i>or</i><br/>Azure Static Web Apps<br/><i>or</i><br/>Nginx"]
         CDN["CDN Distribution"]
     end
     
-    subgraph Backend["<b>Backend Deployment</b>"]
+    subgraph Backend["Backend Deployment"]
         AKS["Azure Kubernetes Service<br/><i>or</i><br/>Azure Container Instances<br/><i>or</i><br/>Azure App Service"]
         LB["Load Balancer"]
     end
     
-    subgraph Data["<b>Data Layer</b>"]
+    subgraph Data["Data Layer"]
         PV["Persistent Volume<br/><i>SQLite DB</i>"]
         SECRETS["Azure Key Vault<br/><i>Connection strings</i>"]
     end
     
-    subgraph Azure["<b>Azure Services</b>"]
+    subgraph Azure["Azure Services"]
         ASB["Multiple Service Bus<br/>Namespaces"]
     end
     
@@ -1048,23 +1048,23 @@ graph TB
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': { 'fontSize':'16px'}}}%%
 graph TB
-    subgraph User["<b>User Authentication</b>"]
+    subgraph User["User Authentication"]
         LOGIN["Optional API Key"]
     end
     
-    subgraph API["<b>API Security</b>"]
+    subgraph API["API Security"]
         CORS["CORS Middleware<br/><i>Allowed origins only</i>"]
         AUTH["Authorization Filter<br/><i>Optional API key check</i>"]
         RATE["Rate Limiting<br/><i>Prevent abuse</i>"]
     end
     
-    subgraph Data["<b>Data Protection</b>"]
+    subgraph Data["Data Protection"]
         ENCRYPT["AES-256 Encryption<br/><i>Connection strings</i>"]
         SECRETS["Azure Key Vault<br/><i>Master encryption key</i>"]
         DB["SQLite with<br/>File Permissions"]
     end
     
-    subgraph Azure["<b>Azure Access</b>"]
+    subgraph Azure["Azure Access"]
         RBAC["RBAC Permissions<br/><i>Least privilege</i>"]
         SAS["Managed Identity<br/><i>or</i><br/>Connection String"]
     end
