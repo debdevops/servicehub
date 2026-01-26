@@ -2,6 +2,26 @@
 
 **AI-Powered Azure Service Bus Inspector API** built with .NET 8 and Clean Architecture.
 
+> This README provides quick start instructions and API reference. For complete documentation with architecture diagrams, design patterns, and detailed flows, see:
+> - **[Comprehensive Guide](../../docs/COMPREHENSIVE-GUIDE.md)** — Complete guide with Mermaid diagrams
+> - **[Architecture Details](ARCHITECTURE.md)** — 805 lines of architectural documentation
+> - **[Documentation Index](DOCUMENTATION_INDEX.md)** — Index of all API documentation
+
+---
+
+## 📖 Documentation Overview
+
+| Document | Purpose | Audience |
+|----------|---------|----------|
+| **[Comprehensive Guide](../../docs/COMPREHENSIVE-GUIDE.md)** | Complete guide with diagrams | Everyone (novices to experts) |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Deep architectural details (805 lines) | Architects, senior developers |
+| [DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md) | Index of 12 architectural diagrams | All developers |
+| [IMPLEMENTATION_PATTERNS.md](IMPLEMENTATION_PATTERNS.md) | Code patterns & conventions | Backend developers |
+| [DEPLOYMENT_OPERATIONS.md](DEPLOYMENT_OPERATIONS.md) | Production deployment guide | DevOps, SREs |
+| [FIXES_APPLIED.md](FIXES_APPLIED.md) | Applied fixes history | Maintainers |
+
+---
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -419,6 +439,46 @@ dotnet watch run --project src/ServiceHub.Api/ServiceHub.Api.csproj
 - [.NET 8 Documentation](https://docs.microsoft.com/dotnet/core/whats-new/dotnet-8)
 - [Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
 - [Result Pattern](https://enterprisecraftsmanship.com/posts/error-handling-exception-or-result/)
+
+---
+
+## 🏗️ Clean Architecture Overview
+
+ServiceHub API follows **Clean Architecture** principles with clear layer separation:
+
+### Layer Structure
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   Presentation Layer                    │
+│              (ServiceHub.Api - ASP.NET Core)            │
+│  • REST Controllers  • Middleware  • Filters           │
+│  • No business logic - only HTTP concerns              │
+└────────────────┬────────────────────────────────────────┘
+                 │ Depends on ↓
+┌────────────────▼────────────────────────────────────────┐
+│                     Domain Layer                        │
+│                (ServiceHub.Core)                        │
+│  • Entities  • DTOs  • Interfaces  • Enums             │
+│  • No dependencies - pure domain models                │
+└────────────────┬────────────────────────────────────────┘
+                 │ Implemented by ↓
+┌────────────────▼────────────────────────────────────────┐
+│                Infrastructure Layer                     │
+│            (ServiceHub.Infrastructure)                  │
+│  • Azure Service Bus client  • SQLite  • AI services   │
+│  • Implements Core interfaces                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Key Principles Applied
+
+1. **Dependency Inversion** — Core defines interfaces, Infrastructure implements them
+2. **Single Responsibility** — Each layer has one clear purpose
+3. **Separation of Concerns** — Business logic separate from infrastructure
+4. **Testability** — Easy to mock dependencies
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architectural diagrams and patterns.
 
 ---
 
