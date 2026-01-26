@@ -15,45 +15,45 @@ This document provides deep architectural insights through diagrams and detailed
 ## 1. Architecture Overview - Layered Design Diagram
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'18px', 'fontFamily':'arial'}}}%%
+%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px', 'fontFamily':'arial'}}}%%
 graph TB
     subgraph Presentation["🎨 PRESENTATION LAYER"]
-        REST["<b>REST API Endpoints</b>"]
-        SWAGGER["<b>Swagger/OpenAPI UI</b>"]
-        HEALTH["<b>Health Checks</b>"]
+        REST["REST API Endpoints"]
+        SWAGGER["Swagger/OpenAPI UI"]
+        HEALTH["Health Checks"]
     end
 
-    subgraph API["🔌 API LAYER<br/>(ServiceHub.Api)"]
-        CTRL["<b>Controllers</b>"]
-        FILTER["<b>Filters & Validators</b>"]
-        MIDDLEWARE["<b>Middleware Pipeline</b>"]
-        EXT["<b>Extensions & Config</b>"]
+    subgraph API["🔌 API LAYER<br/>ServiceHub.Api"]
+        CTRL["Controllers"]
+        FILTER["Filters and Validators"]
+        MIDDLEWARE["Middleware Pipeline"]
+        EXT["Extensions and Config"]
     end
 
-    subgraph Core["💼 CORE LAYER<br/>(ServiceHub.Core)"]
-        ENTITY["<b>Domain Entities</b>"]
-        INTERFACE["<b>Service Interfaces</b>"]
-        RESULT["<b>Result Types</b>"]
+    subgraph Core["💼 CORE LAYER<br/>ServiceHub.Core"]
+        ENTITY["Domain Entities"]
+        INTERFACE["Service Interfaces"]
+        RESULT["Result Types"]
     end
 
-    subgraph Infrastructure["⚙️ INFRASTRUCTURE LAYER<br/>(ServiceHub.Infrastructure)"]
-        IMPL["<b>Service Implementations</b>"]
-        SB["<b>Azure Service Bus</b>"]
-        AI["<b>AI Service</b>"]
-        REPO["<b>Repositories</b>"]
-        CRYPTO["<b>Encryption</b>"]
+    subgraph Infrastructure["⚙️ INFRASTRUCTURE LAYER<br/>ServiceHub.Infrastructure"]
+        IMPL["Service Implementations"]
+        SB["Azure Service Bus"]
+        AI["AI Service"]
+        REPO["Repositories"]
+        CRYPTO["Encryption"]
     end
 
-    subgraph Shared["🧩 SHARED LAYER<br/>(ServiceHub.Shared)"]
-        CONST["<b>Constants</b>"]
-        HELPER["<b>Helpers & Utilities</b>"]
-        MODEL["<b>Data Models</b>"]
+    subgraph Shared["🧩 SHARED LAYER<br/>ServiceHub.Shared"]
+        CONST["Constants"]
+        HELPER["Helpers and Utilities"]
+        MODEL["Data Models"]
     end
 
     subgraph External["🌐 EXTERNAL SYSTEMS"]
-        ASB["<b>Azure Service Bus</b>"]
-        AIAPI["<b>AI API</b>"]
-        KV["<b>Azure Key Vault</b>"]
+        ASB["Azure Service Bus"]
+        AIAPI["AI API"]
+        KV["Azure Key Vault"]
     end
 
     REST --> CTRL
@@ -90,7 +90,7 @@ graph TB
 ## 2. Request/Response Sequential Flow
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'18px'}}}%%
+%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
 sequenceDiagram
     autonumber
     participant Client as 🌐 HTTP Client
@@ -101,31 +101,31 @@ sequenceDiagram
     participant Cache as ⚡ In-Memory<br/>Cache
     participant Logger as 📝 Logger
 
-    Client->>Middleware: <b>HTTP Request</b>
-    Note over Middleware: <b>Security Headers</b><br/>Error Handling<br/>Correlation ID<br/>Request Logging<br/>API Key Auth<br/>Rate Limiting
+    Client->>Middleware: HTTP Request
+    Note over Middleware: Security Headers<br/>Error Handling<br/>Correlation ID<br/>Request Logging<br/>API Key Auth<br/>Rate Limiting
 
-    Middleware->>Controller: <b>Processed Request</b>
-    Controller->>Controller: <b>Validate Input</b>
-    Controller->>Service: <b>Call Business Logic</b>
+    Middleware->>Controller: Processed Request
+    Controller->>Controller: Validate Input
+    Controller->>Service: Call Business Logic
     
-    Service->>Cache: <b>Check Cache</b>
+    Service->>Cache: Check Cache
     alt Cache Hit
-        Cache-->>Service: <b>Cached Result ⚡</b>
+        Cache-->>Service: Cached Result ⚡
     else Cache Miss
-        Service->>Repository: <b>Fetch Data</b>
-        Repository-->>Service: <b>Domain Entity</b>
-        Service->>Cache: <b>Store Result</b>
+        Service->>Repository: Fetch Data
+        Repository-->>Service: Domain Entity
+        Service->>Cache: Store Result
     end
 
-    Service-->>Controller: <b>Result&lt;T&gt;</b>
-    Controller->>Logger: <b>Log Operation</b>
-    Controller-->>Middleware: <b>Response Object</b>
+    Service-->>Controller: Result Type
+    Controller->>Logger: Log Operation
+    Controller-->>Middleware: Response Object
     
-    Middleware->>Middleware: <b>Add Security Headers</b>
-    Middleware->>Logger: <b>Log Response</b>
-    Middleware-->>Client: <b>HTTP Response (JSON)</b>
+    Middleware->>Middleware: Add Security Headers
+    Middleware->>Logger: Log Response
+    Middleware-->>Client: HTTP Response (JSON)
 
-    Note over Client,Logger: <b>Total Flow: ~5-50ms</b>
+    Note over Client,Logger: Total Flow: ~5-50ms
 ```
 
 ---
@@ -133,47 +133,47 @@ sequenceDiagram
 ## 3. Detailed Class & Dependency Injection Diagram
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'18px'}}}%%
+%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
 graph LR
-    subgraph DI["🔧 DEPENDENCY INJECTION<br/>CONTAINER"]
+    subgraph DI["🔧 DEPENDENCY INJECTION CONTAINER"]
         direction TB
-        HTTP["<b>IHttpContextAccessor</b>"]
-        CONFIG["<b>IConfiguration</b>"]
-        LOGGER["<b>ILogger</b>"]
-        OPTIONS["<b>IOptions</b>"]
+        HTTP["IHttpContextAccessor"]
+        CONFIG["IConfiguration"]
+        LOGGER["ILogger"]
+        OPTIONS["IOptions"]
     end
 
     subgraph Services["💼 CORE SERVICES"]
         direction TB
-        NSMGR["<b>INamespaceService</b><br/>Manages connections"]
-        MSGMGR["<b>IMessageService</b><br/>CRUD operations"]
-        QMGR["<b>IQueueService</b><br/>Queue operations"]
-        TMGR["<b>ITopicService</b><br/>Topic operations"]
+        NSMGR["INamespaceService<br/>Manages connections"]
+        MSGMGR["IMessageService<br/>CRUD operations"]
+        QMGR["IQueueService<br/>Queue operations"]
+        TMGR["ITopicService<br/>Topic operations"]
     end
 
-    subgraph Infrastructure_Impl["⚙️ INFRASTRUCTURE<br/>IMPLEMENTATIONS"]
+    subgraph Infrastructure_Impl["⚙️ INFRASTRUCTURE IMPLEMENTATIONS"]
         direction TB
-        NSMGR_IMPL["<b>NamespaceService</b>"]
-        MSGMGR_IMPL["<b>MessageService</b>"]
-        QMGR_IMPL["<b>QueueService</b>"]
-        TMGR_IMPL["<b>TopicService</b>"]
-        SB_FACT["<b>ServiceBusClientFactory</b>"]
-        REPO["<b>INamespaceRepository</b>"]
-        REPO_IMPL["<b>InMemoryRepository</b>"]
+        NSMGR_IMPL["NamespaceService"]
+        MSGMGR_IMPL["MessageService"]
+        QMGR_IMPL["QueueService"]
+        TMGR_IMPL["TopicService"]
+        SB_FACT["ServiceBusClientFactory"]
+        REPO["INamespaceRepository"]
+        REPO_IMPL["InMemoryRepository"]
     end
 
     subgraph Security["🔒 SECURITY SERVICES"]
         direction TB
-        AUTH["<b>ConnectionStringProtector</b><br/>AES-GCM Encryption"]
-        APIKEY["<b>ApiKeyAuthMiddleware</b>"]
-        SECEADER["<b>SecurityHeadersMiddleware</b>"]
-        LOGGER_PROV["<b>RedactingLoggerProvider</b><br/>Log Redaction"]
+        AUTH["ConnectionStringProtector<br/>AES-GCM Encryption"]
+        APIKEY["ApiKeyAuthMiddleware"]
+        SECEADER["SecurityHeadersMiddleware"]
+        LOGGER_PROV["RedactingLoggerProvider<br/>Log Redaction"]
     end
 
     subgraph External_SDK["📦 EXTERNAL SDKs"]
         direction TB
-        SB_SDK["<b>Azure.Messaging.<br/>ServiceBus</b>"]
-        AZURE_ID["<b>Azure.Identity</b>"]
+        SB_SDK["Azure.Messaging.ServiceBus"]
+        AZURE_ID["Azure.Identity"]
     end
 
     CONFIG --> AUTH
@@ -181,7 +181,7 @@ graph LR
     OPTIONS --> SECEADER
     HTTP --> APIKEY
 
-    Services -->|<b>implemented by</b>| Infrastructure_Impl
+    Services -->|implemented by| Infrastructure_Impl
     NSMGR_IMPL --> SB_FACT
     NSMGR_IMPL --> REPO
     REPO --> REPO_IMPL
@@ -192,8 +192,8 @@ graph LR
     SB_FACT --> AZURE_ID
     NSMGR_IMPL --> AUTH
 
-    DI -.->|<b>provides</b>| Services
-    Infrastructure_Impl -.->|<b>uses</b>| DI
+    DI -.->|provides| Services
+    Infrastructure_Impl -.->|uses| DI
 
     style DI fill:#fff9c4,stroke:#f57f17,stroke-width:3px
     style Services fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
@@ -267,36 +267,36 @@ graph TD
 ## 5. Data Flow: Create Namespace to Access Messages
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'18px'}}}%%
+%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
 graph LR
     subgraph Client_Side["💻 CLIENT APPLICATION"]
-        REQ["<b>POST</b><br/>/api/v1/namespaces<br/>{connectionString, name}"]
+        REQ["POST /api/v1/namespaces<br/>connectionString, name"]
     end
 
-    subgraph Validation["✅ 1️⃣ VALIDATION LAYER"]
-        VAL["<b>ValidateModelAttribute</b><br/>Schema Validation"]
-        DECRYPT["<b>Decrypt Connection String</b><br/>AES-GCM"]
+    subgraph Validation["✅ STEP 1: VALIDATION LAYER"]
+        VAL["ValidateModelAttribute<br/>Schema Validation"]
+        DECRYPT["Decrypt Connection String<br/>AES-GCM"]
     end
 
-    subgraph Business_Logic["💼 2️⃣ BUSINESS LOGIC"]
-        NSMGR["<b>NamespaceService</b><br/>Create Namespace"]
-        FACT["<b>ServiceBusClientFactory</b><br/>Create Client"]
+    subgraph Business_Logic["💼 STEP 2: BUSINESS LOGIC"]
+        NSMGR["NamespaceService<br/>Create Namespace"]
+        FACT["ServiceBusClientFactory<br/>Create Client"]
     end
 
-    subgraph Storage["💾 3️⃣ DATA STORAGE"]
-        REPO["<b>InMemoryRepository</b><br/>Store Metadata"]
-        CACHE["<b>IServiceBusClientCache</b><br/>Cache Client Connection"]
+    subgraph Storage["💾 STEP 3: DATA STORAGE"]
+        REPO["InMemoryRepository<br/>Store Metadata"]
+        CACHE["IServiceBusClientCache<br/>Cache Client Connection"]
     end
 
-    subgraph Usage["🔍 4️⃣ USE NAMESPACE"]
-        GETMSG["<b>GET</b><br/>/api/v1/namespaces/:id/messages<br/>Fetch Messages"]
-        RETRIEVE["<b>ServiceBusReceiver</b><br/>Receive from Queue"]
+    subgraph Usage["🔍 STEP 4: USE NAMESPACE"]
+        GETMSG["GET /api/v1/namespaces/:id/messages<br/>Fetch Messages"]
+        RETRIEVE["ServiceBusReceiver<br/>Receive from Queue"]
     end
 
-    subgraph Response["📤 5️⃣ RESPONSE HANDLING"]
-        SERIALIZE["<b>Serialize Messages</b><br/>JSON Format"]
-        HEADERS["<b>Add Response Headers</b><br/>X-Total-Count, X-Page-Size"]
-        CACHE_HEADERS["<b>Add Cache Headers</b><br/>ETag, Last-Modified"]
+    subgraph Response["📤 STEP 5: RESPONSE HANDLING"]
+        SERIALIZE["Serialize Messages<br/>JSON Format"]
+        HEADERS["Add Response Headers<br/>X-Total-Count, X-Page-Size"]
+        CACHE_HEADERS["Add Cache Headers<br/>ETag, Last-Modified"]
     end
 
     REQ --> VAL
@@ -305,12 +305,12 @@ graph LR
     NSMGR --> FACT
     FACT --> REPO
     REPO --> CACHE
-    CACHE -.->|"<b>Later Request</b>"| GETMSG
+    CACHE -.->|Later Request| GETMSG
     GETMSG --> RETRIEVE
     RETRIEVE --> SERIALIZE
     SERIALIZE --> HEADERS
     HEADERS --> CACHE_HEADERS
-    CACHE_HEADERS --> FinalResponse["✅ <b>HTTP 200 Response</b>"]
+    CACHE_HEADERS --> FinalResponse["✅ HTTP 200 Response"]
 
     style Client_Side fill:#e1f5fe,stroke:#01579b,stroke-width:3px
     style Validation fill:#fff9c4,stroke:#f57f17,stroke-width:3px
@@ -326,44 +326,44 @@ graph LR
 ## 6. Security Architecture - Defense in Depth
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'18px'}}}%%
+%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
 graph TB
     subgraph Encryption["🔒 ENCRYPTION LAYER"]
-        CONNSTR["<b>Connection String Protection</b><br/>AES-GCM-256"]
-        PRIVKEY["<b>Derive Key from Master</b><br/>SHA-256"]
-        NONCE["<b>Random Nonce (96-bit)</b><br/>Unique per value"]
-        TAG["<b>Auth Tag (128-bit)</b><br/>Tamper detection"]
+        CONNSTR["Connection String Protection<br/>AES-GCM-256"]
+        PRIVKEY["Derive Key from Master<br/>SHA-256"]
+        NONCE["Random Nonce (96-bit)<br/>Unique per value"]
+        TAG["Auth Tag (128-bit)<br/>Tamper detection"]
     end
 
     subgraph Authentication["🔑 AUTHENTICATION LAYER"]
-        APIKEY["<b>API Key Validation</b><br/>X-API-KEY Header"]
-        BYPASS["<b>Bypass for Health/Swagger</b><br/>Public endpoints"]
-        LOG_MASKING["<b>Log Masking</b><br/>Hide sensitive data"]
+        APIKEY["API Key Validation<br/>X-API-KEY Header"]
+        BYPASS["Bypass for Health/Swagger<br/>Public endpoints"]
+        LOG_MASKING["Log Masking<br/>Hide sensitive data"]
     end
 
     subgraph Transport["🔐 TRANSPORT LAYER"]
-        TLS["<b>TLS 1.2+</b><br/>Encrypted in transit"]
-        HSTS["<b>HSTS (31536000s)</b><br/>Force HTTPS"]
-        CERT["<b>Certificate Validation</b><br/>Azure Service Bus"]
+        TLS["TLS 1.2+<br/>Encrypted in transit"]
+        HSTS["HSTS (31536000s)<br/>Force HTTPS"]
+        CERT["Certificate Validation<br/>Azure Service Bus"]
     end
 
     subgraph Headers["🛡️ SECURITY HEADERS"]
-        CSP["<b>Content-Security-Policy</b><br/>Prevent XSS"]
-        FRAME["<b>X-Frame-Options: DENY</b><br/>Prevent Clickjacking"]
-        XCT["<b>X-Content-Type-Options</b><br/>nosniff"]
-        PERM["<b>Permissions-Policy</b><br/>Restrict features"]
+        CSP["Content-Security-Policy<br/>Prevent XSS"]
+        FRAME["X-Frame-Options: DENY<br/>Prevent Clickjacking"]
+        XCT["X-Content-Type-Options<br/>nosniff"]
+        PERM["Permissions-Policy<br/>Restrict features"]
     end
 
     subgraph RateLimit["⏱️ RATE LIMITING"]
-        IP_LIMIT["<b>IP-based Limiting</b><br/>100 req/min"]
-        SLIDING["<b>Sliding Window</b><br/>Rolling 60s window"]
-        BACKOFF["<b>Exponential Backoff</b><br/>429 with Retry-After"]
+        IP_LIMIT["IP-based Limiting<br/>100 req/min"]
+        SLIDING["Sliding Window<br/>Rolling 60s window"]
+        BACKOFF["Exponential Backoff<br/>429 with Retry-After"]
     end
 
     subgraph Logging["📝 SECURE LOGGING"]
-        REDACT["<b>RedactingLoggerProvider</b><br/>Remove secrets"]
-        CORRELA["<b>Correlation IDs</b><br/>Request tracing"]
-        AUDIT["<b>Audit Trail</b><br/>Track all actions"]
+        REDACT["RedactingLoggerProvider<br/>Remove secrets"]
+        CORRELA["Correlation IDs<br/>Request tracing"]
+        AUDIT["Audit Trail<br/>Track all actions"]
     end
 
     Encryption --> Authentication
@@ -385,35 +385,35 @@ graph TB
 ## 7. Middleware Pipeline Execution Order
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'17px'}}}%%
+%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
 graph TD
-    A["<b>Request Entry</b>"] --> B["<b>1. SecurityHeadersMiddleware</b><br/>Add Security Headers to Response<br/>Order: FIRST | Scope: ALL requests"]
+    A["Request Entry"] --> B["1. SecurityHeadersMiddleware<br/>Add Security Headers to Response<br/>Order: FIRST | Scope: ALL requests"]
     
-    B --> C["<b>2. ErrorHandlingMiddleware</b><br/>Wrap request in try-catch<br/>Order: SECOND | Scope: ALL requests"]
+    B --> C["2. ErrorHandlingMiddleware<br/>Wrap request in try-catch<br/>Order: SECOND | Scope: ALL requests"]
     
-    C --> D["<b>3. CorrelationIdMiddleware</b><br/>Generate/Extract CorrelationId<br/>Order: THIRD | Scope: ALL requests"]
+    C --> D["3. CorrelationIdMiddleware<br/>Generate/Extract CorrelationId<br/>Order: THIRD | Scope: ALL requests"]
     
-    D --> E["<b>4. RequestLoggingMiddleware</b><br/>Log incoming request<br/>Order: FOURTH | Scope: ALL requests"]
+    D --> E["4. RequestLoggingMiddleware<br/>Log incoming request<br/>Order: FOURTH | Scope: ALL requests"]
     
-    E --> F["<b>5. ApiKeyAuthMiddleware</b><br/>Validate X-API-KEY header<br/>Order: FIFTH | Scope: ALL (except /health, /swagger)"]
+    E --> F["5. ApiKeyAuthMiddleware<br/>Validate X-API-KEY header<br/>Order: FIFTH | Scope: ALL (except /health, /swagger)"]
     
-    F --> G["<b>6. RateLimitingMiddleware</b><br/>Check rate limit per IP<br/>Order: SIXTH | Scope: PRODUCTION only"]
+    F --> G["6. RateLimitingMiddleware<br/>Check rate limit per IP<br/>Order: SIXTH | Scope: PRODUCTION only"]
     
-    G --> H["<b>7. CompressionMiddleware</b><br/>Enable gzip/brotli<br/>Order: SEVENTH | Scope: ALL responses"]
+    G --> H["7. CompressionMiddleware<br/>Enable gzip/brotli<br/>Order: SEVENTH | Scope: ALL responses"]
     
-    H --> I["<b>8. CorsMiddleware</b><br/>Apply CORS policy<br/>Order: EIGHTH | Scope: ALL cross-origin"]
+    H --> I["8. CorsMiddleware<br/>Apply CORS policy<br/>Order: EIGHTH | Scope: ALL cross-origin"]
     
-    I --> J["<b>9. SwaggerMiddleware</b><br/>Serve API docs<br/>Order: NINTH | Scope: /swagger only"]
+    I --> J["9. SwaggerMiddleware<br/>Serve API docs<br/>Order: NINTH | Scope: /swagger only"]
     
-    J --> K["<b>10. RoutingMiddleware</b><br/>Match route & select controller<br/>Order: TENTH | Scope: ALL requests"]
+    J --> K["10. RoutingMiddleware<br/>Match route & select controller<br/>Order: TENTH | Scope: ALL requests"]
     
-    K --> L["<b>11. CachingMiddleware</b><br/>Apply caching headers<br/>Order: ELEVENTH | Scope: GET requests"]
+    K --> L["11. CachingMiddleware<br/>Apply caching headers<br/>Order: ELEVENTH | Scope: GET requests"]
     
-    L --> M["🎯 <b>CONTROLLER & ACTION</b><br/>Process business logic"]
+    L --> M["🎯 CONTROLLER & ACTION<br/>Process business logic"]
     
-    M -.->|"<b>Response flows back through<br/>middleware in REVERSE order</b>"| N["<b>Response Header Assembly</b><br/>All middleware add response headers"]
+    M -.->|"Response flows back through<br/>middleware in REVERSE order"| N["Response Header Assembly<br/>All middleware add response headers"]
     
-    N --> O["🎁 <b>HTTP Response to Client</b>"]
+    N --> O["🎁 HTTP Response to Client"]
 
     style A fill:#e3f2fd,stroke:#1565c0,stroke-width:3px
     style B fill:#ffccbc,stroke:#d84315,stroke-width:3px
@@ -437,7 +437,7 @@ graph TD
 ## 8. Entity Relationship & Domain Model
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'17px'}}}%%
+%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
 erDiagram
     NAMESPACE ||--o{ QUEUE : "contains"
     NAMESPACE ||--o{ TOPIC : "contains"
@@ -507,19 +507,19 @@ erDiagram
 ## 9. Exception Handling Flow
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'17px'}}}%%
+%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
 graph TD
-    A["<b>Exception Occurs</b><br/>in Business Logic"] --> B{<b>Exception<br/>Type?</b>}
+    A["Exception Occurs<br/>in Business Logic"] --> B{Exception<br/>Type?}
     
-    B -->|<b>ValidationException</b>| C["❌ <b>400 Bad Request</b><br/>Client Error<br/>Input validation failed"]
-    B -->|<b>NotFoundException</b>| D["❌ <b>404 Not Found</b><br/>Resource doesn't exist"]
-    B -->|<b>UnauthorizedException</b>| E["❌ <b>401 Unauthorized</b><br/>Missing/Invalid credentials"]
-    B -->|<b>ForbiddenException</b>| F["❌ <b>403 Forbidden</b><br/>Insufficient permissions"]
-    B -->|<b>TimeoutException</b>| G["❌ <b>504 Gateway Timeout</b><br/>Operation timed out"]
-    B -->|<b>ServiceBusException</b>| H["❌ <b>503 Service Unavailable</b><br/>External service error"]
-    B -->|<b>Unexpected Exception</b>| I["❌ <b>500 Internal Server Error</b><br/>Unhandled exception"]
+    B -->|ValidationException| C["❌ 400 Bad Request<br/>Client Error<br/>Input validation failed"]
+    B -->|NotFoundException| D["❌ 404 Not Found<br/>Resource doesn't exist"]
+    B -->|UnauthorizedException| E["❌ 401 Unauthorized<br/>Missing/Invalid credentials"]
+    B -->|ForbiddenException| F["❌ 403 Forbidden<br/>Insufficient permissions"]
+    B -->|TimeoutException| G["❌ 504 Gateway Timeout<br/>Operation timed out"]
+    B -->|ServiceBusException| H["❌ 503 Service Unavailable<br/>External service error"]
+    B -->|Unexpected Exception| I["❌ 500 Internal Server Error<br/>Unhandled exception"]
     
-    C --> J["<b>Build ProblemDetails</b><br/>RFC 7231 Format"]
+    C --> J["Build ProblemDetails<br/>RFC 7231 Format"]
     D --> J
     E --> J
     F --> J
@@ -527,11 +527,11 @@ graph TD
     H --> J
     I --> J
     
-    J --> K["<b>Log Exception</b><br/>Full stack trace<br/>Correlation ID"]
-    K --> L["<b>Add Error Headers</b><br/>X-Error-Code<br/>X-Correlation-Id"]
-    L --> M["<b>Serialize JSON Response</b><br/>Include error details"]
-    M --> N["<b>Send Response</b><br/>Appropriate HTTP Status"]
-    N --> O["💻 <b>Client Receives</b><br/>Structured Error"]
+    J --> K["Log Exception<br/>Full stack trace<br/>Correlation ID"]
+    K --> L["Add Error Headers<br/>X-Error-Code<br/>X-Correlation-Id"]
+    L --> M["Serialize JSON Response<br/>Include error details"]
+    M --> N["Send Response<br/>Appropriate HTTP Status"]
+    N --> O["💻 Client Receives<br/>Structured Error"]
 
     style A fill:#ffcdd2,stroke:#c62828,stroke-width:3px
     style C fill:#ffcdd2,stroke:#c62828,stroke-width:3px
@@ -553,32 +553,32 @@ graph TD
 ## 10. Caching Strategy - In-Memory Cache Lifecycle
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'18px'}}}%%
+%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
 graph LR
     subgraph Request_Flow["🔄 CACHE LOOKUP FLOW"]
-        A["🔍 <b>Service Layer</b><br/>Needs Data"] --> B{<b>Cache<br/>Hit?</b>}
-        B -->|<b>Yes</b>| C["⚡ <b>Return from Cache</b><br/>~1-2ms"]
-        B -->|<b>No</b>| D["💾 <b>Fetch from</b><br/>Repository"]
-        D --> E["📦 <b>Store in Cache</b><br/>with TTL"]
-        E --> F["✅ <b>Return to Client</b>"]
+        A["🔍 Service Layer<br/>Needs Data"] --> B{Cache<br/>Hit?}
+        B -->|Yes| C["⚡ Return from Cache<br/>~1-2ms"]
+        B -->|No| D["💾 Fetch from<br/>Repository"]
+        D --> E["📦 Store in Cache<br/>with TTL"]
+        E --> F["✅ Return to Client"]
         C --> F
     end
 
     subgraph Cache_Types["📊 CACHE STRATEGY PER ENTITY"]
-        G["<b>ServiceBus Client</b><br/>Cache Duration: 60 min<br/>Strategy: LRU"]
-        H["<b>Namespace List</b><br/>Cache Duration: 5 min<br/>Strategy: TTL"]
-        I["<b>Queue Messages</b><br/>Cache Duration: 1 min<br/>Strategy: Event-driven"]
+        G["ServiceBus Client<br/>Cache Duration: 60 min<br/>Strategy: LRU"]
+        H["Namespace List<br/>Cache Duration: 5 min<br/>Strategy: TTL"]
+        I["Queue Messages<br/>Cache Duration: 1 min<br/>Strategy: Event-driven"]
     end
 
     subgraph Invalidation["🔄 CACHE INVALIDATION"]
-        J["<b>Manual Invalidation</b><br/>On Create/Update/Delete"]
-        K["<b>Time-based Invalidation</b><br/>TTL Expiration"]
-        L["<b>Event-driven Invalidation</b><br/>Service Bus Events"]
+        J["Manual Invalidation<br/>On Create/Update/Delete"]
+        K["Time-based Invalidation<br/>TTL Expiration"]
+        L["Event-driven Invalidation<br/>Service Bus Events"]
     end
 
     A --> G
-    B -.->|"<b>Cache Hit</b>"| H
-    B -.->|"<b>Cache Miss</b>"| I
+    B -.->|"Cache Hit"| H
+    B -.->|"Cache Miss"| I
     J --> K
     K --> L
     L --> A
@@ -593,39 +593,39 @@ graph LR
 ## 11. Configuration Hierarchy
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'17px'}}}%%
+%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
 graph TD
-    A["<b>Environment Variables</b><br/>Highest Priority"] -->|<b>Override</b>| B["<b>appsettings.Production.json</b>"]
-    B -->|<b>Override</b>| C["<b>appsettings.Staging.json</b>"]
-    C -->|<b>Override</b>| D["<b>appsettings.Development.json</b>"]
-    D -->|<b>Override</b>| E["<b>appsettings.json</b><br/>Base Configuration"]
+    A["Environment Variables<br/>Highest Priority"] -->|Override| B["appsettings.Production.json"]
+    B -->|Override| C["appsettings.Staging.json"]
+    C -->|Override| D["appsettings.Development.json"]
+    D -->|Override| E["appsettings.json<br/>Base Configuration"]
 
-    E --> F["<b>Logging Settings</b>"]
-    E --> G["<b>CORS Configuration</b>"]
-    E --> H["<b>Security Headers</b>"]
-    E --> I["<b>HTTP Headers Names</b>"]
-    E --> J["<b>Rate Limiting</b>"]
-    E --> K["<b>Service Bus Options</b>"]
+    E --> F["Logging Settings"]
+    E --> G["CORS Configuration"]
+    E --> H["Security Headers"]
+    E --> I["HTTP Headers Names"]
+    E --> J["Rate Limiting"]
+    E --> K["Service Bus Options"]
 
-    F --> L["<b>Log Level: Information</b>"]
-    F --> M["<b>Log Providers: Console, Debug</b>"]
+    F --> L["Log Level: Information"]
+    F --> M["Log Providers: Console, Debug"]
 
-    G --> N["<b>AllowedOrigins Array</b>"]
-    G --> O["<b>DevelopmentDefaults Array</b>"]
+    G --> N["AllowedOrigins Array"]
+    G --> O["DevelopmentDefaults Array"]
 
-    H --> P["<b>CSP Production Policy</b>"]
-    H --> Q["<b>CSP Development Policy</b>"]
-    H --> R["<b>HSTS max-age</b>"]
-    H --> S["<b>Permissions Policy</b>"]
+    H --> P["CSP Production Policy"]
+    H --> Q["CSP Development Policy"]
+    H --> R["HSTS max-age"]
+    H --> S["Permissions Policy"]
 
-    I --> T["<b>Header Names</b><br/>X-Correlation-Id<br/>X-RateLimit-*<br/>X-Total-Count<br/>X-Page-*"]
+    I --> T["Header Names<br/>X-Correlation-Id<br/>X-RateLimit-*<br/>X-Total-Count<br/>X-Page-*"]
 
-    J --> U["<b>Max Requests: 100</b>"]
-    J --> V["<b>Window Duration: 1 minute</b>"]
+    J --> U["Max Requests: 100"]
+    J --> V["Window Duration: 1 minute"]
 
-    K --> W["<b>Connection Cache: 60 min</b>"]
-    K --> X["<b>Max Concurrent: 10</b>"]
-    K --> Y["<b>Prefetch Count: 100</b>"]
+    K --> W["Connection Cache: 60 min"]
+    K --> X["Max Concurrent: 10"]
+    K --> Y["Prefetch Count: 100"]
 
     style A fill:#ffccbc,stroke:#d84315,stroke-width:3px
     style B fill:#fff9c4,stroke:#f57f17,stroke-width:3px
@@ -645,29 +645,29 @@ graph TD
 ## 12. Deployment Architecture
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'17px'}}}%%
+%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
 graph TB
     subgraph Development["🖥️ DEVELOPMENT ENVIRONMENT"]
-        DEV_API["<b>ServiceHub API</b><br/>localhost:5000<br/>Debug Mode"]
-        DEV_SB["<b>Local Service Bus</b><br/>Emulator or Dev Namespace"]
-        DEV_CONFIG["<b>appsettings.Development.json</b><br/>- Permissive CORS<br/>- Full CSP for Swagger<br/>- API Key: Optional"]
+        DEV_API["ServiceHub API<br/>localhost:5000<br/>Debug Mode"]
+        DEV_SB["Local Service Bus<br/>Emulator or Dev Namespace"]
+        DEV_CONFIG["appsettings.Development.json<br/>- Permissive CORS<br/>- Full CSP for Swagger<br/>- API Key: Optional"]
     end
 
     subgraph Staging["🧪 STAGING ENVIRONMENT"]
-        STAG_API["<b>ServiceHub API</b><br/>staging.api.servicehub.com<br/>Release Mode"]
-        STAG_SB["<b>Staging Namespace</b><br/>sb://servicehub-staging.servicebus.windows.net"]
-        STAG_CONFIG["<b>appsettings.Staging.json</b><br/>- Limited CORS<br/>- Production CSP<br/>- API Key: Required"]
-        STAG_CACHE["<b>Redis Cache</b><br/>Optional for performance"]
+        STAG_API["ServiceHub API<br/>staging.api.servicehub.com<br/>Release Mode"]
+        STAG_SB["Staging Namespace<br/>sb://servicehub-staging.servicebus.windows.net"]
+        STAG_CONFIG["appsettings.Staging.json<br/>- Limited CORS<br/>- Production CSP<br/>- API Key: Required"]
+        STAG_CACHE["Redis Cache<br/>Optional for performance"]
     end
 
     subgraph Production["🚀 PRODUCTION ENVIRONMENT"]
-        PROD_API["<b>ServiceHub API</b><br/>api.servicehub.com<br/>Release Mode<br/>HTTPS + HSTS"]
-        PROD_SB["<b>Production Namespace</b><br/>sb://servicehub-prod.servicebus.windows.net"]
-        PROD_CONFIG["<b>appsettings.Production.json</b><br/>- Restricted CORS<br/>- Strict CSP<br/>- API Key: Required + Rotation"]
-        PROD_CACHE["<b>Redis Cache Cluster</b><br/>High Availability"]
-        PROD_KV["<b>Azure Key Vault</b><br/>Encryption Keys<br/>Connection Strings"]
-        MONITOR["<b>Application Insights</b><br/>Monitoring & Logging"]
-        WAF["<b>Web Application Firewall</b><br/>DDoS Protection"]
+        PROD_API["ServiceHub API<br/>api.servicehub.com<br/>Release Mode<br/>HTTPS + HSTS"]
+        PROD_SB["Production Namespace<br/>sb://servicehub-prod.servicebus.windows.net"]
+        PROD_CONFIG["appsettings.Production.json<br/>- Restricted CORS<br/>- Strict CSP<br/>- API Key: Required + Rotation"]
+        PROD_CACHE["Redis Cache Cluster<br/>High Availability"]
+        PROD_KV["Azure Key Vault<br/>Encryption Keys<br/>Connection Strings"]
+        MONITOR["Application Insights<br/>Monitoring & Logging"]
+        WAF["Web Application Firewall<br/>DDoS Protection"]
     end
 
     DEV_API --> DEV_SB
