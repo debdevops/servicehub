@@ -15,7 +15,7 @@ This document provides deep architectural insights through diagrams and detailed
 ## 1. Architecture Overview - Layered Design Diagram
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px', 'fontFamily':'arial'}}}%%
+%%{init: {'theme':'dark', 'themeVariables': { 'fontSize':'24px', 'primaryTextColor':'#ffffff', 'fontFamily':'arial', 'lineColor':'#ffffff'}}}%%
 graph TB
     subgraph Presentation["🎨 PRESENTATION LAYER"]
         REST["REST API Endpoints"]
@@ -23,20 +23,20 @@ graph TB
         HEALTH["Health Checks"]
     end
 
-    subgraph API["🔌 API LAYER<br/>ServiceHub.Api"]
+    subgraph API["🔌 API LAYER ServiceHub.Api"]
         CTRL["Controllers"]
         FILTER["Filters and Validators"]
         MIDDLEWARE["Middleware Pipeline"]
         EXT["Extensions and Config"]
     end
 
-    subgraph Core["💼 CORE LAYER<br/>ServiceHub.Core"]
+    subgraph Core["💼 CORE LAYER ServiceHub.Core"]
         ENTITY["Domain Entities"]
         INTERFACE["Service Interfaces"]
         RESULT["Result Types"]
     end
 
-    subgraph Infrastructure["⚙️ INFRASTRUCTURE LAYER<br/>ServiceHub.Infrastructure"]
+    subgraph Infrastructure["⚙️ INFRASTRUCTURE LAYER ServiceHub.Infrastructure"]
         IMPL["Service Implementations"]
         SB["Azure Service Bus"]
         AI["AI Service"]
@@ -44,7 +44,7 @@ graph TB
         CRYPTO["Encryption"]
     end
 
-    subgraph Shared["🧩 SHARED LAYER<br/>ServiceHub.Shared"]
+    subgraph Shared["🧩 SHARED LAYER ServiceHub.Shared"]
         CONST["Constants"]
         HELPER["Helpers and Utilities"]
         MODEL["Data Models"]
@@ -77,12 +77,33 @@ graph TB
     AI --> AIAPI
     CRYPTO --> KV
 
-    style Presentation fill:#e1f5ff,stroke:#01579b,stroke-width:3px
-    style API fill:#f3e5f5,stroke:#4a148c,stroke-width:3px
-    style Core fill:#e8f5e9,stroke:#1b5e20,stroke-width:3px
-    style Infrastructure fill:#fff3e0,stroke:#e65100,stroke-width:3px
-    style Shared fill:#fce4ec,stroke:#880e4f,stroke-width:3px
-    style External fill:#f5f5f5,stroke:#212121,stroke-width:3px
+    style Presentation fill:#1565c0,stroke:#0d47a1,stroke-width:4px,color:#fff
+    style API fill:#7b1fa2,stroke:#4a148c,stroke-width:4px,color:#fff
+    style Core fill:#388e3c,stroke:#1b5e20,stroke-width:4px,color:#fff
+    style Infrastructure fill:#d84315,stroke:#bf360c,stroke-width:4px,color:#fff
+    style Shared fill:#c2185b,stroke:#880e4f,stroke-width:4px,color:#fff
+    style External fill:#424242,stroke:#212121,stroke-width:4px,color:#fff
+    style REST color:#fff
+    style SWAGGER color:#fff
+    style HEALTH color:#fff
+    style CTRL color:#fff
+    style FILTER color:#fff
+    style MIDDLEWARE color:#fff
+    style EXT color:#fff
+    style ENTITY color:#fff
+    style INTERFACE color:#fff
+    style RESULT color:#fff
+    style IMPL color:#fff
+    style SB color:#fff
+    style AI color:#fff
+    style REPO color:#fff
+    style CRYPTO color:#fff
+    style CONST color:#fff
+    style HELPER color:#fff
+    style MODEL color:#fff
+    style ASB color:#fff
+    style AIAPI color:#fff
+    style KV color:#fff
 ```
 
 ---
@@ -90,15 +111,15 @@ graph TB
 ## 2. Request/Response Sequential Flow
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
+%%{init: {'theme':'dark', 'themeVariables': { 'fontSize':'24px', 'primaryTextColor':'#ffffff'}}}}%%
 sequenceDiagram
     autonumber
     participant Client as 🌐 HTTP Client
-    participant Middleware as 🔧 Middleware<br/>Pipeline
+    participant Middleware as 🔧 Middleware Pipeline
     participant Controller as 🎯 Controller
-    participant Service as 💼 Service<br/>Layer
+    participant Service as 💼 Service Layer
     participant Repository as 💾 Repository
-    participant Cache as ⚡ In-Memory<br/>Cache
+    participant Cache as ⚡ In-Memory Cache
     participant Logger as 📝 Logger
 
     Client->>Middleware: HTTP Request
@@ -110,7 +131,7 @@ sequenceDiagram
     
     Service->>Cache: Check Cache
     alt Cache Hit
-        Cache-->>Service: Cached Result ⚡
+        Cache-->>Service: Cached Result
     else Cache Miss
         Service->>Repository: Fetch Data
         Repository-->>Service: Domain Entity
@@ -133,7 +154,7 @@ sequenceDiagram
 ## 3. Detailed Class & Dependency Injection Diagram
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
+%%{init: {'theme':'dark', 'themeVariables': { 'fontSize':'24px', 'primaryTextColor':'#ffffff'}}}%%
 graph LR
     subgraph DI["🔧 DEPENDENCY INJECTION CONTAINER"]
         direction TB
@@ -195,11 +216,11 @@ graph LR
     DI -.->|provides| Services
     Infrastructure_Impl -.->|uses| DI
 
-    style DI fill:#fff9c4,stroke:#f57f17,stroke-width:3px
-    style Services fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
-    style Infrastructure_Impl fill:#ffe0b2,stroke:#ef6c00,stroke-width:3px
-    style Security fill:#ffccbc,stroke:#d84315,stroke-width:3px
-    style External_SDK fill:#eceff1,stroke:#37474f,stroke-width:3px
+    style DI fill:#f57f17,stroke:#f57f17,stroke-width:3px,color:#fff
+    style Services fill:#1b5e20,stroke:#2e7d32,stroke-width:3px,color:#fff
+    style Infrastructure_Impl fill:#e65100,stroke:#bf360c,stroke-width:3px,color:#fff
+    style Security fill:#bf360c,stroke:#d84315,stroke-width:3px,color:#fff
+    style External_SDK fill:#37474f,stroke:#37474f,stroke-width:3px,color:#fff
 ```
 
 ---
@@ -244,22 +265,22 @@ graph TD
     Y --> Z["📤 Add Security Headers<br/>Send Response"]
     Z --> J
 
-    style A fill:#e3f2fd
-    style B fill:#ffccbc
-    style C fill:#ffccbc
-    style D fill:#c8e6c9
-    style E fill:#b2dfdb
-    style F fill:#ffccbc
-    style G fill:#fff9c4
+    style A fill:#0d47a1
+    style B fill:#bf360c
+    style C fill:#bf360c
+    style D fill:#1b5e20
+    style E fill:#004d40
+    style F fill:#bf360c
+    style G fill:#f57f17
     style H fill:#ffcdd2
-    style I fill:#ffccbc
-    style J fill:#e3f2fd
-    style K fill:#ffccbc
-    style L fill:#fff9c4
+    style I fill:#bf360c
+    style J fill:#0d47a1
+    style K fill:#bf360c
+    style L fill:#f57f17
     style M fill:#ffcdd2
-    style R fill:#bbdefb
-    style S fill:#c8e6c9
-    style T fill:#b2dfdb
+    style R fill:#0d47a1
+    style S fill:#1b5e20
+    style T fill:#004d40
 ```
 
 ---
@@ -267,7 +288,7 @@ graph TD
 ## 5. Data Flow: Create Namespace to Access Messages
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
+%%{init: {'theme':'dark', 'themeVariables': { 'fontSize':'24px', 'primaryTextColor':'#ffffff'}}}%%
 graph LR
     subgraph Client_Side["💻 CLIENT APPLICATION"]
         REQ["POST /api/v1/namespaces<br/>connectionString, name"]
@@ -312,13 +333,13 @@ graph LR
     HEADERS --> CACHE_HEADERS
     CACHE_HEADERS --> FinalResponse["✅ HTTP 200 Response"]
 
-    style Client_Side fill:#e1f5fe,stroke:#01579b,stroke-width:3px
-    style Validation fill:#fff9c4,stroke:#f57f17,stroke-width:3px
-    style Business_Logic fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
-    style Storage fill:#b2dfdb,stroke:#00695c,stroke-width:3px
-    style Usage fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
-    style Response fill:#b2dfdb,stroke:#00695c,stroke-width:3px
-    style FinalResponse fill:#a5d6a7,stroke:#1b5e20,stroke-width:3px
+    style Client_Side fill:#0d47a1,stroke:#01579b,stroke-width:3px,color:#fff
+    style Validation fill:#f57f17,stroke:#f57f17,stroke-width:3px,color:#fff
+    style Business_Logic fill:#1b5e20,stroke:#2e7d32,stroke-width:3px,color:#fff
+    style Storage fill:#004d40,stroke:#00695c,stroke-width:3px,color:#fff
+    style Usage fill:#1b5e20,stroke:#2e7d32,stroke-width:3px,color:#fff
+    style Response fill:#004d40,stroke:#00695c,stroke-width:3px,color:#fff
+    style FinalResponse fill:#a5d6a7,stroke:#1b5e20,stroke-width:3px,color:#fff
 ```
 
 ---
@@ -326,7 +347,7 @@ graph LR
 ## 6. Security Architecture - Defense in Depth
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
+%%{init: {'theme':'dark', 'themeVariables': { 'fontSize':'24px', 'primaryTextColor':'#ffffff'}}}%%
 graph TB
     subgraph Encryption["🔒 ENCRYPTION LAYER"]
         CONNSTR["Connection String Protection<br/>AES-GCM-256"]
@@ -372,12 +393,12 @@ graph TB
     Headers --> RateLimit
     RateLimit --> Logging
 
-    style Encryption fill:#ffccbc,stroke:#d84315,stroke-width:3px
-    style Authentication fill:#fff9c4,stroke:#f57f17,stroke-width:3px
-    style Transport fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
-    style Headers fill:#b2dfdb,stroke:#00695c,stroke-width:3px
-    style RateLimit fill:#f8bbd0,stroke:#c2185b,stroke-width:3px
-    style Logging fill:#bbdefb,stroke:#1976d2,stroke-width:3px
+    style Encryption fill:#bf360c,stroke:#d84315,stroke-width:3px,color:#fff
+    style Authentication fill:#f57f17,stroke:#f57f17,stroke-width:3px,color:#fff
+    style Transport fill:#1b5e20,stroke:#2e7d32,stroke-width:3px,color:#fff
+    style Headers fill:#004d40,stroke:#00695c,stroke-width:3px,color:#fff
+    style RateLimit fill:#f8bbd0,stroke:#c2185b,stroke-width:3px,color:#fff
+    style Logging fill:#0d47a1,stroke:#1976d2,stroke-width:3px,color:#fff
 ```
 
 ---
@@ -385,7 +406,7 @@ graph TB
 ## 7. Middleware Pipeline Execution Order
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
+%%{init: {'theme':'dark', 'themeVariables': { 'fontSize':'24px', 'primaryTextColor':'#ffffff'}}}%%
 graph TD
     A["Request Entry"] --> B["1. SecurityHeadersMiddleware<br/>Add Security Headers to Response<br/>Order: FIRST | Scope: ALL requests"]
     
@@ -415,21 +436,21 @@ graph TD
     
     N --> O["🎁 HTTP Response to Client"]
 
-    style A fill:#e3f2fd,stroke:#1565c0,stroke-width:3px
-    style B fill:#ffccbc,stroke:#d84315,stroke-width:3px
-    style C fill:#ffccbc,stroke:#d84315,stroke-width:3px
-    style D fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
-    style E fill:#b2dfdb,stroke:#00695c,stroke-width:3px
-    style F fill:#ffccbc,stroke:#d84315,stroke-width:3px
-    style G fill:#ffccbc,stroke:#d84315,stroke-width:3px
-    style H fill:#b2dfdb,stroke:#00695c,stroke-width:3px
-    style I fill:#b2dfdb,stroke:#00695c,stroke-width:3px
-    style J fill:#b2dfdb,stroke:#00695c,stroke-width:3px
-    style K fill:#b2dfdb,stroke:#00695c,stroke-width:3px
-    style L fill:#b2dfdb,stroke:#00695c,stroke-width:3px
-    style M fill:#bbdefb,stroke:#1976d2,stroke-width:3px
-    style N fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
-    style O fill:#e3f2fd,stroke:#1565c0,stroke-width:3px
+    style A fill:#0d47a1,stroke:#1565c0,stroke-width:3px,color:#fff
+    style B fill:#bf360c,stroke:#d84315,stroke-width:3px,color:#fff
+    style C fill:#bf360c,stroke:#d84315,stroke-width:3px,color:#fff
+    style D fill:#1b5e20,stroke:#2e7d32,stroke-width:3px,color:#fff
+    style E fill:#004d40,stroke:#00695c,stroke-width:3px,color:#fff
+    style F fill:#bf360c,stroke:#d84315,stroke-width:3px,color:#fff
+    style G fill:#bf360c,stroke:#d84315,stroke-width:3px,color:#fff
+    style H fill:#004d40,stroke:#00695c,stroke-width:3px,color:#fff
+    style I fill:#004d40,stroke:#00695c,stroke-width:3px,color:#fff
+    style J fill:#004d40,stroke:#00695c,stroke-width:3px,color:#fff
+    style K fill:#004d40,stroke:#00695c,stroke-width:3px,color:#fff
+    style L fill:#004d40,stroke:#00695c,stroke-width:3px,color:#fff
+    style M fill:#0d47a1,stroke:#1976d2,stroke-width:3px,color:#fff
+    style N fill:#1b5e20,stroke:#2e7d32,stroke-width:3px,color:#fff
+    style O fill:#0d47a1,stroke:#1565c0,stroke-width:3px,color:#fff
 ```
 
 ---
@@ -437,7 +458,7 @@ graph TD
 ## 8. Entity Relationship & Domain Model
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
+%%{init: {'theme':'dark', 'themeVariables': { 'fontSize':'24px', 'primaryTextColor':'#ffffff'}}}%%
 erDiagram
     NAMESPACE ||--o{ QUEUE : "contains"
     NAMESPACE ||--o{ TOPIC : "contains"
@@ -507,7 +528,7 @@ erDiagram
 ## 9. Exception Handling Flow
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
+%%{init: {'theme':'dark', 'themeVariables': { 'fontSize':'24px', 'primaryTextColor':'#ffffff'}}}%%
 graph TD
     A["Exception Occurs<br/>in Business Logic"] --> B{Exception<br/>Type?}
     
@@ -533,19 +554,19 @@ graph TD
     M --> N["Send Response<br/>Appropriate HTTP Status"]
     N --> O["💻 Client Receives<br/>Structured Error"]
 
-    style A fill:#ffcdd2,stroke:#c62828,stroke-width:3px
-    style C fill:#ffcdd2,stroke:#c62828,stroke-width:3px
-    style D fill:#ffcdd2,stroke:#c62828,stroke-width:3px
-    style E fill:#ffcdd2,stroke:#c62828,stroke-width:3px
-    style F fill:#ffcdd2,stroke:#c62828,stroke-width:3px
-    style G fill:#ffcdd2,stroke:#c62828,stroke-width:3px
-    style H fill:#ffcdd2,stroke:#c62828,stroke-width:3px
-    style I fill:#ffcdd2,stroke:#c62828,stroke-width:3px
-    style J fill:#fff9c4,stroke:#f57f17,stroke-width:3px
-    style K fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
-    style L fill:#b2dfdb,stroke:#00695c,stroke-width:3px
-    style M fill:#b2dfdb,stroke:#00695c,stroke-width:3px
-    style N fill:#e3f2fd,stroke:#1565c0,stroke-width:3px
+    style A fill:#ffcdd2,stroke:#c62828,stroke-width:3px,color:#fff
+    style C fill:#ffcdd2,stroke:#c62828,stroke-width:3px,color:#fff
+    style D fill:#ffcdd2,stroke:#c62828,stroke-width:3px,color:#fff
+    style E fill:#ffcdd2,stroke:#c62828,stroke-width:3px,color:#fff
+    style F fill:#ffcdd2,stroke:#c62828,stroke-width:3px,color:#fff
+    style G fill:#ffcdd2,stroke:#c62828,stroke-width:3px,color:#fff
+    style H fill:#ffcdd2,stroke:#c62828,stroke-width:3px,color:#fff
+    style I fill:#ffcdd2,stroke:#c62828,stroke-width:3px,color:#fff
+    style J fill:#f57f17,stroke:#f57f17,stroke-width:3px,color:#fff
+    style K fill:#1b5e20,stroke:#2e7d32,stroke-width:3px,color:#fff
+    style L fill:#004d40,stroke:#00695c,stroke-width:3px,color:#fff
+    style M fill:#004d40,stroke:#00695c,stroke-width:3px,color:#fff
+    style N fill:#0d47a1,stroke:#1565c0,stroke-width:3px,color:#fff
 ```
 
 ---
@@ -553,7 +574,7 @@ graph TD
 ## 10. Caching Strategy - In-Memory Cache Lifecycle
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
+%%{init: {'theme':'dark', 'themeVariables': { 'fontSize':'24px', 'primaryTextColor':'#ffffff'}}}%%
 graph LR
     subgraph Request_Flow["🔄 CACHE LOOKUP FLOW"]
         A["🔍 Service Layer<br/>Needs Data"] --> B{Cache<br/>Hit?}
@@ -583,9 +604,9 @@ graph LR
     K --> L
     L --> A
 
-    style Request_Flow fill:#b2dfdb,stroke:#00695c,stroke-width:3px
-    style Cache_Types fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
-    style Invalidation fill:#fff9c4,stroke:#f57f17,stroke-width:3px
+    style Request_Flow fill:#004d40,stroke:#00695c,stroke-width:3px,color:#fff
+    style Cache_Types fill:#1b5e20,stroke:#2e7d32,stroke-width:3px,color:#fff
+    style Invalidation fill:#f57f17,stroke:#f57f17,stroke-width:3px,color:#fff
 ```
 
 ---
@@ -593,7 +614,7 @@ graph LR
 ## 11. Configuration Hierarchy
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
+%%{init: {'theme':'dark', 'themeVariables': { 'fontSize':'24px', 'primaryTextColor':'#ffffff'}}}%%
 graph TD
     A["Environment Variables<br/>Highest Priority"] -->|Override| B["appsettings.Production.json"]
     B -->|Override| C["appsettings.Staging.json"]
@@ -627,17 +648,17 @@ graph TD
     K --> X["Max Concurrent: 10"]
     K --> Y["Prefetch Count: 100"]
 
-    style A fill:#ffccbc,stroke:#d84315,stroke-width:3px
-    style B fill:#fff9c4,stroke:#f57f17,stroke-width:3px
-    style C fill:#fff9c4,stroke:#f57f17,stroke-width:3px
-    style D fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
-    style E fill:#b2dfdb,stroke:#00695c,stroke-width:3px
-    style F fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    style G fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    style H fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    style I fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    style J fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    style K fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style A fill:#bf360c,stroke:#d84315,stroke-width:3px,color:#fff
+    style B fill:#f57f17,stroke:#f57f17,stroke-width:3px,color:#fff
+    style C fill:#f57f17,stroke:#f57f17,stroke-width:3px,color:#fff
+    style D fill:#1b5e20,stroke:#2e7d32,stroke-width:3px,color:#fff
+    style E fill:#004d40,stroke:#00695c,stroke-width:3px,color:#fff
+    style F fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px,color:#fff
+    style G fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px,color:#fff
+    style H fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px,color:#fff
+    style I fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px,color:#fff
+    style J fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px,color:#fff
+    style K fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px,color:#fff
 ```
 
 ---
@@ -645,7 +666,7 @@ graph TD
 ## 12. Deployment Architecture
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'22px'}}}%%
+%%{init: {'theme':'dark', 'themeVariables': { 'fontSize':'24px', 'primaryTextColor':'#ffffff'}}}%%
 graph TB
     subgraph Development["🖥️ DEVELOPMENT ENVIRONMENT"]
         DEV_API["ServiceHub API<br/>localhost:5000<br/>Debug Mode"]
@@ -684,9 +705,9 @@ graph TB
     PROD_API --> MONITOR
     WAF --> PROD_API
 
-    style Development fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px
-    style Staging fill:#fff9c4,stroke:#f57f17,stroke-width:3px
-    style Production fill:#ffccbc,stroke:#d84315,stroke-width:3px
+    style Development fill:#1b5e20,stroke:#2e7d32,stroke-width:3px,color:#fff
+    style Staging fill:#f57f17,stroke:#f57f17,stroke-width:3px,color:#fff
+    style Production fill:#bf360c,stroke:#d84315,stroke-width:3px,color:#fff
 ```
 
 ---
