@@ -1,4 +1,4 @@
-import { AlertTriangle, Info, ChevronRight } from 'lucide-react';
+import { AlertTriangle, Info, ChevronRight, HelpCircle } from 'lucide-react';
 import type { Message } from '@/lib/mockData';
 
 // ============================================================================
@@ -17,6 +17,29 @@ function PropertyRow({ label, value, mono = false }: { label: string; value: str
     </div>
   );
 }
+
+// ============================================================================
+// Severity Classification with Explanation
+// NOTE: This is ServiceHub's heuristic assessment, not Azure data
+// ============================================================================
+
+const SEVERITY_EXPLANATIONS = {
+  test: {
+    label: 'Test/Manual',
+    description: 'Classified as test because the dead-letter reason or source contains keywords like "test", "demo", "manual", or "servicehub".',
+    color: 'blue',
+  },
+  warning: {
+    label: 'Warning',
+    description: 'Classified as warning: this is a real dead-letter message with normal retry behavior (delivery count ≤ 5).',
+    color: 'amber',
+  },
+  critical: {
+    label: 'Critical',
+    description: 'Classified as critical because the delivery count exceeds 5, indicating persistent processing failures.',
+    color: 'red',
+  },
+} as const;
 
 // Determine severity based on message characteristics
 function getDLQSeverity(message: Message): 'test' | 'warning' | 'critical' {
@@ -80,11 +103,12 @@ function extractDLQDetails(message: Message): {
 
 export function PropertiesTab({ message }: PropertiesTabProps) {
   const dlqDetails = extractDLQDetails(message);
+  const severityInfo = dlqDetails ? SEVERITY_EXPLANATIONS[dlqDetails.severity] : null;
   
   return (
     <div className="p-4 space-y-4">
       {/* DLQ Information Panel - shown prominently at top */}
-      {dlqDetails && (
+      {dlqDetails && severityInfo && (
         <div className={`mb-4 rounded-lg overflow-hidden border-2 ${
           dlqDetails.severity === 'test' 
             ? 'bg-blue-50 border-blue-200' 
@@ -92,7 +116,7 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
             ? 'bg-red-50 border-red-300'
             : 'bg-amber-50 border-amber-300'
         }`}>
-          {/* Header */}
+          {/* Header with Severity Badge */}
           <div className={`px-4 py-3 border-b flex items-center gap-2 ${
             dlqDetails.severity === 'test'
               ? 'bg-blue-100 border-blue-200'
@@ -114,19 +138,30 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
                 ? 'text-red-800'
                 : 'text-amber-800'
             }`}>Dead-Letter Queue Message</span>
-            {dlqDetails.severity === 'test' && (
-              <span className="ml-auto text-xs px-2 py-1 bg-blue-200 text-blue-800 rounded-full font-medium">
-                Test/Manual
-              </span>
-            )}
+            
+            {/* Severity Badge with Tooltip */}
+            <span 
+              className={`ml-auto text-xs px-2 py-1 rounded-full font-medium cursor-help flex items-center gap-1 ${
+                dlqDetails.severity === 'test'
+                  ? 'bg-blue-200 text-blue-800'
+                  : dlqDetails.severity === 'critical'
+                  ? 'bg-red-200 text-red-800'
+                  : 'bg-amber-200 text-amber-800'
+              }`}
+              title={`ServiceHub Assessment: ${severityInfo.description}`}
+            >
+              {severityInfo.label}
+              <HelpCircle className="w-3 h-3 opacity-70" />
+            </span>
           </div>
           
           <div className="p-4 space-y-4">
             {/* Section 1: Azure Service Bus Properties (FACTS) */}
             <div>
-              <div className={`text-xs font-semibold uppercase tracking-wide mb-2 ${
+              <div className={`text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1 ${
                 dlqDetails.severity === 'test' ? 'text-blue-700' : dlqDetails.severity === 'critical' ? 'text-red-700' : 'text-amber-700'
               }`}>
+                <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[10px]">AZURE DATA</span>
                 Azure Service Bus Properties
               </div>
               <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
@@ -145,37 +180,34 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
               </div>
             </div>
             
-            {/* Section 2: ServiceHub Interpretation (INFERENCE) */}
-            <div>
-              <div className={`text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1 ${
-                dlqDetails.severity === 'test' ? 'text-blue-700' : dlqDetails.severity === 'critical' ? 'text-red-700' : 'text-amber-700'
-              }`}>
-                <Info className="w-3 h-3" /> ServiceHub Interpretation
+            {/* Visual Separator */}
+            <div className="border-t-2 border-dashed border-gray-300 my-4" />
+            
+            {/* Section 2: ServiceHub Interpretation (INFERENCE) - Clearly marked */}
+            <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+              <div className="text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1 text-gray-600">
+                <span className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded text-[10px]">ANALYSIS</span>
+                <Info className="w-3 h-3" /> 
+                ServiceHub Interpretation
+                <span className="ml-auto text-[10px] font-normal normal-case text-gray-400">
+                  (not Azure data)
+                </span>
               </div>
-              <div className={`text-sm italic p-3 rounded border ${
-                dlqDetails.severity === 'test'
-                  ? 'bg-blue-50 border-blue-200 text-blue-800'
-                  : dlqDetails.severity === 'critical'
-                  ? 'bg-red-50 border-red-200 text-red-800'
-                  : 'bg-amber-50 border-amber-200 text-amber-800'
-              }`}>
+              <div className="text-sm italic text-gray-700 leading-relaxed">
                 {dlqDetails.interpretation}
               </div>
             </div>
             
             {/* Section 3: Suggested Actions (GUIDANCE) */}
-            <details className="group" open={dlqDetails.severity !== 'test'}>
-              <summary className={`text-xs font-semibold uppercase tracking-wide cursor-pointer select-none list-none ${
-                dlqDetails.severity === 'test' ? 'text-blue-700' : dlqDetails.severity === 'critical' ? 'text-red-700' : 'text-amber-700'
-              }`}>
+            <details className="group bg-gray-50 rounded-lg border border-gray-200 overflow-hidden" open={dlqDetails.severity !== 'test'}>
+              <summary className="px-3 py-2 text-xs font-semibold uppercase tracking-wide cursor-pointer select-none list-none text-gray-600 bg-gray-100 hover:bg-gray-150">
                 <span className="inline-flex items-center gap-1">
                   <ChevronRight className="w-3 h-3 transition-transform group-open:rotate-90" />
+                  <span className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded text-[10px] mr-1">GUIDANCE</span>
                   Suggested Next Steps
                 </span>
               </summary>
-              <ul className={`mt-2 space-y-1.5 text-sm pl-4 ${
-                dlqDetails.severity === 'test' ? 'text-blue-800' : dlqDetails.severity === 'critical' ? 'text-red-800' : 'text-amber-800'
-              }`}>
+              <ul className="p-3 space-y-1.5 text-sm text-gray-700">
                 {dlqDetails.guidance.map((item, idx) => (
                   <li key={idx} className="flex items-start gap-2">
                     <span className="text-gray-400 mt-0.5">•</span>

@@ -28,7 +28,9 @@ export function useCreateNamespace() {
       toast.success('Namespace connected successfully');
     },
     onError: () => {
-      toast.error('Failed to connect namespace');
+      toast.error('Failed to connect namespace. Verify the connection string format and permissions.', {
+        duration: 5000,
+      });
     },
   });
 }
@@ -43,7 +45,9 @@ export function useDeleteNamespace() {
       toast.success('Namespace deleted');
     },
     onError: () => {
-      toast.error('Failed to delete namespace');
+      toast.error('Failed to delete namespace. The namespace may still be in use.', {
+        duration: 5000,
+      });
     },
   });
 }
@@ -55,11 +59,15 @@ export function useTestConnection() {
       if (data.isConnected) {
         toast.success(data.message || 'Connection successful');
       } else {
-        toast.error(data.message || 'Connection failed');
+        toast.error(data.message || 'Connection failed. Check if the Service Bus namespace is accessible.', {
+          duration: 5000,
+        });
       }
     },
     onError: () => {
-      toast.error('Failed to test connection');
+      toast.error('Failed to test connection. Ensure the API server is running.', {
+        duration: 5000,
+      });
     },
   });
 }

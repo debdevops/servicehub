@@ -190,16 +190,25 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
   return (
     <>
       <div className="flex items-center gap-3 p-4 border-t border-gray-200 bg-white">
-        <button
-          className="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition-colors disabled:bg-primary-300 disabled:cursor-not-allowed"
-          onClick={() => openConfirm('replay')}
-          disabled={replayMessage.isPending || !namespaceId || !isFromDeadLetter}
-          title={!isFromDeadLetter ? 'Replay is only available for dead-letter messages' : 'Replay message to main queue'}
-          aria-label="Replay message"
-        >
-          <Play size={16} />
-          {replayMessage.isPending ? 'Replaying...' : 'Replay'}
-        </button>
+        {/* Replay Button - Only enabled for dead-letter messages */}
+        <div className="flex items-center gap-2">
+          <button
+            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition-colors disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+            onClick={() => openConfirm('replay')}
+            disabled={replayMessage.isPending || !namespaceId || !isFromDeadLetter}
+            title={!isFromDeadLetter ? 'Replay is only available for dead-letter messages' : 'Replay message to main queue'}
+            aria-label="Replay message"
+          >
+            <Play size={16} />
+            {replayMessage.isPending ? 'Replaying...' : 'Replay'}
+          </button>
+          {/* Show explanation when Replay is disabled */}
+          {!isFromDeadLetter && (
+            <span className="text-xs text-gray-400 italic">
+              DLQ messages only
+            </span>
+          )}
+        </div>
         <button
           className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-lg font-medium transition-colors"
           onClick={handleCopyId}

@@ -166,15 +166,15 @@ export function MessageFAB({
     setTimeout(refreshAll, 500);
   };
 
-  // Get the help text for DLQ button
+  // Get the help text for DLQ button with explanation
   const getDLQHelpText = () => {
     if (!namespaceId) return 'Select a namespace first';
     if (entityType === 'topic') {
       if (!topicName || !subscriptionName) return 'Select a subscription first';
-      return `Move 3 msgs from ${subscriptionName}`;
+      return `Move up to 3 test msgs to DLQ`;
     }
     if (!queueName) return 'Select a queue first';
-    return `Move 3 msgs from ${queueName}`;
+    return `Move up to 3 test msgs to DLQ`;
   };
 
   return (
@@ -227,6 +227,7 @@ export function MessageFAB({
                 : 'bg-white hover:bg-red-50 border-gray-200 hover:border-red-300 hover:shadow-xl'
               }
             `}
+            title="For testing: moves up to 3 messages from the active queue to the dead-letter queue"
           >
             <div className={`p-2 rounded-lg transition-colors ${
               !hasValidEntity 
@@ -239,7 +240,7 @@ export function MessageFAB({
               <div className={`text-sm font-semibold ${!hasValidEntity ? 'text-gray-400' : 'text-gray-800'}`}>
                 {isDeadLettering ? 'Moving...' : 'Test DLQ'}
               </div>
-              <div className="text-xs text-gray-500 max-w-[180px] truncate">
+              <div className="text-xs text-gray-500 max-w-[180px]">
                 {getDLQHelpText()}
               </div>
             </div>

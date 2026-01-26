@@ -79,6 +79,7 @@ export function ConfirmDialog({
           <button
             onClick={onCancel}
             className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            autoFocus={isDanger} // Focus Cancel for danger dialogs to prevent accidental confirmation
           >
             {cancelLabel}
           </button>
@@ -89,7 +90,7 @@ export function ConfirmDialog({
                 ? 'bg-red-500 hover:bg-red-600'
                 : 'bg-primary-500 hover:bg-primary-600'
             }`}
-            autoFocus
+            autoFocus={!isDanger} // Only auto-focus confirm for non-danger dialogs
           >
             {confirmLabel}
           </button>
