@@ -69,7 +69,7 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor: Handle errors
+// Response interceptor: Handle errors with recovery guidance
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError<{ message?: string; errors?: Record<string, string[]> }>) => {
@@ -77,12 +77,14 @@ apiClient.interceptors.response.use(
     if (!error.response) {
       const errorKey = 'network-error';
       if (shouldShowError(errorKey)) {
-        toast.error('Network error. Check if API is running.');
+        toast.error('Network error. Check if API is running on localhost:5153.', {
+          duration: 5000,
+        });
       }
       return Promise.reject(error);
     }
 
-    // Handle specific status codes
+    // Handle specific status codes with recovery guidance
     const status = error.response.status;
     const url = error.config?.url || 'unknown';
     
@@ -90,14 +92,18 @@ apiClient.interceptors.response.use(
       case 401: {
         const errorKey = `${status}-${url}`;
         if (shouldShowError(errorKey)) {
-          toast.error('Unauthorized. Check your API key.');
+          toast.error('Unauthorized. Check your API key in settings or reconnect to the namespace.', {
+            duration: 5000,
+          });
         }
         break;
       }
       case 403: {
         const errorKey = `${status}-${url}`;
         if (shouldShowError(errorKey)) {
-          toast.error('Access denied.');
+          toast.error('Access denied. Verify your connection string has the required permissions.', {
+            duration: 5000,
+          });
         }
         break;
       }
@@ -117,7 +123,7 @@ apiClient.interceptors.response.use(
         if (validationErrors) {
           const errorKey = `${status}-validation`;
           if (shouldShowError(errorKey)) {
-            Object.values(validationErrors).flat().forEach(msg => toast.error(msg));
+            Object.values(validationErrors).flat().forEach(msg => toast.error(msg, { duration: 5000 }));
           }
         }
         break;
@@ -127,7 +133,9 @@ apiClient.interceptors.response.use(
       case 503: {
         const errorKey = `${status}-server`;
         if (shouldShowError(errorKey)) {
-          toast.error('Server error. Please try again later.');
+          toast.error('Server error. Try refreshing or restart the API server.', {
+            duration: 5000,
+          });
         }
         break;
       }

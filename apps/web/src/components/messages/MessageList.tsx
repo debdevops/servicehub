@@ -21,39 +21,52 @@ interface MessageListProps {
 
 // ============================================================================
 // Status Badge Component
+// ServiceHub Assessment: Status is derived from message state, not Azure data
+// - Success: Normal message (delivery count = 1)
+// - Warning: Message has been retried (delivery count > 1)
+// - Error: Message is in dead-letter queue
 // ============================================================================
 
 const STATUS_CONFIG = {
   success: {
     icon: CheckCircle,
-    label: 'Success',
+    label: 'Normal',
+    tooltip: 'ServiceHub Assessment: Message delivered normally (delivery count = 1)',
     bgColor: 'bg-green-100',
     textColor: 'text-green-700',
     iconColor: 'text-green-600',
   },
   warning: {
     icon: AlertTriangle,
-    label: 'Warning',
+    label: 'Retried',
+    tooltip: 'ServiceHub Assessment: Message has been retried (delivery count > 1)',
     bgColor: 'bg-amber-100',
     textColor: 'text-amber-700',
     iconColor: 'text-amber-600',
   },
   error: {
     icon: XCircle,
-    label: 'Error',
+    label: 'Dead-Letter',
+    tooltip: 'ServiceHub Assessment: Message is in the dead-letter queue',
     bgColor: 'bg-red-100',
     textColor: 'text-red-700',
     iconColor: 'text-red-600',
   },
 } as const;
 
-function StatusBadge({ status }: { status: Message['status'] }) {
+function StatusBadge({ status, deliveryCount }: { status: Message['status']; deliveryCount?: number }) {
   const config = STATUS_CONFIG[status];
   const Icon = config.icon;
+  
+  // Build detailed tooltip
+  const tooltip = deliveryCount !== undefined && status === 'warning'
+    ? `${config.tooltip} — Delivery count: ${deliveryCount}`
+    : config.tooltip;
 
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${config.bgColor} ${config.textColor}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${config.bgColor} ${config.textColor} cursor-help`}
+      title={tooltip}
     >
       <Icon size={12} className={config.iconColor} />
       {config.label}
@@ -105,7 +118,7 @@ function MessageCard({ message, isSelected, onClick }: MessageCardProps) {
 
       {/* Row 2: Status and AI Badge */}
       <div className="flex items-center gap-2 mb-2">
-        <StatusBadge status={message.status} />
+        <StatusBadge status={message.status} deliveryCount={message.deliveryCount} />
         {message.hasAIInsight && (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-primary-100 text-primary-700">
             <Bot size={12} />

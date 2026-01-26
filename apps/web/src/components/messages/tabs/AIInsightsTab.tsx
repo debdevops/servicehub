@@ -96,7 +96,7 @@ export function AIInsightsTab({ message, onViewPattern }: AIInsightsTabProps) {
   const queueName = searchParams.get('queue');
 
   // Fetch insights for this queue
-  const { data: insights, isLoading } = useInsights({
+  const { data: insights, isLoading, isError } = useInsights({
     namespaceId: namespaceId || '',
     queueOrTopicName: queueName || undefined,
     status: 'active',
@@ -121,15 +121,40 @@ export function AIInsightsTab({ message, onViewPattern }: AIInsightsTabProps) {
     );
   }
 
+  // Error state - AI insights not available
+  if (isError || !insights) {
+    return (
+      <div className="p-6">
+        <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+            <Sparkles size={32} className="text-gray-300" />
+          </div>
+          <p className="text-lg font-medium text-gray-700">AI Insights Not Available</p>
+          <p className="text-sm text-gray-400 mt-1 text-center max-w-sm">
+            AI pattern analysis is not enabled for this namespace, or the AI service is currently unavailable.
+          </p>
+          <p className="text-xs text-gray-400 mt-3 text-center">
+            The application works normally without AI features.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // Empty state when not part of any pattern
   if (memberPatterns.length === 0) {
     return (
       <div className="p-6">
         <div className="flex flex-col items-center justify-center py-16 text-gray-500">
-          <Sparkles size={48} className="text-gray-300 mb-4" />
+          <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mb-4">
+            <Sparkles size={32} className="text-green-400" />
+          </div>
           <p className="text-lg font-medium text-gray-700">No Patterns Detected</p>
           <p className="text-sm text-gray-400 mt-1 text-center max-w-sm">
             This message is not part of any AI-detected patterns. It appears to be processing normally.
+          </p>
+          <p className="text-xs text-gray-400 mt-3 text-center max-w-xs">
+            AI analysis found no anomalies or recurring issues associated with this message.
           </p>
         </div>
       </div>

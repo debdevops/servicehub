@@ -50,7 +50,9 @@ export function useDismissInsight() {
       toast.success('Insight dismissed');
     },
     onError: () => {
-      toast.error('Failed to dismiss insight');
+      toast.error('Failed to dismiss insight. AI insights may not be enabled for this namespace.', {
+        duration: 5000,
+      });
     },
   });
 }
@@ -66,7 +68,9 @@ export function useResolveInsight() {
       toast.success('Insight marked as resolved');
     },
     onError: () => {
-      toast.error('Failed to resolve insight');
+      toast.error('Failed to resolve insight. AI insights may not be enabled for this namespace.', {
+        duration: 5000,
+      });
     },
   });
 }
