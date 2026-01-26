@@ -202,6 +202,7 @@ public sealed class NamespacesController : ApiControllerBase
     /// <response code="200">Connection test completed.</response>
     /// <response code="404">Namespace not found.</response>
     [HttpGet("{id:guid}/test")]
+    [HttpPost("{id:guid}/test-connection")]
     [ProducesResponseType(typeof(ConnectionTestResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ConnectionTestResponse>> TestConnection(

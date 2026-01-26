@@ -52,7 +52,7 @@ export function useTestConnection() {
   return useMutation({
     mutationFn: (id: string) => namespacesApi.testConnection(id),
     onSuccess: (data) => {
-      if (data.success) {
+      if (data.isConnected) {
         toast.success(data.message || 'Connection successful');
       } else {
         toast.error(data.message || 'Connection failed');
