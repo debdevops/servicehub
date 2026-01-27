@@ -14,6 +14,7 @@ import {
   Trash2,
   Info,
 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues } from '@/hooks/useQueues';
 import { useTopics } from '@/hooks/useTopics';
@@ -93,6 +94,7 @@ export function MessageGeneratorModal({
 }: MessageGeneratorModalProps) {
   // Data fetching
   const { data: namespaces } = useNamespaces();
+  const queryClient = useQueryClient();
   const [selectedNamespace, setSelectedNamespace] = useState(defaultNamespaceId || '');
   const { data: queues } = useQueues(selectedNamespace);
   const { data: topics } = useTopics(selectedNamespace);
@@ -206,6 +208,16 @@ export function MessageGeneratorModal({
 
       // Dismiss loading toast
       toast.dismiss(toastId);
+
+      // Invalidate all queries to refresh UI immediately
+      if (successCount > 0) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' }),
+          queryClient.invalidateQueries({ queryKey: ['queues', selectedNamespace], refetchType: 'active' }),
+          queryClient.invalidateQueries({ queryKey: ['topics', selectedNamespace], refetchType: 'active' }),
+          queryClient.invalidateQueries({ queryKey: ['subscriptions', selectedNamespace], refetchType: 'active' }),
+        ]);
+      }
 
       // Show final result
       if (errorCount === 0) {
