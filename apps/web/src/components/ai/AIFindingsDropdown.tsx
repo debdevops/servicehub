@@ -1,4 +1,5 @@
 import { X } from 'lucide-react';
+import { useEffect } from 'react';
 import type { AIInsight } from '@/lib/api/types';
 
 // ============================================================================
@@ -27,6 +28,18 @@ const CONFIDENCE_COLORS: Record<string, string> = {
 
 export function AIFindingsDropdown({ insights, onClose, onViewEvidence }: AIFindingsDropdownProps) {
   const activeInsights = insights.filter((i) => i.status === 'active');
+
+  // Handle Escape key to close dropdown
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
 
   return (
     <>

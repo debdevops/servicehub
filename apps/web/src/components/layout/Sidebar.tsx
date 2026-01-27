@@ -115,6 +115,7 @@ function QueueItem({ queue, namespaceId }: QueueItemProps) {
               </span>
             )}
           </div>
+          {isExactMatch && console.debug(`[Sidebar] Queue "${queue.name}" badges: active=${queue.activeMessageCount}, dlq=${queue.deadLetterMessageCount}`)}
         </>
         );
       }}
@@ -133,17 +134,17 @@ function TopicItem({ topic, namespaceId }: TopicItemProps) {
     <div>
       <button
         onClick={() => setShowSubscriptions(!showSubscriptions)}
-        className="w-full flex items-center justify-between px-3 py-1.5 rounded text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+        className="w-full flex items-center justify-between px-3 py-1.5 rounded text-sm text-gray-600 hover:bg-gray-50 transition-colors"
       >
-        <span className="truncate flex items-center gap-1.5">
+        <span className="truncate flex items-center gap-1.5 text-gray-500">
           {showSubscriptions ? (
             <ChevronDown className="w-3 h-3 shrink-0" />
           ) : (
             <ChevronRight className="w-3 h-3 shrink-0" />
           )}
-          {topic.name}
+          <span className="text-gray-700">{topic.name}</span>
         </span>
-        <span className="px-1.5 py-0.5 bg-primary-100 text-primary-700 text-xs font-medium rounded shrink-0">
+        <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-xs font-medium rounded shrink-0">
           {topic.subscriptionCount}
         </span>
       </button>
@@ -218,6 +219,7 @@ function SubscriptionItem({ subscription, namespaceId, topicName }: Subscription
                 </span>
               )}
             </div>
+            {isExactMatch && console.debug(`[Sidebar] Subscription "${subscription.name}" in topic "${topicName}" badges: active=${subscription.activeMessageCount}, dlq=${subscription.deadLetterMessageCount}`)}
           </>
         );
       }}
@@ -239,7 +241,7 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
         onClick={() => setIsExpanded(!isExpanded)}
         className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-all ${
           namespace.isActive
-            ? 'bg-gradient-to-r from-primary-50 to-blue-50 border border-primary-200 hover:from-primary-100 hover:to-blue-100 shadow-sm'
+            ? 'bg-gray-50 border border-gray-200'
             : 'hover:bg-gray-50 border border-transparent'
         }`}
       >
@@ -250,8 +252,9 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
         )}
         <div
           className={`w-2 h-2 rounded-full shrink-0 ${
-            namespace.isActive ? 'bg-green-500' : 'bg-gray-300'
+            namespace.isActive ? 'bg-green-500' : 'bg-gray-200'
           }`}
+          title={namespace.isActive ? 'Active namespace' : 'Inactive namespace'}
         />
         <div className="flex-1 min-w-0">
           <div className="font-medium text-sm text-gray-900 truncate">

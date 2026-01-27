@@ -69,6 +69,18 @@ export function SendMessageModal({
     if (defaultQueueName) setEntity(defaultQueueName);
   }, [defaultNamespaceId, defaultQueueName]);
 
+  // Handle Escape key to close modal
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const addProperty = () => {
