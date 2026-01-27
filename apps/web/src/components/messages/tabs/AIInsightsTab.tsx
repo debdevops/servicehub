@@ -1,11 +1,18 @@
-import { Sparkles, AlertCircle } from 'lucide-react';
+import { Sparkles, AlertCircle, Info } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import type { Message } from '@/lib/mockData';
-import { useInsights } from '@/hooks/useInsights';
+import { useClientSideInsights } from '@/hooks/useInsights';
+import { useMessages } from '@/hooks/useMessages';
 import type { AIInsight } from '@/lib/api/types';
 
 // ============================================================================
 // AIInsightsTab - Shows AI pattern membership for selected message
+// 
+// TRUST GUARANTEES:
+// - All insights labeled as "ServiceHub Interpretation"
+// - AI never presents inference as fact
+// - Uncertainty explicitly stated
+// - Evidence (counts, IDs) always cited
 // ============================================================================
 
 interface AIInsightsTabProps {
@@ -94,13 +101,36 @@ export function AIInsightsTab({ message, onViewPattern }: AIInsightsTabProps) {
   const [searchParams] = useSearchParams();
   const namespaceId = searchParams.get('namespace');
   const queueName = searchParams.get('queue');
+  const topicName = searchParams.get('topic');
+  const subscriptionName = searchParams.get('subscription');
+  
+  // Determine entity name
+  const entityName = queueName || (topicName && subscriptionName ? `${topicName}/subscriptions/${subscriptionName}` : topicName) || '';
+  const entityType: 'queue' | 'topic' = topicName ? 'topic' : 'queue';
 
-  // Fetch insights for this queue
-  const { data: insights, isLoading, isError } = useInsights({
+  // Fetch messages for client-side AI analysis
+  const { data: messagesData, isLoading: messagesLoading } = useMessages({
     namespaceId: namespaceId || '',
-    queueOrTopicName: queueName || undefined,
-    status: 'active',
+    queueOrTopicName: entityName,
+    entityType,
+    queueType: message.queueType || 'active',
+    skip: 0,
+    take: 1000,
   });
+
+  // Perform client-side AI analysis
+  const { data: insights, isLoading: insightsLoading, isError } = useClientSideInsights(
+    messagesData?.items,
+    {
+      namespaceId: namespaceId || '',
+      entityName,
+      subscriptionName: subscriptionName || undefined,
+      entityType,
+    },
+    !!namespaceId && !!entityName && !messagesLoading
+  );
+
+  const isLoading = messagesLoading || insightsLoading;
 
   // Find patterns this message belongs to
   const memberPatterns = (insights || []).filter((insight) => {
@@ -163,6 +193,18 @@ export function AIInsightsTab({ message, onViewPattern }: AIInsightsTabProps) {
 
   return (
     <div className="p-6">
+      {/* Trust Disclaimer Banner */}
+      <div className="mb-4 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="flex items-start gap-2">
+          <Info size={14} className="text-blue-500 mt-0.5 shrink-0" />
+          <p className="text-xs text-blue-700">
+            <strong>ServiceHub Interpretation:</strong> These patterns are AI-assisted analysis 
+            based on message characteristics. They are not Azure Service Bus data. 
+            Always verify findings before taking action.
+          </p>
+        </div>
+      </div>
+
       {/* Header */}
       <div className="flex items-center gap-2 mb-4 text-sm text-gray-600">
         <AlertCircle size={16} className="text-primary-500" />

@@ -132,6 +132,9 @@ export function AIFindingsDropdown({ insights, onClose, onViewEvidence }: AIFind
             <p className="text-xs text-gray-500">
               💡 Click a pattern to filter messages and investigate
             </p>
+            <p className="text-xs text-gray-400 mt-1 italic">
+              ServiceHub Interpretation — AI-assisted patterns, not Azure data
+            </p>
           </div>
         )}
       </div>
