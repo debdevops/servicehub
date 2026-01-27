@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Bot, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/utils';
@@ -21,17 +21,15 @@ interface MessageListProps {
 
 // ============================================================================
 // Status Badge Component
-// ServiceHub Assessment: Status is derived from message state, not Azure data
-// - Success: Normal message (delivery count = 1)
-// - Warning: Message has been retried (delivery count > 1)
-// - Error: Message is in dead-letter queue
+// Azure Service Bus provides: delivery count, queue location (active/DLQ)
+// ServiceHub derives status badge from these facts for visual clarity
 // ============================================================================
 
 const STATUS_CONFIG = {
   success: {
     icon: CheckCircle,
     label: 'Normal',
-    tooltip: 'ServiceHub Assessment: Message delivered normally (delivery count = 1)',
+    tooltip: 'First delivery attempt (delivery count = 1)',
     bgColor: 'bg-green-100',
     textColor: 'text-green-700',
     iconColor: 'text-green-600',
@@ -39,7 +37,7 @@ const STATUS_CONFIG = {
   warning: {
     icon: AlertTriangle,
     label: 'Retried',
-    tooltip: 'ServiceHub Assessment: Message has been retried (delivery count > 1)',
+    tooltip: 'Message has been retried (delivery count > 1)',
     bgColor: 'bg-amber-100',
     textColor: 'text-amber-700',
     iconColor: 'text-amber-600',
@@ -47,7 +45,7 @@ const STATUS_CONFIG = {
   error: {
     icon: XCircle,
     label: 'Dead-Letter',
-    tooltip: 'ServiceHub Assessment: Message is in the dead-letter queue',
+    tooltip: 'Message is in the dead-letter queue',
     bgColor: 'bg-red-100',
     textColor: 'text-red-700',
     iconColor: 'text-red-600',
@@ -154,6 +152,36 @@ export function MessageList({
     () => messages.filter((m) => m.queueType === queueTab),
     [messages, queueTab]
   );
+
+  // Keyboard navigation: j/k or arrow keys to navigate messages
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't interfere with input fields
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if (!filteredMessages.length) return;
+      
+      const selectedIndex = filteredMessages.findIndex(m => m.id === selectedId);
+      let nextIndex = -1;
+
+      if (e.key === 'j' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        nextIndex = selectedIndex < filteredMessages.length - 1 ? selectedIndex + 1 : selectedIndex;
+      } else if (e.key === 'k' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        nextIndex = selectedIndex > 0 ? selectedIndex - 1 : selectedIndex;
+      }
+
+      if (nextIndex !== -1 && nextIndex !== selectedIndex) {
+        onSelectMessage(filteredMessages[nextIndex].id);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [filteredMessages, selectedId, onSelectMessage]);
 
   // Virtual list setup
   const virtualizer = useVirtualizer({

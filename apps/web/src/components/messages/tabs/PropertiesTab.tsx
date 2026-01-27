@@ -26,17 +26,17 @@ function PropertyRow({ label, value, mono = false }: { label: string; value: str
 const SEVERITY_EXPLANATIONS = {
   test: {
     label: 'Test/Manual',
-    description: 'Classified as test because the dead-letter reason or source contains keywords like "test", "demo", "manual", or "servicehub".',
-    color: 'blue',
+    description: 'This message was manually moved to DLQ for testing or inspection purposes. Not a production failure.',
+    color: 'gray',
   },
   warning: {
     label: 'Warning',
-    description: 'Classified as warning: this is a real dead-letter message with normal retry behavior (delivery count ≤ 5).',
+    description: 'Real dead-letter message with normal retry behavior (delivery count ≤ 5).',
     color: 'amber',
   },
   critical: {
     label: 'Critical',
-    description: 'Classified as critical because the delivery count exceeds 5, indicating persistent processing failures.',
+    description: 'Message failed 6+ delivery attempts - indicates persistent processing failure.',
     color: 'red',
   },
 } as const;
@@ -68,15 +68,31 @@ function extractDLQDetails(message: Message): {
   interpretation: string;
   guidance: string[];
   severity: 'test' | 'warning' | 'critical';
+  hasIncompleteData: boolean;
 } | null {
   const isDLQ = message.queueType === 'deadletter' || !!message.deadLetterReason;
   if (!isDLQ) return null;
   
-  const reason = message.deadLetterReason || 'Not specified';
-  const description = message.deadLetterSource || 'Not specified';
+  // Explicit null checks with defensive defaults
+  const rawReason = message.deadLetterReason?.trim();
+  const rawDescription = message.deadLetterSource?.trim();
+  
+  const reason = rawReason || 'Not provided by Azure Service Bus';
+  const description = rawDescription || 'Not provided by Azure Service Bus';
+  const hasIncompleteData = !rawReason || !rawDescription;
+  
   const severity = getDLQSeverity(message);
   let interpretation = '';
   const guidance: string[] = [];
+  
+  // Handle incomplete metadata first
+  if (hasIncompleteData) {
+    interpretation = 'Azure Service Bus did not provide complete dead-letter metadata. The message state information is incomplete.';
+    guidance.push('Check Azure Portal for additional message properties');
+    guidance.push('Verify Service Bus SDK version supports complete metadata');
+    guidance.push('Consider checking application logs for the original failure context');
+    return { reason, description, interpretation, guidance, severity: 'warning', hasIncompleteData };
+  }
   
   // Generate interpretation based on reason pattern
   if (severity === 'test') {
@@ -98,7 +114,7 @@ function extractDLQDetails(message: Message): {
     guidance.push('Check application logs for the original processing failure');
   }
   
-  return { reason, description, interpretation, guidance, severity };
+  return { reason, description, interpretation, guidance, severity, hasIncompleteData };
 }
 
 export function PropertiesTab({ message }: PropertiesTabProps) {
@@ -109,9 +125,21 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
     <div className="p-4 space-y-4">
       {/* DLQ Information Panel - shown prominently at top */}
       {dlqDetails && severityInfo && (
+        <>
+        {dlqDetails.hasIncompleteData && (
+          <div className="mb-3 rounded-lg border-2 border-yellow-300 bg-yellow-50 px-4 py-3">
+            <div className="flex items-center gap-2 text-yellow-800 text-sm font-medium">
+              <AlertTriangle className="w-4 h-4" />
+              <span>Incomplete Azure Data</span>
+            </div>
+            <p className="text-xs text-yellow-700 mt-1">
+              Azure Service Bus did not provide complete dead-letter metadata. Analysis may be limited.
+            </p>
+          </div>
+        )}
         <div className={`mb-4 rounded-lg overflow-hidden border-2 ${
           dlqDetails.severity === 'test' 
-            ? 'bg-blue-50 border-blue-200' 
+            ? 'bg-gray-50 border-gray-200' 
             : dlqDetails.severity === 'critical'
             ? 'bg-red-50 border-red-300'
             : 'bg-amber-50 border-amber-300'
@@ -119,21 +147,21 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
           {/* Header with Severity Badge */}
           <div className={`px-4 py-3 border-b flex items-center gap-2 ${
             dlqDetails.severity === 'test'
-              ? 'bg-blue-100 border-blue-200'
+              ? 'bg-gray-100 border-gray-200'
               : dlqDetails.severity === 'critical'
               ? 'bg-red-100 border-red-200'
               : 'bg-amber-100 border-amber-200'
           }`}>
             <AlertTriangle className={`w-5 h-5 ${
               dlqDetails.severity === 'test'
-                ? 'text-blue-600'
+                ? 'text-gray-500'
                 : dlqDetails.severity === 'critical'
                 ? 'text-red-600'
                 : 'text-amber-600'
             }`} />
             <span className={`font-semibold ${
               dlqDetails.severity === 'test'
-                ? 'text-blue-800'
+                ? 'text-gray-700'
                 : dlqDetails.severity === 'critical'
                 ? 'text-red-800'
                 : 'text-amber-800'
@@ -143,7 +171,7 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
             <span 
               className={`ml-auto text-xs px-2 py-1 rounded-full font-medium cursor-help flex items-center gap-1 ${
                 dlqDetails.severity === 'test'
-                  ? 'bg-blue-200 text-blue-800'
+                  ? 'bg-gray-200 text-gray-700'
                   : dlqDetails.severity === 'critical'
                   ? 'bg-red-200 text-red-800'
                   : 'bg-amber-200 text-amber-800'
@@ -158,11 +186,9 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
           <div className="p-4 space-y-4">
             {/* Section 1: Azure Service Bus Properties (FACTS) */}
             <div>
-              <div className={`text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1 ${
-                dlqDetails.severity === 'test' ? 'text-blue-700' : dlqDetails.severity === 'critical' ? 'text-red-700' : 'text-amber-700'
-              }`}>
-                <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[10px]">AZURE DATA</span>
-                Azure Service Bus Properties
+              <div className="text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1 text-gray-700">
+                <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[10px] font-bold">FACT</span>
+                Azure Service Bus Data
               </div>
               <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
                 <div>
@@ -186,14 +212,11 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
             {/* Section 2: ServiceHub Interpretation (INFERENCE) - Clearly marked */}
             <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
               <div className="text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1 text-gray-600">
-                <span className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded text-[10px]">ANALYSIS</span>
+                <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-bold">ASSESSMENT</span>
                 <Info className="w-3 h-3" /> 
                 ServiceHub Interpretation
-                <span className="ml-auto text-[10px] font-normal normal-case text-gray-400">
-                  (not Azure data)
-                </span>
               </div>
-              <div className="text-sm italic text-gray-700 leading-relaxed">
+              <div className="text-sm text-gray-700 leading-relaxed">
                 {dlqDetails.interpretation}
               </div>
             </div>
@@ -203,8 +226,8 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
               <summary className="px-3 py-2 text-xs font-semibold uppercase tracking-wide cursor-pointer select-none list-none text-gray-600 bg-gray-100 hover:bg-gray-150">
                 <span className="inline-flex items-center gap-1">
                   <ChevronRight className="w-3 h-3 transition-transform group-open:rotate-90" />
-                  <span className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded text-[10px] mr-1">GUIDANCE</span>
-                  Suggested Next Steps
+                  <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px] font-bold">GUIDANCE</span>
+                  Suggested Actions
                 </span>
               </summary>
               <ul className="p-3 space-y-1.5 text-sm text-gray-700">
@@ -218,6 +241,7 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
             </details>
           </div>
         </div>
+        </>
       )}
       
       {/* Detailed Properties */}
@@ -238,8 +262,15 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
         />
         <PropertyRow 
           label="Delivery Count" 
-          value={message.deliveryCount.toString()} 
+          value={`${message.deliveryCount} (current session)`} 
         />
+        <div className="py-2 px-3 bg-gray-50 rounded border-l-2 border-gray-300 my-2">
+          <p className="text-xs text-gray-600 leading-relaxed">
+            <span className="font-medium">Note:</span> Delivery count reflects attempts in the current session. 
+            This value resets when messages move between queues, sessions expire, or manual intervention occurs.
+            Total historical delivery attempts may be higher.
+          </p>
+        </div>
         <PropertyRow 
           label="Time To Live" 
           value={message.timeToLive} 

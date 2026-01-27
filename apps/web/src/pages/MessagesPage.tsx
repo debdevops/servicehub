@@ -1,12 +1,14 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Search, Filter, RefreshCw, Sparkles, X } from 'lucide-react';
+import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle } from 'lucide-react';
 import { MessageList, MessageDetailPanel, type QueueTab } from '@/components/messages';
 import { AIFindingsDropdown } from '@/components/ai';
 import { MessageListSkeleton } from '@/components/messages/MessageListSkeleton';
 import { useMessages } from '@/hooks/useMessages';
 import { useInsights, useInsightsSummary } from '@/hooks/useInsights';
+import { useQueues } from '@/hooks/useQueues';
+import { useSubscriptions } from '@/hooks/useSubscriptions';
 import type { Message } from '@/lib/mockData';
 import type { Message as APIMessage } from '@/lib/api/types';
 import toast from 'react-hot-toast';
@@ -19,7 +21,7 @@ function transformMessage(
 ): Message {
   // Use messageId as the primary identifier
   const id = apiMessage.messageId || `seq-${apiMessage.sequenceNumber}`;
-  const body = apiMessage.body || '';
+  const body = apiMessage.body;
   
   // Derive status from state
   let status: 'success' | 'warning' | 'error' = 'success';
@@ -33,14 +35,14 @@ function transformMessage(
     id,
     enqueuedTime: new Date(apiMessage.enqueuedTime),
     status,
-    preview: body.substring(0, 100),
+    preview: body ? body.substring(0, 100) : '[Body unavailable - may exceed size limit or API throttled]',
     contentType: (apiMessage.contentType || 'application/json') as any,
     deliveryCount: apiMessage.deliveryCount || 0,
     hasAIInsight: insightMessageIds.includes(id),
     sequenceNumber: apiMessage.sequenceNumber || 0,
     properties: apiMessage.applicationProperties || {},
     queueType,
-    body,
+    body: body || '', // Keep for compatibility but show unavailable in UI
     headers: {
       'Content-Type': apiMessage.contentType || 'application/json',
       ...(apiMessage.correlationId ? { 'Correlation-Id': apiMessage.correlationId } : {}),
@@ -83,6 +85,9 @@ export function MessagesPage() {
   // Queue tab: active or deadletter (sync with URL parameter)
   const [queueTab, setQueueTab] = useState<QueueTab>('active');
 
+  // Pagination constant
+  const BATCH_SIZE = 1000;
+
   // Sync queueTab with URL parameter on mount and when it changes
   useEffect(() => {
     if (queueTypeParam === 'deadletter') {
@@ -91,6 +96,11 @@ export function MessagesPage() {
       setQueueTab('active');
     }
   }, [queueTypeParam]);
+
+  // Clear selection when switching queues/topics to prevent stale detail panel
+  useEffect(() => {
+    setSelectedMessageId(null);
+  }, [namespaceId, queueName, topicName, subscriptionName]);
 
   // Fetch messages from API for current tab
   const { data: messagesData, isLoading, error, refetch } = useMessages({
@@ -102,24 +112,46 @@ export function MessagesPage() {
     take: 1000,
   });
 
-  // Fetch counts for both tabs (active and deadletter)
-  const { data: activeMessagesData } = useMessages({
-    namespaceId: namespaceId || '',
-    queueOrTopicName: entityName,
-    entityType,
-    queueType: 'active',
-    skip: 0,
-    take: 1, // Just get the count, not all messages
-  });
+  // Fetch authoritative counts from queue/subscription metadata
+  const { data: queuesData, refetch: refetchQueues } = useQueues(namespaceId || '');
+  const { data: subscriptionsData, refetch: refetchSubscriptions } = useSubscriptions(namespaceId || '', topicName || '');
 
-  const { data: dlqMessagesData } = useMessages({
-    namespaceId: namespaceId || '',
-    queueOrTopicName: entityName,
-    entityType,
-    queueType: 'deadletter',
-    skip: 0,
-    take: 1, // Just get the count, not all messages
-  });
+  // Force refresh metadata counts when entity changes
+  useEffect(() => {
+    if (entityType === 'queue' && namespaceId && queueName) {
+      refetchQueues();
+    } else if (entityType === 'topic' && namespaceId && topicName && subscriptionName) {
+      refetchSubscriptions();
+    }
+  }, [namespaceId, queueName, topicName, subscriptionName, entityType, refetchQueues, refetchSubscriptions]);
+
+  // Extract counts from authoritative metadata
+  const getMessageCounts = () => {
+    if (entityType === 'queue' && queueName) {
+      const queue = queuesData?.find(q => q.name === queueName);
+      // Debug log to identify any mismatches
+      if (queue) {
+        console.debug(`[MessagesPage] Queue "${queueName}" counts: active=${queue.activeMessageCount}, dlq=${queue.deadLetterMessageCount}`);
+      }
+      return {
+        active: queue?.activeMessageCount || 0,
+        deadletter: queue?.deadLetterMessageCount || 0,
+      };
+    } else if (entityType === 'topic' && subscriptionName && topicName) {
+      const subscription = subscriptionsData?.find(s => s.name === subscriptionName);
+      // Debug log to identify any mismatches
+      if (subscription) {
+        console.debug(`[MessagesPage] Subscription "${subscriptionName}" in topic "${topicName}" counts: active=${subscription.activeMessageCount}, dlq=${subscription.deadLetterMessageCount}`);
+      }
+      return {
+        active: subscription?.activeMessageCount || 0,
+        deadletter: subscription?.deadLetterMessageCount || 0,
+      };
+    }
+    return { active: 0, deadletter: 0 };
+  };
+
+  const messageCounts = getMessageCounts();
 
   // Fetch AI insights for this queue/topic
   const { data: insights } = useInsights({
@@ -197,6 +229,10 @@ export function MessagesPage() {
   // Active AI insights count from summary
   const activeInsightsCount = insightsSummary?.activeCount || 0;
 
+  // Check if we're showing a partial view due to batch limit
+  const totalMessagesInQueue = messagesData?.totalCount || 0;
+  const isPartialView = totalMessagesInQueue > messages.length && messages.length >= BATCH_SIZE;
+
   // Handle message selection
   const handleSelectMessage = (id: string) => {
     setSelectedMessageId(id);
@@ -206,6 +242,14 @@ export function MessagesPage() {
   const handleQueueTabChange = (tab: QueueTab) => {
     setQueueTab(tab);
     setSelectedMessageId(null); // Clear selection when switching tabs
+    
+    // Refresh counts when switching between active/dlq tabs
+    // This ensures the counts stay synchronized with actual queue state
+    if (entityType === 'queue') {
+      refetchQueues();
+    } else if (entityType === 'topic') {
+      refetchSubscriptions();
+    }
   };
 
   // Handle viewing evidence from AI pattern
@@ -401,6 +445,17 @@ export function MessagesPage() {
         </div>
       )}
 
+      {/* Partial View Warning */}
+      {isPartialView && !evidenceFilter && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+          <span className="text-xs text-amber-800">
+            <span className="font-semibold">Partial View:</span> Showing first {messages.length.toLocaleString()} of {totalMessagesInQueue.toLocaleString()} messages.
+            Older messages not loaded. Use search or refresh to view different messages.
+          </span>
+        </div>
+      )}
+
       {/* Split View: Message List + Detail Panel */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left: Message List */}
@@ -411,8 +466,8 @@ export function MessagesPage() {
           queueTab={queueTab}
           onQueueTabChange={handleQueueTabChange}
           activeCounts={{
-            active: activeMessagesData?.totalCount || 0,
-            deadletter: dlqMessagesData?.totalCount || 0,
+            active: messageCounts.active,
+            deadletter: messageCounts.deadletter,
           }}
         />
 

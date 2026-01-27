@@ -309,11 +309,29 @@ export function MessageDetailPanel({ message, onViewPattern }: MessageDetailPane
 
   const { title, subtitle } = extractMessageTitle(message);
   const isDLQ = message.queueType === 'deadletter' || !!message.deadLetterReason;
+  
+  // Get DLQ severity for appropriate styling
+  const getDLQSeverity = (msg: Message): 'test' | 'warning' | 'critical' => {
+    const reason = (msg.deadLetterReason || '').toLowerCase();
+    const description = (msg.deadLetterSource || '').toLowerCase();
+    if (reason.includes('test') || reason.includes('demo') || reason.includes('manual') ||
+        description.includes('servicehub') || description.includes('testing')) {
+      return 'test';
+    }
+    if (msg.deliveryCount > 5) {
+      return 'critical';
+    }
+    return 'warning';
+  };
+  
+  const dlqSeverity = isDLQ ? getDLQSeverity(message) : null;
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header */}
-      <div className={`shrink-0 px-6 py-4 border-b border-gray-200 ${isDLQ ? 'bg-red-50' : 'bg-white'}`}>
+      <div className={`shrink-0 px-6 py-4 border-b border-gray-200 ${
+        isDLQ && dlqSeverity === 'critical' ? 'bg-red-50' : 'bg-white'
+      }`}>
         <h2 className="text-xl font-semibold text-gray-900">
           {title}
         </h2>
@@ -321,12 +339,18 @@ export function MessageDetailPanel({ message, onViewPattern }: MessageDetailPane
           <p className="text-sm text-gray-500 mt-1 font-mono">{subtitle}</p>
         )}
         {isDLQ && (
-          <div className="mt-2 flex items-center gap-2 text-red-600">
-            <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 rounded text-xs font-medium">
+          <div className="mt-2 flex items-center gap-2">
+            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
+              dlqSeverity === 'test' 
+                ? 'bg-gray-100 text-gray-700' 
+                : dlqSeverity === 'critical'
+                ? 'bg-red-100 text-red-700'
+                : 'bg-amber-100 text-amber-700'
+            }`}>
               ⚠️ Dead-Letter Queue
             </span>
             {message.deadLetterReason && (
-              <span className="text-sm">{message.deadLetterReason}</span>
+              <span className="text-sm text-gray-600">{message.deadLetterReason}</span>
             )}
           </div>
         )}
