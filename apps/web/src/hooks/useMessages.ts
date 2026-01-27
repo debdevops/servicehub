@@ -21,7 +21,7 @@ export function useMessages(params: GetMessagesParams) {
     queryKey: ['messages', sanitizedParams],
     queryFn: () => messagesApi.list(sanitizedParams),
     enabled: !!sanitizedParams.namespaceId && !!sanitizedParams.queueOrTopicName,
-    staleTime: 10000, // Consider data stale after 10 seconds
+    staleTime: 2000, // Consider data stale after 2 seconds for near real-time updates
     retry: (failureCount, error: any) => {
       // Don't retry on 404 errors
       if (error?.response?.status === 404) return false;
@@ -57,8 +57,13 @@ export function useSendMessage() {
       message: any;
       entityType?: 'queue' | 'topic';
     }) => messagesApi.send(namespaceId, queueOrTopicName, message, entityType),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
+    onSuccess: async (_, variables) => {
+      // Invalidate and refetch ALL related queries for immediate UI update
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['queues', variables.namespaceId], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['subscriptions', variables.namespaceId], refetchType: 'active' }),
+      ]);
       toast.success('Message sent successfully');
     },
     onError: (error: any) => {
@@ -84,8 +89,14 @@ export function useReplayMessage() {
       subscriptionName?: string;
     }) => 
       messagesApi.replay(namespaceId, sequenceNumber, entityName, subscriptionName),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
+    onSuccess: async (_, variables) => {
+      // Invalidate and refetch ALL related queries for immediate UI update
+      // This includes both DLQ and active message lists + counts
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['queues', variables.namespaceId], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['subscriptions', variables.namespaceId], refetchType: 'active' }),
+      ]);
       toast.success('Message replayed successfully');
     },
     onError: (error: any) => {

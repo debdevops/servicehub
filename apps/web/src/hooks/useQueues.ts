@@ -10,7 +10,7 @@ export function useQueues(namespaceId: string) {
       return response.data;
     },
     enabled: !!namespaceId,
-    staleTime: 10000, // Consider data stale after 10 seconds
+    staleTime: 2000, // Consider data stale after 2 seconds for immediate count updates
     retry: (failureCount, error: any) => {
       // Don't retry on 404 errors
       if (error?.response?.status === 404) return false;

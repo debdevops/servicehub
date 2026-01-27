@@ -81,8 +81,7 @@ export function MessageFAB({
     onMessageSent?.(payload);
     setActiveModal(null);
     
-    // Auto-refresh after sending
-    setTimeout(refreshAll, 500);
+    // Cache invalidation now happens in useSendMessage hook - no delay needed
   };
 
   const handleOpenSend = () => {
@@ -146,8 +145,13 @@ export function MessageFAB({
       }
 
       if (result && result.deadLetteredCount > 0) {
-        // Refresh to show updated counts
-        setTimeout(refreshAll, 500);
+        // Refresh to show updated counts immediately with refetch
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' }),
+          queryClient.invalidateQueries({ queryKey: ['queues', namespaceId], refetchType: 'active' }),
+          queryClient.invalidateQueries({ queryKey: ['topics', namespaceId], refetchType: 'active' }),
+          queryClient.invalidateQueries({ queryKey: ['subscriptions', namespaceId], refetchType: 'active' }),
+        ]);
       } else if (result && result.deadLetteredCount === 0) {
         toast('No messages available to dead-letter', { icon: 'ℹ️' });
       }
@@ -162,8 +166,7 @@ export function MessageFAB({
 
   const handleGenerated = () => {
     onMessagesGenerated?.();
-    // Auto-refresh after generation
-    setTimeout(refreshAll, 500);
+    // Cache invalidation now happens in MessageGeneratorModal - no delay needed
   };
 
   // Get the help text for DLQ button with explanation
