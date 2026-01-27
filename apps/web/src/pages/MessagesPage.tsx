@@ -6,7 +6,7 @@ import { MessageList, MessageDetailPanel, type QueueTab } from '@/components/mes
 import { AIFindingsDropdown } from '@/components/ai';
 import { MessageListSkeleton } from '@/components/messages/MessageListSkeleton';
 import { useMessages } from '@/hooks/useMessages';
-import { useInsights, useInsightsSummary } from '@/hooks/useInsights';
+import { useClientSideInsights, useInsightsSummary } from '@/hooks/useInsights';
 import { useQueues } from '@/hooks/useQueues';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import type { Message } from '@/lib/mockData';
@@ -153,14 +153,20 @@ export function MessagesPage() {
 
   const messageCounts = getMessageCounts();
 
-  // Fetch AI insights for this queue/topic
-  const { data: insights } = useInsights({
-    namespaceId: namespaceId || '',
-    queueOrTopicName: entityName || undefined,
-    status: 'active',
-  });
+  // Perform client-side AI analysis on loaded messages
+  // This provides AI insights even when backend AI service is unavailable
+  const { data: insights } = useClientSideInsights(
+    messagesData?.items,
+    {
+      namespaceId: namespaceId || '',
+      entityName: entityName,
+      subscriptionName: subscriptionName || undefined,
+      entityType,
+    },
+    !!namespaceId && !!entityName && !isLoading
+  );
 
-  // Fetch AI insights summary for badge
+  // Fetch AI insights summary for badge (from backend if available)
   const { data: insightsSummary } = useInsightsSummary(
     namespaceId || '',
     entityName || ''
@@ -226,8 +232,8 @@ export function MessagesPage() {
     return result;
   }, [messages, evidenceFilter, searchQuery, statusFilter]);
 
-  // Active AI insights count from summary
-  const activeInsightsCount = insightsSummary?.activeCount || 0;
+  // Active AI insights count - prefer client-side analysis, fallback to backend summary
+  const activeInsightsCount = insights?.length || insightsSummary?.activeCount || 0;
 
   // Check if we're showing a partial view due to batch limit
   const totalMessagesInQueue = messagesData?.totalCount || 0;
