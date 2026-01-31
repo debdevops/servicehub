@@ -152,6 +152,11 @@ public sealed class TopicsController : ApiControllerBase
         return Ok(topicResult.Value);
     }
 
+    /* WRITE OPERATION DISABLED - READ-ONLY MODE
+     * ServiceHub is designed as a read-only inspection tool.
+     * This endpoint is disabled to prevent accidental message injection.
+     * To re-enable, uncomment this block and ensure proper authorization.
+     *
     /// <summary>
     /// Sends a message to a topic.
     /// </summary>
@@ -204,6 +209,7 @@ public sealed class TopicsController : ApiControllerBase
         _logger.LogInformation("Message sent to topic {TopicName}", topicName);
         return Accepted();
     }
+    */
 
     /// <summary>
     /// Peeks messages from a topic subscription (active or dead-letter).
@@ -307,6 +313,11 @@ public sealed class TopicsController : ApiControllerBase
         return Ok(response);
     }
 
+    /* WRITE OPERATION DISABLED - READ-ONLY MODE
+     * ServiceHub is designed as a read-only inspection tool.
+     * Dead-lettering messages is a destructive operation that modifies subscription state.
+     * To re-enable for testing purposes, uncomment this block.
+     *
     /// <summary>
     /// Dead-letters messages from a topic subscription.
     /// Moves messages from the active queue to the dead-letter queue for testing purposes.
@@ -363,6 +374,7 @@ public sealed class TopicsController : ApiControllerBase
 
         return Ok(new DeadLetterResponse(result.Value, reason));
     }
+    */
 
     private static MessageResponse MapToResponse(ServiceHub.Core.Entities.Message message)
     {

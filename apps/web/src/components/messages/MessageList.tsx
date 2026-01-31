@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect } from 'react';
+import { useRef, useMemo, useEffect, useCallback, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Bot, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/utils';
@@ -73,7 +73,7 @@ function StatusBadge({ status, deliveryCount }: { status: Message['status']; del
 }
 
 // ============================================================================
-// Message Card Component
+// Message Card Component - Memoized for performance
 // ============================================================================
 
 interface MessageCardProps {
@@ -82,13 +82,14 @@ interface MessageCardProps {
   onClick: () => void;
 }
 
-function MessageCard({ message, isSelected, onClick }: MessageCardProps) {
+const MessageCard = memo(function MessageCard({ message, isSelected, onClick }: MessageCardProps) {
   // Safely handle message ID - it may not be a hyphenated UUID
-  const shortId = message.id 
-    ? (message.id.includes('-') 
-        ? message.id.split('-').slice(0, 2).join('-') 
-        : message.id.substring(0, 16))
-    : `#${message.sequenceNumber}`;
+  const shortId = useMemo(() => {
+    if (!message.id) return `#${message.sequenceNumber}`;
+    return message.id.includes('-') 
+      ? message.id.split('-').slice(0, 2).join('-') 
+      : message.id.substring(0, 16);
+  }, [message.id, message.sequenceNumber]);
 
   return (
     <div
@@ -131,7 +132,7 @@ function MessageCard({ message, isSelected, onClick }: MessageCardProps) {
       </p>
     </div>
   );
-}
+});
 
 // ============================================================================
 // Main MessageList Component
@@ -147,11 +148,18 @@ export function MessageList({
 }: MessageListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
-  // Filter messages by queue type
+  // Filter messages by queue type - memoized for performance
   const filteredMessages = useMemo(
     () => messages.filter((m) => m.queueType === queueTab),
     [messages, queueTab]
   );
+
+  // Memoized callback for selecting messages by index
+  const selectMessageByIndex = useCallback((index: number) => {
+    if (index >= 0 && index < filteredMessages.length) {
+      onSelectMessage(filteredMessages[index].id);
+    }
+  }, [filteredMessages, onSelectMessage]);
 
   // Keyboard navigation: j/k or arrow keys to navigate messages
   useEffect(() => {
@@ -175,13 +183,13 @@ export function MessageList({
       }
 
       if (nextIndex !== -1 && nextIndex !== selectedIndex) {
-        onSelectMessage(filteredMessages[nextIndex].id);
+        selectMessageByIndex(nextIndex);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [filteredMessages, selectedId, onSelectMessage]);
+  }, [filteredMessages, selectedId, selectMessageByIndex]);
 
   // Virtual list setup
   const virtualizer = useVirtualizer({

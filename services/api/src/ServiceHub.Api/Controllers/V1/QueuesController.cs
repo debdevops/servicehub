@@ -157,6 +157,11 @@ public sealed class QueuesController : ApiControllerBase
     /// </summary>
     /// <param name="namespaceId">The namespace ID.</param>
     /// <param name="queueName">The queue name.</param>
+    /* WRITE OPERATION DISABLED - READ-ONLY MODE
+     * ServiceHub is designed as a read-only inspection tool.
+     * This endpoint is disabled to prevent accidental message injection.
+     * To re-enable, uncomment this block and ensure proper authorization.
+     *
     /// <param name="request">The send message request.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>Accepted if successful.</returns>
@@ -204,6 +209,7 @@ public sealed class QueuesController : ApiControllerBase
         _logger.LogInformation("Message sent to queue {QueueName}", queueName);
         return Accepted();
     }
+    */
 
     /// <summary>
     /// Peeks messages from a queue (active or dead-letter).
@@ -304,6 +310,11 @@ public sealed class QueuesController : ApiControllerBase
         return Ok(response);
     }
 
+    /* WRITE OPERATION DISABLED - READ-ONLY MODE
+     * ServiceHub is designed as a read-only inspection tool.
+     * Dead-lettering messages is a destructive operation that modifies queue state.
+     * To re-enable for testing purposes, uncomment this block.
+     *
     /// <summary>
     /// Moves messages from a queue to its dead-letter queue for testing purposes.
     /// </summary>
@@ -355,6 +366,7 @@ public sealed class QueuesController : ApiControllerBase
 
         return Ok(new DeadLetterResponse(result.Value, reason));
     }
+    */
 
     private static MessageResponse MapToResponse(ServiceHub.Core.Entities.Message message)
     {
