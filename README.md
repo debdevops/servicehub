@@ -1,8 +1,8 @@
 # ServiceHub
 
-**AI-Powered Azure Service Bus Inspector & Intelligence Platform**
+**A Forensic Investigation Workbench for Azure Service Bus**
 
-> A Class-A enterprise-grade tool for debugging, monitoring, and analyzing Azure Service Bus queues and topics with dead-letter queue inspection, AI pattern detection, and message replay capabilities.
+> A Class-A enterprise-grade tool for forensic investigation of Azure Service Bus. Used during incident response for safe, point-in-time message browsing, dead-letter queue analysis, and controlled message replay.
 
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react)](https://react.dev/)
@@ -26,12 +26,12 @@ ServiceHub solves a critical problem for teams using Azure Service Bus: **visibi
 
 ### The Solution With ServiceHub
 
-✅ **Real-time visibility** into all messages  
+✅ **Point-in-time visibility** into all messages for stable investigation  
 ✅ **Dead-letter queue inspection** — see exactly what failed and why  
-✅ **AI-powered pattern detection** — automatically identify recurring issues  
-✅ **Read-only by design** — safe to use in production  
+✅ **Optional AI-powered analysis** — identify recurring issue patterns  
+✅ **Read-mostly by design** — safe for production forensics  
 ✅ **Outlook-style browsing** — designed for 4-8 hour debugging sessions  
-✅ **Message replay** — reprocess failed messages after fixes  
+✅ **Safe message replay** — reprocess failed messages with no risk of message loss  
 ✅ **Class-A quality** — enterprise-grade trust and clarity  
 
 ---
@@ -101,13 +101,14 @@ UI will be available at: **http://localhost:3000**
 
 1. Open **http://localhost:3000**
 2. Click **"Connect to Service Bus"**
-3. Enter your Azure Service Bus connection string:
+3. Create a Shared Access Policy with **Manage**, **Send**, and **Listen** permissions (do not use RootManageSharedAccessKey)
+4. Enter your Azure Service Bus connection string:
    ```
    Endpoint=sb://YOUR-NAMESPACE.servicebus.windows.net/;
-   SharedAccessKeyName=RootManageSharedAccessKey;
+   SharedAccessKeyName=ServiceHub-Policy;
    SharedAccessKey=YOUR-KEY
    ```
-4. Click **"Connect"**
+5. Click **"Connect"**
 
 You're ready to inspect your queues! 🎉
 
@@ -138,10 +139,10 @@ ServiceHub uses a **Clean Architecture** approach with clear separation of conce
 
 **Key Features:**
 
-- **Read-only by default** — Peek messages without removing them
+- **Read-mostly by design** — All browsing uses non-destructive peeks. Write actions (like Replay) are explicit and require user confirmation.
 - **Dead-letter queue support** — Inspect failed messages
-- **Message replay** — Send DLQ messages back to main queue
-- **AI pattern detection** — Optional ML-powered insights
+- **Safe message replay** — Send DLQ messages back to the main queue with an at-least-once guarantee.
+- **Optional AI analysis** — ML-powered insights that never block core workflows.
 - **Connection pooling** — Efficient client management
 - **Encryption** — Connection strings encrypted at rest
 
@@ -197,24 +198,31 @@ ServiceHub takes security seriously:
 - ✅ **AES-256 encryption** for connection strings at rest
 - ✅ **Azure Key Vault** integration for secrets
 - ✅ **No credential logging** — connection strings never appear in logs
-- ✅ **Read-only by default** — minimal Azure permissions required
+- ✅ **Dedicated policies** — use custom Shared Access Policies, not root keys
 
 ### API Security
 
 - ✅ **CORS protection** — Whitelist of allowed origins
 - ✅ **Rate limiting** — 100 requests/minute per IP
-- ✅ **Optional API keys** — Token-based authentication
+- ✅ **API Key Authentication** — Enabled by default in production environments.
 - ✅ **Input validation** — All requests validated
 
 ### Azure Permissions Required
 
-Minimum permissions needed in Azure Service Bus:
+ServiceHub requires a Shared Access Policy with **Manage**, **Send**, and **Listen** permissions for full functionality.
 
-- `Microsoft.ServiceBus/namespaces/read`
-- `Microsoft.ServiceBus/namespaces/queues/read`
-- `Microsoft.ServiceBus/namespaces/topics/read`
-- `Microsoft.ServiceBus/namespaces/queues/messages/read` (peek)
-- `Microsoft.ServiceBus/namespaces/queues/messages/send` (for replay)
+**To Create:**
+1. Azure Portal → Service Bus → Shared Access Policies → + Add
+2. Name: `ServiceHub-Policy`
+3. Check: ✅ Manage, ✅ Send, ✅ Listen
+4. Use the connection string from this policy (not RootManageSharedAccessKey)
+
+**What Each Permission Enables:**
+- **Listen**: Browse messages, view queue/topic metrics
+- **Send**: Replay messages from DLQ, create test DLQ messages
+- **Manage**: Full control (future features)
+
+See the **[Permissions Guide](docs/PERMISSIONS.md)** for detailed information about permission requirements.
 
 ---
 

@@ -8,6 +8,9 @@ export interface Namespace {
   isActive: boolean;
   createdAt: string;
   lastUsedAt?: string;
+  hasListenPermission?: boolean;
+  hasSendPermission?: boolean;
+  hasManagePermission?: boolean;
 }
 
 export interface CreateNamespaceRequest {

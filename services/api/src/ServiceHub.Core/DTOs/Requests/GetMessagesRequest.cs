@@ -26,7 +26,7 @@ public sealed record GetMessagesRequest(
     
     bool FromDeadLetter = false,
     
-    [Range(MinAllowedMessages, MaxAllowedMessages, ErrorMessage = "MaxMessages must be between 1 and 100")]
+    [Range(1, 100, ErrorMessage = "MaxMessages must be between 1 and 100")]
     int MaxMessages = 10,
     
     [Range(0, long.MaxValue, ErrorMessage = "FromSequenceNumber must be non-negative")]

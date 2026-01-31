@@ -48,11 +48,11 @@ export function ConnectPage() {
       return;
     }
 
-    // SECURITY: Reject RootManageSharedAccessKey - excessive permissions
+    // SECURITY: Reject RootManageSharedAccessKey - root keys should not be used
     if (connectionString.includes('RootManageSharedAccessKey')) {
       toast.error(
         'Connection strings using "RootManageSharedAccessKey" are not allowed. ' +
-        'Please create a Shared Access Policy with only "Listen" permission for security.',
+        'Please create a dedicated Shared Access Policy with "Manage", "Send", and "Listen" permissions for ServiceHub.',
         { duration: 8000 }
       );
       return;
@@ -69,11 +69,28 @@ export function ConnectPage() {
     }
 
     try {
-      await createNamespace.mutateAsync({
+      const createdNamespace = await createNamespace.mutateAsync({
         name: namespaceName,
         connectionString: connectionString.trim(),
         displayName: displayName.trim(),
       });
+      
+      // Check actual permissions returned by the backend
+      // The backend attempts to detect permissions from the SAS policy name, but this is not always accurate
+      // since Azure doesn't enforce naming conventions. We show a warning if permissions appear limited.
+      if (createdNamespace.hasManagePermission === false || createdNamespace.hasSendPermission === false) {
+        toast(
+          '⚠️ Limited permissions detected in your SAS policy. For full functionality (message replay, deadletter operations), ensure your policy has Manage, Send, and Listen permissions in Azure Portal.',
+          { 
+            duration: 10000,
+            style: {
+              background: '#fef3c7',
+              color: '#92400e',
+              border: '1px solid #fbbf24',
+            }
+          }
+        );
+      }
       
       // Reset form
       setDisplayName('');
@@ -210,10 +227,10 @@ export function ConnectPage() {
                     </button>
                   </div>
                   <p className="text-xs text-gray-500 mt-2">
-                    <span className="text-amber-600 font-medium">⚠️ Security:</span> Create a new Shared Access Policy with only <strong>"Listen"</strong> permission. 
-                    Go to Azure Portal → Service Bus → Shared access policies → + Add → Check only "Listen" → Copy connection string.
+                    <span className="text-amber-600 font-medium">⚠️ Security:</span> Create a new Shared Access Policy with <strong>"Manage"</strong>, <strong>"Send"</strong>, and <strong>"Listen"</strong> permissions. 
+                    Go to Azure Portal → Service Bus → Shared access policies → + Add → Check "Manage", "Send", and "Listen" → Copy connection string.
                     <br />
-                    <span className="text-red-500">Do not use RootManageSharedAccessKey</span> (it has excessive permissions).
+                    <span className="text-red-500">Do not use RootManageSharedAccessKey</span> (use a dedicated policy instead).
                   </p>
                 </div>
 

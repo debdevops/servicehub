@@ -57,8 +57,8 @@ function StatusBadge({ status, deliveryCount }: { status: Message['status']; del
   const Icon = config.icon;
   
   // Build detailed tooltip
-  const tooltip = deliveryCount !== undefined && status === 'warning'
-    ? `${config.tooltip} — Delivery count: ${deliveryCount}`
+  const tooltip = deliveryCount !== undefined && status !== 'success'
+    ? `ServiceHub Assessment: ${config.tooltip} — Delivery count: ${deliveryCount}`
     : config.tooltip;
 
   return (
