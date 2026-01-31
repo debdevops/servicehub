@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Trash2 } from 'lucide-react';
 import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@/hooks/useNamespaces';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import toast from 'react-hot-toast';
 
 /**
  * Connection Setup Page
@@ -12,7 +13,6 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 export function ConnectPage() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
-  const [connectionName, setConnectionName] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [connectionString, setConnectionString] = useState('');
   
@@ -27,22 +27,45 @@ export function ConnectPage() {
   const createNamespace = useCreateNamespace();
   const deleteNamespace = useDeleteNamespace();
 
+  const extractNamespaceFromConnectionString = (connString: string): string | null => {
+    try {
+      // Extract namespace from connection string Endpoint
+      // Format: Endpoint=sb://namespace-name.servicebus.windows.net/;...
+      const endpointMatch = connString.match(/Endpoint=sb:\/\/([^.]+)\.servicebus\./i);
+      if (endpointMatch && endpointMatch[1]) {
+        return endpointMatch[1];
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!connectionName.trim() || !connectionString.trim()) {
+    if (!displayName.trim() || !connectionString.trim()) {
+      return;
+    }
+
+    // Extract namespace from connection string
+    const namespaceName = extractNamespaceFromConnectionString(connectionString.trim());
+    
+    if (!namespaceName) {
+      toast.error('Could not extract namespace from connection string. Please verify the format.', {
+        duration: 5000,
+      });
       return;
     }
 
     try {
       await createNamespace.mutateAsync({
-        name: connectionName.trim(),
+        name: namespaceName,
         connectionString: connectionString.trim(),
-        displayName: displayName.trim() || undefined,
+        displayName: displayName.trim(),
       });
       
       // Reset form
-      setConnectionName('');
       setDisplayName('');
       setConnectionString('');
       setShowPassword(false);
@@ -142,31 +165,17 @@ export function ConnectPage() {
               <form onSubmit={handleConnect}>
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Connection Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={connectionName}
-                    onChange={(e) => setConnectionName(e.target.value)}
-                    placeholder="e.g., production-westus"
-                    required
-                    className="w-full px-4 py-2.5 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Unique identifier for this namespace</p>
-                </div>
-
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Display Name
+                    Display Name <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
                     placeholder="e.g., Production Service Bus"
+                    required
                     className="w-full px-4 py-2.5 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Friendly name for display</p>
+                  <p className="text-xs text-gray-500 mt-1">Friendly name for your Service Bus namespace</p>
                 </div>
 
                 <div className="mb-4">

@@ -27,9 +27,17 @@ export function useCreateNamespace() {
       queryClient.invalidateQueries({ queryKey: ['namespaces'] });
       toast.success('Namespace connected successfully');
     },
-    onError: () => {
-      toast.error('Failed to connect namespace. Verify the connection string format and permissions.', {
-        duration: 5000,
+    onError: (error: any) => {
+      // Extract the specific error message from the API response
+      const errorMessage = 
+        error?.response?.data?.detail || 
+        error?.response?.data?.message || 
+        error?.message || 
+        'Failed to connect namespace. Verify the connection string format and permissions.';
+      
+      console.error('Namespace creation error:', error);
+      toast.error(errorMessage, {
+        duration: 6000,
       });
     },
   });

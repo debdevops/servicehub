@@ -1,7 +1,7 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useDeferredValue } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle } from 'lucide-react';
+import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause } from 'lucide-react';
 import { MessageList, MessageDetailPanel, type QueueTab } from '@/components/messages';
 import { AIFindingsDropdown } from '@/components/ai';
 import { MessageListSkeleton } from '@/components/messages/MessageListSkeleton';
@@ -9,6 +9,7 @@ import { useMessages } from '@/hooks/useMessages';
 import { useClientSideInsights, useInsightsSummary } from '@/hooks/useInsights';
 import { useQueues } from '@/hooks/useQueues';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
+import { useNamespaces } from '@/hooks/useNamespaces';
 import type { Message } from '@/lib/mockData';
 import type { Message as APIMessage } from '@/lib/api/types';
 import toast from 'react-hot-toast';
@@ -67,7 +68,7 @@ function transformMessage(
  * - AI pattern detection with evidence filtering
  */
 export function MessagesPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const namespaceId = searchParams.get('namespace');
   const queueName = searchParams.get('queue');
@@ -79,11 +80,38 @@ export function MessagesPage() {
   const entityType: 'queue' | 'topic' = topicName ? 'topic' : 'queue';
   const entityName = queueName || (topicName && subscriptionName ? `${topicName}/subscriptions/${subscriptionName}` : topicName) || '';
 
+  // Fetch available namespaces to validate the current namespace ID
+  const { data: namespaces } = useNamespaces();
+
+  // Auto-fix invalid namespace ID by redirecting to the first available namespace
+  useEffect(() => {
+    if (namespaces && namespaces.length > 0 && namespaceId) {
+      const namespaceExists = namespaces.some(ns => ns.id === namespaceId);
+      if (!namespaceExists) {
+        // Namespace ID in URL is invalid (likely from previous API session with in-memory storage)
+        const firstNamespace = namespaces[0];
+        console.warn(`[MessagesPage] Invalid namespace ID "${namespaceId}" - redirecting to "${firstNamespace.id}"`);
+        
+        // Update URL with valid namespace ID while preserving other parameters
+        const newParams = new URLSearchParams(searchParams);
+        newParams.set('namespace', firstNamespace.id);
+        setSearchParams(newParams, { replace: true });
+        
+        toast.success(`Reconnected to ${firstNamespace.displayName || firstNamespace.name}`, {
+          duration: 3000,
+        });
+      }
+    }
+  }, [namespaces, namespaceId, searchParams, setSearchParams]);
+
   // Selected message for detail panel
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   
   // Queue tab: active or deadletter (sync with URL parameter)
   const [queueTab, setQueueTab] = useState<QueueTab>('active');
+
+  // Auto-refresh control
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
 
   // Pagination constant
   const BATCH_SIZE = 1000;
@@ -103,18 +131,19 @@ export function MessagesPage() {
   }, [namespaceId, queueName, topicName, subscriptionName]);
 
   // Fetch messages from API for current tab
-  const { data: messagesData, isLoading, error, refetch } = useMessages({
+  const { data: messagesData, isLoading, error, refetch, isFetching, dataUpdatedAt } = useMessages({
     namespaceId: namespaceId || '',
     queueOrTopicName: entityName,
     entityType,
     queueType: queueTab,
     skip: 0,
     take: 1000,
+    autoRefresh: autoRefreshEnabled,
   });
 
   // Fetch authoritative counts from queue/subscription metadata
-  const { data: queuesData, refetch: refetchQueues } = useQueues(namespaceId || '');
-  const { data: subscriptionsData, refetch: refetchSubscriptions } = useSubscriptions(namespaceId || '', topicName || '');
+  const { data: queuesData, refetch: refetchQueues } = useQueues(namespaceId || '', autoRefreshEnabled);
+  const { data: subscriptionsData, refetch: refetchSubscriptions } = useSubscriptions(namespaceId || '', topicName || '', autoRefreshEnabled);
 
   // Force refresh metadata counts when entity changes
   useEffect(() => {
@@ -175,8 +204,9 @@ export function MessagesPage() {
   // AI dropdown visibility
   const [showAIDropdown, setShowAIDropdown] = useState(false);
 
-  // Search functionality
-  const [searchQuery, setSearchQuery] = useState('');
+  // Search functionality with debouncing
+  const [searchInput, setSearchInput] = useState('');
+  const searchQuery = useDeferredValue(searchInput); // Debounce search
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'warning' | 'error'>('all');
 
@@ -249,6 +279,11 @@ export function MessagesPage() {
     setQueueTab(tab);
     setSelectedMessageId(null); // Clear selection when switching tabs
     
+    // Update URL to keep it in sync with tab state
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('queueType', tab);
+    setSearchParams(newParams, { replace: true });
+    
     // Refresh counts when switching between active/dlq tabs
     // This ensures the counts stay synchronized with actual queue state
     if (entityType === 'queue') {
@@ -279,6 +314,26 @@ export function MessagesPage() {
     queryClient.invalidateQueries({ queryKey: ['topics'] });
     queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
     toast.success('Messages refreshed');
+  };
+
+  // Toggle auto-refresh
+  const handleToggleAutoRefresh = () => {
+    setAutoRefreshEnabled(prev => {
+      const newState = !prev;
+      toast.success(newState ? '🔄 Auto-refresh enabled (7s)' : '⏸️ Auto-refresh paused', {
+        duration: 2000,
+      });
+      return newState;
+    });
+  };
+
+  // Format last updated time
+  const getLastUpdatedText = () => {
+    if (!dataUpdatedAt) return '';
+    const seconds = Math.floor((Date.now() - dataUpdatedAt) / 1000);
+    if (seconds < 5) return 'just now';
+    if (seconds < 60) return `${seconds}s ago`;
+    return `${Math.floor(seconds / 60)}m ago`;
   };
 
   // Loading state
@@ -339,13 +394,13 @@ export function MessagesPage() {
           <input
             type="text"
             placeholder="Search messages by ID, properties, or content..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 rounded-lg text-sm bg-white border border-gray-300 text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-all"
           />
-          {searchQuery && (
+          {searchInput && (
             <button
-              onClick={() => setSearchQuery('')}
+              onClick={() => setSearchInput('')}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
             >
               <X className="w-4 h-4" />
@@ -420,14 +475,44 @@ export function MessagesPage() {
           )}
         </div>
 
+        {/* Auto-refresh Toggle */}
+        <button 
+          onClick={handleToggleAutoRefresh}
+          className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm font-medium transition-colors ${
+            autoRefreshEnabled
+              ? 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100'
+              : 'border-gray-300 bg-gray-50 text-gray-600 hover:bg-gray-100'
+          }`}
+          aria-label={autoRefreshEnabled ? 'Pause auto-refresh' : 'Resume auto-refresh'}
+          title={autoRefreshEnabled ? 'Auto-refresh every 7 seconds' : 'Auto-refresh paused'}
+        >
+          {autoRefreshEnabled ? (
+            <>
+              <Pause className="w-4 h-4" />
+              <span className="hidden sm:inline">Auto: ON</span>
+            </>
+          ) : (
+            <>
+              <Play className="w-4 h-4" />
+              <span className="hidden sm:inline">Auto: OFF</span>
+            </>
+          )}
+        </button>
+
         {/* Refresh */}
         <button 
           onClick={handleRefresh}
-          className="flex items-center gap-2 px-3 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors"
+          className="flex items-center gap-2 px-3 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors relative"
           aria-label="Refresh message list"
+          disabled={isFetching && !isLoading}
         >
-          <RefreshCw className="w-4 h-4" />
-          Refresh
+          <RefreshCw className={`w-4 h-4 ${isFetching && !isLoading ? 'animate-spin' : ''}`} />
+          <span className="hidden sm:inline">Refresh</span>
+          {dataUpdatedAt && (
+            <span className="hidden md:inline text-xs opacity-75 ml-1">
+              ({getLastUpdatedText()})
+            </span>
+          )}
         </button>
       </div>
 

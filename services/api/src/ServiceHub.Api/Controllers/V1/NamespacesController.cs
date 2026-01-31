@@ -76,6 +76,30 @@ public sealed class NamespacesController : ApiControllerBase
             return ToActionResult<NamespaceResponse>(error);
         }
 
+        // Check for duplicate connection string (prevent same connection string with different display names)
+        if (request.AuthType == ConnectionAuthType.ConnectionString && !string.IsNullOrEmpty(request.ConnectionString))
+        {
+            var allNamespacesResult = await _namespaceRepository.GetAllAsync(cancellationToken);
+            if (allNamespacesResult.IsSuccess)
+            {
+                foreach (var existingNs in allNamespacesResult.Value)
+                {
+                    if (existingNs.ConnectionString is not null)
+                    {
+                        var unprotectResult = _connectionStringProtector.Unprotect(existingNs.ConnectionString);
+                        if (unprotectResult.IsSuccess && 
+                            string.Equals(unprotectResult.Value, request.ConnectionString, StringComparison.OrdinalIgnoreCase))
+                        {
+                            var error = Error.Conflict(
+                                ErrorCodes.Namespace.AlreadyExists,
+                                $"A namespace with this connection string already exists (Display Name: '{existingNs.DisplayName ?? existingNs.Name}'). Please use a different connection string.");
+                            return ToActionResult<NamespaceResponse>(error);
+                        }
+                    }
+                }
+            }
+        }
+
         // Create the namespace entity based on auth type
         Result<Namespace> createResult;
 
