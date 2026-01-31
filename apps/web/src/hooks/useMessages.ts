@@ -10,7 +10,7 @@ function sanitizeQueueName(name: string): string {
   return name.replace(/\/?\$deadletterqueue$/i, '');
 }
 
-export function useMessages(params: GetMessagesParams) {
+export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean }) {
   // Sanitize the queue/topic name
   const sanitizedParams = {
     ...params,
@@ -19,12 +19,27 @@ export function useMessages(params: GetMessagesParams) {
   
   return useQuery({
     queryKey: ['messages', sanitizedParams],
-    queryFn: () => messagesApi.list(sanitizedParams),
+    queryFn: async () => {
+      try {
+        return await messagesApi.list(sanitizedParams);
+      } catch (error: any) {
+        // For 404s, return empty result instead of throwing
+        // This prevents the query from getting stuck in loading state
+        if (error?.response?.status === 404) {
+          return { items: [], totalCount: 0, hasMore: false };
+        }
+        throw error;
+      }
+    },
     enabled: !!sanitizedParams.namespaceId && !!sanitizedParams.queueOrTopicName,
     staleTime: 2000, // Consider data stale after 2 seconds for near real-time updates
+    refetchInterval: params.autoRefresh !== false ? 7000 : false, // Auto-refresh every 7 seconds when enabled
+    refetchIntervalInBackground: false, // Don't refetch when tab is not visible
     retry: (failureCount, error: any) => {
-      // Don't retry on 404 errors
+      // Don't retry on 404 errors (entity not found)
       if (error?.response?.status === 404) return false;
+      // Don't retry on 401/403 (auth errors)
+      if (error?.response?.status === 401 || error?.response?.status === 403) return false;
       return failureCount < 2;
     },
     meta: {
