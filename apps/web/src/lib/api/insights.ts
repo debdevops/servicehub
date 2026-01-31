@@ -63,7 +63,7 @@ export const insightsApi = {
     } catch (error: any) {
       // Gracefully handle missing endpoint (404) or service unavailable (503)
       if (error?.response?.status === 404 || error?.response?.status === 503) {
-        console.debug('[AI] Backend insights service not available, using client-side analysis');
+        // Backend AI service not available, using client-side analysis
         return [];
       }
       throw error;
@@ -90,7 +90,6 @@ export const insightsApi = {
   dismiss: async (namespaceId: string, insightId: string): Promise<void> => {
     if (!BACKEND_AI_ENABLED) {
       // For client-side insights, dismissal is not persistent
-      console.debug('[AI] Client-side insight dismissed (not persistent):', insightId);
       return;
     }
     await apiClient.post(`/namespaces/${namespaceId}/insights/${insightId}/dismiss`);
@@ -102,7 +101,6 @@ export const insightsApi = {
   resolve: async (namespaceId: string, insightId: string): Promise<void> => {
     if (!BACKEND_AI_ENABLED) {
       // For client-side insights, resolution is not persistent
-      console.debug('[AI] Client-side insight resolved (not persistent):', insightId);
       return;
     }
     await apiClient.post(`/namespaces/${namespaceId}/insights/${insightId}/resolve`);

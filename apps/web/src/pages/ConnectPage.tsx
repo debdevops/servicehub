@@ -48,6 +48,16 @@ export function ConnectPage() {
       return;
     }
 
+    // SECURITY: Reject RootManageSharedAccessKey - excessive permissions
+    if (connectionString.includes('RootManageSharedAccessKey')) {
+      toast.error(
+        'Connection strings using "RootManageSharedAccessKey" are not allowed. ' +
+        'Please create a Shared Access Policy with only "Listen" permission for security.',
+        { duration: 8000 }
+      );
+      return;
+    }
+
     // Extract namespace from connection string
     const namespaceName = extractNamespaceFromConnectionString(connectionString.trim());
     
@@ -200,7 +210,10 @@ export function ConnectPage() {
                     </button>
                   </div>
                   <p className="text-xs text-gray-500 mt-2">
-                    From Azure Portal: Service Bus namespace → Shared access policies → RootManageSharedAccessKey → Copy connection string
+                    <span className="text-amber-600 font-medium">⚠️ Security:</span> Create a new Shared Access Policy with only <strong>"Listen"</strong> permission. 
+                    Go to Azure Portal → Service Bus → Shared access policies → + Add → Check only "Listen" → Copy connection string.
+                    <br />
+                    <span className="text-red-500">Do not use RootManageSharedAccessKey</span> (it has excessive permissions).
                   </p>
                 </div>
 

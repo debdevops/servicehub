@@ -41,6 +41,11 @@ public sealed class MessagesController : ApiControllerBase
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /* WRITE OPERATION DISABLED - READ-ONLY MODE
+     * ServiceHub is designed as a read-only inspection tool.
+     * These send endpoints are disabled to prevent accidental message injection.
+     * To re-enable, uncomment this block and ensure proper authorization.
+     *
     /// <summary>
     /// Sends a message to a queue.
     /// </summary>
@@ -144,6 +149,7 @@ public sealed class MessagesController : ApiControllerBase
         _logger.LogInformation("Message sent to topic {TopicName}", topicName);
         return Accepted();
     }
+    */
 
     /// <summary>
     /// Peeks messages from a queue without removing them.
@@ -387,6 +393,11 @@ public sealed class MessagesController : ApiControllerBase
             IsFromDeadLetter: message.IsFromDeadLetter);
     }
 
+    /* WRITE OPERATION DISABLED - READ-ONLY MODE
+     * ServiceHub is designed as a read-only inspection tool.
+     * Replay moves messages from DLQ back to main queue (write operation).
+     * To re-enable, uncomment this block and ensure proper authorization.
+     *
     [RequireScope(ApiKeyScopes.MessagesSend)]
     [HttpPost("replay")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
@@ -417,6 +428,7 @@ public sealed class MessagesController : ApiControllerBase
 
         return Accepted();
     }
+    */
 
     /* PURGE ENDPOINT DISABLED - Azure Service Bus Limitation
      * 

@@ -50,13 +50,22 @@ public static class CorsConfiguration
                     .WithExposedHeaders(headersOptions.GetExposedHeaders());
             });
 
-            // Permissive policy for development
-            options.AddPolicy("AllowAll", builder =>
+            // SECURITY: Development policy with explicit localhost origins only
+            // Never use AllowAnyOrigin() - it disables CSRF protection
+            options.AddPolicy("DevelopmentPolicy", builder =>
             {
                 builder
-                    .AllowAnyOrigin()
+                    .WithOrigins(
+                        "http://localhost:3000",
+                        "http://localhost:5173",
+                        "http://localhost:5174",
+                        "http://127.0.0.1:3000",
+                        "http://127.0.0.1:5173",
+                        "http://127.0.0.1:5174"
+                    )
                     .AllowAnyMethod()
                     .AllowAnyHeader()
+                    .AllowCredentials()
                     .WithExposedHeaders(headersOptions.GetExposedHeaders());
             });
         });
@@ -72,8 +81,9 @@ public static class CorsConfiguration
     /// <returns>The application builder for chaining.</returns>
     public static IApplicationBuilder UseCorsConfiguration(this IApplicationBuilder app, IHostEnvironment environment)
     {
-        // Use permissive policy in development
-        var policyName = environment.IsDevelopment() ? "AllowAll" : PolicyName;
+        // SECURITY: Use explicit localhost origins even in development
+        // Never use AllowAnyOrigin with credentials
+        var policyName = environment.IsDevelopment() ? "DevelopmentPolicy" : PolicyName;
         app.UseCors(policyName);
 
         return app;
