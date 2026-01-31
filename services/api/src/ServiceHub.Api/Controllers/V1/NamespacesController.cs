@@ -360,7 +360,10 @@ public sealed class NamespacesController : ApiControllerBase
             CreatedAt: ns.CreatedAt,
             ModifiedAt: ns.ModifiedAt,
             LastConnectionTestAt: ns.LastConnectionTestAt,
-            LastConnectionTestSucceeded: ns.LastConnectionTestSucceeded);
+            LastConnectionTestSucceeded: ns.LastConnectionTestSucceeded,
+            HasListenPermission: ns.HasListenPermission,
+            HasSendPermission: ns.HasSendPermission,
+            HasManagePermission: ns.HasManagePermission);
     }
 }
 

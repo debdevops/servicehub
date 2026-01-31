@@ -145,15 +145,15 @@ public sealed class ServiceBusClientFactory : IServiceBusClientFactory
                 "Connection string with 'SharedAccessKey' must also contain 'SharedAccessKeyName'."));
         }
 
-        // SECURITY: Reject RootManageSharedAccessKey - requires excessive permissions
-        // ServiceHub only needs Listen (peek) rights for read-only inspection
+        // SECURITY: Reject RootManageSharedAccessKey - use dedicated policies
+        // ServiceHub should use a dedicated policy with Manage, Send, and Listen permissions
         if (connectionString.Contains("RootManageSharedAccessKey", StringComparison.OrdinalIgnoreCase))
         {
             return Result.Failure(Error.Validation(
                 ErrorCodes.Namespace.ConnectionStringInvalid,
                 "Connection strings using 'RootManageSharedAccessKey' are not allowed. " +
-                "Please create a Shared Access Policy with only 'Listen' permission for read-only access, " +
-                "or 'Listen' + 'Send' for replay functionality. Using root keys is a security risk."));
+                "Please create a dedicated Shared Access Policy with 'Manage', 'Send', and 'Listen' permissions. " +
+                "Using root keys is a security risk and should be avoided."));
         }
 
         // Validate endpoint format

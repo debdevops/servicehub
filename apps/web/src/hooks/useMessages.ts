@@ -83,7 +83,9 @@ export function useSendMessage() {
     },
     onError: (error: any) => {
       const errorMsg = error?.response?.data?.message || error?.message || 'Failed to send message';
-      toast.error(errorMsg);
+      toast.error(errorMsg, {
+        duration: Infinity, // Force user to acknowledge critical failure
+      });
     },
   });
 }
@@ -123,7 +125,9 @@ export function useReplayMessage() {
         });
       } else {
         const errorMsg = error?.response?.data?.message || error?.message || 'Failed to replay message';
-        toast.error(errorMsg);
+        toast.error(errorMsg, {
+          duration: Infinity, // Force user to acknowledge critical failure
+        });
       }
     },
   });

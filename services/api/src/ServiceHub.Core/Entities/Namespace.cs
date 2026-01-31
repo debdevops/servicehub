@@ -81,6 +81,21 @@ public sealed class Namespace
     public bool? LastConnectionTestSucceeded { get; private set; }
 
     /// <summary>
+    /// Gets a value indicating whether the connection has Listen permission.
+    /// </summary>
+    public bool HasListenPermission { get; private set; }
+
+    /// <summary>
+    /// Gets a value indicating whether the connection has Send permission.
+    /// </summary>
+    public bool HasSendPermission { get; private set; }
+
+    /// <summary>
+    /// Gets a value indicating whether the connection has Manage permission.
+    /// </summary>
+    public bool HasManagePermission { get; private set; }
+
+    /// <summary>
     /// Private constructor to enforce factory method usage.
     /// </summary>
     private Namespace()
@@ -108,6 +123,9 @@ public sealed class Namespace
             return Result<Namespace>.Failure(validationResult.Errors);
         }
 
+        // Detect permissions from connection string
+        var permissions = DetectConnectionStringPermissions(connectionString);
+
         var ns = new Namespace
         {
             Id = Guid.NewGuid(),
@@ -117,7 +135,10 @@ public sealed class Namespace
             Description = description?.Trim(),
             AuthType = ConnectionAuthType.ConnectionString,
             IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = DateTimeOffset.UtcNow,
+            HasListenPermission = permissions.HasListen,
+            HasSendPermission = permissions.HasSend,
+            HasManagePermission = permissions.HasManage
         };
 
         return Result<Namespace>.Success(ns);
@@ -159,7 +180,11 @@ public sealed class Namespace
             Description = description?.Trim(),
             AuthType = authType,
             IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = DateTimeOffset.UtcNow,
+            // Managed identity typically has full permissions
+            HasListenPermission = true,
+            HasSendPermission = true,
+            HasManagePermission = true
         };
 
         return Result<Namespace>.Success(ns);
@@ -432,6 +457,41 @@ public sealed class Namespace
                       connectionString.Contains("SharedAccessSignature=", StringComparison.OrdinalIgnoreCase);
 
         return hasEndpoint && hasAuth;
+    }
+
+    /// <summary>
+    /// Detects permissions from the connection string based on SharedAccessKeyName.
+    /// NOTE: This is a best-effort detection based on naming conventions. Azure does not enforce
+    /// any naming pattern for SAS policies, so a policy with full permissions might be named anything.
+    /// We only flag as limited permissions if the key name explicitly indicates restricted access.
+    /// </summary>
+    private static (bool HasListen, bool HasSend, bool HasManage) DetectConnectionStringPermissions(string connectionString)
+    {
+        // Extract SharedAccessKeyName to infer permissions
+        var match = System.Text.RegularExpressions.Regex.Match(
+            connectionString, 
+            @"SharedAccessKeyName=([^;]+)", 
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        
+        if (!match.Success)
+        {
+            // No key name found, assume all permissions (for backward compatibility)
+            return (true, true, true);
+        }
+
+        var keyName = match.Groups[1].Value.ToLowerInvariant();
+
+        // Detect LIMITED permissions based on common naming patterns
+        // Only flag as limited if the name explicitly indicates restricted access
+        var explicitlyListenOnly = keyName.Contains("listen") && !keyName.Contains("send") && !keyName.Contains("manage");
+        var explicitlySendOnly = keyName.Contains("send") && !keyName.Contains("manage") && !keyName.Contains("listen");
+        
+        // If the name clearly indicates "manage" or "root" or doesn't match any pattern, assume full permissions
+        var hasManage = keyName.Contains("manage") || keyName.Contains("root") || (!explicitlyListenOnly && !explicitlySendOnly);
+        var hasSend = hasManage || keyName.Contains("send");
+        var hasListen = true; // All policies have at least listen permission
+
+        return (hasListen, hasSend, hasManage);
     }
 
     /// <summary>

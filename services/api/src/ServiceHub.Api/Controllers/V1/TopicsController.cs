@@ -152,11 +152,6 @@ public sealed class TopicsController : ApiControllerBase
         return Ok(topicResult.Value);
     }
 
-    /* WRITE OPERATION DISABLED - READ-ONLY MODE
-     * ServiceHub is designed as a read-only inspection tool.
-     * This endpoint is disabled to prevent accidental message injection.
-     * To re-enable, uncomment this block and ensure proper authorization.
-     *
     /// <summary>
     /// Sends a message to a topic.
     /// </summary>
@@ -167,12 +162,14 @@ public sealed class TopicsController : ApiControllerBase
     /// <returns>Accepted if successful.</returns>
     /// <response code="202">Message accepted for delivery.</response>
     /// <response code="400">Invalid request parameters.</response>
+    /// <response code="403">Insufficient permissions.</response>
     /// <response code="404">Namespace or topic not found.</response>
     /// <response code="502">Service Bus communication error.</response>
     [RequireScope(ApiKeyScopes.MessagesSend)]
     [HttpPost("{topicName}/messages")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
     public async Task<IActionResult> SendMessage(
@@ -193,6 +190,22 @@ public sealed class TopicsController : ApiControllerBase
             return ToActionResult(Shared.Results.Result.Failure(namespaceResult.Error));
         }
 
+        var ns = namespaceResult.Value;
+
+        // Check if namespace has Send permission (required to send messages)
+        if (!ns.HasSendPermission)
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new ProblemDetails
+                {
+                    Status = StatusCodes.Status403Forbidden,
+                    Title = "Insufficient Permissions",
+                    Detail = "Send operations require 'Send' permission. " +
+                           "Update your connection string to use a policy with Manage, Send, and Listen permissions."
+                });
+        }
+
         // Create a request with the topic name and namespace ID
         var sendRequest = request with 
         { 
@@ -209,7 +222,6 @@ public sealed class TopicsController : ApiControllerBase
         _logger.LogInformation("Message sent to topic {TopicName}", topicName);
         return Accepted();
     }
-    */
 
     /// <summary>
     /// Peeks messages from a topic subscription (active or dead-letter).
@@ -313,15 +325,14 @@ public sealed class TopicsController : ApiControllerBase
         return Ok(response);
     }
 
-    /* WRITE OPERATION DISABLED - READ-ONLY MODE
-     * ServiceHub is designed as a read-only inspection tool.
-     * Dead-lettering messages is a destructive operation that modifies subscription state.
-     * To re-enable for testing purposes, uncomment this block.
-     *
     /// <summary>
     /// Dead-letters messages from a topic subscription.
     /// Moves messages from the active queue to the dead-letter queue for testing purposes.
     /// </summary>
+    /// <remarks>
+    /// This endpoint is useful for testing DLQ handling without waiting for real failures.
+    /// It moves messages from the active subscription to the dead-letter queue.
+    /// </remarks>
     /// <param name="namespaceId">The namespace ID.</param>
     /// <param name="topicName">The topic name.</param>
     /// <param name="subscriptionName">The subscription name.</param>
@@ -357,6 +368,27 @@ public sealed class TopicsController : ApiControllerBase
             namespaceId,
             reason);
 
+        // Get namespace to check permissions
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult<DeadLetterResponse>(namespaceResult.Error);
+        }
+
+        var ns = namespaceResult.Value;
+        
+        // Check if namespace has Send permission (required to dead-letter messages)
+        if (!ns.HasSendPermission)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Insufficient Permissions",
+                detail: "The configured connection string lacks 'Send' permission. " +
+                       "Dead-letter operations require 'Send' permission to move messages to the dead-letter queue. " +
+                       "Please create or use a Shared Access Policy with 'Manage', 'Send', and 'Listen' permissions.",
+                type: "https://docs.microsoft.com/azure/service-bus-messaging/service-bus-sas");
+        }
+
         var request = new DeadLetterRequest(
             NamespaceId: namespaceId,
             EntityName: topicName,
@@ -372,9 +404,14 @@ public sealed class TopicsController : ApiControllerBase
             return ToActionResult<DeadLetterResponse>(result.Error);
         }
 
+        _logger.LogInformation(
+            "Successfully dead-lettered {Count} messages from subscription {SubscriptionName} on topic {TopicName}",
+            result.Value,
+            subscriptionName,
+            topicName);
+
         return Ok(new DeadLetterResponse(result.Value, reason));
     }
-    */
 
     private static MessageResponse MapToResponse(ServiceHub.Core.Entities.Message message)
     {

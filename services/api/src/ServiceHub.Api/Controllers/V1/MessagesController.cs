@@ -393,14 +393,19 @@ public sealed class MessagesController : ApiControllerBase
             IsFromDeadLetter: message.IsFromDeadLetter);
     }
 
-    /* WRITE OPERATION DISABLED - READ-ONLY MODE
-     * ServiceHub is designed as a read-only inspection tool.
-     * Replay moves messages from DLQ back to main queue (write operation).
-     * To re-enable, uncomment this block and ensure proper authorization.
-     *
+    /// <summary>
+    /// Replays a message from the dead-letter queue back to the main queue.
+    /// </summary>
+    /// <remarks>
+    /// This endpoint moves a message from DLQ back to the main queue for reprocessing.
+    /// ServiceHub is primarily read-only, but this operation is essential for DLQ recovery.
+    /// </remarks>
     [RequireScope(ApiKeyScopes.MessagesSend)]
     [HttpPost("replay")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
     public async Task<IActionResult> ReplayMessage(
         [FromQuery] Guid namespaceId,
         [FromQuery] long sequenceNumber,
@@ -408,10 +413,30 @@ public sealed class MessagesController : ApiControllerBase
         [FromQuery] string? subscriptionName = null,
         CancellationToken cancellationToken = default)
     {
+        _logger.LogInformation(
+            "Replaying message {SequenceNumber} from {EntityName} in namespace {NamespaceId}",
+            sequenceNumber,
+            entityName,
+            namespaceId);
+
         var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult(Shared.Results.Result.Failure(namespaceResult.Error));
+        }
+
+        var ns = namespaceResult.Value;
+        
+        // Check if namespace has Send permission
+        if (!ns.HasSendPermission)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Insufficient Permissions",
+                detail: "The configured connection string lacks 'Send' permission. " +
+                       "Replay operations require 'Send' permission to move messages from DLQ back to the main queue. " +
+                       "Please create or use a Shared Access Policy with 'Manage', 'Send', and 'Listen' permissions for full functionality.",
+                type: "https://docs.microsoft.com/azure/service-bus-messaging/service-bus-sas");
         }
 
         var result = await _messageReceiver.ReplayMessageAsync(
@@ -426,9 +451,9 @@ public sealed class MessagesController : ApiControllerBase
             return ToActionResult(result);
         }
 
+        _logger.LogInformation("Message {SequenceNumber} replayed successfully", sequenceNumber);
         return Accepted();
     }
-    */
 
     /* PURGE ENDPOINT DISABLED - Azure Service Bus Limitation
      * 

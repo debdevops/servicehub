@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileText, Code, Bot, List, Inbox } from 'lucide-react';
+import { FileText, Code, Bot, List, Inbox, AlertTriangle } from 'lucide-react';
 import { Play, Clipboard } from 'lucide-react'; // Trash2 removed - purge feature disabled
 import { useSearchParams } from 'react-router-dom';
 import { useTabPersistence, type DetailTab } from '@/hooks/useTabPersistence';
@@ -344,17 +344,16 @@ export function MessageDetailPanel({ message, onViewPattern }: MessageDetailPane
         {isDLQ && (
           <div className="mt-2 flex items-center gap-2">
             <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
-              dlqSeverity === 'test' 
-                ? 'bg-gray-100 text-gray-700' 
-                : dlqSeverity === 'critical'
-                ? 'bg-red-100 text-red-700'
-                : 'bg-amber-100 text-amber-700'
+              dlqSeverity === 'critical'
+                ? 'bg-red-100 text-red-800'
+                : 'bg-amber-100 text-amber-800'
             }`}>
-              ⚠️ Dead-Letter Queue
+              <AlertTriangle size={12} className={dlqSeverity === 'critical' ? 'text-red-600' : 'text-amber-600'} />
+              ServiceHub Assessment: {dlqSeverity === 'critical' ? 'Critical' : 'Warning'}
             </span>
-            {message.deadLetterReason && (
-              <span className="text-sm text-gray-600">{message.deadLetterReason}</span>
-            )}
+            <span className="text-sm text-gray-600" title="The reason provided by Azure Service Bus.">
+              {message.deadLetterReason}
+            </span>
           </div>
         )}
       </div>
