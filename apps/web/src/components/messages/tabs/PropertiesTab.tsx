@@ -167,7 +167,7 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
                 : 'text-amber-800'
             }`}>Dead-Letter Queue Message</span>
             
-            {/* Severity Badge with Tooltip */}
+            {/* Severity Badge with Tooltip - Clearly labeled as ServiceHub assessment */}
             <span 
               className={`ml-auto text-xs px-2 py-1 rounded-full font-medium cursor-help flex items-center gap-1 ${
                 dlqDetails.severity === 'test'
@@ -176,7 +176,7 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
                   ? 'bg-red-200 text-red-800'
                   : 'bg-amber-200 text-amber-800'
               }`}
-              title={`ServiceHub Assessment: ${severityInfo.description}`}
+              title={`⚠️ ServiceHub Assessment (Not Azure Data): ${severityInfo.description}`}
             >
               {severityInfo.label}
               <HelpCircle className="w-3 h-3 opacity-70" />

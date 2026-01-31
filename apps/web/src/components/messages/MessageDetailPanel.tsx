@@ -196,16 +196,19 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
             className="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition-colors disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
             onClick={() => openConfirm('replay')}
             disabled={replayMessage.isPending || !namespaceId || !isFromDeadLetter}
-            title={!isFromDeadLetter ? 'Replay is only available for dead-letter messages' : 'Replay message to main queue'}
+            title={!isFromDeadLetter 
+              ? 'Replay is only available for dead-letter messages — active messages are already being processed' 
+              : 'Re-send this message from DLQ back to the main queue for reprocessing'
+            }
             aria-label="Replay message"
           >
             <Play size={16} />
             {replayMessage.isPending ? 'Replaying...' : 'Replay'}
           </button>
-          {/* Show explanation when Replay is disabled */}
+          {/* Show clear explanation when Replay is disabled */}
           {!isFromDeadLetter && (
-            <span className="text-xs text-gray-400 italic">
-              DLQ messages only
+            <span className="text-xs text-gray-500 italic max-w-[160px]" title="Active messages are already queued for processing. Replay is for returning dead-letter messages to the main queue.">
+              Active messages cannot be replayed
             </span>
           )}
         </div>

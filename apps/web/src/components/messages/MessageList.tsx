@@ -266,10 +266,10 @@ export function MessageList({
           <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8">
             <CheckCircle size={48} className="text-gray-300 mb-4" />
             <p className="text-lg font-medium">No messages</p>
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-gray-400 text-center max-w-xs">
               {queueTab === 'deadletter'
-                ? 'No dead-letter messages in this queue'
-                : 'No active messages in this queue'}
+                ? 'Dead-letter queue is empty — no messages have been dead-lettered'
+                : 'Active queue is empty — no messages are currently pending'}
             </p>
           </div>
         )}

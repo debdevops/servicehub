@@ -198,9 +198,9 @@ export function AIInsightsTab({ message, onViewPattern }: AIInsightsTabProps) {
         <div className="flex items-start gap-2">
           <Info size={14} className="text-blue-500 mt-0.5 shrink-0" />
           <p className="text-xs text-blue-700">
-            <strong>ServiceHub Interpretation:</strong> These patterns are AI-assisted analysis 
-            based on message characteristics. They are not Azure Service Bus data. 
-            Always verify findings before taking action.
+            <strong>⚠️ ServiceHub Interpretation (Not Azure Data):</strong> These patterns are heuristic analysis 
+            based on message characteristics. They represent possible explanations, not confirmed facts. 
+            Always verify findings in Azure Portal before taking operational action.
           </p>
         </div>
       </div>
