@@ -44,12 +44,12 @@ But what happens when something goes wrong?
 - Manual investigation takes hours
 
 ✅ **With ServiceHub:**
-- **Real-time visibility** into all messages
+- **Point-in-time visibility** into all messages for stable investigation
 - **Dead-letter queue inspection** — see exactly what failed and why
-- **AI-powered pattern detection** — automatically identifies recurring issues
-- **Read-only by design** — safe to use in production (won't accidentally delete messages)
+- **Optional AI-powered analysis** — automatically identifies recurring issue patterns
+- **Read-mostly by design** — safe for production use (browsing is read-only, actions are user-confirmed)
 - **Outlook-style browsing** — familiar interface for long debugging sessions
-- **Replay failed messages** back to the main queue after fixing issues
+- **Safely replay failed messages** back to the main queue with no risk of message loss
 
 ### Who Needs ServiceHub?
 
@@ -319,6 +319,7 @@ sequenceDiagram
         end
         
         API->>Azure: PeekMessagesAsync(take=100)
+        Note over API,Azure: This is a point-in-time snapshot.<br/>The list does not update automatically.
         Note over Azure: Peek = read without removing<br/>Gets up to 100 messages
         
         Azure-->>API: List of messages with metadata
@@ -393,7 +394,7 @@ sequenceDiagram
     UI->>UI: Show detailed panel with sections:
     Note over UI: Section 1: Azure Data<br/>DeadLetterReason: "MaxDeliveryCountExceeded"<br/>DeadLetterSource: "myqueue"<br/>DeliveryCount: 10<br/><br/>Section 2: ServiceHub Analysis<br/>"This message failed 10 times..."<br/><br/>Section 3: Suggested Actions<br/>• Check app logs<br/>• Verify downstream service<br/>• Review error details
     
-    User->>UI: Clicks "Replay" button
+    User->>UI: Clicks "Replay Message" button
     Note over User: This will send the message<br/>back to the main queue
     
     UI->>UI: Show confirmation dialog
@@ -402,16 +403,25 @@ sequenceDiagram
     User->>UI: Confirms
     
     UI->>API: POST /messages/{sequenceNumber}/replay
+    Note over UI,API: This initiates the safe replay flow.
     
-    API->>Azure: Receive message from DLQ
-    Note over API,Azure: ReceiveMessageAsync()<br/>This removes from DLQ
+    API->>Azure: 1. Lock message in DLQ (PeekLock)
+    Note over API,Azure: Message becomes invisible but is NOT deleted.
     
-    Azure-->>API: Message received
+    Azure-->>API: Message locked
     
-    API->>Azure: Send to main queue
-    Note over API,Azure: SendMessageAsync()<br/>to original queue
+    API->>Azure: 2. Send copy to main queue
+    Note over API,Azure: SendMessageAsync() to 'myqueue'
     
-    Azure-->>API: ✅ Sent successfully
+    alt Send Succeeded
+        Azure-->>API: ✅ Sent successfully
+        API->>Azure: 3. Complete message in DLQ
+        Note over API,Azure: Original message is now deleted.
+    else Send Failed
+        Azure-->>API: ❌ Send failed
+        API->>Azure: 3. Abandon lock on DLQ message
+        Note over API,Azure: Message becomes visible in DLQ again.<br/>No message loss.
+    end
     
     API-->>UI: 200 OK
     
@@ -434,7 +444,7 @@ sequenceDiagram
    - **Suggested Actions** — What to do next
 7. **User clicks Replay** — Sends message back to main queue
 8. **Confirmation dialog** — Prevents accidents
-9. **API orchestrates** — Receives from DLQ, sends to main queue
+9. **API orchestrates safe replay** — Locks the DLQ message, sends a copy to the main queue, and only deletes the original from the DLQ upon successful send. This guarantees no message loss.
 10. **Success** — Message will be reprocessed by the application
 
 ---
@@ -462,8 +472,9 @@ sequenceDiagram
     API->>API: Extract patterns from messages
     Note over API: Groups by:<br/>• Error type<br/>• Time window<br/>• Source system<br/>• Message properties
     
+    Note right of API: **Privacy Guarantee:**<br/>Only anonymized metadata is sent.<br/>Message bodies are NEVER sent to the AI service.
     API->>AIService: POST /api/analyze-patterns
-    Note over API,AIService: Sends:<br/>• Message metadata<br/>• Error patterns<br/>• Timeframe
+    Note over API,AIService: Payload includes:<br/>• DeadLetterReason<br/>• DeliveryCount<br/>• EnqueuedTime<br/>• Custom property *keys* (not values)<br/>• Error patterns
     
     AIService->>AIService: ML Pattern Detection
     Note over AIService: Detects:<br/>• Recurring errors<br/>• Time-based patterns<br/>• Anomalies<br/>• Correlations
@@ -771,7 +782,6 @@ classDiagram
         +GetMessage(namespaceId, entityName, sequenceNumber, queueType)
         +SendMessage(namespaceId, entityName, request)
         +ReplayMessage(namespaceId, entityName, sequenceNumber)
-        +DeadLetterMessages(namespaceId, entityName, count)
     }
     
     class IServiceBusClientWrapper {
@@ -810,12 +820,6 @@ classDiagram
    - **Returns**: Success confirmation
    - **Use Case**: Retry failed messages after fixing the issue
 
-4. **DeadLetterMessages**
-   - **Purpose**: Manually move messages to dead-letter queue (for testing)
-   - **Parameters**: Namespace, entity, count (how many to move)
-   - **Returns**: Count of messages moved
-   - **Use Case**: Testing DLQ workflows
-
 ---
 
 ### Backend: ServiceBusClientWrapper
@@ -844,11 +848,11 @@ This is the core service that talks to Azure Service Bus:
    ```
    - **Purpose**: Move a message from one queue to another
    - **How it works**:
-     1. Receive message by sequence number (removes from source)
-     2. Create new message with same body/properties
-     3. Send to target queue
-     4. Complete the receive operation
-   - **Transactional**: Ensures message isn't lost if send fails
+     1. Receive the source message in `PeekLock` mode (makes it invisible but doesn't delete).
+     2. Create and send a new message with the same body/properties to the target queue.
+     3. If the send is successful, `Complete` the original message to delete it.
+     4. If the send fails, `Abandon` the original message so it reappears in the source queue.
+   - **Resilient (At-Least-Once)**: This pattern guarantees the message is not lost, even if the application crashes mid-operation. It is not a distributed transaction, but a highly reliable resiliency pattern.
 
 3. **SendMessageAsync**
    ```csharp
@@ -1046,7 +1050,7 @@ graph TB
 ### Security Model
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'16px'}}}%%
+%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'15px'}}}%%
 graph TB
     subgraph User["User Authentication"]
         LOGIN["Optional API Key"]
@@ -1099,10 +1103,10 @@ graph TB
    - 100 requests per minute per IP
    - Prevents abuse and DDoS
 
-4. **Read-Only by Default**
-   - Most operations are peek/read
-   - Destructive actions require explicit confirmation
-   - Replay is the only "write" operation to Azure
+4. **Read-Mostly by Design**
+   - All browsing operations use non-destructive `Peek`.
+   - Write operations (`Replay`, `Send`) are clearly labeled and require explicit user confirmation.
+   - There are no automatic or background write operations.
 
 5. **Audit Logging**
    - All operations logged with user context
@@ -1116,10 +1120,10 @@ ServiceHub solves a critical problem for teams using Azure Service Bus: **visibi
 
 **What makes ServiceHub valuable:**
 
-✅ **Read-only by design** — Safe to use in production  
+✅ **Read-mostly by design** — Safe for production forensics  
 ✅ **Dead-letter queue inspection** — See exactly why messages failed  
-✅ **AI-powered pattern detection** — Automatically identify recurring issues  
-✅ **Replay capability** — Reprocess failed messages after fixes  
+✅ **Optional AI-powered analysis** — Identify recurring issue patterns  
+✅ **Safe Replay capability** — Reprocess failed messages with no risk of loss  
 ✅ **Outlook-style interface** — Designed for long debugging sessions  
 ✅ **Clean architecture** — Easy to extend and maintain  
 
