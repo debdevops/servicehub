@@ -158,20 +158,12 @@ export function MessagesPage() {
   const getMessageCounts = () => {
     if (entityType === 'queue' && queueName) {
       const queue = queuesData?.find(q => q.name === queueName);
-      // Debug log to identify any mismatches
-      if (queue) {
-        console.debug(`[MessagesPage] Queue "${queueName}" counts: active=${queue.activeMessageCount}, dlq=${queue.deadLetterMessageCount}`);
-      }
       return {
         active: queue?.activeMessageCount || 0,
         deadletter: queue?.deadLetterMessageCount || 0,
       };
     } else if (entityType === 'topic' && subscriptionName && topicName) {
       const subscription = subscriptionsData?.find(s => s.name === subscriptionName);
-      // Debug log to identify any mismatches
-      if (subscription) {
-        console.debug(`[MessagesPage] Subscription "${subscriptionName}" in topic "${topicName}" counts: active=${subscription.activeMessageCount}, dlq=${subscription.deadLetterMessageCount}`);
-      }
       return {
         active: subscription?.activeMessageCount || 0,
         deadletter: subscription?.deadLetterMessageCount || 0,
@@ -350,14 +342,22 @@ export function MessagesPage() {
 
   // Error state
   if (error) {
+    const errorMessage = error instanceof Error ? error.message : 'An error occurred';
+    const isConnectionError = errorMessage.toLowerCase().includes('network') || 
+                              errorMessage.toLowerCase().includes('connection') ||
+                              errorMessage.toLowerCase().includes('timeout');
+    
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md p-8">
           <div className="text-6xl mb-4">⚠️</div>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Failed to load messages</h2>
-          <p className="text-gray-600 mb-4">
-            {error instanceof Error ? error.message : 'An error occurred'}
-          </p>
+          <p className="text-gray-600 mb-2">{errorMessage}</p>
+          {isConnectionError && (
+            <p className="text-sm text-gray-500 mb-4">
+              Check if the API server is running and Azure Service Bus is accessible.
+            </p>
+          )}
           <button
             onClick={() => refetch()}
             className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600"

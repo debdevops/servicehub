@@ -115,7 +115,6 @@ function QueueItem({ queue, namespaceId }: QueueItemProps) {
               </span>
             )}
           </div>
-          {isExactMatch && console.debug(`[Sidebar] Queue "${queue.name}" badges: active=${queue.activeMessageCount}, dlq=${queue.deadLetterMessageCount}`)}
         </>
         );
       }}
@@ -219,7 +218,6 @@ function SubscriptionItem({ subscription, namespaceId, topicName }: Subscription
                 </span>
               )}
             </div>
-            {isExactMatch && console.debug(`[Sidebar] Subscription "${subscription.name}" in topic "${topicName}" badges: active=${subscription.activeMessageCount}, dlq=${subscription.deadLetterMessageCount}`)}
           </>
         );
       }}
