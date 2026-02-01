@@ -64,7 +64,7 @@ You open **Azure Portal**:
 
 **ServiceHub solves this in 60 seconds:**
 
-![ServiceHub solution showing message browser with 50 messages, search functionality, and AI insights](docs/screenshots/08-hero-message-browser-loaded.png)
+![ServiceHub solution showing message browser with 50 messages, search functionality, and AI insights](docs/screenshots/25-main-message-display.png)
 *ServiceHub displaying all messages with searchable content, correlation IDs, and AI-detected error patterns*
 
 **Time saved:** 45 minutes per incident (avg). **Trust gained:** Read-only access proves safety.
