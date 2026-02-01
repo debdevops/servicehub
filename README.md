@@ -127,8 +127,8 @@ Open **http://localhost:3000** and connect:
 
 Click any queue or topic subscription:
 
-![Message browser displaying 50 active messages in testqueue with timestamps and preview text](docs/screenshots/08-hero-message-browser-loaded.png)
-*ServiceHub displaying 50 active messages with event types, timestamps, and AI findings indicator*
+![Message browser displaying 50 active messages in testqueue with timestamps and preview text](docs/screenshots/25-main-message-display.png)
+*ServiceHub displaying active messages with event types, timestamps, and AI findings indicator*
 
 **You're now running ServiceHub.** 
 
@@ -145,7 +145,7 @@ Click any queue or topic subscription:
 
 **Browse 10,000+ messages instantly** with the familiar UX of an email client.
 
-![Message list showing dual-pane layout with Active/Dead-Letter tabs and 50 messages in testqueue](docs/screenshots/08-hero-message-browser-loaded.png)
+![Message list showing dual-pane layout with Active/Dead-Letter tabs and 50 messages in testqueue](docs/screenshots/25-main-message-display.png)
 *Active and Dead-Letter tabs with message preview, timestamp, and status indicators*
 
 **What you get:**
@@ -163,7 +163,7 @@ Click any queue or topic subscription:
 
 **View everything:** Properties, headers, custom metadata, and full JSON body.
 
-![Message properties panel showing Message ID, Enqueued Time, Delivery Count, Time To Live, Sequence Number, and Content Type fields](docs/screenshots/11-feature-message-details-properties.png)
+![Message properties panel showing Message ID, Enqueued Time, Delivery Count, Time To Live, Sequence Number, and Content Type fields](docs/screenshots/13-feature-message-details-custom-props.png)
 *Complete message metadata including Message ID, Enqueued Time, Delivery Count, TTL, and Content Type*
 
 **Properties Tab:**
