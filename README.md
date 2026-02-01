@@ -2,7 +2,7 @@
 
 **Browse, search, and investigate Azure Service Bus messages during incidents—when Azure Portal can't.**
 
-![ServiceHub Message Browser with 50 active messages, AI findings indicator, and real-time refresh](docs/screenshots/08-hero-message-browser-loaded.png)
+![ServiceHub Message Browser with 50 active messages, AI findings indicator, and real-time refresh](docs/screenshots/25-main-message-display.png)
 *ServiceHub displaying 50 active messages from a production queue with real-time AI pattern detection*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -44,7 +44,7 @@ You need answers fast:
 
 You open **Azure Portal**:
 
-![Azure Portal showing empty state with no connections, demonstrating inability to view message contents](docs/screenshots/01-problem-empty-state.png)
+![Azure Portal showing empty state with no connections, demonstrating inability to view message contents](docs/screenshots/25-main-message-display.png)
 *Azure Portal shows queue metrics but cannot display message contents or search across messages*
 
 **What you see:**
@@ -113,12 +113,12 @@ Open **http://localhost:3000** and connect:
 ```plaintext
 1. Go to Azure Portal → Your Service Bus Namespace
 2. Shared access policies → + Add
-3. Policy name: ServiceHub-ReadOnly
-4. Permissions: ✅ Listen only (uncheck Manage, Send)
+3. Policy name: ServiceHub-Manage
+4. Permissions: ✅ Manage
 5. Copy connection string → Paste into ServiceHub
 ```
 
-⚠️ **Security Notice:** ServiceHub enforces **Listen-only** permission. Create a dedicated policy—never use RootManageSharedAccessKey.
+⚠️ **Security Notice:** ServiceHub enforces **Manage** permission. Create a dedicated policy—never use RootManageSharedAccessKey.
 
 ![Connected namespace sidebar showing DevEnvironmentSB with 2 queues and 2 topics expanded with subscriptions](docs/screenshots/03-quickstart-connected-namespace.png)
 *Successfully connected to DevEnvironmentSB namespace showing 2 queues and 2 topics with subscription counts*
