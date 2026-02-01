@@ -218,3 +218,18 @@ TestResults/
 
 # User secrets
 secrets.json
+
+# Temporary files
+*.tmp
+.tmp/
+**/.tmp/
+
+# Build artifacts - additional
+*.dll
+*.pdb
+*.xml
+*.sourcelink.json
+project.assets.json
+project.nuget.cache
+*.nuget.props
+*.nuget.targets
