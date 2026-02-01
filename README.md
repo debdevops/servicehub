@@ -4,7 +4,7 @@
 
 Browse, search, and debug Azure Service Bus messages during incidents — when Azure Portal can't show you what's inside.
 
-![ServiceHub Message Browser](docs/screenshots/08-hero-message-browser-loaded.png)
+![ServiceHub Message Browser](docs/screenshots/25-main-message-display.png)
 *Browse messages from queues and topic subscriptions with real-time AI pattern detection*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -62,6 +62,7 @@ Once connected, your queues and topics appear in the sidebar:
 Click any queue or subscription to browse messages:
 
 ![Empty Queue](docs/screenshots/04-feature-message-browser-empty.png)
+![Full Messages](docs/screenshots/25-main-message-display.png)
 *Empty queue showing Active and Dead-Letter tabs*
 
 Generate test messages or view existing ones:
@@ -75,7 +76,7 @@ Click any message to view full details across three tabs:
 
 **Properties Tab** — Message ID, timestamps, delivery count:
 
-![Message Properties](docs/screenshots/11-feature-message-details-properties.png)
+![Message Properties](docs/screenshots/25-main-message-display.png)
 *Complete message metadata including enqueue time, TTL, and sequence number*
 
 **Custom Properties** — Application headers and metadata:
@@ -85,14 +86,14 @@ Click any message to view full details across three tabs:
 
 **Body Tab** — Full JSON message content:
 
-![Message Body](docs/screenshots/13-feature-message-details-body.png)
+![Message Body](docs/screenshots/14-feature-ai-findings-badge.png)
 *Syntax-highlighted JSON body with copy button*
 
 ### 3. Search Messages
 
 Search across message content, properties, and headers:
 
-![Search](docs/screenshots/23-feature-search-functionality.png)
+![Search](docs/screenshots/24-feature-search-functionality.png)
 *Search "bank" finds 2 matching payment messages*
 
 ### 4. Dead-Letter Queue Investigation
