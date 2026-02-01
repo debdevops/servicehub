@@ -463,7 +463,7 @@ A: ServiceHub analyzes message content, properties, and error descriptions using
 A: ServiceHub displays messages only in your browser session (not persisted). Deploy ServiceHub in your private network and restrict access via your identity provider. API logs do not capture message content.
 
 **Q: Can I deploy ServiceHub to Azure App Service / Kubernetes?**  
-A: Yes. ServiceHub is a standard ASP.NET Core + React app. See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for containerization and cloud deployment guides.
+A: Yes. ServiceHub is a standard ASP.NET Core + React app. You can containerize it with Docker and deploy to any platform supporting .NET 8 and Node.js.
 
 **Q: Does ServiceHub support topics with subscriptions?**  
 A: Yes. ServiceHub browses messages from both queues and topic subscriptions. You can view messages for each subscription independently.
@@ -472,7 +472,7 @@ A: Yes. ServiceHub browses messages from both queues and topic subscriptions. Yo
 A: Session-aware browsing is on the roadmap. Currently, you can view session-enabled messages but not group them by session ID.
 
 **Q: Can I contribute?**  
-A: Absolutely! ServiceHub is open source (MIT license). See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+A: Absolutely! ServiceHub is open source (MIT license). Fork the repository, make your changes, and submit a pull request.
 
 ---
 
@@ -489,8 +489,6 @@ We welcome contributions! Whether it's bug fixes, new features, or documentation
 5. Push to the branch (`git push origin feature/amazing-feature`)
 6. Open a Pull Request
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
-
 ---
 
 ## License
@@ -506,7 +504,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 - **🏠 Repository:** https://github.com/debdevops/servicehub
 - **🐛 Report Issues:** https://github.com/debdevops/servicehub/issues
 - **📖 Full Documentation:** [docs/COMPREHENSIVE-GUIDE.md](docs/COMPREHENSIVE-GUIDE.md)
-- **🚀 Deployment Guide:** [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- **� Screenshots Guide:** [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)
 - **💬 Discussions:** https://github.com/debdevops/servicehub/discussions
 
 ---
