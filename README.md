@@ -4,7 +4,7 @@
 
 Browse, search, and debug Azure Service Bus messages during incidents — when Azure Portal can't show you what's inside.
 
-![ServiceHub Message Browser](docs/screenshots/25-main-message-display.png)
+![ServiceHub Message Browser](docs/screenshots/05-main-message-display1.png)
 *Browse messages from queues and topic subscriptions with real-time AI pattern detection*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -39,18 +39,21 @@ cd servicehub
 
 Open **http://localhost:3000**
 
+![Application Start](docs/screenshots/01-Start-The-App.png)
+*ServiceHub landing page - ready to connect to Azure Service Bus*
+
 ---
 
 ## Connect to Your Namespace
 
 Enter your connection string and connect:
 
-![Connection Form](docs/screenshots/02-quickstart-connection-form.png)
+![Connection Form](docs/screenshots/02-Connect-Service-Bus-With-Manage-ConnStr.png)
 *Enter a display name and your Service Bus connection string*
 
 Once connected, your queues and topics appear in the sidebar:
 
-![Connected Namespace](docs/screenshots/03-quickstart-connected-namespace.png)
+![Connected Namespace](docs/screenshots/03-Connected-ServiceBus.png)
 *Namespace shows 2 queues and 2 topics with subscription counts*
 
 ---
@@ -62,13 +65,15 @@ Once connected, your queues and topics appear in the sidebar:
 Click any queue or subscription to browse messages:
 
 ![Empty Queue](docs/screenshots/04-feature-message-browser-empty.png)
-![Full Messages](docs/screenshots/25-main-message-display.png)
 *Empty queue showing Active and Dead-Letter tabs*
 
 Generate test messages or view existing ones:
 
-![Messages Loaded](docs/screenshots/08-hero-message-browser-loaded.png)
-*50 messages loaded with event types, timestamps, and status badges*
+![Messages Loaded - Top](docs/screenshots/05-main-message-display1.png)
+*Message browser showing multiple messages with event types and timestamps*
+
+![Messages Loaded - Bottom](docs/screenshots/06-main-message-display2.png)
+*Scrolled view showing more messages in the list*
 
 ### 2. Message Details
 
@@ -76,60 +81,77 @@ Click any message to view full details across three tabs:
 
 **Properties Tab** — Message ID, timestamps, delivery count:
 
-![Message Properties](docs/screenshots/25-main-message-display.png)
+![Message Properties](docs/screenshots/10-message-display.png)
 *Complete message metadata including enqueue time, TTL, and sequence number*
 
 **Custom Properties** — Application headers and metadata:
 
-![Custom Properties](docs/screenshots/12-feature-message-details-custom-props.png)
+![Custom Properties - Top](docs/screenshots/13-feature-message-details-custom-props.png)
 *Custom headers like ServiceHub-Generated, scenario, environment, region*
+
+![Custom Properties - Bottom](docs/screenshots/14-feature-message-details-custom-props1.png)
+*Scrolled view showing additional custom properties*
 
 **Body Tab** — Full JSON message content:
 
-![Message Body](docs/screenshots/14-feature-ai-findings-badge.png)
+![Message Body](docs/screenshots/15-feature-message-details-JSON-prop.png)
 *Syntax-highlighted JSON body with copy button*
 
 ### 3. Search Messages
 
 Search across message content, properties, and headers:
 
-![Search](docs/screenshots/24-feature-search-functionality.png)
-*Search "bank" finds 2 matching payment messages*
+![Search](docs/screenshots/25-feature-find-feature.png)
+*Search functionality to filter messages*
 
 ### 4. Dead-Letter Queue Investigation
 
 View DLQ messages with failure details:
 
-![DLQ Tab](docs/screenshots/18-feature-dlq-tab-with-ai.png)
-*Dead-Letter tab showing 3 failed messages with AI indicators*
+![DLQ Tab](docs/screenshots/21-workflow-dlq-investigation-step1.png)
+*Dead-Letter tab showing failed messages with failure details*
 
 Inspect the dead-letter reason and Azure metadata:
 
-![DLQ Properties](docs/screenshots/19-workflow-dlq-investigation-step1.png)
+![DLQ Properties](docs/screenshots/21-workflow-dlq-investigation-step1.png)
 *Dead-letter reason, error description, and delivery count*
 
 Review suggested actions:
 
-![DLQ Guidance](docs/screenshots/20-workflow-dlq-investigation-step2.png)
+![DLQ Guidance](docs/screenshots/22-workflow-dlq-investigation-step2.png)
 *ServiceHub provides suggested actions based on failure patterns*
 
 ### 5. AI Pattern Detection
 
 ServiceHub automatically detects error patterns across messages:
 
-![AI Patterns](docs/screenshots/17-feature-ai-patterns-popup.png)
-*AI detected 2 error patterns: email cluster (31%) and sms cluster (31%)*
+![AI Findings - Pattern 1](docs/screenshots/19-feature-ai-findings-1.png)
+*AI detected error patterns and anomalies*
+
+![AI Findings - Pattern 2](docs/screenshots/20-feature-ai-findings-2.png)
+*Alternative view of AI pattern detection*
 
 Click any message to see its AI insights:
 
-![AI Insights](docs/screenshots/15-feature-ai-insights-error-cluster.png)
-*Error Cluster: push — 3 messages share this error pattern*
+![AI Insights - Top](docs/screenshots/16-feature-message-details-AI-Insight.png)
+*AI Insights panel showing error patterns and recommendations*
+
+![AI Insights - Middle](docs/screenshots/17-feature-message-details-AI-Insight1.png)
+*Scrolled view showing additional AI analysis*
+
+![AI Insights - Bottom](docs/screenshots/18-feature-message-details-AI-Insight2.png)
+*Complete view of all AI insights and suggestions*
 
 ### 6. Replay DLQ Messages
 
+View AI insights for DLQ patterns:
+
+![DLQ AI Insight](docs/screenshots/23-workflow-dlq-AI-Insight.png)
+*AI analysis of dead-letter queue patterns*
+
 After fixing the root cause, replay messages from DLQ:
 
-![Replay Dialog](docs/screenshots/22-workflow-dlq-replay-step4.png)
+![Replay Dialog](docs/screenshots/24-workflow-dlq-replay-step4.png)
 *Confirm replay to re-send message to original queue*
 
 ---
@@ -140,8 +162,14 @@ After fixing the root cause, replay messages from DLQ:
 
 Generate realistic test messages with configurable scenarios:
 
-![Generator Scenarios](docs/screenshots/07-feature-message-generator-scenarios.png)
+![Generator - Single Message](docs/screenshots/07-feature-message-generator-basic-single-message.png)
+*Basic message generator for sending single messages*
+
+![Generator Scenarios - Top](docs/screenshots/08-feature-message-generator-scenarios.png)
 *6 scenarios: Order Processing, Payment Gateway, Notifications, Inventory, User Activity, Error Events*
+
+![Generator Scenarios - Bottom](docs/screenshots/09-feature-message-generator-scenarios1.png)
+*Scrolled view showing volume presets and anomaly rate settings*
 
 Features:
 - Volume presets: 30, 50, 100, 150, 200 messages
@@ -152,17 +180,13 @@ Features:
 
 Send custom messages to any queue or topic:
 
-![Send Message](docs/screenshots/09-feature-send-message-topic.png)
+![Send Message to Topic](docs/screenshots/11-Generate-Single-Message-Topic.png)
 *Send JSON message to topic with custom properties*
 
----
+View the message in topic subscription:
 
-## Quick Actions Menu
-
-Click the floating action button (bottom-right) for quick actions:
-
-![FAB Menu](docs/screenshots/05-feature-fab-menu.png)
-*Refresh All, Test DLQ, Generate Messages, Send Message*
+![Topic Messages](docs/screenshots/12-showing-message-topic.png)
+*Messages appearing in topic subscription after send*
 
 ---
 
