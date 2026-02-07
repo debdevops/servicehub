@@ -56,7 +56,9 @@ jobs:
 
       - name: Install dependencies
         working-directory: apps/web
-        run: npm install --legacy-peer-deps
+        run: |
+          rm -f package-lock.json
+          npm install --include=optional
 
       - name: Type check with TypeScript
         working-directory: apps/web
