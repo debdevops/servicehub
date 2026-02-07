@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - develop
+      - dglocal-110126
       - 'feature/**'
       - 'hotfix/**'
   pull_request:
