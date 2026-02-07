@@ -1,0 +1,87 @@
+name: Compile & Build
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+      - 'hotfix/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  NODE_VERSION: '18.x'
+
+jobs:
+  compile-backend:
+    name: Compile Backend (.NET)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: |
+          cd services/api
+          dotnet restore
+
+      - name: Build solution
+        run: |
+          cd services/api
+          dotnet build --no-restore --configuration Release
+
+  compile-frontend:
+    name: Compile Frontend (React)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'apps/web/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Type check with TypeScript
+        working-directory: apps/web
+        run: npx tsc -b
+
+      - name: Build application
+        working-directory: apps/web
+        run: npm run build
+
+  build-status:
+    name: Build Status
+    runs-on: ubuntu-latest
+    needs: [compile-backend, compile-frontend]
+    if: always()
+
+    steps:
+      - name: Check build status
+        run: |
+          if [ "${{ needs.compile-backend.result }}" != "success" ]; then
+            echo "❌ Backend compilation failed"
+            exit 1
+          fi
+          if [ "${{ needs.compile-frontend.result }}" != "success" ]; then
+            echo "❌ Frontend compilation failed"
+            exit 1
+          fi
+          echo "✅ All projects compiled successfully!"
