@@ -56,7 +56,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: apps/web
-        run: npm ci
+        run: npm install --legacy-peer-deps
 
       - name: Type check with TypeScript
         working-directory: apps/web
