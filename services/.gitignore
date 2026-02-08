@@ -1,0 +1,61 @@
+# ============================================
+# .NET Build Artifacts and Outputs
+# ============================================
+
+# Build output directories
+bin/
+obj/
+
+# NuGet packages
+*.nupkg
+*.nupkg.sha512
+*.snupkg
+packages.lock.json
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+
+# Visual Studio cache
+.vs/
+
+# Rider
+.idea/
+*.sln.iml
+
+# Test Results
+TestResults/
+*.trx
+
+# Local environment files
+.env
+.env.local
+appsettings.local.json
+
+# User specific files
+*.user
+*.suo
+
+# Mac
+.DS_Store
+
+# VS Code (but allow .gitignore)
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+
+# Node modules (for any web apps)
+node_modules/
+dist/
+
+# IDE
+*.swp
+*.swo
+*~
