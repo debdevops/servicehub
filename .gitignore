@@ -137,3 +137,99 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+# ============================================
+# .NET / C# Build Artifacts
+# ============================================
+
+# Build results
+bin/
+obj/
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+
+# Visual Studio cache/options
+.vs/
+.vscode/settings.json
+
+# Build and release folders
+publish/
+dist/
+
+# NuGet packages
+*.nupkg
+*.nupkg.sha512
+*.snupkg
+
+# Nuget local packages
+.nuget/
+
+# NuGet lock files
+packages.lock.json
+
+# Visual Studio profiler
+*.psess
+*.vsp
+*.vspx
+*.sap
+
+# Local environment files
+.env.local
+launchSettings.json
+
+# Rider IDE
+.idea/
+*.sln.iml
+
+# Mac specific
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Rider
+.idea/
+
+# .NET Core
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Test Results
+TestResults/
+*.trx
+*.coverage
+
+# User secrets
+secrets.json
+
+# Temporary files
+*.tmp
+.tmp/
+**/.tmp/
+
+# Build artifacts - additional
+*.dll
+*.pdb
+*.xml
+*.sourcelink.json
+project.assets.json
+project.nuget.cache
+*.nuget.props
+*.nuget.targets

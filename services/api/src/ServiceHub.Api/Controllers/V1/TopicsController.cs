@@ -1,0 +1,446 @@
+using Microsoft.AspNetCore.Mvc;
+using ServiceHub.Api.Authorization;
+using ServiceHub.Core.DTOs.Requests;
+using ServiceHub.Core.DTOs.Responses;
+using ServiceHub.Core.Interfaces;
+using ServiceHub.Shared.Constants;
+
+namespace ServiceHub.Api.Controllers.V1;
+
+/// <summary>
+/// Controller for managing Service Bus topics.
+/// Provides endpoints for listing topics and their metadata.
+/// </summary>
+[Route(ApiRoutes.Topics.Base)]
+[Tags("Topics")]
+public sealed class TopicsController : ApiControllerBase
+{
+    private readonly INamespaceRepository _namespaceRepository;
+    private readonly IServiceBusClientCache _clientCache;
+    private readonly IConnectionStringProtector _connectionStringProtector;
+    private readonly IMessageSender _messageSender;
+    private readonly IMessageReceiver _messageReceiver;
+    private readonly ILogger<TopicsController> _logger;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TopicsController"/> class.
+    /// </summary>
+    /// <param name="namespaceRepository">The namespace repository.</param>
+    /// <param name="clientCache">The Service Bus client cache.</param>
+    /// <param name="connectionStringProtector">The connection string protector.</param>
+    /// <param name="messageSender">The message sender service.</param>
+    /// <param name="messageReceiver">The message receiver service.</param>
+    /// <param name="logger">The logger.</param>
+    public TopicsController(
+        INamespaceRepository namespaceRepository,
+        IServiceBusClientCache clientCache,
+        IConnectionStringProtector connectionStringProtector,
+        IMessageSender messageSender,
+        IMessageReceiver messageReceiver,
+        ILogger<TopicsController> logger)
+    {
+        _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
+        _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
+        _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
+        _messageSender = messageSender ?? throw new ArgumentNullException(nameof(messageSender));
+        _messageReceiver = messageReceiver ?? throw new ArgumentNullException(nameof(messageReceiver));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Gets all topics for a namespace.
+    /// </summary>
+    /// <param name="namespaceId">The namespace ID.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A list of topic information.</returns>
+    /// <response code="200">Topics retrieved successfully.</response>
+    /// <response code="404">Namespace not found.</response>
+    /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.TopicsRead)]
+    [HttpGet]
+    [ProducesResponseType(typeof(IReadOnlyList<TopicRuntimePropertiesDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<IReadOnlyList<TopicRuntimePropertiesDto>>> GetAll(
+        [FromRoute] Guid namespaceId,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Getting all topics for namespace {NamespaceId}", namespaceId);
+
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult<IReadOnlyList<TopicRuntimePropertiesDto>>(namespaceResult.Error);
+        }
+
+        var ns = namespaceResult.Value;
+        if (ns.ConnectionString is null)
+        {
+            return BadRequest("Namespace does not have a connection string configured.");
+        }
+
+        var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
+        if (unprotectResult.IsFailure)
+        {
+            return ToActionResult<IReadOnlyList<TopicRuntimePropertiesDto>>(unprotectResult.Error);
+        }
+
+        var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+        var topicsResult = await wrapper.GetTopicsAsync(cancellationToken);
+        if (topicsResult.IsFailure)
+        {
+            return ToActionResult<IReadOnlyList<TopicRuntimePropertiesDto>>(topicsResult.Error);
+        }
+
+        _logger.LogInformation(
+            "Retrieved {TopicCount} topics for namespace {NamespaceId}",
+            topicsResult.Value.Count,
+            namespaceId);
+
+        return Ok(topicsResult.Value);
+    }
+
+    /// <summary>
+    /// Gets information about a specific topic.
+    /// </summary>
+    /// <param name="namespaceId">The namespace ID.</param>
+    /// <param name="topicName">The topic name.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The topic information.</returns>
+    /// <response code="200">Topic retrieved successfully.</response>
+    /// <response code="404">Namespace or topic not found.</response>
+    /// <response code="502">Service Bus communication error.</response>
+    [HttpGet("{topicName}")]
+    [ProducesResponseType(typeof(TopicRuntimePropertiesDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<TopicRuntimePropertiesDto>> GetByName(
+        [FromRoute] Guid namespaceId,
+        [FromRoute] string topicName,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Getting topic {TopicName} for namespace {NamespaceId}",
+            topicName,
+            namespaceId);
+
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult<TopicRuntimePropertiesDto>(namespaceResult.Error);
+        }
+
+        var ns = namespaceResult.Value;
+        if (ns.ConnectionString is null)
+        {
+            return BadRequest("Namespace does not have a connection string configured.");
+        }
+
+        var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
+        if (unprotectResult.IsFailure)
+        {
+            return ToActionResult<TopicRuntimePropertiesDto>(unprotectResult.Error);
+        }
+
+        var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+        var topicResult = await wrapper.GetTopicAsync(topicName, cancellationToken);
+        if (topicResult.IsFailure)
+        {
+            return ToActionResult<TopicRuntimePropertiesDto>(topicResult.Error);
+        }
+
+        return Ok(topicResult.Value);
+    }
+
+    /// <summary>
+    /// Sends a message to a topic.
+    /// </summary>
+    /// <param name="namespaceId">The namespace ID.</param>
+    /// <param name="topicName">The topic name.</param>
+    /// <param name="request">The send message request.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>Accepted if successful.</returns>
+    /// <response code="202">Message accepted for delivery.</response>
+    /// <response code="400">Invalid request parameters.</response>
+    /// <response code="403">Insufficient permissions.</response>
+    /// <response code="404">Namespace or topic not found.</response>
+    /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.MessagesSend)]
+    [HttpPost("{topicName}/messages")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
+    public async Task<IActionResult> SendMessage(
+        [FromRoute] Guid namespaceId,
+        [FromRoute] string topicName,
+        [FromBody] SendMessageRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Sending message to topic {TopicName} in namespace {NamespaceId}",
+            topicName,
+            namespaceId);
+
+        // Verify namespace exists
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult(Shared.Results.Result.Failure(namespaceResult.Error));
+        }
+
+        var ns = namespaceResult.Value;
+
+        // Check if namespace has Send permission (required to send messages)
+        if (!ns.HasSendPermission)
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new ProblemDetails
+                {
+                    Status = StatusCodes.Status403Forbidden,
+                    Title = "Insufficient Permissions",
+                    Detail = "Send operations require 'Send' permission. " +
+                           "Update your connection string to use a policy with Manage, Send, and Listen permissions."
+                });
+        }
+
+        // Create a request with the topic name and namespace ID
+        var sendRequest = request with 
+        { 
+            EntityName = topicName,
+            NamespaceId = namespaceId
+        };
+
+        var result = await _messageSender.SendAsync(sendRequest, cancellationToken);
+        if (result.IsFailure)
+        {
+            return ToActionResult(result);
+        }
+
+        _logger.LogInformation("Message sent to topic {TopicName}", topicName);
+        return Accepted();
+    }
+
+    /// <summary>
+    /// Peeks messages from a topic subscription (active or dead-letter).
+    /// </summary>
+    /// <param name="namespaceId">The namespace ID.</param>
+    /// <param name="topicName">The topic name.</param>
+    /// <param name="subscriptionName">The subscription name.</param>
+    /// <param name="queueType">Queue type: active or deadletter.</param>
+    /// <param name="skip">Number of items to skip.</param>
+    /// <param name="take">Number of items to take.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A paginated list of messages.</returns>
+    /// <response code="200">Messages retrieved successfully.</response>
+    /// <response code="400">Invalid request parameters.</response>
+    /// <response code="404">Namespace, topic, or subscription not found.</response>
+    /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.MessagesPeek)]
+    [HttpGet("{topicName}/subscriptions/{subscriptionName}/messages")]
+    [ProducesResponseType(typeof(PaginatedResponse<MessageResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<PaginatedResponse<MessageResponse>>> GetSubscriptionMessages(
+        [FromRoute] Guid namespaceId,
+        [FromRoute] string topicName,
+        [FromRoute] string subscriptionName,
+        [FromQuery] string queueType = "active",
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = 100,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Peeking messages from subscription {SubscriptionName} on topic {TopicName} in namespace {NamespaceId}",
+            subscriptionName,
+            topicName,
+            namespaceId);
+
+        var fromDeadLetter = string.Equals(queueType, "deadletter", StringComparison.OrdinalIgnoreCase);
+        var pageSize = Math.Clamp(take, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages);
+        var request = new GetMessagesRequest(
+            NamespaceId: namespaceId,
+            EntityName: topicName,
+            SubscriptionName: subscriptionName,
+            FromDeadLetter: fromDeadLetter,
+            MaxMessages: pageSize,
+            FromSequenceNumber: null);
+
+        var result = fromDeadLetter
+            ? await _messageReceiver.PeekDeadLetterMessagesAsync(request, cancellationToken)
+            : await _messageReceiver.PeekMessagesAsync(request, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ToActionResult<PaginatedResponse<MessageResponse>>(result.Error);
+        }
+
+        // Get the actual total count from subscription runtime properties
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        int totalCount = result.Value.Count; // Default to peeked count
+        
+        if (namespaceResult.IsSuccess && namespaceResult.Value.ConnectionString is not null)
+        {
+            try 
+            {
+                var unprotectResult = _connectionStringProtector.Unprotect(namespaceResult.Value.ConnectionString);
+                if (unprotectResult.IsSuccess)
+                {
+                    var wrapper = _clientCache.GetOrCreate(namespaceResult.Value.Id, unprotectResult.Value);
+                    var subscriptionsResult = await wrapper.GetSubscriptionsAsync(topicName, cancellationToken);
+                    if (subscriptionsResult.IsSuccess)
+                    {
+                        var subInfo = subscriptionsResult.Value.FirstOrDefault(s => string.Equals(s.Name, subscriptionName, StringComparison.OrdinalIgnoreCase));
+                        if (subInfo is not null)
+                        {
+                            totalCount = (int)(fromDeadLetter ? subInfo.DeadLetterMessageCount : subInfo.ActiveMessageCount);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to get subscription runtime properties for accurate count");
+            }
+        }
+
+        var page = pageSize > 0 ? (skip / pageSize) + 1 : 1;
+        var items = result.Value
+            .Skip(Math.Max(skip, 0))
+            .Take(pageSize)
+            .Select(MapToResponse)
+            .ToList();
+
+        var response = new PaginatedResponse<MessageResponse>(
+            Items: items,
+            TotalCount: totalCount,
+            Page: page,
+            PageSize: pageSize,
+            HasNextPage: skip + pageSize < totalCount,
+            HasPreviousPage: skip > 0);
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Dead-letters messages from a topic subscription.
+    /// Moves messages from the active queue to the dead-letter queue for testing purposes.
+    /// </summary>
+    /// <remarks>
+    /// This endpoint is useful for testing DLQ handling without waiting for real failures.
+    /// It moves messages from the active subscription to the dead-letter queue.
+    /// </remarks>
+    /// <param name="namespaceId">The namespace ID.</param>
+    /// <param name="topicName">The topic name.</param>
+    /// <param name="subscriptionName">The subscription name.</param>
+    /// <param name="messageCount">Number of messages to dead-letter (max 10).</param>
+    /// <param name="reason">The reason for dead-lettering.</param>
+    /// <param name="errorDescription">Optional error description.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The count of dead-lettered messages.</returns>
+    /// <response code="200">Messages dead-lettered successfully.</response>
+    /// <response code="400">Invalid request parameters.</response>
+    /// <response code="404">Namespace, topic, or subscription not found.</response>
+    /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.MessagesSend)]
+    [HttpPost("{topicName}/subscriptions/{subscriptionName}/deadletter")]
+    [ProducesResponseType(typeof(DeadLetterResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<DeadLetterResponse>> DeadLetterSubscriptionMessages(
+        [FromRoute] Guid namespaceId,
+        [FromRoute] string topicName,
+        [FromRoute] string subscriptionName,
+        [FromQuery] int messageCount = 1,
+        [FromQuery] string reason = "ManualDeadLetter",
+        [FromQuery] string? errorDescription = null,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Dead-lettering {Count} messages from subscription {SubscriptionName} on topic {TopicName} in namespace {NamespaceId} with reason: {Reason}",
+            messageCount,
+            subscriptionName,
+            topicName,
+            namespaceId,
+            reason);
+
+        // Get namespace to check permissions
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult<DeadLetterResponse>(namespaceResult.Error);
+        }
+
+        var ns = namespaceResult.Value;
+        
+        // Check if namespace has Send permission (required to dead-letter messages)
+        if (!ns.HasSendPermission)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Insufficient Permissions",
+                detail: "The configured connection string lacks 'Send' permission. " +
+                       "Dead-letter operations require 'Send' permission to move messages to the dead-letter queue. " +
+                       "Please create or use a Shared Access Policy with 'Manage', 'Send', and 'Listen' permissions.",
+                type: "https://docs.microsoft.com/azure/service-bus-messaging/service-bus-sas");
+        }
+
+        var request = new DeadLetterRequest(
+            NamespaceId: namespaceId,
+            EntityName: topicName,
+            SubscriptionName: subscriptionName,
+            MessageCount: messageCount,
+            Reason: reason,
+            ErrorDescription: errorDescription);
+
+        var result = await _messageReceiver.DeadLetterMessagesAsync(request, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ToActionResult<DeadLetterResponse>(result.Error);
+        }
+
+        _logger.LogInformation(
+            "Successfully dead-lettered {Count} messages from subscription {SubscriptionName} on topic {TopicName}",
+            result.Value,
+            subscriptionName,
+            topicName);
+
+        return Ok(new DeadLetterResponse(result.Value, reason));
+    }
+
+    private static MessageResponse MapToResponse(ServiceHub.Core.Entities.Message message)
+    {
+        return new MessageResponse(
+            MessageId: message.MessageId,
+            SequenceNumber: message.SequenceNumber,
+            Body: message.Body,
+            ContentType: message.ContentType,
+            CorrelationId: message.CorrelationId,
+            SessionId: message.SessionId,
+            PartitionKey: message.PartitionKey,
+            Subject: message.Subject,
+            ReplyTo: message.ReplyTo,
+            ReplyToSessionId: message.ReplyToSessionId,
+            To: message.To,
+            TimeToLive: message.TimeToLive,
+            ScheduledEnqueueTime: message.ScheduledEnqueueTime,
+            EnqueuedTime: message.EnqueuedTime,
+            ExpiresAt: message.ExpiresAt,
+            LockedUntil: message.LockedUntil,
+            DeliveryCount: message.DeliveryCount,
+            State: message.State,
+            DeadLetterSource: message.DeadLetterSource,
+            DeadLetterReason: message.DeadLetterReason,
+            DeadLetterErrorDescription: message.DeadLetterErrorDescription,
+            ApplicationProperties: message.ApplicationProperties,
+            SizeInBytes: message.SizeInBytes,
+            EntityName: message.EntityName,
+            SubscriptionName: message.SubscriptionName,
+            IsFromDeadLetter: message.IsFromDeadLetter);
+    }
+}
