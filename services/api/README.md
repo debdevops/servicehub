@@ -24,8 +24,30 @@
 
 ## 🚀 Quick Start
 
-### Prerequisites
-- **.NET 8 SDK** ([Download](https://dotnet.microsoft.com/download/dotnet/8.0))
+### Automated Setup (Recommended)
+
+**From the project root**, use the automated setup script that installs all prerequisites:
+
+```bash
+# From servicehub root directory
+cd /path/to/servicehub
+./run.sh
+```
+
+This automatically:
+- ✅ Installs .NET 8 SDK (if needed)
+- ✅ Installs Node.js & npm (for the web UI)
+- ✅ Restores all packages
+- ✅ Starts both API and Web UI
+
+See **[SETUP.md](../../SETUP.md)** for detailed setup instructions.
+
+### Manual API-Only Setup
+
+If you only want to run the API server:
+
+#### Prerequisites
+- **.NET 8 SDK** — Auto-installed by root `run.sh`, or [download manually](https://dotnet.microsoft.com/download/dotnet/8.0)
 - **Azure Service Bus namespace** (for testing)
 - **VS Code** or **Visual Studio 2022**
 
