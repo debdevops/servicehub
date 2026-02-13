@@ -225,14 +225,11 @@ Send single messages to queues or topics for ad-hoc testing:
 
 ---
 
-## Quick Start (5 Minutes)
+## Quick Start (Zero Configuration!)
 
-### Prerequisites
-- .NET 8.0 SDK
-- Node.js 18+
-- Azure Service Bus connection string (Listen permission only)
+### 🚀 Automated Setup (Recommended)
 
-### Installation
+**No manual prerequisites needed!** The setup script automatically installs everything:
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git
@@ -240,7 +237,32 @@ cd servicehub
 ./run.sh
 ```
 
+The script will:
+✅ Auto-install .NET 8 SDK (if not present)
+✅ Auto-install Node.js 18+ (if not present)
+✅ Install all dependencies
+✅ Start both API and UI servers
+
+**First run:** 5-10 minutes (includes installations)
+**Subsequent runs:** 30-60 seconds
+
 Open **http://localhost:3000**
+
+> 📘 **Detailed Setup Guide:** See [SETUP.md](SETUP.md) for platform-specific details, troubleshooting, and manual installation options.
+
+### Prerequisites (Auto-Installed)
+The following are **automatically installed** by `run.sh`:
+- ✅ .NET 8.0 SDK
+- ✅ Node.js 18+
+- ✅ npm package manager
+- ✅ Required utilities (curl, lsof)
+
+**Supports all major platforms:**
+- macOS (Intel & Apple Silicon), Ubuntu/Debian, RHEL/CentOS/Fedora, Arch Linux, openSUSE, Alpine, WSL
+- See [CROSS-PLATFORM-COMPATIBILITY.md](CROSS-PLATFORM-COMPATIBILITY.md) for complete list
+
+**You only need:**
+- ⚠️ Azure Service Bus connection string (Listen permission only)
 
 ![Application Start](docs/screenshots/01-Start-The-App.png)
 
