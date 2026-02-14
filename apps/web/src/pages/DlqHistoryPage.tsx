@@ -14,6 +14,7 @@ import { useDlqHistory, useDlqSummary } from '@/hooks/useDlqHistory';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { dlqHistoryApi } from '@/lib/api/dlqHistory';
 import toast from 'react-hot-toast';
+import { Zap } from 'lucide-react';
 
 const STATUS_OPTIONS = ['Active', 'Replayed', 'Archived', 'Discarded', 'ReplayFailed', 'Resolved'] as const;
 const CATEGORY_OPTIONS = [
@@ -46,6 +47,7 @@ export function DlqHistoryPage() {
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTimelineId, setSelectedTimelineId] = useState<number | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
 
   const pageSize = 50;
 
@@ -81,6 +83,24 @@ export function DlqHistoryPage() {
     toast.success('DLQ history refreshed');
   };
 
+  const handleScanNow = async () => {
+    if (!namespaceId || isScanning) return;
+    setIsScanning(true);
+    try {
+      const newCount = await dlqHistoryApi.triggerScan(namespaceId);
+      // Brief delay to let the DB commit settle, then refetch
+      setTimeout(() => {
+        refetch();
+        setIsScanning(false);
+        toast.success(newCount > 0 ? `Found ${newCount} new DLQ message(s)` : 'No new DLQ messages');
+      }, 1500);
+    } catch (error) {
+      console.error('Scan failed:', error);
+      toast.error('DLQ scan failed');
+      setIsScanning(false);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
@@ -113,6 +133,15 @@ export function DlqHistoryPage() {
             >
               <Download className="w-4 h-4" />
               JSON
+            </button>
+            <button
+              onClick={handleScanNow}
+              disabled={isScanning}
+              className="flex items-center gap-1.5 px-3 py-2 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+              title="Instantly scan DLQs for new messages"
+            >
+              <Zap className={`w-4 h-4 ${isScanning ? 'animate-pulse' : ''}`} />
+              {isScanning ? 'Scanning...' : 'Scan Now'}
             </button>
             <button
               onClick={handleRefresh}

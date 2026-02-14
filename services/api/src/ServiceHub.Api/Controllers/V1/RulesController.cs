@@ -71,7 +71,27 @@ public sealed class RulesController : ApiControllerBase
                 .OrderByDescending(r => r.CreatedAt)
                 .ToListAsync(cancellationToken);
 
-            var response = rules.Select(MapToResponse).ToList();
+            // Compute live pending match counts for each rule
+            var activeMessages = await _dbContext.DlqMessages
+                .AsNoTracking()
+                .Where(m => m.Status == DlqMessageStatus.Active)
+                .ToListAsync(cancellationToken);
+
+            var response = rules.Select(rule =>
+            {
+                var conditions = DeserializeOrDefault<List<RuleCondition>>(rule.ConditionsJson) ?? [];
+                var pendingCount = 0;
+                if (rule.Enabled && conditions.Count > 0 && activeMessages.Count > 0)
+                {
+                    foreach (var msg in activeMessages)
+                    {
+                        var result = _ruleEngine.Evaluate(msg, conditions);
+                        if (result.IsMatch)
+                            pendingCount++;
+                    }
+                }
+                return MapToResponse(rule, pendingCount);
+            }).ToList();
             return Ok(response);
         }
         catch (Exception ex)
@@ -106,7 +126,24 @@ public sealed class RulesController : ApiControllerBase
             return ToActionResult<RuleResponse>(
                 Error.NotFound(ErrorCodes.Rule.NotFound, $"Rule {id} not found"));
 
-        return Ok(MapToResponse(rule));
+        // Compute live pending match count
+        var conditions = DeserializeOrDefault<List<RuleCondition>>(rule.ConditionsJson) ?? [];
+        var pendingCount = 0;
+        if (rule.Enabled && conditions.Count > 0)
+        {
+            var activeMessages = await _dbContext.DlqMessages
+                .AsNoTracking()
+                .Where(m => m.Status == DlqMessageStatus.Active)
+                .ToListAsync(cancellationToken);
+            foreach (var msg in activeMessages)
+            {
+                var result = _ruleEngine.Evaluate(msg, conditions);
+                if (result.IsMatch)
+                    pendingCount++;
+            }
+        }
+
+        return Ok(MapToResponse(rule, pendingCount));
     }
 
     // ── 3. POST /api/v1/dlq/rules — Create rule ────────────────
@@ -306,7 +343,252 @@ public sealed class RulesController : ApiControllerBase
         return Ok(MapToResponse(rule));
     }
 
-    // ── 7. POST /api/v1/dlq/rules/test — Test a rule ───────────
+    // ── 7a. POST /api/v1/dlq/rules/{id}/replay-all — Replay all matched messages ──
+
+    /// <summary>
+    /// Evaluates a rule against all active DLQ messages and replays every match.
+    /// This is a destructive operation — messages are removed from the DLQ and
+    /// re-sent to their original (or alternate) entity.
+    /// </summary>
+    /// <param name="id">The rule ID to execute.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Summary of replay results.</returns>
+    [HttpPost("{id:long}/replay-all")]
+    [RequireScope(ApiKeyScopes.DlqWrite)]
+    [ProducesResponseType(typeof(ReplayAllResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ReplayAllResponse>> ReplayAll(
+        long id,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var rule = await _dbContext.AutoReplayRules
+                .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+
+            if (rule is null)
+                return ToActionResult<ReplayAllResponse>(
+                    Error.NotFound(ErrorCodes.Rule.NotFound, $"Rule {id} not found"));
+
+            if (!rule.Enabled)
+                return ToActionResult<ReplayAllResponse>(
+                    Error.Validation("Rule.Disabled", "Cannot replay-all with a disabled rule. Enable it first."));
+
+            var conditions = DeserializeOrDefault<List<RuleCondition>>(rule.ConditionsJson) ?? [];
+            var action = DeserializeOrDefault<RuleAction>(rule.ActionsJson) ?? new RuleAction();
+
+            // Note: autoReplay flag is no longer required for manual Replay All.
+            // User explicitly clicks Replay All — that IS their intent.
+
+            // Load all Active DLQ messages
+            var activeMessages = await _dbContext.DlqMessages
+                .Where(m => m.Status == DlqMessageStatus.Active)
+                .OrderBy(m => m.DetectedAtUtc)
+                .ToListAsync(cancellationToken);
+
+            // Evaluate the rule against each message
+            var matched = new List<DlqMessage>();
+            foreach (var msg in activeMessages)
+            {
+                var result = _ruleEngine.Evaluate(msg, conditions);
+                if (result.IsMatch)
+                    matched.Add(msg);
+            }
+
+            if (matched.Count == 0)
+            {
+                return Ok(new ReplayAllResponse(
+                    TotalMatched: 0,
+                    Replayed: 0,
+                    Failed: 0,
+                    Skipped: 0,
+                    Results: []));
+            }
+
+            // Rate-limit check (once for the entire batch, not per message)
+            var executor = HttpContext.RequestServices.GetRequiredService<IAutoReplayExecutor>();
+            if (!await executor.CanReplayAsync(rule.Id, cancellationToken))
+            {
+                return Ok(new ReplayAllResponse(
+                    TotalMatched: matched.Count,
+                    Replayed: 0,
+                    Failed: 0,
+                    Skipped: matched.Count,
+                    Results: matched.Select(m => new ReplayAllItemResponse(
+                        DlqRecordId: m.Id,
+                        MessageId: m.MessageId,
+                        EntityName: m.EntityName,
+                        Outcome: "Skipped",
+                        Error: $"Rule '{rule.Name}' has exceeded its hourly replay limit"
+                    )).ToList()));
+            }
+
+            // Resolve services for efficient batch replay
+            var nsRepo = HttpContext.RequestServices.GetRequiredService<INamespaceRepository>();
+            var protector = HttpContext.RequestServices.GetRequiredService<IConnectionStringProtector>();
+            var clientCache = HttpContext.RequestServices.GetRequiredService<IServiceBusClientCache>();
+
+            var results = new List<ReplayAllItemResponse>();
+            var replayed = 0;
+            var failed = 0;
+            var skipped = 0;
+
+            // Group messages by (NamespaceId, EntityPath) for batch replay.
+            // This creates ONE DLQ receiver per entity instead of one per message (O(N) vs O(N²)).
+            var entityGroups = matched.GroupBy(m =>
+            {
+                string entity;
+                string? sub = null;
+                if (!string.IsNullOrEmpty(action.TargetEntity))
+                {
+                    entity = action.TargetEntity;
+                }
+                else if (m.EntityType == ServiceBusEntityType.Subscription && m.TopicName is not null)
+                {
+                    entity = m.TopicName;
+                    // EntityName stores full path: "topicName/subscriptions/subName"
+                    // Extract just the subscription name for the Service Bus receiver
+                    var prefix = $"{m.TopicName}/subscriptions/";
+                    sub = m.EntityName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                        ? m.EntityName[prefix.Length..]
+                        : m.EntityName;
+                }
+                else
+                {
+                    entity = m.EntityName;
+                }
+                return new { m.NamespaceId, Entity = entity, Subscription = sub ?? "" };
+            });
+
+            foreach (var group in entityGroups)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Resolve namespace connection once per group
+                var nsResult = await nsRepo.GetByIdAsync(group.Key.NamespaceId);
+                if (nsResult.IsFailure)
+                {
+                    foreach (var msg in group)
+                    {
+                        failed++;
+                        results.Add(new ReplayAllItemResponse(
+                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
+                            Outcome: "Failed", Error: $"Namespace not found: {nsResult.Error.Message}"));
+                    }
+                    continue;
+                }
+
+                var ns = nsResult.Value;
+                if (string.IsNullOrWhiteSpace(ns.ConnectionString))
+                {
+                    foreach (var msg in group)
+                    {
+                        failed++;
+                        results.Add(new ReplayAllItemResponse(
+                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
+                            Outcome: "Failed", Error: "Namespace has no connection string"));
+                    }
+                    continue;
+                }
+
+                var unprotectResult = protector.Unprotect(ns.ConnectionString);
+                if (unprotectResult.IsFailure)
+                {
+                    foreach (var msg in group)
+                    {
+                        failed++;
+                        results.Add(new ReplayAllItemResponse(
+                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
+                            Outcome: "Failed", Error: $"Connection string error: {unprotectResult.Error.Message}"));
+                    }
+                    continue;
+                }
+
+                var client = clientCache.GetOrCreate(group.Key.NamespaceId, unprotectResult.Value);
+                var entityName = group.Key.Entity;
+                var subscriptionName = string.IsNullOrEmpty(group.Key.Subscription) ? null : group.Key.Subscription;
+                var messagesInGroup = group.ToList();
+                var sequenceNumbers = messagesInGroup.Select(m => m.SequenceNumber).ToList();
+
+                // Batch replay: ONE DLQ receiver, finds all targets at once, replays all
+                var batchResults = await client.ReplayMessagesAsync(
+                    entityName, subscriptionName, sequenceNumbers, cancellationToken);
+
+                // Process results and record history
+                foreach (var msg in messagesInGroup)
+                {
+                    var isSuccess = batchResults.TryGetValue(msg.SequenceNumber, out var replayResult)
+                                    && replayResult.IsSuccess;
+
+                    if (isSuccess)
+                    {
+                        replayed++;
+                        msg.Status = DlqMessageStatus.Replayed;
+                        msg.ReplayedAt = DateTimeOffset.UtcNow;
+                        msg.ReplaySuccess = true;
+                        rule.SuccessCount++;
+                        results.Add(new ReplayAllItemResponse(
+                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
+                            Outcome: "Success", Error: null));
+                    }
+                    else
+                    {
+                        failed++;
+                        var errorMsg = batchResults.TryGetValue(msg.SequenceNumber, out var r)
+                            ? r.Error.Message
+                            : "Message not found in DLQ";
+                        msg.Status = DlqMessageStatus.ReplayFailed;
+                        msg.ReplaySuccess = false;
+                        results.Add(new ReplayAllItemResponse(
+                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
+                            Outcome: "Failed", Error: errorMsg));
+                    }
+
+                    rule.MatchCount++;
+
+                    // Record replay history
+                    _dbContext.ReplayHistories.Add(new ReplayHistory
+                    {
+                        DlqMessageId = msg.Id,
+                        RuleId = rule.Id,
+                        ReplayedAt = DateTimeOffset.UtcNow,
+                        ReplayedBy = $"manual-replay-all:{rule.Name}",
+                        ReplayStrategy = action.TargetEntity is not null ? "alternate-entity" : "original-entity",
+                        ReplayedToEntity = entityName,
+                        OutcomeStatus = isSuccess ? "Success" : "Failed",
+                        ErrorDetails = isSuccess ? null
+                            : (batchResults.TryGetValue(msg.SequenceNumber, out var er) ? er.Error.Message : "Not found"),
+                    });
+                }
+            }
+
+            rule.UpdatedAt = DateTimeOffset.UtcNow;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation(
+                "Replay-all for rule {RuleId}/{RuleName}: {Matched} matched, {Replayed} replayed, {Failed} failed, {Skipped} skipped",
+                id, rule.Name, matched.Count, replayed, failed, skipped);
+
+            return Ok(new ReplayAllResponse(
+                TotalMatched: matched.Count,
+                Replayed: replayed,
+                Failed: failed,
+                Skipped: skipped,
+                Results: results));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to execute replay-all for rule {RuleId}", id);
+            return ToActionResult<ReplayAllResponse>(
+                Error.Internal(ErrorCodes.Rule.TestFailed, "Failed to execute replay-all"));
+        }
+    }
+
+    // ── 7b. POST /api/v1/dlq/rules/test — Test a rule ───────────
 
     /// <summary>
     /// Tests a rule (or ad-hoc conditions) against current active DLQ messages.
@@ -416,7 +698,7 @@ public sealed class RulesController : ApiControllerBase
 
     // ── Mapping ─────────────────────────────────────────────────
 
-    private static RuleResponse MapToResponse(AutoReplayRule rule)
+    private RuleResponse MapToResponse(AutoReplayRule rule, int? pendingMatchCount = null)
     {
         var conditions = DeserializeOrDefault<List<RuleCondition>>(rule.ConditionsJson) ?? [];
         var action = DeserializeOrDefault<RuleAction>(rule.ActionsJson) ?? new RuleAction();
@@ -436,7 +718,8 @@ public sealed class RulesController : ApiControllerBase
             MatchCount: rule.MatchCount,
             SuccessCount: rule.SuccessCount,
             SuccessRate: successRate,
-            MaxReplaysPerHour: rule.MaxReplaysPerHour);
+            MaxReplaysPerHour: rule.MaxReplaysPerHour,
+            PendingMatchCount: pendingMatchCount ?? 0);
     }
 
     private static T? DeserializeOrDefault<T>(string json)

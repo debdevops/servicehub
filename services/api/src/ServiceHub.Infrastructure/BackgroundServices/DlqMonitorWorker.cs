@@ -16,8 +16,8 @@ public sealed class DlqMonitorWorker : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<DlqMonitorWorker> _logger;
 
-    private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(15);
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(5);  // Fast startup
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);  // Aggressive polling for near-realtime DLQ detection
     private static readonly int MaxParallelScans = 10;
 
     /// <summary>

@@ -388,7 +388,24 @@ public sealed class DlqHistoryController : ApiControllerBase
 
         return sb.ToString();
     }
+    /// <summary>
+    /// Manually triggers a DLQ scan for a namespace for instant updates.
+    /// </summary>
+    /// <param name="namespaceId">The namespace to scan.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of new messages found.</returns>
+    [HttpPost("scan/{namespaceId:guid}")]
+    [RequireScope(ApiKeyScopes.DlqWrite)]
+    [ProducesResponseType(typeof(int), StatusCodes.Status200OK)]
+    public async Task<ActionResult<int>> TriggerScan(
+        Guid namespaceId,
+        CancellationToken cancellationToken = default)
+    {
+        var monitorService = HttpContext.RequestServices.GetRequiredService<IDlqMonitorService>();
+        var result = await monitorService.ScanNamespaceAsync(namespaceId, cancellationToken);
 
+        return result.IsSuccess ? Ok(result.Value) : Problem(result.Error.Message);
+    }
     private static string EscapeCsv(string value)
     {
         if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))

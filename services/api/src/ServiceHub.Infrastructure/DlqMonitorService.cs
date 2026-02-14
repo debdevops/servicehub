@@ -15,6 +15,7 @@ namespace ServiceHub.Infrastructure;
 /// <summary>
 /// Monitors dead-letter queues across namespaces, detects new messages,
 /// categorises failures heuristically, and persists them to SQLite.
+/// Rules are evaluated manually only via Test or Replay All actions.
 /// </summary>
 public sealed class DlqMonitorService : IDlqMonitorService
 {

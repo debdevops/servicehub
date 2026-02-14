@@ -13,8 +13,9 @@ export function useDlqHistory(params: DlqHistoryParams, enabled = true) {
     queryKey: ['dlq-history', params],
     queryFn: () => dlqHistoryApi.getHistory(params),
     enabled,
-    staleTime: 10_000,
-    refetchInterval: 30_000,
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
     retry: (failureCount, error: unknown) => {
       const err = error as { response?: { status?: number } };
       if (err?.response?.status === 404) return false;
@@ -55,8 +56,9 @@ export function useDlqSummary(namespaceId?: string) {
     queryKey: ['dlq-summary', namespaceId],
     queryFn: () => dlqHistoryApi.getSummary(namespaceId),
     enabled: !!namespaceId,
-    staleTime: 30_000,
-    refetchInterval: 60_000,
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
     retry: (failureCount, error: unknown) => {
       const err = error as { response?: { status?: number } };
       if (err?.response?.status === 404) return false;

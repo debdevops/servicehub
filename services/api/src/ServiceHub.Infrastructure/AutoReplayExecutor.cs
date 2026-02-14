@@ -87,7 +87,12 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         else if (message.EntityType == ServiceBusEntityType.Subscription && message.TopicName is not null)
         {
             entityName = message.TopicName;
-            subscriptionName = message.EntityName;
+            // EntityName stores full path: "topicName/subscriptions/subName"
+            // Extract just the subscription name for the Service Bus receiver
+            var prefix = $"{message.TopicName}/subscriptions/";
+            subscriptionName = message.EntityName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? message.EntityName[prefix.Length..]
+                : message.EntityName;
         }
         else
         {

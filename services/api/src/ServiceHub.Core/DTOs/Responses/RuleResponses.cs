@@ -17,7 +17,8 @@ public sealed record RuleResponse(
     long MatchCount,
     long SuccessCount,
     double SuccessRate,
-    int MaxReplaysPerHour);
+    int MaxReplaysPerHour,
+    int PendingMatchCount);
 
 /// <summary>
 /// Response DTO for rule test results.
@@ -38,6 +39,26 @@ public sealed record RuleMatchResultResponse(
     bool IsMatch,
     string? MatchReason,
     string? DeadLetterReason);
+
+/// <summary>
+/// Response DTO for a "Replay All" bulk operation.
+/// </summary>
+public sealed record ReplayAllResponse(
+    int TotalMatched,
+    int Replayed,
+    int Failed,
+    int Skipped,
+    IReadOnlyList<ReplayAllItemResponse> Results);
+
+/// <summary>
+/// Individual message result within a Replay All operation.
+/// </summary>
+public sealed record ReplayAllItemResponse(
+    long DlqRecordId,
+    string MessageId,
+    string EntityName,
+    string Outcome,
+    string? Error);
 
 /// <summary>
 /// Response DTO for a rule template.

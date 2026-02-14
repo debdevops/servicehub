@@ -31,6 +31,7 @@ export interface RuleResponse {
   successCount: number;
   successRate: number;
   maxReplaysPerHour: number;
+  pendingMatchCount: number;
 }
 
 export interface RuleMatchResultResponse {
@@ -47,6 +48,22 @@ export interface RuleTestResponse {
   matchedCount: number;
   estimatedSuccessRate: number;
   sampleMatches: RuleMatchResultResponse[];
+}
+
+export interface ReplayAllResponse {
+  totalMatched: number;
+  replayed: number;
+  failed: number;
+  skipped: number;
+  results: ReplayAllItemResponse[];
+}
+
+export interface ReplayAllItemResponse {
+  dlqRecordId: number;
+  messageId: string;
+  entityName: string;
+  outcome: string;
+  error: string | null;
 }
 
 export interface RuleTemplateResponse {
@@ -114,6 +131,15 @@ export const rulesApi = {
   /** Toggle a rule's enabled status */
   toggle: async (id: number): Promise<RuleResponse> => {
     const { data } = await apiClient.post<RuleResponse>(`${BASE}/${id}/toggle`);
+    return data;
+  },
+
+  /** Execute replay-all for a rule — replays every matching DLQ message */
+  replayAll: async (ruleId: number): Promise<ReplayAllResponse> => {
+    // Use extended timeout — bulk replay can take time for many messages
+    const { data } = await apiClient.post<ReplayAllResponse>(`${BASE}/${ruleId}/replay-all`, null, {
+      timeout: 120_000, // 2 minutes (override default 30s)
+    });
     return data;
   },
 

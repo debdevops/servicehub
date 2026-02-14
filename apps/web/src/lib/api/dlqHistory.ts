@@ -137,6 +137,14 @@ export const dlqHistoryApi = {
   },
 
   /**
+   * Trigger an immediate DLQ scan for a namespace.
+   */
+  triggerScan: async (namespaceId: string): Promise<number> => {
+    const response = await apiClient.post<number>(`/dlq/scan/${namespaceId}`);
+    return response.data;
+  },
+
+  /**
    * Get DLQ summary statistics.
    */
   getSummary: async (namespaceId?: string): Promise<DlqSummary> => {

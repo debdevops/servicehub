@@ -125,6 +125,22 @@ public interface IServiceBusClientWrapper : IAsyncDisposable
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Replays multiple messages from the dead-letter queue in a single batch.
+    /// Creates one DLQ receiver and processes all target sequence numbers at once,
+    /// which is far more efficient than calling ReplayMessageAsync per message.
+    /// </summary>
+    /// <param name="entityName">The queue or topic name.</param>
+    /// <param name="subscriptionName">Optional subscription name for topics.</param>
+    /// <param name="sequenceNumbers">The sequence numbers of messages to replay.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A dictionary mapping each sequence number to its replay result (success or failure).</returns>
+    Task<IReadOnlyDictionary<long, Result>> ReplayMessagesAsync(
+        string entityName,
+        string? subscriptionName,
+        IReadOnlyCollection<long> sequenceNumbers,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Purges (permanently deletes) a message from a queue or subscription.
     /// </summary>
     /// <param name="entityName">The queue or topic name.</param>

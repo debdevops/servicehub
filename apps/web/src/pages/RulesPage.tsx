@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Zap, RefreshCw, ToggleLeft, ToggleRight, Pencil, Trash2, FlaskConical } from 'lucide-react';
+import { Plus, Zap, RefreshCw, ToggleLeft, ToggleRight, Pencil, Trash2, FlaskConical, Play, AlertTriangle, X, Shield } from 'lucide-react';
 import { RuleBuilderDialog, TemplateGalleryDialog, RuleTestDialog } from '@/components/rules';
 import {
   useRules,
@@ -7,6 +7,7 @@ import {
   useUpdateRule,
   useDeleteRule,
   useToggleRule,
+  useReplayAll,
 } from '@/hooks/useRules';
 import type {
   RuleResponse,
@@ -22,6 +23,7 @@ export function RulesPage() {
   const updateMutation = useUpdateRule();
   const deleteMutation = useDeleteRule();
   const toggleMutation = useToggleRule();
+  const replayAllMutation = useReplayAll();
 
   // Dialog state
   const [showBuilder, setShowBuilder] = useState(false);
@@ -29,6 +31,7 @@ export function RulesPage() {
   const [showTest, setShowTest] = useState(false);
   const [editRule, setEditRule] = useState<RuleResponse | null>(null);
   const [testRule, setTestRule] = useState<RuleResponse | null>(null);
+  const [replayAllRule, setReplayAllRule] = useState<RuleResponse | null>(null);
   const [templatePrefill, setTemplatePrefill] = useState<{
     conditions: RuleCondition[];
     action: RuleAction;
@@ -73,6 +76,17 @@ export function RulesPage() {
     if (confirm(`Delete rule "${rule.name}"? This cannot be undone.`)) {
       deleteMutation.mutate(rule.id);
     }
+  };
+
+  const handleReplayAll = (rule: RuleResponse) => {
+    setReplayAllRule(rule);
+  };
+
+  const confirmReplayAll = () => {
+    if (!replayAllRule) return;
+    replayAllMutation.mutate(replayAllRule.id, {
+      onSettled: () => setReplayAllRule(null),
+    });
   };
 
   return (
@@ -127,6 +141,8 @@ export function RulesPage() {
                 onDelete={() => handleDelete(rule)}
                 onToggle={() => toggleMutation.mutate(rule.id)}
                 onTest={() => handleTest(rule)}
+                onReplayAll={() => handleReplayAll(rule)}
+                isReplayingAll={replayAllMutation.isPending && replayAllRule?.id === rule.id}
               />
             ))}
           </div>
@@ -160,6 +176,13 @@ export function RulesPage() {
         onClose={() => { setShowTest(false); setTestRule(null); }}
         rule={testRule}
       />
+
+      <ReplayAllConfirmDialog
+        rule={replayAllRule}
+        isExecuting={replayAllMutation.isPending}
+        onConfirm={confirmReplayAll}
+        onCancel={() => setReplayAllRule(null)}
+      />
     </div>
   );
 }
@@ -172,12 +195,16 @@ function RuleCard({
   onDelete,
   onToggle,
   onTest,
+  onReplayAll,
+  isReplayingAll,
 }: {
   rule: RuleResponse;
   onEdit: () => void;
   onDelete: () => void;
   onToggle: () => void;
   onTest: () => void;
+  onReplayAll: () => void;
+  isReplayingAll: boolean;
 }) {
   const successPct =
     rule.matchCount > 0
@@ -261,7 +288,16 @@ function RuleCard({
       {/* Stats */}
       <div className="mb-4 flex items-center gap-4 text-xs text-gray-500">
         <span>
-          Matched: <strong className="text-gray-700">{rule.matchCount}</strong>
+          Pending:{' '}
+          <strong className={rule.pendingMatchCount > 0 ? 'text-amber-600' : 'text-gray-700'}>
+            {rule.pendingMatchCount}
+          </strong>
+        </span>
+        <span>
+          Replayed:{' '}
+          <strong className="text-gray-700">
+            {rule.matchCount}
+          </strong>
         </span>
         <span>
           Success:{' '}
@@ -279,6 +315,21 @@ function RuleCard({
         >
           <FlaskConical className="w-3.5 h-3.5" />
           Test
+        </button>
+        <button
+          onClick={onReplayAll}
+          disabled={!rule.enabled || isReplayingAll}
+          className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          title={
+            !rule.enabled
+              ? 'Enable rule first'
+              : rule.pendingMatchCount === 0
+                ? 'No pending DLQ messages match this rule'
+                : `Replay ${rule.pendingMatchCount} matching DLQ messages`
+          }
+        >
+          <Play className={`w-3.5 h-3.5 ${isReplayingAll ? 'animate-pulse' : ''}`} />
+          {isReplayingAll ? 'Replaying...' : 'Replay All'}
         </button>
         <button
           onClick={onEdit}
@@ -328,6 +379,138 @@ function EmptyState({
           <Plus className="w-4 h-4" />
           Create Rule
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Replay All Confirm Dialog ─────────────────────────────────────
+
+function ReplayAllConfirmDialog({
+  rule,
+  isExecuting,
+  onConfirm,
+  onCancel,
+}: {
+  rule: RuleResponse | null;
+  isExecuting: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!rule) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/60" onClick={isExecuting ? undefined : onCancel} />
+
+      {/* Dialog */}
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+        {/* Header — Danger style */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-red-100 bg-red-50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-red-100 border border-red-200 rounded-full flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Replay All Matching Messages</h2>
+              <p className="text-xs text-red-600 font-medium mt-0.5">Destructive Operation</p>
+            </div>
+          </div>
+          {!isExecuting && (
+            <button onClick={onCancel} className="p-1 hover:bg-red-100 rounded-lg transition-colors">
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+          )}
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4">
+          {/* Rule info */}
+          <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
+            <div className="text-sm font-semibold text-gray-900 mb-1">
+              Rule: {rule.name}
+            </div>
+            <div className="space-y-0.5">
+              {rule.conditions.map((c, i) => (
+                <div key={i} className="text-xs text-gray-600 flex items-center gap-1">
+                  <span className="text-gray-400">•</span>
+                  <span>
+                    {fieldLabel(c.field)} {operatorLabel(c.operator)}{' '}
+                    <span className="font-mono text-gray-800">&quot;{c.value}&quot;</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+            {rule.action.targetEntity && (
+              <div className="mt-2 text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded">
+                Target: <strong>{rule.action.targetEntity}</strong> (not original entity)
+              </div>
+            )}
+          </div>
+
+          {/* Warning messages */}
+          <div className="space-y-3">
+            <div className="flex items-start gap-2.5">
+              <Shield className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+              <div className="text-sm text-gray-700">
+                <strong className="text-red-700">Messages will be removed from the DLQ</strong> and
+                re-sent to their original queue/topic. This cannot be undone.
+              </div>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+              <div className="text-sm text-gray-700">
+                If the root cause hasn&apos;t been fixed, replayed messages may{' '}
+                <strong>end up back in the DLQ</strong>, creating a replay loop.
+              </div>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+              <div className="text-sm text-gray-700">
+                Replaying to the <strong>wrong entity</strong> or at <strong>high volume</strong> may
+                cause downstream service disruption.
+              </div>
+            </div>
+          </div>
+
+          {/* Safety tip */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+            <p className="text-xs text-blue-800">
+              <strong>Tip:</strong> Use the <strong>Test</strong> button first to see how many
+              messages match. Only proceed if you are confident the root cause is resolved.
+            </p>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+          <button
+            onClick={onCancel}
+            disabled={isExecuting}
+            className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+            autoFocus
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isExecuting}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-60"
+          >
+            {isExecuting ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Replaying...
+              </>
+            ) : (
+              <>
+                <Play className="w-4 h-4" />
+                Yes, Replay All Matches
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

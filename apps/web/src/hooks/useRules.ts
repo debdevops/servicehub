@@ -7,6 +7,7 @@ import {
 import toast from 'react-hot-toast';
 
 const RULES_KEY = ['rules'] as const;
+const DLQ_KEYS = ['dlq-history', 'dlq-summary'] as const;
 
 /**
  * Hook for fetching all auto-replay rules.
@@ -111,5 +112,33 @@ export function useTestRule() {
   return useMutation({
     mutationFn: (request: TestRuleRequest) => rulesApi.test(request),
     onError: () => toast.error('Failed to test rule'),
+  });
+}
+
+/**
+ * Hook for executing replay-all on a rule.
+ * Replays every DLQ message that matches the rule's conditions.
+ */
+export function useReplayAll() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ruleId: number) => rulesApi.replayAll(ruleId),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: RULES_KEY });
+      // Also invalidate DLQ data since messages have been replayed
+      DLQ_KEYS.forEach((key) => qc.invalidateQueries({ queryKey: [key] }));
+
+      if (result.replayed > 0) {
+        toast.success(
+          `Replayed ${result.replayed} of ${result.totalMatched} matched messages` +
+            (result.failed > 0 ? ` (${result.failed} failed)` : ''),
+        );
+      } else if (result.totalMatched === 0) {
+        toast('No messages matched this rule\'s conditions', { icon: 'ℹ️' });
+      } else {
+        toast.error(`All ${result.totalMatched} matched messages failed to replay`);
+      }
+    },
+    onError: () => toast.error('Failed to execute replay-all'),
   });
 }
