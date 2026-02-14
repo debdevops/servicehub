@@ -246,12 +246,12 @@ public sealed class DlqHistoryService : IDlqHistoryService
                 query = query.Where(m => m.NamespaceId == namespaceId.Value);
 
             var total = await query.CountAsync(cancellationToken);
-            var active = await query.CountAsync(m => m.Status == DlqMessageStatus.Active, cancellationToken);
-            var replayed = await query.CountAsync(m => m.Status == DlqMessageStatus.Replayed, cancellationToken);
-            var archived = await query.CountAsync(m => m.Status == DlqMessageStatus.Archived, cancellationToken);
+            var active = await query.Where(m => m.Status == DlqMessageStatus.Active).CountAsync(cancellationToken);
+            var replayed = await query.Where(m => m.Status == DlqMessageStatus.Replayed).CountAsync(cancellationToken);
+            var archived = await query.Where(m => m.Status == DlqMessageStatus.Archived).CountAsync(cancellationToken);
 
-            // Exclude resolved (auto-cleaned) messages from breakdown counts
-            var actionableQuery = query.Where(m => m.Status != DlqMessageStatus.Resolved);
+            // Only count actionable messages in breakdown views
+            var actionableQuery = query.Where(m => m.Status == DlqMessageStatus.Active);
 
             var byCategory = await actionableQuery
                 .GroupBy(m => m.FailureCategory)

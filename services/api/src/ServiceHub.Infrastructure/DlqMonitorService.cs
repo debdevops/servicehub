@@ -161,12 +161,38 @@ public sealed class DlqMonitorService : IDlqMonitorService
             _logger.LogWarning(ex, "Error scanning subscription DLQs for namespace {NamespaceId}", namespaceId);
         }
 
-        // Reconcile: mark Active DB records as Resolved if no longer present in the real DLQ
-        var resolved = await ReconcileStaleMessagesAsync(namespaceId, scannedEntities, cancellationToken);
+        // Reconcile: for entities with 0 DLQ messages, mark any remaining Active DB records as Replayed
+        var reconciledCount = 0;
+        foreach (var (entityName2, seqNums) in scannedEntities)
+        {
+            if (seqNums.Count == 0)
+            {
+                var staleRecords = await _dbContext.DlqMessages
+                    .Where(m => m.NamespaceId == namespaceId
+                                && m.EntityName == entityName2
+                                && m.Status == DlqMessageStatus.Active)
+                    .ToListAsync(cancellationToken);
+
+                foreach (var record in staleRecords)
+                {
+                    record.Status = DlqMessageStatus.Replayed;
+                    record.ReplayedAt = DateTimeOffset.UtcNow;
+                    reconciledCount++;
+                }
+            }
+        }
+
+        if (reconciledCount > 0)
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation(
+                "Reconciled {Count} stale DLQ messages as Replayed for namespace {NamespaceId}",
+                reconciledCount, namespaceId);
+        }
 
         _logger.LogInformation(
-            "DLQ scan complete for namespace {NamespaceId}: {NewMessages} new, {Resolved} resolved",
-            namespaceId, totalNew, resolved);
+            "DLQ scan complete for namespace {NamespaceId}: {NewMessages} new, {Reconciled} reconciled",
+            namespaceId, totalNew, reconciledCount);
 
         return totalNew;
     }
@@ -181,6 +207,8 @@ public sealed class DlqMonitorService : IDlqMonitorService
     {
         var newCount = 0;
         var liveSequenceNumbers = new HashSet<long>();
+        var fullEntityName = topicName != null ? $"{topicName}/subscriptions/{entityName}" : entityName;
+
         try
         {
             var request = new GetMessagesRequest(
@@ -201,6 +229,11 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
             var detectedAt = DateTimeOffset.UtcNow;
 
+            // Track which messages are currently in DLQ
+            var currentDlqSequenceNumbers = messagesResult.Value
+                .Select(m => m.SequenceNumber)
+                .ToHashSet();
+
             foreach (var msg in messagesResult.Value)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -208,18 +241,32 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 liveSequenceNumbers.Add(msg.SequenceNumber);
 
                 var bodyHash = ComputeBodyHash(msg.Body);
-                var fullEntityName = topicName != null ? $"{topicName}/subscriptions/{entityName}" : entityName;
 
-                // Check for duplicate using unique index fields
-                var exists = await _dbContext.DlqMessages.AnyAsync(
-                    m => m.NamespaceId == namespaceId
-                         && m.EntityName == fullEntityName
-                         && m.SequenceNumber == msg.SequenceNumber,
-                    cancellationToken);
+                // Check if message already exists in database
+                var existingMessage = await _dbContext.DlqMessages
+                    .FirstOrDefaultAsync(
+                        m => m.NamespaceId == namespaceId
+                             && m.EntityName == fullEntityName
+                             && m.SequenceNumber == msg.SequenceNumber,
+                        cancellationToken);
 
-                if (exists)
+                if (existingMessage != null)
+                {
+                    // Message already tracked — ensure it's marked as Active
+                    if (existingMessage.Status != DlqMessageStatus.Active)
+                    {
+                        existingMessage.Status = DlqMessageStatus.Active;
+                        existingMessage.ResolvedAt = null;
+                        existingMessage.ReplayedAt = null;
+                        existingMessage.ReplaySuccess = null;
+                        _logger.LogInformation(
+                            "Message {MessageId} returned to DLQ, status updated to Active",
+                            msg.MessageId);
+                    }
                     continue;
+                }
 
+                // New message — add to database
                 var (category, confidence) = CategorizeFailure(msg.DeadLetterReason, msg.DeadLetterErrorDescription, msg.DeliveryCount);
 
                 var dlqMessage = new DlqMessage
@@ -242,6 +289,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                     ApplicationPropertiesJson = SerializeProperties(msg.ApplicationProperties),
                     FailureCategory = category,
                     CategoryConfidence = confidence,
+                    Status = DlqMessageStatus.Active,
                     CorrelationId = msg.CorrelationId,
                     SessionId = msg.SessionId,
                     TopicName = topicName,
@@ -251,9 +299,34 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 newCount++;
             }
 
+            // CRITICAL: Mark messages that are NO LONGER in DLQ as Replayed
+            var messagesNoLongerInDlq = await _dbContext.DlqMessages
+                .Where(m => m.NamespaceId == namespaceId
+                            && m.EntityName == fullEntityName
+                            && m.Status == DlqMessageStatus.Active
+                            && !currentDlqSequenceNumbers.Contains(m.SequenceNumber))
+                .ToListAsync(cancellationToken);
+
+            foreach (var removedMessage in messagesNoLongerInDlq)
+            {
+                removedMessage.Status = DlqMessageStatus.Replayed;
+                removedMessage.ReplayedAt = DateTimeOffset.UtcNow;
+                _logger.LogInformation(
+                    "Message {MessageId} no longer in DLQ — marked as Replayed",
+                    removedMessage.MessageId);
+            }
+
+            if (messagesNoLongerInDlq.Count > 0)
+            {
+                _logger.LogInformation(
+                    "Marked {Count} messages as Replayed for {EntityType} {EntityName}",
+                    messagesNoLongerInDlq.Count, entityType, entityName);
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
             if (newCount > 0)
             {
-                await _dbContext.SaveChangesAsync(cancellationToken);
                 _logger.LogInformation(
                     "Stored {Count} new DLQ messages from {EntityType} {EntityName}",
                     newCount, entityType, entityName);
@@ -271,72 +344,6 @@ public sealed class DlqMonitorService : IDlqMonitorService
         }
 
         return (newCount, liveSequenceNumbers);
-    }
-
-    /// <summary>
-    /// Marks Active DB records as Resolved when they are no longer present in the real DLQ.
-    /// </summary>
-    private async Task<int> ReconcileStaleMessagesAsync(
-        Guid namespaceId,
-        Dictionary<string, HashSet<long>> scannedEntities,
-        CancellationToken cancellationToken)
-    {
-        if (scannedEntities.Count == 0)
-            return 0;
-
-        var resolved = 0;
-        var now = DateTimeOffset.UtcNow;
-
-        try
-        {
-            // Get all Active messages for entities that we successfully scanned
-            var entityNames = scannedEntities.Keys.ToList();
-            var activeRecords = await _dbContext.DlqMessages
-                .Where(m => m.NamespaceId == namespaceId
-                         && m.Status == DlqMessageStatus.Active
-                         && entityNames.Contains(m.EntityName))
-                .ToListAsync(cancellationToken);
-
-            foreach (var record in activeRecords)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (!scannedEntities.TryGetValue(record.EntityName, out var liveSeqNums))
-                    continue;
-
-                // If the message's sequence number is NOT in the live set, it has been removed
-                if (!liveSeqNums.Contains(record.SequenceNumber))
-                {
-                    record.Status = DlqMessageStatus.Resolved;
-                    record.ResolvedAt = now;
-                    resolved++;
-
-                    _logger.LogDebug(
-                        "Resolved stale DLQ message {Id} (seq {Seq}) from {Entity} — no longer in DLQ",
-                        record.Id, record.SequenceNumber, record.EntityName);
-                }
-            }
-
-            if (resolved > 0)
-            {
-                await _dbContext.SaveChangesAsync(cancellationToken);
-                _logger.LogInformation(
-                    "Reconciled {Count} stale DLQ messages as Resolved for namespace {NamespaceId}",
-                    resolved, namespaceId);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex,
-                "Error reconciling stale DLQ messages for namespace {NamespaceId}",
-                namespaceId);
-        }
-
-        return resolved;
     }
 
     private static string ComputeBodyHash(string? body)
