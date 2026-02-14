@@ -28,6 +28,9 @@ export interface Message {
   headers: Record<string, string>;
   timeToLive: string;
   lockToken: string;
+  // Event type extracted from message body
+  eventType?: string;
+  displayTitle?: string;
   // Dead-letter specific fields
   deadLetterReason?: string;
   deadLetterSource?: string;

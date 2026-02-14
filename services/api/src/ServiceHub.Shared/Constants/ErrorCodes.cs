@@ -263,6 +263,64 @@ public static class ErrorCodes
     }
 
     /// <summary>
+    /// Error codes related to DLQ Intelligence operations.
+    /// </summary>
+    public static class Dlq
+    {
+        /// <summary>
+        /// The DLQ message was not found.
+        /// </summary>
+        public const string NotFound = "Dlq.NotFound";
+
+        /// <summary>
+        /// Failed to query DLQ history.
+        /// </summary>
+        public const string QueryFailed = "Dlq.QueryFailed";
+
+        /// <summary>
+        /// Failed to create Service Bus client for DLQ scanning.
+        /// </summary>
+        public const string ClientFailed = "Dlq.ClientFailed";
+
+        /// <summary>
+        /// Failed to export DLQ messages.
+        /// </summary>
+        public const string ExportFailed = "Dlq.ExportFailed";
+
+        /// <summary>
+        /// Failed to generate DLQ summary.
+        /// </summary>
+        public const string SummaryFailed = "Dlq.SummaryFailed";
+    }
+
+    /// <summary>
+    /// Error codes related to auto-replay rule operations.
+    /// </summary>
+    public static class Rule
+    {
+        /// <summary>The rule was not found.</summary>
+        public const string NotFound = "Rule.NotFound";
+
+        /// <summary>The rule name already exists.</summary>
+        public const string AlreadyExists = "Rule.AlreadyExists";
+
+        /// <summary>Rule validation failed.</summary>
+        public const string ValidationFailed = "Rule.ValidationFailed";
+
+        /// <summary>The rule has exceeded its rate limit.</summary>
+        public const string RateLimited = "Rule.RateLimited";
+
+        /// <summary>Failed to test the rule.</summary>
+        public const string TestFailed = "Rule.TestFailed";
+
+        /// <summary>Failed to create or update the rule.</summary>
+        public const string SaveFailed = "Rule.SaveFailed";
+
+        /// <summary>Failed to delete the rule.</summary>
+        public const string DeleteFailed = "Rule.DeleteFailed";
+    }
+
+    /// <summary>
     /// General error codes.
     /// </summary>
     public static class General

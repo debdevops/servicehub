@@ -1,9 +1,11 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.AI;
 using ServiceHub.Infrastructure.BackgroundServices;
+using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Persistence.InMemory;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Infrastructure.ServiceBus;
@@ -28,6 +30,9 @@ public static class DependencyInjection
 
         // Persistence
         services.AddPersistence();
+
+        // DLQ Intelligence database
+        services.AddDlqDatabase(configuration);
 
         // Security (needs configuration for encryption key)
         services.AddSecurity(configuration);
@@ -106,6 +111,38 @@ public static class DependencyInjection
     {
         services.AddHostedService<MessagePollingWorker>();
         services.AddHostedService<AnomalyDetectionWorker>();
+        services.AddHostedService<DlqMonitorWorker>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds the DLQ Intelligence SQLite database and related services.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration (optional).</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddDlqDatabase(this IServiceCollection services, IConfiguration? configuration = null)
+    {
+        var dataDir = configuration?["DlqDatabase:DataDirectory"]
+            ?? Path.Combine(AppContext.BaseDirectory, "data");
+
+        Directory.CreateDirectory(dataDir);
+
+        var dbPath = Path.Combine(dataDir, "servicehub-dlq.db");
+        var connectionString = $"Data Source={dbPath}";
+
+        services.AddDbContext<DlqDbContext>(options =>
+        {
+            options.UseSqlite(connectionString);
+            options.EnableDetailedErrors();
+        });
+
+        // Register DLQ services
+        services.TryAddScoped<IDlqMonitorService, DlqMonitorService>();
+        services.TryAddScoped<IDlqHistoryService, DlqHistoryService>();
+        services.TryAddScoped<IRuleEngine, RuleEngine>();
+        services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();
 
         return services;
     }
