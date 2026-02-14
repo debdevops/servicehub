@@ -9,7 +9,7 @@ namespace ServiceHub.Infrastructure.BackgroundServices;
 
 /// <summary>
 /// Background worker that periodically scans all registered namespace DLQs.
-/// Uses adaptive polling: active DLQs are scanned more frequently.
+/// Polls active namespaces on a fixed interval.
 /// </summary>
 public sealed class DlqMonitorWorker : BackgroundService
 {
@@ -17,8 +17,7 @@ public sealed class DlqMonitorWorker : BackgroundService
     private readonly ILogger<DlqMonitorWorker> _logger;
 
     private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(15);
-    private static readonly TimeSpan ActivePollInterval = TimeSpan.FromSeconds(60);
-    private static readonly TimeSpan InactivePollInterval = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(60);
     private static readonly int MaxParallelScans = 10;
 
     /// <summary>
@@ -53,34 +52,32 @@ public sealed class DlqMonitorWorker : BackgroundService
 
         await Task.Delay(InitialDelay, stoppingToken);
 
-        var lastDetectionCounts = new Dictionary<Guid, (int count, DateTimeOffset timestamp)>();
-
         while (!stoppingToken.IsCancellationRequested)
         {
-            var nextInterval = ActivePollInterval;
-
             try
             {
                 using var scope = _serviceProvider.CreateScope();
                 var namespaceRepo = scope.ServiceProvider.GetRequiredService<INamespaceRepository>();
 
-                var namespacesResult = await namespaceRepo.GetActiveAsync();
+                var namespacesResult = await namespaceRepo.GetActiveAsync(stoppingToken);
                 if (namespacesResult.IsFailure)
                 {
                     _logger.LogWarning("Failed to get active namespaces: {Error}", namespacesResult.Error.Message);
-                    await Task.Delay(ActivePollInterval, stoppingToken);
+                    await Task.Delay(PollInterval, stoppingToken);
                     continue;
                 }
 
                 var namespaces = namespacesResult.Value;
                 if (namespaces.Count == 0)
                 {
-                    _logger.LogDebug("No active namespaces found, sleeping for {Interval}s", InactivePollInterval.TotalSeconds);
-                    await Task.Delay(InactivePollInterval, stoppingToken);
+                    _logger.LogInformation("No active namespaces found, sleeping for {Interval}s", PollInterval.TotalSeconds);
+                    await Task.Delay(PollInterval, stoppingToken);
                     continue;
                 }
 
-                _logger.LogDebug("Scanning DLQs for {Count} namespace(s)", namespaces.Count);
+                _logger.LogInformation("Scanning DLQs for {Count} namespace(s): {Namespaces}", 
+                    namespaces.Count, 
+                    string.Join(", ", namespaces.Select(n => $"{n.Name} (ID: {n.Id})")));
 
                 using var semaphore = new SemaphoreSlim(MaxParallelScans);
                 var tasks = namespaces.Select(async ns =>
@@ -88,25 +85,9 @@ public sealed class DlqMonitorWorker : BackgroundService
                     await semaphore.WaitAsync(stoppingToken);
                     try
                     {
-                        // Adaptive polling: skip inactive namespaces
-                        if (lastDetectionCounts.TryGetValue(ns.Id, out var last))
-                        {
-                            var elapsed = DateTimeOffset.UtcNow - last.timestamp;
-                            if (last.count == 0 && elapsed < InactivePollInterval)
-                            {
-                                _logger.LogDebug(
-                                    "Skipping inactive namespace {NamespaceId} (last scan {ElapsedMin:F0}m ago, no messages)",
-                                    ns.Id, elapsed.TotalMinutes);
-                                return;
-                            }
-                        }
-
                         using var innerScope = _serviceProvider.CreateScope();
                         var monitor = innerScope.ServiceProvider.GetRequiredService<IDlqMonitorService>();
-                        var result = await monitor.ScanNamespaceAsync(ns.Id, stoppingToken);
-
-                        var detectedCount = result.IsSuccess ? result.Value : 0;
-                        lastDetectionCounts[ns.Id] = (detectedCount, DateTimeOffset.UtcNow);
+                        await monitor.ScanNamespaceAsync(ns.Id, stoppingToken);
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                     {
@@ -123,12 +104,6 @@ public sealed class DlqMonitorWorker : BackgroundService
                 });
 
                 await Task.WhenAll(tasks);
-
-                // If any namespace had detections, use active polling interval
-                var hasActivity = lastDetectionCounts.Values.Any(v =>
-                    v.count > 0 && (DateTimeOffset.UtcNow - v.timestamp) < TimeSpan.FromHours(2));
-
-                nextInterval = hasActivity ? ActivePollInterval : InactivePollInterval;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -140,7 +115,7 @@ public sealed class DlqMonitorWorker : BackgroundService
                 _logger.LogError(ex, "Error in DLQ Monitor Worker poll cycle");
             }
 
-            await Task.Delay(nextInterval, stoppingToken);
+            await Task.Delay(PollInterval, stoppingToken);
         }
 
         _logger.LogInformation("DLQ Monitor Worker stopped");

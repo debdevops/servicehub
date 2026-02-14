@@ -250,12 +250,15 @@ public sealed class DlqHistoryService : IDlqHistoryService
             var replayed = await query.CountAsync(m => m.Status == DlqMessageStatus.Replayed, cancellationToken);
             var archived = await query.CountAsync(m => m.Status == DlqMessageStatus.Archived, cancellationToken);
 
-            var byCategory = await query
+            // Exclude resolved (auto-cleaned) messages from breakdown counts
+            var actionableQuery = query.Where(m => m.Status != DlqMessageStatus.Resolved);
+
+            var byCategory = await actionableQuery
                 .GroupBy(m => m.FailureCategory)
                 .Select(g => new { Category = g.Key, Count = g.Count() })
                 .ToDictionaryAsync(x => x.Category.ToString(), x => x.Count, cancellationToken);
 
-            var byEntity = await query
+            var byEntity = await actionableQuery
                 .GroupBy(m => m.EntityName)
                 .Select(g => new { Entity = g.Key, Count = g.Count() })
                 .OrderByDescending(x => x.Count)

@@ -54,6 +54,7 @@ export function useDlqSummary(namespaceId?: string) {
   return useQuery({
     queryKey: ['dlq-summary', namespaceId],
     queryFn: () => dlqHistoryApi.getSummary(namespaceId),
+    enabled: !!namespaceId,
     staleTime: 30_000,
     refetchInterval: 60_000,
     retry: (failureCount, error: unknown) => {

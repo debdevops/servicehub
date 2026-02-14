@@ -9,6 +9,7 @@ const statusStyles: Record<string, { bg: string; text: string; dot: string }> = 
   Archived: { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
   Discarded: { bg: 'bg-yellow-100', text: 'text-yellow-700', dot: 'bg-yellow-500' },
   ReplayFailed: { bg: 'bg-orange-100', text: 'text-orange-700', dot: 'bg-orange-500' },
+  Resolved: { bg: 'bg-sky-100', text: 'text-sky-700', dot: 'bg-sky-500' },
 };
 
 const categoryStyles: Record<string, { bg: string; text: string }> = {

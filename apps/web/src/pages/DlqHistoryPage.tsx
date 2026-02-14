@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   RefreshCw,
@@ -15,18 +15,29 @@ import { useNamespaces } from '@/hooks/useNamespaces';
 import { dlqHistoryApi } from '@/lib/api/dlqHistory';
 import toast from 'react-hot-toast';
 
-const STATUS_OPTIONS = ['Active', 'Replayed', 'Archived', 'Discarded', 'ReplayFailed'] as const;
+const STATUS_OPTIONS = ['Active', 'Replayed', 'Archived', 'Discarded', 'ReplayFailed', 'Resolved'] as const;
 const CATEGORY_OPTIONS = [
   'Unknown', 'Transient', 'MaxDelivery', 'Expired', 'DataQuality',
   'Authorization', 'ProcessingError', 'ResourceNotFound', 'QuotaExceeded',
 ] as const;
 
 export function DlqHistoryPage() {
-  const [searchParams] = useSearchParams();
-  const namespaceId = searchParams.get('namespace') || undefined;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlNamespaceId = searchParams.get('namespace') || undefined;
 
   const { data: namespaces } = useNamespaces();
+
+  // Auto-select active namespace when URL param is missing or stale
+  const activeNamespace = namespaces?.find(ns => ns.isActive);
+  const namespaceId = urlNamespaceId || activeNamespace?.id;
   const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
+
+  // Sync URL with resolved namespace ID so bookmarks / refreshes work
+  useEffect(() => {
+    if (namespaceId && namespaceId !== urlNamespaceId && namespaces) {
+      setSearchParams({ namespace: namespaceId }, { replace: true });
+    }
+  }, [namespaceId, urlNamespaceId, namespaces, setSearchParams]);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
@@ -47,7 +58,7 @@ export function DlqHistoryPage() {
     pageSize,
   }), [namespaceId, entityFilter, statusFilter, categoryFilter, page]);
 
-  const { data, isLoading, refetch, isFetching } = useDlqHistory(params);
+  const { data, isLoading, refetch, isFetching } = useDlqHistory(params, !!namespaceId);
   const { data: summary } = useDlqSummary(namespaceId);
 
   const activeFilters = [statusFilter, categoryFilter, entityFilter].filter(Boolean).length;

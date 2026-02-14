@@ -87,6 +87,10 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
         var totalNew = 0;
 
+        // Track all entities that we successfully scanned, with their live sequence numbers.
+        // Key = fullEntityName, Value = set of sequence numbers currently in the DLQ.
+        var scannedEntities = new Dictionary<string, HashSet<long>>();
+
         // Scan queue DLQs
         try
         {
@@ -97,10 +101,18 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 {
                     if (queue.DeadLetterMessageCount > 0)
                     {
-                        var count = await ScanEntityDlqAsync(
+                        _logger.LogInformation("Queue {Queue} has {Count} DLQ messages", 
+                            queue.Name, queue.DeadLetterMessageCount);
+                        var (newCount, liveSequenceNumbers) = await ScanEntityDlqAsync(
                             client, namespaceId, queue.Name, null,
                             ServiceBusEntityType.Queue, cancellationToken);
-                        totalNew += count;
+                        totalNew += newCount;
+                        scannedEntities[queue.Name] = liveSequenceNumbers;
+                    }
+                    else
+                    {
+                        // Entity has 0 DLQ messages — track as empty for reconciliation
+                        scannedEntities[queue.Name] = new HashSet<long>();
                     }
                 }
             }
@@ -123,12 +135,21 @@ public sealed class DlqMonitorService : IDlqMonitorService
                     {
                         foreach (var sub in subsResult.Value)
                         {
+                            var fullEntityName = $"{topic.Name}/subscriptions/{sub.Name}";
                             if (sub.DeadLetterMessageCount > 0)
                             {
-                                var count = await ScanEntityDlqAsync(
+                                _logger.LogInformation("Subscription {Topic}/{Subscription} has {Count} DLQ messages", 
+                                    topic.Name, sub.Name, sub.DeadLetterMessageCount);
+                                var (newCount, liveSequenceNumbers) = await ScanEntityDlqAsync(
                                     client, namespaceId, sub.Name, topic.Name,
                                     ServiceBusEntityType.Subscription, cancellationToken);
-                                totalNew += count;
+                                totalNew += newCount;
+                                scannedEntities[fullEntityName] = liveSequenceNumbers;
+                            }
+                            else
+                            {
+                                // Entity has 0 DLQ messages — track as empty for reconciliation
+                                scannedEntities[fullEntityName] = new HashSet<long>();
                             }
                         }
                     }
@@ -140,14 +161,17 @@ public sealed class DlqMonitorService : IDlqMonitorService
             _logger.LogWarning(ex, "Error scanning subscription DLQs for namespace {NamespaceId}", namespaceId);
         }
 
+        // Reconcile: mark Active DB records as Resolved if no longer present in the real DLQ
+        var resolved = await ReconcileStaleMessagesAsync(namespaceId, scannedEntities, cancellationToken);
+
         _logger.LogInformation(
-            "DLQ scan complete for namespace {NamespaceId}: {NewMessages} new messages detected",
-            namespaceId, totalNew);
+            "DLQ scan complete for namespace {NamespaceId}: {NewMessages} new, {Resolved} resolved",
+            namespaceId, totalNew, resolved);
 
         return totalNew;
     }
 
-    private async Task<int> ScanEntityDlqAsync(
+    private async Task<(int NewCount, HashSet<long> LiveSequenceNumbers)> ScanEntityDlqAsync(
         IServiceBusClientWrapper client,
         Guid namespaceId,
         string entityName,
@@ -156,6 +180,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
         CancellationToken cancellationToken)
     {
         var newCount = 0;
+        var liveSequenceNumbers = new HashSet<long>();
         try
         {
             var request = new GetMessagesRequest(
@@ -171,7 +196,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 _logger.LogWarning(
                     "Failed to peek DLQ messages from {EntityType} {EntityName}: {Error}",
                     entityType, entityName, messagesResult.Error.Message);
-                return 0;
+                return (0, liveSequenceNumbers);
             }
 
             var detectedAt = DateTimeOffset.UtcNow;
@@ -179,6 +204,8 @@ public sealed class DlqMonitorService : IDlqMonitorService
             foreach (var msg in messagesResult.Value)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
+                liveSequenceNumbers.Add(msg.SequenceNumber);
 
                 var bodyHash = ComputeBodyHash(msg.Body);
                 var fullEntityName = topicName != null ? $"{topicName}/subscriptions/{entityName}" : entityName;
@@ -243,7 +270,73 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 entityType, entityName, namespaceId);
         }
 
-        return newCount;
+        return (newCount, liveSequenceNumbers);
+    }
+
+    /// <summary>
+    /// Marks Active DB records as Resolved when they are no longer present in the real DLQ.
+    /// </summary>
+    private async Task<int> ReconcileStaleMessagesAsync(
+        Guid namespaceId,
+        Dictionary<string, HashSet<long>> scannedEntities,
+        CancellationToken cancellationToken)
+    {
+        if (scannedEntities.Count == 0)
+            return 0;
+
+        var resolved = 0;
+        var now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            // Get all Active messages for entities that we successfully scanned
+            var entityNames = scannedEntities.Keys.ToList();
+            var activeRecords = await _dbContext.DlqMessages
+                .Where(m => m.NamespaceId == namespaceId
+                         && m.Status == DlqMessageStatus.Active
+                         && entityNames.Contains(m.EntityName))
+                .ToListAsync(cancellationToken);
+
+            foreach (var record in activeRecords)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!scannedEntities.TryGetValue(record.EntityName, out var liveSeqNums))
+                    continue;
+
+                // If the message's sequence number is NOT in the live set, it has been removed
+                if (!liveSeqNums.Contains(record.SequenceNumber))
+                {
+                    record.Status = DlqMessageStatus.Resolved;
+                    record.ResolvedAt = now;
+                    resolved++;
+
+                    _logger.LogDebug(
+                        "Resolved stale DLQ message {Id} (seq {Seq}) from {Entity} — no longer in DLQ",
+                        record.Id, record.SequenceNumber, record.EntityName);
+                }
+            }
+
+            if (resolved > 0)
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                _logger.LogInformation(
+                    "Reconciled {Count} stale DLQ messages as Resolved for namespace {NamespaceId}",
+                    resolved, namespaceId);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Error reconciling stale DLQ messages for namespace {NamespaceId}",
+                namespaceId);
+        }
+
+        return resolved;
     }
 
     private static string ComputeBodyHash(string? body)

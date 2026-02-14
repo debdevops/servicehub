@@ -19,5 +19,8 @@ public enum DlqMessageStatus
     Discarded = 3,
 
     /// <summary>Message replay was attempted but failed.</summary>
-    ReplayFailed = 4
+    ReplayFailed = 4,
+
+    /// <summary>Message is no longer present in the DLQ (removed externally, expired, or consumed).</summary>
+    Resolved = 5
 }

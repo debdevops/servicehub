@@ -78,6 +78,9 @@ public sealed class DlqMessage
     /// <summary>When the message was archived (if applicable).</summary>
     public DateTimeOffset? ArchivedAt { get; set; }
 
+    /// <summary>When the message was detected as no longer present in the DLQ.</summary>
+    public DateTimeOffset? ResolvedAt { get; set; }
+
     /// <summary>User-added notes for investigation.</summary>
     public string? UserNotes { get; set; }
 
