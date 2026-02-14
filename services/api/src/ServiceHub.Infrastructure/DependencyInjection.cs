@@ -40,6 +40,9 @@ public static class DependencyInjection
         // AI
         services.AddAI();
 
+        // Background Services
+        services.AddHostedService<DlqMonitorWorker>();
+
         return services;
     }
 
