@@ -11,13 +11,15 @@ const DLQ_KEYS = ['dlq-history', 'dlq-summary'] as const;
 
 /**
  * Hook for fetching all auto-replay rules.
+ * Auto-refreshes every 10s to show live pendingMatchCount updates.
  */
 export function useRules(enabledOnly?: boolean) {
   return useQuery({
     queryKey: [...RULES_KEY, { enabledOnly }],
     queryFn: () => rulesApi.getAll(enabledOnly),
     staleTime: 10_000,
-    refetchInterval: 30_000,
+    refetchInterval: 10_000, // Match DLQ polling interval for real-time stats
+    refetchIntervalInBackground: false, // Pause when tab inactive
   });
 }
 
