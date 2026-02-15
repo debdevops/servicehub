@@ -13,6 +13,19 @@ When production breaks at 2 AM and you need to see **what's inside your queues**
 
 ---
 
+## ✨ What's New in v2.0
+
+🎯 **DLQ Intelligence System** — Persistent tracking of dead-letter messages with categorization and timeline  
+⚡ **Auto-Replay Rules** — Define conditional replay rules with live statistics (Pending/Replayed/Success)  
+🔄 **Batch Replay All** — Replay multiple DLQ messages with one click (optimized for O(N) performance)  
+📊 **Instant Scanning** — "Scan Now" button for immediate DLQ polling (bypasses background schedule)  
+📁 **Export Capabilities** — Download DLQ data as JSON/CSV for reporting  
+🎨 **Enhanced UI** — Improved message row display with better visual hierarchy
+
+[See screenshots 26-35](#-dlq-intelligence--auto-replay-system) | [Read changelog](#roadmap)
+
+---
+
 ## The Problem: Blind Incident Response
 
 You're troubleshooting a Service Bus incident. Azure Portal shows **5,000 messages in Dead-Letter Queue**, but:
@@ -86,6 +99,20 @@ You're troubleshooting a Service Bus incident. Azure Portal shows **5,000 messag
 ---
 
 ## Feature Showcase
+
+### 🎨 Enhanced Message Browser UI
+
+Improved message list with better visual hierarchy and information density:
+
+![Row UI Enhancement](docs/screenshots/26-row-ui-new-feature.png)
+
+**Improvements:**
+- Clearer message metadata display
+- Enhanced property visibility
+- Better spacing and readability
+- Optimized for long debugging sessions
+
+---
 
 ### 🔍 Message Browser with Search
 
@@ -393,12 +420,125 @@ az servicebus namespace authorization-rule create \
 
 ---
 
+## 🎯 DLQ Intelligence & Auto-Replay System
+
+ServiceHub includes a **production-ready DLQ management system** that goes far beyond simple message inspection.
+
+### 📊 DLQ Intelligence Dashboard
+
+Persistent tracking and monitoring of dead-letter queue messages:
+
+![DLQ Enhancement](docs/screenshots/27-dlq-enhancement.png)
+
+![DLQ Intelligence](docs/screenshots/28-dlq-intelligence.png)
+
+**Features:**
+- **Persistent history** — All DLQ messages tracked in SQLite database
+- **Instant scanning** — "Scan Now" button triggers immediate DLQ poll (bypasses 10-15s background schedule)
+- **Category classification** — Auto-categorizes failures: Transient, MaxDelivery, Expired, DataQuality, Authorization, etc.
+- **Export capabilities** — Download DLQ data as JSON or CSV for reporting
+- **Timeline view** — Replay history with timestamps, outcomes, and error details
+- **Status tracking** — Active → Replayed → ReplayFailed → Resolved
+
+![DLQ History Post-Replay](docs/screenshots/29-dlq-history-post-replay-message.png)
+
+**Background monitoring:** DLQ messages are automatically scanned every 10-15 seconds and stored for forensic analysis.
+
+---
+
+### ⚡ Auto-Replay Rules Engine
+
+Define **conditional replay rules** that match DLQ messages and enable batch operations:
+
+![Auto-Replay Feature](docs/screenshots/30-auto-replay-feature.png)
+
+**Rule Components:**
+- **Conditions** — Match messages by reason, error description, entity name, delivery count, content type, body text, or custom properties
+- **Operators** — Contains, Equals, StartsWith, EndsWith, Regex, GreaterThan, LessThan, In
+- **Target Entity** — Optionally replay to a different queue/topic (not just original)
+- **Rate Limiting** — Max replays per hour to prevent overwhelming downstream services
+
+**Rule Statistics (Live Evaluation):**
+- **Pending** — How many Active DLQ messages currently match this rule (evaluated in real-time)
+- **Replayed** — How many messages have been replayed using this rule
+- **Success** — Replay success count and percentage
+
+![Auto-Relay Test Feature](docs/screenshots/31-auto-relay-test-feature.png)
+
+**Test Before Replay:** Click "Test" to preview how many Active DLQ messages match your conditions before executing any replay.
+
+---
+
+### 🔄 Batch Replay All System
+
+Replay **multiple matching messages** with a single click:
+
+![Replay All Messages](docs/screenshots/32-replay-all-messages.png)
+
+**Safety Features:**
+- **Confirmation dialog with warnings** — Red danger header, 3 safety warnings before executing
+- **Real-time statistics** — Shows how many messages will be affected
+- **Cancel auto-focused** — Safer default to prevent accidental clicks
+- **Test first workflow** — Encourages testing rules before bulk replay
+
+![Replay All Process](docs/screenshots/33-replay-all-process.png)
+
+**Performance:** Optimized batch replay using **single DLQ receiver per entity** (not per message). Tested with 7 messages across 2 subscriptions → **9 seconds** (vs. 30s+ timeout before optimization).
+
+![Post-Replay All Messages](docs/screenshots/34-post-replay-all-messages.png)
+
+**Outcome Tracking:**
+- Messages matched: 7
+- Successfully replayed: 7
+- Failed: 0
+- Skipped: 0
+
+![DLQ Intelligence History Post-Replay All](docs/screenshots/35-rdlq-intelligence-history-post-replay-all.png)
+
+**History Audit:** Every replay attempt is recorded in the DLQ Intelligence history with:
+- Timestamp
+- Rule name or "Manual Replay"
+- Outcome (Success/Failed)
+- Target entity
+- Error details (if failed)
+
+---
+
+### Real-World DLQ Scenario
+
+**Situation:** 1,500 order messages dead-lettered due to payment gateway outage.
+
+**ServiceHub Workflow:**
+1. Open **DLQ Intelligence** → See 1,500 Active messages categorized as "Transient" failures
+2. Create **Auto-Replay Rule**:
+   - Condition: `Reason contains "Payment Gateway Timeout"`
+   - Target: Original subscription
+   - Rate limit: 500/hour
+3. Click **Test** → Confirms 1,500 messages match
+4. Click **Replay All** → Review warnings → Confirm
+5. Result: **All 1,500 messages replayed in ~3 minutes**
+6. Check **DLQ Intelligence History** → See replay audit trail with success/failure counts
+
+**Why it's safe:**
+- ✅ Messages removed from DLQ only after successful send to target
+- ✅ Failed replays remain in DLQ with error description
+- ✅ Rate limiting prevents overwhelming downstream services
+- ✅ Full audit trail for compliance/debugging
+
+---
+
 ## Roadmap
+
+**Completed Features** ✅
+
+- ✅ **Bulk DLQ Replay** — Replay multiple messages with rule-based filters
+- ✅ **DLQ Intelligence** — Persistent tracking, categorization, and history
+- ✅ **Auto-Replay Rules** — Conditional replay with rate limiting
+- ✅ **Batch Optimization** — O(N) performance with single receiver per entity
 
 **Planned Features:**
 
-- [ ] **Bulk DLQ Replay** — Replay multiple messages with filters (e.g., all "Payment Timeout" errors)
-- [ ] **Message Export** — Download messages as JSON/CSV for offline analysis
+- [ ] **Message Export** — Download messages as JSON/CSV for offline analysis (partially implemented for DLQ)
 - [ ] **Advanced Search** — Regex patterns, date range filters, property comparisons
 - [ ] **Multi-Namespace Support** — Switch between multiple Service Bus namespaces
 - [ ] **Session-Aware Browsing** — Group messages by session ID for stateful workloads
