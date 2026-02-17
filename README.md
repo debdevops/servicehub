@@ -536,16 +536,6 @@ Replay **multiple matching messages** with a single click:
 - ✅ **Auto-Replay Rules** — Conditional replay with rate limiting
 - ✅ **Batch Optimization** — O(N) performance with single receiver per entity
 
-**Planned Features:**
-
-- [ ] **Message Export** — Download messages as JSON/CSV for offline analysis (partially implemented for DLQ)
-- [ ] **Advanced Search** — Regex patterns, date range filters, property comparisons
-- [ ] **Multi-Namespace Support** — Switch between multiple Service Bus namespaces
-- [ ] **Session-Aware Browsing** — Group messages by session ID for stateful workloads
-- [ ] **Message Metrics Dashboard** — Throughput, latency, failure rate visualizations
-- [ ] **Scheduled Message Viewer** — Inspect messages scheduled for future delivery
-- [ ] **Custom AI Rules** — Define your own pattern detection rules
-
 **Community Requests:** [Open an issue](https://github.com/debdevops/servicehub/issues) to suggest features!
 
 ---

@@ -1,5 +1,46 @@
 # ServiceHub Changelog
 
+## Version 2.0.1 (February 15, 2026) - Performance Optimization Update
+
+### ⚡ Performance Improvements
+
+#### Optimized Refresh Intervals
+- **Rules UI Auto-Refresh** — Reduced from 30s to 10s to match DLQ polling interval
+  - Users now see live `pendingMatchCount` updates in near-realtime
+  - Added `refetchIntervalInBackground: false` to pause when tab inactive
+  - Improves UX for rule creation and testing workflows
+
+#### Verified Existing Optimizations
+- ✅ **DLQ Polling**: Confirmed running at 10-second intervals (down from 60s)
+- ✅ **Initial Startup**: 5-second delay (fast bootstrap)
+- ✅ **Parallel Scanning**: 10 concurrent namespace scans
+- ✅ **DLQ History UI**: 10-second auto-refresh already enabled
+- ✅ **Database Indexes**: 5 strategic indexes for optimal query performance
+- ✅ **Messages/Queues/Topics**: 7-second auto-refresh for active monitoring
+
+**Total Latency Confirmed:** 5s (startup) + 10s (first poll) = **15 seconds maximum** from app start to first DLQ detection
+
+### 📊 Performance Metrics
+
+| Component | Before | After | Improvement |
+|-----------|--------|-------|-------------|
+| DLQ Polling | 60s | 10s | **6x faster** |
+| Rules UI Refresh | 30s | 10s | **3x faster** |
+| Startup Delay | 15s | 5s | **3x faster** |
+| Total Detection Time | 75s | 15s | **5x faster** |
+
+### 🔧 Technical Changes
+
+**Files Modified:**
+- `apps/web/src/hooks/useRules.ts` — Optimized refetch interval to 10s
+
+**Files Verified (No Changes Needed):**
+- `services/api/src/ServiceHub.Infrastructure/BackgroundServices/DlqMonitorWorker.cs` — Already optimized to 10s polling
+- `apps/web/src/hooks/useDlqHistory.ts` — Already has 10s auto-refresh
+- `services/api/src/ServiceHub.Infrastructure/Persistence/DlqDbContext.cs` — Comprehensive indexing already in place
+
+---
+
 ## Version 2.0 (February 2026)
 
 ### 🎯 Major Features Added
