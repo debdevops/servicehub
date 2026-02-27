@@ -15,7 +15,7 @@ on:
 
 env:
   DOTNET_VERSION: '8.0.x'
-  NODE_VERSION: '18.x'
+  NODE_VERSION: '20.x'
 
 jobs:
   compile-backend:
@@ -57,7 +57,7 @@ jobs:
       - name: Install dependencies
         working-directory: apps/web
         run: |
-          rm -f package-lock.json
+          rm -rf node_modules package-lock.json
           npm install --include=optional
 
       - name: Type check with TypeScript

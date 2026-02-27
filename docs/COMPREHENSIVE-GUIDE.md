@@ -3,6 +3,9 @@
 **A Complete Guide for Novices and Experts**  
 *Understanding Azure Service Bus Inspection Made Simple*
 
+**Version:** 2.0 (February 2026) — DLQ Intelligence & Auto-Replay System  
+**New Features:** Persistent DLQ tracking, Auto-replay rules, Batch replay operations
+
 ---
 
 ## Table of Contents
@@ -17,6 +20,8 @@
 8. [Key Components & Methods](#key-components--methods)
 9. [Deployment Architecture](#deployment-architecture)
 10. [Security & Authentication](#security--authentication)
+11. [DLQ Intelligence System](#dlq-intelligence-system) ⭐ NEW
+12. [Auto-Replay Rules Engine](#auto-replay-rules-engine) ⭐ NEW
 
 ---
 
@@ -42,10 +47,13 @@ But what happens when something goes wrong?
 - Hard to debug production issues
 - No pattern detection for recurring problems
 - Manual investigation takes hours
+- No automated replay capabilities
 
 ✅ **With ServiceHub:**
 - **Point-in-time visibility** into all messages for stable investigation
 - **Dead-letter queue inspection** — see exactly what failed and why
+- **DLQ Intelligence** — persistent tracking with categorization and history (v2.0)
+- **Auto-Replay Rules** — conditional batch replay with rate limiting (v2.0)
 - **Optional AI-powered analysis** — automatically identifies recurring issue patterns
 - **Read-mostly by design** — safe for production use (browsing is read-only, actions are user-confirmed)
 - **Outlook-style browsing** — familiar interface for long debugging sessions
@@ -1114,6 +1122,306 @@ graph TB
 
 ---
 
+## DLQ Intelligence System
+
+### Overview
+
+**DLQ Intelligence** is a persistent monitoring and forensic system for dead-letter queue messages. Instead of ephemeral message browsing, ServiceHub v2.0 tracks every DLQ message in a SQLite database for historical analysis and audit trails.
+
+### Key Components
+
+#### 1. DlqDbContext (Entity Framework Core)
+
+Manages three core entities:
+
+```csharp
+public class DlqDbContext : DbContext
+{
+    public DbSet<DlqMessage> DlqMessages { get; set; }
+    public DbSet<ReplayHistory> ReplayHistories { get; set; }
+    public DbSet<AutoReplayRule> AutoReplayRules { get; set; }
+}
+```
+
+**DlqMessage Entity:**
+- `ServiceBusMessageId` — Azure Service Bus message ID
+- `EntityName` — Queue/subscription where message dead-lettered
+- `DeadLetterReason` — Azure-provided failure reason
+- `FailureCategory` — ServiceHub categorization (Transient, MaxDelivery, Expired, DataQuality, Authorization, ProcessingError, ResourceNotFound, QuotaExceeded)
+- `Status` — Active, Replayed, Archived, Discarded, ReplayFailed, Resolved
+- `FirstSeenAt`, `LastSeenAt` — Timeline tracking
+- `BodyPreview`, `ContentType`, `DeliveryCount`, `CustomProperties`
+
+**ReplayHistory Entity:**
+- `DlqMessageId` — Foreign key to DlqMessage
+- `ReplayedAt`, `ReplayedBy` — Audit trail
+- `ReplayStrategy` — Manual, AutoRule, BatchReplay
+- `OutcomeStatus` — Success, Failed, Skipped
+- `TargetEntity` — Where message was replayed to
+- `ErrorDetails` — Failure details if replay failed
+- `RuleId` — If replayed via auto-rule
+
+#### 2. DlqMonitorService (Background Worker)
+
+Scans dead-letter queues every 10-15 seconds:
+
+```csharp
+protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+{
+    while (!stoppingToken.IsCancellationRequested)
+    {
+        await ScanAllNamespacesAsync();
+        await Task.Delay(TimeSpan.FromSeconds(10-15), stoppingToken);
+    }
+}
+```
+
+**Scan Process:**
+1. Enumerate all active namespaces
+2. For each namespace, enumerate all queues and subscriptions
+3. Peek DLQ messages (up to 100 per entity)
+4. Upsert into DlqMessages table (idempotent)
+5. Categorize failure reason into FailureCategory enum
+6. Update status if message no longer in DLQ (Resolved)
+
+#### 3. DlqHistoryController (API Endpoints)
+
+**GET /api/v1/dlq/{namespaceId}** — List DLQ messages with filters
+- Query params: `entityName`, `status`, `category`, `page`, `pageSize`
+- Returns paginated DlqMessage list with replay counts
+
+**GET /api/v1/dlq/{namespaceId}/summary** — Statistics
+- Total Active/Replayed/Failed counts
+- Breakdown by entity
+- Failure category distribution
+
+**GET /api/v1/dlq/{namespaceId}/export** — CSV/JSON export
+- Format: `?format=csv` or `?format=json`
+- Includes all message details and replay history
+
+**POST /api/v1/dlq/scan/{namespaceId}** — Instant scan
+- Triggers immediate DLQ scan (bypasses background schedule)
+- Returns count of new messages found
+- Used by "Scan Now" button in UI
+
+**GET /api/v1/dlq/message/{messageId}/timeline** — Message timeline
+- Returns chronological history: FirstSeen, ReplayAttempts, StatusChanges
+- Includes replay outcomes and error details
+
+### Frontend Components
+
+**DlqHistoryPage** (`apps/web/src/pages/DlqHistoryPage.tsx`):
+- Table view with filters (status, category, entity)
+- "Scan Now" button (instant DLQ polling)
+- Export buttons (CSV/JSON)
+- Pagination with 50 items per page
+- Timeline drawer for individual message history
+
+**Features:**
+- Real-time stats: "Active: 150 | Replayed: 45 | Failed: 3"
+- Category badges with color coding
+- Click message → See replay history timeline
+- Filter by entity/status/category
+
+---
+
+## Auto-Replay Rules Engine
+
+### Overview
+
+**Auto-Replay Rules** allow conditional batch replay of DLQ messages based on user-defined criteria. This enables automated recovery workflows after fixing root causes.
+
+### Architecture
+
+#### 1. RuleEngine (Core Logic)
+
+Evaluates conditions against DLQ messages:
+
+```csharp
+public class RuleCondition
+{
+    public string Field { get; set; } // DeadLetterReason, FailureCategory, EntityName, BodyPreview, etc.
+    public string Operator { get; set; } // Contains, Equals, StartsWith, Regex, GreaterThan, etc.
+    public string Value { get; set; }
+}
+
+public class RuleAction
+{
+    public bool AutoReplay { get; set; } // false = manual only
+    public int DelaySeconds { get; set; }
+    public bool ExponentialBackoff { get; set; }
+    public string TargetEntity { get; set; } // null = replay to original
+    public int MaxReplaysPerHour { get; set; } // rate limiting
+}
+```
+
+**Condition Evaluation:**
+- Supports 10+ operators: Contains, NotContains, Equals, NotEquals, StartsWith, EndsWith, Regex, GreaterThan, LessThan, In
+- Can match on any message field or custom property
+- Multiple conditions with AND logic (all must match)
+
+#### 2. RulesController (API Endpoints)
+
+**GET /api/v1/dlq/rules** — List all rules
+- Returns rule definitions + live statistics:
+  - `pendingMatchCount` — How many Active DLQ messages currently match (evaluated real-time)
+  - `matchCount` — Total messages replayed using this rule
+  - `successCount` — Successful replays
+
+**POST /api/v1/dlq/rules** — Create rule
+- Request: `{ name, description, conditions[], action, namespaceId }`
+- Validates conditions and action parameters
+
+**POST /api/v1/dlq/rules/{id}/toggle** — Enable/disable rule
+- Disabled rules don't execute but statistics still update
+
+**POST /api/v1/dlq/rules/test** — Test rule conditions
+- Evaluates conditions against Active DLQ messages
+- Returns: `{ totalTested, matchedCount, estimatedSuccessRate, sampleMatches[] }`
+- Used by "Test" button before executing Replay All
+
+**POST /api/v1/dlq/rules/{id}/replay-all** — Batch replay
+- Evaluates rule conditions against Active DLQ messages
+- Groups messages by (NamespaceId, Entity) for batch processing
+- Calls `ServiceBusClientWrapper.ReplayMessagesAsync` for each group
+- Records ReplayHistory for every message
+- Returns: `{ messagesMatched, replayed, failed, skipped }`
+
+#### 3. ServiceBusClientWrapper.ReplayMessagesAsync (Batch Optimization)
+
+**Problem (Before v2.0):**
+- Created separate DLQ receiver for each message → O(N²) connections
+- Sequential processing with 5s delay per message
+- 7 messages took 30s+ and timed out
+
+**Solution (v2.0):**
+```csharp
+public async Task<Dictionary<long, Result<bool>>> ReplayMessagesAsync(
+    string connectionString,
+    string entityPath,
+    IEnumerable<long> sequenceNumbers,
+    string targetEntity = null)
+{
+    // Create ONE DLQ receiver for all messages in this entity
+    var receiver = await GetDeadLetterReceiverAsync(connectionString, entityPath);
+    
+    // Batch-fetch all target messages (100 at a time)
+    var messagesToReplay = new Dictionary<long, ServiceBusReceivedMessage>();
+    await foreach (var msg in receiver.ReceiveMessagesAsync(maxMessages: 100))
+    {
+        if (sequenceNumbers.Contains(msg.SequenceNumber))
+            messagesToReplay[msg.SequenceNumber] = msg;
+    }
+    
+    // Replay each message to target
+    foreach (var (seqNum, msg) in messagesToReplay)
+    {
+        try
+        {
+            await sender.SendMessageAsync(CloneMessage(msg));
+            await receiver.CompleteMessageAsync(msg); // Remove from DLQ
+            results[seqNum] = Result.Success(true);
+        }
+        catch (Exception ex)
+        {
+            await receiver.AbandonMessageAsync(msg); // Keep in DLQ
+            results[seqNum] = Result.Failure<bool>(ex.Message);
+        }
+    }
+    
+    return results;
+}
+```
+
+**Performance:** O(N) connections instead of O(N²)  
+**Tested:** 7 messages across 2 subscriptions → 9 seconds (was 30s+ timeout)
+
+#### 4. AutoReplayExecutor (Safety & Audit)
+
+Wraps replay operations with safety checks:
+
+```csharp
+public async Task<Result> ExecuteAsync(DlqMessage message, AutoReplayRule rule)
+{
+    // 1. Rate limiting check
+    if (!await CanReplayAsync(rule))
+        return Result.Failure("Rate limit exceeded: MaxReplaysPerHour");
+    
+    // 2. Extract target entity (bug fix: handle "topic/subscriptions/sub" paths)
+    var targetEntity = ExtractSubscriptionName(message.EntityName);
+    
+    // 3. Execute replay via ServiceBusClientWrapper
+    var replayResult = await _wrapper.ReplayMessageAsync(...);
+    
+    // 4. Record audit trail
+    await _db.ReplayHistories.AddAsync(new ReplayHistory {
+        DlqMessageId = message.Id,
+        ReplayedAt = DateTime.UtcNow,
+        ReplayedBy = "System",
+        ReplayStrategy = "AutoRule",
+        OutcomeStatus = replayResult.IsSuccess ? "Success" : "Failed",
+        ErrorDetails = replayResult.Error,
+        RuleId = rule.Id
+    });
+    
+    // 5. Update message status
+    message.Status = replayResult.IsSuccess ? "Replayed" : "ReplayFailed";
+    
+    // 6. Increment rule statistics
+    rule.MatchCount++;
+    if (replayResult.IsSuccess) rule.SuccessCount++;
+    
+    await _db.SaveChangesAsync();
+    return replayResult;
+}
+```
+
+### Frontend Components
+
+**RulesPage** (`apps/web/src/pages/RulesPage.tsx`):
+- Rule cards displaying:
+  - **Pending** (amber): Active DLQ messages matching conditions
+  - **Replayed**: Total messages replayed via this rule
+  - **Success**: Success count and percentage
+- Actions: Test, Replay All, Edit, Delete, Toggle
+
+**RuleTestDialog** (`apps/web/src/components/rules/RuleTestDialog.tsx`):
+- Shows matched message count before execution
+- Displays sample matched messages (up to 10)
+- Estimated success rate based on historical data
+
+**ReplayAllConfirmDialog** (embedded in RulesPage.tsx):
+- **Red danger header** with warning icon
+- 3 safety warnings:
+  1. Messages will be removed from DLQ (cannot undo)
+  2. May end up back in DLQ if root cause not fixed
+  3. High volume may disrupt downstream services
+- Safety tip: "Use Test button first"
+- Cancel button auto-focused (safer default)
+
+### Rate Limiting
+
+**Purpose:** Prevent overwhelming downstream services during bulk replay
+
+**Configuration:**
+- `MaxReplaysPerHour` per rule (default: 100)
+- Enforced in `AutoReplayExecutor.CanReplayAsync`
+
+**Implementation:**
+```csharp
+private async Task<bool> CanReplayAsync(AutoReplayRule rule)
+{
+    var oneHourAgo = DateTime.UtcNow.AddHours(-1);
+    var recentReplays = await _db.ReplayHistories
+        .Where(h => h.RuleId == rule.Id && h.ReplayedAt >= oneHourAgo)
+        .CountAsync();
+    
+    return recentReplays < rule.Action.MaxReplaysPerHour;
+}
+```
+
+---
+
 ## Summary
 
 ServiceHub solves a critical problem for teams using Azure Service Bus: **visibility into message queues**. Without it, debugging production issues is like trying to fix a car engine with the hood closed.
@@ -1122,6 +1430,9 @@ ServiceHub solves a critical problem for teams using Azure Service Bus: **visibi
 
 ✅ **Read-mostly by design** — Safe for production forensics  
 ✅ **Dead-letter queue inspection** — See exactly why messages failed  
+✅ **DLQ Intelligence** — Persistent tracking with categorization and history (v2.0)  
+✅ **Auto-Replay Rules** — Conditional batch replay with rate limiting (v2.0)  
+✅ **Batch Optimization** — O(N) performance for bulk operations (v2.0)  
 ✅ **Optional AI-powered analysis** — Identify recurring issue patterns  
 ✅ **Safe Replay capability** — Reprocess failed messages with no risk of loss  
 ✅ **Outlook-style interface** — Designed for long debugging sessions  
@@ -1130,15 +1441,15 @@ ServiceHub solves a critical problem for teams using Azure Service Bus: **visibi
 **Who benefits:**
 
 - Backend engineers debugging message processing
-- SREs monitoring queue health
-- Support teams investigating issues
-- Platform engineers optimizing systems
+- SREs monitoring queue health and recovery
+- Support teams investigating customer issues
+- Platform engineers optimizing systems and automating recovery
 
 **Technology Stack:**
 
-- **Frontend**: React + TypeScript + Tailwind CSS + React Query
-- **Backend**: .NET 8 + Clean Architecture + Azure SDK
-- **Storage**: SQLite (local), Azure Service Bus (messages)
+- **Frontend**: React + TypeScript + Tailwind CSS + React Query (TanStack Query)
+- **Backend**: .NET 8 + Clean Architecture + Azure SDK + Entity Framework Core
+- **Storage**: SQLite (DLQ Intelligence, rules), Azure Service Bus (messages)
 - **Optional**: AI service for pattern detection
 
 ---

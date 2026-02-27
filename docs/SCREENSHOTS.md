@@ -1,6 +1,6 @@
 # ServiceHub Screenshots Guide
 
-This guide explains the 24 screenshots used in the README and how they demonstrate ServiceHub capabilities.
+This guide explains the 35 screenshots used in the README and how they demonstrate ServiceHub capabilities.
 
 ---
 
@@ -10,42 +10,96 @@ All screenshots are located in `docs/screenshots/` with descriptive filenames th
 
 ### Screenshot Mapping
 
-| # | Filename | Original | Shows | Used In Section |
-|---|----------|----------|-------|-----------------|
-| 1 | `01-problem-empty-state.png` | `Untitled.png` | Empty state - no connections | Problem (before state) |
-| 2 | `02-quickstart-connection-form.png` | `Untitled 2.png` | Connection dialog with form | Quick Start Step 3 |
-| 3 | `03-quickstart-connected-namespace.png` | `Untitled 3.png` | Connected namespace sidebar | Quick Start Step 3 |
-| 4 | `04-feature-message-browser-empty.png` | `Untitled 4.png` | Message browser (empty) | Not actively used |
-| 5 | `05-feature-fab-menu.png` | `Untitled 5.png` | FAB menu opened | Not actively used |
-| 6 | `06-feature-message-generator-basic.png` | `Untitled 6.png` | Message generator dialog | Quick Start Step 4, Features |
-| 7 | `07-feature-message-generator-scenarios.png` | `Untitled 7.png` | Generator scenarios | Quick Start Step 4, Features |
-| 8 | `08-hero-message-browser-loaded.png` | `Untitled 8.png` | **HERO - 50 messages loaded** | Hero, Features, Workflows (7+ uses) |
-| 9 | `09-feature-send-message-topic.png` | `Untitled 9.png` | Send message to topic | Features - Send Message |
-| 10 | `10-workflow-topic-subscription-step1.png` | `Untitled 10.png` | Topic subscription delivery | Workflows - Topics |
-| 11 | `11-feature-message-details-properties.png` | `Untitled 11.png` | Message Properties tab | Features - Message Inspection |
-| 12 | `12-feature-message-details-custom-props.png` | `Untitled 12.png` | Custom Properties tab | Features - Message Inspection |
-| 13 | `13-feature-message-details-body.png` | `Untitled 13.png` | Message Body (JSON) | Features - Message Inspection |
-| 14 | `14-feature-ai-findings-badge.png` | `Untitled 14.png` | AI Findings: 2 badge | Features - AI Insights |
-| 15 | `15-feature-ai-insights-error-cluster.png` | `Untitled 15.png` | AI error cluster detection | Features - AI Insights |
-| 16 | `16-feature-ai-insights-multiple-patterns.png` | `Untitled 16.png` | Multiple AI patterns | Features - AI Insights |
-| 17 | `17-feature-ai-patterns-popup.png` | `Untitled 17.png` | AI patterns summary popup | Features - AI Insights |
-| 18 | `18-feature-dlq-tab-with-ai.png` | `Untitled 18.png` | DLQ tab with AI indicators | Features - DLQ, Workflows |
-| 19 | `19-workflow-dlq-investigation-step1.png` | `Untitled 19.png` | DLQ message Properties | Workflows - DLQ Investigation |
-| 20 | `20-workflow-dlq-investigation-step2.png` | `Untitled 20.png` | DLQ AI Insights tab | Workflows - DLQ Investigation |
-| 21 | `21-workflow-dlq-replay-step3.png` | `Untitled 21.png` | Replay message dialog | Workflows - DLQ Investigation |
-| 22 | `22-workflow-dlq-replay-step4.png` | `Untitled 22.png` | After replay (message counts) | Workflows - DLQ Investigation |
-| 23 | `23-feature-search-functionality.png` | `Untitled 23.png` | Search results for "bank" | Features - Search, Workflows |
-| 24 | `24-feature-dlq-multiple-deliveries.png` | `Untitled 24.png` | DLQ with delivery count: 3 | Features - DLQ Forensics |
+| # | Filename | Shows | Used In Section |
+|---|----------|-------|-----------------|
+| 1 | 01-Start-The-App.png | Application startup | Quick Start |
+| 2 | 02-Connect-Service-Bus-With-Manage-ConnStr.png | Connection form with connection string | Quick Start |
+| 3 | 03-Connected-ServiceBus.png | Connected namespace view | Quick Start |
+| 4 | 04-feature-message-browser-empty.png | Message browser (empty) | Features |
+| 5 | 05-main-message-display1.png | Message browser with loaded messages | Features - Message Browser |
+| 6 | 06-feature-message-generator.png | Message generator basic form | Testing Tools |
+| 7 | 07-feature-message-generator-basic-single-message.png | Single message generator | Testing Tools |
+| 8 | 08-feature-message-generator-scenarios.png | Generator scenarios selection | Testing Tools |
+| 9 | 09-feature-send-message.png | Send message form | Testing Tools |
+| 10 | 10-message-display.png | Message details view | Features - Message Details |
+| 11 | 11-Generate-Single-Message-Topic.png | Generate message to topic | Testing Tools |
+| 12 | 12-showing-message-topic.png | Topic messages display | Features |
+| 13 | 13-feature-message-details-custom-props.png | Custom properties tab | Features - Message Details |
+| 14 | 14-feature-ai-findings.png | AI findings indicator | Features - AI Insights |
+| 15 | 15-feature-message-details-JSON-prop.png | Message body JSON | Features - Message Details |
+| 16 | 16-feature-message-details-AI-Insight.png | AI insights in message details | Features - AI Insights |
+| 17 | 17-feature-ai-patterns-popup.png | AI patterns summary popup | Features - AI Insights |
+| 18 | 18-feature-dlq-tab-with-ai.png | DLQ tab with AI indicators | Features - DLQ |
+| 19 | 19-feature-ai-findings-1.png | AI findings detection | Features - AI Insights |
+| 20 | 20-workflow-dlq-investigation-step1.png | DLQ investigation step 1 | Workflows - DLQ |
+| 21 | 21-workflow-dlq-investigation-step1.png | DLQ investigation detailed | Workflows - DLQ |
+| 22 | 22-workflow-dlq-investigation-step2.png | DLQ AI insights view | Workflows - DLQ |
+| 23 | 23-workflow-dlq-AI-Insight.png | DLQ AI guidance | Workflows - DLQ |
+| 24 | 24-workflow-dlq-replay-step4.png | Replay confirmation dialog | Workflows - DLQ |
+| 25 | 25-feature-find-feature.png | Advanced search functionality | Features - Search |
+| 26 | 26-row-ui-new-feature.png | Enhanced message row UI | Features - Message Browser |
+| 27 | 27-dlq-enhancement.png | DLQ enhancements | Features - DLQ Intelligence |
+| 28 | 28-dlq-intelligence.png | DLQ Intelligence dashboard | Features - DLQ Intelligence |
+| 29 | 29-dlq-history-post-replay-message.png | DLQ history after single replay | Features - DLQ Intelligence |
+| 30 | 30-auto-replay-feature.png | Auto-Replay Rules page with rule cards | Features - Auto-Replay System |
+| 31 | 31-auto-relay-test-feature.png | Rule test dialog with matched messages | Features - Auto-Replay System |
+| 32 | 32-replay-all-messages.png | Replay All confirmation with warnings | Features - Batch Replay |
+| 33 | 33-replay-all-process.png | Batch replay in progress | Features - Batch Replay |
+| 34 | 34-post-replay-all-messages.png | Results after batch replay | Features - Batch Replay |
+| 35 | 35-rdlq-intelligence-history-post-replay-all.png | DLQ history audit trail after bulk replay | Features - DLQ Intelligence |
+
+**Total screenshots: 35 files**
 
 ---
 
 ## 🎯 Key Screenshots Explained
 
+### DLQ Intelligence System (Screenshots 26-35)
+
+**New Feature Area:** DLQ Intelligence & Auto-Replay System
+
+#### Enhanced Message UI (Screenshot 26)
+**File:** `26-row-ui-new-feature.png`
+- Improved message list visual hierarchy
+- Better property visibility
+- Enhanced spacing and readability
+
+#### DLQ Intelligence Dashboard (Screenshots 27-28)
+**Files:** `27-dlq-enhancement.png`, `28-dlq-intelligence.png`
+- Persistent DLQ message tracking in SQLite database
+- Category classification (Transient, MaxDelivery, Expired, DataQuality, etc.)
+- "Scan Now" button for instant DLQ polling
+- Export capabilities (JSON/CSV)
+- Timeline view with replay history
+
+#### Replay History Tracking (Screenshot 29)
+**File:** `29-dlq-history-post-replay-message.png`
+- Shows DLQ message status after replay
+- Timestamps and outcome tracking
+- Audit trail for compliance
+
+#### Auto-Replay Rules System (Screenshots 30-31)
+**Files:** `30-auto-replay-feature.png`, `31-auto-relay-test-feature.png`
+- Rule cards with live statistics (Pending/Replayed/Success)
+- Conditions builder (field, operator, value)
+- "Test" button to preview matched messages
+- Real-time evaluation against Active DLQ messages
+
+#### Batch Replay All (Screenshots 32-35)
+**Files:** `32-replay-all-messages.png`, `33-replay-all-process.png`, `34-post-replay-all-messages.png`, `35-rdlq-intelligence-history-post-replay-all.png`
+- Confirmation dialog with red danger header and 3 safety warnings
+- Shows matched message count before execution
+- Real-time progress indicator
+- Post-replay statistics (matched/replayed/failed/skipped)
+- Complete audit trail in DLQ Intelligence history
+
+---
+
 ### Hero Image (Most Important)
-**File:** `08-hero-message-browser-loaded.png`
+**File:** `05-main-message-display1.png`
 
 **Shows:**
-- ServiceHub message browser with 50 active messages in testqueue
+- ServiceHub message browser with loaded messages
 - Active (50) and Dead-Letter (0) tabs
 - AI Findings: 2 indicator
 - Auto-refresh toggle (ON, 7s ago)
@@ -195,12 +249,12 @@ Use this to verify screenshots display correctly on GitHub:
 
 | Metric | Value |
 |--------|-------|
-| **Total screenshots** | 24 files |
-| **Most used screenshot** | `08-hero-message-browser-loaded.png` (7+ times) |
-| **Total size** | ~5.2 MB |
-| **Average file size** | ~217 KB |
-| **Largest file** | 300 KB (hero image) |
-| **Smallest file** | 95 KB (empty state) |
+| **Total screenshots** | 35 files |
+| **Most used screenshot** | `05-main-message-display1.png` (message browser) |
+| **Total size** | ~6.8 MB (estimated) |
+| **Average file size** | ~195 KB |
+| **Largest file** | ~350 KB |
+| **Smallest file** | ~85 KB |
 | **Recommended max size** | 500 KB per file |
 
 ---
@@ -273,5 +327,5 @@ All 24 screenshots should display inline without broken image icons.
 
 ---
 
-**Last updated:** February 1, 2026  
-**Screenshots version:** v1.0 (initial release)
+**Last updated:** February 15, 2026  
+**Screenshots version:** v2.0 (DLQ Intelligence & Auto-Replay System added)

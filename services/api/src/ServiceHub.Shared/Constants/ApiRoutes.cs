@@ -212,4 +212,69 @@ public static class ApiRoutes
         /// </summary>
         public const string Detect = $"{Base}/detect";
     }
+
+    /// <summary>
+    /// Routes for DLQ Intelligence endpoints.
+    /// </summary>
+    public static class Dlq
+    {
+        /// <summary>
+        /// Base route for DLQ history operations.
+        /// </summary>
+        public const string Base = $"{VersionedBase}/dlq";
+
+        /// <summary>
+        /// Route for DLQ message history listing.
+        /// </summary>
+        public const string History = $"{Base}/history";
+
+        /// <summary>
+        /// Route for a specific DLQ message by ID.
+        /// </summary>
+        public const string ById = $"{History}/{{id:long}}";
+
+        /// <summary>
+        /// Route for the timeline of a specific DLQ message.
+        /// </summary>
+        public const string Timeline = $"{History}/{{id:long}}/timeline";
+
+        /// <summary>
+        /// Route for updating notes on a DLQ message.
+        /// </summary>
+        public const string Notes = $"{History}/{{id:long}}/notes";
+
+        /// <summary>
+        /// Route for exporting DLQ messages.
+        /// </summary>
+        public const string Export = $"{Base}/export";
+
+        /// <summary>
+        /// Route for DLQ summary statistics.
+        /// </summary>
+        public const string Summary = $"{Base}/summary";
+
+        /// <summary>
+        /// Routes for auto-replay rule operations.
+        /// </summary>
+        public static class Rules
+        {
+            /// <summary>Base route for rule operations.</summary>
+            public const string Base = $"{Dlq.Base}/rules";
+
+            /// <summary>Route for a specific rule by ID.</summary>
+            public const string ById = $"{Base}/{{id:long}}";
+
+            /// <summary>Route for toggling a rule's enabled state.</summary>
+            public const string Toggle = $"{Base}/{{id:long}}/toggle";
+
+            /// <summary>Route for testing a rule against live messages.</summary>
+            public const string Test = $"{Base}/test";
+
+            /// <summary>Route for retrieving rule templates.</summary>
+            public const string Templates = $"{Base}/templates";
+
+            /// <summary>Route for rule execution statistics.</summary>
+            public const string Stats = $"{Base}/{{id:long}}/stats";
+        }
+    }
 }
