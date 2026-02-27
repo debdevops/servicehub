@@ -63,7 +63,7 @@ function StatusBadge({ status, deliveryCount }: { status: Message['status']; del
 
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${config.bgColor} ${config.textColor} cursor-help`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${config.bgColor} ${config.textColor} cursor-pointer transition-opacity hover:opacity-80`}
       title={tooltip}
     >
       <Icon size={12} className={config.iconColor} />
@@ -74,6 +74,7 @@ function StatusBadge({ status, deliveryCount }: { status: Message['status']; del
 
 // ============================================================================
 // Message Card Component - Memoized for performance
+// Displays event type (human-readable), status, AI insight badge, and preview
 // ============================================================================
 
 interface MessageCardProps {
@@ -82,41 +83,47 @@ interface MessageCardProps {
   onClick: () => void;
 }
 
+function humanizeTitle(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_.-]+/g, ' ')
+    .trim();
+}
+
 const MessageCard = memo(function MessageCard({ message, isSelected, onClick }: MessageCardProps) {
-  // Safely handle message ID - it may not be a hyphenated UUID
-  const shortId = useMemo(() => {
-    if (!message.id) return `#${message.sequenceNumber}`;
-    return message.id.includes('-') 
-      ? message.id.split('-').slice(0, 2).join('-') 
-      : message.id.substring(0, 16);
-  }, [message.id, message.sequenceNumber]);
+  // Determine display title - prefer eventType, then displayTitle, then short ID
+  const displayTitle = useMemo(() => {
+    if (message.eventType) return humanizeTitle(message.eventType);
+    if (message.displayTitle) return humanizeTitle(message.displayTitle);
+    return 'Message';
+  }, [message.eventType, message.displayTitle]);
 
   return (
     <div
       onClick={onClick}
       className={`
-        px-4 py-3 cursor-pointer transition-colors border-b border-gray-100
+        px-4 py-4 cursor-pointer transition-colors border-b border-gray-100
         ${isSelected
           ? 'bg-primary-50 border-l-4 border-l-primary-500'
           : 'bg-transparent hover:bg-gray-50 border-l-4 border-l-transparent'
         }
       `}
     >
-      {/* Row 1: ID and Timestamp */}
-      <div className="flex items-center justify-between mb-2">
-        <span className="font-mono text-sm font-medium text-gray-900">
-          {shortId}
+      {/* Row 1: Event Type and Timestamp - Large, Clear */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="font-bold text-base text-gray-900 truncate flex-1 mr-2">
+          {displayTitle}
         </span>
         <span 
-          className="text-xs text-gray-500 cursor-help"
+          className="text-xs text-gray-400 cursor-help whitespace-nowrap"
           title={message.enqueuedTime.toISOString()}
         >
           {formatRelativeTime(message.enqueuedTime)}
         </span>
       </div>
 
-      {/* Row 2: Status and AI Badge */}
-      <div className="flex items-center gap-2 mb-2">
+      {/* Row 2: Status and AI Badge - With breathing room */}
+      <div className="flex items-center gap-2 mb-3">
         <StatusBadge status={message.status} deliveryCount={message.deliveryCount} />
         {message.hasAIInsight && (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-primary-100 text-primary-700">
@@ -126,8 +133,18 @@ const MessageCard = memo(function MessageCard({ message, isSelected, onClick }: 
         )}
       </div>
 
-      {/* Row 3: Preview */}
-      <p className="text-sm text-gray-600 truncate">
+      {/* Visual Separator */}
+      <div className="h-px bg-gray-200 my-2" />
+
+      {/* Row 3: Preview - Two-line JSON payload preview */}
+      <p
+        className="text-xs text-gray-600 leading-relaxed overflow-hidden"
+        style={{
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+        }}
+      >
         {message.preview}
       </p>
     </div>
@@ -195,7 +212,8 @@ export function MessageList({
   const virtualizer = useVirtualizer({
     count: filteredMessages.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 88, // Estimated height of each card
+    estimateSize: () => 148,
+    measureElement: (element) => element.getBoundingClientRect().height,
     overscan: 10,
   });
 
@@ -250,12 +268,12 @@ export function MessageList({
             return (
               <div
                 key={virtualItem.key}
+                ref={virtualizer.measureElement}
                 style={{
                   position: 'absolute',
                   top: 0,
                   left: 0,
                   width: '100%',
-                  height: virtualItem.size,
                   transform: `translateY(${virtualItem.start}px)`,
                 }}
               >

@@ -1150,6 +1150,203 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyDictionary<long, Result>> ReplayMessagesAsync(
+        string entityName,
+        string? subscriptionName,
+        IReadOnlyCollection<long> sequenceNumbers,
+        CancellationToken cancellationToken = default)
+    {
+        var results = new Dictionary<long, Result>();
+
+        if (sequenceNumbers.Count == 0)
+            return results;
+
+        if (_disposed || _client.IsClosed)
+        {
+            var error = Result.Failure(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+            foreach (var seq in sequenceNumbers)
+                results[seq] = error;
+            return results;
+        }
+
+        ServiceBusReceiver? dlqReceiver = null;
+        ServiceBusSender? sender = null;
+        var messagesToAbandon = new List<ServiceBusReceivedMessage>();
+
+        try
+        {
+            // Create a SINGLE receiver for the DLQ — all target messages are in the same entity
+            var receiverOptions = new ServiceBusReceiverOptions
+            {
+                ReceiveMode = ServiceBusReceiveMode.PeekLock,
+                SubQueue = SubQueue.DeadLetter,
+                PrefetchCount = 0
+            };
+
+            dlqReceiver = !string.IsNullOrEmpty(subscriptionName)
+                ? _client.CreateReceiver(entityName, subscriptionName, receiverOptions)
+                : _client.CreateReceiver(entityName, receiverOptions);
+
+            sender = _client.CreateSender(entityName);
+
+            // Build the set of target sequence numbers we're looking for
+            var pending = new HashSet<long>(sequenceNumbers);
+            var foundMessages = new Dictionary<long, ServiceBusReceivedMessage>();
+
+            // Receive messages in batches until we find all targets or exhaust the DLQ
+            const int maxAttempts = 10;
+            const int batchSize = 100; // Larger batch for bulk operations
+
+            for (int attempt = 0; attempt < maxAttempts && pending.Count > 0; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var messages = await dlqReceiver.ReceiveMessagesAsync(
+                    maxMessages: batchSize,
+                    maxWaitTime: TimeSpan.FromSeconds(5),
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                if (messages == null || messages.Count == 0)
+                    break; // No more messages in the DLQ
+
+                foreach (var msg in messages)
+                {
+                    if (pending.Remove(msg.SequenceNumber))
+                    {
+                        foundMessages[msg.SequenceNumber] = msg;
+                    }
+                    else
+                    {
+                        messagesToAbandon.Add(msg);
+                    }
+                }
+            }
+
+            // Mark any not-found messages as failure
+            foreach (var seq in pending)
+            {
+                results[seq] = Result.Failure(Error.NotFound(
+                    ErrorCodes.Message.NotFound,
+                    $"Message with sequence number {seq} not found in dead-letter queue."));
+            }
+
+            // Replay all found messages
+            foreach (var (seqNum, targetMessage) in foundMessages)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                try
+                {
+                    // Create a new message with the same content
+                    var replayMessage = new ServiceBusMessage(targetMessage.Body)
+                    {
+                        ContentType = targetMessage.ContentType,
+                        CorrelationId = targetMessage.CorrelationId,
+                        MessageId = Guid.NewGuid().ToString(),
+                        PartitionKey = targetMessage.PartitionKey,
+                        SessionId = targetMessage.SessionId,
+                        ReplyTo = targetMessage.ReplyTo,
+                        ReplyToSessionId = targetMessage.ReplyToSessionId,
+                        Subject = targetMessage.Subject,
+                        TimeToLive = targetMessage.TimeToLive,
+                        To = targetMessage.To
+                    };
+
+                    // Copy application properties, filtering out DLQ-specific ones
+                    foreach (var prop in targetMessage.ApplicationProperties)
+                    {
+                        if (!prop.Key.Equals("DeadLetterReason", StringComparison.OrdinalIgnoreCase) &&
+                            !prop.Key.Equals("DeadLetterErrorDescription", StringComparison.OrdinalIgnoreCase))
+                        {
+                            replayMessage.ApplicationProperties[prop.Key] = prop.Value;
+                        }
+                    }
+
+                    // Add replay metadata
+                    replayMessage.ApplicationProperties["Replayed"] = true;
+                    replayMessage.ApplicationProperties["ReplayedAt"] = DateTime.UtcNow.ToString("O");
+                    replayMessage.ApplicationProperties["OriginalSequenceNumber"] = seqNum;
+                    replayMessage.ApplicationProperties["OriginalDeadLetterReason"] = targetMessage.DeadLetterReason ?? "Unknown";
+
+                    // Send to main queue/topic
+                    await sender.SendMessageAsync(replayMessage, cancellationToken).ConfigureAwait(false);
+
+                    // Complete (remove) the message from DLQ
+                    await dlqReceiver.CompleteMessageAsync(targetMessage, cancellationToken).ConfigureAwait(false);
+
+                    _logger.LogInformation(
+                        "Batch-replayed message {SequenceNumber} from {EntityName} DLQ",
+                        seqNum, entityName);
+
+                    results[seqNum] = Result.Success();
+                }
+                catch (ServiceBusException ex)
+                {
+                    _logger.LogError(ex, "Service Bus error replaying message {SequenceNumber} from {EntityName}", seqNum, entityName);
+                    results[seqNum] = Result.Failure(Error.ExternalService(
+                        ErrorCodes.Message.SendFailed,
+                        $"Failed to replay message {seqNum}: {ex.Reason}"));
+                    // Continue with remaining messages — don't abort the batch
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error replaying message {SequenceNumber} from {EntityName}", seqNum, entityName);
+                    results[seqNum] = Result.Failure(Error.Internal(
+                        ErrorCodes.General.UnexpectedError,
+                        $"Failed to replay message {seqNum}: {ex.Message}"));
+                }
+            }
+
+            return results;
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex, "Entity {EntityName} not found for batch replay", entityName);
+            var error = Result.Failure(Error.NotFound(
+                ErrorCodes.Queue.NotFound,
+                $"The queue or topic '{entityName}' was not found."));
+            foreach (var seq in sequenceNumbers)
+                results.TryAdd(seq, error);
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Batch replay failed for {EntityName}", entityName);
+            var error = Result.Failure(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                $"Batch replay failed: {ex.Message}"));
+            foreach (var seq in sequenceNumbers)
+                results.TryAdd(seq, error);
+            return results;
+        }
+        finally
+        {
+            // Abandon all non-target messages so they become available again
+            if (dlqReceiver != null)
+            {
+                foreach (var msg in messagesToAbandon)
+                {
+                    try
+                    {
+                        await dlqReceiver.AbandonMessageAsync(msg, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // Best effort
+                    }
+                }
+                await dlqReceiver.DisposeAsync().ConfigureAwait(false);
+            }
+            if (sender != null)
+            {
+                await sender.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task<Result> PurgeMessageAsync(
         string entityName,
         string? subscriptionName,

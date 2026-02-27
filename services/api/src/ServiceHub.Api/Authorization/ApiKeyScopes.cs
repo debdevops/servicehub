@@ -26,6 +26,10 @@ public static class ApiKeyScopes
     // Anomaly detection scopes
     public const string AnomaliesRead = "anomalies:read";
 
+    // DLQ Intelligence scopes
+    public const string DlqRead = "dlq:read";
+    public const string DlqWrite = "dlq:write";
+
     // Administrative access (all operations)
     public const string Admin = "admin";
 

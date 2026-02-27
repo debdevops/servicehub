@@ -24,6 +24,24 @@ function transformMessage(
   const id = apiMessage.messageId || `seq-${apiMessage.sequenceNumber}`;
   const body = apiMessage.body;
   
+  // Extract event type from message body (if JSON)
+  let eventType: string | undefined;
+  let displayTitle: string | undefined;
+  try {
+    if (body && typeof body === 'string') {
+      const parsed = JSON.parse(body);
+      eventType = parsed.eventType || parsed.event || parsed.type;
+      // If no eventType, try to construct a display title from other fields
+      if (!eventType) {
+        if (parsed.messageType) displayTitle = parsed.messageType;
+        else if (parsed.name) displayTitle = parsed.name;
+        else if (parsed.action) displayTitle = parsed.action;
+      }
+    }
+  } catch {
+    // Body is not JSON or parsing failed - use as-is for preview
+  }
+  
   // Derive status from state
   let status: 'success' | 'warning' | 'error' = 'success';
   if (apiMessage.isFromDeadLetter || apiMessage.deadLetterReason) {
@@ -51,6 +69,8 @@ function transformMessage(
     },
     timeToLive: apiMessage.timeToLive || '',
     lockToken: '',
+    eventType,
+    displayTitle: displayTitle || eventType,
     deadLetterReason: apiMessage.deadLetterReason || undefined,
     deadLetterSource: apiMessage.deadLetterSource || undefined,
   };

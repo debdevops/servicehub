@@ -1,6 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { MainLayout } from '@/components/layout';
-import { MessagesPage, ConnectPage } from '@/pages';
+import { MessagesPage, ConnectPage, DlqHistoryPage, RulesPage } from '@/pages';
 
 export const router = createBrowserRouter([
   {
@@ -18,6 +18,14 @@ export const router = createBrowserRouter([
       {
         path: 'connect',
         element: <ConnectPage />,
+      },
+      {
+        path: 'dlq-history',
+        element: <DlqHistoryPage />,
+      },
+      {
+        path: 'rules',
+        element: <RulesPage />,
       },
     ],
   },

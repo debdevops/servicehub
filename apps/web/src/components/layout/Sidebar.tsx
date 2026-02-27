@@ -9,6 +9,8 @@ import {
   Database,
   Newspaper,
   RefreshCw,
+  BarChart3,
+  Zap,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useState } from 'react';
@@ -460,6 +462,22 @@ export function Sidebar() {
             <span className="flex-1 text-left">Dead-Letter</span>
             <span className="text-xs text-red-600 font-medium">DLQ</span>
           </button>
+          <NavLink
+            to={activeNamespace ? `/dlq-history?namespace=${activeNamespace.id}` : '/dlq-history'}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-purple-50 text-gray-700 hover:text-purple-700 border border-gray-200 hover:border-purple-300 shadow-sm"
+          >
+            <BarChart3 className="w-4 h-4 text-purple-500" />
+            <span className="flex-1 text-left">DLQ Intelligence</span>
+            <span className="text-xs text-purple-600 font-medium">History</span>
+          </NavLink>
+          <NavLink
+            to="/rules"
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-amber-50 text-gray-700 hover:text-amber-700 border border-gray-200 hover:border-amber-300 shadow-sm"
+          >
+            <Zap className="w-4 h-4 text-amber-500" />
+            <span className="flex-1 text-left">Auto-Replay</span>
+            <span className="text-xs text-amber-600 font-medium">Rules</span>
+          </NavLink>
           <button
             onClick={() => {
               toast('Scheduled messages feature coming soon!', {
