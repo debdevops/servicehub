@@ -34,9 +34,7 @@ export function ForensicTab({ message }: ForensicTabProps) {
   const [error, setError] = useState<string | null>(null);
 
   // Check if we have a DLQ history ID (numeric) from the message
-  const dlqId = typeof (message as Record<string, unknown>)['dlqId'] === 'number'
-    ? ((message as Record<string, unknown>)['dlqId'] as number)
-    : null;
+  const dlqId = message.dlqId ?? null;
 
   const handleAnalyse = async () => {
     if (!dlqId) return;

@@ -7,7 +7,6 @@ using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
-using ServiceHub.Infrastructure.AI;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Shared.Results;
 
@@ -24,7 +23,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IServiceBusClientCache _clientCache;
     private readonly IConnectionStringProtector _protector;
-    private readonly ForensicEngine _forensicEngine;
+    private readonly IForensicEngine _forensicEngine;
     private readonly ILogger<DlqMonitorService> _logger;
 
     private const int MaxBodyPreviewLength = 500;
@@ -38,7 +37,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
         INamespaceRepository namespaceRepository,
         IServiceBusClientCache clientCache,
         IConnectionStringProtector protector,
-        ForensicEngine forensicEngine,
+        IForensicEngine forensicEngine,
         ILogger<DlqMonitorService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
