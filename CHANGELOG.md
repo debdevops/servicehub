@@ -1,5 +1,24 @@
 # ServiceHub Changelog
 
+## [2.1.0] - 2026-03-22
+
+### Changed
+- Migrated from .NET 8 to .NET 10 across all projects
+- C# language version upgraded from 12.0 to 14.0
+- Replaced Swashbuckle with .NET 10 built-in OpenAPI + Scalar UI
+- Updated all Microsoft.Extensions.* packages to 10.0.0
+- Updated Microsoft.EntityFrameworkCore.Sqlite to 10.0.0
+- Updated test infrastructure (xunit 2.9.3, Microsoft.NET.Test.Sdk 17.14.0)
+
+### Fixed
+- Created missing apps/web/.env.production file (CI pipeline was failing)
+
+### Removed
+- System.Text.Json NuGet package (now inbox in .NET 10)
+- Swashbuckle.AspNetCore NuGet package (replaced by built-in OpenAPI)
+
+---
+
 ## Version 2.0.1 (February 15, 2026) - Performance Optimization Update
 
 ### ⚡ Performance Improvements

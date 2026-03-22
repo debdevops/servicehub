@@ -46,11 +46,7 @@ public static class ApplicationBuilderExtensions
         // CORS
         app.UseCorsConfiguration(environment);
 
-        // Swagger (development and staging)
-        if (environment.IsDevelopment() || environment.IsStaging())
-        {
-            app.UseSwaggerConfiguration();
-        }
+        // OpenAPI document and Scalar UI are mapped in WebApplicationExtensions.cs (requires WebApplication, not IApplicationBuilder)
 
         // Routing
         app.UseRouting();
