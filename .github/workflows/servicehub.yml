@@ -62,7 +62,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: apps/web
-        run: npm ci
+        run: npm ci --include=optional
 
       - name: Run unit tests
         working-directory: apps/web
