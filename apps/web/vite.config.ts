@@ -63,6 +63,10 @@ export default defineConfig({
         'src/**/index.ts',
         // pure mock/fixture data — not application logic
         'src/lib/mockData.ts',
+        'src/lib/aiMockData.ts',
+        'src/lib/insightsMockData.ts',
+        // test/demo message generator — not application logic
+        'src/lib/messageGenerator.ts',
         // TypeScript type definitions only — no runtime code
         'src/lib/api/types.ts',
         // single-line QueryClient instantiation
