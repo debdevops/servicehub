@@ -1,3 +1,4 @@
+using Scalar.AspNetCore;
 using ServiceHub.Api.Configuration;
 
 namespace ServiceHub.Api.Extensions;
@@ -37,9 +38,10 @@ public static class WebApplicationExtensions
         }
         else
         {
-            // In development, redirect root to Swagger for API exploration
-            app.MapGet("/", () => Results.Redirect("/swagger"))
-                .ExcludeFromDescription();
+            // In development, expose the OpenAPI document and Scalar UI
+            app.MapOpenApi();                          // serves OpenAPI JSON at /openapi/v1.json
+            app.MapScalarApiReference();               // serves Scalar UI at /scalar/v1
+            app.MapGet("/", () => Results.Redirect("/scalar/v1")).ExcludeFromDescription();
         }
 
         return app;
