@@ -84,6 +84,15 @@ public sealed class DlqMessage
     /// <summary>User-added notes for investigation.</summary>
     public string? UserNotes { get; set; }
 
+    /// <summary>Forensic-engine root-cause explanation (plain English).</summary>
+    public string? ForensicRootCause { get; set; }
+
+    /// <summary>Forensic-engine confidence score (0.0–1.0).</summary>
+    public double ForensicConfidence { get; set; }
+
+    /// <summary>Replay-safety verdict: Safe, Unsafe, or RequiresReview.</summary>
+    public string? ReplaySafety { get; set; }
+
     /// <summary>Correlation ID from the original message.</summary>
     public string? CorrelationId { get; init; }
 

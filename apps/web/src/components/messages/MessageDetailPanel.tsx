@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { FileText, Code, Bot, List, Inbox, AlertTriangle } from 'lucide-react';
+import { FileText, Code, Bot, List, Inbox, AlertTriangle, Shield } from 'lucide-react';
 import { Play, Clipboard } from 'lucide-react'; // Trash2 removed - purge feature disabled
 import { useSearchParams } from 'react-router-dom';
 import { useTabPersistence, type DetailTab } from '@/hooks/useTabPersistence';
-import { PropertiesTab, BodyTab, AIInsightsTab, HeadersTab } from './tabs';
+import { PropertiesTab, BodyTab, AIInsightsTab, HeadersTab, ForensicTab } from './tabs';
 import { useReplayMessage } from '@/hooks/useMessages';
 // usePurgeMessage removed - Azure Service Bus limitation prevents reliable individual message deletion
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -27,6 +27,7 @@ const TABS: { id: DetailTab; label: string; icon: typeof FileText }[] = [
   { id: 'properties', label: 'Properties', icon: FileText },
   { id: 'body', label: 'Body', icon: Code },
   { id: 'ai', label: 'AI Insights', icon: Bot },
+  { id: 'forensic', label: 'Forensic', icon: Shield },
   { id: 'headers', label: 'Headers', icon: List },
 ];
 
@@ -65,6 +66,8 @@ function TabContent({ tab, message, onViewPattern }: { tab: DetailTab; message: 
           onViewPattern={onViewPattern}
         />
       );
+    case 'forensic':
+      return <ForensicTab message={message} />;
     case 'headers':
       return <HeadersTab headers={message.headers} />;
     default:

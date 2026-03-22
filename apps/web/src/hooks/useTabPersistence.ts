@@ -1,9 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
 
-export type DetailTab = 'properties' | 'body' | 'ai' | 'headers';
+export type DetailTab = 'properties' | 'body' | 'ai' | 'forensic' | 'headers';
 
 const STORAGE_KEY = 'servicehub:detail-tab';
-const VALID_TABS: DetailTab[] = ['properties', 'body', 'ai', 'headers'];
+const VALID_TABS: DetailTab[] = ['properties', 'body', 'ai', 'forensic', 'headers'];
 const DEFAULT_TAB: DetailTab = 'properties';
 
 /**

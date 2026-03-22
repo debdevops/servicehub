@@ -28,6 +28,9 @@ export interface DlqHistoryItem {
   userNotes: string | null;
   correlationId: string | null;
   topicName: string | null;
+  forensicRootCause: string | null;
+  forensicConfidence: number;
+  replaySafety: string | null;
 }
 
 export interface DlqMessageDetail extends DlqHistoryItem {
@@ -98,6 +101,21 @@ export interface DlqHistoryParams {
   pageSize?: number;
 }
 
+export interface ForensicResult {
+  messageId: number;
+  failureCategory: string;
+  confidence: number;
+  rootCause: string;
+  replaySafety: string;
+  tier: string;
+}
+
+export interface ForensicBatchSummary {
+  analysed: number;
+  updated: number;
+  byCategory: Record<string, number>;
+}
+
 // ─── API Client ────────────────────────────────────────────────────
 
 export const dlqHistoryApi = {
@@ -166,5 +184,21 @@ export const dlqHistoryApi = {
     if (params?.to) queryParams.set('to', params.to);
     if (params?.status) queryParams.set('status', params.status);
     return `${baseUrl}/dlq/export?${queryParams.toString()}`;
+  },
+
+  /**
+   * Get forensic analysis result for a single DLQ message.
+   */
+  getForensicResult: async (id: number): Promise<ForensicResult> => {
+    const response = await apiClient.get<ForensicResult>(`/dlq/history/${id}/forensic`);
+    return response.data;
+  },
+
+  /**
+   * Run batch forensic analysis across all Active DLQ messages in a namespace.
+   */
+  analyseBatch: async (namespaceId: string): Promise<ForensicBatchSummary> => {
+    const response = await apiClient.post<ForensicBatchSummary>(`/dlq/analyse-batch/${namespaceId}`);
+    return response.data;
   },
 };
