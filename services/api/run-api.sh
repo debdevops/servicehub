@@ -45,6 +45,6 @@ echo ""
 echo -e "${YELLOW}Ctrl+C to stop the server${NC}"
 echo ""
 
-# Run the API
+# Run the API — bind to all interfaces so remote hosts can reach it
 cd "$SCRIPT_DIR"
-dotnet run --project "$PROJECT_FILE"
+dotnet run --project "$PROJECT_FILE" --urls "http://0.0.0.0:5153;https://0.0.0.0:7252"

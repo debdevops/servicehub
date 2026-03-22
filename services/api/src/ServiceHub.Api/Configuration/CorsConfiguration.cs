@@ -21,6 +21,11 @@ public static class CorsConfiguration
         var corsSection = configuration.GetSection("Cors");
         var allowedOrigins = corsSection.GetSection("AllowedOrigins").Get<string[]>() ?? [];
 
+        // When true, development policy accepts requests from any hostname/IP —
+        // required when the server is accessed over the network (not just localhost).
+        // Never set this in Staging or Production configs.
+        var allowAnyOriginInDev = corsSection.GetValue<bool>("DevelopmentAllowAnyOrigin");
+
         // Get headers configuration for exposed headers
         var headersOptions = new HttpHeadersOptions();
         configuration.GetSection("HttpHeaders").Bind(headersOptions);
@@ -50,19 +55,36 @@ public static class CorsConfiguration
                     .WithExposedHeaders(headersOptions.GetExposedHeaders());
             });
 
-            // SECURITY: Development policy with explicit localhost origins only
-            // Never use AllowAnyOrigin() - it disables CSRF protection
+            // SECURITY: Development policy.
+            // When DevelopmentAllowAnyOrigin is true (set in appsettings.Development.json),
+            // accept requests from any origin so users can reach the API from a remote host
+            // (e.g. http://linuxhost:3000).  AllowCredentials() requires SetIsOriginAllowed
+            // instead of AllowAnyOrigin() — both achieve the same result while keeping
+            // credentials support.  This flag must never be true in Staging/Production.
             options.AddPolicy("DevelopmentPolicy", builder =>
             {
+                if (allowAnyOriginInDev)
+                {
+                    builder.SetIsOriginAllowed(_ => true);
+                }
+                else
+                {
+                    // Restrict to explicit localhost origins when flag is off
+                    var devOrigins = allowedOrigins.Length > 0
+                        ? allowedOrigins
+                        : new[]
+                        {
+                            "http://localhost:3000",
+                            "http://localhost:5173",
+                            "http://localhost:5174",
+                            "http://127.0.0.1:3000",
+                            "http://127.0.0.1:5173",
+                            "http://127.0.0.1:5174",
+                        };
+                    builder.WithOrigins(devOrigins);
+                }
+
                 builder
-                    .WithOrigins(
-                        "http://localhost:3000",
-                        "http://localhost:5173",
-                        "http://localhost:5174",
-                        "http://127.0.0.1:3000",
-                        "http://127.0.0.1:5173",
-                        "http://127.0.0.1:5174"
-                    )
                     .AllowAnyMethod()
                     .AllowAnyHeader()
                     .AllowCredentials()
