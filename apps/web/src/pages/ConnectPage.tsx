@@ -48,14 +48,24 @@ export function ConnectPage() {
       return;
     }
 
-    // SECURITY: Reject RootManageSharedAccessKey - root keys should not be used
+    // SECURITY WARNING: RootManageSharedAccessKey has full namespace access.
+    // Warn the user but do not block — it still works for debugging.
     if (connectionString.includes('RootManageSharedAccessKey')) {
-      toast.error(
-        'Connection strings using "RootManageSharedAccessKey" are not allowed. ' +
-        'Please create a dedicated Shared Access Policy with "Manage", "Send", and "Listen" permissions for ServiceHub.',
-        { duration: 8000 }
+      toast(
+        '⚠️ You are using RootManageSharedAccessKey which has full namespace access. ' +
+        'Consider creating a dedicated "servicehub" policy with Listen-only permission for better security. ' +
+        'Connecting anyway...',
+        {
+          duration: 8000,
+          style: {
+            background: '#fef3c7',
+            color: '#92400e',
+            border: '1px solid #fbbf24',
+          },
+          icon: '⚠️',
+        }
       );
-      return;
+      // Do NOT return — allow the connection to proceed
     }
 
     // Extract namespace from connection string
@@ -78,19 +88,25 @@ export function ConnectPage() {
       // Check actual permissions returned by the backend
       // The backend attempts to detect permissions from the SAS policy name, but this is not always accurate
       // since Azure doesn't enforce naming conventions. We show a warning if permissions appear limited.
-      if (createdNamespace.hasManagePermission === false || createdNamespace.hasSendPermission === false) {
+      if (createdNamespace.hasManagePermission === false && createdNamespace.hasSendPermission === false) {
+        // Listen-only — this is the recommended setup for read-only inspection
+        toast.success(
+          '✓ Connected with Listen-only access. Perfect for DLQ inspection and message browsing. ' +
+          'Note: Replay operations require a policy with Send permission.',
+          { duration: 8000 }
+        );
+      } else if (createdNamespace.hasManagePermission === false) {
+        // Has Listen + Send but not Manage — good enough for most operations
         toast(
-          '⚠️ Limited permissions detected in your SAS policy. For full functionality (message replay, deadletter operations), ensure your policy has Manage, Send, and Listen permissions in Azure Portal.',
-          { 
-            duration: 10000,
-            style: {
-              background: '#fef3c7',
-              color: '#92400e',
-              border: '1px solid #fbbf24',
-            }
+          '✓ Connected. All DLQ inspection and replay features are available. ' +
+          'Some administrative operations (queue creation) require Manage permission.',
+          {
+            duration: 6000,
+            style: { background: '#f0fdf4', color: '#166534', border: '1px solid #86efac' },
           }
         );
       }
+      // If all permissions detected or permissions unclear, show no additional message — the success toast from the mutation is enough
       
       // Reset form
       setDisplayName('');
@@ -172,7 +188,8 @@ export function ConnectPage() {
                 Connect to <span className="text-primary-600">Azure Service Bus</span>
               </h1>
               <p className="text-base text-gray-600 mt-2">
-                Monitor, Debug & Automate your Service Bus in real-time.
+                Connect using a Shared Access Policy connection string. A Listen-only policy is sufficient
+                for DLQ investigation, message browsing, and replay operations.
               </p>
             </div>
 
@@ -226,12 +243,25 @@ export function ConnectPage() {
                       {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    <span className="text-amber-600 font-medium">⚠️ Security:</span> Create a new Shared Access Policy with <strong>"Manage"</strong>, <strong>"Send"</strong>, and <strong>"Listen"</strong> permissions. 
-                    Go to Azure Portal → Service Bus → Shared access policies → + Add → Check "Manage", "Send", and "Listen" → Copy connection string.
-                    <br />
-                    <span className="text-red-500">Do not use RootManageSharedAccessKey</span> (use a dedicated policy instead).
-                  </p>
+                  <div className="mt-2 space-y-2">
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <p className="text-xs text-blue-800 font-medium mb-1">
+                        Recommended: Create a dedicated Listen-only policy (60 seconds, no admin required)
+                      </p>
+                      <ol className="text-xs text-blue-700 space-y-0.5 list-decimal list-inside">
+                        <li>Azure Portal → your Service Bus namespace</li>
+                        <li>Shared access policies → + Add policy</li>
+                        <li>Name it <code className="bg-blue-100 px-1 rounded">servicehub</code> → tick <strong>Listen</strong> only</li>
+                        <li>Save → copy Primary Connection String → paste above</li>
+                      </ol>
+                      <p className="text-xs text-blue-600 mt-1">
+                        Listen permission is all ServiceHub needs. No Manage, no admin role, no IT ticket required.
+                      </p>
+                    </div>
+                    <p className="text-xs text-gray-400">
+                      Also accepts Manage + Send + Listen policies if you already have one configured.
+                    </p>
+                  </div>
                 </div>
 
                 <button

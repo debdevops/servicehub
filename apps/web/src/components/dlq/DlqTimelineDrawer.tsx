@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { X, Clock, AlertCircle, CheckCircle, XCircle, ArrowRight, FileText } from 'lucide-react';
-import { useDlqTimeline, useDlqMessageDetail } from '@/hooks/useDlqHistory';
+import { useDlqTimeline, useDlqMessageDetail, useUpdateDlqNotes } from '@/hooks/useDlqHistory';
 import { StatusBadge, CategoryBadge } from './StatusBadge';
 
 interface DlqTimelineDrawerProps {
@@ -50,6 +50,14 @@ export function DlqTimelineDrawer({ messageId, onClose }: DlqTimelineDrawerProps
   const isOpen = messageId !== null;
 
   const events = useMemo(() => timeline?.events ?? [], [timeline]);
+
+  const [notesText, setNotesText] = useState(detail?.userNotes ?? '');
+  const updateNotes = useUpdateDlqNotes();
+
+  // Sync local state when detail changes (different message opened)
+  useEffect(() => {
+    setNotesText(detail?.userNotes ?? '');
+  }, [detail?.id]);
 
   if (!isOpen) return null;
 
@@ -149,6 +157,45 @@ export function DlqTimelineDrawer({ messageId, onClose }: DlqTimelineDrawerProps
                       <p className="text-sm text-yellow-800 mt-1">{detail.userNotes}</p>
                     </div>
                   )}
+
+                  {/* User Notes — always visible, editable */}
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                        Investigation Notes
+                      </span>
+                      {notesText !== (detail.userNotes ?? '') && (
+                        <span className="text-xs text-amber-600">Unsaved changes</span>
+                      )}
+                    </div>
+                    <textarea
+                      value={notesText}
+                      onChange={(e) => setNotesText(e.target.value)}
+                      placeholder="Add investigation notes, root cause findings, or action items..."
+                      rows={3}
+                      className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300 resize-none bg-white"
+                    />
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-xs text-gray-400">
+                        {notesText.length}/4000 characters
+                      </span>
+                      <button
+                        onClick={() => {
+                          if (detail?.id) {
+                            updateNotes.mutate({ id: detail.id, notes: notesText });
+                          }
+                        }}
+                        disabled={
+                          updateNotes.isPending ||
+                          notesText === (detail.userNotes ?? '') ||
+                          notesText.length > 4000
+                        }
+                        className="px-3 py-1.5 text-xs font-medium rounded-lg bg-primary-500 text-white hover:bg-primary-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
+                      >
+                        {updateNotes.isPending ? 'Saving...' : 'Save Notes'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 

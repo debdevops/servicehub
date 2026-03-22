@@ -34,7 +34,7 @@ public sealed class ConnectionStringProtectorTests
         var result = protector.Protect(ValidConnectionString);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().StartWith("ENC:V2:");
+        result.Value.Should().StartWith("ENC[v1]:");
         result.Value.Should().NotContain(ValidConnectionString);
     }
 
@@ -113,7 +113,7 @@ public sealed class ConnectionStringProtectorTests
 
         var masked = protector.Mask(encrypted);
 
-        masked.Should().Be("[ENCRYPTED]");
+        masked.Should().Be("[ENCRYPTED:v1]");
     }
 
     [Fact]

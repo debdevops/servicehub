@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+
+          <!-- Only measure production assemblies — exclude test projects -->
+          <Include>
+            [ServiceHub.Api]*,
+            [ServiceHub.Core]*,
+            [ServiceHub.Infrastructure]*,
+            [ServiceHub.Shared]*
+          </Include>
+
+          <!-- Exclude generated code and boilerplate -->
+          <Exclude>
+            [ServiceHub.UnitTests]*,
+            [ServiceHub.IntegrationTests]*,
+            [*]System.Text.RegularExpressions.*,
+            [*]Microsoft.AspNetCore.OpenApi.*
+          </Exclude>
+
+          <ExcludeByFile>
+            **/*.g.cs,
+            **/*.generated.cs,
+            **/Migrations/**,
+            **/wwwroot/**
+          </ExcludeByFile>
+
+          <!-- Skip auto-property getters/setters — no testable logic -->
+          <SkipAutoProps>true</SkipAutoProps>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

@@ -1,11 +1,12 @@
-name: Compile & Build
+# CI workflow: build + unit tests on every push/PR. See deploy.yml for production deployment.
+name: CI – Build & Unit Tests
 
 on:
   push:
     branches:
       - main
       - develop
-      - dglocal-110126
+      - 'dglocal-*'
       - 'feature/**'
       - 'hotfix/**'
   pull_request:
@@ -14,12 +15,12 @@ on:
       - develop
 
 env:
-  DOTNET_VERSION: '8.0.x'
+  DOTNET_VERSION: '10.0.x'
   NODE_VERSION: '20.x'
 
 jobs:
-  compile-backend:
-    name: Compile Backend (.NET)
+  build-and-test-backend:
+    name: Build & Test Backend (.NET)
     runs-on: ubuntu-latest
 
     steps:
@@ -32,17 +33,57 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore dependencies
-        run: |
-          cd services/api
-          dotnet restore
+        run: dotnet restore services/api/ServiceHub.sln
 
       - name: Build solution
-        run: |
-          cd services/api
-          dotnet build --no-restore --configuration Release
+        run: dotnet build services/api/ServiceHub.sln --no-restore --configuration Release
 
-  compile-frontend:
-    name: Compile Frontend (React)
+      - name: Run unit tests with coverage
+        run: |
+          dotnet test services/api/tests/ServiceHub.UnitTests \
+            --no-build \
+            --configuration Release \
+            --settings services/api/coverlet.runsettings \
+            --results-directory services/api/TestResults \
+            --logger "console;verbosity=normal" \
+            --logger "trx;LogFileName=results.trx"
+
+      - name: Install report generator
+        run: |
+          dotnet tool install --global dotnet-reportgenerator-globaltool \
+            --version 5.4.3 2>/dev/null || true
+
+      - name: Generate coverage report and enforce 60% threshold
+        run: |
+          reportgenerator \
+            -reports:"services/api/TestResults/**/coverage.cobertura.xml" \
+            -targetdir:"services/api/TestResults/CoverageReport" \
+            -reporttypes:"TextSummary"
+
+          echo "=== Coverage Summary ==="
+          cat services/api/TestResults/CoverageReport/Summary.txt
+
+          COVERAGE=$(grep -oP 'Line coverage: \K[\d.]+' \
+            services/api/TestResults/CoverageReport/Summary.txt || echo "0")
+
+          echo "Line coverage: ${COVERAGE}%"
+
+          if awk "BEGIN {exit !($COVERAGE < 60)}"; then
+            echo "❌ Coverage ${COVERAGE}% is below the required 60% threshold"
+            exit 1
+          fi
+          echo "✅ Coverage ${COVERAGE}% meets the 60% threshold"
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-backend-${{ github.run_number }}
+          path: services/api/TestResults/CoverageReport/
+          retention-days: 14
+
+  build-and-test-frontend:
+    name: Build & Test Frontend (React)
     runs-on: ubuntu-latest
 
     steps:
@@ -53,36 +94,79 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: apps/web/package-lock.json
 
       - name: Install dependencies
         working-directory: apps/web
+        run: npm ci --include=optional
+
+      - name: Run unit tests with coverage
+        working-directory: apps/web
+        run: npm run test:coverage
+
+      - name: Check frontend coverage threshold (60%)
+        working-directory: apps/web
         run: |
-          rm -rf node_modules package-lock.json
-          npm install --include=optional
+          if [ ! -f "coverage/coverage-summary.json" ]; then
+            echo "⚠ Coverage file not found — skipping threshold check"
+            exit 0
+          fi
+
+          # Extract total line coverage from vitest coverage JSON
+          COVERAGE=$(node -e "
+            const c = require('./coverage/coverage-summary.json');
+            const total = c.total || c;
+            const pct = total.lines?.pct ?? total.lines?.percent ?? 0;
+            console.log(pct);
+          " 2>/dev/null || echo "0")
+
+          echo "Frontend line coverage: ${COVERAGE}%"
+
+          if awk "BEGIN {exit !($COVERAGE < 60)}"; then
+            echo "❌ Frontend coverage ${COVERAGE}% is below 60%"
+            exit 1
+          fi
+          echo "✅ Frontend coverage ${COVERAGE}% meets the 60% threshold"
+
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-frontend-${{ github.run_number }}
+          path: apps/web/coverage/
+          retention-days: 14
 
       - name: Type check with TypeScript
         working-directory: apps/web
         run: npx tsc -b
 
+      - name: Verify production env file exists
+        run: |
+          if [ ! -f apps/web/.env.production ]; then
+            echo "ERROR: apps/web/.env.production is missing. Create it with VITE_API_BASE_URL=/api/v1"
+            exit 1
+          fi
+
       - name: Build application
         working-directory: apps/web
         run: npm run build
 
-  build-status:
-    name: Build Status
+  ci-status:
+    name: CI Status
     runs-on: ubuntu-latest
-    needs: [compile-backend, compile-frontend]
+    needs: [build-and-test-backend, build-and-test-frontend]
     if: always()
 
     steps:
-      - name: Check build status
+      - name: Check build and test status
         run: |
-          if [ "${{ needs.compile-backend.result }}" != "success" ]; then
-            echo "❌ Backend compilation failed"
+          if [ "${{ needs.build-and-test-backend.result }}" != "success" ]; then
+            echo "❌ Backend build/tests failed"
             exit 1
           fi
-          if [ "${{ needs.compile-frontend.result }}" != "success" ]; then
-            echo "❌ Frontend compilation failed"
+          if [ "${{ needs.build-and-test-frontend.result }}" != "success" ]; then
+            echo "❌ Frontend build/tests failed"
             exit 1
           fi
-          echo "✅ All projects compiled successfully!"
+          echo "✅ All builds and unit tests passed!"

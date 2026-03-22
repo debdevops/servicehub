@@ -1,7 +1,15 @@
 import axios, { AxiosError } from 'axios';
 import toast from 'react-hot-toast';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5153/api/v1';
+// When VITE_API_BASE_URL is not set, use a relative path (/api/v1).
+// With the Vite proxy configured in vite.config.ts, /api requests are
+// automatically forwarded to http://localhost:5153 on the same server.
+// This means the browser always calls the same host it loaded the UI from —
+// no CORS issues and no hardcoded hostnames.
+//
+// For remote server access, the Vite proxy handles routing automatically.
+// You do NOT need to set VITE_API_BASE_URL when using the proxy.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -77,7 +85,7 @@ apiClient.interceptors.response.use(
     if (!error.response) {
       const errorKey = 'network-error';
       if (shouldShowError(errorKey)) {
-        toast.error('Network error. Check if API is running on localhost:5153.', {
+        toast.error('Cannot reach the API. If running on a remote server, ensure port 5153 is accessible.', {
           duration: 5000,
         });
       }

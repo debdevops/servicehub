@@ -54,6 +54,17 @@ public interface IDlqHistoryService
         DateTimeOffset? to = null,
         DlqMessageStatus? status = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Persists the forensic analysis results on a DLQ message.
+    /// </summary>
+    Task<Result<DlqMessage>> UpdateForensicResultAsync(
+        long id,
+        FailureCategory category,
+        double confidence,
+        string rootCause,
+        string replaySafety,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
