@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Interfaces;
 
 namespace ServiceHub.Infrastructure.AI;
 
@@ -8,7 +9,7 @@ namespace ServiceHub.Infrastructure.AI;
 /// Three-tier forensic analysis engine for DLQ messages.
 /// Pipeline: Deterministic → Heuristic → (future OpenAI) → ReplaySafety.
 /// </summary>
-public sealed class ForensicEngine
+public sealed class ForensicEngine : IForensicEngine
 {
     private readonly ILogger<ForensicEngine> _logger;
 
@@ -20,20 +21,8 @@ public sealed class ForensicEngine
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Result of a forensic analysis run.
-    /// </summary>
-    public sealed record ForensicResult(
-        FailureCategory Category,
-        double Confidence,
-        string RootCause,
-        string ReplaySafety,
-        string Tier);
-
-    /// <summary>
-    /// Analyses a single DLQ message through the three-tier pipeline.
-    /// </summary>
-    public ForensicResult Analyse(DlqMessage msg)
+    /// <inheritdoc />
+    public ForensicEngineResult Analyse(DlqMessage msg)
     {
         // Tier 1 – Deterministic
         var detHit = DeterministicClassifier.Evaluate(msg);
@@ -43,7 +32,7 @@ public sealed class ForensicEngine
             _logger.LogDebug(
                 "Forensic Tier-1 hit for message {MessageId}: {Category} ({Confidence:P0})",
                 msg.MessageId, detHit.Category, detHit.Confidence);
-            return new ForensicResult(detHit.Category, detHit.Confidence, detHit.RootCause, safety, "Deterministic");
+            return new ForensicEngineResult(detHit.Category, detHit.Confidence, detHit.RootCause, safety, "Deterministic");
         }
 
         // Tier 2 – Heuristic
@@ -54,14 +43,14 @@ public sealed class ForensicEngine
             _logger.LogDebug(
                 "Forensic Tier-2 hit for message {MessageId}: {Category} ({Confidence:P0})",
                 msg.MessageId, heuHit.Category, heuHit.Confidence);
-            return new ForensicResult(heuHit.Category, heuHit.Confidence, heuHit.RootCause, safety, "Heuristic");
+            return new ForensicEngineResult(heuHit.Category, heuHit.Confidence, heuHit.RootCause, safety, "Heuristic");
         }
 
         // Tier 3 – Placeholder for future OpenAI integration
         // Falls through to Unknown
         _logger.LogDebug("Forensic: no tier matched for message {MessageId}", msg.MessageId);
         var unknownSafety = ReplaySafetyClassifier.Classify(msg, FailureCategory.Unknown);
-        return new ForensicResult(
+        return new ForensicEngineResult(
             FailureCategory.Unknown,
             0.0,
             "No deterministic or heuristic rule matched — manual review recommended.",

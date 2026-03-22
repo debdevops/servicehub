@@ -36,6 +36,8 @@ export interface Message {
   deadLetterSource?: string;
   // AI Analysis (present when hasAIInsight is true)
   aiAnalysis?: AIAnalysis;
+  // DLQ Intelligence history ID (when sourced from DLQ History)
+  dlqId?: number;
 }
 
 // ============================================================================

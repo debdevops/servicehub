@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Clock,
   Eye,
+  Shield,
 } from 'lucide-react';
 import type { DlqHistoryItem } from '@/lib/api/dlqHistory';
 import { StatusBadge, CategoryBadge } from './StatusBadge';
@@ -102,6 +103,10 @@ export function DlqHistoryTable({
               <th className="text-left px-4 py-3 font-semibold text-gray-600">Entity</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-600 w-28">Status</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-600 w-36">Category</th>
+              <th className="text-left px-4 py-3 font-semibold text-gray-600 w-28">Replay Safety</th>
+              <th className="text-left px-4 py-3 font-semibold text-gray-600 w-20">
+                <span title="Forensic Confidence">Conf.</span>
+              </th>
               <th className="text-left px-4 py-3 font-semibold text-gray-600">DLQ Reason</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-600 w-20">
                 <span title="Delivery Count">Del.</span>
@@ -142,6 +147,25 @@ export function DlqHistoryTable({
                     category={item.failureCategory}
                     confidence={item.categoryConfidence}
                   />
+                </td>
+                <td className="px-4 py-3">
+                  {item.replaySafety ? (
+                    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
+                      item.replaySafety === 'Safe' ? 'bg-green-50 text-green-700' :
+                      item.replaySafety === 'Unsafe' ? 'bg-red-50 text-red-700' :
+                      'bg-amber-50 text-amber-700'
+                    }`}>
+                      <Shield className="w-3 h-3" />
+                      {item.replaySafety}
+                    </span>
+                  ) : (
+                    <span className="text-gray-300">—</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-gray-700 text-xs font-mono">
+                  {item.forensicConfidence > 0
+                    ? `${Math.round(item.forensicConfidence * 100)}%`
+                    : '—'}
                 </td>
                 <td className="px-4 py-3 text-gray-700 max-w-[200px]">
                   <span className="truncate block" title={item.deadLetterReason || undefined}>

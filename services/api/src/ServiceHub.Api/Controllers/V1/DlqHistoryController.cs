@@ -5,7 +5,6 @@ using ServiceHub.Api.Authorization;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
-using ServiceHub.Infrastructure.AI;
 using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.Api.Controllers.V1;
@@ -19,7 +18,7 @@ namespace ServiceHub.Api.Controllers.V1;
 public sealed class DlqHistoryController : ApiControllerBase
 {
     private readonly IDlqHistoryService _historyService;
-    private readonly ForensicEngine _forensicEngine;
+    private readonly IForensicEngine _forensicEngine;
     private readonly ILogger<DlqHistoryController> _logger;
 
     /// <summary>
@@ -27,7 +26,7 @@ public sealed class DlqHistoryController : ApiControllerBase
     /// </summary>
     public DlqHistoryController(
         IDlqHistoryService historyService,
-        ForensicEngine forensicEngine,
+        IForensicEngine forensicEngine,
         ILogger<DlqHistoryController> logger)
     {
         _historyService = historyService ?? throw new ArgumentNullException(nameof(historyService));

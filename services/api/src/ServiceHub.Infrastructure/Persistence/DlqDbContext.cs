@@ -121,6 +121,9 @@ public sealed class DlqDbContext : DbContext
         entity.Property(e => e.ForensicRootCause)
             .HasMaxLength(2048);
 
+        entity.Property(e => e.ForensicConfidence)
+            .HasDefaultValue(0.0);
+
         entity.Property(e => e.ReplaySafety)
             .HasMaxLength(32);
 
