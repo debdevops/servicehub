@@ -38,12 +38,49 @@ jobs:
       - name: Build solution
         run: dotnet build services/api/ServiceHub.sln --no-restore --configuration Release
 
-      - name: Run unit tests
+      - name: Run unit tests with coverage
         run: |
           dotnet test services/api/tests/ServiceHub.UnitTests \
             --no-build \
             --configuration Release \
-            --logger "console;verbosity=summary"
+            --settings services/api/coverlet.runsettings \
+            --results-directory services/api/TestResults \
+            --logger "console;verbosity=normal" \
+            --logger "trx;LogFileName=results.trx"
+
+      - name: Install report generator
+        run: |
+          dotnet tool install --global dotnet-reportgenerator-globaltool \
+            --version 5.4.3 2>/dev/null || true
+
+      - name: Generate coverage report and enforce 60% threshold
+        run: |
+          reportgenerator \
+            -reports:"services/api/TestResults/**/coverage.cobertura.xml" \
+            -targetdir:"services/api/TestResults/CoverageReport" \
+            -reporttypes:"TextSummary"
+
+          echo "=== Coverage Summary ==="
+          cat services/api/TestResults/CoverageReport/Summary.txt
+
+          COVERAGE=$(grep -oP 'Line coverage: \K[\d.]+' \
+            services/api/TestResults/CoverageReport/Summary.txt || echo "0")
+
+          echo "Line coverage: ${COVERAGE}%"
+
+          if awk "BEGIN {exit !(\$COVERAGE < 60)}"; then
+            echo "❌ Coverage ${COVERAGE}% is below the required 60% threshold"
+            exit 1
+          fi
+          echo "✅ Coverage ${COVERAGE}% meets the 60% threshold"
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-backend-${{ github.run_number }}
+          path: services/api/TestResults/CoverageReport/
+          retention-days: 14
 
   build-and-test-frontend:
     name: Build & Test Frontend (React)
@@ -64,9 +101,41 @@ jobs:
         working-directory: apps/web
         run: npm ci --include=optional
 
-      - name: Run unit tests
+      - name: Run unit tests with coverage
         working-directory: apps/web
-        run: npm test
+        run: npm run test:coverage -- --reporter=json --outputFile=coverage/coverage-summary.json
+
+      - name: Check frontend coverage threshold (60%)
+        working-directory: apps/web
+        run: |
+          if [ ! -f "coverage/coverage-summary.json" ]; then
+            echo "⚠ Coverage file not found — skipping threshold check"
+            exit 0
+          fi
+
+          # Extract total line coverage from vitest coverage JSON
+          COVERAGE=$(node -e "
+            const c = require('./coverage/coverage-summary.json');
+            const total = c.total || c;
+            const pct = total.lines?.pct ?? total.lines?.percent ?? 0;
+            console.log(pct);
+          " 2>/dev/null || echo "0")
+
+          echo "Frontend line coverage: ${COVERAGE}%"
+
+          if awk "BEGIN {exit !(\$COVERAGE < 60)}"; then
+            echo "❌ Frontend coverage ${COVERAGE}% is below 60%"
+            exit 1
+          fi
+          echo "✅ Frontend coverage ${COVERAGE}% meets the 60% threshold"
+
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-frontend-${{ github.run_number }}
+          path: apps/web/coverage/
+          retention-days: 14
 
       - name: Type check with TypeScript
         working-directory: apps/web

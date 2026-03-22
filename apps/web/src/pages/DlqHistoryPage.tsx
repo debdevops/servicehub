@@ -17,6 +17,87 @@ import type { ForensicBatchSummary } from '@/lib/api/dlqHistory';
 import toast from 'react-hot-toast';
 import { Zap, Shield } from 'lucide-react';
 
+// ─── Inline Trend Chart (pure SVG, no chart library) ───────────────
+
+interface TrendPoint {
+  date: string;
+  newMessages: number;
+  resolvedMessages: number;
+}
+
+function TrendChart({ trend }: { trend: TrendPoint[] }) {
+  if (!trend || trend.length === 0) return null;
+
+  const maxVal = Math.max(...trend.map(t => Math.max(t.newMessages, t.resolvedMessages)), 1);
+  const barWidth = 100 / trend.length;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-gray-700">7-Day DLQ Trend</h3>
+        <div className="flex items-center gap-3 text-xs text-gray-500">
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded bg-red-400 inline-block" />
+            New
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded bg-green-400 inline-block" />
+            Resolved
+          </span>
+        </div>
+      </div>
+      <div className="relative h-24">
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          className="w-full h-full"
+        >
+          {trend.map((point, i) => {
+            const newH = (point.newMessages / maxVal) * 80;
+            const resH = (point.resolvedMessages / maxVal) * 80;
+            const x = i * barWidth;
+            return (
+              <g key={point.date}>
+                <rect
+                  x={x + barWidth * 0.05}
+                  y={100 - newH}
+                  width={barWidth * 0.42}
+                  height={newH}
+                  fill="#f87171"
+                  rx="1"
+                  opacity="0.85"
+                />
+                <rect
+                  x={x + barWidth * 0.52}
+                  y={100 - resH}
+                  width={barWidth * 0.42}
+                  height={resH}
+                  fill="#4ade80"
+                  rx="1"
+                  opacity="0.85"
+                />
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <div className="flex justify-between mt-1">
+        {trend.map((point, i) => {
+          if (i !== 0 && i !== Math.floor(trend.length / 2) && i !== trend.length - 1) return null;
+          const date = new Date(point.date);
+          return (
+            <span key={point.date} className="text-xs text-gray-400">
+              {date.toLocaleDateString('en', { month: 'short', day: 'numeric' })}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Constants ──────────────────────────────────────────────────────
+
 const STATUS_OPTIONS = ['Active', 'Replayed', 'Archived', 'Discarded', 'ReplayFailed', 'Resolved'] as const;
 const CATEGORY_OPTIONS = [
   'Unknown', 'Transient', 'MaxDelivery', 'Expired', 'DataQuality',
@@ -211,6 +292,11 @@ export function DlqHistoryPage() {
               bg="bg-primary-50"
             />
           </div>
+        )}
+
+        {/* DLQ Trend Chart */}
+        {summary?.dailyTrend && summary.dailyTrend.length > 0 && (
+          <TrendChart trend={summary.dailyTrend} />
         )}
 
         {/* Batch Forensic Summary */}

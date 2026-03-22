@@ -38,6 +38,8 @@ export interface Message {
   aiAnalysis?: AIAnalysis;
   // DLQ Intelligence history ID (when sourced from DLQ History)
   dlqId?: number;
+  // Forensic replay safety verdict (when analysed through forensic engine)
+  replaySafety?: 'Safe' | 'Unsafe' | 'RequiresReview' | null;
 }
 
 // ============================================================================

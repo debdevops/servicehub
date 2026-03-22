@@ -5,6 +5,7 @@ import { DlqTimelineDrawer } from '@/components/dlq/DlqTimelineDrawer';
 vi.mock('@/hooks/useDlqHistory', () => ({
   useDlqTimeline: vi.fn(),
   useDlqMessageDetail: vi.fn(),
+  useUpdateDlqNotes: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
 import { useDlqTimeline, useDlqMessageDetail } from '@/hooks/useDlqHistory';

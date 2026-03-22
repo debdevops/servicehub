@@ -14,8 +14,8 @@ API_HTTPS_URL="https://localhost:7252"
 WEB_PORT=3000
 
 # Version requirements
-REQUIRED_DOTNET_VERSION="8.0"
-REQUIRED_NODE_MAJOR_VERSION="18"
+REQUIRED_DOTNET_VERSION="10.0"
+REQUIRED_NODE_MAJOR_VERSION="20"
 
 # Global flags
 IS_WSL=false
@@ -104,7 +104,7 @@ detect_os() {
             ;;
         FreeBSD*|OpenBSD*|NetBSD*)
             echo -e "${RED}✗ Error: BSD systems are not fully supported yet${NC}"
-            echo -e "${YELLOW}Please install .NET 8 SDK and Node.js 18+ manually${NC}"
+            echo -e "${YELLOW}Please install .NET 10 SDK and Node.js 20+ manually${NC}"
             exit 1
             ;;
         CYGWIN*|MINGW*|MSYS*)
@@ -143,13 +143,13 @@ check_and_install_dotnet() {
     
     if command -v dotnet >/dev/null 2>&1; then
         dotnet_version=$(dotnet --version 2>/dev/null | cut -d'.' -f1)
-        if [ "$dotnet_version" = "8" ]; then
+        if [ "$dotnet_version" = "10" ]; then
             dotnet_installed=true
         fi
     fi
     
     if [ "$dotnet_installed" = false ]; then
-        echo -e "${YELLOW}Installing .NET 8 SDK...${NC}"
+        echo -e "${YELLOW}Installing .NET 10 SDK...${NC}"
         
         if [ "$OS" = "macos" ]; then
             brew install --cask dotnet-sdk
@@ -170,15 +170,15 @@ check_and_install_dotnet() {
                     sudo dpkg -i /tmp/packages-microsoft-prod.deb
                     rm -f /tmp/packages-microsoft-prod.deb
                     sudo apt-get update
-                    sudo apt-get install -y dotnet-sdk-8.0
+                    sudo apt-get install -y dotnet-sdk-10.0
                 fi
             elif [ "$PACKAGE_MANAGER" = "dnf" ]; then
                 if [ "$HAS_SUDO" = true ]; then
-                    sudo dnf install -y dotnet-sdk-8.0
+                    sudo dnf install -y dotnet-sdk-10.0
                 fi
             elif [ "$PACKAGE_MANAGER" = "yum" ]; then
                 if [ "$HAS_SUDO" = true ]; then
-                    sudo yum install -y dotnet-sdk-8.0
+                    sudo yum install -y dotnet-sdk-10.0
                 fi
             elif [ "$PACKAGE_MANAGER" = "pacman" ]; then
                 if [ "$HAS_SUDO" = true ]; then
@@ -186,25 +186,25 @@ check_and_install_dotnet() {
                 fi
             elif [ "$PACKAGE_MANAGER" = "zypper" ]; then
                 if [ "$HAS_SUDO" = true ]; then
-                    sudo zypper install -y dotnet-sdk-8.0
+                    sudo zypper install -y dotnet-sdk-10.0
                 fi
             elif [ "$PACKAGE_MANAGER" = "apk" ]; then
                 if [ "$HAS_SUDO" = true ]; then
-                    sudo apk add --no-cache dotnet8-sdk
+                    sudo apk add --no-cache dotnet10-sdk
                 fi
             fi
         fi
         
         # Verify installation
         if command -v dotnet >/dev/null 2>&1; then
-            echo -e "${GREEN}✓ .NET 8 SDK installed successfully ($(dotnet --version))${NC}"
+            echo -e "${GREEN}✓ .NET 10 SDK installed successfully ($(dotnet --version))${NC}"
         else
             echo -e "${RED}✗ Error: .NET SDK installation failed${NC}"
-            echo -e "${YELLOW}Please install .NET 8 SDK manually from: https://dotnet.microsoft.com/download/dotnet/8.0${NC}"
+            echo -e "${YELLOW}Please install .NET 10 SDK manually from: https://dotnet.microsoft.com/download/dotnet/10.0${NC}"
             exit 1
         fi
     else
-        echo -e "${GREEN}✓ .NET 8 SDK already installed ($(dotnet --version))${NC}"
+        echo -e "${GREEN}✓ .NET 10 SDK already installed ($(dotnet --version))${NC}"
     fi
 }
 
@@ -472,7 +472,6 @@ done
 echo -e "${YELLOW}Cleaning npm cache...${NC}"
 cd "$WEB_DIR"
 rm -rf node_modules/.vite 2>/dev/null || true
-rm -f package-lock.json 2>/dev/null || true
 
 echo ""
 echo -e "${GREEN}✓ Cleanup complete${NC}"
