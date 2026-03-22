@@ -21,6 +21,12 @@ public static class CorsConfiguration
         var corsSection = configuration.GetSection("Cors");
         var allowedOrigins = corsSection.GetSection("AllowedOrigins").Get<string[]>() ?? [];
 
+        // Support additional origins via environment variable for remote server deployments.
+        // Set: export SERVICEHUB_ALLOWED_ORIGINS="http://linuxhost:3000,http://192.168.1.50:3000"
+        // Multiple origins are comma-separated. This avoids hardcoding hostnames in config files.
+        var envOrigins = (Environment.GetEnvironmentVariable("SERVICEHUB_ALLOWED_ORIGINS") ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
         // When true, development policy accepts requests from any hostname/IP —
         // required when the server is accessed over the network (not just localhost).
         // Never set this in Staging or Production configs.
@@ -34,17 +40,27 @@ public static class CorsConfiguration
         {
             options.AddPolicy(PolicyName, builder =>
             {
-                if (allowedOrigins.Length > 0)
+                // Merge config origins with environment variable origins (deduped).
+                var effectiveOrigins = allowedOrigins
+                    .Concat(envOrigins)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                if (effectiveOrigins.Length > 0)
                 {
-                    builder.WithOrigins(allowedOrigins);
+                    builder.WithOrigins(effectiveOrigins);
                 }
                 else
                 {
-                    // Fallback to development defaults if not configured
+                    // Fallback to development defaults if nothing is configured
                     var devDefaults = corsSection.GetSection("DevelopmentDefaults").Get<string[]>() ?? [];
-                    if (devDefaults.Length > 0)
+                    var effectiveDefaults = devDefaults
+                        .Concat(envOrigins)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+                    if (effectiveDefaults.Length > 0)
                     {
-                        builder.WithOrigins(devDefaults);
+                        builder.WithOrigins(effectiveDefaults);
                     }
                 }
 
@@ -69,8 +85,8 @@ public static class CorsConfiguration
                 }
                 else
                 {
-                    // Restrict to explicit localhost origins when flag is off
-                    var devOrigins = allowedOrigins.Length > 0
+                    // Combine hardcoded localhost origins with any env-var-supplied remote origins.
+                    var developmentOrigins = (allowedOrigins.Length > 0
                         ? allowedOrigins
                         : new[]
                         {
@@ -80,8 +96,11 @@ public static class CorsConfiguration
                             "http://127.0.0.1:3000",
                             "http://127.0.0.1:5173",
                             "http://127.0.0.1:5174",
-                        };
-                    builder.WithOrigins(devOrigins);
+                        })
+                        .Concat(envOrigins)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+                    builder.WithOrigins(developmentOrigins);
                 }
 
                 builder
