@@ -7,6 +7,7 @@ using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.AI;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Shared.Results;
 
@@ -23,6 +24,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IServiceBusClientCache _clientCache;
     private readonly IConnectionStringProtector _protector;
+    private readonly ForensicEngine _forensicEngine;
     private readonly ILogger<DlqMonitorService> _logger;
 
     private const int MaxBodyPreviewLength = 500;
@@ -36,12 +38,14 @@ public sealed class DlqMonitorService : IDlqMonitorService
         INamespaceRepository namespaceRepository,
         IServiceBusClientCache clientCache,
         IConnectionStringProtector protector,
+        ForensicEngine forensicEngine,
         ILogger<DlqMonitorService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
         _protector = protector ?? throw new ArgumentNullException(nameof(protector));
+        _forensicEngine = forensicEngine ?? throw new ArgumentNullException(nameof(forensicEngine));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -267,9 +271,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                     continue;
                 }
 
-                // New message — add to database
-                var (category, confidence) = CategorizeFailure(msg.DeadLetterReason, msg.DeadLetterErrorDescription, msg.DeliveryCount);
-
+                // New message — build entity, then run forensic analysis
                 var dlqMessage = new DlqMessage
                 {
                     MessageId = msg.MessageId,
@@ -288,13 +290,18 @@ public sealed class DlqMonitorService : IDlqMonitorService
                     MessageSize = msg.SizeInBytes,
                     BodyPreview = TruncateBody(msg.Body),
                     ApplicationPropertiesJson = SerializeProperties(msg.ApplicationProperties),
-                    FailureCategory = category,
-                    CategoryConfidence = confidence,
                     Status = DlqMessageStatus.Active,
                     CorrelationId = msg.CorrelationId,
                     SessionId = msg.SessionId,
                     TopicName = topicName,
                 };
+
+                var forensic = _forensicEngine.Analyse(dlqMessage);
+                dlqMessage.FailureCategory = forensic.Category;
+                dlqMessage.CategoryConfidence = forensic.Confidence;
+                dlqMessage.ForensicRootCause = forensic.RootCause;
+                dlqMessage.ForensicConfidence = forensic.Confidence;
+                dlqMessage.ReplaySafety = forensic.ReplaySafety;
 
                 _dbContext.DlqMessages.Add(dlqMessage);
                 newCount++;
@@ -379,77 +386,5 @@ public sealed class DlqMonitorService : IDlqMonitorService
         {
             return null;
         }
-    }
-
-    /// <summary>
-    /// Heuristically categorises a dead-letter failure based on reason and error description.
-    /// Returns the category and a confidence score between 0.0 and 1.0.
-    /// </summary>
-    internal static (FailureCategory Category, double Confidence) CategorizeFailure(
-        string? reason, string? errorDescription, int deliveryCount)
-    {
-        var combined = $"{reason} {errorDescription}".ToLowerInvariant();
-
-        // MaxDeliveryCountExceeded is the most common and definitive
-        if (reason?.Contains("MaxDeliveryCount", StringComparison.OrdinalIgnoreCase) == true
-            || combined.Contains("maxdeliverycount"))
-        {
-            return (FailureCategory.MaxDelivery, 0.95);
-        }
-
-        // TTL expiration
-        if (reason?.Contains("TTLExpiredException", StringComparison.OrdinalIgnoreCase) == true
-            || combined.Contains("ttl") || combined.Contains("expired"))
-        {
-            return (FailureCategory.Expired, 0.90);
-        }
-
-        // Transient: timeout, connection, database errors
-        if (combined.Contains("timeout") || combined.Contains("database")
-            || combined.Contains("sqlexception") || combined.Contains("connection refused")
-            || combined.Contains("service unavailable") || combined.Contains("transient"))
-        {
-            return (FailureCategory.Transient, 0.80);
-        }
-
-        // Data quality: schema, validation, deserialization
-        if (combined.Contains("schema") || combined.Contains("validation")
-            || combined.Contains("deserializ") || combined.Contains("json")
-            || combined.Contains("format") || combined.Contains("parsing"))
-        {
-            return (FailureCategory.DataQuality, 0.80);
-        }
-
-        // Authorization
-        if (combined.Contains("unauthorized") || combined.Contains("forbidden")
-            || combined.Contains("401") || combined.Contains("403")
-            || combined.Contains("permission") || combined.Contains("access denied"))
-        {
-            return (FailureCategory.Authorization, 0.85);
-        }
-
-        // Resource not found
-        if (combined.Contains("not found") || combined.Contains("404")
-            || combined.Contains("resource missing"))
-        {
-            return (FailureCategory.ResourceNotFound, 0.75);
-        }
-
-        // Quota / size exceeded
-        if (combined.Contains("quota") || combined.Contains("size exceeded")
-            || combined.Contains("too large") || combined.Contains("entity full"))
-        {
-            return (FailureCategory.QuotaExceeded, 0.80);
-        }
-
-        // Generic processing error: any exception-like text
-        if (combined.Contains("exception") || combined.Contains("error")
-            || combined.Contains("failed") || combined.Contains("processing"))
-        {
-            return (FailureCategory.ProcessingError, 0.50);
-        }
-
-        // Unknown
-        return (FailureCategory.Unknown, 0.0);
     }
 }

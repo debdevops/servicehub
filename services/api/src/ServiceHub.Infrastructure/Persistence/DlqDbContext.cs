@@ -118,6 +118,12 @@ public sealed class DlqDbContext : DbContext
         entity.Property(e => e.UserNotes)
             .HasMaxLength(4096);
 
+        entity.Property(e => e.ForensicRootCause)
+            .HasMaxLength(2048);
+
+        entity.Property(e => e.ReplaySafety)
+            .HasMaxLength(32);
+
         entity.Property(e => e.CorrelationId)
             .HasMaxLength(256);
 

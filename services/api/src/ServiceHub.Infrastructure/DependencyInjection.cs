@@ -146,6 +146,7 @@ public static class DependencyInjection
         services.TryAddScoped<IDlqHistoryService, DlqHistoryService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();
+        services.TryAddScoped<ForensicEngine>();
 
         return services;
     }
