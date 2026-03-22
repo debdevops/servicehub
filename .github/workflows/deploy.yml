@@ -1,10 +1,14 @@
 name: Build and Deploy to Azure App Service
 
+# Azure deployment is disabled — credentials (AZURE_APP_SERVICE_NAME,
+# AZURE_PUBLISH_PROFILE) are not configured for local development.
+# Re-enable by restoring the original 'on' triggers when deploying to Azure.
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type 'deploy' to confirm Azure deployment"
+        required: true
 
 env:
   DOTNET_VERSION: '10.0.x'
