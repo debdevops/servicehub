@@ -68,7 +68,7 @@ jobs:
 
           echo "Line coverage: ${COVERAGE}%"
 
-          if awk "BEGIN {exit !(\$COVERAGE < 60)}"; then
+          if awk "BEGIN {exit !($COVERAGE < 60)}"; then
             echo "❌ Coverage ${COVERAGE}% is below the required 60% threshold"
             exit 1
           fi
@@ -103,7 +103,7 @@ jobs:
 
       - name: Run unit tests with coverage
         working-directory: apps/web
-        run: npm run test:coverage -- --reporter=json --outputFile=coverage/coverage-summary.json
+        run: npm run test:coverage
 
       - name: Check frontend coverage threshold (60%)
         working-directory: apps/web
@@ -123,7 +123,7 @@ jobs:
 
           echo "Frontend line coverage: ${COVERAGE}%"
 
-          if awk "BEGIN {exit !(\$COVERAGE < 60)}"; then
+          if awk "BEGIN {exit !($COVERAGE < 60)}"; then
             echo "❌ Frontend coverage ${COVERAGE}% is below 60%"
             exit 1
           fi
