@@ -233,3 +233,7 @@ project.assets.json
 project.nuget.cache
 *.nuget.props
 *.nuget.targets
+
+# Agents folder
+agents/
+.github/agents/

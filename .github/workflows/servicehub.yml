@@ -1,3 +1,4 @@
+# This workflow compiles and type-checks only. See deploy.yml for production deployment.
 name: Compile & Build
 
 on:
@@ -56,9 +57,14 @@ jobs:
 
       - name: Install dependencies
         working-directory: apps/web
+        run: npm ci
+
+      - name: Verify production env file exists
         run: |
-          rm -rf node_modules package-lock.json
-          npm install --include=optional
+          if [ ! -f apps/web/.env.production ]; then
+            echo "ERROR: apps/web/.env.production is missing. Create it with VITE_API_BASE_URL=/api/v1"
+            exit 1
+          fi
 
       - name: Type check with TypeScript
         working-directory: apps/web

@@ -15,4 +15,10 @@ export default defineConfig({
     port: 3000,
     open: true,
   },
+  build: {
+    // Output React build directly into the API's wwwroot folder.
+    // This means one dotnet publish produces both the API and the SPA.
+    outDir: '../../services/api/src/ServiceHub.Api/wwwroot',
+    emptyOutDir: true,
+  },
 })
