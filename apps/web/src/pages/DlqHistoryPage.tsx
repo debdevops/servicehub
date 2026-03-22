@@ -13,8 +13,90 @@ import { DlqHistoryTable, DlqTimelineDrawer } from '@/components/dlq';
 import { useDlqHistory, useDlqSummary } from '@/hooks/useDlqHistory';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { dlqHistoryApi } from '@/lib/api/dlqHistory';
+import type { ForensicBatchSummary } from '@/lib/api/dlqHistory';
 import toast from 'react-hot-toast';
-import { Zap } from 'lucide-react';
+import { Zap, Shield } from 'lucide-react';
+
+// ─── Inline Trend Chart (pure SVG, no chart library) ───────────────
+
+interface TrendPoint {
+  date: string;
+  newMessages: number;
+  resolvedMessages: number;
+}
+
+function TrendChart({ trend }: { trend: TrendPoint[] }) {
+  if (!trend || trend.length === 0) return null;
+
+  const maxVal = Math.max(...trend.map(t => Math.max(t.newMessages, t.resolvedMessages)), 1);
+  const barWidth = 100 / trend.length;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-gray-700">7-Day DLQ Trend</h3>
+        <div className="flex items-center gap-3 text-xs text-gray-500">
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded bg-red-400 inline-block" />
+            New
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded bg-green-400 inline-block" />
+            Resolved
+          </span>
+        </div>
+      </div>
+      <div className="relative h-24">
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          className="w-full h-full"
+        >
+          {trend.map((point, i) => {
+            const newH = (point.newMessages / maxVal) * 80;
+            const resH = (point.resolvedMessages / maxVal) * 80;
+            const x = i * barWidth;
+            return (
+              <g key={point.date}>
+                <rect
+                  x={x + barWidth * 0.05}
+                  y={100 - newH}
+                  width={barWidth * 0.42}
+                  height={newH}
+                  fill="#f87171"
+                  rx="1"
+                  opacity="0.85"
+                />
+                <rect
+                  x={x + barWidth * 0.52}
+                  y={100 - resH}
+                  width={barWidth * 0.42}
+                  height={resH}
+                  fill="#4ade80"
+                  rx="1"
+                  opacity="0.85"
+                />
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <div className="flex justify-between mt-1">
+        {trend.map((point, i) => {
+          if (i !== 0 && i !== Math.floor(trend.length / 2) && i !== trend.length - 1) return null;
+          const date = new Date(point.date);
+          return (
+            <span key={point.date} className="text-xs text-gray-400">
+              {date.toLocaleDateString('en', { month: 'short', day: 'numeric' })}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Constants ──────────────────────────────────────────────────────
 
 const STATUS_OPTIONS = ['Active', 'Replayed', 'Archived', 'Discarded', 'ReplayFailed', 'Resolved'] as const;
 const CATEGORY_OPTIONS = [
@@ -48,6 +130,8 @@ export function DlqHistoryPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTimelineId, setSelectedTimelineId] = useState<number | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [isAnalysing, setIsAnalysing] = useState(false);
+  const [batchSummary, setBatchSummary] = useState<ForensicBatchSummary | null>(null);
 
   const pageSize = 50;
 
@@ -101,6 +185,23 @@ export function DlqHistoryPage() {
     }
   };
 
+  const handleAnalyseAll = async () => {
+    if (!namespaceId || isAnalysing) return;
+    setIsAnalysing(true);
+    setBatchSummary(null);
+    try {
+      const result = await dlqHistoryApi.analyseBatch(namespaceId);
+      setBatchSummary(result);
+      refetch();
+      toast.success(`Analysed ${result.analysed} messages, updated ${result.updated}`);
+    } catch (error) {
+      console.error('Batch analysis failed:', error);
+      toast.error('Batch forensic analysis failed');
+    } finally {
+      setIsAnalysing(false);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
@@ -144,6 +245,15 @@ export function DlqHistoryPage() {
               {isScanning ? 'Scanning...' : 'Scan Now'}
             </button>
             <button
+              onClick={handleAnalyseAll}
+              disabled={isAnalysing}
+              className="flex items-center gap-1.5 px-3 py-2 border border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+              title="Run forensic analysis on all active DLQ messages"
+            >
+              <Shield className={`w-4 h-4 ${isAnalysing ? 'animate-pulse' : ''}`} />
+              {isAnalysing ? 'Analysing...' : 'Analyse All'}
+            </button>
+            <button
               onClick={handleRefresh}
               disabled={isFetching}
               className="flex items-center gap-1.5 px-3 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
@@ -181,6 +291,32 @@ export function DlqHistoryPage() {
               value={summary.totalMessages}
               bg="bg-primary-50"
             />
+          </div>
+        )}
+
+        {/* DLQ Trend Chart */}
+        {summary?.dailyTrend && summary.dailyTrend.length > 0 && (
+          <TrendChart trend={summary.dailyTrend} />
+        )}
+
+        {/* Batch Forensic Summary */}
+        {batchSummary && (
+          <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 mb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-purple-600" />
+                <span className="text-sm font-medium text-purple-800">
+                  Forensic Analysis: {batchSummary.analysed} analysed, {batchSummary.updated} updated
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-purple-600">
+                {Object.entries(batchSummary.byCategory).map(([cat, count]) => (
+                  <span key={cat} className="bg-purple-100 px-2 py-0.5 rounded-full">
+                    {cat}: {count}
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 

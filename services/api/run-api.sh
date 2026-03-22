@@ -37,14 +37,18 @@ echo -e "${BLUE}Location: $PROJECT_FILE${NC}"
 echo -e "${BLUE}Mode: Development${NC}"
 echo ""
 echo -e "${YELLOW}API will be available at:${NC}"
-echo -e "  • ${GREEN}http://localhost:5000${NC}"
-echo -e "  • ${GREEN}https://localhost:5001${NC}"
+echo -e "  • ${GREEN}http://localhost:5153${NC} (local)"
+echo -e "  • ${GREEN}http://0.0.0.0:5153${NC} (all interfaces)"
 echo ""
-echo -e "${YELLOW}Swagger UI: ${GREEN}http://localhost:5000/swagger${NC}"
+echo -e "${YELLOW}Swagger UI: ${GREEN}http://localhost:5153/swagger${NC}"
 echo ""
 echo -e "${YELLOW}Ctrl+C to stop the server${NC}"
 echo ""
 
 # Run the API
+# --urls binds Kestrel to all network interfaces so remote machines can reach the API.
+# When running locally, http://localhost:5153 still works.
+# When running on a server, http://serverip:5153 is also reachable.
 cd "$SCRIPT_DIR"
-dotnet run --project "$PROJECT_FILE"
+dotnet run --project "$PROJECT_FILE" \
+  --urls "http://0.0.0.0:5153"

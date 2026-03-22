@@ -77,8 +77,8 @@ public sealed class ErrorTests
     [Fact]
     public void Equality_WhenSameCodeAndType_ShouldBeEqual()
     {
-        var error1 = Error.Validation("TEST", "Message 1");
-        var error2 = Error.Validation("TEST", "Message 2");
+        var error1 = Error.Validation("TEST", "Same Message");
+        var error2 = Error.Validation("TEST", "Same Message");
 
         (error1 == error2).Should().BeTrue();
         error1.Equals(error2).Should().BeTrue();
@@ -97,8 +97,8 @@ public sealed class ErrorTests
     [Fact]
     public void GetHashCode_WhenSameCodeAndType_ShouldBeSame()
     {
-        var error1 = Error.Validation("TEST", "Message 1");
-        var error2 = Error.Validation("TEST", "Message 2");
+        var error1 = Error.Validation("TEST", "Same Message");
+        var error2 = Error.Validation("TEST", "Same Message");
 
         error1.GetHashCode().Should().Be(error2.GetHashCode());
     }

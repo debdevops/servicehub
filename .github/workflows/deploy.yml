@@ -1,0 +1,63 @@
+name: Build and Deploy to Azure App Service
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  NODE_VERSION: '20.x'
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Build React SPA (outputs to API wwwroot)
+        working-directory: apps/web
+        run: npm run build
+        # vite.config.ts build.outDir points to:
+        # ../../services/api/src/ServiceHub.Api/wwwroot
+        # So the React build is already inside the API project after this step.
+
+      - name: Set up .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore .NET dependencies
+        run: dotnet restore services/api/ServiceHub.sln
+
+      - name: Build .NET solution
+        run: dotnet build services/api/ServiceHub.sln --configuration Release --no-restore
+
+      - name: Publish .NET API (includes wwwroot from React build)
+        run: |
+          dotnet publish services/api/src/ServiceHub.Api/ServiceHub.Api.csproj \
+            --configuration Release \
+            --output ./publish \
+            --no-build
+
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ secrets.AZURE_APP_SERVICE_NAME }}
+          publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
+          package: ./publish

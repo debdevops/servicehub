@@ -375,4 +375,37 @@ public sealed class DlqHistoryService : IDlqHistoryService
                 Error.Internal("Dlq.ExportFailed", $"Failed to export messages: {ex.Message}"));
         }
     }
+
+    /// <inheritdoc />
+    public async Task<Result<DlqMessage>> UpdateForensicResultAsync(
+        long id,
+        FailureCategory category,
+        double confidence,
+        string rootCause,
+        string replaySafety,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var message = await _dbContext.DlqMessages.FindAsync(new object[] { id }, cancellationToken);
+            if (message == null)
+                return Result<DlqMessage>.Failure(
+                    Error.NotFound("Dlq.NotFound", $"DLQ message with ID {id} was not found"));
+
+            message.FailureCategory = category;
+            message.CategoryConfidence = confidence;
+            message.ForensicRootCause = rootCause;
+            message.ForensicConfidence = confidence;
+            message.ReplaySafety = replaySafety;
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return message;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update forensic result for DLQ message {Id}", id);
+            return Result<DlqMessage>.Failure(
+                Error.Internal("Dlq.ForensicUpdateFailed", $"Failed to update forensic result: {ex.Message}"));
+        }
+    }
 }

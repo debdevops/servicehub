@@ -95,6 +95,12 @@ public static class DependencyInjection
 
     /// <summary>
     /// Adds AI infrastructure services.
+    /// <para>
+    /// <see cref="IAIServiceClient"/> — singleton anomaly-detection client used by AnomaliesController
+    /// for real-time message analysis. <br/>
+    /// <see cref="IForensicEngine"/> — scoped three-tier forensic classifier registered in
+    /// <see cref="AddDlqDatabase"/> because it operates on per-request <c>DlqMessage</c> entities.
+    /// </para>
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The service collection for chaining.</returns>
@@ -146,6 +152,7 @@ public static class DependencyInjection
         services.TryAddScoped<IDlqHistoryService, DlqHistoryService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();
+        services.TryAddScoped<IForensicEngine, ForensicEngine>();
 
         return services;
     }
