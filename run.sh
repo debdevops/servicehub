@@ -561,7 +561,7 @@ echo ""
 # Start Web UI in background
 echo -e "${BLUE}Starting UI...${NC}"
 cd "$WEB_DIR"
-npm run dev -- --port $WEB_PORT --strictPort > /tmp/servicehub_ui_startup.log 2>&1 &
+npm run dev -- --port $WEB_PORT --host 0.0.0.0 --strictPort > /tmp/servicehub_ui_startup.log 2>&1 &
 WEB_PID=$!
 echo -e "${GREEN}✓ UI process started (PID: $WEB_PID)${NC}"
 
