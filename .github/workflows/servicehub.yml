@@ -1,12 +1,12 @@
-# This workflow compiles and type-checks only. See deploy.yml for production deployment.
-name: Compile & Build
+# CI workflow: build + unit tests on every push/PR. See deploy.yml for production deployment.
+name: CI – Build & Unit Tests
 
 on:
   push:
     branches:
       - main
       - develop
-      - dglocal-110126
+      - 'dglocal-*'
       - 'feature/**'
       - 'hotfix/**'
   pull_request:
@@ -19,8 +19,8 @@ env:
   NODE_VERSION: '20.x'
 
 jobs:
-  compile-backend:
-    name: Compile Backend (.NET)
+  build-and-test-backend:
+    name: Build & Test Backend (.NET)
     runs-on: ubuntu-latest
 
     steps:
@@ -33,17 +33,20 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore dependencies
-        run: |
-          cd services/api
-          dotnet restore
+        run: dotnet restore services/api/ServiceHub.sln
 
       - name: Build solution
-        run: |
-          cd services/api
-          dotnet build --no-restore --configuration Release
+        run: dotnet build services/api/ServiceHub.sln --no-restore --configuration Release
 
-  compile-frontend:
-    name: Compile Frontend (React)
+      - name: Run unit tests
+        run: |
+          dotnet test services/api/tests/ServiceHub.UnitTests \
+            --no-build \
+            --configuration Release \
+            --logger "console;verbosity=summary"
+
+  build-and-test-frontend:
+    name: Build & Test Frontend (React)
     runs-on: ubuntu-latest
 
     steps:
@@ -54,10 +57,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: apps/web/package-lock.json
 
       - name: Install dependencies
         working-directory: apps/web
         run: npm ci
+
+      - name: Run unit tests
+        working-directory: apps/web
+        run: npm test
+
+      - name: Type check with TypeScript
+        working-directory: apps/web
+        run: npx tsc -b
 
       - name: Verify production env file exists
         run: |
@@ -66,29 +79,25 @@ jobs:
             exit 1
           fi
 
-      - name: Type check with TypeScript
-        working-directory: apps/web
-        run: npx tsc -b
-
       - name: Build application
         working-directory: apps/web
         run: npm run build
 
-  build-status:
-    name: Build Status
+  ci-status:
+    name: CI Status
     runs-on: ubuntu-latest
-    needs: [compile-backend, compile-frontend]
+    needs: [build-and-test-backend, build-and-test-frontend]
     if: always()
 
     steps:
-      - name: Check build status
+      - name: Check build and test status
         run: |
-          if [ "${{ needs.compile-backend.result }}" != "success" ]; then
-            echo "❌ Backend compilation failed"
+          if [ "${{ needs.build-and-test-backend.result }}" != "success" ]; then
+            echo "❌ Backend build/tests failed"
             exit 1
           fi
-          if [ "${{ needs.compile-frontend.result }}" != "success" ]; then
-            echo "❌ Frontend compilation failed"
+          if [ "${{ needs.build-and-test-frontend.result }}" != "success" ]; then
+            echo "❌ Frontend build/tests failed"
             exit 1
           fi
-          echo "✅ All projects compiled successfully!"
+          echo "✅ All builds and unit tests passed!"
