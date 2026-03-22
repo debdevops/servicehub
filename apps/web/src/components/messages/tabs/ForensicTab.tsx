@@ -6,6 +6,7 @@ import type { Message } from '@/lib/mockData';
 
 interface ForensicTabProps {
   message: Message;
+  onForensicResult?: (replaySafety: string | null) => void;
 }
 
 const SAFETY_CONFIG: Record<string, { icon: typeof CheckCircle; color: string; bg: string; label: string }> = {
@@ -28,7 +29,7 @@ function ConfidenceBar({ value }: { value: number }) {
   );
 }
 
-export function ForensicTab({ message }: ForensicTabProps) {
+export function ForensicTab({ message, onForensicResult }: ForensicTabProps) {
   const [result, setResult] = useState<ForensicResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +44,7 @@ export function ForensicTab({ message }: ForensicTabProps) {
     try {
       const res = await dlqHistoryApi.getForensicResult(dlqId);
       setResult(res);
+      onForensicResult?.(res.replaySafety ?? null);
     } catch {
       setError('Failed to run forensic analysis. The API may be unavailable.');
     } finally {

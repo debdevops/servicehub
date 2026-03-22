@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FileText, Code, Bot, List, Inbox, AlertTriangle, Shield } from 'lucide-react';
 import { Play, Clipboard } from 'lucide-react'; // Trash2 removed - purge feature disabled
 import { useSearchParams } from 'react-router-dom';
@@ -53,7 +53,7 @@ function EmptyState() {
 // Tab Content Renderer
 // ============================================================================
 
-function TabContent({ tab, message, onViewPattern }: { tab: DetailTab; message: Message; onViewPattern?: (messageIds: string[]) => void }) {
+function TabContent({ tab, message, onViewPattern, onForensicResult }: { tab: DetailTab; message: Message; onViewPattern?: (messageIds: string[]) => void; onForensicResult?: (replaySafety: string | null) => void }) {
   switch (tab) {
     case 'properties':
       return <PropertiesTab message={message} />;
@@ -67,7 +67,12 @@ function TabContent({ tab, message, onViewPattern }: { tab: DetailTab; message: 
         />
       );
     case 'forensic':
-      return <ForensicTab message={message} />;
+      return (
+        <ForensicTab
+          message={message}
+          onForensicResult={onForensicResult}
+        />
+      );
     case 'headers':
       return <HeadersTab headers={message.headers} />;
     default:
@@ -82,6 +87,7 @@ function TabContent({ tab, message, onViewPattern }: { tab: DetailTab; message: 
 interface ActionButtonsProps {
   message: Message;
   namespaceId: string | null;
+  forensicSafety: string | null;
 }
 
 interface ConfirmState {
@@ -92,7 +98,7 @@ interface ConfirmState {
   action: 'replay' | null; // 'purge' removed - Azure Service Bus limitation
 }
 
-function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
+function ActionButtons({ message, namespaceId, forensicSafety }: ActionButtonsProps) {
   const replayMessage = useReplayMessage();
   // const purgeMessage = usePurgeMessage(); // Removed - Azure Service Bus limitation
   const [searchParams] = useSearchParams();
@@ -193,27 +199,82 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
   return (
     <>
       <div className="flex items-center gap-3 p-4 border-t border-gray-200 bg-white">
-        {/* Replay Button - Only enabled for dead-letter messages */}
+        {/* Replay Button — gated by forensic safety verdict */}
         <div className="flex items-center gap-2">
-          <button
-            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition-colors disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
-            onClick={() => openConfirm('replay')}
-            disabled={replayMessage.isPending || !namespaceId || !isFromDeadLetter}
-            title={!isFromDeadLetter 
-              ? 'Replay is only available for dead-letter messages — active messages are already being processed' 
-              : 'Re-send this message from DLQ back to the main queue for reprocessing'
+          {(() => {
+            const isUnsafe = forensicSafety === 'Unsafe';
+            const requiresReview = forensicSafety === 'RequiresReview';
+            const isSafe = forensicSafety === 'Safe';
+            const hasVerdict = forensicSafety !== null;
+
+            if (!isFromDeadLetter) {
+              return (
+                <>
+                  <button
+                    disabled
+                    title="Replay is only available for dead-letter messages — active messages are already being processed"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-gray-300 text-gray-500 rounded-lg font-medium cursor-not-allowed"
+                    aria-label="Replay message"
+                  >
+                    <Play size={16} />
+                    Replay
+                  </button>
+                  <span className="text-xs text-gray-500 italic max-w-[160px]" title="Active messages are already queued for processing. Replay is for returning dead-letter messages to the main queue.">
+                    Active messages cannot be replayed
+                  </span>
+                </>
+              );
             }
-            aria-label="Replay message"
-          >
-            <Play size={16} />
-            {replayMessage.isPending ? 'Replaying...' : 'Replay'}
-          </button>
-          {/* Show clear explanation when Replay is disabled */}
-          {!isFromDeadLetter && (
-            <span className="text-xs text-gray-500 italic max-w-[160px]" title="Active messages are already queued for processing. Replay is for returning dead-letter messages to the main queue.">
-              Active messages cannot be replayed
-            </span>
-          )}
+
+            if (hasVerdict && isUnsafe) {
+              return (
+                <button
+                  disabled
+                  title="Forensic analysis classified this message as Unsafe to replay. Fix the root cause first."
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-400 rounded-lg font-medium cursor-not-allowed border border-red-200"
+                  aria-label="Replay blocked"
+                >
+                  <Play size={16} />
+                  \uD83D\uDD12 Replay Blocked
+                </button>
+              );
+            }
+
+            if (hasVerdict && requiresReview) {
+              return (
+                <button
+                  onClick={() => {
+                    if (window.confirm(
+                      '\u26A0\uFE0F Forensic analysis marked this message as "Requires Review" before replaying.\n\n' +
+                      'Are you sure you want to replay this message?'
+                    )) {
+                      openConfirm('replay');
+                    }
+                  }}
+                  disabled={replayMessage.isPending || !namespaceId}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Forensic analysis recommends reviewing before replay"
+                  aria-label="Replay with review"
+                >
+                  <Play size={16} />
+                  {replayMessage.isPending ? 'Replaying...' : '\u26A0\uFE0F Replay (Review First)'}
+                </button>
+              );
+            }
+
+            return (
+              <button
+                className="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition-colors disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+                onClick={() => openConfirm('replay')}
+                disabled={replayMessage.isPending || !namespaceId}
+                title={isSafe ? '\u2713 Forensic analysis: Safe to replay' : 'Re-send this message from DLQ back to the main queue for reprocessing'}
+                aria-label="Replay message"
+              >
+                <Play size={16} />
+                {replayMessage.isPending ? 'Replaying...' : (isSafe ? '\u2713 Replay' : 'Replay')}
+              </button>
+            );
+          })()}
         </div>
         <button
           className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-lg font-medium transition-colors"
@@ -308,6 +369,14 @@ export function MessageDetailPanel({ message, onViewPattern }: MessageDetailPane
   const [activeTab, setActiveTab] = useTabPersistence();
   const [searchParams] = useSearchParams();
   const namespaceId = searchParams.get('namespace');
+  const [forensicSafety, setForensicSafety] = useState<string | null>(
+    message?.replaySafety ?? null
+  );
+
+  // Reset forensic verdict when the selected message changes
+  useEffect(() => {
+    setForensicSafety(message?.replaySafety ?? null);
+  }, [message?.id]);
 
   if (!message) {
     return <EmptyState />;
@@ -383,11 +452,11 @@ export function MessageDetailPanel({ message, onViewPattern }: MessageDetailPane
 
       {/* Tab Content */}
       <div className="flex-1 overflow-auto bg-gray-50">
-        <TabContent tab={activeTab} message={message} onViewPattern={onViewPattern} />
+        <TabContent tab={activeTab} message={message} onViewPattern={onViewPattern} onForensicResult={setForensicSafety} />
       </div>
 
       {/* Action Buttons */}
-      <ActionButtons message={message} namespaceId={namespaceId} />
+      <ActionButtons message={message} namespaceId={namespaceId} forensicSafety={forensicSafety} />
     </div>
   );
 }
