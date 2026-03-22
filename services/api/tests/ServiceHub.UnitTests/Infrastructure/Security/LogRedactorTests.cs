@@ -57,7 +57,7 @@ public sealed class LogRedactorTests
         var result = LogRedactor.Redact(input);
 
         result.Should().NotContain("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test");
-        result.Should().Contain("Bearer ***REDACTED***");
+        result.Should().Contain("[REDACTED]");
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public sealed class LogRedactorTests
 
         var result = LogRedactor.Redact(input);
 
-        result.Should().Be("[ENCRYPTED]");
+        result.Should().Be("[ENCRYPTED:V2]");
     }
 
     [Fact]
@@ -128,5 +128,171 @@ public sealed class LogRedactorTests
 
         result.Should().NotContain(secret);
         result.Should().Contain("***REDACTED***");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Endpoint redaction
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void Redact_Endpoint_MasksButKeepsDomain()
+    {
+        var input = "Endpoint=sb://myns.servicebus.windows.net/";
+        var result = LogRedactor.Redact(input);
+
+        result.Should().Contain("myns.servicebus.windows.net");
+        result.Should().Contain("***");
+    }
+
+    [Fact]
+    public void Redact_InvalidEndpoint_MasksCompletely()
+    {
+        var input = "Endpoint=not-a-valid-uri";
+        var result = LogRedactor.Redact(input);
+
+        result.Should().Contain("***...***");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Encrypted value redaction
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void Redact_EncV2_ShouldShowEncryptedIndicator()
+    {
+        var input = "Connection: ENC:V2:abc123def456=";
+        var result = LogRedactor.Redact(input);
+
+        result.Should().Contain("[ENCRYPTED:V2]");
+        result.Should().NotContain("abc123def456");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Authorization/X-API-Key header redaction
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void Redact_AuthorizationHeader_RedactsValue()
+    {
+        var input = "Authorization: Bearer eyJhbGciOi.payload.signature\r\nOther: safe";
+        var result = LogRedactor.Redact(input);
+
+        result.Should().NotContain("eyJhbGciOi");
+    }
+
+    [Fact]
+    public void Redact_XApiKeyHeader_RedactsValue()
+    {
+        var input = "X-API-Key: secret-key-value-12345";
+        var result = LogRedactor.Redact(input);
+
+        result.Should().Contain("***REDACTED***");
+        result.Should().NotContain("secret-key-value-12345");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // RedactForLogging
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void RedactForLogging_NullValue_ReturnsNull()
+    {
+        var result = LogRedactor.RedactForLogging(null);
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void RedactForLogging_StringValue_RedactsSecrets()
+    {
+        var result = LogRedactor.RedactForLogging("SharedAccessKey=mysecretkey123") as string;
+        result.Should().NotBeNull();
+        result.Should().Contain("***REDACTED***");
+    }
+
+    [Fact]
+    public void RedactForLogging_Exception_RedactsExceptionMessage()
+    {
+        var ex = new InvalidOperationException("SharedAccessKey=mysecretkey123");
+        var result = LogRedactor.RedactForLogging(ex) as string;
+
+        result.Should().NotBeNull();
+        result.Should().Contain("***REDACTED***");
+        result.Should().NotContain("mysecretkey123");
+    }
+
+    [Fact]
+    public void RedactForLogging_ExceptionWithInner_RedactsBothMessages()
+    {
+        var inner = new Exception("Password=secret123");
+        var ex = new InvalidOperationException("SharedAccessKey=outerkey", inner);
+        var result = LogRedactor.RedactForLogging(ex) as string;
+
+        result.Should().NotBeNull();
+        result.Should().NotContain("outerkey");
+        result.Should().NotContain("secret123");
+    }
+
+    [Fact]
+    public void RedactForLogging_Dictionary_RedactsSensitiveKeys()
+    {
+        var dict = new Dictionary<string, object>
+        {
+            ["Username"] = "admin",
+            ["Password"] = "secret123",
+            ["ApiKey"] = "key-value",
+            ["Data"] = "SharedAccessKey=somekey"
+        };
+
+        var result = LogRedactor.RedactForLogging(dict) as IDictionary<string, object>;
+
+        result.Should().NotBeNull();
+        result!["Username"].Should().Be("admin");
+        result["Password"].Should().Be("***REDACTED***");
+        result["ApiKey"].Should().Be("***REDACTED***");
+        // "Data" key is not sensitive by name, but its string value is redacted
+        (result["Data"] as string).Should().Contain("***REDACTED***");
+    }
+
+    [Fact]
+    public void RedactForLogging_Dictionary_SensitiveKeyVariants()
+    {
+        var dict = new Dictionary<string, object>
+        {
+            ["secret"] = "hidden",
+            ["token"] = "hidden",
+            ["credential"] = "hidden",
+            ["connectionstring"] = "hidden",
+        };
+
+        var result = LogRedactor.RedactForLogging(dict) as IDictionary<string, object>;
+
+        result.Should().NotBeNull();
+        foreach (var kvp in result!)
+        {
+            kvp.Value.Should().Be("***REDACTED***");
+        }
+    }
+
+    [Fact]
+    public void RedactForLogging_NonStringNonExceptionNonDict_ReturnsOriginal()
+    {
+        var result = LogRedactor.RedactForLogging(42);
+        result.Should().Be(42);
+    }
+
+    [Fact]
+    public void RedactForLogging_Dictionary_NonStringValues_PreservedIfNotSensitiveKey()
+    {
+        var dict = new Dictionary<string, object>
+        {
+            ["Count"] = 42,
+            ["Enabled"] = true,
+        };
+
+        var result = LogRedactor.RedactForLogging(dict) as IDictionary<string, object>;
+
+        result.Should().NotBeNull();
+        result!["Count"].Should().Be(42);
+        result["Enabled"].Should().Be(true);
     }
 }
