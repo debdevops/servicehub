@@ -13,11 +13,28 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    open: true,
-    // Bind to all interfaces so the dev server is reachable from remote machines.
-    // When running on a Linux server accessed over the network, Vite's default
-    // localhost binding (127.0.0.1) rejects connections from other hosts.
-    host: true,
+    // Bind to all network interfaces so the UI is reachable from remote machines.
+    // When running locally, http://localhost:3000 still works.
+    // When running on a server, http://serverip:3000 also works.
+    host: '0.0.0.0',
+    // Do not auto-open browser — this fails on headless/remote servers.
+    open: false,
+    proxy: {
+      // Forward all /api requests to the .NET backend running on the same machine.
+      // This means the browser only needs one port (3000) and CORS is not required
+      // for the browser-to-API communication — requests appear same-origin.
+      '/api': {
+        target: 'http://localhost:5153',
+        changeOrigin: true,
+        secure: false,
+      },
+      // Also proxy health checks so they work through the same port.
+      '/health': {
+        target: 'http://localhost:5153',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
   build: {
     // Output React build directly into the API's wwwroot folder.

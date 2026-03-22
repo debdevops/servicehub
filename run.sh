@@ -588,17 +588,29 @@ fi
 echo ""
 
 # PHASE 5: SERVICES READY
+# Detect server IP and hostname for remote access guidance
+SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || hostname -i 2>/dev/null | awk '{print $1}' || echo "")
+SERVER_HOSTNAME=$(hostname 2>/dev/null || echo "")
+
 echo -e "${YELLOW}╔════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║   ✓ All Services Running Successfully!  ║${NC}"
 echo -e "${YELLOW}╚════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "${BLUE}📍 API Endpoints:${NC}"
 echo -e "  • ${GREEN}HTTP:  ${API_HTTP_URL}${NC}"
-echo -e "  • ${GREEN}HTTPS: ${API_HTTPS_URL}${NC}"
+if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ]; then
+    echo -e "  • ${GREEN}Remote: http://${SERVER_IP}:5153${NC}"
+fi
 echo -e "  • ${GREEN}Swagger: ${API_HTTP_URL}/swagger${NC}"
 echo ""
 echo -e "${BLUE}🌐 Web UI:${NC}"
-echo -e "  • ${GREEN}http://localhost:${WEB_PORT}${NC}"
+echo -e "  • ${GREEN}http://localhost:${WEB_PORT}${NC}   ← from this machine"
+if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ]; then
+    echo -e "  • ${GREEN}http://${SERVER_IP}:${WEB_PORT}${NC}   ← from remote machines (by IP)"
+fi
+if [ -n "$SERVER_HOSTNAME" ] && [ "$SERVER_HOSTNAME" != "localhost" ]; then
+    echo -e "  • ${GREEN}http://${SERVER_HOSTNAME}:${WEB_PORT}${NC}   ← from remote machines (by hostname)"
+fi
 echo ""
 echo -e "${BLUE}📋 Process IDs:${NC}"
 echo -e "  • ${GREEN}API:  $API_PID${NC}"
@@ -608,6 +620,13 @@ echo -e "${YELLOW}════════════════════�
 echo -e "${BLUE}Press ${YELLOW}Ctrl+C${BLUE} to stop all services${NC}"
 echo -e "${YELLOW}════════════════════════════════════════${NC}"
 echo ""
+if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ]; then
+    echo -e "${CYAN}ℹ  Remote access detected. If connection is refused from another machine:${NC}"
+    echo -e "   ${YELLOW}Ubuntu/Debian:${NC}  sudo ufw allow 3000/tcp && sudo ufw allow 5153/tcp"
+    echo -e "   ${YELLOW}RHEL/CentOS:${NC}    sudo firewall-cmd --add-port=3000/tcp --permanent && sudo firewall-cmd --add-port=5153/tcp --permanent && sudo firewall-cmd --reload"
+    echo -e "   ${YELLOW}Or set:${NC}         export SERVICEHUB_ALLOWED_ORIGINS=\"http://${SERVER_IP}:3000\""
+    echo ""
+fi
 
 # Keep services running
 wait
