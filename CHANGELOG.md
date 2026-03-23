@@ -1,5 +1,18 @@
 # ServiceHub Changelog
 
+## [2.1.2] - 2026-03-23
+
+### Security
+- Fixed CodeQL cs/log-forging alerts in ServiceBusClientWrapper.cs
+  — Added LogRedactor.SanitiseForLog() helper that strips control characters
+    (\r, \n, \t, other control chars) from user-derived values before logging
+  — Applied sanitisation to all 65 log-forging taint paths: entityName,
+    queueName, topicName, subscriptionName, reason, queueType
+  — Long integer values (sequenceNumber, count) are exempt — value types
+    cannot contain injection characters
+
+---
+
 ## [2.1.1] - 2026-03-23
 
 ### Fixed
