@@ -106,7 +106,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                     if (queue.DeadLetterMessageCount > 0)
                     {
                         _logger.LogInformation("Queue {Queue} has {Count} DLQ messages", 
-                            queue.Name, queue.DeadLetterMessageCount);
+                            LogSanitizer.Sanitize(queue.Name), queue.DeadLetterMessageCount);
                         var (newCount, liveSequenceNumbers) = await ScanEntityDlqAsync(
                             client, namespaceId, queue.Name, null,
                             ServiceBusEntityType.Queue, cancellationToken);
@@ -143,7 +143,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                             if (sub.DeadLetterMessageCount > 0)
                             {
                                 _logger.LogInformation("Subscription {Topic}/{Subscription} has {Count} DLQ messages", 
-                                    topic.Name, sub.Name, sub.DeadLetterMessageCount);
+                                    LogSanitizer.Sanitize(topic.Name), LogSanitizer.Sanitize(sub.Name), sub.DeadLetterMessageCount);
                                 var (newCount, liveSequenceNumbers) = await ScanEntityDlqAsync(
                                     client, namespaceId, sub.Name, topic.Name,
                                     ServiceBusEntityType.Subscription, cancellationToken);
@@ -227,7 +227,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
             {
                 _logger.LogWarning(
                     "Failed to peek DLQ messages from {EntityType} {EntityName}: {Error}",
-                    entityType, entityName, messagesResult.Error.Message);
+                    entityType, LogSanitizer.Sanitize(entityName), messagesResult.Error.Message);
                 return (0, liveSequenceNumbers);
             }
 
@@ -265,7 +265,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                         existingMessage.ReplaySuccess = null;
                         _logger.LogInformation(
                             "Message {MessageId} returned to DLQ, status updated to Active",
-                            msg.MessageId);
+                            LogSanitizer.Sanitize(msg.MessageId));
                     }
                     continue;
                 }
@@ -320,14 +320,14 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 removedMessage.ReplayedAt = DateTimeOffset.UtcNow;
                 _logger.LogInformation(
                     "Message {MessageId} no longer in DLQ — marked as Replayed",
-                    removedMessage.MessageId);
+                    LogSanitizer.Sanitize(removedMessage.MessageId));
             }
 
             if (messagesNoLongerInDlq.Count > 0)
             {
                 _logger.LogInformation(
                     "Marked {Count} messages as Replayed for {EntityType} {EntityName}",
-                    messagesNoLongerInDlq.Count, entityType, entityName);
+                    messagesNoLongerInDlq.Count, entityType, LogSanitizer.Sanitize(entityName));
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -336,7 +336,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
             {
                 _logger.LogInformation(
                     "Stored {Count} new DLQ messages from {EntityType} {EntityName}",
-                    newCount, entityType, entityName);
+                    newCount, entityType, LogSanitizer.Sanitize(entityName));
             }
         }
         catch (OperationCanceledException)

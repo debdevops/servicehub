@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Extensions;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Interfaces;
@@ -121,7 +122,7 @@ public sealed class TopicsController : ApiControllerBase
     {
         _logger.LogInformation(
             "Getting topic {TopicName} for namespace {NamespaceId}",
-            topicName,
+            LogSanitizer.Sanitize(topicName),
             namespaceId);
 
         var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
@@ -180,7 +181,7 @@ public sealed class TopicsController : ApiControllerBase
     {
         _logger.LogInformation(
             "Sending message to topic {TopicName} in namespace {NamespaceId}",
-            topicName,
+            LogSanitizer.Sanitize(topicName),
             namespaceId);
 
         // Verify namespace exists
@@ -219,7 +220,7 @@ public sealed class TopicsController : ApiControllerBase
             return ToActionResult(result);
         }
 
-        _logger.LogInformation("Message sent to topic {TopicName}", topicName);
+        _logger.LogInformation("Message sent to topic {TopicName}", LogSanitizer.Sanitize(topicName));
         return Accepted();
     }
 
@@ -255,8 +256,8 @@ public sealed class TopicsController : ApiControllerBase
     {
         _logger.LogInformation(
             "Peeking messages from subscription {SubscriptionName} on topic {TopicName} in namespace {NamespaceId}",
-            subscriptionName,
-            topicName,
+            LogSanitizer.Sanitize(subscriptionName),
+            LogSanitizer.Sanitize(topicName),
             namespaceId);
 
         var fromDeadLetter = string.Equals(queueType, "deadletter", StringComparison.OrdinalIgnoreCase);
@@ -363,10 +364,10 @@ public sealed class TopicsController : ApiControllerBase
         _logger.LogInformation(
             "Dead-lettering {Count} messages from subscription {SubscriptionName} on topic {TopicName} in namespace {NamespaceId} with reason: {Reason}",
             messageCount,
-            subscriptionName,
-            topicName,
+            LogSanitizer.Sanitize(subscriptionName),
+            LogSanitizer.Sanitize(topicName),
             namespaceId,
-            reason);
+            LogSanitizer.Sanitize(reason));
 
         // Get namespace to check permissions
         var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
@@ -407,8 +408,8 @@ public sealed class TopicsController : ApiControllerBase
         _logger.LogInformation(
             "Successfully dead-lettered {Count} messages from subscription {SubscriptionName} on topic {TopicName}",
             result.Value,
-            subscriptionName,
-            topicName);
+            LogSanitizer.Sanitize(subscriptionName),
+            LogSanitizer.Sanitize(topicName));
 
         return Ok(new DeadLetterResponse(result.Value, reason));
     }
