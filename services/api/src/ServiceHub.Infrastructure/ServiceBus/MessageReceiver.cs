@@ -4,6 +4,7 @@ using Polly.Retry;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 using Azure.Messaging.ServiceBus;
@@ -98,7 +99,7 @@ public sealed class MessageReceiver : IMessageReceiver
             _logger.LogDebug(
                 "Peeked {Count} messages from {EntityName} in namespace {NamespaceId}",
                 result.Value.Count,
-                request.EntityName,
+                LogRedactor.SanitiseForLog(request.EntityName),
                 request.NamespaceId);
 
             return result;
@@ -107,7 +108,7 @@ public sealed class MessageReceiver : IMessageReceiver
         {
             _logger.LogError(ex,
                 "Failed to peek messages from {EntityName} after retries",
-                request.EntityName);
+                LogRedactor.SanitiseForLog(request.EntityName));
 
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
                 ErrorCodes.Message.ReceiveFailed,
@@ -156,7 +157,7 @@ public sealed class MessageReceiver : IMessageReceiver
             _logger.LogDebug(
                 "Peeked {Count} dead-letter messages from {EntityName} in namespace {NamespaceId}",
                 result.Value.Count,
-                request.EntityName,
+                LogRedactor.SanitiseForLog(request.EntityName),
                 request.NamespaceId);
 
             return result;
@@ -165,7 +166,7 @@ public sealed class MessageReceiver : IMessageReceiver
         {
             _logger.LogError(ex,
                 "Failed to peek dead-letter messages from {EntityName} after retries",
-                request.EntityName);
+                LogRedactor.SanitiseForLog(request.EntityName));
 
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
                 ErrorCodes.Message.ReceiveFailed,
@@ -207,7 +208,7 @@ public sealed class MessageReceiver : IMessageReceiver
         _logger.LogWarning(
             "GetMessageCountAsync is not yet implemented for namespace {NamespaceId}, entity {EntityName}",
             namespaceId,
-            entityName);
+            LogRedactor.SanitiseForLog(entityName));
 
         return Task.FromResult(Result.Failure<long>(Error.Internal(
             ErrorCodes.General.UnexpectedError,
@@ -253,9 +254,9 @@ public sealed class MessageReceiver : IMessageReceiver
             _logger.LogInformation(
                 "Dead-lettered {Count} messages from {EntityName} in namespace {NamespaceId} with reason: {Reason}",
                 deadLetteredCount,
-                request.EntityName,
+                LogRedactor.SanitiseForLog(request.EntityName),
                 request.NamespaceId,
-                request.Reason);
+                LogRedactor.SanitiseForLog(request.Reason));
 
             return Result.Success(deadLetteredCount);
         }
@@ -263,7 +264,7 @@ public sealed class MessageReceiver : IMessageReceiver
         {
             _logger.LogError(ex,
                 "Failed to dead-letter messages from {EntityName}",
-                request.EntityName);
+                LogRedactor.SanitiseForLog(request.EntityName));
 
             return Result.Failure<int>(Error.ExternalService(
                 ErrorCodes.Message.ReceiveFailed,
@@ -380,7 +381,7 @@ public sealed class MessageReceiver : IMessageReceiver
                 _logger.LogInformation(
                     "Replayed message {SequenceNumber} from {EntityName} in namespace {NamespaceId}",
                     sequenceNumber,
-                    entityName,
+                    LogRedactor.SanitiseForLog(entityName),
                     namespaceId);
             }
 
@@ -439,8 +440,8 @@ public sealed class MessageReceiver : IMessageReceiver
                 _logger.LogInformation(
                     "Purged message {SequenceNumber} from {EntityName} {QueueType} in namespace {NamespaceId}",
                     sequenceNumber,
-                    entityName,
-                    queueType,
+                    LogRedactor.SanitiseForLog(entityName),
+                    LogRedactor.SanitiseForLog(queueType),
                     namespaceId);
             }
 

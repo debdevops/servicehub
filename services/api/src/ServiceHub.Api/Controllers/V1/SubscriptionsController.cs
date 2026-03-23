@@ -92,7 +92,7 @@ public sealed class SubscriptionsController : ApiControllerBase
         _logger.LogInformation(
             "Retrieved {SubscriptionCount} subscriptions for topic {TopicName} in namespace {NamespaceId}",
             subscriptionsResult.Value.Count,
-            topicName,
+            LogSanitizer.Sanitize(topicName),
             namespaceId);
 
         return Ok(subscriptionsResult.Value);
