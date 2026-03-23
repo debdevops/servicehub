@@ -2,7 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceHub.Api.Authorization;
-using ServiceHub.Api.Extensions;
+using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
@@ -197,7 +197,7 @@ public sealed class RulesController : ApiControllerBase
             _dbContext.AutoReplayRules.Add(entity);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            _logger.LogInformation("Created auto-replay rule {RuleId}/{RuleName}", entity.Id, LogSanitizer.Sanitize(entity.Name));
+            _logger.LogInformation("Created auto-replay rule {RuleId}/{RuleName}", entity.Id, LogRedactor.SanitiseForLog(entity.Name));
 
             return CreatedAtAction(
                 nameof(GetById),
@@ -279,7 +279,7 @@ public sealed class RulesController : ApiControllerBase
             _dbContext.AutoReplayRules.Add(updatedRule);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            _logger.LogInformation("Updated auto-replay rule {RuleId}/{RuleName}", updatedRule.Id, LogSanitizer.Sanitize(updatedRule.Name));
+            _logger.LogInformation("Updated auto-replay rule {RuleId}/{RuleName}", updatedRule.Id, LogRedactor.SanitiseForLog(updatedRule.Name));
 
             return Ok(MapToResponse(updatedRule));
         }
@@ -332,7 +332,7 @@ public sealed class RulesController : ApiControllerBase
             _dbContext.AutoReplayRules.Remove(rule);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            _logger.LogInformation("Deleted auto-replay rule {RuleId}/{RuleName}", rule.Id, LogSanitizer.Sanitize(rule.Name));
+            _logger.LogInformation("Deleted auto-replay rule {RuleId}/{RuleName}", rule.Id, LogRedactor.SanitiseForLog(rule.Name));
 
             return NoContent();
         }
@@ -621,7 +621,7 @@ public sealed class RulesController : ApiControllerBase
 
             _logger.LogInformation(
                 "Replay-all for rule {RuleId}/{RuleName}: {Matched} matched, {Replayed} replayed, {Failed} failed, {Skipped} skipped",
-                id, LogSanitizer.Sanitize(rule.Name), matched.Count, replayed, failed, skipped);
+                id, LogRedactor.SanitiseForLog(rule.Name), matched.Count, replayed, failed, skipped);
 
             return Ok(new ReplayAllResponse(
                 TotalMatched: matched.Count,

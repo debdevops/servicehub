@@ -5,6 +5,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Infrastructure;
@@ -48,7 +49,7 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
     {
         _logger.LogInformation(
             "Executing auto-replay rule {RuleId}/{RuleName} on message {MessageId} (DLQ record {DlqId})",
-            rule.Id, LogSanitizer.Sanitize(rule.Name), LogSanitizer.Sanitize(message.MessageId), message.Id);
+            rule.Id, LogRedactor.SanitiseForLog(rule.Name), LogRedactor.SanitiseForLog(message.MessageId), message.Id);
 
         // Rate-limit check
         if (!await CanReplayAsync(rule.Id, cancellationToken))
@@ -143,7 +144,7 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
 
             _logger.LogInformation(
                 "Auto-replay result for message {MessageId}: {Outcome}",
-                LogSanitizer.Sanitize(message.MessageId), outcome);
+                LogRedactor.SanitiseForLog(message.MessageId), outcome);
 
             return replayResult.IsSuccess
                 ? Result<string>.Success(outcome)
@@ -151,7 +152,7 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Auto-replay failed for message {MessageId}", LogSanitizer.Sanitize(message.MessageId));
+            _logger.LogError(ex, "Auto-replay failed for message {MessageId}", LogRedactor.SanitiseForLog(message.MessageId));
 
             // Record the failure in history
             var history = new ReplayHistory

@@ -1,5 +1,5 @@
 using ServiceHub.Api.Authorization;
-using ServiceHub.Api.Extensions;
+using ServiceHub.Infrastructure.Security;
 
 namespace ServiceHub.Api.Middleware;
 
@@ -132,8 +132,8 @@ public sealed class ApiKeyAuthenticationMiddleware
             _logger.LogWarning(
                 "Authentication failed: Missing {HeaderName} header for {Method} {Path}",
                 ApiKeyHeaderName,
-                LogSanitizer.Sanitize(context.Request.Method),
-                LogSanitizer.Sanitize(path));
+                LogRedactor.SanitiseForLog(context.Request.Method),
+                LogRedactor.SanitiseForLog(path));
 
             await WriteUnauthorizedResponse(context, "API key is required. Provide the X-API-KEY header.");
             return;
@@ -146,8 +146,8 @@ public sealed class ApiKeyAuthenticationMiddleware
             _logger.LogWarning(
                 "Authentication failed: Empty {HeaderName} header for {Method} {Path}",
                 ApiKeyHeaderName,
-                LogSanitizer.Sanitize(context.Request.Method),
-                LogSanitizer.Sanitize(path));
+                LogRedactor.SanitiseForLog(context.Request.Method),
+                LogRedactor.SanitiseForLog(path));
 
             await WriteUnauthorizedResponse(context, "API key is required. Provide a valid X-API-KEY header.");
             return;
@@ -158,8 +158,8 @@ public sealed class ApiKeyAuthenticationMiddleware
         {
             _logger.LogWarning(
                 "Authentication failed: Invalid API key for {Method} {Path}",
-                LogSanitizer.Sanitize(context.Request.Method),
-                LogSanitizer.Sanitize(path));
+            LogRedactor.SanitiseForLog(context.Request.Method),
+            LogRedactor.SanitiseForLog(path));
 
             await WriteForbiddenResponse(context, "Invalid API key.");
             return;
@@ -172,8 +172,8 @@ public sealed class ApiKeyAuthenticationMiddleware
 
         _logger.LogDebug(
             "Authentication successful for {Method} {Path} with key {KeyPrefix}",
-            LogSanitizer.Sanitize(context.Request.Method),
-            LogSanitizer.Sanitize(path),
+            LogRedactor.SanitiseForLog(context.Request.Method),
+            LogRedactor.SanitiseForLog(path),
             keyConfig.GetSafeKey());
 
         await _next(context);

@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
-using ServiceHub.Api.Extensions;
+using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Shared.Constants;
@@ -61,7 +61,7 @@ public sealed class SubscriptionsController : ApiControllerBase
     {
         _logger.LogInformation(
             "Getting all subscriptions for topic {TopicName} in namespace {NamespaceId}",
-            LogSanitizer.Sanitize(topicName),
+            LogRedactor.SanitiseForLog(topicName),
             namespaceId);
 
         var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
@@ -92,7 +92,7 @@ public sealed class SubscriptionsController : ApiControllerBase
         _logger.LogInformation(
             "Retrieved {SubscriptionCount} subscriptions for topic {TopicName} in namespace {NamespaceId}",
             subscriptionsResult.Value.Count,
-            LogSanitizer.Sanitize(topicName),
+            LogRedactor.SanitiseForLog(topicName),
             namespaceId);
 
         return Ok(subscriptionsResult.Value);
@@ -121,8 +121,8 @@ public sealed class SubscriptionsController : ApiControllerBase
     {
         _logger.LogInformation(
             "Getting subscription {SubscriptionName} for topic {TopicName} in namespace {NamespaceId}",
-            LogSanitizer.Sanitize(subscriptionName),
-            LogSanitizer.Sanitize(topicName),
+            LogRedactor.SanitiseForLog(subscriptionName),
+            LogRedactor.SanitiseForLog(topicName),
             namespaceId);
 
         var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
