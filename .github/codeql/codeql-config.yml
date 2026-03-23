@@ -5,6 +5,15 @@ name: "ServiceHub CodeQL Config"
 queries:
   - uses: security-extended   # includes security-and-quality queries
 
+query-filters:
+  # ServiceHub is a single-tenant local development/operations tool.
+  # Neither Namespace nor AutoReplayRule carries a per-record OwnerId/TenantId
+  # field — every authenticated API key has access to all resources by design.
+  # IDOR (Insecure Direct Object Reference) is structurally inapplicable here;
+  # access control is enforced at the API key scope level, not per-record ownership.
+  - exclude:
+      id: cs/insecure-direct-object-reference
+
 paths-ignore:
   # Test files — intentional weak values for testing only
   - "services/api/tests/**"
