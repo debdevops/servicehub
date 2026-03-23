@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
+using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Controllers.V1;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
@@ -42,6 +43,13 @@ public class NamespacesControllerTests
             {
                 HttpContext = new DefaultHttpContext()
             }
+        };
+
+        // Provide a valid ApiKeyConfig so in-method scope checks pass
+        _controller.ControllerContext.HttpContext.Items["ApiKeyConfig"] = new ApiKeyConfiguration
+        {
+            Key = "test-key-12345678",
+            Scopes = null  // null = admin (all scopes granted)
         };
     }
 
@@ -400,7 +408,10 @@ public class NamespacesControllerTests
     [Fact]
     public async Task Delete_Success_ShouldReturnNoContent()
     {
-        var id = Guid.NewGuid();
+        var ns = CreateTestNamespace();
+        var id = ns.Id;
+        _namespaceRepository.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
         _clientCache.Setup(c => c.Contains(id)).Returns(true);
         _clientCache.Setup(c => c.RemoveAsync(id, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _namespaceRepository.Setup(r => r.DeleteAsync(id, It.IsAny<CancellationToken>()))
@@ -415,9 +426,8 @@ public class NamespacesControllerTests
     public async Task Delete_NotFound_ShouldReturnNotFound()
     {
         var id = Guid.NewGuid();
-        _clientCache.Setup(c => c.Contains(id)).Returns(false);
-        _namespaceRepository.Setup(r => r.DeleteAsync(id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Failure(Error.NotFound(ErrorCodes.Namespace.NotFound, "Not found")));
+        _namespaceRepository.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<Namespace>(Error.NotFound(ErrorCodes.Namespace.NotFound, "Not found")));
 
         var result = await _controller.Delete(id);
 
@@ -427,7 +437,10 @@ public class NamespacesControllerTests
     [Fact]
     public async Task Delete_WithCachedClient_ShouldRemoveFromCache()
     {
-        var id = Guid.NewGuid();
+        var ns = CreateTestNamespace();
+        var id = ns.Id;
+        _namespaceRepository.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
         _clientCache.Setup(c => c.Contains(id)).Returns(true);
         _clientCache.Setup(c => c.RemoveAsync(id, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _namespaceRepository.Setup(r => r.DeleteAsync(id, It.IsAny<CancellationToken>()))

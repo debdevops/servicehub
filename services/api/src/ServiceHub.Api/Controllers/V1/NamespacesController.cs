@@ -327,21 +327,32 @@ public sealed class NamespacesController : ApiControllerBase
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Deleting namespace {NamespaceId}", id);
-
-        // Remove from client cache first
-        if (_clientCache.Contains(id))
+        // In-method resource-level authorization: verify caller has write scope before
+        // any database operation, preventing reliance on the filter attribute alone.
+        if (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
+            keyConfigObj is not ApiKeyConfiguration keyConfig ||
+            !keyConfig.HasScope(ApiKeyScopes.NamespacesWrite))
         {
-            await _clientCache.RemoveAsync(id, cancellationToken);
+            return Forbid();
         }
 
-        var result = await _namespaceRepository.DeleteAsync(id, cancellationToken);
+        // Verify the namespace exists first; subsequent operations use the
+        // repository-verified entity ID, not the raw user-supplied route value.
+        var getResult = await _namespaceRepository.GetByIdAsync(id, cancellationToken);
+        if (getResult.IsFailure)
+            return ToActionResult(Result.Failure(getResult.Error));
+
+        var ns = getResult.Value;
+        _logger.LogInformation("Deleting namespace {NamespaceId}", ns.Id);
+
+        if (_clientCache.Contains(ns.Id))
+            await _clientCache.RemoveAsync(ns.Id, cancellationToken);
+
+        var result = await _namespaceRepository.DeleteAsync(ns.Id, cancellationToken);
         if (result.IsFailure)
-        {
             return ToActionResult(result);
-        }
 
-        _logger.LogInformation("Namespace {NamespaceId} deleted successfully", id);
+        _logger.LogInformation("Namespace {NamespaceId} deleted successfully", ns.Id);
         return NoContent();
     }
 

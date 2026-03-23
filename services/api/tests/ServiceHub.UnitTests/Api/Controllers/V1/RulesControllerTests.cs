@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
+using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Controllers.V1;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
@@ -43,6 +44,13 @@ public class RulesControllerTests : IDisposable
         _controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext()
+        };
+
+        // Provide a valid ApiKeyConfig so in-method scope checks pass
+        _controller.ControllerContext.HttpContext.Items["ApiKeyConfig"] = new ApiKeyConfiguration
+        {
+            Key = "test-key-12345678",
+            Scopes = null  // null = admin (all scopes granted)
         };
     }
 
