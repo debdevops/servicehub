@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using ServiceHub.Api.Authorization;
-using ServiceHub.Api.Extensions;
+using ServiceHub.Infrastructure.Security;
 
 namespace ServiceHub.Api.Filters;
 
@@ -43,8 +43,8 @@ public sealed class ScopeAuthorizationFilter : IAsyncAuthorizationFilter
             // Not authenticated or no API key config available
             _logger.LogWarning(
                 "Authorization failed: No API key configuration found for {Method} {Path} requiring scope {Scope}",
-                LogSanitizer.Sanitize(context.HttpContext.Request.Method),
-                LogSanitizer.Sanitize(context.HttpContext.Request.Path),
+                LogRedactor.SanitiseForLog(context.HttpContext.Request.Method),
+                LogRedactor.SanitiseForLog(context.HttpContext.Request.Path),
                 requiredScope);
 
             context.Result = new JsonResult(new
@@ -68,8 +68,8 @@ public sealed class ScopeAuthorizationFilter : IAsyncAuthorizationFilter
                 "Authorization failed: API key {KeyPrefix} lacks required scope {Scope} for {Method} {Path}",
                 keyConfig.GetSafeKey(),
                 requiredScope,
-                LogSanitizer.Sanitize(context.HttpContext.Request.Method),
-                LogSanitizer.Sanitize(context.HttpContext.Request.Path));
+                LogRedactor.SanitiseForLog(context.HttpContext.Request.Method),
+                LogRedactor.SanitiseForLog(context.HttpContext.Request.Path));
 
             context.Result = new JsonResult(new
             {
@@ -89,8 +89,8 @@ public sealed class ScopeAuthorizationFilter : IAsyncAuthorizationFilter
             "Authorization successful: API key {KeyPrefix} has required scope {Scope} for {Method} {Path}",
             keyConfig.GetSafeKey(),
             requiredScope,
-            LogSanitizer.Sanitize(context.HttpContext.Request.Method),
-            LogSanitizer.Sanitize(context.HttpContext.Request.Path));
+            LogRedactor.SanitiseForLog(context.HttpContext.Request.Method),
+            LogRedactor.SanitiseForLog(context.HttpContext.Request.Path));
 
         await Task.CompletedTask;
     }

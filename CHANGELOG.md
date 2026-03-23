@@ -1,5 +1,17 @@
 # ServiceHub Changelog
 
+## [2.1.3] - 2026-03-23
+
+### Refactored
+- Removed duplicate LogSanitizer classes (ServiceHub.Infrastructure and ServiceHub.Api.Extensions)
+  — Both stripped only CR/LF characters, weaker than LogRedactor.SanitiseForLog()
+  — All callers (AutoReplayExecutor, DlqMonitorService, ErrorHandlingMiddleware,
+    RateLimitingMiddleware, ApiKeyAuthenticationMiddleware) now use the single
+    LogRedactor.SanitiseForLog() which strips all control characters (\x00–\x1F, \x7F)
+  — One consistent, stronger implementation across the entire codebase
+
+---
+
 ## [2.1.2] - 2026-03-23
 
 ### Security

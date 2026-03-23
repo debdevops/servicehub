@@ -8,6 +8,7 @@ using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Infrastructure;
@@ -106,7 +107,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                     if (queue.DeadLetterMessageCount > 0)
                     {
                         _logger.LogInformation("Queue {Queue} has {Count} DLQ messages", 
-                            LogSanitizer.Sanitize(queue.Name), queue.DeadLetterMessageCount);
+                            LogRedactor.SanitiseForLog(queue.Name), queue.DeadLetterMessageCount);
                         var (newCount, liveSequenceNumbers) = await ScanEntityDlqAsync(
                             client, namespaceId, queue.Name, null,
                             ServiceBusEntityType.Queue, cancellationToken);
@@ -143,7 +144,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                             if (sub.DeadLetterMessageCount > 0)
                             {
                                 _logger.LogInformation("Subscription {Topic}/{Subscription} has {Count} DLQ messages", 
-                                    LogSanitizer.Sanitize(topic.Name), LogSanitizer.Sanitize(sub.Name), sub.DeadLetterMessageCount);
+                                    LogRedactor.SanitiseForLog(topic.Name), LogRedactor.SanitiseForLog(sub.Name), sub.DeadLetterMessageCount);
                                 var (newCount, liveSequenceNumbers) = await ScanEntityDlqAsync(
                                     client, namespaceId, sub.Name, topic.Name,
                                     ServiceBusEntityType.Subscription, cancellationToken);
@@ -227,7 +228,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
             {
                 _logger.LogWarning(
                     "Failed to peek DLQ messages from {EntityType} {EntityName}: {Error}",
-                    entityType, LogSanitizer.Sanitize(entityName), messagesResult.Error.Message);
+                    entityType, LogRedactor.SanitiseForLog(entityName), messagesResult.Error.Message);
                 return (0, liveSequenceNumbers);
             }
 
@@ -265,7 +266,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                         existingMessage.ReplaySuccess = null;
                         _logger.LogInformation(
                             "Message {MessageId} returned to DLQ, status updated to Active",
-                            LogSanitizer.Sanitize(msg.MessageId));
+                            LogRedactor.SanitiseForLog(msg.MessageId));
                     }
                     continue;
                 }
@@ -320,14 +321,14 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 removedMessage.ReplayedAt = DateTimeOffset.UtcNow;
                 _logger.LogInformation(
                     "Message {MessageId} no longer in DLQ — marked as Replayed",
-                    LogSanitizer.Sanitize(removedMessage.MessageId));
+                    LogRedactor.SanitiseForLog(removedMessage.MessageId));
             }
 
             if (messagesNoLongerInDlq.Count > 0)
             {
                 _logger.LogInformation(
                     "Marked {Count} messages as Replayed for {EntityType} {EntityName}",
-                    messagesNoLongerInDlq.Count, entityType, LogSanitizer.Sanitize(entityName));
+                    messagesNoLongerInDlq.Count, entityType, LogRedactor.SanitiseForLog(entityName));
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -336,7 +337,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
             {
                 _logger.LogInformation(
                     "Stored {Count} new DLQ messages from {EntityType} {EntityName}",
-                    newCount, entityType, LogSanitizer.Sanitize(entityName));
+                    newCount, entityType, LogRedactor.SanitiseForLog(entityName));
             }
         }
         catch (OperationCanceledException)
