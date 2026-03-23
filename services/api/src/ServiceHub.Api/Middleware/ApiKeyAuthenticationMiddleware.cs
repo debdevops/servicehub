@@ -1,4 +1,5 @@
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Extensions;
 
 namespace ServiceHub.Api.Middleware;
 
@@ -131,8 +132,8 @@ public sealed class ApiKeyAuthenticationMiddleware
             _logger.LogWarning(
                 "Authentication failed: Missing {HeaderName} header for {Method} {Path}",
                 ApiKeyHeaderName,
-                context.Request.Method,
-                path);
+                LogSanitizer.Sanitize(context.Request.Method),
+                LogSanitizer.Sanitize(path));
 
             await WriteUnauthorizedResponse(context, "API key is required. Provide the X-API-KEY header.");
             return;
@@ -145,8 +146,8 @@ public sealed class ApiKeyAuthenticationMiddleware
             _logger.LogWarning(
                 "Authentication failed: Empty {HeaderName} header for {Method} {Path}",
                 ApiKeyHeaderName,
-                context.Request.Method,
-                path);
+                LogSanitizer.Sanitize(context.Request.Method),
+                LogSanitizer.Sanitize(path));
 
             await WriteUnauthorizedResponse(context, "API key is required. Provide a valid X-API-KEY header.");
             return;
@@ -157,8 +158,8 @@ public sealed class ApiKeyAuthenticationMiddleware
         {
             _logger.LogWarning(
                 "Authentication failed: Invalid API key for {Method} {Path}",
-                context.Request.Method,
-                path);
+                LogSanitizer.Sanitize(context.Request.Method),
+                LogSanitizer.Sanitize(path));
 
             await WriteForbiddenResponse(context, "Invalid API key.");
             return;
@@ -171,8 +172,8 @@ public sealed class ApiKeyAuthenticationMiddleware
 
         _logger.LogDebug(
             "Authentication successful for {Method} {Path} with key {KeyPrefix}",
-            context.Request.Method,
-            path,
+            LogSanitizer.Sanitize(context.Request.Method),
+            LogSanitizer.Sanitize(path),
             keyConfig.GetSafeKey());
 
         await _next(context);

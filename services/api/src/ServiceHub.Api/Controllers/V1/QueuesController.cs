@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Extensions;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Interfaces;
@@ -121,7 +122,7 @@ public sealed class QueuesController : ApiControllerBase
     {
         _logger.LogInformation(
             "Getting queue {QueueName} for namespace {NamespaceId}",
-            queueName,
+            LogSanitizer.Sanitize(queueName),
             namespaceId);
 
         var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
@@ -180,7 +181,7 @@ public sealed class QueuesController : ApiControllerBase
     {
         _logger.LogInformation(
             "Sending message to queue {QueueName} in namespace {NamespaceId}",
-            queueName,
+            LogSanitizer.Sanitize(queueName),
             namespaceId);
 
         // Verify namespace exists
@@ -219,7 +220,7 @@ public sealed class QueuesController : ApiControllerBase
             return ToActionResult(result);
         }
 
-        _logger.LogInformation("Message sent to queue {QueueName}", queueName);
+        _logger.LogInformation("Message sent to queue {QueueName}", LogSanitizer.Sanitize(queueName));
         return Accepted();
     }
 
@@ -253,7 +254,7 @@ public sealed class QueuesController : ApiControllerBase
     {
         _logger.LogInformation(
             "Peeking messages from queue {QueueName} in namespace {NamespaceId}",
-            queueName,
+            LogSanitizer.Sanitize(queueName),
             namespaceId);
 
         var fromDeadLetter = string.Equals(queueType, "deadletter", StringComparison.OrdinalIgnoreCase);
@@ -357,9 +358,9 @@ public sealed class QueuesController : ApiControllerBase
         _logger.LogInformation(
             "Dead-lettering {Count} messages from queue {QueueName} in namespace {NamespaceId} with reason: {Reason}",
             messageCount,
-            queueName,
+            LogSanitizer.Sanitize(queueName),
             namespaceId,
-            reason);
+            LogSanitizer.Sanitize(reason));
 
         // Get namespace to check permissions
         var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
@@ -400,7 +401,7 @@ public sealed class QueuesController : ApiControllerBase
         _logger.LogInformation(
             "Successfully dead-lettered {Count} messages from queue {QueueName}",
             result.Value,
-            queueName);
+            LogSanitizer.Sanitize(queueName));
 
         return Ok(new DeadLetterResponse(result.Value, reason));
     }

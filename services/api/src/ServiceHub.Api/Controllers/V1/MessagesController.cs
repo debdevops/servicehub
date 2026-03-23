@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Extensions;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
@@ -180,7 +181,7 @@ public sealed class MessagesController : ApiControllerBase
         _logger.LogInformation(
             "Peeking {MaxMessages} messages from queue {QueueName} in namespace {NamespaceId}",
             maxMessages,
-            queueName,
+            LogSanitizer.Sanitize(queueName),
             namespaceId);
 
         var request = new GetMessagesRequest(
@@ -232,8 +233,8 @@ public sealed class MessagesController : ApiControllerBase
         _logger.LogInformation(
             "Peeking {MaxMessages} messages from subscription {SubscriptionName} on topic {TopicName} in namespace {NamespaceId}",
             maxMessages,
-            subscriptionName,
-            topicName,
+            LogSanitizer.Sanitize(subscriptionName),
+            LogSanitizer.Sanitize(topicName),
             namespaceId);
 
         var request = new GetMessagesRequest(
@@ -283,7 +284,7 @@ public sealed class MessagesController : ApiControllerBase
         _logger.LogInformation(
             "Peeking {MaxMessages} dead letter messages from queue {QueueName} in namespace {NamespaceId}",
             maxMessages,
-            queueName,
+            LogSanitizer.Sanitize(queueName),
             namespaceId);
 
         var request = new GetMessagesRequest(
@@ -335,8 +336,8 @@ public sealed class MessagesController : ApiControllerBase
         _logger.LogInformation(
             "Peeking {MaxMessages} dead letter messages from subscription {SubscriptionName} on topic {TopicName} in namespace {NamespaceId}",
             maxMessages,
-            subscriptionName,
-            topicName,
+            LogSanitizer.Sanitize(subscriptionName),
+            LogSanitizer.Sanitize(topicName),
             namespaceId);
 
         var request = new GetMessagesRequest(
@@ -416,7 +417,7 @@ public sealed class MessagesController : ApiControllerBase
         _logger.LogInformation(
             "Replaying message {SequenceNumber} from {EntityName} in namespace {NamespaceId}",
             sequenceNumber,
-            entityName,
+            LogSanitizer.Sanitize(entityName),
             namespaceId);
 
         var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);

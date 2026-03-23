@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using ServiceHub.Api.Extensions;
 
 namespace ServiceHub.Api.Middleware;
 
@@ -53,9 +54,9 @@ public sealed class RequestLoggingMiddleware
 
         _logger.LogInformation(
             "Request started: {Method} {Path}{QueryString} | CorrelationId: {CorrelationId}",
-            method,
-            path,
-            queryString,
+            LogSanitizer.Sanitize(method),
+            LogSanitizer.Sanitize(path),
+            LogSanitizer.Sanitize(queryString),
             correlationId);
 
         var stopwatch = Stopwatch.StartNew();
@@ -76,8 +77,8 @@ public sealed class RequestLoggingMiddleware
 
             _logger.Log(logLevel,
                 "Request completed: {Method} {Path} | Status: {StatusCode} | Duration: {Duration}ms | CorrelationId: {CorrelationId}",
-                method,
-                path,
+                LogSanitizer.Sanitize(method),
+                LogSanitizer.Sanitize(path),
                 statusCode,
                 duration,
                 correlationId);

@@ -48,7 +48,7 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
     {
         _logger.LogInformation(
             "Executing auto-replay rule {RuleId}/{RuleName} on message {MessageId} (DLQ record {DlqId})",
-            rule.Id, rule.Name, message.MessageId, message.Id);
+            rule.Id, LogSanitizer.Sanitize(rule.Name), LogSanitizer.Sanitize(message.MessageId), message.Id);
 
         // Rate-limit check
         if (!await CanReplayAsync(rule.Id, cancellationToken))
@@ -143,7 +143,7 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
 
             _logger.LogInformation(
                 "Auto-replay result for message {MessageId}: {Outcome}",
-                message.MessageId, outcome);
+                LogSanitizer.Sanitize(message.MessageId), outcome);
 
             return replayResult.IsSuccess
                 ? Result<string>.Success(outcome)
@@ -151,7 +151,7 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Auto-replay failed for message {MessageId}", message.MessageId);
+            _logger.LogError(ex, "Auto-replay failed for message {MessageId}", LogSanitizer.Sanitize(message.MessageId));
 
             // Record the failure in history
             var history = new ReplayHistory
