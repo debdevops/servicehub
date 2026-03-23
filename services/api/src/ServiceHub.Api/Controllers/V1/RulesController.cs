@@ -287,6 +287,18 @@ public sealed class RulesController : ApiControllerBase
         long id,
         CancellationToken cancellationToken = default)
     {
+        // In-method resource-level authorization: verify caller has write scope before
+        // any database operation, preventing reliance on the filter attribute alone.
+        if (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
+            keyConfigObj is not ApiKeyConfiguration keyConfig ||
+            !keyConfig.HasScope(ApiKeyScopes.DlqWrite))
+        {
+            return Forbid();
+        }
+
+        if (id <= 0)
+            return BadRequest(new ProblemDetails { Title = "Invalid ID", Detail = "Rule ID must be a positive integer.", Status = 400 });
+
         try
         {
             var rule = await _dbContext.AutoReplayRules

@@ -158,11 +158,15 @@ public sealed class Namespace
         string? displayName = null,
         string? description = null)
     {
-        if (authType == ConnectionAuthType.ConnectionString)
+        // Allowlist: only accept known managed-identity types; reject ConnectionString
+        // and any future/unknown enum values to prevent user-controlled bypass.
+        if (authType is not (ConnectionAuthType.ManagedIdentity
+            or ConnectionAuthType.ServicePrincipal
+            or ConnectionAuthType.DefaultAzureCredential))
         {
             return Result<Namespace>.Failure(Error.Validation(
                 ErrorCodes.Namespace.ConnectionStringRequired,
-                "Connection string authentication requires a connection string. Use Create() method instead."));
+                "Authentication type must be ManagedIdentity, ServicePrincipal, or DefaultAzureCredential. Use Create() for connection string authentication."));
         }
 
         var validationResult = ValidateManagedIdentityAuth(name, displayName, description);
