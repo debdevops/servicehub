@@ -202,7 +202,7 @@ public sealed class NamespacesController : ApiControllerBase
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(NamespaceResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<NamespaceResponse>> GetById( // lgtm[cs/insecure-direct-object-reference]
+    public async Task<ActionResult<NamespaceResponse>> GetById(
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
@@ -240,7 +240,7 @@ public sealed class NamespacesController : ApiControllerBase
     [HttpPost("{id:guid}/test-connection")]
     [ProducesResponseType(typeof(ConnectionTestResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ConnectionTestResponse>> TestConnection( // lgtm[cs/insecure-direct-object-reference]
+    public async Task<ActionResult<ConnectionTestResponse>> TestConnection(
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
@@ -339,13 +339,11 @@ public sealed class NamespacesController : ApiControllerBase
     /// <returns>No content on success.</returns>
     /// <response code="204">Namespace deleted successfully.</response>
     /// <response code="404">Namespace not found.</response>
-    // lgtm[cs/insecure-direct-object-reference] Single-tenant tool: namespaces have no per-record owner field.
-    // Access is governed by API key scope (NamespacesWrite) checked below and via [RequireScope] filter.
     [HttpDelete("{id:guid}")]
     [RequireScope(ApiKeyScopes.NamespacesWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete( // lgtm[cs/insecure-direct-object-reference]
+    public async Task<IActionResult> Delete(
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {

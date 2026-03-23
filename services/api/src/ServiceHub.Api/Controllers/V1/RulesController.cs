@@ -115,7 +115,7 @@ public sealed class RulesController : ApiControllerBase
     [RequireScope(ApiKeyScopes.DlqRead)]
     [ProducesResponseType(typeof(RuleResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<RuleResponse>> GetById( // lgtm[cs/insecure-direct-object-reference]
+    public async Task<ActionResult<RuleResponse>> GetById(
         long id,
         CancellationToken cancellationToken = default)
     {
@@ -225,7 +225,7 @@ public sealed class RulesController : ApiControllerBase
     [RequireScope(ApiKeyScopes.DlqWrite)]
     [ProducesResponseType(typeof(RuleResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<RuleResponse>> Update( // lgtm[cs/insecure-direct-object-reference]
+    public async Task<ActionResult<RuleResponse>> Update(
         long id,
         [FromBody] CreateRuleRequest request,
         CancellationToken cancellationToken = default)
@@ -299,13 +299,11 @@ public sealed class RulesController : ApiControllerBase
     /// <param name="id">The rule ID.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>No content on success.</returns>
-    // lgtm[cs/insecure-direct-object-reference] Single-tenant tool: AutoReplayRule has no per-record owner field.
-    // Access is governed by API key scope (DlqWrite) checked below and via [RequireScope] filter.
     [HttpDelete("{id:long}")]
     [RequireScope(ApiKeyScopes.DlqWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete( // lgtm[cs/insecure-direct-object-reference]
+    public async Task<IActionResult> Delete(
         long id,
         CancellationToken cancellationToken = default)
     {
@@ -358,7 +356,7 @@ public sealed class RulesController : ApiControllerBase
     [RequireScope(ApiKeyScopes.DlqWrite)]
     [ProducesResponseType(typeof(RuleResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<RuleResponse>> Toggle( // lgtm[cs/insecure-direct-object-reference]
+    public async Task<ActionResult<RuleResponse>> Toggle(
         long id,
         CancellationToken cancellationToken = default)
     {
@@ -403,7 +401,7 @@ public sealed class RulesController : ApiControllerBase
     [RequireScope(ApiKeyScopes.DlqWrite)]
     [ProducesResponseType(typeof(ReplayAllResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ReplayAllResponse>> ReplayAll( // lgtm[cs/insecure-direct-object-reference]
+    public async Task<ActionResult<ReplayAllResponse>> ReplayAll(
         long id,
         CancellationToken cancellationToken = default)
     {
