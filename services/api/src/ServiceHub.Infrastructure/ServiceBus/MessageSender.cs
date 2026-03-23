@@ -113,7 +113,7 @@ public sealed class MessageSender : IMessageSender
             _logger.LogInformation(
                 "Message sent to {EntityName} in namespace {NamespaceId}",
                 LogRedactor.SanitiseForLog(request.EntityName),
-                request.NamespaceId);
+                request.NamespaceId.GetValueOrDefault());
 
             return Result.Success();
         }

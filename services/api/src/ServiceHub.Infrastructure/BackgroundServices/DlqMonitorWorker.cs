@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace ServiceHub.Infrastructure.BackgroundServices;
@@ -77,7 +78,7 @@ public sealed class DlqMonitorWorker : BackgroundService
 
                 _logger.LogInformation("Scanning DLQs for {Count} namespace(s): {Namespaces}", 
                     namespaces.Count, 
-                    string.Join(", ", namespaces.Select(n => $"{n.Name} (ID: {n.Id})")));
+                    string.Join(", ", namespaces.Select(n => $"{LogRedactor.SanitiseForLog(n.Name)} (ID: {n.Id})")));
 
                 using var semaphore = new SemaphoreSlim(MaxParallelScans);
                 var tasks = namespaces.Select(async ns =>
