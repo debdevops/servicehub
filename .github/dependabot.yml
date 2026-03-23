@@ -1,0 +1,74 @@
+# Dependabot configuration for ServiceHub
+# Scans NuGet (.NET) and npm (React) packages daily for known vulnerabilities.
+# Creates automated PRs to bump vulnerable packages.
+# Free on all GitHub repos (public and private).
+version: 2
+
+updates:
+  # .NET / NuGet packages
+  - package-ecosystem: "nuget"
+    directory: "/services/api"
+    schedule:
+      interval: "daily"
+      time: "06:00"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 5
+    labels:
+      - "security"
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps)"
+    reviewers: []
+    # Group all non-major updates into a single PR to reduce noise
+    groups:
+      microsoft-extensions:
+        patterns:
+          - "Microsoft.Extensions.*"
+          - "Microsoft.EntityFrameworkCore.*"
+          - "Microsoft.AspNetCore.*"
+      azure-sdk:
+        patterns:
+          - "Azure.*"
+
+  # npm packages (React frontend)
+  - package-ecosystem: "npm"
+    directory: "/apps/web"
+    schedule:
+      interval: "daily"
+      time: "06:00"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 5
+    labels:
+      - "security"
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      tanstack:
+        patterns:
+          - "@tanstack/*"
+      testing:
+        patterns:
+          - "@testing-library/*"
+          - "vitest"
+          - "@vitest/*"
+      vite-and-build:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "typescript"
+          - "tailwindcss"
+          - "@tailwindcss/*"
+
+  # GitHub Actions versions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      time: "06:00"
+      timezone: "Asia/Kolkata"
+    labels:
+      - "security"
+      - "dependencies"
+    commit-message:
+      prefix: "chore(actions)"

@@ -1,5 +1,25 @@
 # ServiceHub Changelog
 
+## [2.1.1] - 2026-03-23
+
+### Fixed
+- Remote access: Vite now binds to 0.0.0.0 so UI is reachable from remote machines
+- Remote access: Kestrel now binds to 0.0.0.0:5153 via --urls flag in run-api.sh
+- Remote access: DevelopmentAllowAnyOrigin: true in appsettings.Development.json allows any hostname in dev
+- Remote access: SERVICEHUB_ALLOWED_ORIGINS env var supported in CorsConfiguration for flexible origin config
+- Remote access: client.ts fallback changed from hardcoded localhost:5153 to relative /api/v1 (uses Vite proxy)
+- deploy.yml: Added unit test gate — deployment blocked if any test fails
+- deploy.yml: Added post-deploy health check with 5 retries
+- appsettings.Production.json: Added Cors:AllowedOrigins with Azure App Service URL
+- appsettings.Production.json: Added DlqDatabase:DataDirectory and NamespaceRepository:DataDirectory pointing to /home/data for persistent storage on Azure App Service
+
+### Added
+- REMOTE_ACCESS.md: Complete guide for running ServiceHub on a remote Linux server
+- run.sh: Startup banner now shows remote access URLs (IP and hostname) automatically
+- run.sh: Firewall commands shown in banner when non-loopback IP detected
+
+---
+
 ## [2.1.0] - 2026-03-22
 
 ### Changed
