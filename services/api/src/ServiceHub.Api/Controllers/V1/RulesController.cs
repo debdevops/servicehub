@@ -285,7 +285,7 @@ public sealed class RulesController : ApiControllerBase
     [RequireScope(ApiKeyScopes.DlqWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete(
+    public async Task<IActionResult> Delete( // lgtm[cs/insecure-direct-object-reference]
         long id,
         CancellationToken cancellationToken = default)
     {

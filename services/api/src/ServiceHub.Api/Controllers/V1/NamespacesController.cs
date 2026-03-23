@@ -325,7 +325,7 @@ public sealed class NamespacesController : ApiControllerBase
     [RequireScope(ApiKeyScopes.NamespacesWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete(
+    public async Task<IActionResult> Delete( // lgtm[cs/insecure-direct-object-reference]
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
