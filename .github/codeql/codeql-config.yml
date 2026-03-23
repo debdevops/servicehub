@@ -1,0 +1,16 @@
+# CodeQL configuration for ServiceHub
+# Suppresses known false positives — intentional dev-only values and test data.
+name: "ServiceHub CodeQL Config"
+
+queries:
+  - uses: security-extended   # includes security-and-quality queries
+
+paths-ignore:
+  # Test files — intentional weak values for testing only
+  - "services/api/tests/**"
+  - "apps/web/src/__tests__/**"
+  # Mock/fixture data — not application logic
+  - "apps/web/src/lib/mockData.ts"
+  - "apps/web/src/lib/aiMockData.ts"
+  - "apps/web/src/lib/insightsMockData.ts"
+  - "apps/web/src/lib/messageGenerator.ts"
