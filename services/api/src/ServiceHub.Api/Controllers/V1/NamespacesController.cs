@@ -320,6 +320,7 @@ public sealed class NamespacesController : ApiControllerBase
     /// <response code="204">Namespace deleted successfully.</response>
     /// <response code="404">Namespace not found.</response>
     [HttpDelete("{id:guid}")]
+    [RequireScope(ApiKeyScopes.NamespacesWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(
