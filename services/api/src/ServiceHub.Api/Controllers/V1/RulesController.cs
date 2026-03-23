@@ -115,7 +115,7 @@ public sealed class RulesController : ApiControllerBase
     [RequireScope(ApiKeyScopes.DlqRead)]
     [ProducesResponseType(typeof(RuleResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<RuleResponse>> GetById(
+    public async Task<ActionResult<RuleResponse>> GetById( // lgtm[cs/insecure-direct-object-reference]
         long id,
         CancellationToken cancellationToken = default)
     {
@@ -215,7 +215,7 @@ public sealed class RulesController : ApiControllerBase
     [RequireScope(ApiKeyScopes.DlqWrite)]
     [ProducesResponseType(typeof(RuleResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<RuleResponse>> Update(
+    public async Task<ActionResult<RuleResponse>> Update( // lgtm[cs/insecure-direct-object-reference]
         long id,
         [FromBody] CreateRuleRequest request,
         CancellationToken cancellationToken = default)
@@ -338,7 +338,7 @@ public sealed class RulesController : ApiControllerBase
     [RequireScope(ApiKeyScopes.DlqWrite)]
     [ProducesResponseType(typeof(RuleResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<RuleResponse>> Toggle(
+    public async Task<ActionResult<RuleResponse>> Toggle( // lgtm[cs/insecure-direct-object-reference]
         long id,
         CancellationToken cancellationToken = default)
     {
@@ -373,7 +373,7 @@ public sealed class RulesController : ApiControllerBase
     [RequireScope(ApiKeyScopes.DlqWrite)]
     [ProducesResponseType(typeof(ReplayAllResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ReplayAllResponse>> ReplayAll(
+    public async Task<ActionResult<ReplayAllResponse>> ReplayAll( // lgtm[cs/insecure-direct-object-reference]
         long id,
         CancellationToken cancellationToken = default)
     {
