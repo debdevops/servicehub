@@ -7,6 +7,7 @@ using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 
@@ -81,7 +82,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
             _logger.LogDebug(
                 "Message sent to {EntityName} in namespace {NamespaceId}",
-                request.EntityName,
+                LogRedactor.SanitiseForLog(request.EntityName),
                 NamespaceId);
 
             return Result.Success();
@@ -90,7 +91,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         {
             _logger.LogWarning(ex,
                 "Entity {EntityName} not found in namespace {NamespaceId}",
-                request.EntityName,
+                LogRedactor.SanitiseForLog(request.EntityName),
                 NamespaceId);
 
             return Result.Failure(Error.NotFound(
@@ -101,7 +102,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         {
             _logger.LogWarning(ex,
                 "Message size exceeded for entity {EntityName}",
-                request.EntityName);
+                LogRedactor.SanitiseForLog(request.EntityName));
 
             return Result.Failure(Error.Validation(
                 ErrorCodes.Message.BodyTooLarge,
@@ -111,7 +112,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         {
             _logger.LogError(ex,
                 "Service Bus error sending message to {EntityName}",
-                request.EntityName);
+                LogRedactor.SanitiseForLog(request.EntityName));
 
             return Result.Failure(Error.ExternalService(
                 ErrorCodes.Message.SendFailed,
@@ -121,7 +122,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         {
             _logger.LogError(ex,
                 "Unexpected error sending message to {EntityName}",
-                request.EntityName);
+                LogRedactor.SanitiseForLog(request.EntityName));
 
             return Result.Failure(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
@@ -185,7 +186,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             _logger.LogDebug(
                 "Peeked {Count} messages from {EntityPath} in namespace {NamespaceId}",
                 messages.Count,
-                entityPath,
+                LogRedactor.SanitiseForLog(entityPath),
                 NamespaceId);
 
             return Result.Success<IReadOnlyList<Message>>(messages);
@@ -194,7 +195,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         {
             _logger.LogWarning(ex,
                 "Entity {EntityName} not found in namespace {NamespaceId}",
-                request.EntityName,
+                LogRedactor.SanitiseForLog(request.EntityName),
                 NamespaceId);
 
             return Result.Failure<IReadOnlyList<Message>>(Error.NotFound(
@@ -205,7 +206,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         {
             _logger.LogError(ex,
                 "Service Bus error peeking messages from {EntityName}",
-                request.EntityName);
+                LogRedactor.SanitiseForLog(request.EntityName));
 
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
                 ErrorCodes.Message.ReceiveFailed,
@@ -215,7 +216,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         {
             _logger.LogError(ex,
                 "Unexpected error peeking messages from {EntityName}",
-                request.EntityName);
+                LogRedactor.SanitiseForLog(request.EntityName));
 
             return Result.Failure<IReadOnlyList<Message>>(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
@@ -386,7 +387,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
                 if (message == null)
                 {
-                    _logger.LogDebug("No more messages to dead-letter in {EntityName}", entityName);
+                    _logger.LogDebug("No more messages to dead-letter in {EntityName}", LogRedactor.SanitiseForLog(entityName));
                     break;
                 }
 
@@ -401,14 +402,14 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
                 _logger.LogDebug(
                     "Dead-lettered message {MessageId} from {EntityName} with reason: {Reason}",
                     message.MessageId,
-                    entityName,
-                    reason);
+                    LogRedactor.SanitiseForLog(entityName),
+                    LogRedactor.SanitiseForLog(reason));
             }
 
             _logger.LogInformation(
                 "Successfully dead-lettered {Count} messages from {EntityName} in namespace {NamespaceId}",
                 deadLetteredCount,
-                entityName,
+                LogRedactor.SanitiseForLog(entityName),
                 NamespaceId);
 
             return deadLetteredCount;
@@ -417,14 +418,14 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         {
             _logger.LogWarning(ex,
                 "Entity {EntityName} not found when attempting to dead-letter messages",
-                entityName);
+                LogRedactor.SanitiseForLog(entityName));
             throw;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex,
                 "Error dead-lettering messages from {EntityName}",
-                entityName);
+                LogRedactor.SanitiseForLog(entityName));
             throw;
         }
         finally
@@ -499,28 +500,28 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
             _logger.LogDebug(
                 "Retrieved queue {QueueName} from namespace {NamespaceId}",
-                queueName,
+                LogRedactor.SanitiseForLog(queueName),
                 NamespaceId);
 
             return Result.Success(MapToQueueDto(queueResponse.Value, propsResponse.Value));
         }
         catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
         {
-            _logger.LogWarning(ex, "Queue {QueueName} not found in namespace {NamespaceId}", queueName, NamespaceId);
+            _logger.LogWarning(ex, "Queue {QueueName} not found in namespace {NamespaceId}", LogRedactor.SanitiseForLog(queueName), NamespaceId);
             return Result.Failure<QueueRuntimePropertiesDto>(Error.NotFound(
                 ErrorCodes.Queue.NotFound,
                 $"Queue '{queueName}' was not found."));
         }
         catch (ServiceBusException ex)
         {
-            _logger.LogError(ex, "Service Bus error getting queue {QueueName} for namespace {NamespaceId}", queueName, NamespaceId);
+            _logger.LogError(ex, "Service Bus error getting queue {QueueName} for namespace {NamespaceId}", LogRedactor.SanitiseForLog(queueName), NamespaceId);
             return Result.Failure<QueueRuntimePropertiesDto>(Error.ExternalService(
                 ErrorCodes.Queue.GetFailed,
                 $"Failed to get queue: {ex.Reason}"));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error getting queue {QueueName} for namespace {NamespaceId}", queueName, NamespaceId);
+            _logger.LogError(ex, "Unexpected error getting queue {QueueName} for namespace {NamespaceId}", LogRedactor.SanitiseForLog(queueName), NamespaceId);
             return Result.Failure<QueueRuntimePropertiesDto>(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
                 "An unexpected error occurred while getting queue."));
@@ -590,28 +591,28 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
             _logger.LogDebug(
                 "Retrieved topic {TopicName} from namespace {NamespaceId}",
-                topicName,
+                LogRedactor.SanitiseForLog(topicName),
                 NamespaceId);
 
             return Result.Success(MapToTopicDto(topicResponse.Value, propsResponse.Value));
         }
         catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
         {
-            _logger.LogWarning(ex, "Topic {TopicName} not found in namespace {NamespaceId}", topicName, NamespaceId);
+            _logger.LogWarning(ex, "Topic {TopicName} not found in namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
             return Result.Failure<TopicRuntimePropertiesDto>(Error.NotFound(
                 ErrorCodes.Topic.NotFound,
                 $"Topic '{topicName}' was not found."));
         }
         catch (ServiceBusException ex)
         {
-            _logger.LogError(ex, "Service Bus error getting topic {TopicName} for namespace {NamespaceId}", topicName, NamespaceId);
+            _logger.LogError(ex, "Service Bus error getting topic {TopicName} for namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
             return Result.Failure<TopicRuntimePropertiesDto>(Error.ExternalService(
                 ErrorCodes.Topic.GetFailed,
                 $"Failed to get topic: {ex.Reason}"));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error getting topic {TopicName} for namespace {NamespaceId}", topicName, NamespaceId);
+            _logger.LogError(ex, "Unexpected error getting topic {TopicName} for namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
             return Result.Failure<TopicRuntimePropertiesDto>(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
                 "An unexpected error occurred while getting topic."));
@@ -642,28 +643,28 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             _logger.LogDebug(
                 "Retrieved {Count} subscriptions for topic {TopicName} from namespace {NamespaceId}",
                 subscriptions.Count,
-                topicName,
+                LogRedactor.SanitiseForLog(topicName),
                 NamespaceId);
 
             return Result.Success<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(subscriptions);
         }
         catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
         {
-            _logger.LogWarning(ex, "Topic {TopicName} not found in namespace {NamespaceId}", topicName, NamespaceId);
+            _logger.LogWarning(ex, "Topic {TopicName} not found in namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
             return Result.Failure<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(Error.NotFound(
                 ErrorCodes.Topic.NotFound,
                 $"Topic '{topicName}' was not found."));
         }
         catch (ServiceBusException ex)
         {
-            _logger.LogError(ex, "Service Bus error getting subscriptions for topic {TopicName} in namespace {NamespaceId}", topicName, NamespaceId);
+            _logger.LogError(ex, "Service Bus error getting subscriptions for topic {TopicName} in namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
             return Result.Failure<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(Error.ExternalService(
                 ErrorCodes.Subscription.ListFailed,
                 $"Failed to list subscriptions: {ex.Reason}"));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error getting subscriptions for topic {TopicName} in namespace {NamespaceId}", topicName, NamespaceId);
+            _logger.LogError(ex, "Unexpected error getting subscriptions for topic {TopicName} in namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
             return Result.Failure<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
                 "An unexpected error occurred while listing subscriptions."));
@@ -689,29 +690,29 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
             _logger.LogDebug(
                 "Retrieved subscription {SubscriptionName} for topic {TopicName} from namespace {NamespaceId}",
-                subscriptionName,
-                topicName,
+                LogRedactor.SanitiseForLog(subscriptionName),
+                LogRedactor.SanitiseForLog(topicName),
                 NamespaceId);
 
             return Result.Success(MapToSubscriptionDto(subscriptionResponse.Value, propsResponse.Value));
         }
         catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
         {
-            _logger.LogWarning(ex, "Subscription {SubscriptionName} for topic {TopicName} not found in namespace {NamespaceId}", subscriptionName, topicName, NamespaceId);
+            _logger.LogWarning(ex, "Subscription {SubscriptionName} for topic {TopicName} not found in namespace {NamespaceId}", LogRedactor.SanitiseForLog(subscriptionName), LogRedactor.SanitiseForLog(topicName), NamespaceId);
             return Result.Failure<SubscriptionRuntimePropertiesDto>(Error.NotFound(
                 ErrorCodes.Subscription.NotFound,
                 $"Subscription '{subscriptionName}' for topic '{topicName}' was not found."));
         }
         catch (ServiceBusException ex)
         {
-            _logger.LogError(ex, "Service Bus error getting subscription {SubscriptionName} for topic {TopicName} in namespace {NamespaceId}", subscriptionName, topicName, NamespaceId);
+            _logger.LogError(ex, "Service Bus error getting subscription {SubscriptionName} for topic {TopicName} in namespace {NamespaceId}", LogRedactor.SanitiseForLog(subscriptionName), LogRedactor.SanitiseForLog(topicName), NamespaceId);
             return Result.Failure<SubscriptionRuntimePropertiesDto>(Error.ExternalService(
                 ErrorCodes.Subscription.GetFailed,
                 $"Failed to get subscription: {ex.Reason}"));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error getting subscription {SubscriptionName} for topic {TopicName} in namespace {NamespaceId}", subscriptionName, topicName, NamespaceId);
+            _logger.LogError(ex, "Unexpected error getting subscription {SubscriptionName} for topic {TopicName} in namespace {NamespaceId}", LogRedactor.SanitiseForLog(subscriptionName), LogRedactor.SanitiseForLog(topicName), NamespaceId);
             return Result.Failure<SubscriptionRuntimePropertiesDto>(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
                 "An unexpected error occurred while getting subscription."));
@@ -1099,27 +1100,27 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             _logger.LogInformation(
                 "Successfully replayed message {SequenceNumber} from {EntityName} DLQ to main queue",
                 sequenceNumber,
-                entityName);
+                LogRedactor.SanitiseForLog(entityName));
 
             return Result.Success();
         }
         catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
         {
-            _logger.LogWarning(ex, "Entity {EntityName} not found", entityName);
+            _logger.LogWarning(ex, "Entity {EntityName} not found", LogRedactor.SanitiseForLog(entityName));
             return Result.Failure(Error.NotFound(
                 ErrorCodes.Queue.NotFound,
                 $"The queue or topic '{entityName}' was not found."));
         }
         catch (ServiceBusException ex)
         {
-            _logger.LogError(ex, "Service Bus error replaying message from {EntityName}", entityName);
+            _logger.LogError(ex, "Service Bus error replaying message from {EntityName}", LogRedactor.SanitiseForLog(entityName));
             return Result.Failure(Error.ExternalService(
                 ErrorCodes.Message.SendFailed,
                 $"Failed to replay message: {ex.Reason}"));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error replaying message from {EntityName}", entityName);
+            _logger.LogError(ex, "Error replaying message from {EntityName}", LogRedactor.SanitiseForLog(entityName));
             return Result.Failure(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
                 "An unexpected error occurred while replaying the message."));
@@ -1278,13 +1279,13 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
                     _logger.LogInformation(
                         "Batch-replayed message {SequenceNumber} from {EntityName} DLQ",
-                        seqNum, entityName);
+                        seqNum, LogRedactor.SanitiseForLog(entityName));
 
                     results[seqNum] = Result.Success();
                 }
                 catch (ServiceBusException ex)
                 {
-                    _logger.LogError(ex, "Service Bus error replaying message {SequenceNumber} from {EntityName}", seqNum, entityName);
+                    _logger.LogError(ex, "Service Bus error replaying message {SequenceNumber} from {EntityName}", seqNum, LogRedactor.SanitiseForLog(entityName));
                     results[seqNum] = Result.Failure(Error.ExternalService(
                         ErrorCodes.Message.SendFailed,
                         $"Failed to replay message {seqNum}: {ex.Reason}"));
@@ -1292,7 +1293,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error replaying message {SequenceNumber} from {EntityName}", seqNum, entityName);
+                    _logger.LogError(ex, "Error replaying message {SequenceNumber} from {EntityName}", seqNum, LogRedactor.SanitiseForLog(entityName));
                     results[seqNum] = Result.Failure(Error.Internal(
                         ErrorCodes.General.UnexpectedError,
                         $"Failed to replay message {seqNum}: {ex.Message}"));
@@ -1303,7 +1304,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         }
         catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
         {
-            _logger.LogWarning(ex, "Entity {EntityName} not found for batch replay", entityName);
+            _logger.LogWarning(ex, "Entity {EntityName} not found for batch replay", LogRedactor.SanitiseForLog(entityName));
             var error = Result.Failure(Error.NotFound(
                 ErrorCodes.Queue.NotFound,
                 $"The queue or topic '{entityName}' was not found."));
@@ -1313,7 +1314,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Batch replay failed for {EntityName}", entityName);
+            _logger.LogError(ex, "Batch replay failed for {EntityName}", LogRedactor.SanitiseForLog(entityName));
             var error = Result.Failure(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
                 $"Batch replay failed: {ex.Message}"));
@@ -1397,8 +1398,8 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             _logger.LogDebug(
                 "Starting purge scan for sequence {SequenceNumber} in {EntityName}/{SubscriptionName}",
                 sequenceNumber,
-                entityName,
-                subscriptionName ?? "N/A");
+                LogRedactor.SanitiseForLog(entityName),
+                LogRedactor.SanitiseForLog(subscriptionName ?? "N/A"));
 
             for (int attempt = 0; attempt < maxAttempts && targetMessage == null; attempt++)
             {
@@ -1447,29 +1448,29 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             _logger.LogInformation(
                 "Successfully purged message {SequenceNumber} from {EntityName}/{SubscriptionName} {QueueType}",
                 sequenceNumber,
-                entityName,
-                subscriptionName ?? "N/A",
-                queueType);
+                LogRedactor.SanitiseForLog(entityName),
+                LogRedactor.SanitiseForLog(subscriptionName ?? "N/A"),
+                LogRedactor.SanitiseForLog(queueType));
 
             return Result.Success();
         }
         catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
         {
-            _logger.LogWarning(ex, "Entity {EntityName} not found", entityName);
+            _logger.LogWarning(ex, "Entity {EntityName} not found", LogRedactor.SanitiseForLog(entityName));
             return Result.Failure(Error.NotFound(
                 ErrorCodes.Queue.NotFound,
                 $"The queue or topic '{entityName}' was not found."));
         }
         catch (ServiceBusException ex)
         {
-            _logger.LogError(ex, "Service Bus error purging message from {EntityName}", entityName);
+            _logger.LogError(ex, "Service Bus error purging message from {EntityName}", LogRedactor.SanitiseForLog(entityName));
             return Result.Failure(Error.ExternalService(
                 ErrorCodes.Message.ReceiveFailed,
                 $"Failed to purge message: {ex.Reason}"));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error purging message from {EntityName}", entityName);
+            _logger.LogError(ex, "Error purging message from {EntityName}", LogRedactor.SanitiseForLog(entityName));
             return Result.Failure(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
                 "An unexpected error occurred while purging the message."));
