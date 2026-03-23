@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Extensions;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
@@ -64,7 +65,7 @@ public sealed class NamespacesController : ApiControllerBase
         [FromBody] CreateNamespaceRequest request,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Creating namespace with name {Name}", request.Name);
+        _logger.LogInformation("Creating namespace with name {Name}", LogSanitizer.Sanitize(request.Name));
 
         // Check for existing namespace with same name
         var existingResult = await _namespaceRepository.GetByNameAsync(request.Name, cancellationToken);
