@@ -119,6 +119,16 @@ public sealed class RulesController : ApiControllerBase
         long id,
         CancellationToken cancellationToken = default)
     {
+        // When authentication is enabled, enforce read scope in-method so
+        // static-analysis tools can trace the authorization check before the data access.
+        if (HttpContext.Items.ContainsKey("Authenticated") &&
+            (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
+             keyConfigObj is not ApiKeyConfiguration keyConfig ||
+             !keyConfig.HasScope(ApiKeyScopes.DlqRead)))
+        {
+            return Forbid();
+        }
+
         var rule = await _dbContext.AutoReplayRules
             .AsNoTracking()
             .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
@@ -220,6 +230,16 @@ public sealed class RulesController : ApiControllerBase
         [FromBody] CreateRuleRequest request,
         CancellationToken cancellationToken = default)
     {
+        // When authentication is enabled, enforce write scope in-method so
+        // static-analysis tools can trace the authorization check before the data access.
+        if (HttpContext.Items.ContainsKey("Authenticated") &&
+            (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
+             keyConfigObj is not ApiKeyConfiguration keyConfig ||
+             !keyConfig.HasScope(ApiKeyScopes.DlqWrite)))
+        {
+            return Forbid();
+        }
+
         try
         {
             var rule = await _dbContext.AutoReplayRules
@@ -342,6 +362,16 @@ public sealed class RulesController : ApiControllerBase
         long id,
         CancellationToken cancellationToken = default)
     {
+        // When authentication is enabled, enforce write scope in-method so
+        // static-analysis tools can trace the authorization check before the data access.
+        if (HttpContext.Items.ContainsKey("Authenticated") &&
+            (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
+             keyConfigObj is not ApiKeyConfiguration keyConfig ||
+             !keyConfig.HasScope(ApiKeyScopes.DlqWrite)))
+        {
+            return Forbid();
+        }
+
         var rule = await _dbContext.AutoReplayRules
             .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
 
@@ -377,6 +407,16 @@ public sealed class RulesController : ApiControllerBase
         long id,
         CancellationToken cancellationToken = default)
     {
+        // When authentication is enabled, enforce write scope in-method so
+        // static-analysis tools can trace the authorization check before the data access.
+        if (HttpContext.Items.ContainsKey("Authenticated") &&
+            (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
+             keyConfigObj is not ApiKeyConfiguration keyConfig ||
+             !keyConfig.HasScope(ApiKeyScopes.DlqWrite)))
+        {
+            return Forbid();
+        }
+
         try
         {
             var rule = await _dbContext.AutoReplayRules

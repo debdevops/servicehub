@@ -206,6 +206,16 @@ public sealed class NamespacesController : ApiControllerBase
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
+        // When authentication is enabled, enforce read scope in-method so
+        // static-analysis tools can trace the authorization check before the data access.
+        if (HttpContext.Items.ContainsKey("Authenticated") &&
+            (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
+             keyConfigObj is not ApiKeyConfiguration keyConfig ||
+             !keyConfig.HasScope(ApiKeyScopes.NamespacesRead)))
+        {
+            return Forbid();
+        }
+
         _logger.LogInformation("Getting namespace {NamespaceId}", id);
 
         var result = await _namespaceRepository.GetByIdAsync(id, cancellationToken);
@@ -234,6 +244,16 @@ public sealed class NamespacesController : ApiControllerBase
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
+        // When authentication is enabled, enforce read scope in-method so
+        // static-analysis tools can trace the authorization check before the data access.
+        if (HttpContext.Items.ContainsKey("Authenticated") &&
+            (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
+             keyConfigObj is not ApiKeyConfiguration keyConfig ||
+             !keyConfig.HasScope(ApiKeyScopes.NamespacesRead)))
+        {
+            return Forbid();
+        }
+
         _logger.LogInformation("Testing connection for namespace {NamespaceId}", id);
 
         var namespaceResult = await _namespaceRepository.GetByIdAsync(id, cancellationToken);
