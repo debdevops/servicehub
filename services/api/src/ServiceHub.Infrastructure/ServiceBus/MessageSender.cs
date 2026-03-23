@@ -3,6 +3,7 @@ using Polly;
 using Polly.Retry;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 using Azure.Messaging.ServiceBus;
@@ -111,7 +112,7 @@ public sealed class MessageSender : IMessageSender
 
             _logger.LogInformation(
                 "Message sent to {EntityName} in namespace {NamespaceId}",
-                request.EntityName,
+                LogRedactor.SanitiseForLog(request.EntityName),
                 request.NamespaceId);
 
             return Result.Success();
@@ -120,7 +121,7 @@ public sealed class MessageSender : IMessageSender
         {
             _logger.LogError(ex,
                 "Failed to send message to {EntityName} after retries",
-                request.EntityName);
+                LogRedactor.SanitiseForLog(request.EntityName));
 
             return Result.Failure(Error.ExternalService(
                 ErrorCodes.Message.SendFailed,
