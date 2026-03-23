@@ -52,6 +52,14 @@ jobs:
       - name: Build .NET solution
         run: dotnet build services/api/ServiceHub.sln --configuration Release --no-restore
 
+      - name: Run unit tests — block deployment if tests fail
+        run: |
+          dotnet test services/api/tests/ServiceHub.UnitTests \
+            --no-build \
+            --configuration Release \
+            --logger "console;verbosity=summary"
+          echo "✅ All tests passed — proceeding with deployment"
+
       - name: Publish .NET API (includes wwwroot from React build)
         run: |
           dotnet publish services/api/src/ServiceHub.Api/ServiceHub.Api.csproj \
@@ -65,3 +73,29 @@ jobs:
           app-name: ${{ secrets.AZURE_APP_SERVICE_NAME }}
           publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
           package: ./publish
+
+      - name: Wait for application startup
+        run: sleep 30
+
+      - name: Health check — verify deployment succeeded
+        run: |
+          APP_URL="https://${{ secrets.AZURE_APP_SERVICE_NAME }}.azurewebsites.net"
+          echo "Checking: ${APP_URL}/health"
+
+          for i in 1 2 3 4 5; do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 20 \
+              "${APP_URL}/health" || echo "000")
+
+            echo "Attempt ${i}/5: HTTP ${HTTP_STATUS}"
+
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "✅ Application is healthy at ${APP_URL}"
+              exit 0
+            fi
+
+            [ "$i" -lt "5" ] && sleep 15
+          done
+
+          echo "❌ Health check failed after 5 attempts — check Azure App Service logs"
+          exit 1

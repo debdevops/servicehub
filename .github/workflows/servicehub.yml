@@ -101,6 +101,20 @@ jobs:
         working-directory: apps/web
         run: npm ci --include=optional
 
+      - name: Audit npm packages for vulnerabilities
+        working-directory: apps/web
+        run: |
+          echo "=== npm audit — checking for known vulnerabilities ==="
+          # --audit-level=high: fail only on HIGH or CRITICAL severity
+          # --omit=dev: skip dev dependencies (they don't run in production)
+          npm audit --audit-level=high --omit=dev || {
+            echo ""
+            echo "❌ High/critical severity vulnerabilities found in production npm dependencies."
+            echo "   Run 'npm audit' locally to see details and 'npm audit fix' to fix automatically."
+            exit 1
+          }
+          echo "✅ No high/critical npm vulnerabilities in production dependencies"
+
       - name: Run unit tests with coverage
         working-directory: apps/web
         run: npm run test:coverage
