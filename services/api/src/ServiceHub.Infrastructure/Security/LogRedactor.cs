@@ -74,6 +74,35 @@ public static partial class LogRedactor
     }
 
     /// <summary>
+    /// Sanitises a string value for safe inclusion in log messages.
+    /// Removes newline characters and other control characters that could be used
+    /// for log injection attacks (CodeQL: cs/log-forging).
+    /// </summary>
+    /// <param name="value">The value to sanitise.</param>
+    /// <returns>The sanitised value with control characters removed.</returns>
+    public static string SanitiseForLog(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        // Remove characters that could forge new log entries or break log structure.
+        // \r \n \t are the primary log injection vectors.
+        // Control characters (< \u0020, excluding space) are also stripped.
+        return ControlCharRegex().Replace(value, string.Empty);
+    }
+
+    /// <summary>
+    /// Sanitises a long value for safe inclusion in log messages.
+    /// Long integers cannot contain injection characters — this overload exists
+    /// to avoid unnecessary boxing and to be explicit about numeric safety.
+    /// </summary>
+    /// <param name="value">The value to sanitise.</param>
+    /// <returns>The string representation of the value.</returns>
+    public static string SanitiseForLog(long value) => value.ToString();
+
+    /// <summary>
     /// Redacts sensitive information from an object for logging.
     /// Handles common types including strings, exceptions, and dictionaries.
     /// </summary>
@@ -181,4 +210,7 @@ public static partial class LogRedactor
 
     [GeneratedRegex(@"X-API-Key:\s*[^\r\n]+", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex ApiKeyHeaderRegex();
+
+    [GeneratedRegex(@"[\x00-\x1F\x7F]", RegexOptions.Compiled)]
+    private static partial Regex ControlCharRegex();
 }
