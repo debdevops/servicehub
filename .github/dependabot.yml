@@ -43,6 +43,14 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     groups:
+      # React runtime and its types must move together.
+      # @types/react-dom@19 requires @types/react@^19 — splitting them breaks npm ci.
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
       tanstack:
         patterns:
           - "@tanstack/*"
