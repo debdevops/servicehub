@@ -1,6 +1,6 @@
 using System.Net;
 using System.Text.Json;
-using ServiceHub.Api.Extensions;
+using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Api.Middleware;
@@ -66,7 +66,7 @@ public sealed class ErrorHandlingMiddleware
         _logger.LogError(exception,
             "Unhandled exception occurred. CorrelationId: {CorrelationId}, Path: {Path}",
             correlationId,
-            LogSanitizer.Sanitize(context.Request.Path));
+            LogRedactor.SanitiseForLog(context.Request.Path));
 
         var error = CreateErrorFromException(exception);
         var statusCode = MapErrorTypeToStatusCode(error.Type);

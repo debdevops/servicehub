@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using Microsoft.Extensions.Options;
 using ServiceHub.Api.Configuration;
-using ServiceHub.Api.Extensions;
+using ServiceHub.Infrastructure.Security;
 
 namespace ServiceHub.Api.Middleware;
 
@@ -98,7 +98,7 @@ public sealed class RateLimitingMiddleware
 
             _logger.LogWarning(
                 "Rate limit exceeded for client {ClientId}. Requests: {RequestCount}/{MaxRequests}",
-                LogSanitizer.Sanitize(clientId),
+                LogRedactor.SanitiseForLog(clientId),
                 currentCount,
                 _options.MaxRequests);
 
