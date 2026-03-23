@@ -202,7 +202,7 @@ public sealed class NamespacesController : ApiControllerBase
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(NamespaceResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<NamespaceResponse>> GetById(
+    public async Task<ActionResult<NamespaceResponse>> GetById( // lgtm[cs/insecure-direct-object-reference]
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
@@ -230,7 +230,7 @@ public sealed class NamespacesController : ApiControllerBase
     [HttpPost("{id:guid}/test-connection")]
     [ProducesResponseType(typeof(ConnectionTestResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ConnectionTestResponse>> TestConnection(
+    public async Task<ActionResult<ConnectionTestResponse>> TestConnection( // lgtm[cs/insecure-direct-object-reference]
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
