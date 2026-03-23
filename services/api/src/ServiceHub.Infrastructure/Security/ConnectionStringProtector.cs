@@ -47,6 +47,14 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
         var keyString = configuration["Security:EncryptionKey"]
             ?? throw new InvalidOperationException("Security:EncryptionKey is not configured.");
 
+        if (string.IsNullOrWhiteSpace(keyString))
+        {
+            throw new InvalidOperationException(
+                "Security:EncryptionKey is empty or whitespace. " +
+                "Set a secure random value via the SECURITY__ENCRYPTIONKEY environment variable " +
+                "or Azure App Service Application Settings.");
+        }
+
         _encryptionEnabled = configuration.GetValue("Security:EnableConnectionStringEncryption", true);
 
         // Derive a proper 256-bit key from the configured key using SHA256

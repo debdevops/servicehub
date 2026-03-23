@@ -20,6 +20,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Validate deployment confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "deploy" ]; then
+            echo "❌ You must type 'deploy' in the confirm field to proceed."
+            exit 1
+          fi
+          echo "✅ Deployment confirmed"
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
