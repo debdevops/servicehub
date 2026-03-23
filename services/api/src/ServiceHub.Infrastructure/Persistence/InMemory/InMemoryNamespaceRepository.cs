@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 
@@ -84,11 +85,11 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
 
         if (ns is not null)
         {
-            _logger.LogDebug("Retrieved namespace {NamespaceName} from in-memory store", name);
+            _logger.LogDebug("Retrieved namespace {NamespaceName} from in-memory store", LogRedactor.SanitiseForLog(name));
             return Task.FromResult(Result.Success(ns));
         }
 
-        _logger.LogDebug("Namespace {NamespaceName} not found in in-memory store", name);
+        _logger.LogDebug("Namespace {NamespaceName} not found in in-memory store", LogRedactor.SanitiseForLog(name));
         return Task.FromResult(Result.Failure<Namespace>(Error.NotFound(
             ErrorCodes.Namespace.NotFound,
             $"Namespace with name '{name}' was not found.")));
@@ -131,7 +132,7 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
         {
             _logger.LogWarning(
                 "Attempted to add namespace with duplicate name {NamespaceName}",
-                @namespace.Name);
+                LogRedactor.SanitiseForLog(@namespace.Name));
 
             return Task.FromResult(Result.Failure(Error.Conflict(
                 ErrorCodes.Namespace.AlreadyExists,
@@ -145,7 +146,7 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
             _logger.LogInformation(
                 "Added namespace {NamespaceId} ({NamespaceName}) to in-memory store",
                 @namespace.Id,
-                @namespace.Name);
+                LogRedactor.SanitiseForLog(@namespace.Name));
 
             return Task.FromResult(Result.Success());
         }
@@ -195,7 +196,7 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
         _logger.LogInformation(
             "Updated namespace {NamespaceId} ({NamespaceName}) in in-memory store",
             @namespace.Id,
-            @namespace.Name);
+            LogRedactor.SanitiseForLog(@namespace.Name));
 
         return Task.FromResult(Result.Success());
     }
@@ -217,7 +218,7 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
             _logger.LogInformation(
                 "Deleted namespace {NamespaceId} ({NamespaceName}) from in-memory store",
                 id,
-                removed.Name);
+                LogRedactor.SanitiseForLog(removed.Name));
 
             return Task.FromResult(Result.Success());
         }
@@ -338,7 +339,7 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
             {
                 _logger.LogWarning(
                     "Skipping persisted namespace {Name} due to validation failure while rehydrating",
-                    snapshot.Name);
+                    LogRedactor.SanitiseForLog(snapshot.Name));
                 return null;
             }
 
@@ -362,7 +363,7 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to rehydrate persisted namespace {Name}", snapshot.Name);
+            _logger.LogError(ex, "Failed to rehydrate persisted namespace {Name}", LogRedactor.SanitiseForLog(snapshot.Name));
             return null;
         }
     }
