@@ -123,19 +123,14 @@ public sealed class RateLimitingMiddleware
 
     private static string GetClientIdentifier(HttpContext context)
     {
-        // Try X-Forwarded-For header first (for clients behind proxy)
-        var forwardedFor = context.Request.Headers["X-Forwarded-For"].FirstOrDefault();
-        if (!string.IsNullOrEmpty(forwardedFor))
-        {
-            // Take the first IP in the chain
-            var firstIp = forwardedFor.Split(',')[0].Trim();
-            if (!string.IsNullOrEmpty(firstIp))
-            {
-                return firstIp;
-            }
-        }
-
-        // Fall back to remote IP
+        // Use the actual remote IP as the authoritative identifier.
+        // X-Forwarded-For is NOT trusted for rate-limit keying because it can be
+        // trivially spoofed by any client, allowing an attacker to bypass limits
+        // by cycling through arbitrary forged IP values.
+        // If the app is behind a trusted reverse proxy, rely on ASP.NET Core's
+        // ForwardedHeaders middleware (app.UseForwardedHeaders()) with explicit
+        // KnownProxies configured — that middleware rewrites Connection.RemoteIpAddress
+        // before this code runs.
         return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
     }
 

@@ -69,11 +69,11 @@ describe('apiClient interceptors', () => {
   });
 
   afterEach(() => {
-    localStorage.clear();
+    sessionStorage.clear();
   });
 
-  it('adds X-API-Key header when api-key is in localStorage', async () => {
-    localStorage.setItem('servicehub:api-key', 'my-api-key');
+  it('adds X-API-Key header when api-key is in sessionStorage', async () => {
+    sessionStorage.setItem('servicehub:api-key', 'my-api-key');
 
     // Create a config and run it through the interceptor manually
     const { apiClient } = await import('@/lib/api/client');

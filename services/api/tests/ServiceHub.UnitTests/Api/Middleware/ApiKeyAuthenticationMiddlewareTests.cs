@@ -85,8 +85,27 @@ public class ApiKeyAuthenticationMiddlewareTests
     }
 
     [Fact]
-    public async Task InvokeAsync_SwaggerPath_ShouldBypass()
+    public async Task InvokeAsync_SwaggerPath_WithoutApiKey_ShouldReturn401()
     {
+        // Swagger endpoints no longer bypass authentication — they must be protected
+        // in production just like any other endpoint.
+        RequestDelegate next = _ => Task.CompletedTask;
+        var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/swagger/index.html";
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        context.Response.StatusCode.Should().Be(401);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_SwaggerPath_WithValidApiKey_ShouldPass()
+    {
+        // When a valid API key is provided, Swagger can still be reached (useful in dev/staging).
         var nextCalled = false;
         RequestDelegate next = _ => { nextCalled = true; return Task.CompletedTask; };
         var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
@@ -94,6 +113,7 @@ public class ApiKeyAuthenticationMiddlewareTests
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/swagger/index.html";
+        context.Request.Headers["X-API-KEY"] = "test-key-12345";
 
         await middleware.InvokeAsync(context);
 
