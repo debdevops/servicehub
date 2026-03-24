@@ -237,4 +237,60 @@ public class ApiKeyAuthenticationMiddlewareTests
 
         nextCalled.Should().BeTrue();
     }
+
+    // ── Placeholder Key Rejection ────────────────────────────────────
+
+    [Theory]
+    [InlineData("REPLACED_BY_KEYVAULT_servicehub_api_key_admin")]
+    [InlineData("SET_VIA_SOMETHING")]
+    [InlineData("CHANGE_THIS_IN_PRODUCTION")]
+    public async Task InvokeAsync_PlaceholderApiKey_ShouldReject(string placeholderKey)
+    {
+        RequestDelegate next = _ => Task.CompletedTask;
+        var config = CreateConfig(enabled: true, apiKeys: [placeholderKey]);
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Request.Headers["X-API-KEY"] = placeholderKey;
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        // Placeholder keys should be rejected (403 = not in lookup)
+        context.Response.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task LoadApiKeys_ScopedKeyWithPlaceholder_ShouldSkip()
+    {
+        var dict = new Dictionary<string, string?>
+        {
+            ["Security:Authentication:Enabled"] = "true",
+            ["Security:Authentication:ScopedApiKeys:0:Key"] = "REPLACED_BY_KEYVAULT_servicehub_api_key_admin",
+            ["Security:Authentication:ScopedApiKeys:0:Description"] = "Admin key",
+            ["Security:Authentication:ScopedApiKeys:1:Key"] = "real-valid-key-here",
+            ["Security:Authentication:ScopedApiKeys:1:Description"] = "Real key"
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+
+        var nextCalled = false;
+        RequestDelegate next = _ => { nextCalled = true; return Task.CompletedTask; };
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        // Real key should work
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Request.Headers["X-API-KEY"] = "real-valid-key-here";
+        await middleware.InvokeAsync(context);
+        nextCalled.Should().BeTrue();
+
+        // Placeholder key should fail
+        var context2 = new DefaultHttpContext();
+        context2.Request.Path = "/api/v1/namespaces";
+        context2.Request.Headers["X-API-KEY"] = "REPLACED_BY_KEYVAULT_servicehub_api_key_admin";
+        context2.Response.Body = new MemoryStream();
+        await middleware.InvokeAsync(context2);
+        context2.Response.StatusCode.Should().Be(403);
+    }
 }
