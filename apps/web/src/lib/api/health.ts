@@ -1,5 +1,3 @@
-import { apiClient } from './client';
-
 // Note: Health endpoints are on /api/health, not /api/v1/health
 // We use axios directly for this since apiClient has baseURL /api/v1
 import axios from 'axios';
