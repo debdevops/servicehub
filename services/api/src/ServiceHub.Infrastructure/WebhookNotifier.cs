@@ -55,6 +55,16 @@ public sealed class WebhookNotifier : IWebhookNotifier
             return Result.Failure(Error.Validation("Webhook.NoUrl", "Webhook URL is not configured"));
         }
 
+        // SSRF guard: only allow HTTPS URLs pointing to non-private, non-loopback hosts.
+        // This prevents the webhook from being misconfigured to reach internal services.
+        if (!TryGetSafeWebhookUri(_options.Url, out var webhookUri))
+        {
+            _logger.LogWarning("Webhook URL {Url} is not a permitted destination (must be HTTPS and not an internal address)",
+                _options.Url);
+            return Result.Failure(Error.Validation("Webhook.InvalidUrl",
+                "Webhook URL must be an HTTPS URL pointing to an external host"));
+        }
+
         if (newMessageCount < _options.DlqSpikeThreshold)
         {
             return Result.Success();
@@ -90,7 +100,7 @@ public sealed class WebhookNotifier : IWebhookNotifier
                 _options.DlqSpikeThreshold);
 
             using var response = await _httpClient.PostAsJsonAsync(
-                _options.Url, payload, cancellationToken);
+                webhookUri, payload, cancellationToken);
 
             if (response.IsSuccessStatusCode)
             {
@@ -124,6 +134,66 @@ public sealed class WebhookNotifier : IWebhookNotifier
                 "Webhook.Failed",
                 $"Webhook notification failed: {ex.Message}"));
         }
+    }
+
+    /// <summary>
+    /// Validates the webhook URL is safe to call (SSRF guard).
+    /// Returns true only for HTTPS URLs that resolve to a non-loopback, non-private-IP host.
+    /// </summary>
+    private static bool TryGetSafeWebhookUri(string rawUrl, out Uri safeUri)
+    {
+        safeUri = null!;
+
+        if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri))
+            return false;
+
+        // Only HTTPS — no plain HTTP, no file://, no ftp://
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var host = uri.Host;
+
+        // Block loopback names
+        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(host, "::1", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // Block IP-literal hosts that are loopback or RFC-1918 private ranges
+        if (System.Net.IPAddress.TryParse(host, out var ip))
+        {
+            if (System.Net.IPAddress.IsLoopback(ip) || IsRfc1918OrLinkLocal(ip))
+                return false;
+        }
+
+        safeUri = uri;
+        return true;
+    }
+
+    /// <summary>
+    /// Returns true for RFC-1918 private ranges and link-local addresses:
+    /// 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16 (IPv4)
+    /// fc00::/7, fe80::/10 (IPv6)
+    /// </summary>
+    private static bool IsRfc1918OrLinkLocal(System.Net.IPAddress ip)
+    {
+        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            var bytes = ip.GetAddressBytes();
+            return bytes[0] == 10
+                || (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31)
+                || (bytes[0] == 192 && bytes[1] == 168)
+                || (bytes[0] == 169 && bytes[1] == 254);  // link-local
+        }
+
+        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            var bytes = ip.GetAddressBytes();
+            // fc00::/7 — unique local; fe80::/10 — link-local
+            return (bytes[0] & 0xFE) == 0xFC   // fc00::/7
+                || (bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80);  // fe80::/10
+        }
+
+        return false;
     }
 
     /// <summary>
