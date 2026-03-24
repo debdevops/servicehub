@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.AI;
 using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.Persistence;
@@ -39,6 +40,9 @@ public static class DependencyInjection
 
         // AI
         services.AddAI();
+
+        // Webhooks
+        services.AddWebhooks(configuration);
 
         // Background Services
         services.AddHostedService<DlqMonitorWorker>();
@@ -153,6 +157,25 @@ public static class DependencyInjection
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();
         services.TryAddScoped<IForensicEngine, ForensicEngine>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds webhook notification services.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration (optional).</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddWebhooks(this IServiceCollection services, IConfiguration? configuration = null)
+    {
+        services.Configure<WebhookOptions>(opts =>
+            configuration?.GetSection(WebhookOptions.SectionName).Bind(opts));
+
+        services.AddHttpClient<IWebhookNotifier, WebhookNotifier>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
 
         return services;
     }

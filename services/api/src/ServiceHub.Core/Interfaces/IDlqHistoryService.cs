@@ -42,7 +42,10 @@ public interface IDlqHistoryService
     /// <summary>
     /// Gets a summary of DLQ activity across all or a specific namespace.
     /// </summary>
-    Task<Result<DlqSummary>> GetSummaryAsync(Guid? namespaceId = null, CancellationToken cancellationToken = default);
+    /// <param name="namespaceId">Optional namespace filter.</param>
+    /// <param name="days">Number of days for the daily trend (default 30).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<Result<DlqSummary>> GetSummaryAsync(Guid? namespaceId = null, int days = 30, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Exports DLQ messages matching the given filters.

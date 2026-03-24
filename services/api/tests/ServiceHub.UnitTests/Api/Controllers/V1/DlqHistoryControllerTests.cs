@@ -293,7 +293,7 @@ public class DlqHistoryControllerTests
                 new(DateTimeOffset.UtcNow.Date, 5, 3)
             });
 
-        _historyService.Setup(s => s.GetSummaryAsync(It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+        _historyService.Setup(s => s.GetSummaryAsync(It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DlqSummary>.Success(summary));
 
         var result = await _controller.GetSummary();
@@ -307,7 +307,7 @@ public class DlqHistoryControllerTests
     [Fact]
     public async Task GetSummary_Failure_ReturnsError()
     {
-        _historyService.Setup(s => s.GetSummaryAsync(It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+        _historyService.Setup(s => s.GetSummaryAsync(It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DlqSummary>.Failure(Error.Internal("ERR", "Failed")));
 
         var result = await _controller.GetSummary();
