@@ -1,5 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import toast from 'react-hot-toast';
+import { getCachedApiKey } from '@/lib/apiKeyStore';
 
 // When VITE_API_BASE_URL is not set, use a relative path (/api/v1).
 // With the Vite proxy configured in vite.config.ts, /api requests are
@@ -65,13 +66,14 @@ function isSilent404(url: string): boolean {
   return silentPatterns.some(pattern => url.includes(pattern));
 }
 
-// Request interceptor: Add API key
-// The key is stored in sessionStorage (not localStorage) so it is scoped to the
-// current browser tab/session and is automatically cleared when the tab closes.
-// This limits the window of exposure if an XSS vulnerability were ever exploited.
+// Request interceptor: Add API key from the encrypted in-memory cache.
+// The key is decrypted once at load time by apiKeyStore and held in memory,
+// so this interceptor remains synchronous and adds no per-request latency.
+// The underlying ciphertext is stored in sessionStorage (tab-scoped), so
+// the key is automatically discarded when the tab closes.
 apiClient.interceptors.request.use(
   (config) => {
-    const apiKey = sessionStorage.getItem('servicehub:api-key');
+    const apiKey = getCachedApiKey();
     if (apiKey) {
       config.headers['X-API-Key'] = apiKey;
     }
