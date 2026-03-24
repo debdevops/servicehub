@@ -221,6 +221,9 @@ TestResults/
 secrets.json
 appsettings.Local.json
 
+# Operational runbook — contains resource names/URLs specific to your deployment
+docs/AZURE-KEYVAULT-SETUP.md
+
 # Temporary files
 *.tmp
 .tmp/
