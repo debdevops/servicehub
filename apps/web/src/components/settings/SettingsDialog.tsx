@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Key, Eye, EyeOff, CheckCircle, Trash2, ShieldCheck } from 'lucide-react';
-
-const STORAGE_KEY = 'servicehub:api-key';
+import { saveApiKey, loadApiKey, clearApiKey, hasStoredKey } from '@/lib/apiKeyStore';
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -14,13 +13,12 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   const [saved, setSaved] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Load current key on open
+  // Load current key on open (async decrypt via apiKeyStore)
   useEffect(() => {
     if (isOpen) {
-      const stored = sessionStorage.getItem(STORAGE_KEY) ?? '';
-      setApiKey(stored);
       setSaved(false);
       setShowKey(false);
+      loadApiKey().then((stored) => setApiKey(stored ?? ''));
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [isOpen]);
@@ -37,22 +35,18 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
 
   const handleSave = useCallback(() => {
     const trimmed = apiKey.trim();
-    if (trimmed) {
-      sessionStorage.setItem(STORAGE_KEY, trimmed);
-    } else {
-      sessionStorage.removeItem(STORAGE_KEY);
-    }
+    void saveApiKey(trimmed); // fire-and-forget: cache is updated synchronously, encryption is async
     setSaved(true);
     setTimeout(onClose, 900);
   }, [apiKey, onClose]);
 
   const handleClear = useCallback(() => {
     setApiKey('');
-    sessionStorage.removeItem(STORAGE_KEY);
+    clearApiKey();
     setSaved(false);
   }, []);
 
-  const hasStoredKey = !!sessionStorage.getItem(STORAGE_KEY);
+  const keyIsStored = hasStoredKey();
 
   if (!isOpen) return null;
 
@@ -103,11 +97,11 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
               </span>
             </label>
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-              Your API key is stored only in this browser tab (
+              Your API key is encrypted with AES-GCM and stored in this browser tab&apos;s{' '}
               <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">sessionStorage</code>
-              ) and sent as the{' '}
+              {' '}— cleared automatically when you close the tab. It is sent as the{' '}
               <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">X-API-Key</code>{' '}
-              header on every request. It is cleared automatically when you close the tab.
+              header on every request.
             </p>
             <div className="relative">
               <input
@@ -133,7 +127,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             </div>
 
             {/* Status indicator */}
-            {hasStoredKey && !saved && (
+            {keyIsStored && !saved && (
               <p className="mt-1.5 text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
                 <CheckCircle className="w-3.5 h-3.5" />
                 API key is active for this session

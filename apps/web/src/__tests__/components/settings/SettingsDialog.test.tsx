@@ -1,18 +1,32 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SettingsDialog } from '@/components/settings/SettingsDialog';
+import { saveApiKey, loadApiKey, clearApiKey, hasStoredKey } from '@/lib/apiKeyStore';
+
+// Mock the entire apiKeyStore so tests never touch real crypto or sessionStorage.
+// This also breaks the CodeQL taint flow in the source under test.
+vi.mock('@/lib/apiKeyStore', () => ({
+  saveApiKey: vi.fn().mockResolvedValue(undefined),
+  loadApiKey: vi.fn().mockResolvedValue(null),
+  clearApiKey: vi.fn(),
+  hasStoredKey: vi.fn().mockReturnValue(false),
+  getCachedApiKey: vi.fn().mockReturnValue(null),
+}));
 
 describe('SettingsDialog', () => {
   const onClose = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
-    sessionStorage.clear();
+    // Restore default mock return values after clearAllMocks resets them
+    vi.mocked(loadApiKey).mockResolvedValue(null);
+    vi.mocked(hasStoredKey).mockReturnValue(false);
+    vi.mocked(saveApiKey).mockResolvedValue(undefined);
   });
 
   afterEach(() => {
-    sessionStorage.clear();
+    // nothing — no real sessionStorage used in these tests
   });
 
   it('renders nothing when isOpen is false', () => {
@@ -32,15 +46,18 @@ describe('SettingsDialog', () => {
     expect(screen.getByPlaceholderText(/Paste your API key/)).toBeInTheDocument();
   });
 
-  it('loads existing key from sessionStorage on open', () => {
-    sessionStorage.setItem('servicehub:api-key', 'test-key-abc');
+  it('loads existing key from sessionStorage on open', async () => {
+    vi.mocked(loadApiKey).mockResolvedValue('test-key-abc');
     render(<SettingsDialog isOpen={true} onClose={onClose} />);
-    const input = screen.getByPlaceholderText(/Paste your API key/) as HTMLInputElement;
-    expect(input.value).toBe('test-key-abc');
+    // loadApiKey() is async; waitFor flushes the Promise and React state update
+    await waitFor(() => {
+      const input = screen.getByPlaceholderText(/Paste your API key/) as HTMLInputElement;
+      expect(input.value).toBe('test-key-abc');
+    });
   });
 
   it('shows status indicator when key is active', () => {
-    sessionStorage.setItem('servicehub:api-key', 'test-key-abc');
+    vi.mocked(hasStoredKey).mockReturnValue(true);
     render(<SettingsDialog isOpen={true} onClose={onClose} />);
     expect(screen.getByText('API key is active for this session')).toBeInTheDocument();
   });
@@ -50,7 +67,7 @@ describe('SettingsDialog', () => {
     const input = screen.getByPlaceholderText(/Paste your API key/);
     await userEvent.type(input, 'my-new-key-xyz');
     fireEvent.click(screen.getByText('Save'));
-    expect(sessionStorage.getItem('servicehub:api-key')).toBe('my-new-key-xyz');
+    expect(vi.mocked(saveApiKey)).toHaveBeenCalledWith('my-new-key-xyz');
     expect(screen.getByText('Saved!')).toBeInTheDocument();
   });
 
@@ -59,14 +76,19 @@ describe('SettingsDialog', () => {
     const input = screen.getByPlaceholderText(/Paste your API key/);
     await userEvent.type(input, 'enter-key-test');
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(sessionStorage.getItem('servicehub:api-key')).toBe('enter-key-test');
+    expect(vi.mocked(saveApiKey)).toHaveBeenCalledWith('enter-key-test');
   });
 
   it('clears key on Clear button click', async () => {
-    sessionStorage.setItem('servicehub:api-key', 'old-key');
+    vi.mocked(loadApiKey).mockResolvedValue('old-key');
     render(<SettingsDialog isOpen={true} onClose={onClose} />);
+    // Wait for the async load to populate the input (enables the Clear button)
+    await waitFor(() => {
+      const input = screen.getByPlaceholderText(/Paste your API key/) as HTMLInputElement;
+      expect(input.value).toBe('old-key');
+    });
     fireEvent.click(screen.getByText('Clear key'));
-    expect(sessionStorage.getItem('servicehub:api-key')).toBeNull();
+    expect(vi.mocked(clearApiKey)).toHaveBeenCalled();
   });
 
   it('closes on Escape key', () => {
@@ -109,12 +131,17 @@ describe('SettingsDialog', () => {
   });
 
   it('removes key from sessionStorage when saving empty value', async () => {
-    sessionStorage.setItem('servicehub:api-key', 'will-be-removed');
+    vi.mocked(loadApiKey).mockResolvedValue('will-be-removed');
     render(<SettingsDialog isOpen={true} onClose={onClose} />);
+    await waitFor(() => {
+      const input = screen.getByPlaceholderText(/Paste your API key/) as HTMLInputElement;
+      expect(input.value).toBe('will-be-removed');
+    });
     const input = screen.getByPlaceholderText(/Paste your API key/) as HTMLInputElement;
     await userEvent.clear(input);
     fireEvent.click(screen.getByText('Save'));
-    expect(sessionStorage.getItem('servicehub:api-key')).toBeNull();
+    // saveApiKey('') internally delegates to clearApiKey — verify it was called with empty
+    expect(vi.mocked(saveApiKey)).toHaveBeenCalledWith('');
   });
 
   it('disables Clear button when input is empty', () => {
@@ -131,17 +158,16 @@ describe('SettingsDialog', () => {
 
   it('explains sessionStorage usage', () => {
     render(<SettingsDialog isOpen={true} onClose={onClose} />);
-    expect(screen.getByText(/stored only in this browser tab/)).toBeInTheDocument();
+    expect(screen.getByText(/encrypted with AES-GCM and stored in this browser tab/)).toBeInTheDocument();
     expect(screen.getByText(/X-API-Key/)).toBeInTheDocument();
   });
 
   it('shows Saved state after save', () => {
     render(<SettingsDialog isOpen={true} onClose={onClose} />);
-    // Type directly using fireEvent to avoid issues with fake timers
     const input = screen.getByPlaceholderText(/Paste your API key/);
     fireEvent.change(input, { target: { value: 'test-key' } });
     fireEvent.click(screen.getByText('Save'));
     expect(screen.getByText('Saved!')).toBeInTheDocument();
-    expect(sessionStorage.getItem('servicehub:api-key')).toBe('test-key');
+    expect(vi.mocked(saveApiKey)).toHaveBeenCalledWith('test-key');
   });
 });
