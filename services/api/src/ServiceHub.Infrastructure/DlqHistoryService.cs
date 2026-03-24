@@ -236,10 +236,12 @@ public sealed class DlqHistoryService : IDlqHistoryService
 
     /// <inheritdoc />
     public async Task<Result<DlqSummary>> GetSummaryAsync(
-        Guid? namespaceId = null, CancellationToken cancellationToken = default)
+        Guid? namespaceId = null, int days = 30, CancellationToken cancellationToken = default)
     {
         try
         {
+            // Clamp days to a sensible range
+            days = Math.Clamp(days, 1, 365);
             var query = _dbContext.DlqMessages.AsNoTracking().AsQueryable();
 
             if (namespaceId.HasValue)
@@ -275,17 +277,17 @@ public sealed class DlqHistoryService : IDlqHistoryService
                 .Select(m => (DateTimeOffset?)m.DetectedAtUtc)
                 .FirstOrDefaultAsync(cancellationToken);
 
-            // Daily trend for the last 30 days
-            var thirtyDaysAgo = DateTimeOffset.UtcNow.AddDays(-30);
+            // Daily trend for the configured number of days
+            var cutoffDate = DateTimeOffset.UtcNow.AddDays(-days);
 
             // SQLite cannot translate DateTimeOffset.Date grouping reliably, so aggregate in-memory
             var detectedTimestamps = await query
-                .Where(m => m.DetectedAtUtc >= thirtyDaysAgo)
+                .Where(m => m.DetectedAtUtc >= cutoffDate)
                 .Select(m => m.DetectedAtUtc)
                 .ToListAsync(cancellationToken);
 
             var replayedTimestamps = await query
-                .Where(m => m.ReplayedAt.HasValue && m.ReplayedAt.Value >= thirtyDaysAgo)
+                .Where(m => m.ReplayedAt.HasValue && m.ReplayedAt.Value >= cutoffDate)
                 .Select(m => m.ReplayedAt!.Value)
                 .ToListAsync(cancellationToken);
 

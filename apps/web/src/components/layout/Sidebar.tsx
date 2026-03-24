@@ -11,6 +11,7 @@ import {
   RefreshCw,
   BarChart3,
   Zap,
+  Activity,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useState } from 'react';
@@ -477,6 +478,14 @@ export function Sidebar() {
             <Zap className="w-4 h-4 text-amber-500" />
             <span className="flex-1 text-left">Auto-Replay</span>
             <span className="text-xs text-amber-600 font-medium">Rules</span>
+          </NavLink>
+          <NavLink
+            to="/health"
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border border-gray-200 hover:border-emerald-300 shadow-sm"
+          >
+            <Activity className="w-4 h-4 text-emerald-500" />
+            <span className="flex-1 text-left">System Health</span>
+            <span className="text-xs text-emerald-600 font-medium">Status</span>
           </NavLink>
           <button
             onClick={() => {

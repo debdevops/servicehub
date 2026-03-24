@@ -34,7 +34,7 @@ function TrendChart({ trend }: { trend: TrendPoint[] }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 mb-3">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-gray-700">7-Day DLQ Trend</h3>
+        <h3 className="text-sm font-semibold text-gray-700">30-Day DLQ Trend</h3>
         <div className="flex items-center gap-3 text-xs text-gray-500">
           <span className="flex items-center gap-1">
             <span className="w-3 h-3 rounded bg-red-400 inline-block" />

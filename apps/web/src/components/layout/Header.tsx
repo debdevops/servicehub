@@ -35,6 +35,14 @@ export function Header() {
             <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" aria-hidden="true" />
             <span className="text-white/90">Connected:</span>
             <span className="font-medium">{currentNamespace.displayName || currentNamespace.name}</span>
+            {/* Environment badge */}
+            <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded uppercase leading-none ${
+              currentNamespace.environment === 'Prod' ? 'bg-red-500 text-white' :
+              currentNamespace.environment === 'Uat' ? 'bg-amber-400 text-amber-900' :
+              'bg-green-400 text-green-900'
+            }`}>
+              {currentNamespace.environment || 'DEV'}
+            </span>
           </div>
         ) : (
           <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full">

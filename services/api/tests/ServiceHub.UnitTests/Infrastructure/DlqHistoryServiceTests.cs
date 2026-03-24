@@ -333,6 +333,66 @@ public class DlqHistoryServiceTests : IDisposable
         result.Value.TotalMessages.Should().Be(1);
     }
 
+    [Fact]
+    public async Task GetSummary_WithDaysParameter_FiltersTrendByDate()
+    {
+        var nsId = Guid.NewGuid();
+
+        // Recent message — within 7 days
+        var recentMsg = CreateMessage(1, namespaceId: nsId);  // DetectedAtUtc = UtcNow by default
+        _dbContext.DlqMessages.Add(recentMsg);
+
+        // Old message — 60 days ago (outside the trend window, but still counted in totals)
+        var oldMsg = new DlqMessage
+        {
+            MessageId = "msg-old",
+            SequenceNumber = 99,
+            BodyHash = "hash-old",
+            NamespaceId = nsId,
+            EntityName = "test-queue",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddDays(-61),
+            DeadLetterTimeUtc = DateTimeOffset.UtcNow.AddDays(-60),
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddDays(-60),
+            DeadLetterReason = "MaxDeliveryCountExceeded",
+            DeadLetterErrorDescription = "Max delivery count reached",
+            DeliveryCount = 10,
+            ContentType = "application/json",
+            MessageSize = 256,
+            BodyPreview = "{ \"test\": true }",
+            FailureCategory = FailureCategory.Transient,
+            CategoryConfidence = 0.95,
+            Status = DlqMessageStatus.Active
+        };
+        _dbContext.DlqMessages.Add(oldMsg);
+
+        await _dbContext.SaveChangesAsync();
+
+        // TotalMessages always counts all messages regardless of days
+        var result7 = await _service.GetSummaryAsync(namespaceId: nsId, days: 7);
+        result7.IsSuccess.Should().BeTrue();
+        result7.Value.TotalMessages.Should().Be(2);
+        // Only today's message appears in the 7-day trend
+        result7.Value.DailyTrend.Sum(t => t.NewMessages).Should().Be(1);
+
+        // With 365-day window, both messages appear in trend
+        var result365 = await _service.GetSummaryAsync(namespaceId: nsId, days: 365);
+        result365.IsSuccess.Should().BeTrue();
+        result365.Value.TotalMessages.Should().Be(2);
+        result365.Value.DailyTrend.Sum(t => t.NewMessages).Should().Be(2);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    [InlineData(500)]
+    public async Task GetSummary_DaysClampedToValidRange_DoesNotThrow(int inputDays)
+    {
+        // Just verify it doesn't throw — the clamping is internal
+        var result = await _service.GetSummaryAsync(days: inputDays);
+        result.IsSuccess.Should().BeTrue();
+    }
+
     // ── ExportAsync ─────────────────────────────────────────
 
     [Fact]

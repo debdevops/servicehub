@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { MessageFAB } from '@/components/fab';
+import { useNamespaces } from '@/hooks/useNamespaces';
 
 export function MainLayout() {
   const [searchParams] = useSearchParams();
@@ -12,6 +13,11 @@ export function MainLayout() {
   const topicName = searchParams.get('topic');
   const subscriptionName = searchParams.get('subscription');
   const isMessagesPage = window.location.pathname === '/messages';
+
+  // Resolve current namespace to check environment
+  const { data: namespaces } = useNamespaces();
+  const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
+  const isProd = currentNamespace?.environment === 'Prod';
 
   // Determine entity type and names for FAB
   const entityType: 'queue' | 'topic' = topicName ? 'topic' : 'queue';
@@ -51,8 +57,8 @@ export function MainLayout() {
         </main>
       </div>
 
-      {/* FAB - Only show on messages page */}
-      {isMessagesPage && (
+      {/* FAB - Only show on messages page and NOT in production */}
+      {isMessagesPage && !isProd && (
         <MessageFAB 
           namespaceId={namespaceId}
           queueName={entityName}

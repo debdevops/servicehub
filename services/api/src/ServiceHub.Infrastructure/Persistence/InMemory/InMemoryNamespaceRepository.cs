@@ -316,7 +316,8 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
             LastConnectionTestSucceeded = ns.LastConnectionTestSucceeded,
             HasListenPermission = ns.HasListenPermission,
             HasSendPermission = ns.HasSendPermission,
-            HasManagePermission = ns.HasManagePermission
+            HasManagePermission = ns.HasManagePermission,
+            Environment = ns.Environment
         };
 
     private Namespace? Rehydrate(NamespaceSnapshot snapshot)
@@ -328,12 +329,14 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
                     snapshot.Name,
                     snapshot.ConnectionString ?? string.Empty,
                     snapshot.DisplayName,
-                    snapshot.Description)
+                    snapshot.Description,
+                    snapshot.Environment)
                 : Namespace.CreateWithManagedIdentity(
                     snapshot.Name,
                     snapshot.AuthType,
                     snapshot.DisplayName,
-                    snapshot.Description);
+                    snapshot.Description,
+                    snapshot.Environment);
 
             if (createResult.IsFailure)
             {
@@ -353,6 +356,7 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
             SetPrivateProperty(ns, nameof(Namespace.HasListenPermission), snapshot.HasListenPermission);
             SetPrivateProperty(ns, nameof(Namespace.HasSendPermission), snapshot.HasSendPermission);
             SetPrivateProperty(ns, nameof(Namespace.HasManagePermission), snapshot.HasManagePermission);
+            SetPrivateProperty(ns, nameof(Namespace.Environment), snapshot.Environment);
 
             if (!snapshot.IsActive)
             {
@@ -393,5 +397,6 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
         public bool HasListenPermission { get; init; }
         public bool HasSendPermission { get; init; }
         public bool HasManagePermission { get; init; }
+        public EnvironmentType Environment { get; init; }
     }
 }

@@ -129,7 +129,8 @@ public sealed class NamespacesController : ApiControllerBase
                 request.Name,
                 protectedConnectionStringResult.Value,
                 request.DisplayName,
-                request.Description);
+                request.Description,
+                request.Environment);
         }
         else
         {
@@ -137,7 +138,8 @@ public sealed class NamespacesController : ApiControllerBase
                 request.Name,
                 request.AuthType,
                 request.DisplayName,
-                request.Description);
+                request.Description,
+                request.Environment);
         }
 
         if (createResult.IsFailure)
@@ -397,7 +399,8 @@ public sealed class NamespacesController : ApiControllerBase
             LastConnectionTestSucceeded: ns.LastConnectionTestSucceeded,
             HasListenPermission: ns.HasListenPermission,
             HasSendPermission: ns.HasSendPermission,
-            HasManagePermission: ns.HasManagePermission);
+            HasManagePermission: ns.HasManagePermission,
+            Environment: ns.Environment);
     }
 }
 

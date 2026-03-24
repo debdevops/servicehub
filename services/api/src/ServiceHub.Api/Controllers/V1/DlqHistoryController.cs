@@ -343,6 +343,7 @@ public sealed class DlqHistoryController : ApiControllerBase
     /// Gets a summary of DLQ activity across all or a specific namespace.
     /// </summary>
     /// <param name="namespaceId">Optional namespace filter.</param>
+    /// <param name="days">Number of days for the daily trend (1–365, default 30).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>DLQ summary statistics.</returns>
     [HttpGet("summary")]
@@ -350,9 +351,10 @@ public sealed class DlqHistoryController : ApiControllerBase
     [ProducesResponseType(typeof(DlqSummaryResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<DlqSummaryResponse>> GetSummary(
         [FromQuery] Guid? namespaceId = null,
+        [FromQuery] int days = 30,
         CancellationToken cancellationToken = default)
     {
-        var result = await _historyService.GetSummaryAsync(namespaceId, cancellationToken);
+        var result = await _historyService.GetSummaryAsync(namespaceId, days, cancellationToken);
         if (result.IsFailure)
             return ToActionResult<DlqSummaryResponse>(result.Error);
 
