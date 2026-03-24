@@ -112,6 +112,7 @@ public sealed class QueuesController : ApiControllerBase
     /// <response code="200">Queue retrieved successfully.</response>
     /// <response code="404">Namespace or queue not found.</response>
     /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.QueuesRead)]
     [HttpGet("{queueName}")]
     [ProducesResponseType(typeof(QueueRuntimePropertiesDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

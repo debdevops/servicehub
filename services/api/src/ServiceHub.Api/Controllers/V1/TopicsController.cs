@@ -112,6 +112,7 @@ public sealed class TopicsController : ApiControllerBase
     /// <response code="200">Topic retrieved successfully.</response>
     /// <response code="404">Namespace or topic not found.</response>
     /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.TopicsRead)]
     [HttpGet("{topicName}")]
     [ProducesResponseType(typeof(TopicRuntimePropertiesDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

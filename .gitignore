@@ -219,6 +219,7 @@ TestResults/
 
 # User secrets
 secrets.json
+appsettings.Local.json
 
 # Temporary files
 *.tmp

@@ -1,9 +1,24 @@
+using Azure.Identity;
+using ServiceHub.Api.Configuration;
 using ServiceHub.Api.Extensions;
 using ServiceHub.Api.Logging;
 using ServiceHub.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Load appsettings.Local.json (git-ignored) for local dev secrets
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
+
+// Add Azure Key Vault as a configuration source when VaultUri is configured
+var keyVaultUri = builder.Configuration["KeyVault:VaultUri"];
+if (!string.IsNullOrWhiteSpace(keyVaultUri))
+{
+    builder.Configuration.AddAzureKeyVault(
+        new Uri(keyVaultUri),
+        new DefaultAzureCredential(),
+        new ServiceHubKeyVaultSecretManager());
+}
 
 // Configure logging with redaction
 builder.Logging.ClearProviders();

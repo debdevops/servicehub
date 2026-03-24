@@ -201,6 +201,7 @@ public sealed class NamespacesController : ApiControllerBase
     /// <returns>The namespace response.</returns>
     /// <response code="200">Namespace retrieved successfully.</response>
     /// <response code="404">Namespace not found.</response>
+    [RequireScope(ApiKeyScopes.NamespacesRead)]
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(NamespaceResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -238,6 +239,7 @@ public sealed class NamespacesController : ApiControllerBase
     /// <returns>The test result.</returns>
     /// <response code="200">Connection test completed.</response>
     /// <response code="404">Namespace not found.</response>
+    [RequireScope(ApiKeyScopes.NamespacesRead)]
     [HttpGet("{id:guid}/test")]
     [HttpPost("{id:guid}/test-connection")]
     [ProducesResponseType(typeof(ConnectionTestResponse), StatusCodes.Status200OK)]

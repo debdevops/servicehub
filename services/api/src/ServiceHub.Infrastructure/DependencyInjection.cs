@@ -1,3 +1,5 @@
+using Azure.Identity;
+using Azure.Security.KeyVault.Secrets;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -92,7 +94,18 @@ public static class DependencyInjection
     {
         // ConnectionStringProtector now requires IConfiguration
         services.TryAddSingleton<IConnectionStringProtector, ConnectionStringProtector>();
-        services.TryAddSingleton<ISecretsManager, SecretsManager>();
+
+        // Use Azure Key Vault when configured; fall back to in-memory for local dev
+        var vaultUri = configuration?["KeyVault:VaultUri"];
+        if (!string.IsNullOrWhiteSpace(vaultUri))
+        {
+            services.AddSingleton(_ => new SecretClient(new Uri(vaultUri), new DefaultAzureCredential()));
+            services.TryAddSingleton<ISecretsManager, AzureKeyVaultSecretsManager>();
+        }
+        else
+        {
+            services.TryAddSingleton<ISecretsManager, SecretsManager>();
+        }
 
         return services;
     }

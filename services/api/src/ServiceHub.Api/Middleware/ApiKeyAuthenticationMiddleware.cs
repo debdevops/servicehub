@@ -75,7 +75,7 @@ public sealed class ApiKeyAuthenticationMiddleware
         {
             foreach (var key in simpleKeys)
             {
-                if (!string.IsNullOrWhiteSpace(key))
+                if (!string.IsNullOrWhiteSpace(key) && !IsPlaceholderKey(key))
                 {
                     // Simple keys have admin scope (backward compatibility)
                     _apiKeyLookup[key] = new ApiKeyConfiguration
@@ -96,12 +96,29 @@ public sealed class ApiKeyAuthenticationMiddleware
         {
             foreach (var keyConfig in scopedKeys)
             {
-                if (!string.IsNullOrWhiteSpace(keyConfig.Key))
+                if (!string.IsNullOrWhiteSpace(keyConfig.Key) && !IsPlaceholderKey(keyConfig.Key))
                 {
                     _apiKeyLookup[keyConfig.Key] = keyConfig;
                 }
+                else if (!string.IsNullOrWhiteSpace(keyConfig.Key) && IsPlaceholderKey(keyConfig.Key))
+                {
+                    _logger.LogWarning(
+                        "Skipping placeholder API key '{Description}' — Key Vault may not be configured",
+                        keyConfig.Description ?? "unknown");
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// Detects placeholder key values that should never be accepted for authentication.
+    /// These are config-file stubs meant to be overridden by Key Vault at startup.
+    /// </summary>
+    private static bool IsPlaceholderKey(string key)
+    {
+        return key.StartsWith("REPLACED_BY_KEYVAULT", StringComparison.OrdinalIgnoreCase)
+            || key.StartsWith("SET_VIA_", StringComparison.OrdinalIgnoreCase)
+            || key.StartsWith("CHANGE_THIS", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
