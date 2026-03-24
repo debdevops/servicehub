@@ -1,18 +1,22 @@
+import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Settings, User, Search, Cloud, HelpCircle } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
 import { useNamespaces } from '@/hooks/useNamespaces';
+import { SettingsDialog } from '@/components/settings';
 
 export function Header() {
   const [searchParams] = useSearchParams();
   const namespaceId = searchParams.get('namespace');
   const { data: namespaces } = useNamespaces();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   
   // Find the current namespace from URL params
   const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
   const isConnected = !!currentNamespace;
 
   return (
+    <>
     <header
       className="h-14 bg-primary-500 text-white flex items-center justify-between px-4 shadow-sm"
     >
@@ -80,9 +84,10 @@ export function Header() {
 
         {/* Settings */}
         <button
+          onClick={() => setSettingsOpen(true)}
           className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-          title="Settings"
-          aria-label="Settings"
+          title="Security Settings"
+          aria-label="Security Settings"
         >
           <Settings className="w-5 h-5" />
         </button>
@@ -96,5 +101,8 @@ export function Header() {
         </button>
       </div>
     </header>
+
+    <SettingsDialog isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+  </>
   );
 }

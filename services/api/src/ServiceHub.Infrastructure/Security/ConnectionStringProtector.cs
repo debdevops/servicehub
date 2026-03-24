@@ -60,12 +60,15 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
         // Derive a proper 256-bit key from the configured key using SHA256
         _encryptionKey = DeriveKey(keyString);
 
-        // Validate that the key was changed from the default
-        if (keyString.Contains("CHANGE_THIS", StringComparison.OrdinalIgnoreCase))
+        // Validate that the key was changed from the default / placeholder
+        if (keyString.Contains("CHANGE_THIS", StringComparison.OrdinalIgnoreCase) ||
+            keyString.Contains("SET_VIA_", StringComparison.OrdinalIgnoreCase) ||
+            keyString.Contains("DEV_KEY_NOT_FOR_PRODUCTION", StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning(
-                "Security warning: Using default encryption key. " +
-                "Set Security:EncryptionKey to a secure value in production.");
+                "Security warning: Encryption key appears to be a placeholder or development key. " +
+                "Set a cryptographically random value via the SECURITY__ENCRYPTIONKEY environment variable " +
+                "or Azure App Service Application Settings before using in production.");
         }
     }
 

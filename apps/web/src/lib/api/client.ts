@@ -66,9 +66,12 @@ function isSilent404(url: string): boolean {
 }
 
 // Request interceptor: Add API key
+// The key is stored in sessionStorage (not localStorage) so it is scoped to the
+// current browser tab/session and is automatically cleared when the tab closes.
+// This limits the window of exposure if an XSS vulnerability were ever exploited.
 apiClient.interceptors.request.use(
   (config) => {
-    const apiKey = localStorage.getItem('servicehub:api-key');
+    const apiKey = sessionStorage.getItem('servicehub:api-key');
     if (apiKey) {
       config.headers['X-API-Key'] = apiKey;
     }

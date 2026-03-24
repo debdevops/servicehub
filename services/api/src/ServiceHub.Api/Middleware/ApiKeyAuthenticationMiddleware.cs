@@ -181,25 +181,9 @@ public sealed class ApiKeyAuthenticationMiddleware
 
     private static bool ShouldBypassAuthentication(string path)
     {
-        // Exact match for known paths
-        if (BypassPaths.Contains(path))
-        {
-            return true;
-        }
-
-        // Swagger UI and related endpoints
-        if (path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        // OpenAPI spec endpoint
-        if (path.Contains("/swagger/", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return false;
+        // Exact match for health check paths only — these must remain accessible
+        // for load balancer / container orchestration liveness probes.
+        return BypassPaths.Contains(path);
     }
 
     private static async Task WriteUnauthorizedResponse(HttpContext context, string message)
