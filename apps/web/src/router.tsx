@@ -1,6 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { MainLayout } from '@/components/layout';
-import { MessagesPage, ConnectPage, DlqHistoryPage, RulesPage, HealthPage } from '@/pages';
+import { MessagesPage, ConnectPage, DlqHistoryPage, RulesPage, HealthPage, HelpPage } from '@/pages';
 
 export const router = createBrowserRouter([
   {
@@ -30,6 +30,10 @@ export const router = createBrowserRouter([
       {
         path: 'health',
         element: <HealthPage />,
+      },
+      {
+        path: 'help',
+        element: <HelpPage />,
       },
     ],
   },
