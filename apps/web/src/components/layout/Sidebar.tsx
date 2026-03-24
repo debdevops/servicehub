@@ -12,6 +12,7 @@ import {
   BarChart3,
   Zap,
   Activity,
+  HelpCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useState } from 'react';
@@ -349,7 +350,7 @@ export function Sidebar() {
   const { data: topics } = useTopics(activeNamespace?.id || '');
 
   return (
-    <aside className="w-[260px] bg-white border-r border-gray-200 flex flex-col overflow-hidden">
+    <aside className="w-[260px] bg-white border-r border-gray-200 flex flex-col overflow-hidden" data-tour="sidebar">
       {/* Namespaces Section */}
       <div className="flex-1 overflow-y-auto p-3">
         <div className="flex items-center justify-between mb-3">
@@ -370,6 +371,7 @@ export function Sidebar() {
               className="p-1 hover:bg-gray-100 rounded transition-colors"
               title="Add Connection"
               aria-label="Add new connection"
+              data-tour="add-connection"
             >
               <Plus className="w-4 h-4 text-gray-500" />
             </NavLink>
@@ -398,7 +400,7 @@ export function Sidebar() {
       </div>
 
       {/* Quick Filters */}
-      <div className="border-t border-gray-200 p-3 bg-gradient-to-b from-sky-50 to-white">
+      <div className="border-t border-gray-200 p-3 bg-gradient-to-b from-sky-50 to-white" data-tour="quick-access">
         <h2 className="text-xs font-semibold text-sky-700 uppercase tracking-wider mb-2">
           Quick Access
         </h2>
@@ -500,6 +502,14 @@ export function Sidebar() {
             <span className="flex-1 text-left">Scheduled</span>
             <span className="text-xs text-gray-400 font-medium">Soon</span>
           </button>
+          <NavLink
+            to="/help"
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border border-gray-200 hover:border-primary-300 shadow-sm"
+          >
+            <HelpCircle className="w-4 h-4 text-primary-500" />
+            <span className="flex-1 text-left">Help & Guide</span>
+            <span className="text-xs text-primary-600 font-medium">?</span>
+          </NavLink>
         </nav>
       </div>
 

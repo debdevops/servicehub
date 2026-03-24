@@ -1,13 +1,34 @@
+import { useState, useEffect, useCallback } from 'react';
 import { Outlet, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { MessageFAB } from '@/components/fab';
+import { GuidedTour, isTourCompleted } from '@/components/help/GuidedTour';
 import { useNamespaces } from '@/hooks/useNamespaces';
 
 export function MainLayout() {
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
+
+  // Guided tour state
+  const [tourActive, setTourActive] = useState(false);
+
+  // Auto-launch tour on first visit
+  useEffect(() => {
+    if (!isTourCompleted()) {
+      // Small delay so DOM is ready for spotlight targeting
+      const timer = setTimeout(() => setTourActive(true), 800);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  // Listen for "Take a Tour" event from HelpPage
+  const handleStartTour = useCallback(() => setTourActive(true), []);
+  useEffect(() => {
+    window.addEventListener('servicehub:start-tour', handleStartTour);
+    return () => window.removeEventListener('servicehub:start-tour', handleStartTour);
+  }, [handleStartTour]);
   const namespaceId = searchParams.get('namespace');
   const queueName = searchParams.get('queue');
   const topicName = searchParams.get('topic');
@@ -69,6 +90,9 @@ export function MainLayout() {
           onMessagesGenerated={handleMessagesGenerated}
         />
       )}
+
+      {/* Guided Tour Overlay */}
+      <GuidedTour isActive={tourActive} onComplete={() => setTourActive(false)} />
     </div>
   );
 }

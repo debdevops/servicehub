@@ -13,6 +13,8 @@ import { DlqHistoryTable, DlqTimelineDrawer } from '@/components/dlq';
 import { useDlqHistory, useDlqSummary } from '@/hooks/useDlqHistory';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { dlqHistoryApi } from '@/lib/api/dlqHistory';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@/lib/helpContent';
 import type { ForensicBatchSummary } from '@/lib/api/dlqHistory';
 import toast from 'react-hot-toast';
 import { Zap, Shield } from 'lucide-react';
@@ -34,7 +36,10 @@ function TrendChart({ trend }: { trend: TrendPoint[] }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 mb-3">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-gray-700">30-Day DLQ Trend</h3>
+        <h3 className="text-sm font-semibold text-gray-700">
+          30-Day DLQ Trend
+          <HelpTooltip {...tooltips.dlqHistory.trendChart} position="right" className="ml-1" />
+        </h3>
         <div className="flex items-center gap-3 text-xs text-gray-500">
           <span className="flex items-center gap-1">
             <span className="w-3 h-3 rounded bg-red-400 inline-block" />
@@ -211,6 +216,7 @@ export function DlqHistoryPage() {
             <h1 className="text-xl font-bold text-gray-900">DLQ Intelligence</h1>
             <p className="text-sm text-gray-500 mt-0.5">
               Dead-letter queue message history and monitoring
+              <HelpTooltip {...tooltips.dlqHistory.trendChart} position="right" className="ml-1" />
               {currentNamespace && (
                 <span className="text-primary-600 ml-1">
                   — {currentNamespace.displayName || currentNamespace.name}

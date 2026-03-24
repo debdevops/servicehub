@@ -1,5 +1,6 @@
 import { Link, useSearchParams } from 'react-router-dom';
-import { Settings, User, Search, Cloud } from 'lucide-react';
+import { Settings, User, Search, Cloud, HelpCircle } from 'lucide-react';
+import { Link as RouterLink } from 'react-router-dom';
 import { useNamespaces } from '@/hooks/useNamespaces';
 
 export function Header() {
@@ -29,7 +30,7 @@ export function Header() {
       </div>
 
       {/* Connection Status */}
-      <div className="flex items-center gap-2 text-sm">
+      <div className="flex items-center gap-2 text-sm" data-tour="header-connection">
         {isConnected ? (
           <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full">
             <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" aria-hidden="true" />
@@ -65,6 +66,17 @@ export function Header() {
           <span className="text-white/70">Search...</span>
           <kbd className="text-xs bg-white/10 px-1.5 py-0.5 rounded">⌘K</kbd>
         </button>
+
+        {/* Help */}
+        <RouterLink
+          to="/help"
+          className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+          title="Help & Quick Reference"
+          aria-label="Help"
+          data-tour="header-help"
+        >
+          <HelpCircle className="w-5 h-5" />
+        </RouterLink>
 
         {/* Settings */}
         <button

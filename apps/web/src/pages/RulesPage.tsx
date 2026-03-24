@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Plus, Zap, RefreshCw, ToggleLeft, ToggleRight, Pencil, Trash2, FlaskConical, Play, AlertTriangle, X, Shield } from 'lucide-react';
 import { RuleBuilderDialog, TemplateGalleryDialog, RuleTestDialog } from '@/components/rules';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@/lib/helpContent';
 import {
   useRules,
   useCreateRule,
@@ -95,7 +97,10 @@ export function RulesPage() {
       <div className="bg-white border-b border-gray-200 px-6 py-4 shrink-0">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Auto-Replay Rules</h1>
+            <h1 className="text-xl font-bold text-gray-900">
+              Auto-Replay Rules
+              <HelpTooltip {...tooltips.rules.ruleBuilder} position="bottom" className="ml-1.5" />
+            </h1>
             <p className="text-sm text-gray-500 mt-0.5">
               Define rules that automatically replay dead-letter messages matching specific conditions
             </p>

@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Trash2 } from 'lucide-react';
 import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@/hooks/useNamespaces';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@/lib/helpContent';
 import type { EnvironmentType } from '@/lib/api/types';
 import toast from 'react-hot-toast';
 
@@ -214,6 +216,7 @@ export function ConnectPage() {
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Display Name <span className="text-red-500">*</span>
+                    <HelpTooltip {...tooltips.connect.displayName} position="right" className="ml-1" />
                   </label>
                   <input
                     type="text"
@@ -229,6 +232,7 @@ export function ConnectPage() {
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Connection String <span className="text-red-500">*</span>
+                    <HelpTooltip {...tooltips.connect.connectionString} position="right" className="ml-1" />
                   </label>
                   <div className="relative">
                     <input
@@ -271,6 +275,7 @@ export function ConnectPage() {
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Environment <span className="text-red-500">*</span>
+                    <HelpTooltip {...tooltips.connect.environment} position="right" className="ml-1" />
                   </label>
                   <select
                     value={environment}
@@ -311,7 +316,10 @@ export function ConnectPage() {
             </div>
 
             <div className="p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Saved Connections</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                Saved Connections
+                <HelpTooltip {...tooltips.connect.savedConnections} position="bottom" className="ml-1.5" />
+              </h2>
 
               <div className="space-y-3">
                 {namespaces && namespaces.length > 0 ? (
