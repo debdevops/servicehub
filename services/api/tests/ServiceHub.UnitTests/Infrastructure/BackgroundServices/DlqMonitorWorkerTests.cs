@@ -15,9 +15,6 @@ namespace ServiceHub.UnitTests.Infrastructure.BackgroundServices;
 
 public sealed class DlqMonitorWorkerTests
 {
-    private static readonly string ValidConnString =
-        "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=TestPolicy;SharedAccessKey=abc123=";
-
     // ── Constructor ─────────────────────────────────────────────────
 
     [Fact]
