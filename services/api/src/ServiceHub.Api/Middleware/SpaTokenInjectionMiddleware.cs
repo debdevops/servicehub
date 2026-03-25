@@ -49,7 +49,7 @@ public sealed class SpaTokenInjectionMiddleware
 
                 // Inject the SPA token meta tag before </head>
                 var token = _tokenProvider.GenerateToken();
-                var metaTag = $"<meta name=\"spa-token\" content=\"{token}\" />";
+                var metaTag = $"<meta name=\"spa-token\" content=\"{System.Net.WebUtility.HtmlEncode(token)}\" />";
                 html = html.Replace("</head>", $"{metaTag}\n</head>", StringComparison.OrdinalIgnoreCase);
 
                 // Write the modified response
