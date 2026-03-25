@@ -47,6 +47,12 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
+      # Linux platform-specific optional binaries — bump all variants together manually.
+      # These create noisy individual PRs per architecture variant.
+      - dependency-name: "@rollup/rollup-linux-*"
+      - dependency-name: "lightningcss-linux-*"
+      - dependency-name: "@tailwindcss/oxide-linux-*"
+      - dependency-name: "@esbuild/linux-*"
     groups:
       # React runtime and its types must move together.
       # @types/react-dom@19 requires @types/react@^19 — splitting them breaks npm ci.
