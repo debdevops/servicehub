@@ -1,6 +1,5 @@
 import axios, { AxiosError } from 'axios';
 import toast from 'react-hot-toast';
-import { getCachedApiKey } from '@/lib/apiKeyStore';
 
 // When VITE_API_BASE_URL is not set, use a relative path (/api/v1).
 // With the Vite proxy configured in vite.config.ts, /api requests are
@@ -12,12 +11,30 @@ import { getCachedApiKey } from '@/lib/apiKeyStore';
 // You do NOT need to set VITE_API_BASE_URL when using the proxy.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
+// Read the SPA token injected into <meta name="spa-token"> by the server.
+// This token proves the request originates from the co-hosted SPA (loaded
+// from the same server) and cannot be obtained by Postman/curl since they
+// never load the HTML page.
+function getSpaToken(): string | null {
+  const meta = document.querySelector('meta[name="spa-token"]');
+  return meta?.getAttribute('content') ?? null;
+}
+
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
   timeout: 30000, // 30 seconds
+});
+
+// Request interceptor: attach SPA token if available
+apiClient.interceptors.request.use((config) => {
+  const token = getSpaToken();
+  if (token) {
+    config.headers['X-SPA-Token'] = token;
+  }
+  return config;
 });
 
 // Debounce mechanism for error toasts to prevent duplicates
@@ -65,22 +82,6 @@ function isSilent404(url: string): boolean {
   
   return silentPatterns.some(pattern => url.includes(pattern));
 }
-
-// Request interceptor: Add API key from the encrypted in-memory cache.
-// The key is decrypted once at load time by apiKeyStore and held in memory,
-// so this interceptor remains synchronous and adds no per-request latency.
-// The underlying ciphertext is stored in sessionStorage (tab-scoped), so
-// the key is automatically discarded when the tab closes.
-apiClient.interceptors.request.use(
-  (config) => {
-    const apiKey = getCachedApiKey();
-    if (apiKey) {
-      config.headers['X-API-Key'] = apiKey;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
 
 // Response interceptor: Handle errors with recovery guidance
 apiClient.interceptors.response.use(

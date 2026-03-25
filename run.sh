@@ -423,6 +423,20 @@ echo ""
 echo -e "${GREEN}✓ All dependencies installed${NC}"
 echo ""
 
+# PHASE 0.75: GENERATE LOCAL SECRETS
+echo -e "${YELLOW}╔════════════════════════════════════════╗${NC}"
+echo -e "${YELLOW}║      Generating Local Secrets          ║${NC}"
+echo -e "${YELLOW}╚════════════════════════════════════════╝${NC}"
+echo ""
+
+LOCAL_SETTINGS="$REPO_ROOT/services/api/src/ServiceHub.Api/appsettings.Local.json"
+if [[ -f "$LOCAL_SETTINGS" ]]; then
+    echo -e "${GREEN}✓ appsettings.Local.json already exists — keeping existing secrets${NC}"
+else
+    bash "$REPO_ROOT/scripts/generate-keys.sh" --local
+fi
+echo ""
+
 # PHASE 1: AGGRESSIVE CLEANUP
 echo -e "${YELLOW}╔════════════════════════════════════════╗${NC}"
 echo -e "${YELLOW}║      Cleaning Previous Sessions        ║${NC}"
@@ -461,17 +475,9 @@ rm -f /tmp/servicehub_api.log 2>/dev/null || true
 rm -f /tmp/servicehub_ui.log 2>/dev/null || true
 rm -f /tmp/servicehub_*.log 2>/dev/null || true
 
-# Clean API build artifacts if needed
-echo -e "${YELLOW}Cleaning API build artifacts...${NC}"
-cd "$API_DIR"
-find . \( -type d -name "bin" -o -name "obj" \) 2>/dev/null | head -5 | while IFS= read -r dir; do
-  [ -d "$dir" ] && echo "  Cleaning $dir" && rm -rf "$dir" 2>/dev/null || true
-done
-
-# Clean npm cache for web
-echo -e "${YELLOW}Cleaning npm cache...${NC}"
-cd "$WEB_DIR"
-rm -rf node_modules/.vite 2>/dev/null || true
+# Clean Vite cache (quick, avoids stale HMR state)
+echo -e "${YELLOW}Cleaning Vite cache...${NC}"
+rm -rf "$WEB_DIR/node_modules/.vite" 2>/dev/null || true
 
 echo ""
 echo -e "${GREEN}✓ Cleanup complete${NC}"
@@ -529,10 +535,10 @@ echo -e "${YELLOW}║        Starting Services              ║${NC}"
 echo -e "${YELLOW}╚════════════════════════════════════════╝${NC}"
 echo ""
 
-# Start API in background
+# Start API in background with Development environment
 echo -e "${BLUE}Starting API...${NC}"
 cd "$API_DIR"
-bash run-api.sh > /tmp/servicehub_api_startup.log 2>&1 &
+ASPNETCORE_ENVIRONMENT=Development bash run-api.sh > /tmp/servicehub_api_startup.log 2>&1 &
 API_PID=$!
 echo -e "${GREEN}✓ API process started (PID: $API_PID)${NC}"
 

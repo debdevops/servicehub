@@ -50,5 +50,7 @@ echo ""
 # When running locally, http://localhost:5153 still works.
 # When running on a server, http://serverip:5153 is also reachable.
 cd "$SCRIPT_DIR"
+export ASPNETCORE_ENVIRONMENT="${ASPNETCORE_ENVIRONMENT:-Development}"
+echo -e "${BLUE}Environment: $ASPNETCORE_ENVIRONMENT${NC}"
 dotnet run --project "$PROJECT_FILE" \
   --urls "http://0.0.0.0:5153"

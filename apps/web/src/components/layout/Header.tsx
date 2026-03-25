@@ -1,19 +1,20 @@
-import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Settings, User, Search, Cloud, HelpCircle } from 'lucide-react';
+import { User, Cloud, HelpCircle } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
 import { useNamespaces } from '@/hooks/useNamespaces';
-import { SettingsDialog } from '@/components/settings';
+import { getStoredUser } from '@/components/WelcomeDialog';
 
 export function Header() {
   const [searchParams] = useSearchParams();
   const namespaceId = searchParams.get('namespace');
   const { data: namespaces } = useNamespaces();
-  const [settingsOpen, setSettingsOpen] = useState(false);
   
   // Find the current namespace from URL params
   const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
   const isConnected = !!currentNamespace;
+
+  // Read user identity collected by WelcomeDialog
+  const user = getStoredUser();
 
   return (
     <>
@@ -59,18 +60,6 @@ export function Header() {
 
       {/* Actions */}
       <div className="flex items-center gap-2">
-        {/* Global Search - Disabled placeholder */}
-        <button
-          className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg text-sm transition-colors opacity-50 cursor-not-allowed"
-          title="Search (Coming soon)"
-          disabled
-          aria-label="Search - Coming soon"
-        >
-          <Search className="w-4 h-4" />
-          <span className="text-white/70">Search...</span>
-          <kbd className="text-xs bg-white/10 px-1.5 py-0.5 rounded">⌘K</kbd>
-        </button>
-
         {/* Help */}
         <RouterLink
           to="/help"
@@ -82,27 +71,16 @@ export function Header() {
           <HelpCircle className="w-5 h-5" />
         </RouterLink>
 
-        {/* Settings */}
-        <button
-          onClick={() => setSettingsOpen(true)}
-          className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-          title="Security Settings"
-          aria-label="Security Settings"
-        >
-          <Settings className="w-5 h-5" />
-        </button>
-
         {/* User Menu */}
         <button 
           className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
           aria-label="User menu"
+          title={user ? `${user.fullName} (${user.email})` : 'ServiceHub User'}
         >
           <User className="w-4 h-4" />
         </button>
       </div>
     </header>
-
-    <SettingsDialog isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
   </>
   );
 }

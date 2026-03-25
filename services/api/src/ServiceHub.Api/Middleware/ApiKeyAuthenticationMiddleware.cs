@@ -1,4 +1,5 @@
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Security;
 using ServiceHub.Infrastructure.Security;
 
 namespace ServiceHub.Api.Middleware;
@@ -10,11 +11,13 @@ namespace ServiceHub.Api.Middleware;
 public sealed class ApiKeyAuthenticationMiddleware
 {
     private const string ApiKeyHeaderName = "X-API-KEY";
+    private const string SpaTokenHeaderName = "X-SPA-Token";
 
     private readonly RequestDelegate _next;
     private readonly ILogger<ApiKeyAuthenticationMiddleware> _logger;
     private readonly Dictionary<string, ApiKeyConfiguration> _apiKeyLookup;
     private readonly bool _authenticationEnabled;
+    private readonly SpaTokenProvider? _spaTokenProvider;
 
     private static readonly HashSet<string> BypassPaths = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -32,13 +35,16 @@ public sealed class ApiKeyAuthenticationMiddleware
     /// <param name="next">The next middleware in the pipeline.</param>
     /// <param name="logger">The logger instance.</param>
     /// <param name="configuration">The configuration.</param>
+    /// <param name="spaTokenProvider">Optional SPA token provider for co-hosted browser auth.</param>
     public ApiKeyAuthenticationMiddleware(
         RequestDelegate next,
         ILogger<ApiKeyAuthenticationMiddleware> logger,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        SpaTokenProvider? spaTokenProvider = null)
     {
         _next = next;
         _logger = logger;
+        _spaTokenProvider = spaTokenProvider;
         _apiKeyLookup = new Dictionary<string, ApiKeyConfiguration>(StringComparer.Ordinal);
 
         // Load authentication settings
@@ -136,39 +142,52 @@ public sealed class ApiKeyAuthenticationMiddleware
 
         var path = context.Request.Path.Value ?? string.Empty;
 
-        // Bypass authentication for health checks and swagger
+        // Bypass authentication for health checks
         if (ShouldBypassAuthentication(path))
         {
             await _next(context);
             return;
         }
 
-        // Extract API key from header
-        if (!context.Request.Headers.TryGetValue(ApiKeyHeaderName, out var apiKeyHeader))
+        // Try SPA token first (co-hosted browser requests)
+        if (_spaTokenProvider is { IsEnabled: true }
+            && context.Request.Headers.TryGetValue(SpaTokenHeaderName, out var spaTokenHeader))
+        {
+            var spaToken = spaTokenHeader.FirstOrDefault();
+            if (_spaTokenProvider.ValidateToken(spaToken))
+            {
+                context.Items["Authenticated"] = true;
+                context.Items["AuthMethod"] = "SpaToken";
+
+                _logger.LogDebug(
+                    "SPA token authentication successful for {Method} {Path}",
+                    LogRedactor.SanitiseForLog(context.Request.Method),
+                    LogRedactor.SanitiseForLog(path));
+
+                await _next(context);
+                return;
+            }
+
+            _logger.LogWarning(
+                "SPA token validation failed for {Method} {Path}",
+                LogRedactor.SanitiseForLog(context.Request.Method),
+                LogRedactor.SanitiseForLog(path));
+        }
+
+        // Fall through to API key authentication
+        if (!context.Request.Headers.TryGetValue(ApiKeyHeaderName, out var apiKeyHeader)
+            || string.IsNullOrWhiteSpace(apiKeyHeader.FirstOrDefault()))
         {
             _logger.LogWarning(
-                "Authentication failed: Missing {HeaderName} header for {Method} {Path}",
-                ApiKeyHeaderName,
+                "Authentication failed: No valid credential for {Method} {Path}",
                 LogRedactor.SanitiseForLog(context.Request.Method),
                 LogRedactor.SanitiseForLog(path));
 
-            await WriteUnauthorizedResponse(context, "API key is required. Provide the X-API-KEY header.");
+            await WriteUnauthorizedResponse(context, "Authentication required. Provide X-API-KEY or access via the ServiceHub UI.");
             return;
         }
 
-        var apiKey = apiKeyHeader.FirstOrDefault();
-
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            _logger.LogWarning(
-                "Authentication failed: Empty {HeaderName} header for {Method} {Path}",
-                ApiKeyHeaderName,
-                LogRedactor.SanitiseForLog(context.Request.Method),
-                LogRedactor.SanitiseForLog(path));
-
-            await WriteUnauthorizedResponse(context, "API key is required. Provide a valid X-API-KEY header.");
-            return;
-        }
+        var apiKey = apiKeyHeader.FirstOrDefault()!;
 
         // Validate API key exists
         if (!_apiKeyLookup.TryGetValue(apiKey, out var keyConfig))
@@ -198,9 +217,18 @@ public sealed class ApiKeyAuthenticationMiddleware
 
     private static bool ShouldBypassAuthentication(string path)
     {
-        // Exact match for health check paths only — these must remain accessible
-        // for load balancer / container orchestration liveness probes.
-        return BypassPaths.Contains(path);
+        // Health check paths must remain accessible for load balancer probes
+        if (BypassPaths.Contains(path))
+            return true;
+
+        // Only enforce authentication on API routes (/api/*).
+        // Static files (JS, CSS, images), index.html, and SPA fallback routes
+        // must pass through unauthenticated so the browser can load the app
+        // and obtain the SPA token injected into the HTML.
+        if (!path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
     }
 
     private static async Task WriteUnauthorizedResponse(HttpContext context, string message)
