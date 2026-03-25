@@ -13,9 +13,6 @@ updates:
       time: "06:00"
       timezone: "Asia/Kolkata"
     open-pull-requests-limit: 5
-    labels:
-      - "security"
-      - "dependencies"
     commit-message:
       prefix: "chore(deps)"
     # Group all non-major updates into a single PR to reduce noise
@@ -37,11 +34,19 @@ updates:
       time: "06:00"
       timezone: "Asia/Kolkata"
     open-pull-requests-limit: 5
-    labels:
-      - "security"
-      - "dependencies"
     commit-message:
       prefix: "chore(deps)"
+    # Ignore major-version bumps that require manual migration work.
+    # TypeScript 6, Vite 8, and ESLint 10 have breaking changes; upgrade manually.
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
     groups:
       # React runtime and its types must move together.
       # @types/react-dom@19 requires @types/react@^19 — splitting them breaks npm ci.
@@ -74,8 +79,5 @@ updates:
       interval: "weekly"
       time: "06:00"
       timezone: "Asia/Kolkata"
-    labels:
-      - "security"
-      - "dependencies"
     commit-message:
       prefix: "chore(actions)"
