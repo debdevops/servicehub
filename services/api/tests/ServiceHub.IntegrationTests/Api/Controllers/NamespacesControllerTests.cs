@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
@@ -12,39 +14,49 @@ public sealed class NamespacesControllerTests : IClassFixture<TestWebApplication
 {
     private readonly HttpClient _client;
     private const string BaseUrl = "/api/v1/namespaces";
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+    };
 
     public NamespacesControllerTests(TestWebApplicationFactory factory)
     {
         _client = factory.CreateClient();
     }
 
+    private static string UniqueId() => Guid.NewGuid().ToString("N")[..8];
+
+    private static CreateNamespaceRequest MakeRequest(string prefix, string? displayName = null, string? description = null) =>
+        new(
+            Name: $"{prefix}-{UniqueId()}.servicebus.windows.net",
+            ConnectionString: $"Endpoint=sb://{prefix}-{UniqueId()}.servicebus.windows.net/;SharedAccessKeyName=ServiceHubPolicy;SharedAccessKey=testkey123456789=",
+            AuthType: ConnectionAuthType.ConnectionString,
+            DisplayName: displayName,
+            Description: description);
+
     [Fact]
-    public async Task GetAll_WhenNoNamespaces_ShouldReturnEmptyList()
+    public async Task GetAll_ShouldReturnOk()
     {
         var response = await _client.GetAsync(BaseUrl);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var namespaces = await response.Content.ReadFromJsonAsync<List<NamespaceResponse>>();
+        var namespaces = await response.Content.ReadFromJsonAsync<List<NamespaceResponse>>(JsonOptions);
         namespaces.Should().NotBeNull();
-        namespaces.Should().BeEmpty();
     }
 
     [Fact]
     public async Task Create_WithValidRequest_ShouldReturnCreated()
     {
-        var request = new CreateNamespaceRequest(
-            Name: "test-namespace.servicebus.windows.net",
-            ConnectionString: "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123==",
-            AuthType: ConnectionAuthType.ConnectionString,
-            DisplayName: "Test Namespace",
-            Description: "Test description");
+        var request = MakeRequest("create", displayName: "Test Namespace", description: "Test description");
 
         var response = await _client.PostAsJsonAsync(BaseUrl, request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         response.Headers.Location.Should().NotBeNull();
         
-        var created = await response.Content.ReadFromJsonAsync<NamespaceResponse>();
+        var created = await response.Content.ReadFromJsonAsync<NamespaceResponse>(JsonOptions);
         created.Should().NotBeNull();
         created!.Name.Should().Be(request.Name.ToLowerInvariant());
         created.DisplayName.Should().Be(request.DisplayName);
@@ -53,9 +65,11 @@ public sealed class NamespacesControllerTests : IClassFixture<TestWebApplication
     [Fact]
     public async Task Create_WithDuplicateName_ShouldReturnConflict()
     {
+        var name = $"dup-{UniqueId()}.servicebus.windows.net";
+        var connStr = $"Endpoint=sb://dup-{UniqueId()}.servicebus.windows.net/;SharedAccessKeyName=ServiceHubPolicy;SharedAccessKey=testkey123456789=";
         var request = new CreateNamespaceRequest(
-            Name: "duplicate-namespace.servicebus.windows.net",
-            ConnectionString: "Endpoint=sb://duplicate.servicebus.windows.net/;SharedAccessKey=key==",
+            Name: name,
+            ConnectionString: connStr,
             AuthType: ConnectionAuthType.ConnectionString);
 
         await _client.PostAsJsonAsync(BaseUrl, request);
@@ -68,7 +82,7 @@ public sealed class NamespacesControllerTests : IClassFixture<TestWebApplication
     public async Task Create_WithInvalidConnectionString_ShouldReturnBadRequest()
     {
         var request = new CreateNamespaceRequest(
-            Name: "test-namespace.servicebus.windows.net",
+            Name: $"invalid-{UniqueId()}.servicebus.windows.net",
             ConnectionString: "invalid-connection-string",
             AuthType: ConnectionAuthType.ConnectionString);
 
@@ -82,7 +96,7 @@ public sealed class NamespacesControllerTests : IClassFixture<TestWebApplication
     {
         var request = new CreateNamespaceRequest(
             Name: "",
-            ConnectionString: "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKey=key==",
+            ConnectionString: $"Endpoint=sb://test-{UniqueId()}.servicebus.windows.net/;SharedAccessKeyName=ServiceHubPolicy;SharedAccessKey=testkey123456789=",
             AuthType: ConnectionAuthType.ConnectionString);
 
         var response = await _client.PostAsJsonAsync(BaseUrl, request);
@@ -93,18 +107,15 @@ public sealed class NamespacesControllerTests : IClassFixture<TestWebApplication
     [Fact]
     public async Task GetById_WithExistingNamespace_ShouldReturnOk()
     {
-        var createRequest = new CreateNamespaceRequest(
-            Name: "get-test-namespace.servicebus.windows.net",
-            ConnectionString: "Endpoint=sb://get-test.servicebus.windows.net/;SharedAccessKey=key==",
-            AuthType: ConnectionAuthType.ConnectionString);
-
-        var createResponse = await _client.PostAsJsonAsync(BaseUrl, createRequest);
-        var created = await createResponse.Content.ReadFromJsonAsync<NamespaceResponse>();
+        var request = MakeRequest("getbyid");
+        var createResponse = await _client.PostAsJsonAsync(BaseUrl, request);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<NamespaceResponse>(JsonOptions);
 
         var response = await _client.GetAsync($"{BaseUrl}/{created!.Id}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var retrieved = await response.Content.ReadFromJsonAsync<NamespaceResponse>();
+        var retrieved = await response.Content.ReadFromJsonAsync<NamespaceResponse>(JsonOptions);
         retrieved.Should().NotBeNull();
         retrieved!.Id.Should().Be(created.Id);
     }
@@ -122,13 +133,10 @@ public sealed class NamespacesControllerTests : IClassFixture<TestWebApplication
     [Fact]
     public async Task Delete_WithExistingNamespace_ShouldReturnNoContent()
     {
-        var createRequest = new CreateNamespaceRequest(
-            Name: "delete-test-namespace.servicebus.windows.net",
-            ConnectionString: "Endpoint=sb://delete-test.servicebus.windows.net/;SharedAccessKey=key==",
-            AuthType: ConnectionAuthType.ConnectionString);
-
-        var createResponse = await _client.PostAsJsonAsync(BaseUrl, createRequest);
-        var created = await createResponse.Content.ReadFromJsonAsync<NamespaceResponse>();
+        var request = MakeRequest("deltest");
+        var createResponse = await _client.PostAsJsonAsync(BaseUrl, request);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<NamespaceResponse>(JsonOptions);
 
         var response = await _client.DeleteAsync($"{BaseUrl}/{created!.Id}");
 

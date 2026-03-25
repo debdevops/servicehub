@@ -8,6 +8,8 @@ namespace ServiceHub.IntegrationTests.Infrastructure;
 
 public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
+    private readonly string _testDataDir = Path.Combine(Path.GetTempPath(), $"servicehub-test-{Guid.NewGuid():N}");
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.ConfigureAppConfiguration((context, config) =>
@@ -19,7 +21,8 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["Security:Authentication:Enabled"] = "false",
                 ["Security:SecurityHeaders:Enabled"] = "true",
                 ["Cors:AllowedOrigins:0"] = "*",
-                ["RateLimiting:Enabled"] = "false"
+                ["RateLimiting:Enabled"] = "false",
+                ["NamespaceRepository:DataDirectory"] = _testDataDir
             });
         });
 
@@ -36,5 +39,15 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
     {
         builder.UseContentRoot(Directory.GetCurrentDirectory());
         return base.CreateHost(builder);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        if (disposing && Directory.Exists(_testDataDir))
+        {
+            try { Directory.Delete(_testDataDir, recursive: true); }
+            catch { /* best-effort cleanup */ }
+        }
     }
 }

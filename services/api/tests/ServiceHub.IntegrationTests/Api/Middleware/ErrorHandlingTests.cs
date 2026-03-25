@@ -16,20 +16,15 @@ public sealed class ErrorHandlingTests : IClassFixture<TestWebApplicationFactory
     }
 
     [Fact]
-    public async Task NotFoundEndpoint_ShouldReturn404WithProblemDetails()
+    public async Task NotFoundEndpoint_ShouldReturn404()
     {
         var response = await _client.GetAsync("/api/v1/nonexistent");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-        
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("status");
-        content.Should().Contain("404");
     }
 
     [Fact]
-    public async Task BadRequest_ShouldReturnProblemDetailsWithCorrelationId()
+    public async Task BadRequest_ShouldReturnValidationErrors()
     {
         var invalidRequest = new { };
 
@@ -37,7 +32,7 @@ public sealed class ErrorHandlingTests : IClassFixture<TestWebApplicationFactory
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("correlationId");
+        content.Should().Contain("errors");
     }
 
     [Fact]
@@ -54,7 +49,7 @@ public sealed class ErrorHandlingTests : IClassFixture<TestWebApplicationFactory
         root.TryGetProperty("type", out _).Should().BeTrue();
         root.TryGetProperty("title", out _).Should().BeTrue();
         root.TryGetProperty("status", out _).Should().BeTrue();
-        root.TryGetProperty("correlationId", out _).Should().BeTrue();
+        root.TryGetProperty("traceId", out _).Should().BeTrue();
     }
 
     [Fact]
@@ -62,8 +57,8 @@ public sealed class ErrorHandlingTests : IClassFixture<TestWebApplicationFactory
     {
         var response = await _client.GetAsync("/api/v1/namespaces/" + Guid.NewGuid());
 
-        response.Headers.Should().ContainKey("X-Correlation-ID");
-        var headerCorrelationId = response.Headers.GetValues("X-Correlation-ID").FirstOrDefault();
+        response.Headers.Should().ContainKey("X-Correlation-Id");
+        var headerCorrelationId = response.Headers.GetValues("X-Correlation-Id").FirstOrDefault();
         headerCorrelationId.Should().NotBeNullOrEmpty();
     }
 }

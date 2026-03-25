@@ -46,21 +46,21 @@ public sealed class SecurityHeadersTests : IClassFixture<TestWebApplicationFacto
     {
         var response = await _client.GetAsync("/health");
 
-        response.Headers.Should().ContainKey("X-Correlation-ID");
-        var correlationId = response.Headers.GetValues("X-Correlation-ID").FirstOrDefault();
+        response.Headers.Should().ContainKey("X-Correlation-Id");
+        var correlationId = response.Headers.GetValues("X-Correlation-Id").FirstOrDefault();
         correlationId.Should().NotBeNullOrEmpty();
-        Guid.TryParse(correlationId, out _).Should().BeTrue();
+        correlationId.Should().StartWith("sh-", "correlation IDs use the sh- prefix format");
     }
 
     [Fact]
     public async Task Request_WithProvidedCorrelationId_ShouldReturnSameId()
     {
         var providedCorrelationId = Guid.NewGuid().ToString();
-        _client.DefaultRequestHeaders.Add("X-Correlation-ID", providedCorrelationId);
+        _client.DefaultRequestHeaders.Add("X-Correlation-Id", providedCorrelationId);
 
         var response = await _client.GetAsync("/health");
 
-        var returnedCorrelationId = response.Headers.GetValues("X-Correlation-ID").FirstOrDefault();
+        var returnedCorrelationId = response.Headers.GetValues("X-Correlation-Id").FirstOrDefault();
         returnedCorrelationId.Should().Be(providedCorrelationId);
     }
 }
