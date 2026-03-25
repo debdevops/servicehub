@@ -607,7 +607,7 @@ echo -e "  • ${GREEN}HTTP:  ${API_HTTP_URL}${NC}"
 if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ]; then
     echo -e "  • ${GREEN}Remote: http://${SERVER_IP}:5153${NC}"
 fi
-echo -e "  • ${GREEN}Swagger: ${API_HTTP_URL}/swagger${NC}"
+echo -e "  • ${GREEN}Scalar:  ${API_HTTP_URL}/scalar/v1${NC}"
 echo ""
 echo -e "${BLUE}🌐 Web UI:${NC}"
 echo -e "  • ${GREEN}http://localhost:${WEB_PORT}${NC}   ← from this machine"

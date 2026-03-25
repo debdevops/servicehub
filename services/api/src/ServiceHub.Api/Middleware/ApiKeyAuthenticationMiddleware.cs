@@ -53,11 +53,11 @@ public sealed class ApiKeyAuthenticationMiddleware
         // Load API keys with scope support
         LoadApiKeys(configuration);
 
-        if (_authenticationEnabled && _apiKeyLookup.Count == 0)
+        if (_authenticationEnabled && _apiKeyLookup.Count == 0 && (_spaTokenProvider is null || !_spaTokenProvider.IsEnabled))
         {
             _logger.LogWarning(
-                "API Key authentication is enabled but no API keys are configured. " +
-                "All requests will be rejected. Configure Security:Authentication:ApiKeys.");
+                "API Key authentication is enabled but no API keys are configured and SPA token is disabled. " +
+                "All API requests will be rejected. Configure Security:Authentication:ApiKeys.");
         }
 
         if (_authenticationEnabled)

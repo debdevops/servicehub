@@ -399,4 +399,21 @@ public class ApiKeyAuthenticationMiddlewareTests
         // Should fall through to API key check and fail (no API key provided)
         context.Response.StatusCode.Should().Be(401);
     }
+
+    [Fact]
+    public async Task InvokeAsync_InternalSpaTokenPath_ShouldBypass()
+    {
+        // /internal/spa-token is not an /api/* route, so auth is bypassed
+        var nextCalled = false;
+        RequestDelegate next = _ => { nextCalled = true; return Task.CompletedTask; };
+        var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/internal/spa-token";
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
+    }
 }
