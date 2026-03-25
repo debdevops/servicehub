@@ -368,4 +368,48 @@ public class TopicsControllerTests
     }
 
     #endregion
+
+    #region Production Safety Guard Tests
+
+    [Fact]
+    public async Task SendMessage_ProductionNamespace_Returns403()
+    {
+        var ns = Namespace.Create(
+            "prod-namespace",
+            "Endpoint=sb://prod.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
+            "Prod NS",
+            environment: EnvironmentType.Prod).Value;
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var request = new SendMessageRequest(Body: "test message");
+        var result = await _controller.SendMessage(ns.Id, "test-topic", request);
+
+        var objectResult = result as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task SendMessage_DevNamespace_Allowed()
+    {
+        var ns = Namespace.Create(
+            "dev-namespace",
+            "Endpoint=sb://dev.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
+            "Dev NS",
+            environment: EnvironmentType.Dev).Value;
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+        _messageSender.Setup(s => s.SendAsync(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var request = new SendMessageRequest(Body: "test message");
+        var result = await _controller.SendMessage(ns.Id, "test-topic", request);
+
+        result.Should().BeOfType<AcceptedResult>();
+    }
+
+    #endregion
 }

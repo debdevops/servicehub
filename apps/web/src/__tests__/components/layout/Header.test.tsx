@@ -37,14 +37,14 @@ describe('Header', () => {
     expect(screen.getByText('No namespace selected')).toBeInTheDocument();
   });
 
-  it('renders search button', () => {
+  it('renders help link', () => {
     renderHeader();
-    expect(screen.getByLabelText(/Search/i)).toBeInTheDocument();
+    expect(screen.getByLabelText('Help')).toBeInTheDocument();
   });
 
-  it('renders settings icon', () => {
-    const { container } = renderHeader();
-    expect(container).not.toBeEmptyDOMElement();
+  it('renders user menu button', () => {
+    renderHeader();
+    expect(screen.getByLabelText('User menu')).toBeInTheDocument();
   });
 
   it('renders the home link', () => {

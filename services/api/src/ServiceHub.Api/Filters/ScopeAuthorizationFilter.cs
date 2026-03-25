@@ -36,6 +36,14 @@ public sealed class ScopeAuthorizationFilter : IAsyncAuthorizationFilter
             return;
         }
 
+        // SPA token authentication grants full access (the UI needs all scopes).
+        // Scope restrictions only apply to external API key consumers.
+        if (context.HttpContext.Items.TryGetValue("AuthMethod", out var authMethod)
+            && authMethod is "SpaToken")
+        {
+            return;
+        }
+
         // Get authenticated API key config from middleware
         if (!context.HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
             keyConfigObj is not ApiKeyConfiguration keyConfig)

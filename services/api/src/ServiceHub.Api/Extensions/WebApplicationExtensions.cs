@@ -1,5 +1,7 @@
 using Scalar.AspNetCore;
 using ServiceHub.Api.Configuration;
+using ServiceHub.Api.Middleware;
+using ServiceHub.Api.Security;
 
 namespace ServiceHub.Api.Extensions;
 
@@ -19,6 +21,13 @@ public static class WebApplicationExtensions
         // In development, the React dev server runs separately on port 3000
         if (!app.Environment.IsDevelopment())
         {
+            // Inject SPA token into index.html before serving static files
+            var spaTokenProvider = app.Services.GetRequiredService<SpaTokenProvider>();
+            if (spaTokenProvider.IsEnabled)
+            {
+                app.UseMiddleware<SpaTokenInjectionMiddleware>();
+            }
+
             app.UseDefaultFiles();   // serves index.html for /
             app.UseStaticFiles();    // serves JS, CSS, images from wwwroot
         }
@@ -42,6 +51,16 @@ public static class WebApplicationExtensions
             app.MapOpenApi();                          // serves OpenAPI JSON at /openapi/v1.json
             app.MapScalarApiReference();               // serves Scalar UI at /scalar/v1
             app.MapGet("/", () => Results.Redirect("/scalar/v1")).ExcludeFromDescription();
+
+            // Internal endpoint for Vite dev server to fetch SPA tokens.
+            // The Vite transformIndexHtml plugin calls this server-side and injects
+            // the token into the HTML <meta> tag before serving to the browser.
+            var spaTokenProvider = app.Services.GetRequiredService<SpaTokenProvider>();
+            if (spaTokenProvider.IsEnabled)
+            {
+                app.MapGet("/internal/spa-token", () => Results.Text(spaTokenProvider.GenerateToken()))
+                   .ExcludeFromDescription();
+            }
         }
 
         return app;

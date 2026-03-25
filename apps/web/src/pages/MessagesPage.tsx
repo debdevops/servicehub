@@ -5,6 +5,8 @@ import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause } from
 import { MessageList, MessageDetailPanel, type QueueTab } from '@/components/messages';
 import { AIFindingsDropdown } from '@/components/ai';
 import { MessageListSkeleton } from '@/components/messages/MessageListSkeleton';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@/lib/helpContent';
 import { useMessages } from '@/hooks/useMessages';
 import { useClientSideInsights, useInsightsSummary } from '@/hooks/useInsights';
 import { useQueues } from '@/hooks/useQueues';
@@ -405,7 +407,7 @@ export function MessagesPage() {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden relative">
+    <div className="flex-1 flex flex-col overflow-hidden relative" data-tour="messages-area">
       {/* Toolbar */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shrink-0">
         {/* Search */}
@@ -484,6 +486,7 @@ export function MessagesPage() {
           >
             <Sparkles className="w-4 h-4 text-primary-500" />
             AI Findings: {activeInsightsCount}
+            <HelpTooltip {...tooltips.messages.aiFindings} position="bottom" className="ml-0.5" />
           </button>
 
           {showAIDropdown && (
@@ -510,6 +513,7 @@ export function MessagesPage() {
             <>
               <Pause className="w-4 h-4" />
               <span className="hidden sm:inline">Auto: ON</span>
+              <HelpTooltip {...tooltips.messages.autoRefresh} position="bottom" className="ml-0.5" />
             </>
           ) : (
             <>

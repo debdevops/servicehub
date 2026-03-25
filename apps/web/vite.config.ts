@@ -1,11 +1,39 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig, Plugin } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
 
+/**
+ * Vite plugin that injects a SPA token <meta> tag into index.html during
+ * development. Fetches a fresh HMAC token from the API's /internal/spa-token
+ * endpoint on every page load, mirroring what SpaTokenInjectionMiddleware
+ * does in production. This ensures local dev also requires auth — Postman
+ * callers who copy URLs from DevTools will get 401.
+ */
+function spaTokenDevPlugin(): Plugin {
+  return {
+    name: 'spa-token-dev',
+    transformIndexHtml: {
+      order: 'post',
+      async handler(html) {
+        try {
+          const res = await fetch('http://localhost:5153/internal/spa-token');
+          if (res.ok) {
+            const token = await res.text();
+            return html.replace('</head>', `  <meta name="spa-token" content="${token}">\n  </head>`);
+          }
+        } catch {
+          // API not ready yet — token will be missing; refresh after API starts
+        }
+        return html;
+      },
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), spaTokenDevPlugin()],
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),

@@ -96,6 +96,12 @@ public sealed class Namespace
     public bool HasManagePermission { get; private set; }
 
     /// <summary>
+    /// Gets the deployment environment for this namespace (Dev, Uat, Prod).
+    /// Controls safety guards and feature availability.
+    /// </summary>
+    public EnvironmentType Environment { get; private set; }
+
+    /// <summary>
     /// Private constructor to enforce factory method usage.
     /// </summary>
     private Namespace()
@@ -110,12 +116,14 @@ public sealed class Namespace
     /// <param name="connectionString">The connection string with SAS credentials.</param>
     /// <param name="displayName">Optional display name.</param>
     /// <param name="description">Optional description.</param>
+    /// <param name="environment">The deployment environment (defaults to Dev).</param>
     /// <returns>A result containing the namespace or validation errors.</returns>
     public static Result<Namespace> Create(
         string name,
         string connectionString,
         string? displayName = null,
-        string? description = null)
+        string? description = null,
+        EnvironmentType environment = EnvironmentType.Dev)
     {
         var validationResult = ValidateConnectionStringAuth(name, connectionString, displayName, description);
         if (validationResult.IsFailure)
@@ -138,7 +146,8 @@ public sealed class Namespace
             CreatedAt = DateTimeOffset.UtcNow,
             HasListenPermission = permissions.HasListen,
             HasSendPermission = permissions.HasSend,
-            HasManagePermission = permissions.HasManage
+            HasManagePermission = permissions.HasManage,
+            Environment = environment
         };
 
         return Result<Namespace>.Success(ns);
@@ -151,12 +160,14 @@ public sealed class Namespace
     /// <param name="authType">The authentication type (must be identity-based).</param>
     /// <param name="displayName">Optional display name.</param>
     /// <param name="description">Optional description.</param>
+    /// <param name="environment">The deployment environment (defaults to Dev).</param>
     /// <returns>A result containing the namespace or validation errors.</returns>
     public static Result<Namespace> CreateWithManagedIdentity(
         string name,
         ConnectionAuthType authType = ConnectionAuthType.ManagedIdentity,
         string? displayName = null,
-        string? description = null)
+        string? description = null,
+        EnvironmentType environment = EnvironmentType.Dev)
     {
         // Allowlist: only accept known managed-identity types; reject ConnectionString
         // and any future/unknown enum values to prevent user-controlled bypass.
@@ -188,7 +199,8 @@ public sealed class Namespace
             // Managed identity typically has full permissions
             HasListenPermission = true,
             HasSendPermission = true,
-            HasManagePermission = true
+            HasManagePermission = true,
+            Environment = environment
         };
 
         return Result<Namespace>.Success(ns);

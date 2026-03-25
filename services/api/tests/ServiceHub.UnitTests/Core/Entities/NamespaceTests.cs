@@ -238,4 +238,48 @@ public sealed class NamespaceTests
 
         result.IsSuccess.Should().Be(shouldSucceed);
     }
+
+    // ── Environment Tests ───────────────────────────────────
+
+    [Fact]
+    public void Create_DefaultEnvironment_ShouldBeDev()
+    {
+        var result = Namespace.Create(ValidName, ValidConnectionString);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Environment.Should().Be(EnvironmentType.Dev);
+    }
+
+    [Theory]
+    [InlineData(EnvironmentType.Dev)]
+    [InlineData(EnvironmentType.Uat)]
+    [InlineData(EnvironmentType.Prod)]
+    public void Create_WithExplicitEnvironment_ShouldStoreValue(EnvironmentType env)
+    {
+        var result = Namespace.Create(ValidName, ValidConnectionString, environment: env);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Environment.Should().Be(env);
+    }
+
+    [Fact]
+    public void CreateWithManagedIdentity_DefaultEnvironment_ShouldBeDev()
+    {
+        var result = Namespace.CreateWithManagedIdentity(ValidName);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Environment.Should().Be(EnvironmentType.Dev);
+    }
+
+    [Theory]
+    [InlineData(EnvironmentType.Dev)]
+    [InlineData(EnvironmentType.Uat)]
+    [InlineData(EnvironmentType.Prod)]
+    public void CreateWithManagedIdentity_WithExplicitEnvironment_ShouldStoreValue(EnvironmentType env)
+    {
+        var result = Namespace.CreateWithManagedIdentity(ValidName, environment: env);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Environment.Should().Be(env);
+    }
 }

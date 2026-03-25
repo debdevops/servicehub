@@ -109,6 +109,7 @@ public sealed class SubscriptionsController : ApiControllerBase
     /// <response code="200">Subscription retrieved successfully.</response>
     /// <response code="404">Namespace, topic, or subscription not found.</response>
     /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.SubscriptionsRead)]
     [HttpGet("{subscriptionName}")]
     [ProducesResponseType(typeof(SubscriptionRuntimePropertiesDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

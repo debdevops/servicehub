@@ -29,12 +29,17 @@ public sealed class ScopeAuthorizationFilterTests
 
     private static AuthorizationFilterContext CreateContext(
         ApiKeyConfiguration? keyConfig = null,
-        List<object>? endpointMetadata = null)
+        List<object>? endpointMetadata = null,
+        string? authMethod = null)
     {
         var httpContext = new DefaultHttpContext();
         if (keyConfig != null)
         {
             httpContext.Items["ApiKeyConfig"] = keyConfig;
+        }
+        if (authMethod != null)
+        {
+            httpContext.Items["AuthMethod"] = authMethod;
         }
         httpContext.Items["CorrelationId"] = "test-123";
 
@@ -188,5 +193,20 @@ public sealed class ScopeAuthorizationFilterTests
 
         context.Result.Should().NotBeNull();
         (context.Result as JsonResult)!.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public async Task RequiredScope_SpaTokenAuth_BypassesScopeCheck()
+    {
+        // SPA token auth grants full access — no ApiKeyConfig needed
+        var filter = CreateFilter();
+        var context = CreateContext(
+            keyConfig: null,
+            endpointMetadata: new List<object> { new RequireScopeAttribute("dlq:write") },
+            authMethod: "SpaToken");
+
+        await filter.OnAuthorizationAsync(context);
+
+        context.Result.Should().BeNull();
     }
 }
