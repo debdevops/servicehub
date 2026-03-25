@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('react-hot-toast', () => ({
   default: {
@@ -63,22 +63,13 @@ describe('insightsApi', () => {
   });
 });
 
-describe('apiClient interceptors', () => {
+describe('apiClient configuration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  afterEach(() => {
-    sessionStorage.clear();
-  });
-
-  it('adds X-API-Key header when api-key is in sessionStorage', async () => {
-    sessionStorage.setItem('servicehub:api-key', 'my-api-key');
-
-    // Create a config and run it through the interceptor manually
+  it('has correct base URL and headers', async () => {
     const { apiClient } = await import('@/lib/api/client');
-    
-    // Verify the client was configured with the correct baseURL
     expect(apiClient.defaults.baseURL).toBeTruthy();
     expect(apiClient.defaults.headers?.['Content-Type']).toBe('application/json');
   });

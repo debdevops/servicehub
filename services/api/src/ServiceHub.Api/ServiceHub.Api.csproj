@@ -15,8 +15,6 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
-    <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.4.0" />
-    <PackageReference Include="Azure.Identity" Version="1.13.1" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.6.4" />
     <!-- AspNetCore.HealthChecks.UI.Client: no .NET 10 release yet; 9.0.0 is the latest compatible version -->
     <PackageReference Include="AspNetCore.HealthChecks.UI.Client" Version="9.0.0" />

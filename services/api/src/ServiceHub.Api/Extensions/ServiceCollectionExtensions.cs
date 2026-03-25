@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using ServiceHub.Api.Configuration;
 using ServiceHub.Api.Filters;
+using ServiceHub.Api.Security;
 using ServiceHub.Infrastructure;
 
 namespace ServiceHub.Api.Extensions;
@@ -81,6 +82,9 @@ public static class ServiceCollectionExtensions
         {
             options.EnableForHttps = true;
         });
+
+        // SPA token provider for co-hosted browser authentication
+        services.AddSingleton<SpaTokenProvider>();
 
         return services;
     }
