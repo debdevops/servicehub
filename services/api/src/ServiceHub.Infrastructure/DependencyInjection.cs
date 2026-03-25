@@ -93,9 +93,6 @@ public static class DependencyInjection
         // ConnectionStringProtector now requires IConfiguration
         services.TryAddSingleton<IConnectionStringProtector, ConnectionStringProtector>();
 
-        // In-memory secrets manager (API keys are managed via environment variables)
-        services.TryAddSingleton<ISecretsManager, SecretsManager>();
-
         return services;
     }
 

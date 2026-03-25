@@ -37,7 +37,7 @@ TestResults/
 # Local environment files
 .env
 .env.local
-appsettings.local.json
+appsettings.Local.json
 
 # User specific files
 *.user

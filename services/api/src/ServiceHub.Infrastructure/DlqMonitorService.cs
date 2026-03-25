@@ -54,7 +54,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
     {
         _logger.LogDebug("Starting DLQ scan for namespace {NamespaceId}", namespaceId);
 
-        var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId);
+        var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
         if (nsResult.IsFailure)
         {
             _logger.LogWarning("Namespace {NamespaceId} not found, skipping DLQ scan", namespaceId);
