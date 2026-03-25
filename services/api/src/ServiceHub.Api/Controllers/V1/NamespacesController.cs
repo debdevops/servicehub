@@ -129,7 +129,8 @@ public sealed class NamespacesController : ApiControllerBase
                 request.Name,
                 protectedConnectionStringResult.Value,
                 request.DisplayName,
-                request.Description);
+                request.Description,
+                request.Environment);
         }
         else
         {
@@ -137,7 +138,8 @@ public sealed class NamespacesController : ApiControllerBase
                 request.Name,
                 request.AuthType,
                 request.DisplayName,
-                request.Description);
+                request.Description,
+                request.Environment);
         }
 
         if (createResult.IsFailure)
@@ -199,6 +201,7 @@ public sealed class NamespacesController : ApiControllerBase
     /// <returns>The namespace response.</returns>
     /// <response code="200">Namespace retrieved successfully.</response>
     /// <response code="404">Namespace not found.</response>
+    [RequireScope(ApiKeyScopes.NamespacesRead)]
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(NamespaceResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -208,7 +211,9 @@ public sealed class NamespacesController : ApiControllerBase
     {
         // When authentication is enabled, enforce read scope in-method so
         // static-analysis tools can trace the authorization check before the data access.
+        // SPA token auth gets full access — scope restrictions only apply to API keys.
         if (HttpContext.Items.ContainsKey("Authenticated") &&
+            HttpContext.Items["AuthMethod"] is not "SpaToken" &&
             (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
              keyConfigObj is not ApiKeyConfiguration keyConfig ||
              !keyConfig.HasScope(ApiKeyScopes.NamespacesRead)))
@@ -236,6 +241,7 @@ public sealed class NamespacesController : ApiControllerBase
     /// <returns>The test result.</returns>
     /// <response code="200">Connection test completed.</response>
     /// <response code="404">Namespace not found.</response>
+    [RequireScope(ApiKeyScopes.NamespacesRead)]
     [HttpGet("{id:guid}/test")]
     [HttpPost("{id:guid}/test-connection")]
     [ProducesResponseType(typeof(ConnectionTestResponse), StatusCodes.Status200OK)]
@@ -246,7 +252,9 @@ public sealed class NamespacesController : ApiControllerBase
     {
         // When authentication is enabled, enforce read scope in-method so
         // static-analysis tools can trace the authorization check before the data access.
+        // SPA token auth gets full access — scope restrictions only apply to API keys.
         if (HttpContext.Items.ContainsKey("Authenticated") &&
+            HttpContext.Items["AuthMethod"] is not "SpaToken" &&
             (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
              keyConfigObj is not ApiKeyConfiguration keyConfig ||
              !keyConfig.HasScope(ApiKeyScopes.NamespacesRead)))
@@ -349,7 +357,9 @@ public sealed class NamespacesController : ApiControllerBase
     {
         // When authentication is enabled, enforce write scope in-method in addition to
         // the [RequireScope] filter, so the check is visible to static-analysis tools.
+        // SPA token auth gets full access — scope restrictions only apply to API keys.
         if (HttpContext.Items.ContainsKey("Authenticated") &&
+            HttpContext.Items["AuthMethod"] is not "SpaToken" &&
             (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
              keyConfigObj is not ApiKeyConfiguration keyConfig ||
              !keyConfig.HasScope(ApiKeyScopes.NamespacesWrite)))
@@ -397,7 +407,8 @@ public sealed class NamespacesController : ApiControllerBase
             LastConnectionTestSucceeded: ns.LastConnectionTestSucceeded,
             HasListenPermission: ns.HasListenPermission,
             HasSendPermission: ns.HasSendPermission,
-            HasManagePermission: ns.HasManagePermission);
+            HasManagePermission: ns.HasManagePermission,
+            Environment: ns.Environment);
     }
 }
 

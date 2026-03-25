@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Trash2 } from 'lucide-react';
 import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@/hooks/useNamespaces';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@/lib/helpContent';
+import type { EnvironmentType } from '@/lib/api/types';
 import toast from 'react-hot-toast';
 
 /**
@@ -15,6 +18,7 @@ export function ConnectPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [connectionString, setConnectionString] = useState('');
+  const [environment, setEnvironment] = useState<EnvironmentType>('Dev');
   
   // Delete confirmation dialog state
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; id: string; name: string }>({
@@ -83,6 +87,7 @@ export function ConnectPage() {
         name: namespaceName,
         connectionString: connectionString.trim(),
         displayName: displayName.trim(),
+        environment,
       });
       
       // Check actual permissions returned by the backend
@@ -112,6 +117,7 @@ export function ConnectPage() {
       setDisplayName('');
       setConnectionString('');
       setShowPassword(false);
+      setEnvironment('Dev');
     } catch (error) {
       // Error handled by mutation hook
     }
@@ -210,6 +216,7 @@ export function ConnectPage() {
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Display Name <span className="text-red-500">*</span>
+                    <HelpTooltip {...tooltips.connect.displayName} position="right" className="ml-1" />
                   </label>
                   <input
                     type="text"
@@ -225,6 +232,7 @@ export function ConnectPage() {
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Connection String <span className="text-red-500">*</span>
+                    <HelpTooltip {...tooltips.connect.connectionString} position="right" className="ml-1" />
                   </label>
                   <div className="relative">
                     <input
@@ -264,6 +272,25 @@ export function ConnectPage() {
                   </div>
                 </div>
 
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Environment <span className="text-red-500">*</span>
+                    <HelpTooltip {...tooltips.connect.environment} position="right" className="ml-1" />
+                  </label>
+                  <select
+                    value={environment}
+                    onChange={(e) => setEnvironment(e.target.value as EnvironmentType)}
+                    className="w-full px-4 py-2.5 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
+                  >
+                    <option value="Dev">DEV — Development</option>
+                    <option value="Uat">UAT — User Acceptance Testing</option>
+                    <option value="Prod">PROD — Production</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Production namespaces have additional safety guards — message sending and dead-lettering are disabled.
+                  </p>
+                </div>
+
                 <button
                   type="submit"
                   disabled={createNamespace.isPending}
@@ -289,7 +316,10 @@ export function ConnectPage() {
             </div>
 
             <div className="p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Saved Connections</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                Saved Connections
+                <HelpTooltip {...tooltips.connect.savedConnections} position="bottom" className="ml-1.5" />
+              </h2>
 
               <div className="space-y-3">
                 {namespaces && namespaces.length > 0 ? (
@@ -305,7 +335,16 @@ export function ConnectPage() {
                           }`}
                         />
                         <div>
-                          <h3 className="font-medium text-gray-900">{ns.displayName || ns.name}</h3>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-medium text-gray-900">{ns.displayName || ns.name}</h3>
+                            <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase ${
+                              ns.environment === 'Prod' ? 'bg-red-100 text-red-700' :
+                              ns.environment === 'Uat' ? 'bg-amber-100 text-amber-700' :
+                              'bg-green-100 text-green-700'
+                            }`}>
+                              {ns.environment || 'Dev'}
+                            </span>
+                          </div>
                           <p className="text-xs text-gray-500">
                             {ns.name}
                             {ns.lastUsedAt && ` • Last used: ${new Date(ns.lastUsedAt).toLocaleDateString()}`}

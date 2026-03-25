@@ -18,6 +18,7 @@ namespace ServiceHub.Core.DTOs.Responses;
 /// <param name="HasListenPermission">Whether the connection has Listen permission.</param>
 /// <param name="HasSendPermission">Whether the connection has Send permission.</param>
 /// <param name="HasManagePermission">Whether the connection has Manage permission.</param>
+/// <param name="Environment">The deployment environment (Dev, Uat, Prod).</param>
 public sealed record NamespaceResponse(
     Guid Id,
     string Name,
@@ -31,4 +32,5 @@ public sealed record NamespaceResponse(
     bool? LastConnectionTestSucceeded,
     bool HasListenPermission,
     bool HasSendPermission,
-    bool HasManagePermission);
+    bool HasManagePermission,
+    EnvironmentType Environment);

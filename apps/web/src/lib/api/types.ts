@@ -1,3 +1,6 @@
+// Environment type matching backend EnvironmentType enum
+export type EnvironmentType = 'Dev' | 'Uat' | 'Prod';
+
 // Namespace DTOs (match your backend CreateNamespaceRequest, NamespaceResponse)
 export interface Namespace {
   id: string;
@@ -11,6 +14,7 @@ export interface Namespace {
   hasListenPermission?: boolean;
   hasSendPermission?: boolean;
   hasManagePermission?: boolean;
+  environment?: EnvironmentType;
 }
 
 export interface CreateNamespaceRequest {
@@ -18,6 +22,7 @@ export interface CreateNamespaceRequest {
   connectionString: string;
   displayName?: string;
   description?: string;
+  environment?: EnvironmentType;
 }
 
 // Message DTOs (match your backend MessageResponse)

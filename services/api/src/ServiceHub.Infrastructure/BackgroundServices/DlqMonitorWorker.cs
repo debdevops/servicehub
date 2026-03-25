@@ -80,7 +80,7 @@ public sealed class DlqMonitorWorker : BackgroundService
                     namespaces.Count, 
                     string.Join(", ", namespaces.Select(n => $"{LogRedactor.SanitiseForLog(n.Name)} (ID: {n.Id})")));
 
-                using var semaphore = new SemaphoreSlim(MaxParallelScans);
+                    using var semaphore = new SemaphoreSlim(MaxParallelScans);
                 var tasks = namespaces.Select(async ns =>
                 {
                     await semaphore.WaitAsync(stoppingToken);
@@ -88,7 +88,15 @@ public sealed class DlqMonitorWorker : BackgroundService
                     {
                         using var innerScope = _serviceProvider.CreateScope();
                         var monitor = innerScope.ServiceProvider.GetRequiredService<IDlqMonitorService>();
-                        await monitor.ScanNamespaceAsync(ns.Id, stoppingToken);
+                        var scanResult = await monitor.ScanNamespaceAsync(ns.Id, stoppingToken);
+
+                        // Fire webhook if new DLQ messages were detected
+                        if (scanResult.IsSuccess && scanResult.Value > 0)
+                        {
+                            var notifier = innerScope.ServiceProvider.GetRequiredService<IWebhookNotifier>();
+                            await notifier.NotifyDlqSpikeAsync(
+                                ns.Id, ns.Name, scanResult.Value, stoppingToken);
+                        }
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                     {

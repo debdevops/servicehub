@@ -11,6 +11,8 @@ import {
   RefreshCw,
   BarChart3,
   Zap,
+  Activity,
+  HelpCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useState } from 'react';
@@ -339,6 +341,7 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
 export function Sidebar() {
   const navigate = useNavigate();
   const { data: namespaces, isLoading, refetch } = useNamespaces();
+  const [quickAccessOpen, setQuickAccessOpen] = useState(false);
   
   // Get active namespace for Quick Access
   const activeNamespace = namespaces?.find(ns => ns.isActive);
@@ -348,7 +351,7 @@ export function Sidebar() {
   const { data: topics } = useTopics(activeNamespace?.id || '');
 
   return (
-    <aside className="w-[260px] bg-white border-r border-gray-200 flex flex-col overflow-hidden">
+    <aside className="w-[260px] bg-white border-r border-gray-200 flex flex-col overflow-hidden" data-tour="sidebar">
       {/* Namespaces Section */}
       <div className="flex-1 overflow-y-auto p-3">
         <div className="flex items-center justify-between mb-3">
@@ -369,6 +372,7 @@ export function Sidebar() {
               className="p-1 hover:bg-gray-100 rounded transition-colors"
               title="Add Connection"
               aria-label="Add new connection"
+              data-tour="add-connection"
             >
               <Plus className="w-4 h-4 text-gray-500" />
             </NavLink>
@@ -396,12 +400,18 @@ export function Sidebar() {
         )}
       </div>
 
-      {/* Quick Filters */}
-      <div className="border-t border-gray-200 p-3 bg-gradient-to-b from-sky-50 to-white">
-        <h2 className="text-xs font-semibold text-sky-700 uppercase tracking-wider mb-2">
+      {/* Quick Filters — collapsible so Service Bus entities stay visible */}
+      <div className="border-t border-gray-200 bg-gradient-to-b from-sky-50 to-white" data-tour="quick-access">
+        <button
+          onClick={() => setQuickAccessOpen(prev => !prev)}
+          className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-sky-700 uppercase tracking-wider hover:bg-sky-100/50 transition-colors"
+          aria-expanded={quickAccessOpen}
+        >
           Quick Access
-        </h2>
-        <nav className="space-y-1">
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${quickAccessOpen ? '' : '-rotate-90'}`} />
+        </button>
+        {quickAccessOpen && (
+        <nav className="space-y-1 px-3 pb-3">
           <button
             onClick={() => {
               const activeNamespace = namespaces?.find(ns => ns.isActive);
@@ -478,6 +488,14 @@ export function Sidebar() {
             <span className="flex-1 text-left">Auto-Replay</span>
             <span className="text-xs text-amber-600 font-medium">Rules</span>
           </NavLink>
+          <NavLink
+            to="/health"
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border border-gray-200 hover:border-emerald-300 shadow-sm"
+          >
+            <Activity className="w-4 h-4 text-emerald-500" />
+            <span className="flex-1 text-left">System Health</span>
+            <span className="text-xs text-emerald-600 font-medium">Status</span>
+          </NavLink>
           <button
             onClick={() => {
               toast('Scheduled messages feature coming soon!', {
@@ -491,7 +509,16 @@ export function Sidebar() {
             <span className="flex-1 text-left">Scheduled</span>
             <span className="text-xs text-gray-400 font-medium">Soon</span>
           </button>
+          <NavLink
+            to="/help"
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border border-gray-200 hover:border-primary-300 shadow-sm"
+          >
+            <HelpCircle className="w-4 h-4 text-primary-500" />
+            <span className="flex-1 text-left">Help & Guide</span>
+            <span className="text-xs text-primary-600 font-medium">?</span>
+          </NavLink>
         </nav>
+        )}
       </div>
 
       {/* Add Connection CTA */}

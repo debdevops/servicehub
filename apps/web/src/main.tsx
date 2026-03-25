@@ -6,12 +6,14 @@ import { Toaster } from 'react-hot-toast';
 import { router } from './router';
 import { queryClient } from './lib/queryClient';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { WelcomeDialog } from './components/WelcomeDialog';
 import './styles/index.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
+        <WelcomeDialog />
         <RouterProvider router={router} />
       <Toaster
       position="top-right"

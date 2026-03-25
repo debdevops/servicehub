@@ -27,7 +27,8 @@ public class CoreDtoTests
             LastConnectionTestSucceeded: true,
             HasListenPermission: true,
             HasSendPermission: true,
-            HasManagePermission: false);
+            HasManagePermission: false,
+            Environment: EnvironmentType.Dev);
 
         response.Id.Should().Be(id);
         response.Name.Should().Be("test-ns");

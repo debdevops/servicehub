@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useTabPersistence, type DetailTab } from '@/hooks/useTabPersistence';
 import { PropertiesTab, BodyTab, AIInsightsTab, HeadersTab, ForensicTab } from './tabs';
 import { useReplayMessage } from '@/hooks/useMessages';
+import { useNamespaces } from '@/hooks/useNamespaces';
 // usePurgeMessage removed - Azure Service Bus limitation prevents reliable individual message deletion
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import type { Message } from '@/lib/mockData';
@@ -100,6 +101,9 @@ interface ConfirmState {
 
 function ActionButtons({ message, namespaceId, forensicSafety }: ActionButtonsProps) {
   const replayMessage = useReplayMessage();
+  const { data: namespaces } = useNamespaces();
+  const currentNs = namespaces?.find(ns => ns.id === namespaceId);
+  const isProd = currentNs?.environment === 'Prod';
   // const purgeMessage = usePurgeMessage(); // Removed - Azure Service Bus limitation
   const [searchParams] = useSearchParams();
   
@@ -206,6 +210,21 @@ function ActionButtons({ message, namespaceId, forensicSafety }: ActionButtonsPr
             const requiresReview = forensicSafety === 'RequiresReview';
             const isSafe = forensicSafety === 'Safe';
             const hasVerdict = forensicSafety !== null;
+
+            // Production environment guard — block all replay actions
+            if (isProd) {
+              return (
+                <button
+                  disabled
+                  title="Replay is disabled for production namespaces. Use your CI/CD pipeline for production message operations."
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-400 rounded-lg font-medium cursor-not-allowed border border-red-200"
+                  aria-label="Replay blocked in production"
+                >
+                  <Play size={16} />
+                  PROD — Replay Blocked
+                </button>
+              );
+            }
 
             if (!isFromDeadLetter) {
               return (

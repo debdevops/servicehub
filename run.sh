@@ -136,71 +136,138 @@ install_homebrew() {
     fi
 }
 
+# Install .NET 10 via Microsoft's official install script (works on any Linux distro)
+install_dotnet_via_script() {
+    echo -e "${YELLOW}  Trying Microsoft .NET install script (works on any distro)...${NC}"
+    local install_dir="$HOME/.dotnet"
+    local install_script="/tmp/dotnet-install.sh"
+
+    if ! command -v curl >/dev/null 2>&1; then
+        echo -e "${RED}  ✗ curl is required to download the .NET install script${NC}"
+        return 1
+    fi
+
+    curl -fsSL https://dot.net/v1/dotnet-install.sh -o "$install_script" 2>/dev/null
+    if [ ! -f "$install_script" ]; then
+        echo -e "${RED}  ✗ Failed to download dotnet-install.sh${NC}"
+        return 1
+    fi
+
+    chmod +x "$install_script"
+    bash "$install_script" --channel 10.0 --install-dir "$install_dir" 2>/dev/null
+    rm -f "$install_script"
+
+    # Make dotnet available in PATH for the rest of this script
+    export DOTNET_ROOT="$install_dir"
+    export PATH="$install_dir:$PATH"
+
+    if command -v dotnet >/dev/null 2>&1 && [ "$(dotnet --version 2>/dev/null | cut -d'.' -f1)" = "10" ]; then
+        echo -e "${GREEN}  ✓ .NET 10 SDK installed to $install_dir ($(dotnet --version))${NC}"
+        echo -e "${CYAN}  ℹ Add to your shell profile: export DOTNET_ROOT=\"$install_dir\" && export PATH=\"\$DOTNET_ROOT:\$PATH\"${NC}"
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Check and install .NET SDK
 check_and_install_dotnet() {
     local dotnet_installed=false
     local dotnet_version=""
-    
+
     if command -v dotnet >/dev/null 2>&1; then
         dotnet_version=$(dotnet --version 2>/dev/null | cut -d'.' -f1)
         if [ "$dotnet_version" = "10" ]; then
             dotnet_installed=true
         fi
     fi
-    
+
     if [ "$dotnet_installed" = false ]; then
-        echo -e "${YELLOW}Installing .NET 10 SDK...${NC}"
-        
+        # Show what's currently installed (if anything) to help the user understand
+        if command -v dotnet >/dev/null 2>&1; then
+            echo -e "${YELLOW}Installing .NET 10 SDK... (found $(dotnet --version), need 10.x)${NC}"
+        else
+            echo -e "${YELLOW}Installing .NET 10 SDK...${NC}"
+        fi
+
         if [ "$OS" = "macos" ]; then
             brew install --cask dotnet-sdk
+
         elif [ "$OS" = "linux" ]; then
-            # Add Microsoft package repository based on distro
+            local pkg_install_ok=false
+
             if [ "$PACKAGE_MANAGER" = "apt" ]; then
-                # Detect Ubuntu/Debian version
-                if [ -f /etc/os-release ]; then
-                    . /etc/os-release
-                    VERSION_NUM="${VERSION_ID:-22.04}"
-                else
-                    VERSION_NUM="22.04"  # Default fallback
-                fi
-                
                 if [ "$HAS_SUDO" = true ]; then
-                    wget -q https://packages.microsoft.com/config/ubuntu/${VERSION_NUM}/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb 2>/dev/null || 
-                    wget -q https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb
-                    sudo dpkg -i /tmp/packages-microsoft-prod.deb
-                    rm -f /tmp/packages-microsoft-prod.deb
-                    sudo apt-get update
-                    sudo apt-get install -y dotnet-sdk-10.0
+                    # Detect Ubuntu/Debian version
+                    if [ -f /etc/os-release ]; then
+                        . /etc/os-release
+                        VERSION_NUM="${VERSION_ID:-22.04}"
+                    else
+                        VERSION_NUM="22.04"
+                    fi
+                    # Try adding Microsoft APT repo + installing
+                    (
+                        wget -q "https://packages.microsoft.com/config/ubuntu/${VERSION_NUM}/packages-microsoft-prod.deb" -O /tmp/packages-microsoft-prod.deb 2>/dev/null ||
+                        wget -q "https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb" -O /tmp/packages-microsoft-prod.deb
+                        sudo dpkg -i /tmp/packages-microsoft-prod.deb
+                        rm -f /tmp/packages-microsoft-prod.deb
+                        sudo apt-get update -q
+                        sudo apt-get install -y dotnet-sdk-10.0
+                    ) && pkg_install_ok=true || pkg_install_ok=false
                 fi
-            elif [ "$PACKAGE_MANAGER" = "dnf" ]; then
+
+            elif [ "$PACKAGE_MANAGER" = "dnf" ] || [ "$PACKAGE_MANAGER" = "yum" ]; then
+                # .NET 10 may not be in distro repos yet (e.g. RHEL 8/9 ships .NET 8).
+                # Try the package manager first; fall through to the install script on failure.
                 if [ "$HAS_SUDO" = true ]; then
-                    sudo dnf install -y dotnet-sdk-10.0
+                    echo -e "${YELLOW}  Trying $PACKAGE_MANAGER install dotnet-sdk-10.0...${NC}"
+                    if sudo "$PACKAGE_MANAGER" install -y dotnet-sdk-10.0 2>/dev/null; then
+                        pkg_install_ok=true
+                    else
+                        echo -e "${YELLOW}  dotnet-sdk-10.0 not found in distro repos (this is normal on RHEL/CentOS — .NET 10 is new).${NC}"
+                        pkg_install_ok=false
+                    fi
                 fi
-            elif [ "$PACKAGE_MANAGER" = "yum" ]; then
-                if [ "$HAS_SUDO" = true ]; then
-                    sudo yum install -y dotnet-sdk-10.0
-                fi
+
             elif [ "$PACKAGE_MANAGER" = "pacman" ]; then
                 if [ "$HAS_SUDO" = true ]; then
-                    sudo pacman -S --noconfirm dotnet-sdk
+                    sudo pacman -S --noconfirm dotnet-sdk && pkg_install_ok=true || pkg_install_ok=false
                 fi
+
             elif [ "$PACKAGE_MANAGER" = "zypper" ]; then
                 if [ "$HAS_SUDO" = true ]; then
-                    sudo zypper install -y dotnet-sdk-10.0
+                    sudo zypper install -y dotnet-sdk-10.0 && pkg_install_ok=true || pkg_install_ok=false
                 fi
+
             elif [ "$PACKAGE_MANAGER" = "apk" ]; then
                 if [ "$HAS_SUDO" = true ]; then
-                    sudo apk add --no-cache dotnet10-sdk
+                    sudo apk add --no-cache dotnet10-sdk && pkg_install_ok=true || pkg_install_ok=false
                 fi
             fi
+
+            # Fallback: Microsoft's universal install script (works on any distro/version)
+            if [ "$pkg_install_ok" = false ]; then
+                install_dotnet_via_script || {
+                    echo -e "${RED}✗ Could not install .NET 10 SDK automatically.${NC}"
+                    echo -e "${YELLOW}Please install it manually using one of:${NC}"
+                    echo -e "  1. Microsoft install script:  curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 10.0"
+                    echo -e "  2. Download directly:         https://dotnet.microsoft.com/download/dotnet/10.0"
+                    echo -e "  3. On RHEL, add the Microsoft repo first:"
+                    echo -e "       sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc"
+                    echo -e "       sudo dnf install -y https://packages.microsoft.com/config/rhel/9/packages-microsoft-prod.rpm"
+                    echo -e "       sudo dnf install -y dotnet-sdk-10.0"
+                    exit 1
+                }
+            fi
         fi
-        
+
         # Verify installation
-        if command -v dotnet >/dev/null 2>&1; then
-            echo -e "${GREEN}✓ .NET 10 SDK installed successfully ($(dotnet --version))${NC}"
+        if command -v dotnet >/dev/null 2>&1 && [ "$(dotnet --version 2>/dev/null | cut -d'.' -f1)" = "10" ]; then
+            echo -e "${GREEN}✓ .NET 10 SDK ready ($(dotnet --version))${NC}"
         else
-            echo -e "${RED}✗ Error: .NET SDK installation failed${NC}"
-            echo -e "${YELLOW}Please install .NET 10 SDK manually from: https://dotnet.microsoft.com/download/dotnet/10.0${NC}"
+            echo -e "${RED}✗ Error: .NET 10 SDK installation failed or wrong version installed.${NC}"
+            echo -e "${YELLOW}Installed: $(dotnet --version 2>/dev/null || echo 'none') — required: 10.x${NC}"
+            echo -e "${YELLOW}Install manually: https://dotnet.microsoft.com/download/dotnet/10.0${NC}"
             exit 1
         fi
     else
@@ -423,6 +490,20 @@ echo ""
 echo -e "${GREEN}✓ All dependencies installed${NC}"
 echo ""
 
+# PHASE 0.75: GENERATE LOCAL SECRETS
+echo -e "${YELLOW}╔════════════════════════════════════════╗${NC}"
+echo -e "${YELLOW}║      Generating Local Secrets          ║${NC}"
+echo -e "${YELLOW}╚════════════════════════════════════════╝${NC}"
+echo ""
+
+LOCAL_SETTINGS="$SCRIPT_DIR/services/api/src/ServiceHub.Api/appsettings.Local.json"
+if [[ -f "$LOCAL_SETTINGS" ]]; then
+    echo -e "${GREEN}✓ appsettings.Local.json already exists — keeping existing secrets${NC}"
+else
+    bash "$SCRIPT_DIR/scripts/generate-keys.sh" --local
+fi
+echo ""
+
 # PHASE 1: AGGRESSIVE CLEANUP
 echo -e "${YELLOW}╔════════════════════════════════════════╗${NC}"
 echo -e "${YELLOW}║      Cleaning Previous Sessions        ║${NC}"
@@ -461,17 +542,9 @@ rm -f /tmp/servicehub_api.log 2>/dev/null || true
 rm -f /tmp/servicehub_ui.log 2>/dev/null || true
 rm -f /tmp/servicehub_*.log 2>/dev/null || true
 
-# Clean API build artifacts if needed
-echo -e "${YELLOW}Cleaning API build artifacts...${NC}"
-cd "$API_DIR"
-find . \( -type d -name "bin" -o -name "obj" \) 2>/dev/null | head -5 | while IFS= read -r dir; do
-  [ -d "$dir" ] && echo "  Cleaning $dir" && rm -rf "$dir" 2>/dev/null || true
-done
-
-# Clean npm cache for web
-echo -e "${YELLOW}Cleaning npm cache...${NC}"
-cd "$WEB_DIR"
-rm -rf node_modules/.vite 2>/dev/null || true
+# Clean Vite cache (quick, avoids stale HMR state)
+echo -e "${YELLOW}Cleaning Vite cache...${NC}"
+rm -rf "$WEB_DIR/node_modules/.vite" 2>/dev/null || true
 
 echo ""
 echo -e "${GREEN}✓ Cleanup complete${NC}"
@@ -529,10 +602,10 @@ echo -e "${YELLOW}║        Starting Services              ║${NC}"
 echo -e "${YELLOW}╚════════════════════════════════════════╝${NC}"
 echo ""
 
-# Start API in background
+# Start API in background with Development environment
 echo -e "${BLUE}Starting API...${NC}"
 cd "$API_DIR"
-bash run-api.sh > /tmp/servicehub_api_startup.log 2>&1 &
+ASPNETCORE_ENVIRONMENT=Development bash run-api.sh > /tmp/servicehub_api_startup.log 2>&1 &
 API_PID=$!
 echo -e "${GREEN}✓ API process started (PID: $API_PID)${NC}"
 
@@ -565,13 +638,21 @@ npm run dev -- --port $WEB_PORT --host 0.0.0.0 --strictPort > /tmp/servicehub_ui
 WEB_PID=$!
 echo -e "${GREEN}✓ UI process started (PID: $WEB_PID)${NC}"
 
-# Wait for UI to be ready (max 10 seconds)
+# Wait for UI to be ready — use port check instead of curl (Vite dev server
+# keeps connections open and curl hangs waiting for a response on macOS)
 echo -e "${YELLOW}Waiting for UI to be ready...${NC}"
 WAIT_COUNT=0
-MAX_WAIT=10
+MAX_WAIT=15
 UI_READY=false
 while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
-    if curl -s http://localhost:$WEB_PORT >/dev/null 2>&1; then
+    if command -v lsof >/dev/null 2>&1; then
+        if lsof -nP -iTCP:$WEB_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
+            UI_READY=true
+            break
+        fi
+    else
+        # Fallback: give it time to start
+        sleep 5
         UI_READY=true
         break
     fi
@@ -601,7 +682,7 @@ echo -e "  • ${GREEN}HTTP:  ${API_HTTP_URL}${NC}"
 if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ]; then
     echo -e "  • ${GREEN}Remote: http://${SERVER_IP}:5153${NC}"
 fi
-echo -e "  • ${GREEN}Swagger: ${API_HTTP_URL}/swagger${NC}"
+echo -e "  • ${GREEN}Scalar:  ${API_HTTP_URL}/scalar/v1${NC}"
 echo ""
 echo -e "${BLUE}🌐 Web UI:${NC}"
 echo -e "  • ${GREEN}http://localhost:${WEB_PORT}${NC}   ← from this machine"

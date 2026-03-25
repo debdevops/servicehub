@@ -5,6 +5,9 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Load appsettings.Local.json (git-ignored) for local dev secrets
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
+
 // Configure logging with redaction
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();

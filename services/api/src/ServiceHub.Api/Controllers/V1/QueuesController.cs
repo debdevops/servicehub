@@ -3,6 +3,7 @@ using ServiceHub.Api.Authorization;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Shared.Constants;
 
@@ -111,6 +112,7 @@ public sealed class QueuesController : ApiControllerBase
     /// <response code="200">Queue retrieved successfully.</response>
     /// <response code="404">Namespace or queue not found.</response>
     /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.QueuesRead)]
     [HttpGet("{queueName}")]
     [ProducesResponseType(typeof(QueueRuntimePropertiesDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -205,6 +207,16 @@ public sealed class QueuesController : ApiControllerBase
                     Detail = "Send operations require 'Send' permission. " +
                            "Update your connection string to use a policy with Manage, Send, and Listen permissions."
                 });
+        }
+
+        // Production safety guard — block direct message sends to production namespaces
+        if (ns.Environment == EnvironmentType.Prod)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Production Restriction",
+                detail: "Sending messages directly to production namespaces is not permitted via ServiceHub. " +
+                       "Use your CI/CD pipeline or approved tooling for production message operations.");
         }
 
         // Create a request with the queue name and namespace ID
@@ -381,6 +393,16 @@ public sealed class QueuesController : ApiControllerBase
                        "Dead-letter operations require 'Send' permission to move messages to the dead-letter queue. " +
                        "Please create or use a Shared Access Policy with 'Manage', 'Send', and 'Listen' permissions.",
                 type: "https://docs.microsoft.com/azure/service-bus-messaging/service-bus-sas");
+        }
+
+        // Production safety guard — block dead-lettering in production namespaces
+        if (ns.Environment == EnvironmentType.Prod)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Production Restriction",
+                detail: "Dead-lettering messages in production namespaces is not permitted via ServiceHub. " +
+                       "Use your CI/CD pipeline or approved tooling for production message operations.");
         }
 
         var request = new DeadLetterRequest(

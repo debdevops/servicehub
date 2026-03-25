@@ -121,7 +121,9 @@ public sealed class RulesController : ApiControllerBase
     {
         // When authentication is enabled, enforce read scope in-method so
         // static-analysis tools can trace the authorization check before the data access.
+        // SPA token auth gets full access — scope restrictions only apply to API keys.
         if (HttpContext.Items.ContainsKey("Authenticated") &&
+            HttpContext.Items["AuthMethod"] is not "SpaToken" &&
             (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
              keyConfigObj is not ApiKeyConfiguration keyConfig ||
              !keyConfig.HasScope(ApiKeyScopes.DlqRead)))
@@ -232,7 +234,9 @@ public sealed class RulesController : ApiControllerBase
     {
         // When authentication is enabled, enforce write scope in-method so
         // static-analysis tools can trace the authorization check before the data access.
+        // SPA token auth gets full access — scope restrictions only apply to API keys.
         if (HttpContext.Items.ContainsKey("Authenticated") &&
+            HttpContext.Items["AuthMethod"] is not "SpaToken" &&
             (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
              keyConfigObj is not ApiKeyConfiguration keyConfig ||
              !keyConfig.HasScope(ApiKeyScopes.DlqWrite)))
@@ -309,7 +313,9 @@ public sealed class RulesController : ApiControllerBase
     {
         // When authentication is enabled, enforce write scope in-method in addition to
         // the [RequireScope] filter, so the check is visible to static-analysis tools.
+        // SPA token auth gets full access — scope restrictions only apply to API keys.
         if (HttpContext.Items.ContainsKey("Authenticated") &&
+            HttpContext.Items["AuthMethod"] is not "SpaToken" &&
             (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
              keyConfigObj is not ApiKeyConfiguration keyConfig ||
              !keyConfig.HasScope(ApiKeyScopes.DlqWrite)))
@@ -362,7 +368,9 @@ public sealed class RulesController : ApiControllerBase
     {
         // When authentication is enabled, enforce write scope in-method so
         // static-analysis tools can trace the authorization check before the data access.
+        // SPA token auth gets full access — scope restrictions only apply to API keys.
         if (HttpContext.Items.ContainsKey("Authenticated") &&
+            HttpContext.Items["AuthMethod"] is not "SpaToken" &&
             (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
              keyConfigObj is not ApiKeyConfiguration keyConfig ||
              !keyConfig.HasScope(ApiKeyScopes.DlqWrite)))
@@ -407,7 +415,9 @@ public sealed class RulesController : ApiControllerBase
     {
         // When authentication is enabled, enforce write scope in-method so
         // static-analysis tools can trace the authorization check before the data access.
+        // SPA token auth gets full access — scope restrictions only apply to API keys.
         if (HttpContext.Items.ContainsKey("Authenticated") &&
+            HttpContext.Items["AuthMethod"] is not "SpaToken" &&
             (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
              keyConfigObj is not ApiKeyConfiguration keyConfig ||
              !keyConfig.HasScope(ApiKeyScopes.DlqWrite)))

@@ -219,6 +219,10 @@ TestResults/
 
 # User secrets
 secrets.json
+appsettings.Local.json
+
+# Operational runbook — contains resource names/URLs specific to your deployment
+docs/AZURE-KEYVAULT-SETUP.md
 
 # Temporary files
 *.tmp
@@ -235,6 +239,8 @@ project.nuget.cache
 *.nuget.props
 *.nuget.targets
 
-# Agents folder
+# Agents and prompts (local dev workflows)
 agents/
 .github/agents/
+.github/prompts/
+.github/copilot-instructions.md

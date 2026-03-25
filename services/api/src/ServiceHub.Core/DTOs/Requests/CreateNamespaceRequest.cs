@@ -11,6 +11,7 @@ namespace ServiceHub.Core.DTOs.Requests;
 /// <param name="AuthType">The authentication type to use.</param>
 /// <param name="DisplayName">Optional display name for the namespace.</param>
 /// <param name="Description">Optional description for the namespace.</param>
+/// <param name="Environment">The deployment environment (Dev, Uat, Prod). Defaults to Dev.</param>
 public sealed record CreateNamespaceRequest(
     [Required(ErrorMessage = "Namespace name is required")]
     [StringLength(256, MinimumLength = 6, ErrorMessage = "Namespace name must be between 6 and 256 characters")]
@@ -26,4 +27,6 @@ public sealed record CreateNamespaceRequest(
     string? DisplayName = null,
     
     [StringLength(512, ErrorMessage = "Description cannot exceed 512 characters")]
-    string? Description = null);
+    string? Description = null,
+    
+    EnvironmentType Environment = EnvironmentType.Dev);
