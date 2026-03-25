@@ -51,6 +51,16 @@ public static class WebApplicationExtensions
             app.MapOpenApi();                          // serves OpenAPI JSON at /openapi/v1.json
             app.MapScalarApiReference();               // serves Scalar UI at /scalar/v1
             app.MapGet("/", () => Results.Redirect("/scalar/v1")).ExcludeFromDescription();
+
+            // Internal endpoint for Vite dev server to fetch SPA tokens.
+            // The Vite transformIndexHtml plugin calls this server-side and injects
+            // the token into the HTML <meta> tag before serving to the browser.
+            var spaTokenProvider = app.Services.GetRequiredService<SpaTokenProvider>();
+            if (spaTokenProvider.IsEnabled)
+            {
+                app.MapGet("/internal/spa-token", () => Results.Text(spaTokenProvider.GenerateToken()))
+                   .ExcludeFromDescription();
+            }
         }
 
         return app;

@@ -30,7 +30,7 @@ if [[ "${1:-}" == "--local" ]]; then
   "Security": {
     "EncryptionKey": "$ENCRYPTION_KEY",
     "SpaToken": {
-      "Enabled": false,
+      "Enabled": true,
       "Secret": "$SPA_TOKEN_SECRET"
     }
   }
