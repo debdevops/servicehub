@@ -24,9 +24,15 @@ public sealed class ApiKeyAuthenticationMiddleware
         "/health",
         "/health/ready",
         "/health/live",
+        "/health/version",
+        "/health/status",
         "/api/v1/health",
         "/api/v1/health/ready",
-        "/api/v1/health/live"
+        "/api/v1/health/live",
+        "/api/v1/health/version",
+        "/api/v1/health/status",
+        "/api/health/version",
+        "/api/health/status"
     };
 
     /// <summary>

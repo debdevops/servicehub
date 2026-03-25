@@ -89,9 +89,11 @@ describe('Sidebar', () => {
     expect(screen.getByText('Quick Access')).toBeInTheDocument();
   });
 
-  it('renders Quick Access navigation buttons', () => {
+  it('renders Quick Access navigation buttons after expanding', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><Sidebar /></Wrapper>);
+    // Quick Access starts collapsed — expand it first
+    fireEvent.click(screen.getByText('Quick Access'));
     expect(screen.getByText('Active Messages')).toBeInTheDocument();
     expect(screen.getByText('Dead-Letter')).toBeInTheDocument();
     expect(screen.getByText('DLQ Intelligence')).toBeInTheDocument();

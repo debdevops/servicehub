@@ -29,6 +29,11 @@ public static class ApplicationBuilderExtensions
         // Request logging (with redaction)
         app.UseMiddleware<RequestLoggingMiddleware>();
 
+        // CORS must run BEFORE authentication so that OPTIONS preflight requests
+        // are handled here (with 204 + CORS headers) and never reach the auth
+        // middleware. Moving it after auth causes CORS preflights to get 401.
+        app.UseCorsConfiguration(environment);
+
         // API Key authentication
         app.UseMiddleware<ApiKeyAuthenticationMiddleware>();
 
@@ -42,9 +47,6 @@ public static class ApplicationBuilderExtensions
 
         // Response compression
         app.UseResponseCompression();
-
-        // CORS
-        app.UseCorsConfiguration(environment);
 
         // OpenAPI document and Scalar UI are mapped in WebApplicationExtensions.cs (requires WebApplication, not IApplicationBuilder)
 
