@@ -15,7 +15,7 @@ namespace ServiceHub.Core.DTOs.Requests;
 public sealed record CreateNamespaceRequest(
     [Required(ErrorMessage = "Namespace name is required")]
     [StringLength(256, MinimumLength = 6, ErrorMessage = "Namespace name must be between 6 and 256 characters")]
-    [RegularExpression(@"^[a-zA-Z][a-zA-Z0-9-]*$", ErrorMessage = "Namespace name must start with a letter and contain only letters, numbers, and hyphens")]
+    [RegularExpression(@"^[a-zA-Z][a-zA-Z0-9-]*(\.[a-zA-Z][a-zA-Z0-9-]*)*$", ErrorMessage = "Namespace name must start with a letter and contain only letters, numbers, hyphens, and dots")]
     string Name,
     
     [StringLength(2048, ErrorMessage = "Connection string cannot exceed 2048 characters")]
