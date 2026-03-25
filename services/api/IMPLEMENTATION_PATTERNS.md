@@ -142,7 +142,7 @@ graph TD
     
     F --> O["INamespaceRepository<br/>InMemoryNamespaceRepository"]
     
-    G --> P["IConnectionStringProtector<br/>ISecretsManager"]
+    G --> P["IConnectionStringProtector"]
     
     H --> Q["IAIServiceClient"]
 ```
@@ -249,10 +249,11 @@ graph TD
         B["2. ErrorHandlingMiddleware"]
         C["3. CorrelationIdMiddleware"]
         D["4. RequestLoggingMiddleware"]
-        E["5. ApiKeyAuthenticationMiddleware"]
-        F["6. RateLimitingMiddleware"]
-        G["7. (Framework Middleware)"]
-        H["🎯 CONTROLLER"]
+        E["5. CorsMiddleware (OPTIONS preflights short-circuit here)"]
+        F["6. ApiKeyAuthenticationMiddleware"]
+        G["7. RateLimitingMiddleware"]
+        H["(Framework Middleware)"]
+        I["🎯 CONTROLLER"]
     end
     
     subgraph Out["RESPONSE PIPELINE (OUT)"]
