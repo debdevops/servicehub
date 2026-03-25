@@ -341,6 +341,7 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
 export function Sidebar() {
   const navigate = useNavigate();
   const { data: namespaces, isLoading, refetch } = useNamespaces();
+  const [quickAccessOpen, setQuickAccessOpen] = useState(false);
   
   // Get active namespace for Quick Access
   const activeNamespace = namespaces?.find(ns => ns.isActive);
@@ -399,12 +400,18 @@ export function Sidebar() {
         )}
       </div>
 
-      {/* Quick Filters */}
-      <div className="border-t border-gray-200 p-3 bg-gradient-to-b from-sky-50 to-white" data-tour="quick-access">
-        <h2 className="text-xs font-semibold text-sky-700 uppercase tracking-wider mb-2">
+      {/* Quick Filters — collapsible so Service Bus entities stay visible */}
+      <div className="border-t border-gray-200 bg-gradient-to-b from-sky-50 to-white" data-tour="quick-access">
+        <button
+          onClick={() => setQuickAccessOpen(prev => !prev)}
+          className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-sky-700 uppercase tracking-wider hover:bg-sky-100/50 transition-colors"
+          aria-expanded={quickAccessOpen}
+        >
           Quick Access
-        </h2>
-        <nav className="space-y-1">
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${quickAccessOpen ? '' : '-rotate-90'}`} />
+        </button>
+        {quickAccessOpen && (
+        <nav className="space-y-1 px-3 pb-3">
           <button
             onClick={() => {
               const activeNamespace = namespaces?.find(ns => ns.isActive);
@@ -511,6 +518,7 @@ export function Sidebar() {
             <span className="text-xs text-primary-600 font-medium">?</span>
           </NavLink>
         </nav>
+        )}
       </div>
 
       {/* Add Connection CTA */}

@@ -27,7 +27,7 @@ export function HelpTooltip({
   const [isHovered, setIsHovered] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLSpanElement>(null);
 
   // Close popover on outside click
   useEffect(() => {
@@ -68,18 +68,20 @@ export function HelpTooltip({
 
   return (
     <span className={`relative inline-flex items-center ${className}`}>
-      <button
+      <span
         ref={triggerRef}
-        type="button"
-        className="inline-flex items-center justify-center text-gray-400 hover:text-primary-500 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 rounded-full"
+        role="button"
+        tabIndex={0}
+        className="inline-flex items-center justify-center text-gray-400 hover:text-primary-500 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 rounded-full cursor-pointer"
         aria-label="Help"
         aria-expanded={isOpen}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         onClick={() => hasDetail ? setIsOpen(!isOpen) : undefined}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (hasDetail) setIsOpen(!isOpen); } }}
       >
         <HelpCircle style={{ width: size, height: size }} />
-      </button>
+      </span>
 
       {/* Hover tooltip — short text */}
       {showTooltip && (
