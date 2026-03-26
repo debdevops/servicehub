@@ -44,7 +44,7 @@ The startup banner will show all access URLs automatically:
 📍 API Endpoints:
   • HTTP:    http://localhost:5153
   • Remote:  http://192.168.1.50:5153
-  • Swagger: http://localhost:5153/swagger
+  • API Docs: http://localhost:5153/scalar/v1
 ```
 
 ### 2. Access from Your Laptop

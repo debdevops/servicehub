@@ -104,6 +104,7 @@ function ActionButtons({ message, namespaceId, forensicSafety }: ActionButtonsPr
   const { data: namespaces } = useNamespaces();
   const currentNs = namespaces?.find(ns => ns.id === namespaceId);
   const isProd = currentNs?.environment === 'Prod';
+  const hasSendPermission = currentNs?.hasSendPermission !== false;
   // const purgeMessage = usePurgeMessage(); // Removed - Azure Service Bus limitation
   const [searchParams] = useSearchParams();
   
@@ -222,6 +223,21 @@ function ActionButtons({ message, namespaceId, forensicSafety }: ActionButtonsPr
                 >
                   <Play size={16} />
                   PROD — Replay Blocked
+                </button>
+              );
+            }
+
+            // Send permission guard — block replay without Manage SAS policy
+            if (!hasSendPermission) {
+              return (
+                <button
+                  disabled
+                  title="Replay requires a SAS policy with Manage permission. Update your connection string to enable replay."
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-400 rounded-lg font-medium cursor-not-allowed border border-amber-200"
+                  aria-label="Replay blocked — insufficient permissions"
+                >
+                  <Play size={16} />
+                  Replay — Manage Required
                 </button>
               );
             }
