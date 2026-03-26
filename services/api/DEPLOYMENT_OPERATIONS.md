@@ -196,7 +196,7 @@ dotnet watch run --project src/ServiceHub.Api/ServiceHub.Api.csproj
 
 # 4. Access API
 # http://localhost:5000
-# http://localhost:5000/swagger
+# http://localhost:5153/scalar/v1
 ```
 
 ---
