@@ -4,8 +4,7 @@
 
 > This README provides quick start instructions and API reference. For complete documentation with architecture diagrams, design patterns, and detailed flows, see:
 > - **[Comprehensive Guide](../../docs/COMPREHENSIVE-GUIDE.md)** — Complete guide with Mermaid diagrams
-> - **[Architecture Details](ARCHITECTURE.md)** — 805 lines of architectural documentation
-> - **[Documentation Index](DOCUMENTATION_INDEX.md)** — Index of all API documentation
+> - **[Architecture Details](ARCHITECTURE.md)** — Architectural documentation with Mermaid diagrams
 
 ---
 
@@ -14,11 +13,9 @@
 | Document | Purpose | Audience |
 |----------|---------|----------|
 | **[Comprehensive Guide](../../docs/COMPREHENSIVE-GUIDE.md)** | Complete guide with diagrams | Everyone (novices to experts) |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Deep architectural details (805 lines) | Architects, senior developers |
-| [DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md) | Index of 12 architectural diagrams | All developers |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Deep architectural details | Architects, senior developers |
 | [IMPLEMENTATION_PATTERNS.md](IMPLEMENTATION_PATTERNS.md) | Code patterns & conventions | Backend developers |
 | [DEPLOYMENT_OPERATIONS.md](DEPLOYMENT_OPERATIONS.md) | Production deployment guide | DevOps, SREs |
-| [FIXES_APPLIED.md](FIXES_APPLIED.md) | Applied fixes history | Maintainers |
 
 ---
 
