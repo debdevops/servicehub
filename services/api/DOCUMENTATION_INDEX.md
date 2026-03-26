@@ -431,7 +431,7 @@ A: See [DEPLOYMENT_OPERATIONS.md](./DEPLOYMENT_OPERATIONS.md) Performance Tuning
 A: See [ARCHITECTURE.md](./ARCHITECTURE.md) diagram 6 (Security Architecture) and [IMPLEMENTATION_PATTERNS.md](./IMPLEMENTATION_PATTERNS.md) section 5 (Security Implementation).
 
 **Q: Are there example requests?**
-A: Yes! See [README.md](./README.md) section "First API Calls" with curl examples, or use Swagger UI at `/swagger`
+A: Yes! See [README.md](./README.md) section "First API Calls" with curl examples, or use the API docs at `/scalar/v1`
 
 ---
 

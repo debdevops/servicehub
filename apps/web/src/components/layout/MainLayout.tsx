@@ -35,10 +35,11 @@ export function MainLayout() {
   const subscriptionName = searchParams.get('subscription');
   const isMessagesPage = window.location.pathname === '/messages';
 
-  // Resolve current namespace to check environment
+  // Resolve current namespace to check environment and permissions
   const { data: namespaces } = useNamespaces();
   const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
   const isProd = currentNamespace?.environment === 'Prod';
+  const canUseFab = !isProd && currentNamespace?.hasSendPermission !== false;
 
   // Determine entity type and names for FAB
   const entityType: 'queue' | 'topic' = topicName ? 'topic' : 'queue';
@@ -78,8 +79,8 @@ export function MainLayout() {
         </main>
       </div>
 
-      {/* FAB - Only show on messages page and NOT in production */}
-      {isMessagesPage && !isProd && (
+      {/* FAB - Only show on messages page, NOT in production, and only with Send permission */}
+      {isMessagesPage && canUseFab && (
         <MessageFAB 
           namespaceId={namespaceId}
           queueName={entityName}

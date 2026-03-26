@@ -43,7 +43,7 @@ export const glossary: Record<string, { term: string; definition: string }> = {
   environment: {
     term: 'Environment',
     definition:
-      'Classifies a namespace as Development, UAT, or Production. Production namespaces have safety guards — send and replay actions are disabled to prevent accidental data modification.',
+      'Classifies a namespace as Development, UAT, or Production. Production namespaces have safety guards — the Quick Actions button (FAB), send, dead-letter, and replay actions are all disabled to prevent accidental data modification.',
   },
 };
 
@@ -66,13 +66,13 @@ export const tooltips = {
     connectionString: {
       text: 'Azure Service Bus connection string',
       detail:
-        'Paste your Service Bus connection string from the Azure Portal → Shared access policies. We recommend a "Listen-only" policy for read access. An admin key (RootManageSharedAccessKey) will trigger a security warning.',
+        'Paste your Service Bus connection string from the Azure Portal → Shared access policies. Use a Listen-only policy for read-only browsing, or a Manage policy for full Quick Actions (FAB) functionality including sending messages, generating test data, and dead-lettering.',
       action: 'Go to Azure Portal → Service Bus → Shared access policies → Copy the connection string.',
     } as TooltipContent,
     environment: {
       text: "Classify this namespace\u2019s environment",
       detail:
-        'Production namespaces have safety guards: the send-message and replay actions are disabled to prevent accidental data changes. Dev and UAT allow full operations.',
+        'Production namespaces have safety guards: the Quick Actions button (FAB) is hidden, and send, generate, dead-letter, and replay actions are all disabled. Dev and UAT allow full operations when the SAS policy has Manage permission.',
       action: 'Select "Prod" for live namespaces, "Dev" or "Uat" for lower environments.',
     } as TooltipContent,
     savedConnections: {
@@ -217,19 +217,19 @@ export const tooltips = {
     mainButton: {
       text: 'Quick actions menu',
       detail:
-        'Open the floating action menu to send test messages, generate sample data, move messages to the DLQ for testing, or refresh all data. This menu is hidden in Production environments for safety.',
+        'Open the floating action menu to send test messages, generate sample data, move messages to the DLQ for testing, or refresh all data. Hidden in Production environments and when the SAS policy lacks Manage permission.',
     } as TooltipContent,
     sendMessage: {
       text: 'Send a test message to this queue/topic',
-      detail: 'Compose and send a JSON message for testing. Only available in Dev/UAT.',
+      detail: 'Compose and send a JSON message for testing. Requires Manage SAS permission. Only available in Dev/UAT.',
     } as TooltipContent,
     generateMessages: {
       text: 'Generate random sample messages',
-      detail: 'Creates multiple test messages with realistic payloads for load testing and demo purposes.',
+      detail: 'Creates multiple test messages with realistic payloads for load testing and demo purposes. Requires Manage SAS permission.',
     } as TooltipContent,
     testDlq: {
       text: 'Move messages to dead-letter queue',
-      detail: 'Dead-letters up to 3 active messages — useful for testing DLQ monitoring and auto-replay rules.',
+      detail: 'Dead-letters up to 3 active messages — useful for testing DLQ monitoring and auto-replay rules. Requires Manage SAS permission.',
     } as TooltipContent,
   },
 
@@ -329,12 +329,12 @@ export const helpSections: HelpSection[] = [
       {
         question: 'What connection string format is required?',
         answer:
-          'The format is: Endpoint=sb://<namespace>.servicebus.windows.net/;SharedAccessKeyName=<policy>;SharedAccessKey=<key>. We recommend a "Listen-only" policy for safety.',
+          'The format is: Endpoint=sb://<namespace>.servicebus.windows.net/;SharedAccessKeyName=<policy>;SharedAccessKey=<key>. Use a Listen-only policy for read-only browsing, or a Manage policy for full Quick Actions (FAB) functionality.',
       },
       {
         question: 'What does the environment selector do?',
         answer:
-          'It classifies the namespace as Dev, UAT, or Prod. Production namespaces have safety guards — the send-message, generate-messages, and replay actions are all disabled to prevent accidental data modification.',
+          'It classifies the namespace as Dev, UAT, or Prod. Production namespaces have strict safety guards — the Quick Actions button (FAB) is completely hidden, and send, generate, dead-letter, and replay actions are all disabled. Dev and UAT allow full operations when the SAS policy has Manage permission.',
       },
       {
         question: 'How do I navigate between namespaces?',
@@ -371,7 +371,7 @@ export const helpSections: HelpSection[] = [
       {
         question: 'How does Replay / Resubmit work?',
         answer:
-          'Replay sends a dead-lettered message back to the original queue for reprocessing. It copies the body and properties. Only available in Dev/UAT — Production blocks replays.',
+          'Replay sends a dead-lettered message back to the original queue for reprocessing. It copies the body and properties. Requires a SAS policy with Send permission. Only available in Dev/UAT — Production blocks replays.',
       },
     ],
   },
@@ -442,17 +442,17 @@ export const helpSections: HelpSection[] = [
       {
         question: 'Where is the + button / quick actions menu?',
         answer:
-          'The floating action button (FAB) appears in the bottom-right corner on the Messages page. It\'s hidden in Production environments as a safety measure.',
+          'The floating action button (FAB) appears in the bottom-right corner on the Messages page. It requires: (1) a non-Production namespace, and (2) a SAS policy with Manage permission. If either condition is not met, the FAB is hidden.',
       },
       {
         question: 'Why don\'t I see the + button?',
         answer:
-          'The FAB is hidden in two cases: (1) you\'re not on the Messages page, or (2) your namespace is classified as Production. Switch to a Dev/UAT namespace to see it.',
+          'The FAB is hidden in three cases: (1) you\'re not on the Messages page, (2) your namespace is classified as Production, or (3) your SAS policy lacks Manage permission. Switch to a Dev/UAT namespace with a Manage policy to see it.',
       },
       {
         question: 'What can I do from the FAB?',
         answer:
-          'Send a test message, generate random sample messages, move messages to the DLQ for testing, or refresh all data. These actions are for development and testing only.',
+          'Send a test message, generate random sample messages (realistic business scenarios), move messages to the DLQ for testing, or refresh all data. These actions require a Manage SAS policy and are disabled in Production.',
       },
     ],
   },
@@ -470,6 +470,38 @@ export const helpSections: HelpSection[] = [
         question: 'What does high memory usage mean?',
         answer:
           'Memory over 500 MB may indicate a leak. Check if it keeps rising after garbage collection. The GC stats show how often each generation is collected.',
+      },
+    ],
+  },
+  {
+    id: 'permissions',
+    title: 'Permissions & Security',
+    icon: '🔒',
+    items: [
+      {
+        question: 'What SAS permissions does ServiceHub need?',
+        answer:
+          'It depends on your use case. Listen-only is sufficient for browsing messages, inspecting DLQ, and viewing metrics. Manage permission enables the Quick Actions (FAB) button for sending messages, generating test data, dead-lettering, and replay operations.',
+      },
+      {
+        question: 'Why is the Quick Actions (FAB) button hidden?',
+        answer:
+          'The FAB requires two conditions: (1) the namespace must be Dev or UAT (not Production), and (2) the SAS policy must have Manage permission. This prevents accidental modification of production data and ensures only authorized users can perform write operations.',
+      },
+      {
+        question: 'What is the difference between Listen, Send, and Manage?',
+        answer:
+          'Listen: Read messages without removing them (peek). Send: Write messages to queues/topics and replay from DLQ. Manage: Full control including Send + Listen + administrative operations. ServiceHub recommends Manage for Dev/UAT and Listen-only for Production.',
+      },
+      {
+        question: 'Is it safe to use ServiceHub with production namespaces?',
+        answer:
+          'Yes. When a namespace is classified as Production, ServiceHub operates in strict read-only mode — the FAB is hidden, send/dead-letter/replay actions are all blocked both in the UI and at the API level. A Listen-only SAS policy is all you need for Production.',
+      },
+      {
+        question: 'What is Scalar API Docs (/scalar/v1)?',
+        answer:
+          'Scalar is an interactive API documentation viewer, only available in Development mode. It lets developers explore and test all API endpoints. It is automatically disabled in Production deployments for security.',
       },
     ],
   },
