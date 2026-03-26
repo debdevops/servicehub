@@ -70,7 +70,7 @@ dotnet watch --project src/ServiceHub.Api/ServiceHub.Api.csproj
 ### Access Points
 
 - **API**: http://localhost:5000
-- **Swagger UI**: http://localhost:5000/swagger
+- **API Docs (Scalar)**: http://localhost:5153/scalar/v1
 - **Health Check**: http://localhost:5000/health
 - **Ready Check**: http://localhost:5000/health/ready
 - **Live Check**: http://localhost:5000/health/live

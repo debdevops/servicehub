@@ -94,17 +94,17 @@ export function ConnectPage() {
       // The backend attempts to detect permissions from the SAS policy name, but this is not always accurate
       // since Azure doesn't enforce naming conventions. We show a warning if permissions appear limited.
       if (createdNamespace.hasManagePermission === false && createdNamespace.hasSendPermission === false) {
-        // Listen-only — this is the recommended setup for read-only inspection
+        // Listen-only — read-only inspection mode
         toast.success(
           '✓ Connected with Listen-only access. Perfect for DLQ inspection and message browsing. ' +
-          'Note: Replay operations require a policy with Send permission.',
+          'Quick Actions (FAB) require a Manage policy for send, generate, and dead-letter operations.',
           { duration: 8000 }
         );
       } else if (createdNamespace.hasManagePermission === false) {
-        // Has Listen + Send but not Manage — good enough for most operations
+        // Has Listen + Send but not Manage
         toast(
-          '✓ Connected. All DLQ inspection and replay features are available. ' +
-          'Some administrative operations (queue creation) require Manage permission.',
+          '✓ Connected with Send + Listen access. Replay and send operations are available. ' +
+          'Some Quick Actions may require Manage permission.',
           {
             duration: 6000,
             style: { background: '#f0fdf4', color: '#166534', border: '1px solid #86efac' },
@@ -254,21 +254,26 @@ export function ConnectPage() {
                   <div className="mt-2 space-y-2">
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                       <p className="text-xs text-blue-800 font-medium mb-1">
-                        Recommended: Create a dedicated Listen-only policy (60 seconds, no admin required)
+                        Create a dedicated SAS policy for ServiceHub
                       </p>
                       <ol className="text-xs text-blue-700 space-y-0.5 list-decimal list-inside">
                         <li>Azure Portal → your Service Bus namespace</li>
                         <li>Shared access policies → + Add policy</li>
-                        <li>Name it <code className="bg-blue-100 px-1 rounded">servicehub</code> → tick <strong>Listen</strong> only</li>
+                        <li>Name it <code className="bg-blue-100 px-1 rounded">servicehub</code></li>
                         <li>Save → copy Primary Connection String → paste above</li>
                       </ol>
-                      <p className="text-xs text-blue-600 mt-1">
-                        Listen permission is all ServiceHub needs. No Manage, no admin role, no IT ticket required.
+                      <div className="mt-2 space-y-1">
+                        <p className="text-xs text-blue-700">
+                          <strong>Listen only</strong> — Browse messages, inspect DLQ, view metrics (read-only)
+                        </p>
+                        <p className="text-xs text-blue-700">
+                          <strong>Manage</strong> — Full access: send messages, generate test data, dead-letter, replay (Dev/UAT only)
+                        </p>
+                      </div>
+                      <p className="text-xs text-blue-600 mt-1.5">
+                        ⚠️ The Quick Actions button (FAB) requires a policy with <strong>Manage</strong> permission. Production namespaces always hide the FAB for safety.
                       </p>
                     </div>
-                    <p className="text-xs text-gray-400">
-                      Also accepts Manage + Send + Listen policies if you already have one configured.
-                    </p>
                   </div>
                 </div>
 
@@ -287,7 +292,7 @@ export function ConnectPage() {
                     <option value="Prod">PROD — Production</option>
                   </select>
                   <p className="text-xs text-gray-500 mt-1">
-                    Production namespaces have additional safety guards — message sending and dead-lettering are disabled.
+                    Production namespaces have safety guards — Quick Actions (FAB), message sending, dead-lettering, and replay are all disabled.
                   </p>
                 </div>
 
