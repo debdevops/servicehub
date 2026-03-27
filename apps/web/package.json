@@ -13,6 +13,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@microsoft/applicationinsights-react-js": "^19.3.8",
+    "@microsoft/applicationinsights-web": "^3.3.11",
     "@tailwindcss/vite": "^4.2.2",
     "@tanstack/react-query": "^5.95.2",
     "@tanstack/react-table": "^8.21.3",
@@ -46,19 +48,19 @@
     "vitest": "^4.1.0"
   },
   "optionalDependencies": {
-    "@rollup/rollup-linux-x64-gnu": "4.60.0",
-    "@rollup/rollup-linux-x64-musl": "4.60.0",
+    "@esbuild/linux-arm64": "0.25.12",
+    "@esbuild/linux-x64": "0.25.12",
     "@rollup/rollup-linux-arm64-gnu": "4.60.0",
     "@rollup/rollup-linux-arm64-musl": "4.60.0",
-    "lightningcss-linux-x64-gnu": "1.32.0",
-    "lightningcss-linux-x64-musl": "1.32.0",
-    "lightningcss-linux-arm64-gnu": "1.32.0",
-    "lightningcss-linux-arm64-musl": "1.32.0",
-    "@tailwindcss/oxide-linux-x64-gnu": "4.2.2",
-    "@tailwindcss/oxide-linux-x64-musl": "4.2.2",
+    "@rollup/rollup-linux-x64-gnu": "4.60.0",
+    "@rollup/rollup-linux-x64-musl": "4.60.0",
     "@tailwindcss/oxide-linux-arm64-gnu": "4.2.2",
     "@tailwindcss/oxide-linux-arm64-musl": "4.2.2",
-    "@esbuild/linux-x64": "0.25.12",
-    "@esbuild/linux-arm64": "0.25.12"
+    "@tailwindcss/oxide-linux-x64-gnu": "4.2.2",
+    "@tailwindcss/oxide-linux-x64-musl": "4.2.2",
+    "lightningcss-linux-arm64-gnu": "1.32.0",
+    "lightningcss-linux-arm64-musl": "1.32.0",
+    "lightningcss-linux-x64-gnu": "1.32.0",
+    "lightningcss-linux-x64-musl": "1.32.0"
   }
 }

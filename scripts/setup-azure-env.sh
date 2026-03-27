@@ -40,6 +40,7 @@ az webapp config appsettings set \
     "Security__Authentication__Enabled=true" \
     "Security__Authentication__ScopedApiKeys__0__Key=$ADMIN_KEY" \
     "Security__Authentication__ScopedApiKeys__1__Key=$READONLY_KEY" \
+    "ApplicationInsights__ConnectionString=SET_YOUR_APPINSIGHTS_CONNECTION_STRING" \
   --output table
 
 echo ""
