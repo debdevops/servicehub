@@ -1,4 +1,5 @@
 import { Component, ReactNode } from 'react';
+import { appInsights } from '../lib/telemetry';
 
 interface Props {
   children: ReactNode;
@@ -45,6 +46,14 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // Track exception in Application Insights
+    appInsights.trackException({
+      exception: error,
+      properties: {
+        componentStack: errorInfo.componentStack ?? undefined,
+      },
+    });
+
     // Only log detailed errors in development
     if (import.meta.env.DEV) {
       console.error('ErrorBoundary caught:', error, errorInfo);
