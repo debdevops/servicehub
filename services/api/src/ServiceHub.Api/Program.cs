@@ -22,6 +22,9 @@ else
     builder.Logging.SetMinimumLevel(LogLevel.Information);
 }
 
+// Add Application Insights telemetry (cost-effective configuration)
+builder.Services.AddApplicationInsightsTelemetryConfiguration(builder.Configuration, builder.Environment);
+
 // Add ServiceHub API services
 builder.Services.AddServiceHubApi(builder.Configuration);
 
