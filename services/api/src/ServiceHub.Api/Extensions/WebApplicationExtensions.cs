@@ -43,7 +43,13 @@ public static class WebApplicationExtensions
         // This MUST come after MapControllers() so API routes take priority.
         if (!app.Environment.IsDevelopment())
         {
-            app.MapFallbackToFile("index.html");
+            // Check if index.html exists before mapping fallback
+            // (May not exist during testing or in non-hosted scenarios)
+            var indexPath = Path.Combine(app.Environment.WebRootPath ?? "wwwroot", "index.html");
+            if (File.Exists(indexPath))
+            {
+                app.MapFallbackToFile("index.html");
+            }
         }
         else
         {
