@@ -18,6 +18,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             {
                 ["Security:EncryptionKey"] = "test-encryption-key-for-integration-tests-minimum-32bytes",
                 ["Security:EnableConnectionStringEncryption"] = "true",
+                ["Security:SpaToken:Enabled"] = "false",
                 ["Security:Authentication:Enabled"] = "false",
                 ["Security:SecurityHeaders:Enabled"] = "true",
                 ["Cors:AllowedOrigins:0"] = "*",
