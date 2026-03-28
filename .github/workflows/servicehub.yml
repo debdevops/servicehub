@@ -6,12 +6,19 @@ on:
     branches:
       - main
       - develop
+      - 'release'
+      - 'bugfix/**'
       - 'feature/**'
       - 'hotfix/**'
   pull_request:
     branches:
       - main
       - develop
+      - 'release'
+      - 'bugfix/**'
+      - 'feature/**'
+      - 'hotfix/**'
+
 
 env:
   DOTNET_VERSION: '10.0.x'
