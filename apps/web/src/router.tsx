@@ -35,6 +35,10 @@ export const router = createBrowserRouter([
         path: 'help',
         element: <HelpPage />,
       },
+      {
+        path: '*',
+        element: <Navigate to="/messages" replace />,
+      },
     ],
   },
 ]);
