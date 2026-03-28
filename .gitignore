@@ -227,6 +227,9 @@ appsettings.Local.json
 # Operational runbook — contains resource names/URLs specific to your deployment
 docs/AZURE-KEYVAULT-SETUP.md
 
+# Azure deployment scripts and guides (local only, not committed)
+deploy/
+
 # Temporary files
 *.tmp
 .tmp/
