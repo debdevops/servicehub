@@ -45,7 +45,16 @@ public sealed class SpaTokenProvider
         }
         else
         {
-            _secretKey = Convert.FromHexString(secret);
+            try
+            {
+                _secretKey = Convert.FromHexString(secret);
+            }
+            catch (FormatException)
+            {
+                // Secret is not hex-encoded (e.g., plaintext dev/test key) — use ephemeral key
+                _secretKey = RandomNumberGenerator.GetBytes(32);
+                _logger.LogWarning("SPA token secret is not valid hex — using ephemeral key. Encode your secret as hex for persistence across restarts");
+            }
         }
 
         _logger.LogInformation("SPA token validation enabled (lifetime: {Lifetime} min)", TokenLifetime.TotalMinutes);
