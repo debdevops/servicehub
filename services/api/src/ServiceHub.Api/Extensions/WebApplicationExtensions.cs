@@ -65,8 +65,9 @@ public static class WebApplicationExtensions
             // Internal endpoint for Vite dev server to fetch SPA tokens.
             // The Vite transformIndexHtml plugin calls this server-side and injects
             // the token into the HTML <meta> tag before serving to the browser.
-            var spaTokenProvider = app.Services.GetRequiredService<SpaTokenProvider>();
-            if (spaTokenProvider.IsEnabled)
+            // Use GetService (returns null if not found) instead of GetRequiredService
+            var spaTokenProvider = app.Services.GetService<SpaTokenProvider>();
+            if (spaTokenProvider?.IsEnabled == true)
             {
                 app.MapGet("/internal/spa-token", () => Results.Text(spaTokenProvider.GenerateToken()))
                    .ExcludeFromDescription();
