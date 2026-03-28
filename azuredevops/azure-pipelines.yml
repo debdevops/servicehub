@@ -7,7 +7,6 @@ trigger:
       - '*.md'
       - 'docs/**'
       - 'deploy/**'
-      - 'azuredevops/**'
       - '.github/**'
 
 pr: none               # Do NOT trigger on PRs — only on merge to release
@@ -78,6 +77,7 @@ stages:
 
           # ── Copy SPA build into API's wwwroot ──
           - script: |
+              mkdir -p $(Build.ArtifactStagingDirectory)/api/wwwroot
               cp -r apps/web/dist/* $(Build.ArtifactStagingDirectory)/api/wwwroot/
             displayName: 'Copy SPA into API wwwroot'
 
