@@ -41,6 +41,17 @@ stages:
             inputs:
               versionSpec: '$(nodeVersion)'
 
+          # ── Frontend: Install & Build FIRST ──
+          # vite.config.ts build.outDir = ../../services/api/src/ServiceHub.Api/wwwroot
+          # So the React build populates wwwroot before dotnet publish runs.
+          - script: |
+              cd apps/web
+              npm ci
+              npm run build
+            displayName: 'UI: Install & Build'
+            env:
+              VITE_APPINSIGHTS_CONNECTION_STRING: ''   # Set at runtime via app settings
+
           # ── Backend: Restore, Build, Test ──
           - script: |
               cd services/api
@@ -60,26 +71,13 @@ stages:
               testResultsFiles: '$(Agent.TempDirectory)/test-results/**/*.trx'
             condition: always()
 
-          # ── Backend: Publish ──
+          # ── Backend: Publish (wwwroot already populated by the UI build above) ──
           - script: |
-              cd services/api/src/ServiceHub.Api
-              dotnet publish -c $(buildConfiguration) -o $(Build.ArtifactStagingDirectory)/api --no-build
+              dotnet publish services/api/src/ServiceHub.Api/ServiceHub.Api.csproj \
+                -c $(buildConfiguration) \
+                -o $(Build.ArtifactStagingDirectory)/api \
+                --no-build
             displayName: 'API: Publish'
-
-          # ── Frontend: Install, Build ──
-          - script: |
-              cd apps/web
-              npm ci
-              npm run build
-            displayName: 'UI: Install & Build'
-            env:
-              VITE_APPINSIGHTS_CONNECTION_STRING: ''   # Set at runtime via app settings
-
-          # ── Copy SPA build into API's wwwroot ──
-          - script: |
-              mkdir -p $(Build.ArtifactStagingDirectory)/api/wwwroot
-              cp -r apps/web/dist/* $(Build.ArtifactStagingDirectory)/api/wwwroot/
-            displayName: 'Copy SPA into API wwwroot'
 
           # ── Publish artifact ──
           - publish: $(Build.ArtifactStagingDirectory)/api
