@@ -19,6 +19,7 @@ namespace ServiceHub.Infrastructure.ServiceBus;
 public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 {
     private readonly ServiceBusClient _client;
+    private readonly string _connectionString;
     private readonly ILogger<ServiceBusClientWrapper> _logger;
     private volatile bool _disposed;
 
@@ -37,14 +38,17 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
     /// </summary>
     /// <param name="namespaceId">The namespace identifier.</param>
     /// <param name="client">The underlying Service Bus client.</param>
+    /// <param name="connectionString">The connection string for creating the admin client.</param>
     /// <param name="logger">The logger instance.</param>
     public ServiceBusClientWrapper(
         Guid namespaceId,
         ServiceBusClient client,
+        string connectionString,
         ILogger<ServiceBusClientWrapper> logger)
     {
         NamespaceId = namespaceId;
         _client = client ?? throw new ArgumentNullException(nameof(client));
+        _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -302,9 +306,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             // Double-check after acquiring lock
             if (_adminClient == null)
             {
-                _adminClient = new ServiceBusAdministrationClient(
-                    _client.FullyQualifiedNamespace,
-                    new Azure.Identity.DefaultAzureCredential());
+                _adminClient = new ServiceBusAdministrationClient(_connectionString);
 
                 _logger.LogDebug(
                     "Created ServiceBusAdministrationClient for namespace {NamespaceId}",
