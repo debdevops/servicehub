@@ -40,9 +40,10 @@ public static class ApplicationBuilderExtensions
         // Rate limiting (skip in development for easier testing)
         if (!environment.IsDevelopment())
         {
-            // Get headers options from DI to pass to middleware
+            // Get options from DI — passing null as an arg breaks ActivatorUtilities in .NET 10
+            var rateLimitOptions = app.ApplicationServices.GetRequiredService<IOptions<RateLimitOptions>>().Value;
             var headersOptions = app.ApplicationServices.GetRequiredService<IOptions<HttpHeadersOptions>>().Value;
-            app.UseMiddleware<RateLimitingMiddleware>(null, headersOptions);
+            app.UseMiddleware<RateLimitingMiddleware>(rateLimitOptions, headersOptions);
         }
 
         // Response compression
