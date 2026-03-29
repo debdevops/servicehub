@@ -1,5 +1,20 @@
 # ServiceHub Changelog
 
+## [3.0.0] - 2026-03-29
+
+### Breaking Changes
+- Bumped major version to 3.0.0 — aligns API and UI versioning under a single shared version
+
+### Fixed
+- Fix: use connection string for `ServiceBusAdministrationClient` (resolves authentication failures with SAS-based connection strings)
+- Fix: resolve `RateLimitingMiddleware` DI failure on .NET 10
+
+### Changed
+- `ServiceCollectionExtensions`: switched `ServiceBusAdministrationClient` registration to use connection-string-based construction
+- `ServiceBusClientWrapper`: tightened log sanitisation paths for `entityName` and `queueName`
+
+---
+
 ## [2.1.3] - 2026-03-23
 
 ### Refactored
