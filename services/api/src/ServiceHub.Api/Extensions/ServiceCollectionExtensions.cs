@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using ServiceHub.Api.Configuration;
 using ServiceHub.Api.Filters;
+using ServiceHub.Api.Middleware;
 using ServiceHub.Api.Security;
 using ServiceHub.Infrastructure;
 
@@ -85,6 +86,9 @@ public static class ServiceCollectionExtensions
 
         // SPA token provider for co-hosted browser authentication
         services.AddSingleton<SpaTokenProvider>();
+
+        // Rate limit options (read from RateLimit config section)
+        services.Configure<RateLimitOptions>(configuration.GetSection("RateLimit"));
 
         return services;
     }
