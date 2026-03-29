@@ -52,7 +52,7 @@ public sealed class ServiceBusClientCache : IServiceBusClientCache
             var client = new ServiceBusClient(connectionString, clientOptions);
             var wrapperLogger = _loggerFactory.CreateLogger<ServiceBusClientWrapper>();
 
-            return new ServiceBusClientWrapper(id, client, wrapperLogger);
+            return new ServiceBusClientWrapper(id, client, connectionString, wrapperLogger);
         });
     }
 
