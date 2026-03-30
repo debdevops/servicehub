@@ -61,10 +61,15 @@ public static class WebApplicationExtensions
                 app.MapScalarApiReference();               // serves Scalar UI at /scalar/v1
                 app.MapGet("/", () => Results.Redirect("/scalar/v1")).ExcludeFromDescription();
             }
+        }
 
-            // Internal endpoint for Vite dev server to fetch SPA tokens.
-            // The Vite transformIndexHtml plugin calls this server-side and injects
-            // the token into the HTML <meta> tag before serving to the browser.
+        {
+            // Expose the SPA token refresh endpoint in ALL environments.
+            // The browser SPA calls this when its embedded token expires (30-min lifetime)
+            // or when Azure App Service load-balancer routes the request to a different
+            // instance that has a different ephemeral key. The endpoint is intentionally
+            // NOT under /api/ so the ApiKeyAuthenticationMiddleware bypass rule lets it
+            // through without any credential, which is necessary to bootstrap auth.
             // Use GetService (returns null if not found) instead of GetRequiredService
             var spaTokenProvider = app.Services.GetService<SpaTokenProvider>();
             if (spaTokenProvider?.IsEnabled == true)
