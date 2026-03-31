@@ -1,5 +1,19 @@
 # ServiceHub Changelog
 
+## [3.0.2] - 2026-03-31
+
+### Fixed
+- Fix: continuous toast spam when Service Bus is unavailable or deleted
+  — Background-polling hooks (queues, topics, subscriptions, messages) now use silent mode so Service Bus connectivity errors never produce toast notifications
+  — Sidebar shows inline “Connection unavailable” indicator instead of confusing error popups
+  — Messages hook gracefully returns empty results on 502/503 instead of throwing
+  — Stopped retrying on 500+ errors in all polling hooks to reduce wasted network calls
+
+### Changed
+- Landing page changed from `/messages` to `/connect` so users always start at the connection management screen — no confusing error state when no Service Bus is connected
+
+---
+
 ## [3.0.1] - 2026-03-31
 
 ### Fixed

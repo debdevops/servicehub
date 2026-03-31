@@ -88,7 +88,7 @@ describe('useQueues', () => {
     (apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] });
     renderHook(() => useQueues('ns-test'), { wrapper: createWrapper() });
     await waitFor(() => expect(apiClient.get).toHaveBeenCalled());
-    expect(apiClient.get).toHaveBeenCalledWith('/namespaces/ns-test/queues');
+    expect(apiClient.get).toHaveBeenCalledWith('/namespaces/ns-test/queues', { _silent: true });
   });
 });
 
@@ -124,7 +124,7 @@ describe('useTopics', () => {
     (apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] });
     renderHook(() => useTopics('ns-xyz'), { wrapper: createWrapper() });
     await waitFor(() => expect(apiClient.get).toHaveBeenCalled());
-    expect(apiClient.get).toHaveBeenCalledWith('/namespaces/ns-xyz/topics');
+    expect(apiClient.get).toHaveBeenCalledWith('/namespaces/ns-xyz/topics', { _silent: true });
   });
 });
 
