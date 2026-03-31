@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <Version>3.0.1</Version>
+    <Version>3.0.2</Version>
     <AssemblyVersion>3.0.1.0</AssemblyVersion>
     <InformationalVersion>3.0.1</InformationalVersion>
     <TargetFramework>net10.0</TargetFramework>

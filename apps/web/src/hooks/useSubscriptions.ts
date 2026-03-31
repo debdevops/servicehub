@@ -14,7 +14,8 @@ export function useSubscriptions(namespaceId: string, topicName: string, autoRef
     queryKey: ['subscriptions', namespaceId, topicName],
     queryFn: async () => {
       const response = await apiClient.get<Subscription[]>(
-        `/namespaces/${namespaceId}/topics/${topicName}/subscriptions`
+        `/namespaces/${namespaceId}/topics/${topicName}/subscriptions`,
+        { _silent: true }
       );
       return response.data;
     },
@@ -23,8 +24,9 @@ export function useSubscriptions(namespaceId: string, topicName: string, autoRef
     refetchInterval: autoRefresh ? 7000 : false, // Auto-refresh every 7 seconds when enabled
     refetchIntervalInBackground: false, // Don't refetch when tab is not visible
     retry: (failureCount, error: any) => {
-      // Don't retry on 404 errors
+      // Don't retry on 404 or Service Bus connectivity errors
       if (error?.response?.status === 404) return false;
+      if (error?.response?.status >= 500) return false;
       return failureCount < 2;
     },
   });
