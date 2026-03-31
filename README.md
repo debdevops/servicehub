@@ -12,8 +12,9 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10-purple.svg)](https://dotnet.microsoft.com/)
 [![React 18](https://img.shields.io/badge/React-18-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6.svg)](https://www.typescriptlang.org/)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Azure-0078D4.svg)](https://app-servicehub-prod.azurewebsites.net/)
 
-[Get Started](#-quick-start) · [Features](#-features) · [Screenshots](#-screenshots) · [API Docs](#-api-documentation) · [Contributing](#-contributing)
+[Live Demo](https://app-servicehub-prod.azurewebsites.net/) · [Get Started](#-quick-start) · [Features](#-features) · [Screenshots](#-screenshots) · [API Docs](#-api-documentation) · [Contributing](#-contributing)
 
 </div>
 
@@ -282,9 +283,10 @@ az servicebus namespace authorization-rule create \
 
 | Service | URL |
 |---|---|
-| UI | http://localhost:3000 |
-| API | http://localhost:5153 |
-| API Docs | http://localhost:5153/scalar/v1 |
+| **Live Demo** | **https://app-servicehub-prod.azurewebsites.net/** |
+| UI (local) | http://localhost:3000 |
+| API (local) | http://localhost:5153 |
+| API Docs (local) | http://localhost:5153/scalar/v1 |
 
 ---
 
@@ -436,6 +438,6 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 Built for DevOps, Platform, and SRE Engineers.
 
-[Get Started](#-quick-start) · [View Features](#-features) · [Report Issue](https://github.com/debdevops/servicehub/issues)
+[Live Demo](https://app-servicehub-prod.azurewebsites.net/) · [Get Started](#-quick-start) · [View Features](#-features) · [Report Issue](https://github.com/debdevops/servicehub/issues)
 
 </div>
