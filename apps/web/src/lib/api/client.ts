@@ -40,27 +40,69 @@ apiClient.interceptors.request.use((config) => {
 /**
  * Fetch a fresh SPA token from the server and update the <meta> tag.
  * Called automatically when a 401 indicates an expired or instance-mismatched token.
+ * Retries with exponential backoff to handle transient failures and multi-instance
+ * Azure App Service routing mismatches.
  * Returns true if a new token was successfully obtained.
  */
-async function refreshSpaToken(): Promise<boolean> {
-  try {
-    const response = await fetch('/internal/spa-token', { cache: 'no-store' });
-    if (!response.ok) return false;
-    const newToken = await response.text();
-    if (!newToken?.trim()) return false;
+async function refreshSpaToken(maxRetries = 3): Promise<boolean> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await fetch('/internal/spa-token', { cache: 'no-store' });
+      if (!response.ok) {
+        if (attempt < maxRetries - 1) {
+          await new Promise(r => setTimeout(r, 200 * Math.pow(2, attempt)));
+          continue;
+        }
+        return false;
+      }
+      const newToken = await response.text();
+      if (!newToken?.trim()) {
+        if (attempt < maxRetries - 1) {
+          await new Promise(r => setTimeout(r, 200 * Math.pow(2, attempt)));
+          continue;
+        }
+        return false;
+      }
 
-    // Update (or create) the meta tag so subsequent requests use the fresh token
-    let meta = document.querySelector<HTMLMetaElement>('meta[name="spa-token"]');
-    if (!meta) {
-      meta = document.createElement('meta');
-      meta.setAttribute('name', 'spa-token');
-      document.head.appendChild(meta);
+      // Update (or create) the meta tag so subsequent requests use the fresh token
+      let meta = document.querySelector<HTMLMetaElement>('meta[name="spa-token"]');
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.setAttribute('name', 'spa-token');
+        document.head.appendChild(meta);
+      }
+      meta.setAttribute('content', newToken.trim());
+      scheduleProactiveRefresh();
+      return true;
+    } catch {
+      if (attempt < maxRetries - 1) {
+        await new Promise(r => setTimeout(r, 200 * Math.pow(2, attempt)));
+        continue;
+      }
+      return false;
     }
-    meta.setAttribute('content', newToken.trim());
-    return true;
-  } catch {
-    return false;
   }
+  return false;
+}
+
+/**
+ * Proactively refresh the SPA token before it expires.
+ * The server token lifetime is 2 hours; we refresh every 90 minutes
+ * so the token never expires during active use.
+ */
+let proactiveRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+const PROACTIVE_REFRESH_MS = 90 * 60 * 1000; // 90 minutes
+
+function scheduleProactiveRefresh() {
+  if (proactiveRefreshTimer) clearTimeout(proactiveRefreshTimer);
+  proactiveRefreshTimer = setTimeout(async () => {
+    await refreshSpaToken();
+  }, PROACTIVE_REFRESH_MS);
+}
+
+// Kick off the proactive refresh cycle if a SPA token is already present
+if (getSpaToken()) {
+  scheduleProactiveRefresh();
 }
 
 // Debounce mechanism for error toasts to prevent duplicates
@@ -130,18 +172,20 @@ apiClient.interceptors.response.use(
     
     switch (status) {
       case 401: {
-        // Auto-refresh the SPA token and retry the request once.
-        // This recovers two production failure modes:
+        // Auto-refresh the SPA token and retry the request.
+        // Handles two production failure modes:
         //   1. Multi-instance Azure App Service where each instance has a different
         //      ephemeral HMAC key (Security:SpaToken:Secret not set) — the retry
         //      hits the same instance as the token-refresh call, giving a matching key.
-        //   2. 30-minute token expiry — the stale token in the HTML <meta> tag is
-        //      replaced with a fresh one before the request is retried.
-        const originalConfig = error.config as (typeof error.config & { _spaTokenRetried?: boolean });
-        if (!originalConfig?._spaTokenRetried && getSpaToken() !== null) {
-          originalConfig._spaTokenRetried = true;
+        //   2. Token expiry — the stale token in the HTML <meta> tag is replaced
+        //      with a fresh one before the request is retried.
+        // We allow up to 2 refresh+retry cycles to handle transient instance mismatches.
+        const originalConfig = error.config as (typeof error.config & { _spaRetryCount?: number });
+        const retryCount = originalConfig?._spaRetryCount ?? 0;
+        if (retryCount < 2 && getSpaToken() !== null && originalConfig) {
+          originalConfig._spaRetryCount = retryCount + 1;
           const refreshed = await refreshSpaToken();
-          if (refreshed && originalConfig) {
+          if (refreshed) {
             originalConfig.headers = originalConfig.headers ?? {};
             originalConfig.headers['X-SPA-Token'] = getSpaToken();
             return apiClient(originalConfig);
@@ -150,7 +194,7 @@ apiClient.interceptors.response.use(
 
         const errorKey = `${status}-${url}`;
         if (shouldShowError(errorKey)) {
-          toast.error('Unauthorized. Check your API key in settings or reconnect to the namespace.', {
+          toast.error('Session expired. Please refresh the page to continue.', {
             duration: 5000,
           });
         }
