@@ -230,8 +230,8 @@ function SubscriptionItem({ subscription, namespaceId, topicName }: Subscription
 }
 
 function NamespaceSection({ namespace }: NamespaceItemProps) {
-  const { data: queues, isLoading: queuesLoading } = useQueues(namespace.id);
-  const { data: topics, isLoading: topicsLoading } = useTopics(namespace.id);
+  const { data: queues, isLoading: queuesLoading, isError: queuesError } = useQueues(namespace.id);
+  const { data: topics, isLoading: topicsLoading, isError: topicsError } = useTopics(namespace.id);
   const [isExpanded, setIsExpanded] = useState(namespace.isActive);
   const [showQueues, setShowQueues] = useState(true);
   const [showTopics, setShowTopics] = useState(true);
@@ -285,7 +285,12 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
 
           {showQueues && (
             <div className="space-y-0.5">
-              {queuesLoading ? (
+              {queuesError ? (
+                <div className="px-3 py-2 text-xs text-amber-600 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Connection unavailable
+                </div>
+              ) : queuesLoading ? (
                 <div className="px-3 py-2 text-xs text-gray-500">Loading...</div>
               ) : queues && queues.length > 0 ? (
                 queues.map((queue) => (
@@ -317,7 +322,12 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
 
           {showTopics && (
             <div className="space-y-0.5">
-              {topicsLoading ? (
+              {topicsError ? (
+                <div className="px-3 py-2 text-xs text-amber-600 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Connection unavailable
+                </div>
+              ) : topicsLoading ? (
                 <div className="px-3 py-2 text-xs text-gray-500">Loading...</div>
               ) : topics && topics.length > 0 ? (
                 topics.map((topic) => (
