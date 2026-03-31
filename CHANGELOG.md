@@ -1,5 +1,17 @@
 # ServiceHub Changelog
 
+## [3.0.1] - 2026-03-31
+
+### Fixed
+- Fix: intermittent "Unauthorized" toast in production caused by SPA token expiry and multi-instance key mismatch
+  — Extended SPA token lifetime from 30 minutes to 2 hours
+  — Added retry with exponential backoff to SPA token refresh (3 attempts)
+  — Allowed up to 2 refresh+retry cycles on 401 instead of 1
+  — Added proactive background token refresh (every 90 min) so tokens never expire during active sessions
+  — Improved error message from confusing "Check your API key" to actionable "Session expired. Please refresh the page."
+
+---
+
 ## [3.0.0] - 2026-03-29
 
 ### Breaking Changes

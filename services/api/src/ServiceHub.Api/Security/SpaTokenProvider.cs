@@ -15,9 +15,11 @@ public sealed class SpaTokenProvider
     private readonly bool _enabled;
 
     /// <summary>
-    /// How long each token is valid. Kept short to limit replay windows.
+    /// How long each token is valid. 2 hours balances security (replay window)
+    /// against user experience (fewer mid-session 401 errors). The frontend
+    /// proactively refreshes the token well before expiry.
     /// </summary>
-    private static readonly TimeSpan TokenLifetime = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan TokenLifetime = TimeSpan.FromHours(2);
 
     public SpaTokenProvider(IConfiguration configuration, ILogger<SpaTokenProvider> logger)
     {
