@@ -1,6 +1,14 @@
 import axios, { AxiosError } from 'axios';
 import toast from 'react-hot-toast';
 
+// Extend AxiosRequestConfig so hooks can mark background-polling requests
+// as silent — the error interceptor skips toast notifications for these.
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    _silent?: boolean;
+  }
+}
+
 // When VITE_API_BASE_URL is not set, use a relative path (/api/v1).
 // With the Vite proxy configured in vite.config.ts, /api requests are
 // automatically forwarded to http://localhost:5153 on the same server.
@@ -155,6 +163,13 @@ function isSilent404(url: string): boolean {
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<{ message?: string; errors?: Record<string, string[]> }>) => {
+    // Silent mode: skip all toast notifications.
+    // Used by background-polling hooks (useQueues, useTopics, useSubscriptions,
+    // useMessages) so Service Bus connectivity failures don't spam the user.
+    if (error.config?._silent) {
+      return Promise.reject(error);
+    }
+
     // Network error
     if (!error.response) {
       const errorKey = 'network-error';
