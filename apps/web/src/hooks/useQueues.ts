@@ -6,7 +6,9 @@ export function useQueues(namespaceId: string, autoRefresh: boolean = true) {
   return useQuery({
     queryKey: ['queues', namespaceId],
     queryFn: async () => {
-      const response = await apiClient.get<Queue[]>(`/namespaces/${namespaceId}/queues`);
+      const response = await apiClient.get<Queue[]>(`/namespaces/${namespaceId}/queues`, {
+        _silent: true,
+      });
       return response.data;
     },
     enabled: !!namespaceId,
@@ -14,8 +16,9 @@ export function useQueues(namespaceId: string, autoRefresh: boolean = true) {
     refetchInterval: autoRefresh ? 7000 : false, // Auto-refresh every 7 seconds when enabled
     refetchIntervalInBackground: false, // Don't refetch when tab is not visible
     retry: (failureCount, error: any) => {
-      // Don't retry on 404 errors
+      // Don't retry on 404 or Service Bus connectivity errors
       if (error?.response?.status === 404) return false;
+      if (error?.response?.status >= 500) return false;
       return failureCount < 2;
     },
   });

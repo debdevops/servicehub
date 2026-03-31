@@ -23,9 +23,11 @@ export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean 
       try {
         return await messagesApi.list(sanitizedParams);
       } catch (error: any) {
-        // For 404s, return empty result instead of throwing
-        // This prevents the query from getting stuck in loading state
-        if (error?.response?.status === 404) {
+        // For 404s or Service Bus connectivity errors, return empty result
+        // instead of throwing. This prevents toast spam from background polling
+        // when the Service Bus namespace is unavailable.
+        const status = error?.response?.status;
+        if (status === 404 || status === 502 || status === 503) {
           return { items: [], totalCount: 0, hasMore: false };
         }
         throw error;
@@ -40,6 +42,8 @@ export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean 
       if (error?.response?.status === 404) return false;
       // Don't retry on 401/403 (auth errors)
       if (error?.response?.status === 401 || error?.response?.status === 403) return false;
+      // Don't retry on Service Bus connectivity errors
+      if (error?.response?.status >= 500) return false;
       return failureCount < 2;
     },
     meta: {

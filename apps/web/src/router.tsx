@@ -9,7 +9,7 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <Navigate to="/messages" replace />,
+        element: <Navigate to="/connect" replace />,
       },
       {
         path: 'messages',
@@ -37,7 +37,7 @@ export const router = createBrowserRouter([
       },
       {
         path: '*',
-        element: <Navigate to="/messages" replace />,
+        element: <Navigate to="/connect" replace />,
       },
     ],
   },
