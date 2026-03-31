@@ -2,8 +2,8 @@
 
   <PropertyGroup>
     <Version>3.0.2</Version>
-    <AssemblyVersion>3.0.1.0</AssemblyVersion>
-    <InformationalVersion>3.0.1</InformationalVersion>
+    <AssemblyVersion>3.0.2.0</AssemblyVersion>
+    <InformationalVersion>3.0.2</InformationalVersion>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
