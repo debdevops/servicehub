@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { namespacesApi } from '@/lib/api/namespaces';
-import { CreateNamespaceRequest } from '@/lib/api/types';
+import { CreateNamespaceRequest, ApiError } from '@/lib/api/types';
 import toast from 'react-hot-toast';
 
 export function useNamespaces() {
@@ -27,7 +27,7 @@ export function useCreateNamespace() {
       queryClient.invalidateQueries({ queryKey: ['namespaces'] });
       toast.success('Namespace connected successfully');
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       // Extract the specific error message from the API response
       const errorMessage = 
         error?.response?.data?.detail || 

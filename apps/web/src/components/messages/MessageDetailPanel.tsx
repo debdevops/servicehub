@@ -181,7 +181,7 @@ function ActionButtons({ message, namespaceId, forensicSafety }: ActionButtonsPr
         });
       }
       */
-    } catch (error) {
+    } catch {
       // Error handled by mutation hook
     } finally {
       setConfirmState(prev => ({ ...prev, isOpen: false, action: null }));
@@ -411,6 +411,7 @@ export function MessageDetailPanel({ message, onViewPattern }: MessageDetailPane
   // Reset forensic verdict when the selected message changes
   useEffect(() => {
     setForensicSafety(message?.replaySafety ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [message?.id]);
 
   if (!message) {

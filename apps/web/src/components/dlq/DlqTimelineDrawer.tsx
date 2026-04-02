@@ -57,6 +57,7 @@ export function DlqTimelineDrawer({ messageId, onClose }: DlqTimelineDrawerProps
   // Sync local state when detail changes (different message opened)
   useEffect(() => {
     setNotesText(detail?.userNotes ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.id]);
 
   if (!isOpen) return null;
