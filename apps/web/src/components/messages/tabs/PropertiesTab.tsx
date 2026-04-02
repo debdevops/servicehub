@@ -1,4 +1,5 @@
-import { AlertTriangle, Info, ChevronRight, HelpCircle } from 'lucide-react';
+import { AlertTriangle, Info, ChevronRight, HelpCircle, GitMerge } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Message } from '@/lib/mockData';
 
 // ============================================================================
@@ -118,6 +119,10 @@ function extractDLQDetails(message: Message): {
 }
 
 export function PropertiesTab({ message }: PropertiesTabProps) {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const namespaceId = searchParams.get('namespace') ?? '';
+  const correlationId = message.properties?.correlationId as string | undefined;
   const dlqDetails = extractDLQDetails(message);
   const severityInfo = dlqDetails ? SEVERITY_EXPLANATIONS[dlqDetails.severity] : null;
   
@@ -332,6 +337,23 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
               />
             ))}
           </dl>
+        </div>
+      )}
+
+      {/* Trace Correlation button — only when correlationId is present */}
+      {correlationId && (
+        <div className="flex justify-end">
+          <button
+            onClick={() =>
+              navigate(
+                `/correlation?correlationId=${encodeURIComponent(correlationId)}${namespaceId ? `&namespaceId=${encodeURIComponent(namespaceId)}` : ''}`
+              )
+            }
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition-colors"
+          >
+            <GitMerge className="w-4 h-4" />
+            🔍 Trace Correlation
+          </button>
         </div>
       )}
     </div>

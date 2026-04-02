@@ -1,6 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { MainLayout } from '@/components/layout';
-import { MessagesPage, ConnectPage, DlqHistoryPage, RulesPage, HealthPage, HelpPage } from '@/pages';
+import { DashboardPage, CorrelationExplorerPage, MessagesPage, ConnectPage, DlqHistoryPage, RulesPage, HealthPage, HelpPage, ScheduledMessagesPage } from '@/pages';
 
 export const router = createBrowserRouter([
   {
@@ -10,6 +10,10 @@ export const router = createBrowserRouter([
       {
         index: true,
         element: <Navigate to="/connect" replace />,
+      },
+      {
+        path: 'dashboard',
+        element: <DashboardPage />,
       },
       {
         path: 'messages',
@@ -34,6 +38,14 @@ export const router = createBrowserRouter([
       {
         path: 'help',
         element: <HelpPage />,
+      },
+      {
+        path: 'scheduled',
+        element: <ScheduledMessagesPage />,
+      },
+      {
+        path: 'correlation',
+        element: <CorrelationExplorerPage />,
       },
       {
         path: '*',

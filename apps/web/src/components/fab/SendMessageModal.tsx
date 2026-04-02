@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Send, X, Plus, Trash2 } from 'lucide-react';
+import { Send, X, Plus, Trash2, Clock, Zap } from 'lucide-react';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues } from '@/hooks/useQueues';
 import { useTopics } from '@/hooks/useTopics';
@@ -59,6 +59,7 @@ export function SendMessageModal({
   const [correlationId, setCorrelationId] = useState('');
   const [sessionId, setSessionId] = useState('');
   const [timeToLive, setTimeToLive] = useState('');
+  const [deliveryMode, setDeliveryMode] = useState<'now' | 'scheduled'>('now');
   const [scheduledEnqueueTime, setScheduledEnqueueTime] = useState('');
   const [sendMultiple, setSendMultiple] = useState(false);
   const [messageCount, setMessageCount] = useState(1);
@@ -158,7 +159,8 @@ export function SendMessageModal({
     }
   };
 
-  const isValid = selectedNamespace && entity && body.trim().length > 0 && validateJson();
+  const isValid = selectedNamespace && entity && body.trim().length > 0 && validateJson() &&
+    (deliveryMode === 'now' || (deliveryMode === 'scheduled' && !!scheduledEnqueueTime));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -332,6 +334,56 @@ export function SendMessageModal({
             </div>
           </div>
 
+          {/* Delivery Mode */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Delivery Mode
+            </label>
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => { setDeliveryMode('now'); setScheduledEnqueueTime(''); }}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors border ${
+                  deliveryMode === 'now'
+                    ? 'bg-primary-500 text-white border-primary-500'
+                    : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                <Zap className="w-4 h-4" />
+                Send Now
+              </button>
+              <button
+                onClick={() => setDeliveryMode('scheduled')}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors border ${
+                  deliveryMode === 'scheduled'
+                    ? 'bg-sky-500 text-white border-sky-500'
+                    : 'bg-white text-gray-700 border-gray-200 hover:bg-sky-50 hover:border-sky-300 hover:text-sky-700'
+                }`}
+              >
+                <Clock className="w-4 h-4" />
+                Schedule
+              </button>
+            </div>
+            {deliveryMode === 'scheduled' && (
+              <div>
+                <input
+                  type="datetime-local"
+                  value={scheduledEnqueueTime}
+                  onChange={(e) => setScheduledEnqueueTime(e.target.value)}
+                  min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
+                  className="w-full px-3 py-2 border border-sky-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 bg-sky-50"
+                />
+                {scheduledEnqueueTime && (
+                  <p className="text-xs text-sky-600 mt-1">
+                    ⏰ Message will be delivered at {new Date(scheduledEnqueueTime).toLocaleString()}
+                  </p>
+                )}
+                {!scheduledEnqueueTime && (
+                  <p className="text-xs text-amber-600 mt-1">Select a future date and time</p>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Advanced Options Toggle */}
           <button
             onClick={() => setShowAdvanced(!showAdvanced)}
@@ -369,30 +421,18 @@ export function SendMessageModal({
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Time To Live
-                  </label>
-                  <input
-                    type="text"
-                    value={timeToLive}
-                    onChange={(e) => setTimeToLive(e.target.value)}
-                    placeholder="e.g., 00:30:00"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Scheduled Enqueue Time
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={scheduledEnqueueTime}
-                    onChange={(e) => setScheduledEnqueueTime(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
-                  />
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Time To Live (seconds)
+                </label>
+                <input
+                  type="number"
+                  value={timeToLive}
+                  onChange={(e) => setTimeToLive(e.target.value)}
+                  placeholder="Optional — leave blank for entity default"
+                  min={1}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+                />
               </div>
             </div>
           )}

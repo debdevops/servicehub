@@ -121,6 +121,16 @@ public static class ErrorCodes
         /// The subscription name is required for topic operations.
         /// </summary>
         public const string SubscriptionNameRequired = "Message.SubscriptionName.Required";
+
+        /// <summary>
+        /// Failed to list scheduled messages.
+        /// </summary>
+        public const string ScheduledListFailed = "Message.Scheduled.ListFailed";
+
+        /// <summary>
+        /// Failed to cancel a scheduled message.
+        /// </summary>
+        public const string ScheduledCancelFailed = "Message.Scheduled.CancelFailed";
     }
 
     /// <summary>

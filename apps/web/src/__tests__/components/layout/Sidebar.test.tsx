@@ -4,6 +4,13 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Sidebar } from '@/components/layout/Sidebar';
 
+// Mock apiClient to prevent real HTTP calls from useQueries in Sidebar
+vi.mock('@/lib/api/client', () => ({
+  apiClient: {
+    get: vi.fn().mockResolvedValue({ data: [] }),
+  },
+}));
+
 // Mock hooks
 vi.mock('@/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
@@ -96,9 +103,11 @@ describe('Sidebar', () => {
     fireEvent.click(screen.getByText('Quick Access'));
     expect(screen.getByText('Active Messages')).toBeInTheDocument();
     expect(screen.getByText('Dead-Letter')).toBeInTheDocument();
+    expect(screen.getByText('Dashboard')).toBeInTheDocument();
     expect(screen.getByText('DLQ Intelligence')).toBeInTheDocument();
     expect(screen.getByText('Auto-Replay')).toBeInTheDocument();
     expect(screen.getByText('Scheduled')).toBeInTheDocument();
+    expect(screen.getByText('Correlation')).toBeInTheDocument();
   });
 
   it('renders Add Connection button', () => {
