@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
-import { useQueues } from '@/hooks/useQueues';
+import { useQueues, useAllNamespacesQueues } from '@/hooks/useQueues';
 import { useTopics } from '@/hooks/useTopics';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useNamespaces, useNamespace } from '@/hooks/useNamespaces';
@@ -238,5 +238,62 @@ describe('useNamespace (single)', () => {
   it('does NOT fetch when id is empty', () => {
     const { result } = renderHook(() => useNamespace(''), { wrapper: createWrapper() });
     expect(result.current.isFetching).toBe(false);
+  });
+});
+// ─── useAllNamespacesQueues ────────────────────────────────────────────────────
+
+describe('useAllNamespacesQueues', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns empty array when namespaceIds is empty', () => {
+    const { result } = renderHook(() => useAllNamespacesQueues([]), { wrapper: createWrapper() });
+    expect(result.current).toEqual([]);
+  });
+
+  it('returns one entry per namespace with loading state initially', () => {
+    (apiClient.get as ReturnType<typeof vi.fn>).mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(
+      () => useAllNamespacesQueues(['ns-1', 'ns-2']),
+      { wrapper: createWrapper() },
+    );
+    expect(result.current).toHaveLength(2);
+    expect(result.current[0].namespaceId).toBe('ns-1');
+    expect(result.current[1].namespaceId).toBe('ns-2');
+    expect(result.current[0].isLoading).toBe(true);
+  });
+
+  it('aggregates queue stats after successful fetch', async () => {
+    const mockQueues = [
+      { name: 'q1', activeMessageCount: 5, deadLetterMessageCount: 2, scheduledMessageCount: 1 },
+      { name: 'q2', activeMessageCount: 3, deadLetterMessageCount: 0, scheduledMessageCount: 0 },
+    ];
+    (apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockQueues });
+
+    const { result } = renderHook(
+      () => useAllNamespacesQueues(['ns-1']),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(result.current[0].isLoading).toBe(false));
+    expect(result.current[0].totalActive).toBe(8);
+    expect(result.current[0].totalDlq).toBe(2);
+    expect(result.current[0].totalScheduled).toBe(1);
+    expect(result.current[0].totalQueues).toBe(2);
+    expect(result.current[0].queues).toEqual(mockQueues);
+  });
+
+  it('returns isError=true when one namespace fetch fails', async () => {
+    (apiClient.get as ReturnType<typeof vi.fn>).mockRejectedValue({ response: { status: 404 } });
+
+    const { result } = renderHook(
+      () => useAllNamespacesQueues(['ns-bad']),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => result.current[0].isError === true);
+    expect(result.current[0].totalActive).toBe(0);
+    expect(result.current[0].queues).toBeUndefined();
   });
 });
