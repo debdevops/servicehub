@@ -1,8 +1,21 @@
 import { useNavigate } from 'react-router-dom';
-import { Globe, RefreshCw, AlertTriangle, CheckCircle, Plus } from 'lucide-react';
+import {
+  Globe,
+  RefreshCw,
+  AlertTriangle,
+  CheckCircle,
+  Plus,
+  Activity,
+  Inbox,
+  Clock,
+  BarChart2,
+  Flame,
+} from 'lucide-react';
 import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues } from '@/hooks/useQueues';
+import { useQueues, useAllNamespacesQueues, NamespaceQueueStats } from '@/hooks/useQueues';
 import { Namespace, EnvironmentType } from '@/lib/api/types';
+
+const DLQ_SPIKE_THRESHOLD = 10;
 
 // ============================================================================
 // Environment Badge
@@ -34,6 +47,163 @@ function EnvironmentBadge({ env }: { env?: EnvironmentType }) {
     <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-gray-100 text-gray-500 border border-gray-200">
       —
     </span>
+  );
+}
+
+// ============================================================================
+// Aggregate Stats Bar
+// ============================================================================
+
+interface AggregateStats {
+  totalNamespaces: number;
+  loadedNamespaces: number;
+  totalActive: number;
+  totalDlq: number;
+  totalScheduled: number;
+  spikeCount: number;
+  isLoading: boolean;
+}
+
+function AggregateSummaryBar({ stats }: { stats: AggregateStats }) {
+  const cells = [
+    {
+      icon: <Globe className="w-4 h-4 text-indigo-400" />,
+      label: 'Namespaces',
+      value: stats.totalNamespaces,
+      colorClass: 'text-indigo-700',
+      bg: 'bg-indigo-50 border-indigo-100',
+    },
+    {
+      icon: <Inbox className="w-4 h-4 text-sky-400" />,
+      label: 'Active',
+      value: stats.isLoading ? '…' : stats.totalActive.toLocaleString(),
+      colorClass: 'text-sky-700',
+      bg: 'bg-sky-50 border-sky-100',
+    },
+    {
+      icon: <AlertTriangle className="w-4 h-4 text-red-400" />,
+      label: 'Dead Letter',
+      value: stats.isLoading ? '…' : stats.totalDlq.toLocaleString(),
+      colorClass: stats.totalDlq > 0 ? 'text-red-700 font-bold' : 'text-gray-500',
+      bg: stats.totalDlq > 0 ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-100',
+    },
+    {
+      icon: <Clock className="w-4 h-4 text-purple-400" />,
+      label: 'Scheduled',
+      value: stats.isLoading ? '…' : stats.totalScheduled.toLocaleString(),
+      colorClass: 'text-purple-700',
+      bg: 'bg-purple-50 border-purple-100',
+    },
+    {
+      icon: <Activity className="w-4 h-4 text-orange-400" />,
+      label: 'DLQ Spikes',
+      value: stats.isLoading ? '…' : stats.spikeCount,
+      colorClass: stats.spikeCount > 0 ? 'text-orange-700 font-bold' : 'text-gray-500',
+      bg: stats.spikeCount > 0 ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-100',
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
+      {cells.map((cell) => (
+        <div
+          key={cell.label}
+          className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${cell.bg}`}
+        >
+          {cell.icon}
+          <div>
+            <p className="text-xs text-gray-500 leading-none mb-1">{cell.label}</p>
+            <p className={`text-xl leading-none ${cell.colorClass}`}>{cell.value}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================================
+// DLQ Hot Spots Panel
+// ============================================================================
+
+interface HotSpot {
+  namespace: Namespace;
+  totalDlq: number;
+  isError: boolean;
+}
+
+function DlqHotSpotsPanel({
+  hotspots,
+  maxDlq,
+}: {
+  hotspots: HotSpot[];
+  maxDlq: number;
+}) {
+  const navigate = useNavigate();
+
+  if (hotspots.length === 0) return null;
+
+  return (
+    <div className="mb-5 bg-white border border-red-200 rounded-xl shadow-sm overflow-hidden">
+      {/* Panel Header */}
+      <div className="flex items-center gap-2 px-5 py-3 bg-red-50 border-b border-red-200">
+        <Flame className="w-4 h-4 text-red-500" />
+        <span className="text-sm font-semibold text-red-700">
+          DLQ Hot Spots — {hotspots.length} namespace{hotspots.length !== 1 ? 's' : ''} need
+          {hotspots.length === 1 ? 's' : ''} attention
+        </span>
+      </div>
+
+      {/* Ranked List */}
+      <div className="divide-y divide-gray-100">
+        {hotspots.map((spot, idx) => {
+          const barWidth = maxDlq > 0 ? Math.max(3, (spot.totalDlq / maxDlq) * 100) : 0;
+          const displayName = spot.namespace.displayName || spot.namespace.name;
+          return (
+            <div
+              key={spot.namespace.id}
+              className="flex items-center gap-4 px-5 py-3 hover:bg-red-50/50 transition-colors"
+            >
+              {/* Rank */}
+              <span className="text-xs font-bold text-gray-400 w-5 shrink-0">{idx + 1}</span>
+
+              {/* Env + Name */}
+              <div className="flex items-center gap-2 w-48 shrink-0">
+                <EnvironmentBadge env={spot.namespace.environment} />
+                <span
+                  className="text-sm font-medium text-gray-800 truncate"
+                  title={displayName}
+                >
+                  {displayName}
+                </span>
+              </div>
+
+              {/* Bar */}
+              <div className="flex-1 h-2 bg-red-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-red-500 rounded-full transition-all duration-500"
+                  style={{ width: `${barWidth}%` }}
+                />
+              </div>
+
+              {/* DLQ count */}
+              <span className="text-sm font-bold text-red-700 w-16 text-right shrink-0">
+                {spot.totalDlq.toLocaleString()} DLQ
+              </span>
+
+              {/* Action */}
+              <button
+                onClick={() =>
+                  navigate(`/dlq-history?namespace=${spot.namespace.id}`)
+                }
+                className="shrink-0 px-3 py-1 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 border border-red-200 rounded-lg transition-colors"
+              >
+                View
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -96,7 +266,7 @@ export interface NamespaceCardProps {
   dlqThreshold?: number;
 }
 
-export function NamespaceCard({ namespace, dlqThreshold = 10 }: NamespaceCardProps) {
+export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }: NamespaceCardProps) {
   const navigate = useNavigate();
   const { data: queues, isLoading, isError } = useQueues(namespace.id, true);
 
@@ -194,6 +364,46 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const { data: namespaces, isLoading, isFetching, refetch } = useNamespaces();
 
+  const namespaceIds = namespaces?.map((ns) => ns.id) ?? [];
+  const allStats: NamespaceQueueStats[] = useAllNamespacesQueues(namespaceIds, true);
+
+  // Build a lookup: namespaceId → stats
+  const statsById = new Map<string, NamespaceQueueStats>(
+    allStats.map((s) => [s.namespaceId, s]),
+  );
+
+  // Aggregate totals across all namespaces
+  const aggregateStats: AggregateStats = {
+    totalNamespaces: namespaces?.length ?? 0,
+    loadedNamespaces: allStats.filter((s) => !s.isLoading && !s.isError).length,
+    totalActive: allStats.reduce((sum, s) => sum + s.totalActive, 0),
+    totalDlq: allStats.reduce((sum, s) => sum + s.totalDlq, 0),
+    totalScheduled: allStats.reduce((sum, s) => sum + s.totalScheduled, 0),
+    spikeCount: allStats.filter((s) => s.totalDlq > DLQ_SPIKE_THRESHOLD).length,
+    isLoading: allStats.some((s) => s.isLoading),
+  };
+
+  // DLQ hot spots: namespaces with spikes, ranked by DLQ count descending
+  const hotspots: HotSpot[] = (namespaces ?? [])
+    .map((ns) => {
+      const s = statsById.get(ns.id);
+      return { namespace: ns, totalDlq: s?.totalDlq ?? 0, isError: s?.isError ?? false };
+    })
+    .filter((h) => h.totalDlq > DLQ_SPIKE_THRESHOLD)
+    .sort((a, b) => b.totalDlq - a.totalDlq);
+
+  const maxDlq = hotspots[0]?.totalDlq ?? 1;
+
+  // Sort namespace cards: highest DLQ first, then by name
+  const sortedNamespaces = [...(namespaces ?? [])].sort((a, b) => {
+    const dlqA = statsById.get(a.id)?.totalDlq ?? 0;
+    const dlqB = statsById.get(b.id)?.totalDlq ?? 0;
+    if (dlqB !== dlqA) return dlqB - dlqA;
+    const nameA = a.displayName || a.name;
+    const nameB = b.displayName || b.name;
+    return nameA.localeCompare(nameB);
+  });
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
@@ -202,18 +412,30 @@ export function DashboardPage() {
           <div className="flex items-center gap-3">
             <Globe className="w-6 h-6 text-white/80" />
             <div>
-              <h1 className="text-xl font-semibold text-white">Namespace Overview</h1>
-              <p className="text-indigo-100 text-sm">All connected namespaces at a glance</p>
+              <h1 className="text-xl font-semibold text-white">Multi-Namespace Dashboard</h1>
+              <p className="text-indigo-100 text-sm">
+                {namespaces && namespaces.length > 0
+                  ? `${namespaces.length} namespace${namespaces.length !== 1 ? 's' : ''} · live stats`
+                  : 'All connected namespaces at a glance'}
+              </p>
             </div>
           </div>
-          <button
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="flex items-center gap-2 px-3 py-1.5 bg-white/20 hover:bg-white/30 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
-          >
-            <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-3">
+            {aggregateStats.spikeCount > 0 && (
+              <span className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/90 text-white rounded-lg text-sm font-medium">
+                <Flame className="w-4 h-4" />
+                {aggregateStats.spikeCount} DLQ spike{aggregateStats.spikeCount !== 1 ? 's' : ''}
+              </span>
+            )}
+            <button
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white/20 hover:bg-white/30 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
         </div>
       </div>
 
@@ -241,13 +463,32 @@ export function DashboardPage() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {namespaces.map((ns) => (
-              <NamespaceCard key={ns.id} namespace={ns} />
-            ))}
-          </div>
+          <>
+            {/* Aggregate Stats Bar */}
+            <AggregateSummaryBar stats={aggregateStats} />
+
+            {/* DLQ Hot Spots Panel — only shown when spikes exist */}
+            {hotspots.length > 0 && (
+              <DlqHotSpotsPanel hotspots={hotspots} maxDlq={maxDlq} />
+            )}
+
+            {/* Namespace Cards — sorted by DLQ severity */}
+            <div className="flex items-center gap-2 mb-3">
+              <BarChart2 className="w-4 h-4 text-gray-400" />
+              <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">
+                Namespaces · sorted by DLQ severity
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {sortedNamespaces.map((ns) => (
+                <NamespaceCard key={ns.id} namespace={ns} />
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>
   );
 }
+
+
