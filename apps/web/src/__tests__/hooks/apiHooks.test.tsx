@@ -126,6 +126,12 @@ describe('useTopics', () => {
     await waitFor(() => expect(apiClient.get).toHaveBeenCalled());
     expect(apiClient.get).toHaveBeenCalledWith('/namespaces/ns-xyz/topics', { _silent: true });
   });
+
+  it('returns error state when fetch fails with 404', async () => {
+    (apiClient.get as ReturnType<typeof vi.fn>).mockRejectedValue({ response: { status: 404 } });
+    const { result } = renderHook(() => useTopics('ns-001'), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
 });
 
 // ─── useSubscriptions ──────────────────────────────────────────────────────────
@@ -173,6 +179,28 @@ describe('useSubscriptions', () => {
       { wrapper: createWrapper() }
     );
     expect(result.current.isFetching).toBe(false);
+  });
+
+  it('calls the subscriptions endpoint with correct namespace and topic', async () => {
+    (apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] });
+    renderHook(
+      () => useSubscriptions('ns-abc', 'my-topic'),
+      { wrapper: createWrapper() }
+    );
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalled());
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/namespaces/ns-abc/topics/my-topic/subscriptions',
+      { _silent: true }
+    );
+  });
+
+  it('returns error state when fetch fails', async () => {
+    (apiClient.get as ReturnType<typeof vi.fn>).mockRejectedValue({ response: { status: 500 } });
+    const { result } = renderHook(
+      () => useSubscriptions('ns-001', 'orders-topic'),
+      { wrapper: createWrapper() }
+    );
+    await waitFor(() => expect(result.current.isError).toBe(true));
   });
 });
 
