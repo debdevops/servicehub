@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Clock, RefreshCw, XCircle, Calendar, AlertCircle, Inbox } from 'lucide-react';
+import { Clock, RefreshCw, XCircle, Calendar, AlertCircle, Inbox, CalendarClock } from 'lucide-react';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues } from '@/hooks/useQueues';
 import { useScheduledMessages, useCancelScheduledMessage } from '@/hooks/useScheduledMessages';
+import { useSendMessage } from '@/hooks/useMessages';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { CopyButton } from '@/components/CopyButton';
 import { Message } from '@/lib/api/types';
+import toast from 'react-hot-toast';
 
 // ============================================================================
 // ScheduledMessagesPage - Dashboard for viewing and cancelling scheduled messages
@@ -40,15 +43,116 @@ function formatBytes(bytes?: number | null): string {
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
-interface ScheduledMessageRowProps {
+// ============================================================================
+// RescheduleModal
+// ============================================================================
+
+interface RescheduleModalProps {
   message: Message;
   namespaceId: string;
   queueName: string;
+  onClose: () => void;
 }
+
+function RescheduleModal({ message, namespaceId, queueName, onClose }: RescheduleModalProps) {
+  const cancel = useCancelScheduledMessage();
+  const send = useSendMessage();
+
+  // Pre-fill with the existing scheduled time (or 1 hour from now)
+  const defaultValue = message.scheduledEnqueueTime
+    ? new Date(message.scheduledEnqueueTime).toISOString().slice(0, 16)
+    : new Date(Date.now() + 60 * 60_000).toISOString().slice(0, 16);
+
+  const [newTime, setNewTime] = useState(defaultValue);
+  const [busy, setBusy] = useState(false);
+
+  const minValue = new Date(Date.now() + 30_000).toISOString().slice(0, 16);
+
+  const handleReschedule = async () => {
+    if (!newTime) return;
+    setBusy(true);
+    try {
+      // 1. Cancel the existing scheduled message
+      await cancel.mutateAsync({ namespaceId, queueName, sequenceNumber: message.sequenceNumber });
+      // 2. Resend with updated scheduled time
+      await send.mutateAsync({
+        namespaceId,
+        queueOrTopicName: queueName,
+        entityType: 'queue',
+        message: {
+          body: message.body ?? '',
+          contentType: message.contentType ?? 'application/json',
+          correlationId: message.correlationId ?? undefined,
+          sessionId: message.sessionId ?? undefined,
+          scheduledEnqueueTime: new Date(newTime).toISOString(),
+        },
+      });
+      toast.success('Message rescheduled successfully');
+      onClose();
+    } catch {
+      // errors are handled by the mutation hooks
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Reschedule message"
+    >
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+        <div className="flex items-center gap-2 mb-5">
+          <CalendarClock className="w-5 h-5 text-sky-600" />
+          <h2 className="text-base font-semibold text-gray-900">Reschedule Message</h2>
+        </div>
+
+        <p className="text-sm text-gray-500 mb-4">
+          The original scheduled message will be cancelled and re-enqueued with the new delivery time.
+        </p>
+
+        <label className="block text-sm font-medium text-gray-700 mb-1.5" htmlFor="new-schedule-time">
+          New delivery time
+        </label>
+        <input
+          id="new-schedule-time"
+          type="datetime-local"
+          value={newTime}
+          min={minValue}
+          onChange={e => setNewTime(e.target.value)}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+        />
+
+        <div className="flex items-center justify-end gap-2 mt-6">
+          <button
+            onClick={onClose}
+            disabled={busy}
+            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleReschedule}
+            disabled={busy || !newTime}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-sky-600 text-white hover:bg-sky-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <CalendarClock className="w-3.5 h-3.5" />
+            {busy ? 'Rescheduling…' : 'Confirm Reschedule'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 
 function ScheduledMessageRow({ message, namespaceId, queueName }: ScheduledMessageRowProps) {
   const cancel = useCancelScheduledMessage();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
   // Tick every 30 s so the "Delivers In" column stays accurate without hammering renders
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -76,8 +180,11 @@ function ScheduledMessageRow({ message, namespaceId, queueName }: ScheduledMessa
     <>
       <tr className="border-b border-gray-100 hover:bg-sky-50/30 transition-colors">
         <td className="px-4 py-3 text-sm font-mono text-gray-700">
-          <span title={message.messageId ?? undefined} className="cursor-default">
-            {shortId}
+          <span className="flex items-center gap-1">
+            <span title={message.messageId ?? undefined} className="cursor-default">
+              {shortId}
+            </span>
+            {message.messageId && <CopyButton text={message.messageId} label="message ID" iconSize="w-3 h-3" />}
           </span>
         </td>
         <td className="px-4 py-3 text-sm text-gray-500 max-w-[220px]">
@@ -106,16 +213,35 @@ function ScheduledMessageRow({ message, namespaceId, queueName }: ScheduledMessa
           {formatBytes(message.body ? new TextEncoder().encode(message.body).length : null)}
         </td>
         <td className="px-4 py-3 text-right">
-          <button
-            onClick={handleCancelClick}
-            disabled={cancel.isPending}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-200 hover:border-red-300 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <XCircle className="w-3.5 h-3.5" />
-            Cancel
-          </button>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={() => setRescheduleOpen(true)}
+              disabled={cancel.isPending}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-sky-600 hover:text-sky-700 hover:bg-sky-50 border border-sky-200 hover:border-sky-300 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <CalendarClock className="w-3.5 h-3.5" />
+              Reschedule
+            </button>
+            <button
+              onClick={handleCancelClick}
+              disabled={cancel.isPending}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-200 hover:border-red-300 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              Cancel
+            </button>
+          </div>
         </td>
       </tr>
+
+      {rescheduleOpen && (
+        <RescheduleModal
+          message={message}
+          namespaceId={namespaceId}
+          queueName={queueName}
+          onClose={() => setRescheduleOpen(false)}
+        />
+      )}
 
       <ConfirmDialog
         isOpen={confirmOpen}

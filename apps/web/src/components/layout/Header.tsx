@@ -1,5 +1,5 @@
 import { Link, useSearchParams } from 'react-router-dom';
-import { User, Cloud, HelpCircle } from 'lucide-react';
+import { User, Cloud, HelpCircle, Search } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { getStoredUser } from '@/components/WelcomeDialog';
@@ -60,6 +60,26 @@ export function Header() {
 
       {/* Actions */}
       <div className="flex items-center gap-2">
+        {/* Command Palette trigger */}
+        <button
+          onClick={() => window.dispatchEvent(new Event('servicehub:open-palette'))}
+          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-white/80 text-xs transition-colors"
+          title="Open command palette (⌘K)"
+          aria-label="Open command palette"
+        >
+          <Search className="w-3.5 h-3.5" />
+          <span>Search…</span>
+          <kbd className="ml-1 text-[10px] font-mono bg-white/10 px-1 rounded">⌘K</kbd>
+        </button>
+        <button
+          onClick={() => window.dispatchEvent(new Event('servicehub:open-palette'))}
+          className="sm:hidden p-2 hover:bg-white/10 rounded-lg transition-colors"
+          title="Open command palette (⌘K)"
+          aria-label="Open command palette"
+        >
+          <Search className="w-5 h-5" />
+        </button>
+
         {/* Help */}
         <RouterLink
           to="/help"
