@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useRef } from 'react';
 import {
   Globe,
   RefreshCw,
@@ -10,6 +11,9 @@ import {
   Clock,
   BarChart2,
   Flame,
+  GitMerge,
+  TrendingUp,
+  Zap,
 } from 'lucide-react';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues, useAllNamespacesQueues, NamespaceQueueStats } from '@/hooks/useQueues';
@@ -276,6 +280,17 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }:
   const totalScheduled = queues?.reduce((s, q) => s + q.scheduledMessageCount, 0) ?? 0;
   const isDlqSpike = totalDlq > dlqThreshold;
 
+  // Track previous DLQ count to detect sudden increases
+  const prevDlqRef = useRef<number | null>(null);
+  const dlqDelta =
+    !isLoading && !isError && prevDlqRef.current !== null && totalDlq > prevDlqRef.current
+      ? totalDlq - prevDlqRef.current
+      : 0;
+  // Update previous after computing delta (runs after render)
+  if (!isLoading && !isError && prevDlqRef.current !== totalDlq) {
+    prevDlqRef.current = totalDlq;
+  }
+
   const displayName = namespace.displayName || namespace.name;
 
   if (isLoading) {
@@ -293,6 +308,12 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }:
         <div className="flex items-center gap-2 mb-1">
           <EnvironmentBadge env={namespace.environment} />
           <h3 className="text-base font-semibold text-gray-900 truncate">{displayName}</h3>
+          {dlqDelta > 0 && (
+            <span className="ml-auto shrink-0 flex items-center gap-1 px-2 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse">
+              <TrendingUp className="w-3 h-3" />
+              +{dlqDelta} DLQ
+            </span>
+          )}
         </div>
         <p className="text-xs text-gray-400 truncate">{namespace.name}</p>
       </div>
@@ -404,6 +425,27 @@ export function DashboardPage() {
     return nameA.localeCompare(nameB);
   });
 
+  // Prod vs Non-Prod comparison (only shown when both exist)
+  const prodNamespaces = (namespaces ?? []).filter((ns) => ns.environment === 'Prod');
+  const nonProdNamespaces = (namespaces ?? []).filter((ns) => ns.environment !== 'Prod');
+  const hasBothEnvs = prodNamespaces.length > 0 && nonProdNamespaces.length > 0;
+
+  function envTotals(nsList: Namespace[]) {
+    return nsList.reduce(
+      (acc, ns) => {
+        const s = statsById.get(ns.id);
+        return {
+          active: acc.active + (s?.totalActive ?? 0),
+          dlq: acc.dlq + (s?.totalDlq ?? 0),
+          scheduled: acc.scheduled + (s?.totalScheduled ?? 0),
+        };
+      },
+      { active: 0, dlq: 0, scheduled: 0 },
+    );
+  }
+  const prodTotals = hasBothEnvs ? envTotals(prodNamespaces) : null;
+  const nonProdTotals = hasBothEnvs ? envTotals(nonProdNamespaces) : null;
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
@@ -466,6 +508,79 @@ export function DashboardPage() {
           <>
             {/* Aggregate Stats Bar */}
             <AggregateSummaryBar stats={aggregateStats} />
+
+            {/* Quick Actions Row */}
+            <div className="flex flex-wrap items-center gap-2 mb-5">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide mr-1">
+                Quick Actions
+              </span>
+              <button
+                onClick={() => navigate('/dlq-history')}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
+              >
+                <Flame className="w-3.5 h-3.5" />
+                Browse All DLQs
+              </button>
+              <button
+                onClick={() => navigate('/scheduled')}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors"
+              >
+                <Clock className="w-3.5 h-3.5" />
+                All Scheduled
+              </button>
+              <button
+                onClick={() => navigate('/correlation')}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition-colors"
+              >
+                <GitMerge className="w-3.5 h-3.5" />
+                Correlation Explorer
+              </button>
+              <button
+                onClick={() => navigate('/rules')}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                Auto-Replay Rules
+              </button>
+            </div>
+
+            {/* Prod vs Non-Prod Comparison — only when both exist */}
+            {hasBothEnvs && prodTotals && nonProdTotals && (
+              <div className="mb-5 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="flex items-center gap-2 px-5 py-3 bg-gray-50 border-b border-gray-200">
+                  <BarChart2 className="w-4 h-4 text-gray-500" />
+                  <span className="text-sm font-semibold text-gray-700">
+                    Prod vs Non-Prod Comparison
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 divide-x divide-gray-100">
+                  {[
+                    { label: `Production (${prodNamespaces.length})`, totals: prodTotals, accent: 'text-red-700', bg: 'bg-red-50/40' },
+                    { label: `Non-Prod (${nonProdNamespaces.length})`, totals: nonProdTotals, accent: 'text-emerald-700', bg: 'bg-emerald-50/40' },
+                  ].map((side) => (
+                    <div key={side.label} className={`px-6 py-4 ${side.bg}`}>
+                      <p className={`text-xs font-bold uppercase tracking-wide mb-3 ${side.accent}`}>{side.label}</p>
+                      <div className="flex gap-6">
+                        <div>
+                          <p className="text-xs text-gray-500">Active</p>
+                          <p className="text-lg font-semibold text-sky-700">{side.totals.active.toLocaleString()}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Dead Letter</p>
+                          <p className={`text-lg font-semibold ${side.totals.dlq > 0 ? 'text-red-700' : 'text-gray-400'}`}>
+                            {side.totals.dlq.toLocaleString()}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Scheduled</p>
+                          <p className="text-lg font-semibold text-purple-700">{side.totals.scheduled.toLocaleString()}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* DLQ Hot Spots Panel — only shown when spikes exist */}
             {hotspots.length > 0 && (

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Clock, RefreshCw, XCircle, Calendar, AlertCircle, Inbox } from 'lucide-react';
 import { useNamespaces } from '@/hooks/useNamespaces';
@@ -49,6 +49,12 @@ interface ScheduledMessageRowProps {
 function ScheduledMessageRow({ message, namespaceId, queueName }: ScheduledMessageRowProps) {
   const cancel = useCancelScheduledMessage();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Tick every 30 s so the "Delivers In" column stays accurate without hammering renders
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const handleCancelClick = () => setConfirmOpen(true);
 

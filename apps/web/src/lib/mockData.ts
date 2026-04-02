@@ -34,6 +34,8 @@ export interface Message {
   // Dead-letter specific fields
   deadLetterReason?: string;
   deadLetterSource?: string;
+  // Scheduled delivery
+  scheduledEnqueueTime?: string;
   // AI Analysis (present when hasAIInsight is true)
   aiAnalysis?: AIAnalysis;
   // DLQ Intelligence history ID (when sourced from DLQ History)

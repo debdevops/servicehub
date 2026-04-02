@@ -75,6 +75,7 @@ function transformMessage(
     displayTitle: displayTitle || eventType,
     deadLetterReason: apiMessage.deadLetterReason || undefined,
     deadLetterSource: apiMessage.deadLetterSource || undefined,
+    scheduledEnqueueTime: apiMessage.scheduledEnqueueTime ?? undefined,
   };
 }
 

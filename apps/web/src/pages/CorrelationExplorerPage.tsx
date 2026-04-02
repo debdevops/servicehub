@@ -1,19 +1,27 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { GitMerge, Search, AlertTriangle, Clock, CheckCircle } from 'lucide-react';
+import {
+  GitMerge,
+  Search,
+  AlertTriangle,
+  Clock,
+  CheckCircle,
+  Download,
+  Filter,
+  ChevronDown,
+  ChevronUp,
+  Database,
+  Radio,
+} from 'lucide-react';
 import { useCorrelationSearch } from '@/hooks/useCorrelation';
 import { useNamespaces } from '@/hooks/useNamespaces';
-import type { CorrelationTimelineEntry } from '@/lib/api/types';
+import type { CorrelationTimelineEntry, CorrelationTimelineResponse } from '@/lib/api/types';
 
 // ============================================================================
 // State badge helpers
 // ============================================================================
 
-type StateColor = {
-  bg: string;
-  text: string;
-  dot: string;
-};
+type StateColor = { bg: string; text: string; dot: string };
 
 function getStateColor(state: string): StateColor {
   switch (state) {
@@ -49,18 +57,77 @@ function formatTimestamp(ts: string): string {
   }
 }
 
+/** Detect if entity path looks like a topic subscription */
+function getEntityType(entry: CorrelationTimelineEntry): 'Queue' | 'Topic/Sub' {
+  return entry.entityPath?.includes('/subscriptions/') ? 'Topic/Sub' : 'Queue';
+}
+
 // ============================================================================
-// Timeline Entry Card
+// Time range options
 // ============================================================================
 
-function TimelineEntryCard({ entry, isLast }: { entry: CorrelationTimelineEntry; isLast: boolean }) {
+type TimeRange = '1h' | '6h' | '24h' | '7d' | 'all';
+const TIME_RANGE_OPTIONS: { label: string; value: TimeRange }[] = [
+  { label: 'Last 1 hour', value: '1h' },
+  { label: 'Last 6 hours', value: '6h' },
+  { label: 'Last 24 hours', value: '24h' },
+  { label: 'Last 7 days', value: '7d' },
+  { label: 'All time', value: 'all' },
+];
+
+function filterByTimeRange(entries: CorrelationTimelineEntry[], range: TimeRange): CorrelationTimelineEntry[] {
+  if (range === 'all') return entries;
+  const now = Date.now();
+  const msMap: Record<TimeRange, number> = {
+    '1h': 60 * 60 * 1000,
+    '6h': 6 * 60 * 60 * 1000,
+    '24h': 24 * 60 * 60 * 1000,
+    '7d': 7 * 24 * 60 * 60 * 1000,
+    all: Infinity,
+  };
+  const cutoff = now - msMap[range];
+  return entries.filter((e) => new Date(e.timestamp).getTime() >= cutoff);
+}
+
+// ============================================================================
+// Export helpers
+// ============================================================================
+
+function exportAsJson(result: CorrelationTimelineResponse) {
+  const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `correlation-${result.correlationId}-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================================
+// Timeline Entry Card with body expand
+// ============================================================================
+
+function TimelineEntryCard({
+  entry,
+  isLast,
+  index,
+}: {
+  entry: CorrelationTimelineEntry;
+  isLast: boolean;
+  index: number;
+}) {
   const stateColor = getStateColor(entry.state);
+  const [expanded, setExpanded] = useState(false);
+  const entityType = getEntityType(entry);
 
   return (
     <div className="flex gap-4">
-      {/* Left column: dot + connector line */}
-      <div className="flex flex-col items-center">
-        <div className={`w-3 h-3 rounded-full shrink-0 mt-3 ${stateColor.dot}`} />
+      {/* Left column: index + dot + connector line */}
+      <div className="flex flex-col items-center shrink-0 w-8">
+        <span className="text-xs font-bold text-gray-400 text-center leading-none mb-1 pt-3">
+          {index + 1}
+        </span>
+        <div className={`w-3 h-3 rounded-full shrink-0 ${stateColor.dot}`} />
         {!isLast && <div className="w-0.5 flex-1 bg-gray-200 mt-1" />}
       </div>
 
@@ -68,53 +135,84 @@ function TimelineEntryCard({ entry, isLast }: { entry: CorrelationTimelineEntry;
       <div className="flex-1 mb-4">
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
           {/* Header row */}
-          <div className="flex items-center justify-between mb-2 gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${stateColor.bg} ${stateColor.text}`}>
+          <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+            <div className="flex items-center gap-2 min-w-0 flex-wrap">
+              <span
+                className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${stateColor.bg} ${stateColor.text}`}
+              >
                 {entry.state}
               </span>
               <span className="text-sm font-medium text-gray-900 truncate">{entry.entityName}</span>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full shrink-0 font-medium ${
+                  entityType === 'Queue'
+                    ? 'bg-sky-50 text-sky-600 border border-sky-100'
+                    : 'bg-indigo-50 text-indigo-600 border border-indigo-100'
+                }`}
+              >
+                {entityType}
+              </span>
             </div>
             <span
               className={`text-xs px-2 py-0.5 rounded-full shrink-0 font-medium ${
-                entry.source === 'Live'
-                  ? 'bg-sky-100 text-sky-700'
-                  : 'bg-gray-100 text-gray-600'
+                entry.source === 'Live' ? 'bg-sky-100 text-sky-700' : 'bg-gray-100 text-gray-600'
               }`}
             >
-              {entry.source}
+              {entry.source === 'Live' ? (
+                <span className="flex items-center gap-1"><Radio className="w-3 h-3" />Live</span>
+              ) : (
+                <span className="flex items-center gap-1"><Database className="w-3 h-3" />History</span>
+              )}
             </span>
           </div>
 
           {/* Timestamp + Seq no */}
-          <div className="flex items-center gap-4 text-xs text-gray-500 mb-2">
+          <div className="flex items-center gap-4 text-xs text-gray-500 mb-2 flex-wrap">
             <span className="flex items-center gap-1">
               <Clock className="w-3 h-3" />
               {formatTimestamp(entry.timestamp)}
             </span>
             <span>SeqNo: {entry.sequenceNumber.toLocaleString()}</span>
+            <span>Size: {entry.sizeInBytes > 0 ? `${(entry.sizeInBytes / 1024).toFixed(1)} KB` : '—'}</span>
           </div>
 
           {/* Namespace */}
-          <p className="text-xs text-gray-500 mb-1">
-            Namespace: <span className="font-medium text-gray-700">{entry.namespaceDisplayName}</span>
+          <p className="text-xs text-gray-500 mb-2">
+            Namespace:{' '}
+            <span className="font-medium text-gray-700">{entry.namespaceDisplayName}</span>
             {entry.entityPath && entry.entityPath !== entry.entityName && (
               <span className="ml-1 text-gray-400">({entry.entityPath})</span>
             )}
           </p>
 
-          {/* Body preview */}
+          {/* Body preview — expandable */}
           {entry.bodyPreview && (
-            <p className="text-xs text-gray-600 font-mono bg-gray-50 rounded px-2 py-1 truncate mt-1">
-              {entry.bodyPreview.length > 80
-                ? `${entry.bodyPreview.slice(0, 80)}…`
-                : entry.bodyPreview}
-            </p>
+            <div className="mt-1">
+              <div
+                className={`text-xs text-gray-600 font-mono bg-gray-50 border border-gray-100 rounded px-2 py-1.5 ${
+                  expanded ? 'whitespace-pre-wrap break-words' : 'truncate'
+                }`}
+              >
+                {expanded ? entry.bodyPreview : entry.bodyPreview.slice(0, 200) + (entry.bodyPreview.length > 200 ? '…' : '')}
+              </div>
+              {entry.bodyPreview.length > 200 && (
+                <button
+                  onClick={() => setExpanded((v) => !v)}
+                  className="mt-1 text-xs text-violet-600 hover:text-violet-800 flex items-center gap-1"
+                >
+                  {expanded ? (
+                    <><ChevronUp className="w-3 h-3" /> Show less</>
+                  ) : (
+                    <><ChevronDown className="w-3 h-3" /> Show full body</>
+                  )}
+                </button>
+              )}
+            </div>
           )}
 
           {/* DLQ reason */}
           {entry.deadLetterReason && (
-            <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
+            <p className="text-xs text-red-600 mt-2 flex items-center gap-1">
               <AlertTriangle className="w-3 h-3 shrink-0" />
               DLQ Reason: {entry.deadLetterReason}
             </p>
@@ -137,6 +235,19 @@ function PlaceholderState() {
       <p className="text-gray-400 text-sm max-w-sm">
         Trace a message journey across all your queues and namespaces by entering a Correlation ID above.
       </p>
+      <div className="mt-6 grid grid-cols-3 gap-3 text-left w-full max-w-sm">
+        {[
+          { icon: '🔍', title: 'Cross-namespace', body: 'Searches all connected namespaces in parallel' },
+          { icon: '📜', title: 'Live + History', body: 'Merges live queue data with DLQ history' },
+          { icon: '📦', title: 'Full journey', body: 'Shows message state at every hop' },
+        ].map((tip) => (
+          <div key={tip.title} className="bg-white border border-gray-100 rounded-xl p-3">
+            <div className="text-lg mb-1">{tip.icon}</div>
+            <p className="text-xs font-semibold text-gray-700 mb-0.5">{tip.title}</p>
+            <p className="text-xs text-gray-400">{tip.body}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -153,10 +264,12 @@ export function CorrelationExplorerPage() {
 
   const [correlationIdInput, setCorrelationIdInput] = useState(initialCorrelationId);
   const [selectedNamespaceId, setSelectedNamespaceId] = useState(initialNamespaceId);
+  const [timeRange, setTimeRange] = useState<TimeRange>('all');
+  const [entityTypeFilter, setEntityTypeFilter] = useState<'all' | 'queue' | 'topic'>('all');
+  const [showFilters, setShowFilters] = useState(false);
 
   const { data: namespaces } = useNamespaces();
   const search = useCorrelationSearch();
-
   const hasAutoSearched = useRef(false);
 
   // Auto-trigger search from URL params on first mount
@@ -168,7 +281,7 @@ export function CorrelationExplorerPage() {
         namespaceId: initialNamespaceId || undefined,
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function handleSearch() {
@@ -190,18 +303,44 @@ export function CorrelationExplorerPage() {
   const isLoading = search.isPending;
   const hasSearched = search.isSuccess || search.isError;
 
+  // Client-side filtering of timeline entries
+  const filteredEntries = useMemo(() => {
+    if (!result?.entries) return [];
+    let entries = filterByTimeRange(result.entries, timeRange);
+    if (entityTypeFilter === 'queue') {
+      entries = entries.filter((e) => !e.entityPath?.includes('/subscriptions/'));
+    } else if (entityTypeFilter === 'topic') {
+      entries = entries.filter((e) => e.entityPath?.includes('/subscriptions/'));
+    }
+    return entries;
+  }, [result?.entries, timeRange, entityTypeFilter]);
+
+  const hasActiveFilters = timeRange !== 'all' || entityTypeFilter !== 'all';
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
       <div className="bg-gradient-to-r from-violet-600 to-violet-500 px-6 py-4 shrink-0">
-        <div className="flex items-center gap-3">
-          <GitMerge className="w-6 h-6 text-white/80" />
-          <div>
-            <h1 className="text-xl font-semibold text-white">Correlation Explorer</h1>
-            <p className="text-violet-100 text-sm">
-              Find every message sharing a CorrelationId across all queues and namespaces
-            </p>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <GitMerge className="w-6 h-6 text-white/80" />
+            <div>
+              <h1 className="text-xl font-semibold text-white">Correlation Explorer</h1>
+              <p className="text-violet-100 text-sm">
+                Trace any message's full journey across all queues and namespaces
+              </p>
+            </div>
           </div>
+          {result && result.totalCount > 0 && (
+            <button
+              onClick={() => exportAsJson(result)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-sm font-medium transition-colors"
+              title="Export timeline as JSON"
+            >
+              <Download className="w-4 h-4" />
+              Export JSON
+            </button>
+          )}
         </div>
       </div>
 
@@ -214,7 +353,7 @@ export function CorrelationExplorerPage() {
             <input
               type="text"
               value={correlationIdInput}
-              onChange={e => setCorrelationIdInput(e.target.value)}
+              onChange={(e) => setCorrelationIdInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Enter Correlation ID…"
               className="flex-1 bg-transparent text-sm text-gray-900 placeholder-gray-400 outline-none"
@@ -225,17 +364,34 @@ export function CorrelationExplorerPage() {
           {/* Namespace filter */}
           <select
             value={selectedNamespaceId}
-            onChange={e => setSelectedNamespaceId(e.target.value)}
+            onChange={(e) => setSelectedNamespaceId(e.target.value)}
             className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-700 focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400"
             aria-label="Namespace filter"
           >
             <option value="">All Namespaces</option>
-            {namespaces?.map(ns => (
+            {namespaces?.map((ns) => (
               <option key={ns.id} value={ns.id}>
                 {ns.displayName ?? ns.name}
               </option>
             ))}
           </select>
+
+          {/* Filters toggle */}
+          <button
+            onClick={() => setShowFilters((v) => !v)}
+            className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm font-medium transition-colors ${
+              hasActiveFilters
+                ? 'border-violet-400 bg-violet-50 text-violet-700'
+                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+            aria-label="Toggle result filters"
+          >
+            <Filter className="w-4 h-4" />
+            Filters
+            {hasActiveFilters && (
+              <span className="w-2 h-2 rounded-full bg-violet-500 ml-0.5" />
+            )}
+          </button>
 
           {/* Search button */}
           <button
@@ -247,12 +403,57 @@ export function CorrelationExplorerPage() {
             {isLoading ? 'Searching…' : 'Search'}
           </button>
         </div>
+
+        {/* Expandable filter panel */}
+        {showFilters && (
+          <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-100 flex-wrap">
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-gray-600">Time range</label>
+              <select
+                value={timeRange}
+                onChange={(e) => setTimeRange(e.target.value as TimeRange)}
+                className="text-sm border border-gray-200 rounded-lg px-2.5 py-1 bg-white focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400"
+              >
+                {TIME_RANGE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-gray-600">Entity type</label>
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+                {(['all', 'queue', 'topic'] as const).map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => setEntityTypeFilter(opt)}
+                    className={`px-3 py-1 text-xs font-medium transition-colors ${
+                      entityTypeFilter === opt
+                        ? 'bg-violet-600 text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {opt === 'all' ? 'All' : opt === 'queue' ? 'Queues' : 'Topics'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {hasActiveFilters && (
+              <button
+                onClick={() => { setTimeRange('all'); setEntityTypeFilter('all'); }}
+                className="text-xs text-gray-400 hover:text-gray-600 underline"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Content area */}
       <div className="flex-1 overflow-auto bg-gray-50">
         {isLoading ? (
-          // Loading state
           <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-500">
             <div className="animate-spin rounded-full border-4 border-violet-200 border-t-violet-600 w-10 h-10" />
             <p className="text-sm">
@@ -262,12 +463,11 @@ export function CorrelationExplorerPage() {
         ) : !hasSearched ? (
           <PlaceholderState />
         ) : result && result.totalCount === 0 ? (
-          // Empty results
           <div className="flex flex-col items-center justify-center h-full text-center px-8 py-16">
             <CheckCircle className="w-12 h-12 text-gray-300 mb-4" />
             <p className="text-gray-600 font-semibold text-lg mb-1">No messages found</p>
             <p className="text-gray-400 text-sm">
-              No messages found for correlation ID:{' '}
+              No messages for correlation ID:{' '}
               <span className="font-mono text-gray-600">{result.correlationId}</span>
             </p>
           </div>
@@ -284,29 +484,70 @@ export function CorrelationExplorerPage() {
             )}
 
             {/* Results header */}
-            <div className="mb-5">
-              <p className="text-gray-700 text-sm">
-                Found{' '}
-                <span className="font-semibold text-gray-900">{result.totalCount}</span>{' '}
-                message(s) across{' '}
-                <span className="font-semibold">{result.entitiesSearched}</span> queue(s) in{' '}
-                <span className="font-semibold">{result.namespacesSearched}</span> namespace(s)
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Search completed in {result.searchDurationMs.toLocaleString()}ms
-              </p>
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <div>
+                <p className="text-gray-700 text-sm">
+                  Found{' '}
+                  <span className="font-semibold text-gray-900">{result.totalCount}</span>{' '}
+                  message(s) across{' '}
+                  <span className="font-semibold">{result.entitiesSearched}</span> entity/ies in{' '}
+                  <span className="font-semibold">{result.namespacesSearched}</span> namespace(s)
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Search completed in {result.searchDurationMs.toLocaleString()}ms
+                  {hasActiveFilters && filteredEntries.length !== result.entries.length && (
+                    <span className="ml-2 text-violet-600 font-medium">
+                      · Showing {filteredEntries.length} of {result.totalCount} after filters
+                    </span>
+                  )}
+                </p>
+              </div>
+              <button
+                onClick={() => exportAsJson(result)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export JSON
+              </button>
             </div>
 
-            {/* Timeline */}
-            <div className="ml-4">
-              {result.entries.map((entry, idx) => (
-                <TimelineEntryCard
-                  key={`${entry.messageId}-${idx}`}
-                  entry={entry}
-                  isLast={idx === result.entries.length - 1}
-                />
-              ))}
+            {/* Source legend */}
+            <div className="flex items-center gap-4 mb-4 text-xs text-gray-500">
+              <span className="flex items-center gap-1">
+                <Radio className="w-3 h-3 text-sky-500" />
+                Live = currently in queue
+              </span>
+              <span className="flex items-center gap-1">
+                <Database className="w-3 h-3 text-gray-400" />
+                History = from DLQ history database
+              </span>
             </div>
+
+            {/* Filtered empty state */}
+            {filteredEntries.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">
+                <Filter className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                <p className="font-medium">No entries match the current filters</p>
+                <button
+                  onClick={() => { setTimeRange('all'); setEntityTypeFilter('all'); }}
+                  className="mt-2 text-sm text-violet-600 underline"
+                >
+                  Clear filters
+                </button>
+              </div>
+            ) : (
+              /* Timeline */
+              <div className="ml-4">
+                {filteredEntries.map((entry, idx) => (
+                  <TimelineEntryCard
+                    key={`${entry.messageId}-${idx}`}
+                    entry={entry}
+                    isLast={idx === filteredEntries.length - 1}
+                    index={idx}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         ) : null}
       </div>
