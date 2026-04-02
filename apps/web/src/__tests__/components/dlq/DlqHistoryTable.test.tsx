@@ -166,8 +166,10 @@ describe('DlqHistoryTable', () => {
   });
 
   it('shows loading state', () => {
-    render(<DlqHistoryTable {...defaultProps} isLoading={true} />);
-    expect(screen.getByText('Loading DLQ history...')).toBeInTheDocument();
+    const { container } = render(<DlqHistoryTable {...defaultProps} isLoading={true} />);
+    expect(container.querySelector('.animate-pulse')).not.toBeNull();
+    // Skeleton: no actual data rows visible
+    expect(screen.queryByText('No DLQ messages found')).not.toBeInTheDocument();
   });
 
   it('shows empty state when items is empty', () => {

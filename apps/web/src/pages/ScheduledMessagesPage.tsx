@@ -28,13 +28,13 @@ function deliversIn(isoString: string): string {
   const diffMs = target - now;
   if (diffMs <= 0) return 'Now';
   const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return `in ${diffSec}s`;
   const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `in ${diffMin}m ${diffSec % 60}s`;
   const diffHr = Math.floor(diffMin / 60);
   const diffDay = Math.floor(diffHr / 24);
   if (diffDay > 0) return `in ${diffDay}d ${diffHr % 24}h`;
-  if (diffHr > 0) return `in ${diffHr}h ${diffMin % 60}m`;
-  if (diffMin > 0) return `in ${diffMin}m`;
-  return `in ${diffSec}s`;
+  return `in ${diffHr}h ${diffMin % 60}m`;
 }
 
 function formatBytes(bytes?: number | null): string {
@@ -159,12 +159,19 @@ function ScheduledMessageRow({ message, namespaceId, queueName }: ScheduledMessa
   const cancel = useCancelScheduledMessage();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
-  // Tick every 30 s so the "Delivers In" column stays accurate without hammering renders
+  // Adaptive tick: 1s when delivery is <60s away, 10s when <1hr, otherwise 30s
   const [, setTick] = useState(0);
+  const scheduledTime = message.scheduledEnqueueTime;
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 30_000);
-    return () => clearInterval(id);
-  }, []);
+    let id: ReturnType<typeof setTimeout>;
+    function schedule() {
+      const ms = scheduledTime ? new Date(scheduledTime).getTime() - Date.now() : Infinity;
+      const interval = ms < 60_000 ? 1_000 : ms < 3_600_000 ? 10_000 : 30_000;
+      id = setTimeout(() => { setTick(t => t + 1); schedule(); }, interval);
+    }
+    schedule();
+    return () => clearTimeout(id);
+  }, [scheduledTime]);
 
   const handleCancelClick = () => setConfirmOpen(true);
 
@@ -177,7 +184,6 @@ function ScheduledMessageRow({ message, namespaceId, queueName }: ScheduledMessa
     });
   };
 
-  const scheduledTime = message.scheduledEnqueueTime;
   const shortId = message.messageId
     ? `${message.messageId.substring(0, 12)}…`
     : `#${message.sequenceNumber}`;
