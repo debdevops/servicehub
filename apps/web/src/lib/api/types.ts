@@ -1,6 +1,15 @@
 // Environment type matching backend EnvironmentType enum
 export type EnvironmentType = 'Dev' | 'Uat' | 'Prod';
 
+/** Shape of errors returned by the axios API client. Used for typed error handling in hooks. */
+export type ApiError = {
+  response?: {
+    status?: number;
+    data?: { detail?: string; message?: string; title?: string };
+  };
+  message?: string;
+};
+
 // Namespace DTOs (match your backend CreateNamespaceRequest, NamespaceResponse)
 export interface Namespace {
   id: string;
@@ -48,7 +57,7 @@ export interface Message {
   deadLetterSource?: string | null;
   deadLetterReason?: string | null;
   deadLetterErrorDescription?: string | null;
-  applicationProperties?: Record<string, any> | null;
+  applicationProperties?: Record<string, unknown> | null;
   sizeInBytes?: number;
   entityName?: string | null;
   subscriptionName?: string | null;

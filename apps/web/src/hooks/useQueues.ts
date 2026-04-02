@@ -1,6 +1,6 @@
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
-import { Queue } from '@/lib/api/types';
+import { Queue, ApiError } from '@/lib/api/types';
 
 const queuesQueryOptions = (namespaceId: string, autoRefresh: boolean) => ({
   queryKey: ['queues', namespaceId] as const,
@@ -14,9 +14,9 @@ const queuesQueryOptions = (namespaceId: string, autoRefresh: boolean) => ({
   staleTime: 2000,
   refetchInterval: autoRefresh ? 7000 : (false as const),
   refetchIntervalInBackground: false,
-  retry: (failureCount: number, error: any) => {
+  retry: (failureCount: number, error: ApiError) => {
     if (error?.response?.status === 404) return false;
-    if (error?.response?.status >= 500) return false;
+    if ((error?.response?.status ?? 0) >= 500) return false;
     return failureCount < 2;
   },
 });

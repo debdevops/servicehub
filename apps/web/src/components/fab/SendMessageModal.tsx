@@ -144,7 +144,7 @@ export function SendMessageModal({
         scheduledEnqueueTime,
         messageCount: count,
       });
-    } catch (error) {
+    } catch {
       // Error handled by mutation hook
     }
   };

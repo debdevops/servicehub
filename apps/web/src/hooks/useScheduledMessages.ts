@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { scheduledApi } from '@/lib/api/scheduled';
+import { ApiError } from '@/lib/api/types';
 import toast from 'react-hot-toast';
 
 export function useScheduledMessages(namespaceId: string, queueName: string) {
@@ -10,8 +11,8 @@ export function useScheduledMessages(namespaceId: string, queueName: string) {
     staleTime: 5000,
     refetchInterval: 10000,
     refetchIntervalInBackground: false,
-    retry: (failureCount, error: any) => {
-      const status = error?.response?.status;
+    retry: (failureCount, error: ApiError) => {
+      const status = error?.response?.status ?? 0;
       if (status === 404 || status === 401 || status === 403) return false;
       if (status >= 500) return false;
       return failureCount < 2;
@@ -43,7 +44,7 @@ export function useCancelScheduledMessage() {
       });
     },
 
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       const message =
         error?.response?.data?.detail ||
         error?.response?.data?.title ||

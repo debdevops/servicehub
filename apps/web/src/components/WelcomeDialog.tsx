@@ -14,6 +14,7 @@ export interface ServiceHubUser {
 }
 
 /** Read persisted user identity from localStorage (null if not set). */
+// eslint-disable-next-line react-refresh/only-export-components
 export function getStoredUser(): ServiceHubUser | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
