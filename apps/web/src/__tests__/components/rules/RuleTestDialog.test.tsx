@@ -8,29 +8,24 @@ vi.mock('@/hooks/useRules', () => ({
 }));
 
 import { useTestRule } from '@/hooks/useRules';
+import type { RuleResponse } from '@/lib/api/rules';
 
 const mockUseTestRule = useTestRule as ReturnType<typeof vi.fn>;
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
-  return function Wrapper({ children }: { children: React.ReactNode }) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
-  };
-}
-
-const sampleRule = {
-  id: 'rule-1',
+const sampleRule: RuleResponse = {
+  id: 1,
   name: 'Timeout Rule',
+  description: null,
   enabled: true,
   conditions: [{ field: 'DeadLetterReason', operator: 'Contains', value: 'timeout' }],
   action: { autoReplay: true, delaySeconds: 60, maxRetries: 3, exponentialBackoff: false },
   maxReplaysPerHour: 100,
   matchCount: 5,
-  replayCount: 3,
+  successCount: 3,
+  successRate: 0.6,
+  pendingMatchCount: 0,
   createdAt: new Date().toISOString(),
-  lastModifiedAt: new Date().toISOString(),
+  updatedAt: null,
 };
 
 describe('RuleTestDialog', () => {

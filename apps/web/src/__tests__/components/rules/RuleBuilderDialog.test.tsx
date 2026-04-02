@@ -25,16 +25,19 @@ describe('RuleBuilderDialog', () => {
 
   it('shows "Edit Auto-Replay Rule" title when editRule is provided', () => {
     const editRule: RuleResponse = {
-      id: 'rule-1',
+      id: 1,
       name: 'My Rule',
+      description: null,
       enabled: true,
       conditions: [{ field: 'DeadLetterReason', operator: 'Contains', value: 'timeout' }],
       action: { autoReplay: true, delaySeconds: 60, maxRetries: 3, exponentialBackoff: false },
       maxReplaysPerHour: 100,
       matchCount: 0,
-      replayCount: 0,
+      successCount: 0,
+      successRate: 0,
+      pendingMatchCount: 0,
       createdAt: new Date().toISOString(),
-      lastModifiedAt: new Date().toISOString(),
+      updatedAt: null,
     };
     render(<RuleBuilderDialog {...defaultProps} editRule={editRule} />);
     expect(screen.getByText('Edit Auto-Replay Rule')).toBeInTheDocument();
@@ -42,16 +45,19 @@ describe('RuleBuilderDialog', () => {
 
   it('prepopulates name field when editing rule', () => {
     const editRule: RuleResponse = {
-      id: 'rule-1',
+      id: 2,
       name: 'Timeout Handler',
+      description: null,
       enabled: true,
       conditions: [{ field: 'DeadLetterReason', operator: 'Contains', value: 'timeout' }],
       action: { autoReplay: true, delaySeconds: 30, maxRetries: 5, exponentialBackoff: true },
       maxReplaysPerHour: 50,
       matchCount: 0,
-      replayCount: 0,
+      successCount: 0,
+      successRate: 0,
+      pendingMatchCount: 0,
       createdAt: new Date().toISOString(),
-      lastModifiedAt: new Date().toISOString(),
+      updatedAt: null,
     };
     render(<RuleBuilderDialog {...defaultProps} editRule={editRule} />);
     const nameInput = screen.getByPlaceholderText(/e.g., Database Timeouts/i);

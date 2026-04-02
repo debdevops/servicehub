@@ -54,6 +54,12 @@ interface RescheduleModalProps {
   onClose: () => void;
 }
 
+interface ScheduledMessageRowProps {
+  message: Message;
+  namespaceId: string;
+  queueName: string;
+}
+
 function RescheduleModal({ message, namespaceId, queueName, onClose }: RescheduleModalProps) {
   const cancel = useCancelScheduledMessage();
   const send = useSendMessage();
