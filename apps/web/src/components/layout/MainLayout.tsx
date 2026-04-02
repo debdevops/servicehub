@@ -5,6 +5,8 @@ import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { MessageFAB } from '@/components/fab';
 import { GuidedTour, isTourCompleted } from '@/components/help/GuidedTour';
+import { CommandPalette } from '@/components/CommandPalette';
+import { KeyboardShortcutsOverlay } from '@/components/KeyboardShortcutsOverlay';
 import { useNamespaces } from '@/hooks/useNamespaces';
 
 export function MainLayout() {
@@ -13,6 +15,12 @@ export function MainLayout() {
 
   // Guided tour state
   const [tourActive, setTourActive] = useState(false);
+
+  // Command Palette state
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Keyboard shortcuts overlay state
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   // Auto-launch tour on first visit
   useEffect(() => {
@@ -29,6 +37,39 @@ export function MainLayout() {
     window.addEventListener('servicehub:start-tour', handleStartTour);
     return () => window.removeEventListener('servicehub:start-tour', handleStartTour);
   }, [handleStartTour]);
+
+  // Global Cmd+K / Ctrl+K shortcut for Command Palette
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setPaletteOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  // Listen for open-palette event from Header button
+  useEffect(() => {
+    const handler = () => setPaletteOpen(true);
+    window.addEventListener('servicehub:open-palette', handler);
+    return () => window.removeEventListener('servicehub:open-palette', handler);
+  }, []);
+
+  // Global '?' shortcut — skip when focus is inside a form element
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.key === '?') {
+        e.preventDefault();
+        setShortcutsOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
   const namespaceId = searchParams.get('namespace');
   const queueName = searchParams.get('queue');
   const topicName = searchParams.get('topic');
@@ -94,6 +135,12 @@ export function MainLayout() {
 
       {/* Guided Tour Overlay */}
       <GuidedTour isActive={tourActive} onComplete={() => setTourActive(false)} />
+
+      {/* Command Palette */}
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+
+      {/* Keyboard Shortcuts Overlay */}
+      <KeyboardShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </div>
   );
 }

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useCorrelationSearch } from '@/hooks/useCorrelation';
 import { useNamespaces } from '@/hooks/useNamespaces';
+import { CopyButton } from '@/components/CopyButton';
 import type { CorrelationTimelineEntry, CorrelationTimelineResponse } from '@/lib/api/types';
 
 // ============================================================================
@@ -173,8 +174,12 @@ function TimelineEntryCard({
               {formatTimestamp(entry.timestamp)}
             </span>
             <span>SeqNo: {entry.sequenceNumber.toLocaleString()}</span>
-            <span>Size: {entry.sizeInBytes > 0 ? `${(entry.sizeInBytes / 1024).toFixed(1)} KB` : '—'}</span>
-          </div>
+            <span>Size: {entry.sizeInBytes > 0 ? `${(entry.sizeInBytes / 1024).toFixed(1)} KB` : '—'}</span>            {entry.messageId && (
+              <span className="flex items-center gap-1">
+                <span className="font-mono text-gray-500">ID: {entry.messageId.slice(0, 8)}…</span>
+                <CopyButton text={entry.messageId} label="message ID" iconSize="w-3 h-3" />
+              </span>
+            )}          </div>
 
           {/* Namespace */}
           <p className="text-xs text-gray-500 mb-2">
@@ -493,13 +498,17 @@ export function CorrelationExplorerPage() {
                   <span className="font-semibold">{result.entitiesSearched}</span> entity/ies in{' '}
                   <span className="font-semibold">{result.namespacesSearched}</span> namespace(s)
                 </p>
-                <p className="text-xs text-gray-400 mt-0.5">
+                <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5">
                   Search completed in {result.searchDurationMs.toLocaleString()}ms
                   {hasActiveFilters && filteredEntries.length !== result.entries.length && (
                     <span className="ml-2 text-violet-600 font-medium">
-                      · Showing {filteredEntries.length} of {result.totalCount} after filters
+                      &middot; Showing {filteredEntries.length} of {result.totalCount} after filters
                     </span>
                   )}
+                  <span className="flex items-center gap-1 ml-2 font-mono text-gray-500">
+                    CorrelationID: {result.correlationId.slice(0, 12)}…
+                    <CopyButton text={result.correlationId} label="correlation ID" iconSize="w-3 h-3" />
+                  </span>
                 </p>
               </div>
               <button
