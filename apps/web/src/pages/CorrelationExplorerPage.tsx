@@ -105,6 +105,96 @@ function exportAsJson(result: CorrelationTimelineResponse) {
 }
 
 // ============================================================================
+// Duration between events
+// ============================================================================
+
+function formatDuration(ms: number): string {
+  if (ms < 1_000) return `${ms}ms`;
+  const sec = Math.floor(ms / 1_000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ${sec % 60}s`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ${min % 60}m`;
+  return `${Math.floor(hr / 24)}d ${hr % 24}h`;
+}
+
+function DurationConnector({ fromTs, toTs }: { fromTs: string; toTs: string }) {
+  const ms = new Date(toTs).getTime() - new Date(fromTs).getTime();
+  if (ms <= 0) return null;
+  return (
+    <div className="flex items-center gap-2 ml-8 my-1 text-xs text-gray-400 select-none">
+      <div className="h-px flex-1 border-l-0 border-t border-dashed border-gray-300" />
+      <span className="shrink-0 px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-mono">
+        +{formatDuration(ms)}
+      </span>
+      <div className="h-px flex-1 border-r-0 border-t border-dashed border-gray-300" />
+    </div>
+  );
+}
+
+// ============================================================================
+// Horizontal timeline minimap
+// ============================================================================
+
+function TimelineMinimap({ entries }: { entries: CorrelationTimelineEntry[] }) {
+  if (entries.length < 2) return null;
+
+  const timestamps = entries.map(e => new Date(e.timestamp).getTime());
+  const minT = Math.min(...timestamps);
+  const maxT = Math.max(...timestamps);
+  const span = maxT - minT || 1;
+
+  // SVG dimensions
+  const W = 100; // viewBox units (percent)
+  const H = 28;
+  const RAIL_Y = 14;
+  const DOT_R = 3.5;
+
+  return (
+    <div className="mb-5 bg-white border border-gray-200 rounded-xl px-5 py-3 shadow-sm">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          Timeline Minimap · {entries.length} event{entries.length !== 1 ? 's' : ''}
+        </span>
+        <span className="text-xs text-gray-400 font-mono">
+          {formatDuration(span)} total span
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full" style={{ height: H }}>
+        {/* Rail */}
+        <line x1="2" y1={RAIL_Y} x2="98" y2={RAIL_Y} stroke="#e5e7eb" strokeWidth="1.5" />
+        {/* Events */}
+        {entries.map((entry, i) => {
+          const t = new Date(entry.timestamp).getTime();
+          const pct = 2 + ((t - minT) / span) * 96;
+          const { dot } = getStateColor(entry.state);
+          // Convert tailwind dot class to fill color approximation
+          const fillMap: Record<string, string> = {
+            'bg-emerald-500': '#10b981',
+            'bg-sky-500': '#0ea5e9',
+            'bg-red-500': '#ef4444',
+            'bg-amber-500': '#f59e0b',
+            'bg-gray-400': '#9ca3af',
+            'bg-purple-500': '#a855f7',
+          };
+          const fill = fillMap[dot] ?? '#9ca3af';
+          return (
+            <g key={i}>
+              <circle cx={pct} cy={RAIL_Y} r={DOT_R} fill={fill} opacity="0.9" />
+            </g>
+          );
+        })}
+      </svg>
+      <div className="flex justify-between text-[10px] text-gray-400 font-mono mt-0.5">
+        <span>{formatTimestamp(entries[0].timestamp).split(',')[0]}</span>
+        <span>{formatTimestamp(entries[entries.length - 1].timestamp).split(',')[0]}</span>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // Timeline Entry Card with body expand
 // ============================================================================
 
@@ -546,16 +636,26 @@ export function CorrelationExplorerPage() {
               </div>
             ) : (
               /* Timeline */
-              <div className="ml-4">
-                {filteredEntries.map((entry, idx) => (
-                  <TimelineEntryCard
-                    key={`${entry.messageId}-${idx}`}
-                    entry={entry}
-                    isLast={idx === filteredEntries.length - 1}
-                    index={idx}
-                  />
-                ))}
-              </div>
+              <>
+                <TimelineMinimap entries={filteredEntries} />
+                <div className="ml-4">
+                  {filteredEntries.map((entry, idx) => (
+                    <div key={`${entry.messageId}-${idx}`}>
+                      {idx > 0 && (
+                        <DurationConnector
+                          fromTs={filteredEntries[idx - 1].timestamp}
+                          toTs={entry.timestamp}
+                        />
+                      )}
+                      <TimelineEntryCard
+                        entry={entry}
+                        isLast={idx === filteredEntries.length - 1}
+                        index={idx}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         ) : null}

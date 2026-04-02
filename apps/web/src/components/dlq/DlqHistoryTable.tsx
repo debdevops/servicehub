@@ -67,12 +67,33 @@ export function DlqHistoryTable({
 
   if (isLoading) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="p-8 text-center">
-          <div className="inline-flex items-center gap-2 text-gray-500">
-            <div className="w-5 h-5 border-2 border-gray-300 border-t-primary-500 rounded-full animate-spin" />
-            Loading DLQ history...
-          </div>
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden animate-pulse">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                {['w-10', 'flex-1', 'w-24', 'w-32', 'w-24', 'w-16', 'flex-1', 'w-20'].map((w, i) => (
+                  <th key={i} className="px-4 py-3">
+                    <div className={`h-3 bg-gray-200 rounded ${w}`} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <tr key={i} className="border-b border-gray-100">
+                  <td className="px-4 py-3"><div className="h-3 w-6 bg-gray-100 rounded" /></td>
+                  <td className="px-4 py-3"><div className="h-3 w-32 bg-gray-100 rounded" /></td>
+                  <td className="px-4 py-3"><div className="h-5 w-20 bg-gray-100 rounded-full" /></td>
+                  <td className="px-4 py-3"><div className="h-5 w-24 bg-gray-100 rounded-full" /></td>
+                  <td className="px-4 py-3"><div className="h-5 w-20 bg-gray-100 rounded-full" /></td>
+                  <td className="px-4 py-3"><div className="h-3 w-10 bg-gray-100 rounded" /></td>
+                  <td className="px-4 py-3"><div className="h-3 w-40 bg-gray-100 rounded" /></td>
+                  <td className="px-4 py-3"><div className="h-7 w-16 bg-gray-100 rounded-lg" /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     );

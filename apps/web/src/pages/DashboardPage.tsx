@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { useRef } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import {
   Globe,
   RefreshCw,
@@ -20,6 +20,39 @@ import { useQueues, useAllNamespacesQueues, NamespaceQueueStats } from '@/hooks/
 import { Namespace, EnvironmentType } from '@/lib/api/types';
 
 const DLQ_SPIKE_THRESHOLD = 10;
+
+// ============================================================================
+// Live refresh hook — tracks seconds since last successful data fetch
+// ============================================================================
+
+function useSecondsSince(triggerAt: number | null): number {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    if (triggerAt === null) return;
+    setSeconds(0);
+    const id = setInterval(() => setSeconds(s => s + 1), 1_000);
+    return () => clearInterval(id);
+  }, [triggerAt]);
+  return seconds;
+}
+
+// ============================================================================
+// Live Badge — pulsing dot + "last updated Xs ago"
+// ============================================================================
+
+function LiveBadge({ secondsAgo }: { secondsAgo: number }) {
+  const label =
+    secondsAgo < 5 ? 'just now' : secondsAgo < 60 ? `${secondsAgo}s ago` : `${Math.floor(secondsAgo / 60)}m ago`;
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-white/80">
+      <span className="relative flex h-2 w-2">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75" />
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+      </span>
+      Live · {label}
+    </span>
+  );
+}
 
 // ============================================================================
 // Environment Badge
@@ -383,10 +416,18 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }:
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { data: namespaces, isLoading, isFetching, refetch } = useNamespaces();
+  const { data: namespaces, isLoading, isFetching, refetch, dataUpdatedAt } = useNamespaces();
 
-  const namespaceIds = namespaces?.map((ns) => ns.id) ?? [];
-  const allStats: NamespaceQueueStats[] = useAllNamespacesQueues(namespaceIds, true);
+  // Track when queue stats last settled to drive the live badge
+  const allStats: NamespaceQueueStats[] = useAllNamespacesQueues(namespaces?.map(ns => ns.id) ?? [], true);
+  const statsLoading = allStats.some(s => s.isLoading);
+  const lastUpdatedAt = useRef<number | null>(null);
+  if (!statsLoading && allStats.length > 0) {
+    lastUpdatedAt.current = Date.now();
+  } else if (dataUpdatedAt && lastUpdatedAt.current === null) {
+    lastUpdatedAt.current = dataUpdatedAt;
+  }
+  const secondsSinceLive = useSecondsSince(lastUpdatedAt.current);
 
   // Build a lookup: namespaceId → stats
   const statsById = new Map<string, NamespaceQueueStats>(
@@ -455,11 +496,16 @@ export function DashboardPage() {
             <Globe className="w-6 h-6 text-white/80" />
             <div>
               <h1 className="text-xl font-semibold text-white">Multi-Namespace Dashboard</h1>
-              <p className="text-indigo-100 text-sm">
-                {namespaces && namespaces.length > 0
-                  ? `${namespaces.length} namespace${namespaces.length !== 1 ? 's' : ''} · live stats`
-                  : 'All connected namespaces at a glance'}
-              </p>
+              <div className="flex items-center gap-3 mt-0.5">
+                <p className="text-indigo-100 text-sm">
+                  {namespaces && namespaces.length > 0
+                    ? `${namespaces.length} namespace${namespaces.length !== 1 ? 's' : ''}`
+                    : 'All connected namespaces at a glance'}
+                </p>
+                {lastUpdatedAt.current !== null && (
+                  <LiveBadge secondsAgo={secondsSinceLive} />
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-3">
