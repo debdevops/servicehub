@@ -10,6 +10,7 @@ vi.mock('@/hooks/useNamespaces', () => ({
 
 vi.mock('@/hooks/useQueues', () => ({
   useQueues: vi.fn(),
+  useAllNamespacesQueues: vi.fn(),
 }));
 
 const mockNavigate = vi.fn();
@@ -19,10 +20,11 @@ vi.mock('react-router-dom', async () => {
 });
 
 import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues } from '@/hooks/useQueues';
+import { useQueues, useAllNamespacesQueues } from '@/hooks/useQueues';
 
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;
+const mockUseAllNamespacesQueues = useAllNamespacesQueues as ReturnType<typeof vi.fn>;
 
 const mockNamespace = {
   id: 'ns1',
@@ -69,11 +71,23 @@ describe('DashboardPage', () => {
       refetch: vi.fn(),
     });
     mockUseQueues.mockReturnValue({ data: mockQueues, isLoading: false, isError: false });
+    mockUseAllNamespacesQueues.mockReturnValue([
+      {
+        namespaceId: 'ns1',
+        queues: mockQueues,
+        totalActive: 5,
+        totalDlq: 2,
+        totalScheduled: 1,
+        totalQueues: 1,
+        isLoading: false,
+        isError: false,
+      },
+    ]);
   });
 
   it('renders page title', () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
-    expect(screen.getByText('Namespace Overview')).toBeInTheDocument();
+    expect(screen.getByText('Multi-Namespace Dashboard')).toBeInTheDocument();
   });
 
   it('shows empty state with Connect button when no namespaces', () => {
@@ -113,6 +127,10 @@ describe('DashboardPage', () => {
       isFetching: false,
       refetch: vi.fn(),
     });
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns1', queues: mockQueues, totalActive: 5, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
+      { namespaceId: 'ns2', queues: mockQueues, totalActive: 3, totalDlq: 0, totalScheduled: 0, totalQueues: 1, isLoading: false, isError: false },
+    ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(screen.getByText('My Namespace')).toBeInTheDocument();
     expect(screen.getByText('Second Namespace')).toBeInTheDocument();
@@ -141,6 +159,18 @@ describe('DashboardPage', () => {
       isLoading: false,
       isError: false,
     });
+    mockUseAllNamespacesQueues.mockReturnValue([
+      {
+        namespaceId: 'ns1',
+        queues: [{ ...mockQueues[0], deadLetterMessageCount: 15 }],
+        totalActive: 5,
+        totalDlq: 15,
+        totalScheduled: 1,
+        totalQueues: 1,
+        isLoading: false,
+        isError: false,
+      },
+    ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(screen.getByText(/DLQ: 15 messages need attention/i)).toBeInTheDocument();
   });
@@ -169,6 +199,9 @@ describe('DashboardPage', () => {
       isFetching: false,
       refetch: vi.fn(),
     });
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns1', queues: mockQueues, totalActive: 5, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
+    ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(screen.getByText('PROD')).toBeInTheDocument();
   });
@@ -180,6 +213,9 @@ describe('DashboardPage', () => {
       isFetching: false,
       refetch: vi.fn(),
     });
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns1', queues: mockQueues, totalActive: 5, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
+    ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(screen.getByText('UAT')).toBeInTheDocument();
   });
@@ -192,6 +228,9 @@ describe('DashboardPage', () => {
       isFetching: false,
       refetch: vi.fn(),
     });
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns1', queues: mockQueues, totalActive: 5, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
+    ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(screen.getByText('—')).toBeInTheDocument();
   });
