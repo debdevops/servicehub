@@ -202,7 +202,7 @@ describe('MessagesPage', () => {
     expect(screen.getByText('All Messages')).toBeInTheDocument();
     expect(screen.getByText('Success')).toBeInTheDocument();
     expect(screen.getByText('Warning')).toBeInTheDocument();
-    expect(screen.getByText('Error')).toBeInTheDocument();
+    expect(screen.getByText('Dead-Letter')).toBeInTheDocument();
   });
 
   it('renders active message count badge in tabs', () => {

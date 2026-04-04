@@ -20,28 +20,63 @@
     <meta property="og:title" content="ServiceHub — Azure Service Bus Message Browser & DLQ Debugger" />
     <meta property="og:description" content="Free web tool to browse Azure Service Bus messages, debug dead-letter queues, replay messages, and trace correlation IDs. No installation required." />
     <meta property="og:site_name" content="ServiceHub" />
+    <meta property="og:image" content="https://app-servicehub-prod.azurewebsites.net/og-image.svg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image" />
     <meta property="twitter:url" content="https://app-servicehub-prod.azurewebsites.net" />
     <meta property="twitter:title" content="ServiceHub — Azure Service Bus Message Browser & DLQ Debugger" />
     <meta property="twitter:description" content="Free web tool to browse Azure Service Bus messages, debug dead-letter queues, replay messages, and trace correlation IDs. No installation required." />
+    <meta property="twitter:image" content="https://app-servicehub-prod.azurewebsites.net/og-image.svg" />
     
     <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon.svg" />
     
     <!-- Additional SEO tags -->
     <meta name="language" content="English" />
     <meta name="author" content="ServiceHub Contributors" />
     <meta name="robots" content="index, follow" />
     <meta name="revisit-after" content="7 days" />
-    
-    <!-- Build artifacts (compiled JS/CSS) -->
-    <script type="module" crossorigin src="/assets/index-C9JqyvQK.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-PaPllbKH.css">
-    
-    <!-- SPA Token for authentication -->
-    <meta name="spa-token" content="QyTRaQAAAAA=.hR4jJ9/2+nDvujP5WPq9bOquNK6qrEn5w4lSxtzUC24=">
+
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "ServiceHub",
+      "description": "Free web tool to browse Azure Service Bus messages, debug dead-letter queues, replay failed messages, trace correlation IDs, and get AI-powered root-cause analysis. No installation required.",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Any (web browser)",
+      "url": "https://app-servicehub-prod.azurewebsites.net",
+      "screenshot": "https://app-servicehub-prod.azurewebsites.net/og-image.svg",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "featureList": [
+        "Azure Service Bus message browser",
+        "Dead-letter queue (DLQ) inspection and replay",
+        "Message correlation tracing",
+        "AI-powered root cause analysis",
+        "Auto-replay rules engine",
+        "Real-time DLQ trend monitoring",
+        "Shareable deep links to messages",
+        "AES-GCM encrypted connection storage"
+      ],
+      "author": {
+        "@type": "Organization",
+        "name": "ServiceHub Contributors",
+        "url": "https://github.com/debdevops/servicehub"
+      }
+    }
+    </script>
+    <script type="module" crossorigin src="/assets/index-CFeVm_VM.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CzVD7VA7.css">
+    <meta name="spa-token" content="4UDRaQAAAAA=.wfHsZ6aS76p+yBAWjugAHiBbax+mmdQFvFWi8QKUCZY=">
   </head>
   <body>
     <div id="root"></div>
