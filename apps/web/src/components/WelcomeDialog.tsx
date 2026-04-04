@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
-import { User, Mail, ArrowRight } from 'lucide-react';
+import { User, Mail, ArrowRight, Lock } from 'lucide-react';
 
 // ============================================================================
-// WelcomeDialog - Collects user identity on first visit
+// WelcomeDialog - Optionally collects user identity on first visit
 // Persists to localStorage so it only shows once per browser
 // ============================================================================
 
 const STORAGE_KEY = 'servicehub_user';
+const DISMISSED_KEY = 'servicehub_dismissed';
 
 export interface ServiceHubUser {
   fullName: string;
@@ -34,7 +35,8 @@ export function WelcomeDialog() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!getStoredUser()) {
+    const dismissed = localStorage.getItem(DISMISSED_KEY) === 'true';
+    if (!getStoredUser() && !dismissed) {
       setIsOpen(true);
     }
   }, []);
@@ -62,6 +64,11 @@ export function WelcomeDialog() {
     setIsOpen(false);
   };
 
+  const handleSkip = () => {
+    localStorage.setItem(DISMISSED_KEY, 'true');
+    setIsOpen(false);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -85,12 +92,12 @@ export function WelcomeDialog() {
             Welcome to ServiceHub
           </h2>
           <p className="text-sm text-gray-500 mt-1">
-            Please identify yourself so actions can be attributed to you.
+            Save your name so replays and actions are attributed to you in the audit log. Takes 10 seconds — or skip below.
           </p>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="px-6 pb-6 pt-4 space-y-4">
+        <form onSubmit={handleSubmit} className="px-6 pb-4 pt-4 space-y-4">
           <div>
             <label htmlFor="welcome-name" className="block text-sm font-medium text-gray-700 mb-1">
               Full Name
@@ -126,6 +133,10 @@ export function WelcomeDialog() {
                 className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
             </div>
+            <p className="mt-1.5 flex items-center gap-1.5 text-xs text-gray-400">
+              <Lock className="w-3 h-3 shrink-0" />
+              Stored in your browser only — we never receive your data.
+            </p>
           </div>
 
           {error && (
@@ -140,6 +151,17 @@ export function WelcomeDialog() {
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
+
+        {/* Skip */}
+        <div className="px-6 pb-6 text-center border-t border-gray-100 pt-4">
+          <button
+            type="button"
+            onClick={handleSkip}
+            className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            Continue without saving →
+          </button>
+        </div>
       </div>
     </div>
   );
