@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, Code, Bot, List, Inbox, AlertTriangle, Shield, Link } from 'lucide-react';
+import { FileText, Code, Bot, List, Inbox, AlertTriangle, Shield } from 'lucide-react';
 import { Play, Clipboard } from 'lucide-react'; // Trash2 removed - purge feature disabled
 import { useSearchParams } from 'react-router-dom';
 import { useTabPersistence, type DetailTab } from '@/hooks/useTabPersistence';
