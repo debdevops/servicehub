@@ -5,6 +5,8 @@ import { MessageList } from '@/components/messages/MessageList';
 // useVirtualizer doesn't render items in jsdom without proper scroll container setup;
 // we test structural behavior at component API level
 
+const futureTime = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+
 const mockMessages = [
   {
     id: 'msg-1',
@@ -41,6 +43,7 @@ const mockMessages = [
     lockToken: '',
     eventType: 'PaymentFailed',
     displayTitle: 'PaymentFailed',
+    scheduledEnqueueTime: futureTime,
   },
   {
     id: 'msg-3',
@@ -137,4 +140,81 @@ describe('MessageList', () => {
     const dlqDots = document.querySelectorAll('.bg-red-500.rounded-full');
     expect(dlqDots).toHaveLength(0);
   });
+
+  it('does not render "Scheduled" badge for messages without scheduledEnqueueTime', () => {
+    // Only msg-1 (no scheduledEnqueueTime) in the active list
+    const propsWithoutScheduled = {
+      ...defaultProps,
+      messages: [mockMessages[0]],
+      activeCounts: { active: 1, deadletter: 0 },
+    };
+    render(<MessageList {...propsWithoutScheduled} />);
+    expect(screen.queryByText('Scheduled')).not.toBeInTheDocument();
+  });
+
+  it('navigates messages with j/k keyboard when list has items', () => {
+    const onSelect = vi.fn();
+    render(
+      <MessageList
+        {...defaultProps}
+        selectedId="msg-1"
+        onSelectMessage={onSelect}
+      />
+    );
+    // 'j' moves to next message
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(onSelect).toHaveBeenCalledWith('msg-2');
+  });
+
+  it('navigates messages with ArrowDown keyboard', () => {
+    const onSelect = vi.fn();
+    render(
+      <MessageList
+        {...defaultProps}
+        selectedId="msg-1"
+        onSelectMessage={onSelect}
+      />
+    );
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    expect(onSelect).toHaveBeenCalledWith('msg-2');
+  });
+
+  it('navigates messages with k/ArrowUp keyboard', () => {
+    const onSelect = vi.fn();
+    render(
+      <MessageList
+        {...defaultProps}
+        selectedId="msg-2"
+        onSelectMessage={onSelect}
+      />
+    );
+    fireEvent.keyDown(window, { key: 'k' });
+    expect(onSelect).toHaveBeenCalledWith('msg-1');
+  });
+
+  it('does not navigate past the first message with k', () => {
+    const onSelect = vi.fn();
+    render(
+      <MessageList
+        {...defaultProps}
+        selectedId="msg-1"
+        onSelectMessage={onSelect}
+      />
+    );
+    fireEvent.keyDown(window, { key: 'k' });
+    // already at first item, should not call
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('renders large (localized) counts in tabs', () => {
+    render(
+      <MessageList
+        {...defaultProps}
+        activeCounts={{ active: 1000, deadletter: 500 }}
+      />
+    );
+    // toLocaleString may format as "1,000" in en-US or "1000" depending on locale
+    expect(screen.getByText(/1[\s,.]?000/)).toBeInTheDocument();
+  });
 });
+

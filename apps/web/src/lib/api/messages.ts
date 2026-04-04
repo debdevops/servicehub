@@ -54,7 +54,7 @@ export const messagesApi = {
     message: {
       body: string;
       contentType?: string;
-      properties?: Record<string, any>;
+      properties?: Record<string, unknown>;
       sessionId?: string;
       correlationId?: string;
       timeToLive?: number;

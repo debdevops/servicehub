@@ -118,7 +118,7 @@ export function ConnectPage() {
       setConnectionString('');
       setShowPassword(false);
       setEnvironment('Dev');
-    } catch (error) {
+    } catch {
       // Error handled by mutation hook
     }
   };

@@ -123,6 +123,7 @@ interface UseConfirmDialogOptions {
   variant?: 'default' | 'danger';
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useConfirmDialog() {
   const [isOpen, setIsOpen] = useState(false);
   const [options, setOptions] = useState<UseConfirmDialogOptions>({
