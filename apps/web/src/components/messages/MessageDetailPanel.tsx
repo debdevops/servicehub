@@ -6,10 +6,10 @@ import { useTabPersistence, type DetailTab } from '@/hooks/useTabPersistence';
 import { PropertiesTab, BodyTab, AIInsightsTab, HeadersTab, ForensicTab } from './tabs';
 import { useReplayMessage } from '@/hooks/useMessages';
 import { useNamespaces } from '@/hooks/useNamespaces';
-// usePurgeMessage removed - Azure Service Bus limitation prevents reliable individual message deletion
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CopyButton } from '@/components/CopyButton';
 import type { Message } from '@/lib/mockData';
+import type { AIInsight } from '@/lib/api/types';
 import toast from 'react-hot-toast';
 
 // ============================================================================
@@ -19,6 +19,7 @@ import toast from 'react-hot-toast';
 interface MessageDetailPanelProps {
   message: Message | null;
   onViewPattern?: (messageIds: string[]) => void;
+  insights?: AIInsight[];
 }
 
 // ============================================================================
@@ -55,7 +56,7 @@ function EmptyState() {
 // Tab Content Renderer
 // ============================================================================
 
-function TabContent({ tab, message, onViewPattern, onForensicResult }: { tab: DetailTab; message: Message; onViewPattern?: (messageIds: string[]) => void; onForensicResult?: (replaySafety: string | null) => void }) {
+function TabContent({ tab, message, onViewPattern, onForensicResult, insights }: { tab: DetailTab; message: Message; onViewPattern?: (messageIds: string[]) => void; onForensicResult?: (replaySafety: string | null) => void; insights?: AIInsight[] }) {
   switch (tab) {
     case 'properties':
       return <PropertiesTab message={message} />;
@@ -66,6 +67,7 @@ function TabContent({ tab, message, onViewPattern, onForensicResult }: { tab: De
         <AIInsightsTab 
           message={message}
           onViewPattern={onViewPattern}
+          insights={insights}
         />
       );
     case 'forensic':
@@ -401,7 +403,7 @@ function extractMessageTitle(message: Message): { title: string; subtitle: strin
   return { title: 'Message', subtitle: shortId };
 }
 
-export function MessageDetailPanel({ message, onViewPattern }: MessageDetailPanelProps) {
+export function MessageDetailPanel({ message, onViewPattern, insights }: MessageDetailPanelProps) {
   const [activeTab, setActiveTab] = useTabPersistence();
   const [searchParams] = useSearchParams();
   const namespaceId = searchParams.get('namespace');
@@ -510,7 +512,7 @@ export function MessageDetailPanel({ message, onViewPattern }: MessageDetailPane
 
       {/* Tab Content */}
       <div className="flex-1 overflow-auto bg-gray-50">
-        <TabContent tab={activeTab} message={message} onViewPattern={onViewPattern} onForensicResult={setForensicSafety} />
+        <TabContent tab={activeTab} message={message} onViewPattern={onViewPattern} onForensicResult={setForensicSafety} insights={insights} />
       </div>
 
       {/* Action Buttons */}

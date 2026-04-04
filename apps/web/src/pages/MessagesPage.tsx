@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useDeferredValue } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause, Info } from 'lucide-react';
+import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause } from 'lucide-react';
 import { MessageList, MessageDetailPanel, type QueueTab } from '@/components/messages';
 import { AIFindingsDropdown } from '@/components/ai';
 import { MessageListSkeleton } from '@/components/messages/MessageListSkeleton';
@@ -12,8 +12,8 @@ import { useClientSideInsights, useInsightsSummary } from '@/hooks/useInsights';
 import { useQueues } from '@/hooks/useQueues';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useNamespaces } from '@/hooks/useNamespaces';
-import { generateMockMessages } from '@/lib/mockData';
-import type { Message, ContentType } from '@/lib/mockData';
+import { generateMockMessages, AI_ISSUES } from '@/lib/mockData';
+import type { Message, ContentType, MessageStatus, QueueType } from '@/lib/mockData';
 import type { Message as APIMessage } from '@/lib/api/types';
 import toast from 'react-hot-toast';
 
@@ -94,6 +94,7 @@ function transformMessage(
 export function MessagesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const isDemo = searchParams.get('demo') === 'true';
   const namespaceId = searchParams.get('namespace');
   const queueName = searchParams.get('queue');
@@ -155,6 +156,50 @@ export function MessagesPage() {
     setSelectedMessageId(null);
   }, [namespaceId, queueName, topicName, subscriptionName]);
 
+  // After-demo conversion nudge — fires 90 seconds into demo mode
+  useEffect(() => {
+    if (!isDemo) return;
+    const NUDGE_KEY = 'servicehub_demo_nudge_shown';
+    if (sessionStorage.getItem(NUDGE_KEY)) return; // Only once per session
+
+    const timer = setTimeout(() => {
+      sessionStorage.setItem(NUDGE_KEY, 'true');
+      toast(
+        (t) => (
+          <div className="max-w-xs">
+            <p className="font-semibold text-gray-900 mb-0.5">Ready to connect your real Service Bus?</p>
+            <p className="text-xs text-gray-500 mb-3">
+              See your actual messages, DLQ data, and AI insights on live traffic.
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { navigate('/connect'); toast.dismiss(t.id); }}
+                className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-lg transition-colors"
+              >
+                Connect now →
+              </button>
+              <button
+                onClick={() => toast.dismiss(t.id)}
+                className="px-3 py-1.5 text-gray-500 hover:text-gray-700 text-xs transition-colors"
+              >
+                Keep exploring
+              </button>
+            </div>
+          </div>
+        ),
+        {
+          duration: 15000,
+          id: 'demo-nudge',
+          style: { maxWidth: '320px', padding: '16px' },
+          position: 'bottom-right',
+        }
+      );
+    }, 90000); // 90 seconds
+
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDemo]);
+
   // Fetch messages from API for current tab
   const { data: messagesData, isLoading, error, refetch, isFetching, dataUpdatedAt } = useMessages({
     namespaceId: namespaceId || '',
@@ -181,6 +226,16 @@ export function MessagesPage() {
 
   // Extract counts from authoritative metadata
   const getMessageCounts = () => {
+    // In demo mode, calculate counts from demo messages
+    if (isDemo && demoMessages.length > 0) {
+      const activeCount = demoMessages.filter(m => m.queueType === 'active').length;
+      const deadletterCount = demoMessages.filter(m => m.queueType === 'deadletter').length;
+      return {
+        active: activeCount,
+        deadletter: deadletterCount,
+      };
+    }
+    
     if (entityType === 'queue' && queueName) {
       const queue = queuesData?.find(q => q.name === queueName);
       return {
@@ -197,10 +252,58 @@ export function MessagesPage() {
     return { active: 0, deadletter: 0 };
   };
 
+  // Generate demo messages with realistic scenarios - showcase key features
+  const demoMessages = useMemo(() => {
+    if (!isDemo) return [];
+    
+    const messages = generateMockMessages(50);
+    
+    // Enhance demo messages to showcase features better
+    return messages.map((msg, idx) => {
+      const enhancedMsg = { ...msg };
+      
+      // First 10 messages: make them DLQ errors with consistent AI analysis
+      // Use queueType (not status) to identify non-DLQ messages since status is now
+      // always consistent with queueType after the mockData fix.
+      if (idx < 10 && msg.queueType !== 'deadletter') {
+        enhancedMsg.status = 'error' as MessageStatus;
+        enhancedMsg.queueType = 'deadletter' as QueueType;
+        enhancedMsg.deadLetterReason = msg.deadLetterReason || 'MaxDeliveryCountExceeded';
+        enhancedMsg.deadLetterSource = msg.deadLetterSource || 'PaymentService';
+        enhancedMsg.preview = `[ERROR] ${msg.preview.substring(0, 60)}`;
+        // Ensure AI insight badge is always backed by actual aiAnalysis data
+        if (Math.random() < 0.8) {
+          const template = AI_ISSUES[idx % AI_ISSUES.length];
+          enhancedMsg.hasAIInsight = true;
+          enhancedMsg.aiAnalysis = {
+            issue: template.issue,
+            recommendations: [...template.recommendations],
+            detectedAt: new Date(msg.enqueuedTime.getTime() + 60000),
+          };
+        } else {
+          enhancedMsg.hasAIInsight = false;
+          enhancedMsg.aiAnalysis = undefined;
+        }
+      }
+
+      // Add AI insights to active messages that don't already have them (~50% of remaining)
+      if (enhancedMsg.queueType === 'active' && !enhancedMsg.aiAnalysis && Math.random() < 0.5) {
+        const template = AI_ISSUES[Math.floor(Math.random() * AI_ISSUES.length)];
+        enhancedMsg.hasAIInsight = true;
+        enhancedMsg.aiAnalysis = {
+          issue: template.issue,
+          recommendations: [...template.recommendations],
+          detectedAt: new Date(msg.enqueuedTime.getTime() + Math.floor(Math.random() * 300000 + 30000)),
+        };
+      }
+      
+      return enhancedMsg;
+    });
+  }, [isDemo]);
   const messageCounts = getMessageCounts();
 
-  // Perform client-side AI analysis on loaded messages
-  // This provides AI insights even when backend AI service is unavailable
+  // Build insights from demo messages (they already have AI analysis embedded)
+  // or fetch from API for real data
   const { data: insights } = useClientSideInsights(
     messagesData?.items,
     {
@@ -209,8 +312,57 @@ export function MessagesPage() {
       subscriptionName: subscriptionName || undefined,
       entityType,
     },
-    !!namespaceId && !!entityName && !isLoading
+    !!namespaceId && !!entityName && !isLoading && !isDemo
   );
+  
+  // For demo mode, extract insights directly from messages that have AI analysis
+  const demoInsights = useMemo(() => {
+    if (!isDemo || demoMessages.length === 0) return [];
+    const demoMsgsWithInsights = demoMessages.filter(msg => msg.aiAnalysis);
+    return demoMsgsWithInsights
+      .map((msg, idx) => ({
+        id: `demo-insight-${idx}`,
+        type: 'error-cluster' as const,
+        title: msg.aiAnalysis!.issue.substring(0, 100),
+        description: msg.aiAnalysis!.issue,
+        confidence: {
+          level: 'high' as const,
+          score: 0.95,
+          reasoning: 'Detected from message patterns in demo dataset',
+        },
+        evidence: {
+          sampleSize: demoMsgsWithInsights.length,
+          affectedMessageIds: [msg.id],
+          exampleMessageIds: [msg.id],
+          metrics: [
+            {
+              label: 'Confidence',
+              value: '95%',
+              comparison: 'High confidence pattern match',
+              isAnomaly: false,
+            },
+          ],
+          patternSignature: msg.aiAnalysis!.issue.substring(0, 50),
+        },
+        recommendations: msg.aiAnalysis!.recommendations.map(rec => ({
+          title: rec.substring(0, 50),
+          description: rec,
+          priority: 'immediate' as const,
+        })),
+        timeWindow: {
+          start: msg.enqueuedTime.toISOString(),
+          end: new Date().toISOString(),
+          analysisTimestamp: msg.aiAnalysis!.detectedAt.toISOString(),
+        },
+        scope: {
+          namespaceId: 'demo',
+          queueOrTopicName: 'demo-queue',
+        },
+        status: 'active' as const,
+      }));
+  }, [isDemo, demoMessages]);
+  
+  const displayInsights = isDemo ? demoInsights : (insights || []);
 
   // Fetch AI insights summary for badge (from backend if available)
   const { data: insightsSummary } = useInsightsSummary(
@@ -232,18 +384,19 @@ export function MessagesPage() {
 
   // Get all message IDs that have AI insights
   const insightMessageIds = useMemo(() => {
-    if (!insights) return [];
+    if (!displayInsights) return [];
     const ids = new Set<string>();
-    insights.forEach(insight => {
+    displayInsights.forEach(insight => {
       insight.evidence.affectedMessageIds.forEach(msgId => ids.add(msgId));
     });
     return Array.from(ids);
-  }, [insights]);
+  }, [displayInsights]);
 
   // Get messages from API or demo data - sort by enqueued time descending (newest first)
-  const demoMessages = useMemo(() => isDemo ? generateMockMessages(50) : [], [isDemo]);
   const messages: Message[] = isDemo
-    ? demoMessages.sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime())
+    ? demoMessages
+        .filter(m => m.queueType === queueTab)
+        .sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime())
     : (messagesData?.items || [])
       .map(msg => transformMessage(msg, insightMessageIds, queueTab))
       .sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime());
@@ -283,7 +436,7 @@ export function MessagesPage() {
   }, [messages, evidenceFilter, searchQuery, statusFilter]);
 
   // Active AI insights count - prefer client-side analysis, fallback to backend summary
-  const activeInsightsCount = insights?.length || insightsSummary?.activeCount || 0;
+  const activeInsightsCount = displayInsights?.length || insightsSummary?.activeCount || 0;
 
   // Check if we're showing a partial view due to batch limit
   const totalMessagesInQueue = messagesData?.totalCount || 0;
@@ -416,11 +569,35 @@ export function MessagesPage() {
     <div className="flex-1 flex flex-col overflow-hidden relative" data-tour="messages-area">
       {/* Demo Mode Banner */}
       {isDemo && (
-        <div className="bg-blue-50 border-b border-blue-200 px-4 py-2.5 flex items-center gap-2 shrink-0">
-          <Info className="w-4 h-4 text-blue-600 shrink-0" />
-          <span className="text-sm text-blue-800">
-            <strong>Demo Mode</strong> — Showing sample messages. Connect a real namespace to see your own data.
-          </span>
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-4 py-3 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center justify-center w-5 h-5 bg-blue-600 rounded-full text-white text-xs font-bold">▶</span>
+            <div>
+              <p className="text-sm font-semibold text-blue-900">
+                🎬 Interactive Demo — 50 Production-Realistic Messages
+              </p>
+              <p className="text-xs text-blue-700 mt-0.5">
+                Try the DLQ tab to see error patterns • Click AI Insights for root-cause analysis • Use filters to pinpoint issues
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate('/messages?demo=true&queueType=deadletter')}
+              className="text-xs font-medium text-blue-700 hover:bg-blue-100 px-2.5 py-1 rounded transition-colors"
+              title="View Dead-Letter Queue"
+            >
+              📬 View DLQ
+            </button>
+            <button
+              onClick={() => navigate('/connect')}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 rounded transition-colors"
+              title="Return to Connect page"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Exit Demo</span>
+            </button>
+          </div>
         </div>
       )}
       {/* Toolbar */}
@@ -482,7 +659,9 @@ export function MessagesPage() {
                     status === 'success' ? 'bg-green-500' :
                     status === 'warning' ? 'bg-amber-500' : 'bg-red-500'
                   }`} />
-                  {status === 'all' ? 'All Messages' : status.charAt(0).toUpperCase() + status.slice(1)}
+                  {status === 'all' ? 'All Messages' :
+                    status === 'error' ? 'Dead-Letter' :
+                    status.charAt(0).toUpperCase() + status.slice(1)}
                 </button>
               ))}
             </div>
@@ -506,7 +685,7 @@ export function MessagesPage() {
 
           {showAIDropdown && (
             <AIFindingsDropdown
-              insights={insights || []}
+              insights={displayInsights || []}
               onClose={() => setShowAIDropdown(false)}
               onViewEvidence={handleViewEvidence}
             />
@@ -605,6 +784,7 @@ export function MessagesPage() {
         <MessageDetailPanel 
           message={selectedMessage} 
           onViewPattern={handleViewEvidence}
+          insights={displayInsights}
         />
       </div>
     </div>
