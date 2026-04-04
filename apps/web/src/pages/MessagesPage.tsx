@@ -12,7 +12,7 @@ import { useClientSideInsights, useInsightsSummary } from '@/hooks/useInsights';
 import { useQueues } from '@/hooks/useQueues';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useNamespaces } from '@/hooks/useNamespaces';
-import type { Message } from '@/lib/mockData';
+import type { Message, ContentType } from '@/lib/mockData';
 import type { Message as APIMessage } from '@/lib/api/types';
 import toast from 'react-hot-toast';
 
@@ -57,7 +57,7 @@ function transformMessage(
     enqueuedTime: new Date(apiMessage.enqueuedTime),
     status,
     preview: body ? body.substring(0, 100) : '[Body unavailable - may exceed size limit or API throttled]',
-    contentType: (apiMessage.contentType || 'application/json') as any,
+    contentType: (apiMessage.contentType || 'application/json') as ContentType,
     deliveryCount: apiMessage.deliveryCount || 0,
     hasAIInsight: insightMessageIds.includes(id),
     sequenceNumber: apiMessage.sequenceNumber || 0,
@@ -75,6 +75,7 @@ function transformMessage(
     displayTitle: displayTitle || eventType,
     deadLetterReason: apiMessage.deadLetterReason || undefined,
     deadLetterSource: apiMessage.deadLetterSource || undefined,
+    scheduledEnqueueTime: apiMessage.scheduledEnqueueTime ?? undefined,
   };
 }
 

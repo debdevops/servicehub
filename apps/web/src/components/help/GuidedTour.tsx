@@ -4,10 +4,12 @@ import { tourSteps, type TourStep } from '@/lib/helpContent';
 
 const TOUR_COMPLETED_KEY = 'servicehub_tour_completed';
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function isTourCompleted(): boolean {
   return localStorage.getItem(TOUR_COMPLETED_KEY) === 'true';
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function resetTour(): void {
   localStorage.removeItem(TOUR_COMPLETED_KEY);
 }

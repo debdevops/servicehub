@@ -86,6 +86,21 @@ public static class ApiRoutes
         /// Route for peeking dead-letter messages.
         /// </summary>
         public const string DeadLetterPeek = $"{Base}/{{queueName}}/dead-letter/peek";
+
+        /// <summary>
+        /// Route for listing scheduled messages in a queue.
+        /// </summary>
+        public const string Scheduled = $"{Base}/{{queueName}}/scheduled";
+
+        /// <summary>
+        /// Route for cancelling a specific scheduled message by sequence number.
+        /// </summary>
+        public const string ScheduledMessage = $"{Base}/{{queueName}}/scheduled/{{sequenceNumber:long}}";
+
+        /// <summary>
+        /// Route for cancelling a specific scheduled message by sequence number (alias for ScheduledMessage).
+        /// </summary>
+        public const string CancelScheduled = $"{Base}/{{queueName}}/scheduled/{{sequenceNumber:long}}";
     }
 
     /// <summary>
@@ -276,5 +291,15 @@ public static class ApiRoutes
             /// <summary>Route for rule execution statistics.</summary>
             public const string Stats = $"{Base}/{{id:long}}/stats";
         }
+    }
+
+    /// <summary>Routes for correlation search endpoints.</summary>
+    public static class Correlation
+    {
+        /// <summary>Base route for correlation search.</summary>
+        public const string Base = $"{VersionedBase}/correlation";
+
+        /// <summary>Route for timeline search by correlation ID.</summary>
+        public const string Timeline = $"{Base}/timeline";
     }
 }

@@ -1,6 +1,15 @@
 // Environment type matching backend EnvironmentType enum
 export type EnvironmentType = 'Dev' | 'Uat' | 'Prod';
 
+/** Shape of errors returned by the axios API client. Used for typed error handling in hooks. */
+export type ApiError = {
+  response?: {
+    status?: number;
+    data?: { detail?: string; message?: string; title?: string };
+  };
+  message?: string;
+};
+
 // Namespace DTOs (match your backend CreateNamespaceRequest, NamespaceResponse)
 export interface Namespace {
   id: string;
@@ -48,7 +57,7 @@ export interface Message {
   deadLetterSource?: string | null;
   deadLetterReason?: string | null;
   deadLetterErrorDescription?: string | null;
-  applicationProperties?: Record<string, any> | null;
+  applicationProperties?: Record<string, unknown> | null;
   sizeInBytes?: number;
   entityName?: string | null;
   subscriptionName?: string | null;
@@ -156,4 +165,40 @@ export interface GetInsightsParams {
   queueOrTopicName?: string;
   status?: 'active' | 'dismissed' | 'resolved';
   insightType?: InsightType;
+}
+
+// Correlation Explorer DTOs
+export interface CorrelationTimelineEntry {
+  source: 'Live' | 'History';
+  namespaceId: string;
+  namespaceDisplayName: string;
+  entityName: string;
+  entityPath?: string | null;
+  messageId: string;
+  sequenceNumber: number;
+  state: string;
+  timestamp: string;
+  deadLetterReason?: string | null;
+  bodyPreview?: string | null;
+  sizeInBytes: number;
+}
+
+export interface CorrelationTimelineResponse {
+  correlationId: string;
+  entries: CorrelationTimelineEntry[];
+  totalCount: number;
+  namespacesSearched: number;
+  entitiesSearched: number;
+  isPartialResult: boolean;
+  searchDurationMs: number;
+}
+
+export interface ScheduleMessageRequest {
+  body: string;
+  contentType?: string;
+  applicationProperties?: Record<string, string>;
+  sessionId?: string;
+  correlationId?: string;
+  timeToLiveSeconds?: number;
+  scheduledEnqueueTimeUtc: string;
 }

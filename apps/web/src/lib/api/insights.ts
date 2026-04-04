@@ -60,9 +60,9 @@ export const insightsApi = {
         { params: queryParams }
       );
       return response.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Gracefully handle missing endpoint (404) or service unavailable (503)
-      if (error?.response?.status === 404 || error?.response?.status === 503) {
+      if ((error as { response?: { status?: number } })?.response?.status === 404 || (error as { response?: { status?: number } })?.response?.status === 503) {
         // Backend AI service not available, using client-side analysis
         return [];
       }
@@ -125,8 +125,8 @@ export const insightsApi = {
         `/namespaces/${namespaceId}/queues/${sanitizedName}/insights/summary`
       );
       return response.data;
-    } catch (error: any) {
-      if (error?.response?.status === 404 || error?.response?.status === 503) {
+    } catch (error: unknown) {
+      if ((error as { response?: { status?: number } })?.response?.status === 404 || (error as { response?: { status?: number } })?.response?.status === 503) {
         return { activeCount: 0, insights: [] };
       }
       throw error;

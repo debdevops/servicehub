@@ -155,8 +155,9 @@ export function MessageFAB({
       } else if (result && result.deadLetteredCount === 0) {
         toast('No messages available to dead-letter', { icon: 'ℹ️' });
       }
-    } catch (error: any) {
-      const errorDetail = error?.response?.data?.detail || error?.response?.data?.message || error?.message || 'Failed to dead-letter messages';
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string; message?: string } }; message?: string };
+      const errorDetail = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Failed to dead-letter messages';
       toast.error(`DLQ Error: ${errorDetail}`);
       console.error('Dead-letter error:', error);
     } finally {

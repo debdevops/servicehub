@@ -454,4 +454,239 @@ public class QueuesControllerTests
     }
 
     #endregion
+
+    #region GetScheduledMessages Tests
+
+    [Fact]
+    public async Task GetScheduledMessages_Success_ReturnsOkWithPaginatedMessages()
+    {
+        var ns = CreateTestNamespace();
+        var allMessages = new List<Message>
+        {
+            new()
+            {
+                MessageId = "sched-1",
+                SequenceNumber = 100,
+                EnqueuedTime = DateTimeOffset.UtcNow,
+                State = MessageState.Scheduled,
+                ScheduledEnqueueTime = DateTimeOffset.UtcNow.AddHours(1)
+            },
+            new()
+            {
+                MessageId = "active-1",
+                SequenceNumber = 101,
+                EnqueuedTime = DateTimeOffset.UtcNow,
+                State = MessageState.Active
+            }
+        };
+
+        _messageReceiver.Setup(r => r.PeekMessagesAsync(
+                It.Is<GetMessagesRequest>(req => req.NamespaceId == ns.Id && req.EntityName == "test-queue" && !req.FromDeadLetter),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(allMessages));
+
+        var result = await _controller.GetScheduledMessages(ns.Id, "test-queue");
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var paginated = okResult.Value.Should().BeAssignableTo<PaginatedResponse<MessageResponse>>().Subject;
+        // Only the Scheduled message is returned, not the Active one
+        paginated.Items.Should().HaveCount(1);
+        paginated.Items[0].SequenceNumber.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task GetScheduledMessages_FiltersOutNonScheduledMessages()
+    {
+        var ns = CreateTestNamespace();
+        var allMessages = new List<Message>
+        {
+            new() { MessageId = "active-1", SequenceNumber = 1, State = MessageState.Active },
+            new() { MessageId = "deferred-1", SequenceNumber = 2, State = MessageState.Deferred },
+            new()
+            {
+                MessageId = "sched-1", SequenceNumber = 3,
+                State = MessageState.Scheduled,
+                ScheduledEnqueueTime = DateTimeOffset.UtcNow.AddHours(1)
+            }
+        };
+
+        _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(allMessages));
+
+        var result = await _controller.GetScheduledMessages(ns.Id, "test-queue");
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var paginated = okResult.Value.Should().BeAssignableTo<PaginatedResponse<MessageResponse>>().Subject;
+        paginated.Items.Should().HaveCount(1);
+        paginated.Items[0].MessageId.Should().Be("sched-1");
+    }
+
+    [Fact]
+    public async Task GetScheduledMessages_ReceiverFails_ReturnsError()
+    {
+        var ns = CreateTestNamespace();
+
+        _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Message>>.Failure(Error.ExternalService("err", "timeout")));
+
+        var result = await _controller.GetScheduledMessages(ns.Id, "test-queue");
+
+        result.Result.Should().NotBeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task GetScheduledMessages_EmptyQueue_ReturnsOkWithEmptyPaginatedList()
+    {
+        var ns = CreateTestNamespace();
+
+        _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(new List<Message>()));
+
+        var result = await _controller.GetScheduledMessages(ns.Id, "empty-queue");
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var paginated = okResult.Value.Should().BeAssignableTo<PaginatedResponse<MessageResponse>>().Subject;
+        paginated.Items.Should().BeEmpty();
+        paginated.TotalCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetScheduledMessages_DoesNotCallWrapper_UsesMessageReceiverDirectly()
+    {
+        var ns = CreateTestNamespace();
+        var wrapper = new Mock<IServiceBusClientWrapper>();
+
+        _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(new List<Message>()));
+
+        await _controller.GetScheduledMessages(ns.Id, "test-queue");
+
+        // The controller must NOT call GetScheduledMessagesAsync on the wrapper
+        wrapper.Verify(w => w.GetScheduledMessagesAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+        _messageReceiver.Verify(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    #endregion
+
+    #region CancelScheduledMessage Tests
+
+    [Fact]
+    public async Task CancelScheduledMessage_Success_ReturnsNoContent()
+    {
+        var ns = CreateTestNamespace();
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _connectionStringProtector.Setup(p => p.Unprotect(It.IsAny<string>()))
+            .Returns(Result<string>.Success("conn-string"));
+
+        var wrapper = new Mock<IServiceBusClientWrapper>();
+        wrapper.Setup(w => w.CancelScheduledMessageAsync("test-queue", 100L, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        _clientCache.Setup(c => c.GetOrCreate(ns.Id, It.IsAny<string>()))
+            .Returns(wrapper.Object);
+
+        var result = await _controller.CancelScheduledMessage(ns.Id, "test-queue", 100L);
+
+        result.Should().BeOfType<NoContentResult>();
+    }
+
+    [Fact]
+    public async Task CancelScheduledMessage_NamespaceNotFound_ReturnsNotFound()
+    {
+        var id = Guid.NewGuid();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("NOT_FOUND", "Not found")));
+
+        var result = await _controller.CancelScheduledMessage(id, "test-queue", 100L);
+
+        result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task CancelScheduledMessage_NoSendPermission_Returns403()
+    {
+        var ns = Namespace.Create(
+            "listen-namespace",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=ListenPolicy;SharedAccessKey=testkey123=",
+            "Listen NS").Value;
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var result = await _controller.CancelScheduledMessage(ns.Id, "test-queue", 100L);
+
+        var objectResult = result as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task CancelScheduledMessage_ProductionNamespace_Returns403()
+    {
+        var ns = Namespace.Create(
+            "prod-namespace",
+            "Endpoint=sb://prod.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
+            "Prod NS",
+            environment: EnvironmentType.Prod).Value;
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var result = await _controller.CancelScheduledMessage(ns.Id, "test-queue", 100L);
+
+        var objectResult = result as ObjectResult;
+        objectResult.Should().NotBeNull();
+        objectResult!.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task CancelScheduledMessage_MessageNotFound_ReturnsNotFound()
+    {
+        var ns = CreateTestNamespace();
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _connectionStringProtector.Setup(p => p.Unprotect(It.IsAny<string>()))
+            .Returns(Result<string>.Success("conn-string"));
+
+        var wrapper = new Mock<IServiceBusClientWrapper>();
+        wrapper.Setup(w => w.CancelScheduledMessageAsync("test-queue", 999L, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.NotFound(ErrorCodes.Message.NotFound, "Message not found")));
+
+        _clientCache.Setup(c => c.GetOrCreate(ns.Id, It.IsAny<string>()))
+            .Returns(wrapper.Object);
+
+        var result = await _controller.CancelScheduledMessage(ns.Id, "test-queue", 999L);
+
+        result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task CancelScheduledMessage_WrapperFails_ReturnsError()
+    {
+        var ns = CreateTestNamespace();
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _connectionStringProtector.Setup(p => p.Unprotect(It.IsAny<string>()))
+            .Returns(Result<string>.Success("conn-string"));
+
+        var wrapper = new Mock<IServiceBusClientWrapper>();
+        wrapper.Setup(w => w.CancelScheduledMessageAsync("test-queue", 100L, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.ExternalService("err", "Service Bus timeout")));
+
+        _clientCache.Setup(c => c.GetOrCreate(ns.Id, It.IsAny<string>()))
+            .Returns(wrapper.Object);
+
+        var result = await _controller.CancelScheduledMessage(ns.Id, "test-queue", 100L);
+
+        result.Should().NotBeOfType<NoContentResult>();
+    }
+
+    #endregion
 }

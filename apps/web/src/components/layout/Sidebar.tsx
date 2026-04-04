@@ -3,6 +3,8 @@ import {
   ChevronDown,
   ChevronRight,
   Inbox,
+  LayoutDashboard,
+  GitMerge,
   Plus,
   AlertCircle,
   Clock,
@@ -21,6 +23,9 @@ import { useQueues } from '@/hooks/useQueues';
 import { useTopics } from '@/hooks/useTopics';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useInsightsSummary } from '@/hooks/useInsights';
+import { useQueries } from '@tanstack/react-query';
+import { apiClient } from '@/lib/api/client';
+import type { Queue } from '@/lib/api/types';
 
 interface NamespaceItemProps {
   namespace: {
@@ -360,6 +365,24 @@ export function Sidebar() {
   const { data: queues } = useQueues(activeNamespace?.id || '');
   const { data: topics } = useTopics(activeNamespace?.id || '');
 
+  // Aggregate DLQ counts across all namespaces for the Sidebar badge
+  const allNamespaceIds = namespaces?.map(ns => ns.id) ?? [];
+  const allQueuesResults = useQueries({
+    queries: allNamespaceIds.map(id => ({
+      queryKey: ['queues', id] as const,
+      queryFn: async () => {
+        const response = await apiClient.get<Queue[]>(`/namespaces/${id}/queues`, { _silent: true } as Record<string, unknown>);
+        return response.data;
+      },
+      enabled: !!id,
+      staleTime: 2000,
+    })),
+  });
+  const totalDlqCount = allQueuesResults.reduce((total, result) => {
+    if (!result.data) return total;
+    return total + result.data.reduce((sum, q) => sum + q.deadLetterMessageCount, 0);
+  }, 0);
+
   return (
     <aside className="w-[260px] bg-white border-r border-gray-200 flex flex-col overflow-hidden" data-tour="sidebar">
       {/* Namespaces Section */}
@@ -483,6 +506,24 @@ export function Sidebar() {
             <span className="text-xs text-red-600 font-medium">DLQ</span>
           </button>
           <NavLink
+            to="/dashboard"
+            className={({ isActive }) =>
+              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                isActive
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-300'
+                  : 'bg-white hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 border-gray-200 hover:border-indigo-300'
+              }`
+            }
+          >
+            <LayoutDashboard className="w-4 h-4 text-indigo-500" />
+            <span className="flex-1 text-left">Dashboard</span>
+            {totalDlqCount > 0 && (
+              <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium">
+                {totalDlqCount}
+              </span>
+            )}
+          </NavLink>
+          <NavLink
             to={activeNamespace ? `/dlq-history?namespace=${activeNamespace.id}` : '/dlq-history'}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-purple-50 text-gray-700 hover:text-purple-700 border border-gray-200 hover:border-purple-300 shadow-sm"
           >
@@ -506,19 +547,33 @@ export function Sidebar() {
             <span className="flex-1 text-left">System Health</span>
             <span className="text-xs text-emerald-600 font-medium">Status</span>
           </NavLink>
-          <button
-            onClick={() => {
-              toast('Scheduled messages feature coming soon!', {
-                icon: '⏰',
-                duration: 2000
-              });
-            }}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border border-gray-200 hover:border-sky-300 shadow-sm opacity-75"
+          <NavLink
+            to="/scheduled"
+            className={({ isActive }) =>
+              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                isActive
+                  ? 'bg-sky-50 text-sky-700 border-sky-300 font-medium'
+                  : 'bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border-gray-200 hover:border-sky-300'
+              }`
+            }
           >
             <Clock className="w-4 h-4 text-sky-500" />
             <span className="flex-1 text-left">Scheduled</span>
-            <span className="text-xs text-gray-400 font-medium">Soon</span>
-          </button>
+            <span className="text-xs text-sky-600 font-medium">View</span>
+          </NavLink>
+          <NavLink
+            to="/correlation"
+            className={({ isActive }) =>
+              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                isActive
+                  ? 'bg-violet-50 text-violet-700 border-violet-300'
+                  : 'bg-white hover:bg-violet-50 text-gray-700 hover:text-violet-700 border-gray-200 hover:border-violet-300'
+              }`
+            }
+          >
+            <GitMerge className="w-4 h-4 text-violet-500" />
+            <span className="flex-1 text-left">Correlation</span>
+          </NavLink>
           <NavLink
             to="/help"
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border border-gray-200 hover:border-primary-300 shadow-sm"

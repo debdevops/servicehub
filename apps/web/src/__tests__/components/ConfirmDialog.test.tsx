@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ConfirmDialog, useConfirmDialog } from '@/components/ConfirmDialog';
 
 const defaultProps = {
   isOpen: true,
@@ -147,5 +147,65 @@ describe('ConfirmDialog', () => {
     render(<ConfirmDialog {...defaultProps} variant="danger" />);
     const cancelBtn = screen.getByText('Cancel').closest('button') as HTMLElement;
     expect(document.activeElement).toBe(cancelBtn);
+  });
+});
+
+// ── useConfirmDialog hook ─────────────────────────────────────────────────────
+
+import { renderHook, waitFor } from '@testing-library/react';
+
+describe('useConfirmDialog', () => {
+  it('starts with dialog closed', () => {
+    const { result } = renderHook(() => useConfirmDialog());
+    expect(result.current.dialogProps.isOpen).toBe(false);
+  });
+
+  it('opens the dialog when confirm() is called', async () => {
+    const { result } = renderHook(() => useConfirmDialog());
+    act(() => {
+      result.current.confirm({ title: 'Really?', message: 'Are you sure?' });
+    });
+    await waitFor(() => expect(result.current.dialogProps.isOpen).toBe(true));
+    expect(result.current.dialogProps.title).toBe('Really?');
+    expect(result.current.dialogProps.message).toBe('Are you sure?');
+  });
+
+  it('resolves true and closes when handleConfirm is called', async () => {
+    const { result } = renderHook(() => useConfirmDialog());
+    let resolved: boolean | undefined;
+    act(() => {
+      result.current.confirm({ title: 'T', message: 'M' }).then(v => { resolved = v; });
+    });
+    await waitFor(() => expect(result.current.dialogProps.isOpen).toBe(true));
+    act(() => { result.current.dialogProps.onConfirm(); });
+    await waitFor(() => expect(result.current.dialogProps.isOpen).toBe(false));
+    expect(resolved).toBe(true);
+  });
+
+  it('resolves false and closes when handleCancel is called', async () => {
+    const { result } = renderHook(() => useConfirmDialog());
+    let resolved: boolean | undefined;
+    act(() => {
+      result.current.confirm({ title: 'T', message: 'M' }).then(v => { resolved = v; });
+    });
+    await waitFor(() => expect(result.current.dialogProps.isOpen).toBe(true));
+    act(() => { result.current.dialogProps.onCancel(); });
+    await waitFor(() => expect(result.current.dialogProps.isOpen).toBe(false));
+    expect(resolved).toBe(false);
+  });
+
+  it('passes through custom options (confirmLabel, variant)', async () => {
+    const { result } = renderHook(() => useConfirmDialog());
+    act(() => {
+      result.current.confirm({
+        title: 'Delete',
+        message: 'Confirm delete',
+        confirmLabel: 'Yes, delete',
+        variant: 'danger',
+      });
+    });
+    await waitFor(() => expect(result.current.dialogProps.title).toBe('Delete'));
+    expect(result.current.dialogProps.confirmLabel).toBe('Yes, delete');
+    expect(result.current.dialogProps.variant).toBe('danger');
   });
 });

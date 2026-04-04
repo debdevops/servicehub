@@ -1,6 +1,6 @@
 import { useRef, useMemo, useEffect, useCallback, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Bot, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import { Bot, AlertTriangle, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/utils';
 import type { Message } from '@/lib/mockData';
 
@@ -125,6 +125,12 @@ const MessageCard = memo(function MessageCard({ message, isSelected, onClick }: 
       {/* Row 2: Status and AI Badge - With breathing room */}
       <div className="flex items-center gap-2 mb-3">
         <StatusBadge status={message.status} deliveryCount={message.deliveryCount} />
+        {message.scheduledEnqueueTime && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700" title={`Scheduled for ${new Date(message.scheduledEnqueueTime).toLocaleString()}`}>
+            <Clock size={12} />
+            Scheduled
+          </span>
+        )}
         {message.hasAIInsight && (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-primary-100 text-primary-700">
             <Bot size={12} />
