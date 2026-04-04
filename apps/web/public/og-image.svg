@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="60%" stop-color="#0c2340"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0ea5e9"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1e293b" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.9"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- Subtle grid overlay -->
+  <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
+    <path d="M 60 0 L 0 0 0 60" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+  </pattern>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+
+  <!-- Glow effect top-left -->
+  <ellipse cx="200" cy="200" rx="350" ry="250" fill="#0ea5e9" opacity="0.06"/>
+  <!-- Glow right -->
+  <ellipse cx="1050" cy="400" rx="250" ry="200" fill="#6366f1" opacity="0.07"/>
+
+  <!-- ── Logo area ── -->
+  <!-- Cloud icon background -->
+  <rect x="80" y="72" width="64" height="64" rx="16" fill="#0ea5e9"/>
+  <!-- Cloud path -->
+  <path d="M96 120c-4 0-7-3.5-7-7.5 0-3.5 2.5-6.5 6-7.3.5-4.5 4.5-8 9.2-8 1.2 0 2.3.2 3.3.6 1.5-2.8 4.5-4.8 8-4.8 5.3 0 9.5 4.3 9.5 9.5v.5c3.5.8 6 3.8 6 7.5 0 4.3-3.5 7.5-7.8 7.5H96z" fill="white" opacity="0.95"/>
+
+  <!-- ServiceHub wordmark -->
+  <text x="164" y="112" font-family="system-ui, -apple-system, sans-serif" font-size="36" font-weight="800" fill="white" letter-spacing="-1">ServiceHub</text>
+  <text x="164" y="136" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="400" fill="#94a3b8">Azure Service Bus · Message Browser &amp; DLQ Debugger</text>
+
+  <!-- ── Main headline ── -->
+  <text x="80" y="230" font-family="system-ui, -apple-system, sans-serif" font-size="56" font-weight="800" fill="white" letter-spacing="-2">Debug Azure Service Bus</text>
+  <text x="80" y="295" font-family="system-ui, -apple-system, sans-serif" font-size="56" font-weight="800" letter-spacing="-2">
+    <tspan fill="#38bdf8">at 2 AM. </tspan><tspan fill="white">In seconds.</tspan>
+  </text>
+
+  <!-- ── Subline ── -->
+  <text x="80" y="345" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="400" fill="#94a3b8">
+    Browse messages · Replay DLQs · Trace correlations · AI root-cause · Free &amp; open-source
+  </text>
+
+  <!-- ── Fake terminal / UI preview ── -->
+  <rect x="80" y="385" width="640" height="195" rx="12" fill="url(#card)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+  <!-- Terminal title bar -->
+  <rect x="80" y="385" width="640" height="36" rx="12" fill="rgba(255,255,255,0.05)"/>
+  <circle cx="108" cy="403" r="5" fill="#ef4444" opacity="0.7"/>
+  <circle cx="126" cy="403" r="5" fill="#f59e0b" opacity="0.7"/>
+  <circle cx="144" cy="403" r="5" fill="#22c55e" opacity="0.7"/>
+  <text x="380" y="408" font-family="monospace" font-size="12" fill="#64748b" text-anchor="middle">payment-queue · Dead-Letter (847)</text>
+
+  <!-- Message row 1 — error -->
+  <rect x="96" y="432" width="608" height="44" rx="8" fill="rgba(239,68,68,0.08)" stroke="rgba(239,68,68,0.2)" stroke-width="1"/>
+  <circle cx="118" cy="454" r="6" fill="#ef4444"/>
+  <text x="134" y="450" font-family="monospace" font-size="13" font-weight="600" fill="#fca5a5">MaxDeliveryCountExceeded · ×5 retries</text>
+  <text x="134" y="467" font-family="monospace" font-size="11" fill="#64748b">TXN-STR-8472039812 — Northwind Trading Ltd, £14,850 · GatewayTimeout_RetryExhausted</text>
+
+  <!-- Message row 2 — warning -->
+  <rect x="96" y="482" width="608" height="44" rx="8" fill="rgba(245,158,11,0.08)" stroke="rgba(245,158,11,0.2)" stroke-width="1"/>
+  <circle cx="118" cy="504" r="6" fill="#f59e0b"/>
+  <text x="134" y="500" font-family="monospace" font-size="13" font-weight="600" fill="#fcd34d">SchemaValidationFailure · ×3</text>
+  <text x="134" y="517" font-family="monospace" font-size="11" fill="#64748b">OrderCreated v3.0 rejected by NotificationService v2.1 · missing "recipientTimezone"</text>
+
+  <!-- Message row 3 — AI insight -->
+  <rect x="96" y="532" width="608" height="38" rx="8" fill="rgba(99,102,241,0.1)" stroke="rgba(99,102,241,0.25)" stroke-width="1"/>
+  <text x="118" y="548" font-family="monospace" font-size="12" fill="#a5b4fc">🤖 AI Root-Cause</text>
+  <text x="222" y="548" font-family="monospace" font-size="12" fill="#6366f1">·</text>
+  <text x="234" y="548" font-family="monospace" font-size="12" fill="#94a3b8">Null ref in OrderValidationService.ProcessAsync() line 312 · 1-click bulk replay ready</text>
+
+  <!-- ── Right side stats ── -->
+  <rect x="760" y="385" width="360" height="195" rx="12" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+
+  <!-- Stats -->
+  <text x="940" y="428" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#64748b" text-anchor="middle" letter-spacing="1" text-transform="uppercase">WHAT YOU GET</text>
+
+  <text x="786" y="462" font-family="system-ui, sans-serif" font-size="15" fill="#38bdf8">✓</text>
+  <text x="808" y="462" font-family="system-ui, sans-serif" font-size="14" fill="#cbd5e1">Browse queues, topics &amp; DLQ content</text>
+
+  <text x="786" y="490" font-family="system-ui, sans-serif" font-size="15" fill="#38bdf8">✓</text>
+  <text x="808" y="490" font-family="system-ui, sans-serif" font-size="14" fill="#cbd5e1">Replay dead-lettered messages in 1 click</text>
+
+  <text x="786" y="518" font-family="system-ui, sans-serif" font-size="15" fill="#38bdf8">✓</text>
+  <text x="808" y="518" font-family="system-ui, sans-serif" font-size="14" fill="#cbd5e1">AI-powered root-cause analysis</text>
+
+  <text x="786" y="546" font-family="system-ui, sans-serif" font-size="15" fill="#38bdf8">✓</text>
+  <text x="808" y="546" font-family="system-ui, sans-serif" font-size="14" fill="#cbd5e1">Trace correlation chains visually</text>
+
+  <text x="786" y="574" font-family="system-ui, sans-serif" font-size="15" fill="#38bdf8">✓</text>
+  <text x="808" y="574" font-family="system-ui, sans-serif" font-size="14" fill="#cbd5e1">Free · Open-source · No installation</text>
+
+  <!-- ── Bottom CTA strip ── -->
+  <text x="80" y="608" font-family="system-ui, sans-serif" font-size="18" font-weight="700" fill="#0ea5e9">app-servicehub-prod.azurewebsites.net</text>
+  <text x="1120" y="608" font-family="system-ui, sans-serif" font-size="14" fill="#475569" text-anchor="end">github.com/debdevops/servicehub</text>
+</svg>

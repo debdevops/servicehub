@@ -80,7 +80,7 @@ describe('ConnectPage', () => {
 
   it('renders Azure portal instructions for creating a policy', () => {
     renderConnectPage();
-    expect(screen.getByText(/Azure Portal/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Azure Portal/).length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows password toggle button', () => {

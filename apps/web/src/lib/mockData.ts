@@ -45,76 +45,208 @@ export interface Message {
 }
 
 // ============================================================================
-// Mock Data Templates
+// Enterprise Demo Data — Realistic production-grade scenarios
+// Company: Contoso Commerce Platform (B2B marketplace, 500k orders/month)
 // ============================================================================
 
-const ORDER_TEMPLATES = [
-  { orderId: 'ORD-2024-12345', customerId: 'CUST-98765', amount: 299.99, currency: 'USD', paymentMethod: 'credit_card', status: 'pending_validation' },
-  { orderId: 'ORD-2024-67890', customerId: 'CUST-11111', amount: 149.50, currency: 'EUR', paymentMethod: 'paypal', status: 'completed' },
-  { orderId: 'ORD-2024-24680', customerId: 'CUST-22222', amount: 599.00, currency: 'USD', paymentMethod: 'bank_transfer', status: 'processing' },
-  { orderId: 'ORD-2024-13579', customerId: 'CUST-33333', amount: 79.99, currency: 'GBP', paymentMethod: 'apple_pay', status: 'shipped' },
-  { orderId: 'ORD-2024-11223', customerId: 'CUST-44444', amount: 1299.00, currency: 'USD', paymentMethod: 'credit_card', status: 'failed' },
+const CUSTOMER_COMPANIES = [
+  'Northwind Trading Ltd', 'Fabrikam Corporation', 'Adventure Works LLC',
+  'Blue Yonder Airlines', 'Tailspin Toys Inc', 'Wide World Importers',
+  'Datum Corp', 'Wingtip Toys', 'Contoso Manufacturing', 'Litware Global',
+  'Proseware Inc', 'A. Datum Corporation', 'Alpine Ski House',
 ];
 
-const PAYMENT_TEMPLATES = [
-  { transactionId: 'TXN-9876543210', amount: 250.00, currency: 'USD', gateway: 'stripe', status: 'authorized', retryCount: 0 },
-  { transactionId: 'TXN-1234567890', amount: 99.99, currency: 'USD', gateway: 'paypal', status: 'captured', retryCount: 1 },
-  { transactionId: 'TXN-5555555555', amount: 450.00, currency: 'EUR', gateway: 'adyen', status: 'pending', retryCount: 2 },
-  { transactionId: 'TXN-7777777777', amount: 75.50, currency: 'GBP', gateway: 'stripe', status: 'declined', retryCount: 3 },
+const CUSTOMER_REFS: Record<string, string> = {
+  'Northwind Trading Ltd': 'NW',
+  'Fabrikam Corporation': 'FAB',
+  'Adventure Works LLC': 'AW',
+  'Blue Yonder Airlines': 'BYA',
+  'Tailspin Toys Inc': 'TST',
+  'Wide World Importers': 'WWI',
+  'Datum Corp': 'DAT',
+  'Wingtip Toys': 'WTT',
+  'Contoso Manufacturing': 'CM',
+  'Litware Global': 'LWG',
+  'Proseware Inc': 'PRW',
+  'A. Datum Corporation': 'ADC',
+  'Alpine Ski House': 'ASH',
+};
+
+const ORDER_LINE_ITEMS = [
+  { product: 'Enterprise Analytics Suite (Annual)', unitPrice: 4800.00, category: 'software' },
+  { product: 'Cloud API Gateway Pro — 10M calls/mo', unitPrice: 1250.00, category: 'infrastructure' },
+  { product: 'Business Intelligence Dashboard (3 seats)', unitPrice: 2400.00, category: 'software' },
+  { product: 'Managed SQL Database — Standard S4', unitPrice: 890.00, category: 'database' },
+  { product: 'IoT Device Management Platform (500 devices)', unitPrice: 3200.00, category: 'iot' },
+  { product: 'Security & Compliance Module', unitPrice: 1800.00, category: 'security' },
+  { product: 'Automated Workflow Engine — 50k runs/mo', unitPrice: 750.00, category: 'automation' },
+  { product: 'Distributed Cache Cluster (16-node)', unitPrice: 5400.00, category: 'infrastructure' },
+  { product: 'Real-time Event Streaming (10 partitions)', unitPrice: 2100.00, category: 'streaming' },
+  { product: 'Identity & Access Management Suite', unitPrice: 1650.00, category: 'security' },
 ];
 
-const INVENTORY_TEMPLATES = [
-  { sku: 'SKU-LAPTOP-001', warehouse: 'WH-EAST-01', quantity: 150, threshold: 50, action: 'restock_alert' },
-  { sku: 'SKU-PHONE-002', warehouse: 'WH-WEST-02', quantity: 0, threshold: 25, action: 'out_of_stock' },
-  { sku: 'SKU-TABLET-003', warehouse: 'WH-CENTRAL-01', quantity: 500, threshold: 100, action: 'inventory_update' },
-  { sku: 'SKU-WATCH-004', warehouse: 'WH-EAST-01', quantity: 75, threshold: 30, action: 'low_stock_warning' },
+const PAYMENT_GATEWAYS = [
+  { gateway: 'Stripe', code: 'STR' },
+  { gateway: 'PayPal Commerce', code: 'PPL' },
+  { gateway: 'Adyen', code: 'ADY' },
+  { gateway: 'Braintree', code: 'BRT' },
+  { gateway: 'Square', code: 'SQR' },
+  { gateway: 'Worldpay', code: 'WPY' },
 ];
 
-const NOTIFICATION_TEMPLATES = [
-  { notificationId: 'NOTIF-001', type: 'email', recipient: 'user@example.com', template: 'order_confirmation', status: 'sent' },
-  { notificationId: 'NOTIF-002', type: 'sms', recipient: '+1234567890', template: 'shipping_update', status: 'pending' },
-  { notificationId: 'NOTIF-003', type: 'push', recipient: 'device-token-xyz', template: 'payment_received', status: 'delivered' },
-  { notificationId: 'NOTIF-004', type: 'webhook', recipient: 'https://api.partner.com/webhook', template: 'inventory_sync', status: 'failed' },
+const PAYMENT_ERROR_CODES: Record<string, string> = {
+  'insufficient_funds': 'Card declined — insufficient funds',
+  'do_not_honor': 'Card declined — do_not_honor (bank refused)',
+  'gateway_timeout': 'Gateway timeout after 30s — connection reset by peer',
+  'duplicate_transaction': 'Duplicate transaction detected — idempotency key collision',
+  'card_velocity_exceeded': 'Card velocity limit exceeded — 3 transactions in 60s',
+  'invalid_cvv': 'CVV validation failed — card not present verification error',
+  'expired_card': 'Card expired — expiry date 03/24 is in the past',
+  'stolen_card': 'Card flagged as stolen — issuer declined with code 41',
+};
+
+const INVENTORY_WAREHOUSES = [
+  { id: 'WH-LHR-01', location: 'London Heathrow Logistics Hub', region: 'EMEA' },
+  { id: 'WH-JFK-02', location: 'Newark Distribution Centre', region: 'AMER' },
+  { id: 'WH-SIN-03', location: 'Singapore Changi Fulfilment', region: 'APAC' },
+  { id: 'WH-FRA-04', location: 'Frankfurt Rhine Warehouse', region: 'EMEA' },
+  { id: 'WH-SEA-05', location: 'Seattle West Coast Hub', region: 'AMER' },
 ];
 
-const SHIPPING_TEMPLATES = [
-  { shipmentId: 'SHIP-2024-001', carrier: 'FedEx', trackingNumber: 'FX123456789', status: 'in_transit', estimatedDelivery: '2024-01-20' },
-  { shipmentId: 'SHIP-2024-002', carrier: 'UPS', trackingNumber: 'UPS987654321', status: 'delivered', estimatedDelivery: '2024-01-18' },
-  { shipmentId: 'SHIP-2024-003', carrier: 'DHL', trackingNumber: 'DHL555555555', status: 'processing', estimatedDelivery: '2024-01-22' },
+const NOTIFICATION_CHANNELS = [
+  { type: 'email', provider: 'SendGrid', template: 'order_confirmation_v3' },
+  { type: 'email', provider: 'SendGrid', template: 'invoice_ready_v2' },
+  { type: 'sms', provider: 'Twilio', template: 'shipping_update' },
+  { type: 'push', provider: 'Firebase FCM', template: 'payment_received' },
+  { type: 'webhook', provider: 'Partner ERP', template: 'inventory_sync_v2' },
+  { type: 'teams', provider: 'Microsoft Teams', template: 'ops_alert' },
 ];
 
-const PREVIEWS = [
-  'Payment validation failed - retry logic needed',
-  'Order processed successfully',
-  'Expired timer - check TTL settings',
-  'Inventory update completed',
-  'High retry count detected',
-  'Notification sent to user@example.com',
-  'Stock level updated for SKU-12345',
-  'Rate limit approaching threshold',
-  'Database connection timeout',
-  'Message deserialization successful',
-  'Queue processing delayed',
-  'Customer order #12345 confirmed',
-  'Shipping label generated',
-  'Email notification queued',
-  'Webhook delivery attempted',
-  'Payment gateway timeout',
-  'Schema validation error',
-  'Duplicate message detected',
-  'Consumer processing slow',
-  'Message size exceeds limit',
+const FRAUD_RISK_FACTORS = [
+  ['unusual_geo', 'high_velocity'], ['card_testing_pattern'], ['multiple_failed_attempts'],
+  ['ip_mismatch', 'device_fingerprint_anomaly'], ['account_age_low', 'high_order_value'],
+  ['vpn_detected', 'unusual_geo'], ['chargeback_history', 'velocity_exceeded'],
 ];
 
-const AI_ISSUES = [
-  { issue: 'Payment validation timeout. Message retried 3 times without success.', recommendations: ['Increase timeout from 30s to 60s for payment gateway', 'Implement circuit breaker to prevent cascade failures', 'Add dead-letter rule after 5 retry attempts'] },
-  { issue: 'High retry count indicates downstream service instability.', recommendations: ['Check service health dashboard', 'Scale up consumer instances', 'Review error logs for root cause'] },
-  { issue: 'Message schema mismatch detected. JSON deserialization failing.', recommendations: ['Update message consumer schema to handle new "shippingAddress" field', 'Replay affected messages after schema update', 'Implement schema validation before enqueueing messages'] },
-  { issue: 'Processing latency increased by 340% in the last hour.', recommendations: ['Increase timeout from 30s to 90s to prevent cascading failures', 'Implement circuit breaker pattern with 5-retry threshold', 'Add redundant payment gateway with automatic failover'] },
-  { issue: 'Dead-letter queue growing rapidly. 89% share same error pattern.', recommendations: ['Investigate common failure cause', 'Update consumer error handling', 'Consider batch replay after fix'] },
-  { issue: 'Message ordering violation detected in sequence.', recommendations: ['Enable session-based ordering', 'Review partition key strategy', 'Add sequence validation in consumer'] },
-  { issue: 'Resource exhaustion warning. Connection pool near limit.', recommendations: ['Increase connection pool size', 'Implement connection recycling', 'Add monitoring alerts for pool usage'] },
-  { issue: 'Duplicate message IDs detected across partitions.', recommendations: ['Implement idempotency checks', 'Add deduplication window', 'Review message ID generation strategy'] },
+const SHIPPING_CARRIERS = [
+  { name: 'FedEx Priority', code: 'FEDEX', prefix: 'FX' },
+  { name: 'DHL Express', code: 'DHL', prefix: 'DE' },
+  { name: 'UPS Next Day Air', code: 'UPS', prefix: 'UPS' },
+  { name: 'Royal Mail Special', code: 'RMSPL', prefix: 'RM' },
+  { name: 'Parcelforce 48', code: 'PF48', prefix: 'PF' },
+];
+
+const INVOICE_STATUSES = ['awaiting_approval', 'approved', 'queued_for_payment', 'paid', 'disputed'];
+const APPROVAL_TIERS = ['L1_Manager', 'L2_Finance', 'L3_CFO', 'Procurement_Committee'];
+
+// ============================================================================
+// Realistic preview texts — specific, feel like real production incidents
+// ============================================================================
+
+const PREVIEWS_SUCCESS = [
+  'Order ORD-2026-%s processed — Northwind Trading Ltd, £14,850 — payment confirmed via Stripe',
+  'Payment TXN-%s captured — Fabrikam Corporation, $6,240 — Adyen gateway, 0.8s latency',
+  'Invoice INV-2026-%s approved by L2_Finance — Wide World Importers, £22,400 — queued for payment',
+  'Inventory sync complete — WH-LHR-01 → WH-JFK-02 — 1,240 units of Enterprise Analytics Suite',
+  'Shipping label generated — Blue Yonder Airlines, FedEx FX%s, estimated delivery D+2',
+  'Fraud check cleared — Datum Corp, risk score 12/100 — all 6 factors within threshold',
+  'Auto-replay rule triggered — 28 payment messages replayed successfully, 0 failures',
+  'Webhook delivered — Tailspin Toys ERP (v2.1), 204ms, all 142 line items synced',
+  'Order ORD-2026-%s shipped — Adventure Works LLC — DHL DE%s, in transit via Frankfurt',
+  'Consumer group caught up — adventure-works-consumer lag 0ms after processing 3,241 messages',
+];
+
+const PREVIEWS_WARNING = [
+  'Payment retry #2 — TXN-%s — Fabrikam Corp, Worldpay gateway, timeout after 30s (retry 3 of 5)',
+  'Invoice INV-2026-%s pending — awaiting L3_CFO approval for 18h — SLA breach in 6h',
+  'Inventory low stock alert — SKU:EDS-PRO-2026 — 12 units remain, 9 open orders pending',
+  'Shipping delay — UPS UPS%s — customs hold at Frankfurt (HS code mismatch on 3 of 8 items)',
+  'Duplicate order detected — ORD-2026-%s submitted twice in same customer session (60s apart)',
+  'Consumer lag growing — notification-queue — 1,843 unprocessed messages, 12min behind real-time',
+  'Fraud score elevated — Litware Global — riskScore 68/100 (vpn_detected, unusual_geo) — review',
+  'Webhook delivering slowly — Proseware ERP — attempt 3 of 5, 5.2s timeout, retrying in 30s',
+  'Schema warning — NotificationService received order body missing new "recipientTimezone" field',
+  'Rate limit approaching — Stripe API at 87% of 100 req/s quota — throttling risk in ~8 min',
+];
+
+const PREVIEWS_ERROR = [
+  'DLQ flood — payment-queue — 847 messages dead-lettered: MaxDeliveryCountExceeded after 5 retries',
+  'Payment declined — TXN-%s — Northwind Trading Ltd £14,850 — do_not_honor (bank code 05)',
+  'Order validation failed — ORD-2026-%s — OrderService rejected: "shippingAddress.postcode" null',
+  'Fraud alert — Wingtip Toys — riskScore 94/100 — card_testing_pattern, 11 attempts in 4 minutes',
+  'Shipping failed — DHL DE%s — address undeliverable: postcode SW1A 2AA not valid for carrier zone',
+  'Invoice processing error — INV-2026-%s — Accounts Payable API returned 503 Service Unavailable',
+  'TTL expired — ORD-2026-%s — message in queue 14 days without consumer pickup — moved to DLQ',
+  'Schema mismatch — NotificationService v2.1 cannot deserialise OrderCreated v3.0 payload',
+  'Database deadlock — OrderService.ProcessAsync() — 3 concurrent writes to Orders table, tx aborted',
+  'Session lock expired — checkout-session-%s held 5 min — consumer reconnecting, message re-enqueued',
+];
+
+export const AI_ISSUES = [
+  {
+    issue: 'DLQ flood — 847 of 862 dead-lettered messages share the identical error signature: null reference in OrderValidationService.ProcessAsync() at line 312. Root cause: "shippingAddress.postcode" field introduced in order-schema v3.0 but consumer still running v2.8.',
+    recommendations: [
+      'Deploy OrderValidationService v2.9+ (null-safe postcode handling) — ETA 15 min',
+      'After deployment, use Auto-Replay to bulk-replay the 847 affected messages',
+      'Add schema version negotiation to prevent cross-version incompatibility in future',
+    ],
+  },
+  {
+    issue: 'Payment gateway cascade failure — Worldpay returning 504 Gateway Timeout consistently since 14:32 UTC. Retry backoff not working: all 5 retry attempts fire within 2 seconds instead of exponential spacing. This is flooding the retry queue.',
+    recommendations: [
+      'Fix retry backoff: implement exponential delay (2s, 4s, 8s, 16s, 32s) not fixed 0.5s',
+      'Add circuit breaker: after 3 consecutive failures, route to Stripe fallback gateway',
+      'Dead-letter after 5 attempts with DeadLetterReason="GatewayDown" for targeted replay later',
+    ],
+  },
+  {
+    issue: 'Message ordering violation in orders-queue — 23 messages processed out-of-sequence. OrderUpdated events arriving before OrderCreated for the same OrderId, causing foreign key violations in the Orders database.',
+    recommendations: [
+      'Enable Azure Service Bus Sessions keyed on OrderId to guarantee FIFO per customer order',
+      'Add idempotency check in consumer: skip if OrderCreated not yet in DB, re-enqueue with delay',
+      'Review partition key strategy — currently random, should be set to customerId',
+    ],
+  },
+  {
+    issue: 'Consumer group saturation — notification-queue has 1,843 backlogged messages. Single consumer instance processing at 2.3 msg/sec; at current rate backlog will clear in 13 minutes. However a new DLQ spike at 15:20 UTC could overwhelm it.',
+    recommendations: [
+      'Scale notification consumer to 3 instances immediately (Azure Container Apps: min replicas 3)',
+      'Set queue max delivery count to 3 (currently 10) to reduce retry amplification',
+      'Add dead-letter monitoring alert: notify #ops-alerts if DLQ count exceeds 50',
+    ],
+  },
+  {
+    issue: 'Fraud detection bypassed — 11 high-risk transactions from Wingtip Toys processed without fraud check completion. FraudCheckService timed out (60s) and the order pipeline proceeded without awaiting the fraud verdict. Risk exposure: £47,230.',
+    recommendations: [
+      'Make fraud check synchronous in the critical payment path — do not proceed on timeout',
+      'Add compensating transaction: if FraudCheck times out, place order in "pending_review" state',
+      'Increase FraudCheckService timeout budget from 60s to 120s and add dedicated node pool',
+    ],
+  },
+  {
+    issue: 'Shipping address validation failures concentrated in UK postcodes — Royal Mail API rejecting 38 of 42 UK addresses. Root cause: postcode format changed in service update (space stripped), "SW1A2AA" failing Royal Mail format validation expecting "SW1A 2AA".',
+    recommendations: [
+      'Fix postcode normalisation: add space before last 3 chars for UK postcodes before API call',
+      'Replay the 38 failed shipping label messages after deploying the fix',
+      'Add postcode format unit test with all Royal Mail edge-case formats',
+    ],
+  },
+  {
+    issue: 'Invoice approval SLA breach risk — 14 invoices from Wide World Importers and Fabrikam Corporation awaiting L3_CFO approval for 18+ hours. SLA requires approval within 24h. Breach in < 6h for 9 of them.',
+    recommendations: [
+      'Trigger escalation webhook to CFO TEAMS channel immediately (auto-alert rule)',
+      'Configure approval reminder automation: resend after 12h, 20h, 23h intervals',
+      'Review L3_CFO approval delegation — apply L2_Finance auto-approve for amounts < £25,000',
+    ],
+  },
+  {
+    issue: 'Duplicate message delivery — message deduplication window expired (60s) causing 34 OrderCreated events to be processed twice. Orders created for customers Datum Corp and Proseware Inc have duplicate line items. Billing impact: £18,400 over-charged.',
+    recommendations: [
+      'Extend deduplication window to 10 minutes (Service Bus property: DuplicateDetectionHistoryTimeWindow)',
+      'Add idempotency guard in OrderService — check order exists before insert (upsert pattern)',
+      'Reconcile and reverse the 34 duplicate charges before end of business today',
+    ],
+  },
 ];
 
 const DEAD_LETTER_REASONS = [
@@ -123,25 +255,10 @@ const DEAD_LETTER_REASONS = [
   'MessageSizeExceeded',
   'SessionIdMismatch',
   'HeaderSizeExceeded',
-  'TransactionAborted',
   'FilterEvaluationException',
-];
-
-const HEADER_KEYS = [
-  'Content-Type',
-  'Content-Encoding',
-  'Message-Id',
-  'Correlation-Id',
-  'Session-Id',
-  'Reply-To',
-  'Reply-To-Session-Id',
-  'Label',
-  'Scheduled-Enqueue-Time-Utc',
-  'Partition-Key',
-  'Via-Partition-Key',
-  'x-opt-enqueue-sequence-number',
-  'x-opt-offset',
-  'x-opt-locked-until',
+  'GatewayTimeout_RetryExhausted',
+  'SchemaValidationFailure',
+  'DownstreamServiceUnavailable',
 ];
 
 // ============================================================================
@@ -152,90 +269,283 @@ function randomItem<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function generateMessageBody(): { body: string; contentType: ContentType } {
-  const roll = Math.random();
-  
-  if (roll < 0.4) {
-    // Order message
-    const template = { ...randomItem(ORDER_TEMPLATES) };
-    template.orderId = `ORD-2026-${Math.floor(Math.random() * 99999).toString().padStart(5, '0')}`;
-    template.amount = Math.round(Math.random() * 1000 * 100) / 100;
-    return { body: JSON.stringify(template, null, 2), contentType: 'application/json' };
-  } else if (roll < 0.6) {
-    // Payment message
-    const template = { ...randomItem(PAYMENT_TEMPLATES) };
-    template.transactionId = `TXN-${Math.floor(Math.random() * 9999999999)}`;
-    template.amount = Math.round(Math.random() * 500 * 100) / 100;
-    return { body: JSON.stringify(template, null, 2), contentType: 'application/json' };
-  } else if (roll < 0.75) {
-    // Inventory message
-    const template = { ...randomItem(INVENTORY_TEMPLATES) };
-    template.quantity = Math.floor(Math.random() * 1000);
-    return { body: JSON.stringify(template, null, 2), contentType: 'application/json' };
-  } else if (roll < 0.85) {
-    // Notification message
-    const template = { ...randomItem(NOTIFICATION_TEMPLATES) };
-    template.notificationId = `NOTIF-${Math.floor(Math.random() * 99999).toString().padStart(5, '0')}`;
-    return { body: JSON.stringify(template, null, 2), contentType: 'application/json' };
-  } else if (roll < 0.95) {
-    // Shipping message
-    const template = { ...randomItem(SHIPPING_TEMPLATES) };
-    template.shipmentId = `SHIP-2026-${Math.floor(Math.random() * 999).toString().padStart(3, '0')}`;
-    return { body: JSON.stringify(template, null, 2), contentType: 'application/json' };
-  } else {
-    // Plain text message
-    return { 
-      body: `Event logged at ${new Date().toISOString()}\nSource: ServiceHub\nPriority: Normal\nMessage: System health check completed successfully.`, 
-      contentType: 'text/plain' 
-    };
-  }
+function randomInt(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function generateHeaders(): Record<string, string> {
+function seqId(): string {
+  return String(randomInt(10000, 99999));
+}
+
+function generateOrderBody(): { body: string; contentType: ContentType; eventType: string } {
+  const company = randomItem(CUSTOMER_COMPANIES);
+  const ref = CUSTOMER_REFS[company] || 'CTM';
+  const item = randomItem(ORDER_LINE_ITEMS);
+  const qty = randomInt(1, 5);
+  const amount = Math.round(item.unitPrice * qty * 100) / 100;
+  const currency = randomItem(['USD', 'GBP', 'EUR']);
+  const orderId = `ORD-2026-${String(randomInt(100000, 999999))}`;
+  const customerRef = `${ref}-PO-2026-${String(randomInt(1000, 9999))}`;
+
+  const body = {
+    eventType: 'OrderCreated',
+    schemaVersion: '3.1',
+    orderId,
+    customerRef,
+    customer: {
+      company,
+      accountId: `ACC-${randomInt(10000, 99999)}`,
+      billingRegion: randomItem(['EMEA', 'AMER', 'APAC']),
+      accountManager: randomItem(['Sarah Chen', 'James Okafor', 'Priya Nair', 'Tom Bergström', 'Maria Santos']),
+    },
+    lineItems: [
+      {
+        lineId: 1,
+        product: item.product,
+        category: item.category,
+        quantity: qty,
+        unitPrice: item.unitPrice,
+        currency,
+        total: amount,
+      },
+    ],
+    orderTotal: { amount, currency, vatIncluded: currency === 'GBP' || currency === 'EUR' },
+    paymentMethod: randomItem(['bank_transfer', 'credit_card', 'purchase_order', 'direct_debit']),
+    status: randomItem(['pending_validation', 'validated', 'processing', 'shipped', 'delivered']),
+    timestamps: {
+      created: new Date(Date.now() - randomInt(60000, 86400000)).toISOString(),
+      lastUpdated: new Date().toISOString(),
+    },
+    sourceService: 'OrderManagementService',
+    correlationId: `corr-${Math.random().toString(36).substring(2, 11)}`,
+  };
+  return { body: JSON.stringify(body, null, 2), contentType: 'application/json', eventType: 'OrderCreated' };
+}
+
+function generatePaymentBody(): { body: string; contentType: ContentType; eventType: string } {
+  const gwInfo = randomItem(PAYMENT_GATEWAYS);
+  const company = randomItem(CUSTOMER_COMPANIES);
+  const amount = Math.round(randomInt(500, 50000) * 100) / 100;
+  const currency = randomItem(['USD', 'GBP', 'EUR']);
+  const errorCode = randomItem(Object.keys(PAYMENT_ERROR_CODES));
+  const txnId = `${gwInfo.code}-TXN-${String(randomInt(1000000000, 9999999999))}`;
+
+  const body = {
+    eventType: 'PaymentProcessed',
+    schemaVersion: '2.4',
+    transactionId: txnId,
+    externalRef: `${gwInfo.code}-${String(randomInt(100000000, 999999999))}`,
+    payer: { company, accountId: `ACC-${randomInt(10000, 99999)}` },
+    amount: { value: amount, currency },
+    gateway: {
+      provider: gwInfo.gateway,
+      environment: 'production',
+      processingTimeMs: randomInt(120, 8500),
+    },
+    status: randomItem(['authorized', 'captured', 'declined', 'pending_3ds', 'refunded']),
+    failureDetail: Math.random() < 0.4 ? {
+      errorCode,
+      message: PAYMENT_ERROR_CODES[errorCode],
+      retryCount: randomInt(1, 5),
+      retryable: !['stolen_card', 'do_not_honor'].includes(errorCode),
+    } : undefined,
+    timestamps: {
+      initiated: new Date(Date.now() - randomInt(30000, 3600000)).toISOString(),
+      completed: new Date().toISOString(),
+    },
+    sourceService: 'PaymentProcessingService',
+  };
+  return { body: JSON.stringify(body, null, 2), contentType: 'application/json', eventType: 'PaymentProcessed' };
+}
+
+function generateInventoryBody(): { body: string; contentType: ContentType; eventType: string } {
+  const warehouse = randomItem(INVENTORY_WAREHOUSES);
+  const item = randomItem(ORDER_LINE_ITEMS);
+  const current = randomInt(0, 2000);
+  const threshold = randomInt(50, 200);
+
+  const body = {
+    eventType: 'InventoryUpdated',
+    schemaVersion: '1.8',
+    warehouseId: warehouse.id,
+    warehouseName: warehouse.location,
+    region: warehouse.region,
+    product: {
+      sku: `SKU-${item.category.toUpperCase().substring(0, 3)}-${String(randomInt(1000, 9999))}`,
+      name: item.product,
+      category: item.category,
+    },
+    stockLevel: { current, threshold, unit: 'licenses' },
+    alert: current === 0 ? 'out_of_stock' : current < threshold ? 'low_stock' : 'normal',
+    pendingOrders: randomInt(0, 25),
+    transitStock: randomInt(0, 500),
+    lastPhysicalCount: new Date(Date.now() - randomInt(86400000, 604800000)).toISOString(),
+    sourceService: 'InventoryManagementService',
+  };
+  return { body: JSON.stringify(body, null, 2), contentType: 'application/json', eventType: 'InventoryUpdated' };
+}
+
+function generateNotificationBody(): { body: string; contentType: ContentType; eventType: string } {
+  const channel = randomItem(NOTIFICATION_CHANNELS);
+  const company = randomItem(CUSTOMER_COMPANIES);
+
+  const body = {
+    eventType: 'NotificationDispatched',
+    schemaVersion: '2.0',
+    notificationId: `NOTIF-${String(randomInt(100000, 999999))}`,
+    channel: channel.type,
+    provider: channel.provider,
+    template: channel.template,
+    recipient: channel.type === 'email'
+      ? `accounts@${company.toLowerCase().replace(/[^a-z]/g, '').substring(0, 10)}.com`
+      : channel.type === 'sms' ? `+44${randomInt(7700000000, 7799999999)}`
+      : channel.type === 'webhook' ? `https://erp.${company.toLowerCase().replace(/[^a-z]/g, '').substring(0, 8)}.com/api/v2/webhook`
+      : `team-${randomItem(['ops', 'finance', 'procurement', 'engineering'])}`,
+    subject: randomItem([
+      'Your order has been confirmed', 'Invoice ready for review', 'Shipment dispatched',
+      'Payment received — thank you', 'Action required: PO approval', 'Account statement ready',
+    ]),
+    deliveryStatus: randomItem(['sent', 'delivered', 'failed', 'bounced', 'pending']),
+    attemptCount: randomInt(1, 4),
+    latencyMs: randomInt(80, 12000),
+    sourceService: 'CustomerEngagementService',
+  };
+  return { body: JSON.stringify(body, null, 2), contentType: 'application/json', eventType: 'NotificationDispatched' };
+}
+
+function generateFraudBody(): { body: string; contentType: ContentType; eventType: string } {
+  const company = randomItem(CUSTOMER_COMPANIES);
+  const riskScore = randomInt(10, 98);
+  const riskFactors = randomItem(FRAUD_RISK_FACTORS);
+  const amount = randomInt(2000, 80000);
+
+  const body = {
+    eventType: 'FraudCheckResult',
+    schemaVersion: '1.3',
+    alertId: `FRD-${String(randomInt(100000, 999999))}`,
+    orderId: `ORD-2026-${String(randomInt(100000, 999999))}`,
+    customer: { company, accountId: `ACC-${randomInt(10000, 99999)}` },
+    transaction: { amount, currency: 'GBP', gatewayRef: `STR-${randomInt(100000000, 999999999)}` },
+    riskAssessment: {
+      score: riskScore,
+      verdict: riskScore > 80 ? 'HIGH_RISK' : riskScore > 50 ? 'MEDIUM_RISK' : 'LOW_RISK',
+      riskFactors,
+      modelVersion: 'fraud-ml-v4.2',
+      processingTimeMs: randomInt(200, 2000),
+    },
+    action: riskScore > 80 ? 'block_and_review' : riskScore > 50 ? 'review_required' : 'approve',
+    sourceService: 'FraudDetectionService',
+    timestamp: new Date().toISOString(),
+  };
+  return { body: JSON.stringify(body, null, 2), contentType: 'application/json', eventType: 'FraudCheckResult' };
+}
+
+function generateInvoiceBody(): { body: string; contentType: ContentType; eventType: string } {
+  const company = randomItem(CUSTOMER_COMPANIES);
+  const ref = CUSTOMER_REFS[company] || 'CTM';
+  const amount = randomInt(5000, 150000);
+  const tier = randomItem(APPROVAL_TIERS);
+  const invoiceId = `INV-2026-${String(randomInt(10000, 99999))}`;
+
+  const body = {
+    eventType: 'InvoiceProcessing',
+    schemaVersion: '1.5',
+    invoiceId,
+    vendor: company,
+    purchaseOrder: `${ref}-PO-2026-${String(randomInt(1000, 9999))}`,
+    amount: { value: amount, currency: randomItem(['GBP', 'USD', 'EUR']) },
+    approvalWorkflow: {
+      requiredTier: tier,
+      currentStatus: randomItem(INVOICE_STATUSES),
+      submittedAt: new Date(Date.now() - randomInt(3600000, 86400000 * 3)).toISOString(),
+      slaHours: randomInt(8, 48),
+      hoursElapsed: randomInt(1, 50),
+      escalated: Math.random() < 0.3,
+    },
+    lineItems: randomInt(1, 12),
+    attachmentCount: randomInt(1, 4),
+    sourceService: 'InvoiceProcessingService',
+  };
+  return { body: JSON.stringify(body, null, 2), contentType: 'application/json', eventType: 'InvoiceProcessing' };
+}
+
+function generateShippingBody(): { body: string; contentType: ContentType; eventType: string } {
+  const carrier = randomItem(SHIPPING_CARRIERS);
+  const warehouse = randomItem(INVENTORY_WAREHOUSES);
+  const company = randomItem(CUSTOMER_COMPANIES);
+  const tracking = `${carrier.prefix}${randomInt(1000000000, 9999999999)}`;
+
+  const body = {
+    eventType: 'ShipmentCreated',
+    schemaVersion: '2.2',
+    shipmentId: `SHIP-2026-${String(randomInt(10000, 99999))}`,
+    orderId: `ORD-2026-${String(randomInt(100000, 999999))}`,
+    recipient: { company, deliveryContact: randomItem(['Goods_In', 'Reception', 'IT_Department', 'Finance']) },
+    carrier: { name: carrier.name, code: carrier.code, trackingNumber: tracking },
+    origin: { warehouseId: warehouse.id, name: warehouse.location, region: warehouse.region },
+    destination: {
+      country: randomItem(['GB', 'US', 'DE', 'FR', 'NL', 'SG', 'AU']),
+      postcode: randomItem(['EC2A 4NE', 'W1D 3QZ', '10001', '75001', '60311', '048624', '2000']),
+    },
+    estimatedDelivery: new Date(Date.now() + randomInt(86400000, 86400000 * 5)).toISOString().split('T')[0],
+    status: randomItem(['label_created', 'collected', 'in_transit', 'customs_hold', 'out_for_delivery', 'delivered']),
+    packageDetails: { count: randomInt(1, 8), totalWeightKg: Math.round(randomInt(1, 200) * 0.5) / 1 },
+    sourceService: 'LogisticsService',
+  };
+  return { body: JSON.stringify(body, null, 2), contentType: 'application/json', eventType: 'ShipmentCreated' };
+}
+
+function generateMessageBody(): { body: string; contentType: ContentType; eventType?: string } {
+  const roll = Math.random();
+  if (roll < 0.30) return generateOrderBody();
+  if (roll < 0.50) return generatePaymentBody();
+  if (roll < 0.62) return generateInventoryBody();
+  if (roll < 0.72) return generateNotificationBody();
+  if (roll < 0.82) return generateFraudBody();
+  if (roll < 0.91) return generateInvoiceBody();
+  return generateShippingBody();
+}
+
+function generateHeaders(eventType: string): Record<string, string> {
   const headers: Record<string, string> = {};
-  const numHeaders = 4 + Math.floor(Math.random() * 6); // 4-9 headers
-  const shuffled = [...HEADER_KEYS].sort(() => Math.random() - 0.5);
-  
-  for (let i = 0; i < numHeaders && i < shuffled.length; i++) {
-    const key = shuffled[i];
-    switch (key) {
-      case 'Content-Type':
-        headers[key] = 'application/json; charset=utf-8';
-        break;
-      case 'Content-Encoding':
-        headers[key] = 'gzip';
-        break;
-      case 'Message-Id':
-        headers[key] = crypto.randomUUID?.() || `msg-${Math.random().toString(36).substring(2, 15)}`;
-        break;
-      case 'Correlation-Id':
-        headers[key] = `corr-${Math.random().toString(36).substring(2, 11)}`;
-        break;
-      case 'Session-Id':
-        headers[key] = `session-${Math.floor(Math.random() * 10000)}`;
-        break;
-      case 'Reply-To':
-        headers[key] = 'response-queue';
-        break;
-      case 'Label':
-        headers[key] = randomItem(['OrderCreated', 'PaymentProcessed', 'InventoryUpdated', 'NotificationSent', 'ShipmentCreated']);
-        break;
-      case 'Partition-Key':
-        headers[key] = `partition-${Math.floor(Math.random() * 16)}`;
-        break;
-      default:
-        headers[key] = `value-${Math.random().toString(36).substring(2, 8)}`;
-    }
-  }
-  
+  const service = {
+    OrderCreated: 'OrderManagementService',
+    PaymentProcessed: 'PaymentProcessingService',
+    InventoryUpdated: 'InventoryManagementService',
+    NotificationDispatched: 'CustomerEngagementService',
+    FraudCheckResult: 'FraudDetectionService',
+    InvoiceProcessing: 'InvoiceProcessingService',
+    ShipmentCreated: 'LogisticsService',
+  }[eventType] || 'ContosoCommerceBackend';
+
+  headers['Content-Type'] = 'application/json; charset=utf-8';
+  headers['Message-Id'] = crypto.randomUUID?.() || `msg-${Math.random().toString(36).substring(2, 15)}`;
+  headers['Correlation-Id'] = `corr-${Math.random().toString(36).substring(2, 11)}`;
+  headers['x-contoso-source-service'] = service;
+  headers['x-contoso-schema-version'] = randomItem(['1.0', '2.0', '2.4', '3.0', '3.1']);
+  headers['x-contoso-event-version'] = '1';
+  headers['Label'] = eventType;
+  headers['Partition-Key'] = `partition-${randomInt(0, 15)}`;
+  if (Math.random() < 0.6) headers['Session-Id'] = `session-${randomInt(10000, 99999)}`;
+  if (Math.random() < 0.4) headers['Reply-To'] = 'response-processed-queue';
+
   return headers;
 }
 
 function generateTimeToLive(): string {
-  const days = Math.floor(Math.random() * 30);
-  const hours = Math.floor(Math.random() * 24);
-  const minutes = Math.floor(Math.random() * 60);
-  return `${days}d ${hours}h ${minutes}m 0s`;
+  const options = ['1d 0h 0m 0s', '7d 0h 0m 0s', '14d 0h 0m 0s', '0d 4h 0m 0s', '0d 12h 0m 0s'];
+  return randomItem(options);
+}
+
+function getPreview(status: MessageStatus): string {
+  const s = seqId();
+  const templates =
+    status === 'success' ? PREVIEWS_SUCCESS :
+    status === 'warning' ? PREVIEWS_WARNING :
+    PREVIEWS_ERROR;
+
+  const template = randomItem(templates);
+  return template.replace(/%s/g, s);
 }
 
 // ============================================================================
@@ -243,13 +553,12 @@ function generateTimeToLive(): string {
 // ============================================================================
 
 export function generateMockMessages(count: number): Message[] {
-  const statusWeights = [0.65, 0.25, 0.10]; // 65% success, 25% warning, 10% error
-  
+  const statusWeights = [0.55, 0.30, 0.15]; // 55% success, 30% warning, 15% error
+
   const messages: Message[] = [];
   const now = new Date();
 
   for (let i = 0; i < count; i++) {
-    // Determine status based on weights
     const statusRoll = Math.random();
     let status: MessageStatus;
     if (statusRoll < statusWeights[0]) {
@@ -259,80 +568,83 @@ export function generateMockMessages(count: number): Message[] {
     } else {
       status = 'error';
     }
-    
-    // 10% chance of dead-letter, higher for errors
-    const isDeadLetter = status === 'error' ? Math.random() < 0.4 : Math.random() < 0.1;
+
+    const isDeadLetter = status === 'error' ? Math.random() < 0.5 : Math.random() < 0.08;
     const queueType: QueueType = isDeadLetter ? 'deadletter' : 'active';
-    
-    // Generate timing (spread across last 7 days for variety)
-    const minutesAgo = Math.floor(Math.random() * 10080); // Up to 7 days
+
+    // Ensure status is always semantically consistent with queue location.
+    // An active-queue message can never be 'error' (Dead-Letter) — it can only be
+    // 'success' (normal delivery) or 'warning' (retried, multiple delivery attempts).
+    // The 'error' status exclusively indicates a DLQ message.
+    const effectiveStatus: MessageStatus = queueType === 'active' && status === 'error' ? 'warning' : status;
+
+    // Spread across last 72 hours — concentrated in last 4h (more realistic peak traffic)
+    const recentBias = Math.random() < 0.6;
+    const minutesAgo = recentBias ? randomInt(0, 240) : randomInt(240, 4320);
     const enqueuedTime = new Date(now.getTime() - minutesAgo * 60 * 1000);
-    
-    // Generate body and content type
-    const { body, contentType } = generateMessageBody();
-    
-    // Delivery count higher for warnings/errors
+
+    const { body, contentType, eventType } = generateMessageBody();
+
     let deliveryCount: number;
-    if (status === 'error') {
-      deliveryCount = 3 + Math.floor(Math.random() * 7); // 3-9
-    } else if (status === 'warning') {
-      deliveryCount = 1 + Math.floor(Math.random() * 4); // 1-4
-    } else {
-      deliveryCount = Math.floor(Math.random() * 2); // 0-1
-    }
-    
-    // AI insight more likely for warnings/errors
-    const hasAIInsight = status === 'error' 
-      ? Math.random() < 0.7 
-      : status === 'warning' 
-        ? Math.random() < 0.4 
-        : Math.random() < 0.1;
-    
-    // Build message
+    if (effectiveStatus === 'error') deliveryCount = randomInt(3, 10);
+    else if (effectiveStatus === 'warning') deliveryCount = randomInt(2, 5);
+    else deliveryCount = randomInt(0, 1);
+
+    const hasAIInsight = effectiveStatus === 'error'
+      ? Math.random() < 0.75
+      : effectiveStatus === 'warning'
+        ? Math.random() < 0.45
+        : Math.random() < 0.08;
+
     const message: Message = {
       id: `msg-${Math.random().toString(36).substring(2, 6)}-${String(i + 1).padStart(6, '0')}`,
       enqueuedTime,
-      status,
-      preview: randomItem(PREVIEWS),
+      status: effectiveStatus,
+      preview: getPreview(effectiveStatus),
       contentType,
       deliveryCount,
       hasAIInsight,
-      sequenceNumber: 1000000 + i,
+      sequenceNumber: 10000000 + i,
       properties: {
         correlationId: `corr-${Math.random().toString(36).substring(2, 11)}`,
-        userId: `user-${Math.floor(Math.random() * 10000)}`,
-        source: randomItem(['OrderService', 'PaymentService', 'InventoryService', 'NotificationService', 'ShippingService']),
-        priority: randomItem(['low', 'normal', 'high', 'critical']),
+        sourceService: randomItem([
+          'OrderManagementService', 'PaymentProcessingService', 'InventoryManagementService',
+          'CustomerEngagementService', 'FraudDetectionService', 'InvoiceProcessingService', 'LogisticsService',
+        ]),
+        schemaVersion: randomItem(['2.4', '3.0', '3.1']),
+        priority: randomItem(['normal', 'high', 'critical']),
+        region: randomItem(['EMEA', 'AMER', 'APAC']),
+        environment: 'production',
       },
       queueType,
       body,
-      headers: generateHeaders(),
+      headers: generateHeaders(eventType || 'GenericEvent'),
       timeToLive: generateTimeToLive(),
       lockToken: `lock-${Math.random().toString(36).substring(2, 15)}-${Math.random().toString(36).substring(2, 15)}`,
+      eventType,
     };
-    
-    // Add dead-letter specific fields
+
     if (queueType === 'deadletter') {
       message.deadLetterReason = randomItem(DEAD_LETTER_REASONS);
-      message.deadLetterSource = randomItem(['OrdersQueue', 'PaymentsQueue', 'NotificationsQueue', 'InventoryQueue']);
+      message.deadLetterSource = randomItem([
+        'OrderManagementService', 'PaymentProcessingService', 'InventoryManagementService',
+        'CustomerEngagementService', 'FraudDetectionService',
+      ]);
     }
-    
-    // Add AI analysis if applicable
+
     if (hasAIInsight) {
       const aiTemplate = randomItem(AI_ISSUES);
       message.aiAnalysis = {
         issue: aiTemplate.issue,
         recommendations: [...aiTemplate.recommendations],
-        detectedAt: new Date(enqueuedTime.getTime() + Math.random() * 300000), // Within 5 mins of enqueue
+        detectedAt: new Date(enqueuedTime.getTime() + randomInt(30000, 300000)),
       };
     }
-    
+
     messages.push(message);
   }
 
-  // Sort by enqueued time (most recent first)
   messages.sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime());
-  
   return messages;
 }
 
@@ -343,16 +655,3 @@ export function generateMockMessages(count: number): Message[] {
 console.time('Generating 100,000 mock messages');
 export const MOCK_MESSAGES = generateMockMessages(100000);
 console.timeEnd('Generating 100,000 mock messages');
-
-// Pre-computed counts for UI
-export const MESSAGE_COUNTS = {
-  total: MOCK_MESSAGES.length,
-  active: MOCK_MESSAGES.filter(m => m.queueType === 'active').length,
-  deadletter: MOCK_MESSAGES.filter(m => m.queueType === 'deadletter').length,
-  withAIInsights: MOCK_MESSAGES.filter(m => m.hasAIInsight).length,
-  byStatus: {
-    success: MOCK_MESSAGES.filter(m => m.status === 'success').length,
-    warning: MOCK_MESSAGES.filter(m => m.status === 'warning').length,
-    error: MOCK_MESSAGES.filter(m => m.status === 'error').length,
-  },
-};
