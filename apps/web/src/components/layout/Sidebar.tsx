@@ -472,6 +472,26 @@ export function Sidebar() {
         </button>
         {quickAccessOpen && (
         <nav className="space-y-1 px-3 pb-3">
+          {/* Dashboard - moved to top */}
+          <NavLink
+            to="/dashboard"
+            className={({ isActive }) =>
+              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                isActive
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-300 font-medium'
+                  : 'bg-white hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 border-gray-200 hover:border-indigo-300'
+              }`
+            }
+          >
+            <LayoutDashboard className="w-4 h-4 text-indigo-500" />
+            <span className="flex-1 text-left">Dashboard</span>
+            {totalDlqCount > 0 && (
+              <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium">
+                {totalDlqCount}
+              </span>
+            )}
+          </NavLink>
+
           <button
             onClick={() => {
               const activeNamespace = namespaces?.find(ns => ns.isActive);
@@ -532,24 +552,6 @@ export function Sidebar() {
             <span className="flex-1 text-left">Dead-Letter</span>
             <span className="text-xs text-red-600 font-medium">DLQ</span>
           </button>
-          <NavLink
-            to="/dashboard"
-            className={({ isActive }) =>
-              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-                isActive
-                  ? 'bg-indigo-50 text-indigo-700 border-indigo-300'
-                  : 'bg-white hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 border-gray-200 hover:border-indigo-300'
-              }`
-            }
-          >
-            <LayoutDashboard className="w-4 h-4 text-indigo-500" />
-            <span className="flex-1 text-left">Dashboard</span>
-            {totalDlqCount > 0 && (
-              <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium">
-                {totalDlqCount}
-              </span>
-            )}
-          </NavLink>
           <NavLink
             to={activeNamespace ? `/dlq-history?namespace=${activeNamespace.id}` : '/dlq-history'}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-purple-50 text-gray-700 hover:text-purple-700 border border-gray-200 hover:border-purple-300 shadow-sm"
