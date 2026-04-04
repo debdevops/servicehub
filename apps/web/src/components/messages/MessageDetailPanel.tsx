@@ -454,7 +454,18 @@ export function MessageDetailPanel({ message, onViewPattern }: MessageDetailPane
             )}
           </div>
           <CopyButton
-            text={`${window.location.origin}/messages?namespace=${namespaceId || ''}&queue=${searchParams.get('queue') || searchParams.get('topic') || ''}&messageId=${message.id}`}
+            text={(() => {
+              const base = `${window.location.origin}/messages?namespace=${namespaceId || ''}`;
+              const queueParam = searchParams.get('queue');
+              const topicParam = searchParams.get('topic');
+              const subParam = searchParams.get('subscription');
+              const entityPart = queueParam
+                ? `&queue=${queueParam}`
+                : topicParam
+                  ? `&topic=${topicParam}${subParam ? `&subscription=${subParam}` : ''}`
+                  : '';
+              return `${base}${entityPart}&messageId=${message.id}`;
+            })()}
             label="Copy Link"
             className="shrink-0 ml-3 px-2 py-1 border border-gray-200 rounded-lg"
             iconSize="w-4 h-4"
