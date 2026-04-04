@@ -377,6 +377,36 @@ public sealed class DlqHistoryController : ApiControllerBase
         return Ok(response);
     }
 
+    /// <summary>
+    /// Gets a 7-day DLQ trend for a specific namespace.
+    /// Returns daily new and resolved message counts.
+    /// </summary>
+    /// <param name="namespaceId">The namespace to get trend data for.</param>
+    /// <param name="days">Number of days (1–30, default 7).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Array of daily trend data points.</returns>
+    [HttpGet("trend")]
+    [RequireScope(ApiKeyScopes.DlqRead)]
+    [ProducesResponseType(typeof(IReadOnlyList<DlqTrendPointResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<DlqTrendPointResponse>>> GetTrend(
+        [FromQuery] Guid? namespaceId = null,
+        [FromQuery] int days = 7,
+        CancellationToken cancellationToken = default)
+    {
+        days = Math.Clamp(days, 1, 30);
+        var result = await _historyService.GetSummaryAsync(namespaceId, days, cancellationToken);
+        if (result.IsFailure)
+            return ToActionResult<IReadOnlyList<DlqTrendPointResponse>>(result.Error);
+
+        var trend = result.Value.DailyTrend.Select(t => new DlqTrendPointResponse(
+            Date: t.Date,
+            NewMessages: t.NewMessages,
+            ResolvedMessages: t.ResolvedMessages
+        )).ToList();
+
+        return Ok(trend);
+    }
+
     private static string GenerateCsv(IReadOnlyList<Core.Entities.DlqMessage> messages)
     {
         var sb = new StringBuilder();

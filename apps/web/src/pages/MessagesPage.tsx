@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useDeferredValue } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause } from 'lucide-react';
+import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause, Info } from 'lucide-react';
 import { MessageList, MessageDetailPanel, type QueueTab } from '@/components/messages';
 import { AIFindingsDropdown } from '@/components/ai';
 import { MessageListSkeleton } from '@/components/messages/MessageListSkeleton';
@@ -12,6 +12,7 @@ import { useClientSideInsights, useInsightsSummary } from '@/hooks/useInsights';
 import { useQueues } from '@/hooks/useQueues';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useNamespaces } from '@/hooks/useNamespaces';
+import { generateMockMessages } from '@/lib/mockData';
 import type { Message, ContentType } from '@/lib/mockData';
 import type { Message as APIMessage } from '@/lib/api/types';
 import toast from 'react-hot-toast';
@@ -93,6 +94,7 @@ function transformMessage(
 export function MessagesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const isDemo = searchParams.get('demo') === 'true';
   const namespaceId = searchParams.get('namespace');
   const queueName = searchParams.get('queue');
   const topicName = searchParams.get('topic');
@@ -238,10 +240,13 @@ export function MessagesPage() {
     return Array.from(ids);
   }, [insights]);
 
-  // Get messages from API or empty array - sort by enqueued time descending (newest first)
-  const messages: Message[] = (messagesData?.items || [])
-    .map(msg => transformMessage(msg, insightMessageIds, queueTab))
-    .sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime());
+  // Get messages from API or demo data - sort by enqueued time descending (newest first)
+  const demoMessages = useMemo(() => isDemo ? generateMockMessages(50) : [], [isDemo]);
+  const messages: Message[] = isDemo
+    ? demoMessages.sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime())
+    : (messagesData?.items || [])
+      .map(msg => transformMessage(msg, insightMessageIds, queueTab))
+      .sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime());
 
   // Find selected message
   const selectedMessage = useMemo(
@@ -393,7 +398,7 @@ export function MessagesPage() {
   }
 
   // Empty state (no namespace/queue selected)
-  if (!namespaceId || !entityName) {
+  if (!isDemo && (!namespaceId || !entityName)) {
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md p-8">
@@ -409,6 +414,15 @@ export function MessagesPage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden relative" data-tour="messages-area">
+      {/* Demo Mode Banner */}
+      {isDemo && (
+        <div className="bg-blue-50 border-b border-blue-200 px-4 py-2.5 flex items-center gap-2 shrink-0">
+          <Info className="w-4 h-4 text-blue-600 shrink-0" />
+          <span className="text-sm text-blue-800">
+            <strong>Demo Mode</strong> — Showing sample messages. Connect a real namespace to see your own data.
+          </span>
+        </div>
+      )}
       {/* Toolbar */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shrink-0">
         {/* Search */}

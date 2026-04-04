@@ -448,4 +448,158 @@ public class DlqHistoryControllerTests
         // Problem() without ProblemDetailsFactory will throw InvalidOperationException
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
+
+    // ── GetTrend ────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetTrend_ReturnsEmptyArrayWhenNoData()
+    {
+        var summary = new DlqSummary(
+            TotalMessages: 0, ActiveMessages: 0, ReplayedMessages: 0, ArchivedMessages: 0,
+            ByCategory: new Dictionary<string, int>(),
+            ByEntity: new Dictionary<string, int>(),
+            OldestMessage: null, NewestMessage: null,
+            DailyTrend: new List<DlqTrendPoint>());
+
+        _historyService.Setup(s => s.GetSummaryAsync(
+            It.IsAny<Guid?>(), 7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSummary>.Success(summary));
+
+        var result = await _controller.GetTrend(days: 7);
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var trend = ok.Value.Should().BeAssignableTo<IReadOnlyList<DlqTrendPointResponse>>().Subject;
+        trend.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetTrend_Returns7DayGrouping()
+    {
+        var trendPoints = Enumerable.Range(0, 7).Select(i =>
+            new DlqTrendPoint(
+                Date: DateTimeOffset.UtcNow.AddDays(-6 + i),
+                NewMessages: i + 1,
+                ResolvedMessages: i)).ToList();
+
+        var summary = new DlqSummary(
+            TotalMessages: 28, ActiveMessages: 10, ReplayedMessages: 15, ArchivedMessages: 3,
+            ByCategory: new Dictionary<string, int>(),
+            ByEntity: new Dictionary<string, int>(),
+            OldestMessage: DateTimeOffset.UtcNow.AddDays(-6), NewestMessage: DateTimeOffset.UtcNow,
+            DailyTrend: trendPoints);
+
+        _historyService.Setup(s => s.GetSummaryAsync(
+            It.IsAny<Guid?>(), 7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSummary>.Success(summary));
+
+        var result = await _controller.GetTrend(days: 7);
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var trend = ok.Value.Should().BeAssignableTo<IReadOnlyList<DlqTrendPointResponse>>().Subject;
+        trend.Should().HaveCount(7);
+        trend[0].NewMessages.Should().Be(1);
+        trend[6].NewMessages.Should().Be(7);
+    }
+
+    [Fact]
+    public async Task GetTrend_FiltersByNamespaceId()
+    {
+        var nsId = Guid.NewGuid();
+        var summary = new DlqSummary(
+            TotalMessages: 5, ActiveMessages: 3, ReplayedMessages: 2, ArchivedMessages: 0,
+            ByCategory: new Dictionary<string, int>(),
+            ByEntity: new Dictionary<string, int>(),
+            OldestMessage: null, NewestMessage: null,
+            DailyTrend: new List<DlqTrendPoint>
+            {
+                new(DateTimeOffset.UtcNow.AddDays(-1), 3, 1),
+                new(DateTimeOffset.UtcNow, 2, 1),
+            });
+
+        _historyService.Setup(s => s.GetSummaryAsync(
+            nsId, 7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSummary>.Success(summary));
+
+        var result = await _controller.GetTrend(namespaceId: nsId, days: 7);
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var trend = ok.Value.Should().BeAssignableTo<IReadOnlyList<DlqTrendPointResponse>>().Subject;
+        trend.Should().HaveCount(2);
+
+        _historyService.Verify(s => s.GetSummaryAsync(nsId, 7, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ── GetTrend ────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetTrend_ReturnsEmptyArrayWhenNoData()
+    {
+        var summary = new DlqSummary(
+            TotalMessages: 0, ActiveMessages: 0, ReplayedMessages: 0, ArchivedMessages: 0,
+            ByCategory: new Dictionary<string, int>(),
+            ByEntity: new Dictionary<string, int>(),
+            OldestMessage: null, NewestMessage: null,
+            DailyTrend: new List<DlqTrendPoint>());
+
+        _historyService.Setup(s => s.GetSummaryAsync(
+            It.IsAny<Guid?>(), 7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSummary>.Success(summary));
+
+        var result = await _controller.GetTrend(days: 7);
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var trend = ok.Value.Should().BeAssignableTo<IReadOnlyList<DlqTrendPointResponse>>().Subject;
+        trend.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetTrend_Returns7DayGrouping()
+    {
+        var trendPoints = Enumerable.Range(0, 7).Select(i =>
+            new DlqTrendPoint(
+                Date: DateTimeOffset.UtcNow.AddDays(-6 + i),
+                NewMessages: i + 1,
+                ResolvedMessages: i)).ToList();
+
+        var summary = new DlqSummary(
+            TotalMessages: 28, ActiveMessages: 10, ReplayedMessages: 15, ArchivedMessages: 3,
+            ByCategory: new Dictionary<string, int>(),
+            ByEntity: new Dictionary<string, int>(),
+            OldestMessage: DateTimeOffset.UtcNow.AddDays(-6), NewestMessage: DateTimeOffset.UtcNow,
+            DailyTrend: trendPoints);
+
+        _historyService.Setup(s => s.GetSummaryAsync(
+            It.IsAny<Guid?>(), 7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSummary>.Success(summary));
+
+        var result = await _controller.GetTrend(days: 7);
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var trend = ok.Value.Should().BeAssignableTo<IReadOnlyList<DlqTrendPointResponse>>().Subject;
+        trend.Should().HaveCount(7);
+        trend[0].NewMessages.Should().Be(1);
+        trend[6].NewMessages.Should().Be(7);
+    }
+
+    [Fact]
+    public async Task GetTrend_FiltersByNamespaceId()
+    {
+        var nsId = Guid.NewGuid();
+        var summary = new DlqSummary(
+            TotalMessages: 5, ActiveMessages: 3, ReplayedMessages: 2, ArchivedMessages: 0,
+            ByCategory: new Dictionary<string, int>(),
+            ByEntity: new Dictionary<string, int>(),
+            OldestMessage: null, NewestMessage: null,
+            DailyTrend: new List<DlqTrendPoint>
+            {
+                new(DateTimeOffset.UtcNow.AddDays(-1), 3, 1),
+                new(DateTimeOffset.UtcNow, 2, 1),
+            });
+
+        _historyService.Setup(s => s.GetSummaryAsync(
+            nsId, 7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSummary>.Success(summary));
+
+        var result = await _controller.GetTrend(namespaceId: nsId, days: 7);
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var trend = ok.Value.Should().BeAssignableTo<IReadOnlyList<DlqTrendPointResponse>>().Subject;
+        trend.Should().HaveCount(2);
+
+        _historyService.Verify(s => s.GetSummaryAsync(nsId, 7, It.IsAny<CancellationToken>()), Times.Once);
+    }
 }
