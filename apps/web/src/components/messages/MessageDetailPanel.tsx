@@ -8,6 +8,7 @@ import { useReplayMessage } from '@/hooks/useMessages';
 import { useNamespaces } from '@/hooks/useNamespaces';
 // usePurgeMessage removed - Azure Service Bus limitation prevents reliable individual message deletion
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { CopyButton } from '@/components/CopyButton';
 import type { Message } from '@/lib/mockData';
 import toast from 'react-hot-toast';
 
@@ -443,12 +444,33 @@ export function MessageDetailPanel({ message, onViewPattern }: MessageDetailPane
       <div className={`shrink-0 px-6 py-4 border-b border-gray-200 ${
         isDLQ && dlqSeverity === 'critical' ? 'bg-red-50' : 'bg-white'
       }`}>
-        <h2 className="text-xl font-semibold text-gray-900">
-          {title}
-        </h2>
-        {subtitle && (
-          <p className="text-sm text-gray-500 mt-1 font-mono">{subtitle}</p>
-        )}
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">
+              {title}
+            </h2>
+            {subtitle && (
+              <p className="text-sm text-gray-500 mt-1 font-mono">{subtitle}</p>
+            )}
+          </div>
+          <CopyButton
+            text={(() => {
+              const base = `${window.location.origin}/messages?namespace=${namespaceId || ''}`;
+              const queueParam = searchParams.get('queue');
+              const topicParam = searchParams.get('topic');
+              const subParam = searchParams.get('subscription');
+              const entityPart = queueParam
+                ? `&queue=${queueParam}`
+                : topicParam
+                  ? `&topic=${topicParam}${subParam ? `&subscription=${subParam}` : ''}`
+                  : '';
+              return `${base}${entityPart}&messageId=${message.id}`;
+            })()}
+            label="Copy Link"
+            className="shrink-0 ml-3 px-2 py-1 border border-gray-200 rounded-lg"
+            iconSize="w-4 h-4"
+          />
+        </div>
         {isDLQ && (
           <div className="mt-2 flex items-center gap-2">
             <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${

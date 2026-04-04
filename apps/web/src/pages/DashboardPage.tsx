@@ -15,9 +15,12 @@ import {
   TrendingUp,
   Zap,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues, useAllNamespacesQueues, NamespaceQueueStats } from '@/hooks/useQueues';
 import { Namespace, EnvironmentType } from '@/lib/api/types';
+import { apiClient } from '@/lib/api/client';
 
 const DLQ_SPIKE_THRESHOLD = 10;
 
@@ -245,6 +248,34 @@ function DlqHotSpotsPanel({
 }
 
 // ============================================================================
+// Health Score Grade
+// ============================================================================
+
+export function getHealthGrade(totalActive: number, totalDlq: number): { grade: string; color: string; bgClass: string; textClass: string; borderClass: string } {
+  const dlqRatio = totalDlq / Math.max(totalActive + totalDlq, 1);
+  if (dlqRatio === 0) return { grade: 'A', color: 'emerald', bgClass: 'bg-emerald-50', textClass: 'text-emerald-700', borderClass: 'border-emerald-200' };
+  if (dlqRatio < 0.05) return { grade: 'B', color: 'green', bgClass: 'bg-green-50', textClass: 'text-green-700', borderClass: 'border-green-200' };
+  if (dlqRatio < 0.15) return { grade: 'C', color: 'amber', bgClass: 'bg-amber-50', textClass: 'text-amber-700', borderClass: 'border-amber-200' };
+  if (dlqRatio < 0.40) return { grade: 'D', color: 'orange', bgClass: 'bg-orange-50', textClass: 'text-orange-700', borderClass: 'border-orange-200' };
+  return { grade: 'F', color: 'red', bgClass: 'bg-red-50', textClass: 'text-red-700', borderClass: 'border-red-200' };
+}
+
+function HealthScoreBadge({ totalActive, totalDlq }: { totalActive: number; totalDlq: number }) {
+  const { grade, bgClass, textClass, borderClass } = getHealthGrade(totalActive, totalDlq);
+  const total = totalActive + totalDlq;
+  const dlqPct = total > 0 ? ((totalDlq / total) * 100).toFixed(1) : '0.0';
+  return (
+    <div
+      className={`flex flex-col items-center px-2 py-1 rounded-lg border ${bgClass} ${borderClass}`}
+      title={`DLQ ratio: ${dlqPct}% | ${totalDlq} DLQ of ${total} total messages`}
+    >
+      <span className={`text-2xl font-bold leading-none ${textClass}`}>{grade}</span>
+      <span className={`text-[10px] font-medium ${textClass}`}>Health</span>
+    </div>
+  );
+}
+
+// ============================================================================
 // Stat Cell
 // ============================================================================
 
@@ -295,6 +326,52 @@ function SkeletonCard() {
 }
 
 // ============================================================================
+// DLQ Trend Sparkline
+// ============================================================================
+
+interface TrendPoint {
+  date: string;
+  newCount: number;
+  resolvedCount: number;
+}
+
+function DlqTrendSparkline({ namespaceId }: { namespaceId: string }) {
+  const { data: trendData } = useQuery<TrendPoint[]>({
+    queryKey: ['dlq-trend', namespaceId],
+    queryFn: async () => {
+      const res = await apiClient.get(`/api/v1/dlq/trend`, {
+        params: { namespaceId, days: 7 },
+      });
+      return (res.data as Array<{ date: string; newMessages: number; resolvedMessages: number }>).map(d => ({
+        date: d.date,
+        newCount: d.newMessages,
+        resolvedCount: d.resolvedMessages,
+      }));
+    },
+    refetchInterval: 30000,
+  });
+
+  if (!trendData || trendData.length < 2) {
+    return (
+      <div className="px-5 pb-2">
+        <p className="text-[10px] text-gray-400 text-center">No trend data yet</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-5 pb-2">
+      <ResponsiveContainer width="100%" height={60}>
+        <LineChart data={trendData}>
+          <Line type="monotone" dataKey="newCount" stroke="#ef4444" strokeWidth={1.5} dot={false} />
+          <Line type="monotone" dataKey="resolvedCount" stroke="#22c55e" strokeWidth={1.5} dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ============================================================================
 // NamespaceCard
 // ============================================================================
 
@@ -338,14 +415,19 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }:
     >
       {/* Card Header */}
       <div className="px-5 pt-5 pb-3">
-        <div className="flex items-center gap-2 mb-1">
-          <EnvironmentBadge env={namespace.environment} />
-          <h3 className="text-base font-semibold text-gray-900 truncate">{displayName}</h3>
-          {dlqDelta > 0 && (
-            <span className="ml-auto shrink-0 flex items-center gap-1 px-2 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse">
-              <TrendingUp className="w-3 h-3" />
-              +{dlqDelta} DLQ
-            </span>
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-2 mb-1">
+            <EnvironmentBadge env={namespace.environment} />
+            <h3 className="text-base font-semibold text-gray-900 truncate">{displayName}</h3>
+            {dlqDelta > 0 && (
+              <span className="ml-auto shrink-0 flex items-center gap-1 px-2 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse">
+                <TrendingUp className="w-3 h-3" />
+                +{dlqDelta} DLQ
+              </span>
+            )}
+          </div>
+          {!isError && (
+            <HealthScoreBadge totalActive={totalActive} totalDlq={totalDlq} />
           )}
         </div>
         <p className="text-xs text-gray-400 truncate">{namespace.name}</p>
@@ -370,6 +452,9 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }:
           colorClass="text-purple-700"
         />
       </div>
+
+      {/* DLQ Trend Sparkline */}
+      <DlqTrendSparkline namespaceId={namespace.id} />
 
       {/* Status Banner */}
       <div className="px-5 pb-4">

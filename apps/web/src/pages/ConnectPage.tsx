@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, Trash2, Github } from 'lucide-react';
 import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@/hooks/useNamespaces';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { HelpTooltip } from '@/components/help';
@@ -186,13 +186,36 @@ export function ConnectPage() {
   return (
     <div className="flex-1 overflow-auto p-10">
       <div className="max-w-6xl mx-auto">
+        {/* Hero Section */}
+        <div className="text-center mb-10">
+          <h1 className="text-4xl font-bold text-gray-900 leading-tight">
+            Debug Azure Service Bus at 2 AM. <span className="text-primary-600">In seconds.</span>
+          </h1>
+          <p className="text-lg text-gray-600 mt-4 max-w-3xl mx-auto">
+            ServiceHub is a free, open-source web tool to browse messages, investigate DLQs,
+            replay failed messages, and trace message journeys. No installation. Just paste a connection string.
+          </p>
+          {/* Feature Pills */}
+          <div className="flex items-center justify-center gap-3 mt-6">
+            <span className="px-4 py-2 rounded-full bg-sky-50 text-sky-700 border border-sky-200 text-sm font-medium">
+              🔍 Browse Messages
+            </span>
+            <span className="px-4 py-2 rounded-full bg-red-50 text-red-700 border border-red-200 text-sm font-medium">
+              ⚡ Replay DLQs
+            </span>
+            <span className="px-4 py-2 rounded-full bg-violet-50 text-violet-700 border border-violet-200 text-sm font-medium">
+              🔗 Trace Correlations
+            </span>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
           {/* Left: Hero + Form */}
           <div>
             <div className="mb-8">
-              <h1 className="text-3xl font-semibold text-gray-900 leading-tight">
+              <h2 className="text-3xl font-semibold text-gray-900 leading-tight">
                 Connect to <span className="text-primary-600">Azure Service Bus</span>
-              </h1>
+              </h2>
               <p className="text-base text-gray-600 mt-2">
                 Connect using a Shared Access Policy connection string. A Listen-only policy is sufficient
                 for DLQ investigation, message browsing, and replay operations.
@@ -388,6 +411,57 @@ export function ConnectPage() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Try Demo Button */}
+        <div className="text-center mt-8">
+          <button
+            onClick={() => navigate('/messages?demo=true')}
+            className="inline-flex items-center gap-2 px-6 py-3 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 border-2 border-gray-300 hover:border-gray-400 rounded-xl transition-colors shadow-sm"
+          >
+            🎮 Explore with Sample Data — No credentials required
+          </button>
+        </div>
+
+        {/* How it works */}
+        <div className="mt-12 mb-8">
+          <h3 className="text-xl font-semibold text-gray-900 text-center mb-6">How it works</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="text-center p-6 bg-white rounded-xl border border-gray-200 shadow-sm">
+              <div className="w-10 h-10 bg-primary-50 border border-primary-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <span className="text-lg font-bold text-primary-600">1</span>
+              </div>
+              <p className="text-sm text-gray-700 font-medium">Paste your connection string</p>
+              <p className="text-xs text-gray-500 mt-1">Listen permission is enough</p>
+            </div>
+            <div className="text-center p-6 bg-white rounded-xl border border-gray-200 shadow-sm">
+              <div className="w-10 h-10 bg-primary-50 border border-primary-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <span className="text-lg font-bold text-primary-600">2</span>
+              </div>
+              <p className="text-sm text-gray-700 font-medium">Browse queues, messages, and dead-letter content</p>
+              <p className="text-xs text-gray-500 mt-1">In real time</p>
+            </div>
+            <div className="text-center p-6 bg-white rounded-xl border border-gray-200 shadow-sm">
+              <div className="w-10 h-10 bg-primary-50 border border-primary-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <span className="text-lg font-bold text-primary-600">3</span>
+              </div>
+              <p className="text-sm text-gray-700 font-medium">Investigate failures, replay messages, trace journeys</p>
+              <p className="text-xs text-gray-500 mt-1">All from your browser</p>
+            </div>
+          </div>
+        </div>
+
+        {/* View on GitHub */}
+        <div className="text-center mb-8">
+          <a
+            href="https://github.com/debdevops/servicehub"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            <Github className="w-4 h-4" />
+            View on GitHub
+          </a>
         </div>
       </div>
 
