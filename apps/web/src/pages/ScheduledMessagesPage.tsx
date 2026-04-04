@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Clock, RefreshCw, XCircle, Calendar, AlertCircle, Inbox, CalendarClock } from 'lucide-react';
+import { Clock, RefreshCw, XCircle, Calendar, AlertCircle, Inbox, CalendarClock, Plus } from 'lucide-react';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues } from '@/hooks/useQueues';
 import { useScheduledMessages, useCancelScheduledMessage } from '@/hooks/useScheduledMessages';
@@ -153,7 +153,192 @@ function RescheduleModal({ message, namespaceId, queueName, onClose }: Reschedul
   );
 }
 
+// ============================================================================
+// ScheduleNewMessageModal
+// ============================================================================
 
+interface ScheduleNewMessageModalProps {
+  namespaceId: string;
+  queueName: string;
+  onClose: () => void;
+}
+
+function ScheduleNewMessageModal({ namespaceId, queueName, onClose }: ScheduleNewMessageModalProps) {
+  const send = useSendMessage();
+  const [messageBody, setMessageBody] = useState('');
+  const [scheduledTime, setScheduledTime] = useState(
+    new Date(Date.now() + 60 * 60_000).toISOString().slice(0, 16)
+  );
+  const [correlationId, setCorrelationId] = useState('');
+  const [sessionId, setSessionId] = useState('');
+  const [contentType, setContentType] = useState('application/json');
+  const [busy, setBusy] = useState(false);
+
+  const minValue = new Date(Date.now() + 30_000).toISOString().slice(0, 16);
+
+  const handleSchedule = async () => {
+    if (!messageBody.trim()) {
+      toast.error('Message body cannot be empty');
+      return;
+    }
+    if (!scheduledTime) {
+      toast.error('Please select a delivery time');
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const schedTime = new Date(scheduledTime).toISOString();
+      const validationTime = new Date(schedTime).getTime();
+      const now = Date.now();
+      
+      if (validationTime <= now) {
+        toast.error('Scheduled time must be at least 30 seconds in the future');
+        setBusy(false);
+        return;
+      }
+
+      await send.mutateAsync({
+        namespaceId,
+        queueOrTopicName: queueName,
+        message: {
+          body: messageBody,
+          contentType,
+          ...(correlationId && { correlationId }),
+          ...(sessionId && { sessionId }),
+          scheduledEnqueueTime: schedTime,
+        },
+      });
+      onClose();
+    } catch {
+      // Error is handled by useSendMessage hook toast
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="bg-sky-600 text-white px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Plus className="w-5 h-5" />
+            <span className="font-semibold">Schedule New Message</span>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={busy}
+            className="hover:bg-white/20 p-1 rounded disabled:opacity-50"
+            aria-label="Close"
+          >
+            <XCircle className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {/* Message Body */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Message Body
+            </label>
+            <textarea
+              value={messageBody}
+              onChange={(e) => setMessageBody(e.target.value)}
+              disabled={busy}
+              placeholder={'{"orderId":"ORDER-123","amount":100}'}
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
+            />
+          </div>
+
+          {/* Scheduled Time */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Scheduled For
+            </label>
+            <input
+              type="datetime-local"
+              value={scheduledTime}
+              onChange={(e) => setScheduledTime(e.target.value)}
+              disabled={busy}
+              min={minValue}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              {scheduledTime ? deliversIn(new Date(scheduledTime).toISOString()) : '—'}
+            </p>
+          </div>
+
+          {/* Content Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Content Type
+            </label>
+            <select
+              value={contentType}
+              onChange={(e) => setContentType(e.target.value)}
+              disabled={busy}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
+            >
+              <option value="application/json">JSON</option>
+              <option value="application/xml">XML</option>
+              <option value="text/plain">Plain Text</option>
+              <option value="">None</option>
+            </select>
+          </div>
+
+          {/* Correlation ID */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Correlation ID (optional)
+            </label>
+            <input
+              type="text"
+              value={correlationId}
+              onChange={(e) => setCorrelationId(e.target.value)}
+              disabled={busy}
+              placeholder="e.g., order-12345"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
+            />
+          </div>
+
+          {/* Session ID */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Session ID (optional)
+            </label>
+            <input
+              type="text"
+              value={sessionId}
+              onChange={(e) => setSessionId(e.target.value)}
+              disabled={busy}
+              placeholder="e.g., session-xyz"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
+            />
+          </div>
+        </div>
+
+        <div className="bg-gray-50 px-6 py-3 flex items-center justify-end gap-2 border-t border-gray-200">
+          <button
+            onClick={onClose}
+            disabled={busy}
+            className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSchedule}
+            disabled={busy || !messageBody.trim()}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-lg transition-colors disabled:bg-sky-300 disabled:cursor-not-allowed"
+          >
+            <Clock className="w-4 h-4" />
+            {busy ? 'Scheduling…' : 'Schedule Message'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ScheduledMessageRow({ message, namespaceId, queueName }: ScheduledMessageRowProps) {
   const cancel = useCancelScheduledMessage();
@@ -271,6 +456,7 @@ function ScheduledMessageRow({ message, namespaceId, queueName }: ScheduledMessa
 
 export function ScheduledMessagesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const selectedNamespaceId = searchParams.get('namespace') ?? '';
   const selectedQueue = searchParams.get('queue') ?? '';
 
@@ -316,15 +502,26 @@ export function ScheduledMessagesPage() {
               </p>
             </div>
           </div>
-          <button
-            onClick={() => refetch()}
-            disabled={isFetching || !selectedQueue}
-            className="flex items-center gap-2 px-3 py-1.5 bg-white/20 hover:bg-white/30 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
-            title="Refresh"
-          >
-            <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setScheduleModalOpen(true)}
+              disabled={!selectedQueue}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white/20 hover:bg-white/30 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+              title={selectedQueue ? 'Schedule a new message' : 'Select a queue first'}
+            >
+              <Plus className="w-4 h-4" />
+              Schedule
+            </button>
+            <button
+              onClick={() => refetch()}
+              disabled={isFetching || !selectedQueue}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white/20 hover:bg-white/30 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+              title="Refresh"
+            >
+              <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
         </div>
       </div>
 
@@ -451,6 +648,15 @@ export function ScheduledMessagesPage() {
           </div>
         )}
       </div>
+
+      {/* Schedule New Message Modal */}
+      {scheduleModalOpen && selectedNamespaceId && selectedQueue && (
+        <ScheduleNewMessageModal
+          namespaceId={selectedNamespaceId}
+          queueName={selectedQueue}
+          onClose={() => setScheduleModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

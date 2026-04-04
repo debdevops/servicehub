@@ -440,8 +440,8 @@ export function CorrelationExplorerPage() {
       </div>
 
       {/* Search bar */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 shrink-0">
-        <div className="flex items-center gap-3">
+      <div className="bg-white border-b border-gray-200 px-3 sm:px-4 lg:px-6 py-3 shrink-0 overflow-x-auto">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* Correlation ID input */}
           <div className="flex-1 flex items-center gap-2 bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 focus-within:border-violet-400 focus-within:ring-1 focus-within:ring-violet-400 transition-all">
             <Search className="w-4 h-4 text-gray-400 shrink-0" />
@@ -474,7 +474,7 @@ export function CorrelationExplorerPage() {
           {/* Filters toggle */}
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm font-medium transition-colors ${
+            className={`flex items-center gap-1.5 px-2 sm:px-3 py-2 border rounded-lg text-xs sm:text-sm font-medium transition-colors ${
               hasActiveFilters
                 ? 'border-violet-400 bg-violet-50 text-violet-700'
                 : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
@@ -482,7 +482,7 @@ export function CorrelationExplorerPage() {
             aria-label="Toggle result filters"
           >
             <Filter className="w-4 h-4" />
-            Filters
+            <span className="hidden sm:inline">Filters</span>
             {hasActiveFilters && (
               <span className="w-2 h-2 rounded-full bg-violet-500 ml-0.5" />
             )}
@@ -492,16 +492,17 @@ export function CorrelationExplorerPage() {
           <button
             onClick={handleSearch}
             disabled={!correlationIdInput.trim() || isLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:bg-violet-300 text-white rounded-lg text-sm font-medium transition-colors"
+            className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:bg-violet-300 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap"
           >
             <Search className="w-4 h-4" />
-            {isLoading ? 'Searching…' : 'Search'}
+            <span className="hidden sm:inline">{isLoading ? 'Searching…' : 'Search'}</span>
+            <span className="sm:hidden">{isLoading ? '...' : '→'}</span>
           </button>
         </div>
 
         {/* Expandable filter panel */}
         {showFilters && (
-          <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-100 flex-wrap">
+          <div className="flex items-center gap-2 sm:gap-4 mt-3 pt-3 border-t border-gray-100 flex-wrap">
             <div className="flex items-center gap-2">
               <label className="text-xs font-medium text-gray-600">Time range</label>
               <select
@@ -567,7 +568,7 @@ export function CorrelationExplorerPage() {
             </p>
           </div>
         ) : result ? (
-          <div className="px-6 py-5 max-w-3xl mx-auto">
+          <div className="px-3 sm:px-4 lg:px-6 py-4 sm:py-5 w-full max-w-5xl mx-auto">
             {/* Partial result banner */}
             {result.isPartialResult && (
               <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 mb-4 text-amber-800 text-sm">
@@ -638,7 +639,7 @@ export function CorrelationExplorerPage() {
               /* Timeline */
               <>
                 <TimelineMinimap entries={filteredEntries} />
-                <div className="ml-4">
+                <div className="ml-1 sm:ml-2 -mr-4">
                   {filteredEntries.map((entry, idx) => (
                     <div key={`${entry.messageId}-${idx}`}>
                       {idx > 0 && (
