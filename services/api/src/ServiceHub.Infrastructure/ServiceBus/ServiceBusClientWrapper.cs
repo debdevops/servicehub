@@ -82,7 +82,17 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             sender = _client.CreateSender(request.EntityName);
             var message = CreateServiceBusMessage(request);
 
-            await sender.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
+            // When a future scheduled enqueue time is requested, use ScheduleMessageAsync so
+            // the message appears as State=Scheduled in PeekMessages (SendMessageAsync with
+            // ScheduledEnqueueTime uses a different AMQP path that is invisible to peek).
+            if (request.ScheduledEnqueueTimeUtc.HasValue && request.ScheduledEnqueueTimeUtc.Value > DateTimeOffset.UtcNow)
+            {
+                await sender.ScheduleMessageAsync(message, request.ScheduledEnqueueTimeUtc.Value, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await sender.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
+            }
 
             _logger.LogDebug(
                 "Message sent to {EntityName} in namespace {NamespaceId}",
@@ -1544,7 +1554,8 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
                 .ToList();
 
             _logger.LogDebug(
-                "Found {Count} scheduled messages in {EntityName} (peeked {PeekedCount})",
+                "Found {Count} scheduled messages in {EntityName} via peek (peeked {PeekedCount}). " +
+                "Note: Azure Service Bus scheduled-message broker store is not accessible via PeekMessages.",
                 scheduledMessages.Count,
                 LogRedactor.SanitiseForLog(entityName),
                 peekedMessages.Count);
