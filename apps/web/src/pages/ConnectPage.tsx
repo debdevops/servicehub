@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight } from 'lucide-react';
 import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@/hooks/useNamespaces';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -187,6 +187,43 @@ export function ConnectPage() {
               </div>
             </div>
 
+            {/* Trust & Security panel */}
+            <div className="mb-4 rounded-lg bg-green-50 border border-green-100 p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Shield className="w-4 h-4 text-green-600 flex-shrink-0" />
+                <span className="text-xs font-semibold text-green-800">Your data stays yours</span>
+              </div>
+              <div className="space-y-1">
+                {[
+                  { label: 'Connection string', value: 'AES-256-GCM encrypted before saving — never returned to browser' },
+                  { label: 'Message content', value: 'Never logged or stored by ServiceHub' },
+                  { label: 'Your encryption key', value: 'Lives only in your own Azure App Service config' },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex items-start gap-2 text-xs">
+                    <span className="text-green-500 mt-0.5 flex-shrink-0">✓</span>
+                    <span><span className="font-medium text-green-800">{label}:</span>{' '}
+                      <span className="text-green-700">{value}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-3 mt-2 pt-2 border-t border-green-100">
+                <a
+                  href="https://github.com/debdevops/servicehub/blob/main/services/api/src/ServiceHub.Infrastructure/Security/ConnectionStringProtector.cs"
+                  target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
+                >
+                  Verify encryption code →
+                </a>
+                <Link
+                  to="/security"
+                  className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
+                >
+                  Security overview →
+                </Link>
+              </div>
+            </div>
+
             <form onSubmit={handleConnect}>
               <div className="mb-3">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -264,18 +301,22 @@ export function ConnectPage() {
               </button>
             </form>
 
-            {/* SAS policy quick instructions */}
-            <details className="mt-4">
-              <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700 select-none">
-                How to create a Listen-only SAS policy ▸
-              </summary>
-              <ol className="text-xs text-blue-700 space-y-0.5 list-decimal list-inside mt-2 bg-blue-50 border border-blue-100 rounded-lg p-3">
+            {/* SAS instructions — always visible */}
+            <div className="mt-3 rounded-r-lg border-l-2 border-blue-300 bg-blue-50 pl-3 pr-2 py-2">
+              <p className="text-xs font-semibold text-blue-800 mb-1">
+                💡 A Listen-only key is all you need — and it's the safest option
+              </p>
+              <p className="text-xs text-blue-700 mb-1">
+                A Listen-only policy can <strong>only read</strong> messages. It cannot delete, send, or
+                modify anything. Even if this key were ever exposed, your data remains safe.
+              </p>
+              <ol className="text-xs text-blue-700 space-y-0.5 list-decimal list-inside">
                 <li>Azure Portal → your Service Bus namespace</li>
                 <li>Shared access policies → + Add policy</li>
-                <li>Name it <code className="bg-blue-100 px-1 rounded">servicehub</code>, tick <strong>Listen</strong></li>
+                <li>Name it <code className="bg-blue-100 px-1 rounded">servicehub</code>, tick <strong>Listen only</strong></li>
                 <li>Save → copy Primary Connection String → paste above</li>
               </ol>
-            </details>
+            </div>
           </div>
 
           {/* Right: Saved Connections + Demo callout */}
@@ -364,6 +405,31 @@ export function ConnectPage() {
                 Launch
                 <ArrowRight className="w-3 h-3" />
               </button>
+            </div>
+
+            {/* Self-host callout */}
+            <div className="bg-white rounded-xl border border-blue-100 p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Shield className="w-4 h-4 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-900 mb-0.5">
+                    Prefer zero-trust? Run it yourself.
+                  </p>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Deploy ServiceHub inside your own Azure subscription in under 10 minutes.
+                    Your data never leaves your infrastructure.
+                  </p>
+                  <a
+                    href="https://github.com/debdevops/servicehub/blob/main/self-hosting/README.md"
+                    target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800"
+                  >
+                    Self-hosting guide <ArrowRight className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
             </div>
           </div>
         </div>
