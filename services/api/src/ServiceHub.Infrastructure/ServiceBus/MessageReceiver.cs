@@ -455,4 +455,60 @@ public sealed class MessageReceiver : IMessageReceiver
                 "An unexpected error occurred while purging the message."));
         }
     }
+
+    /// <inheritdoc/>
+    public async Task<Result<IReadOnlyList<Message>>> GetScheduledMessagesAsync(
+        Guid namespaceId,
+        string entityName,
+        string? subscriptionName,
+        int maxMessages,
+        CancellationToken cancellationToken = default)
+    {
+        if (namespaceId == Guid.Empty)
+        {
+            return Result.Failure<IReadOnlyList<Message>>(Error.Validation(
+                ErrorCodes.Namespace.NotFound,
+                "Namespace ID is required."));
+        }
+
+        if (string.IsNullOrWhiteSpace(entityName))
+        {
+            return Result.Failure<IReadOnlyList<Message>>(Error.Validation(
+                ErrorCodes.Message.QueueNameRequired,
+                "Queue or topic name is required."));
+        }
+
+        var clientResult = await GetClientWrapperAsync(namespaceId, cancellationToken).ConfigureAwait(false);
+        if (clientResult.IsFailure)
+        {
+            return Result.Failure<IReadOnlyList<Message>>(clientResult.Error);
+        }
+
+        try
+        {
+            var result = await _resiliencePipeline.ExecuteAsync(async ct =>
+                await clientResult.Value.GetScheduledMessagesAsync(entityName, subscriptionName, maxMessages, ct).ConfigureAwait(false),
+                cancellationToken).ConfigureAwait(false);
+
+            if (result.IsFailure)
+            {
+                return result;
+            }
+
+            _logger.LogDebug(
+                "Found {Count} scheduled messages in {EntityName} for namespace {NamespaceId}",
+                result.Value.Count,
+                LogRedactor.SanitiseForLog(entityName),
+                namespaceId);
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error retrieving scheduled messages");
+            return Result.Failure<IReadOnlyList<Message>>(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while retrieving scheduled messages."));
+        }
+    }
 }

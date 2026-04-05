@@ -461,7 +461,7 @@ public class QueuesControllerTests
     public async Task GetScheduledMessages_Success_ReturnsOkWithPaginatedMessages()
     {
         var ns = CreateTestNamespace();
-        var allMessages = new List<Message>
+        var scheduledMessages = new List<Message>
         {
             new()
             {
@@ -470,38 +470,29 @@ public class QueuesControllerTests
                 EnqueuedTime = DateTimeOffset.UtcNow,
                 State = MessageState.Scheduled,
                 ScheduledEnqueueTime = DateTimeOffset.UtcNow.AddHours(1)
-            },
-            new()
-            {
-                MessageId = "active-1",
-                SequenceNumber = 101,
-                EnqueuedTime = DateTimeOffset.UtcNow,
-                State = MessageState.Active
             }
         };
 
-        _messageReceiver.Setup(r => r.PeekMessagesAsync(
-                It.Is<GetMessagesRequest>(req => req.NamespaceId == ns.Id && req.EntityName == "test-queue" && !req.FromDeadLetter),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(allMessages));
+        _messageReceiver.Setup(r => r.GetScheduledMessagesAsync(
+                ns.Id, "test-queue", null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(scheduledMessages));
 
         var result = await _controller.GetScheduledMessages(ns.Id, "test-queue");
 
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var paginated = okResult.Value.Should().BeAssignableTo<PaginatedResponse<MessageResponse>>().Subject;
-        // Only the Scheduled message is returned, not the Active one
         paginated.Items.Should().HaveCount(1);
         paginated.Items[0].SequenceNumber.Should().Be(100);
     }
 
     [Fact]
-    public async Task GetScheduledMessages_FiltersOutNonScheduledMessages()
+    public async Task GetScheduledMessages_UsesDedicatedScheduledMessagesMethod()
     {
+        // The controller must use GetScheduledMessagesAsync (not PeekMessagesAsync) so that
+        // scheduled messages beyond the active-message peek window are returned correctly.
         var ns = CreateTestNamespace();
-        var allMessages = new List<Message>
+        var scheduledMessages = new List<Message>
         {
-            new() { MessageId = "active-1", SequenceNumber = 1, State = MessageState.Active },
-            new() { MessageId = "deferred-1", SequenceNumber = 2, State = MessageState.Deferred },
             new()
             {
                 MessageId = "sched-1", SequenceNumber = 3,
@@ -510,8 +501,9 @@ public class QueuesControllerTests
             }
         };
 
-        _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(allMessages));
+        _messageReceiver.Setup(r => r.GetScheduledMessagesAsync(
+                ns.Id, "test-queue", null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(scheduledMessages));
 
         var result = await _controller.GetScheduledMessages(ns.Id, "test-queue");
 
@@ -519,6 +511,7 @@ public class QueuesControllerTests
         var paginated = okResult.Value.Should().BeAssignableTo<PaginatedResponse<MessageResponse>>().Subject;
         paginated.Items.Should().HaveCount(1);
         paginated.Items[0].MessageId.Should().Be("sched-1");
+        _messageReceiver.Verify(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -526,7 +519,8 @@ public class QueuesControllerTests
     {
         var ns = CreateTestNamespace();
 
-        _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+        _messageReceiver.Setup(r => r.GetScheduledMessagesAsync(
+                ns.Id, "test-queue", null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Failure(Error.ExternalService("err", "timeout")));
 
         var result = await _controller.GetScheduledMessages(ns.Id, "test-queue");
@@ -539,7 +533,8 @@ public class QueuesControllerTests
     {
         var ns = CreateTestNamespace();
 
-        _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+        _messageReceiver.Setup(r => r.GetScheduledMessagesAsync(
+                ns.Id, "empty-queue", null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(new List<Message>()));
 
         var result = await _controller.GetScheduledMessages(ns.Id, "empty-queue");
@@ -551,19 +546,19 @@ public class QueuesControllerTests
     }
 
     [Fact]
-    public async Task GetScheduledMessages_DoesNotCallWrapper_UsesMessageReceiverDirectly()
+    public async Task GetScheduledMessages_CallsGetScheduledMessagesOnReceiver()
     {
         var ns = CreateTestNamespace();
-        var wrapper = new Mock<IServiceBusClientWrapper>();
 
-        _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+        _messageReceiver.Setup(r => r.GetScheduledMessagesAsync(
+                ns.Id, "test-queue", null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(new List<Message>()));
 
         await _controller.GetScheduledMessages(ns.Id, "test-queue");
 
-        // The controller must NOT call GetScheduledMessagesAsync on the wrapper
-        wrapper.Verify(w => w.GetScheduledMessagesAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
-        _messageReceiver.Verify(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+        _messageReceiver.Verify(r => r.GetScheduledMessagesAsync(
+            ns.Id, "test-queue", null, It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
+        _messageReceiver.Verify(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion
