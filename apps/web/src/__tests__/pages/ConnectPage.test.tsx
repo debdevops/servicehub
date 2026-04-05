@@ -75,7 +75,7 @@ describe('ConnectPage', () => {
 
   it('shows not-configured message on entra tab when OAuth is not set up', () => {
     renderConnectPage();
-    expect(screen.getByText(/Azure Entra ID not configured/i)).toBeInTheDocument();
+    expect(screen.getByText(/Microsoft sign-in is not available on this instance/i)).toBeInTheDocument();
   });
 
   it('shows Connection String tab button', () => {
@@ -150,11 +150,12 @@ describe('ConnectPage', () => {
     }
   });
 
-  it('shows Sign in with Microsoft button on entra tab when OAuth configured', () => {
+  it('shows not-configured state on entra tab when OAuth is not configured', () => {
     // The default mock has isConfigured: false, so the not-configured state shows
     renderConnectPage();
-    // Entra tab is active by default; shows the not-configured amber panel
-    expect(screen.getByText(/Azure Entra ID not configured/i)).toBeInTheDocument();
+    // Entra tab is active by default; shows the amber panel with clear user guidance
+    expect(screen.getByText(/Microsoft sign-in is not available on this instance/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Use Connection String instead/i })).toBeInTheDocument();
   });
 });
 

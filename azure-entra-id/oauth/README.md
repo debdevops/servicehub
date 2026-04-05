@@ -1,5 +1,11 @@
 # Azure Entra ID — OAuth 2.0 User Sign-In
 
+> **If you see "Microsoft sign-in is not available on this instance"** on the Connect page,
+> your administrator has not yet enabled OAuth. Jump to [Enable Microsoft Sign-in (Administrators)](#for-devops--sre-one-time-setup).
+> You can connect right now using a **Connection String** — click "Use Connection String instead →" on the Connect page.
+
+---
+
 ## What This Is
 
 ServiceHub supports **passwordless Azure sign-in** via OAuth 2.0 Authorization Code + PKCE (RFC 7636). When this is configured:
@@ -10,6 +16,91 @@ ServiceHub supports **passwordless Azure sign-in** via OAuth 2.0 Authorization C
 - The user picks their Service Bus namespace from a dropdown — no hostnames to type
 
 This is the most secure authentication method available. It satisfies Zero Trust requirements and requires zero user training.
+
+---
+
+## What You Will See on the Connect Page
+
+The Azure Entra ID tab shows different content depending on how ServiceHub is configured.
+**There are three distinct states:**
+
+### State 1 — Microsoft sign-in not enabled (amber warning)
+
+**You see this when:** The ServiceHub administrator has not yet configured an Azure App Registration.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  🔒 Microsoft sign-in is not available on this instance     │
+│                                                             │
+│  The administrator of this ServiceHub instance has not      │
+│  enabled Microsoft sign-in yet. You can connect right now   │
+│  using a Connection String instead, or ask your             │
+│  administrator to enable passwordless sign-in.              │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │         Use Connection String instead →             │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  ▶ Administrator: enable Microsoft sign-in  (collapsed)     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**What to do:**
+- Click **"Use Connection String instead →"** to connect immediately with a connection string
+- Or ask your ServiceHub administrator to enable OAuth (see [Administrator Setup](#for-devops--sre-one-time-setup))
+
+---
+
+### State 2 — Microsoft sign-in enabled, not yet signed in
+
+**You see this when:** OAuth is configured and you haven't signed in yet.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ℹ️  What is Azure Entra ID?                                 │
+│  Microsoft's enterprise identity platform. When you sign in │
+│  with your company account, ServiceHub receives a           │
+│  short-lived token scoped only to namespaces you already    │
+│  have access to.                                            │
+│                                                             │
+│  ✅ No passwords typed here                                  │
+│  ✅ No connection strings needed                             │
+│  ✅ Short-lived tokens only (8 hours)                        │
+│  ✅ Conforms to zero-trust                                   │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  ▪▪▪▪  Sign in with Microsoft                      │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**⬆ This is the "Sign in with Microsoft" button.** Click it to be redirected to Microsoft's login page.
+
+---
+
+### State 3 — Signed in — pick a namespace
+
+**You see this when:** You have successfully signed in with your Microsoft account.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ✅ Signed in as alice@contoso.com          [Sign out]       │
+│                                                             │
+│  Select a namespace:                                        │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  mybus (East US) — Standard                     ▼  │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  Display name:  [                              ]            │
+│  Environment:   [Dev ▼]                                     │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                    Connect                          │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**What to do:** Select the namespace you want, add a display name, choose an environment, and click **Connect**.
 
 ---
 
@@ -132,11 +223,17 @@ For each namespace a user needs access to:
 
 ## For End Users: What to Expect
 
+> ⚠️ **First check:** Does your Connect page show an amber warning "Microsoft sign-in is not available on this instance"?
+> If yes, OAuth has not been enabled by your administrator — see [State 1](#state-1--microsoft-sign-in-not-enabled-amber-warning) above.
+> You can still connect using a Connection String.
+
+If Microsoft sign-in **is** enabled on your instance, follow these steps:
+
 1. Go to the ServiceHub **Connect** page → **Azure Entra ID** tab (default)
-2. Click **Sign in with Microsoft**
+2. Click **Sign in with Microsoft** (see [State 2](#state-2--microsoft-sign-in-enabled-not-yet-signed-in) for what this looks like)
 3. Microsoft's login page opens — enter your work/school email and password normally
 4. You may be asked to consent to ServiceHub accessing your Service Bus namespaces on your behalf (one-time)
-5. You are redirected back to ServiceHub, signed in
+5. You are redirected back to ServiceHub, signed in (see [State 3](#state-3--signed-in--pick-a-namespace))
 6. A dropdown shows all Service Bus namespaces you have access to across all your Azure subscriptions
 7. Select a namespace, give it a display name, click **Connect**
 
@@ -177,7 +274,12 @@ OAuth 2.0 Authorization Code + PKCE is the industry standard for user-delegated 
 
 ## Troubleshooting
 
-### "Azure OAuth sign-in is not configured on this ServiceHub instance"
+### "Microsoft sign-in is not available on this instance" (amber warning, no sign-in button)
+This is the most common source of confusion. It means the administrator has not configured OAuth.
+**For end users:** Click "Use Connection String instead →" to connect immediately. Optionally contact your admin.
+**For administrators:** Set the five `AzureOAuth__*` environment variables and restart the API ([setup guide](#step-4--configure-servicehub)).
+
+### "Azure OAuth sign-in is not configured on this ServiceHub instance" (API error)
 → The `AzureOAuth__Enabled=true` environment variable is not set or the ClientId/ClientSecret are empty.
 
 ### "AADSTS50011: The redirect URI specified in the request does not match"

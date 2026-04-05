@@ -737,32 +737,64 @@ export function ConnectPage() {
 
                 ) : (
                   /* ════ NOTHING CONFIGURED ════ */
-                  <div className="rounded-lg bg-amber-50 border border-amber-200 p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Lock className="w-4 h-4 text-amber-700 flex-shrink-0" />
-                      <span className="text-xs font-semibold text-amber-800">Azure Entra ID not configured</span>
+                  <div className="space-y-3">
+                    {/* End-user explanation */}
+                    <div className="rounded-lg bg-amber-50 border border-amber-200 p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Lock className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                        <span className="text-xs font-semibold text-amber-800">
+                          Microsoft sign-in is not available on this instance
+                        </span>
+                      </div>
+                      <p className="text-xs text-amber-700 mb-3">
+                        The administrator of this ServiceHub instance has not enabled Microsoft sign-in yet.
+                        You can connect right now using a <strong>Connection String</strong> instead,
+                        or ask your administrator to enable passwordless sign-in.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('connectionstring')}
+                        className="w-full px-3 py-2 rounded-lg text-xs font-semibold border border-amber-400 bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors"
+                      >
+                        Use Connection String instead →
+                      </button>
                     </div>
-                    <p className="text-xs text-amber-700 mb-3">
-                      This ServiceHub instance has not been configured with an Azure App Registration.
-                      You can still connect using a Connection String, or self-host ServiceHub with your own App Registration to enable passwordless sign-in.
-                    </p>
-                    <div className="space-y-1">
-                      <a href="https://github.com/debdevops/servicehub/blob/main/azure-entra-id/oauth/README.md" target="_blank" rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-amber-700 underline hover:text-amber-900 block">
-                        OAuth 2.0 setup guide (DevOps/SRE) <ExternalLink className="w-3 h-3" />
-                      </a>
-                      <a href="https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app" target="_blank" rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-amber-700 underline hover:text-amber-900 block">
-                        Register an app in Azure Portal <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('connectionstring')}
-                      className="mt-3 w-full px-3 py-2 rounded-lg text-xs font-medium border border-amber-300 text-amber-800 hover:bg-amber-100 transition-colors"
-                    >
-                      Use Connection String instead →
-                    </button>
+
+                    {/* Administrator setup note — collapsed/secondary */}
+                    <details className="rounded-lg border border-gray-200 bg-gray-50">
+                      <summary className="px-3 py-2 text-xs font-semibold text-gray-600 cursor-pointer select-none list-none flex items-center gap-1.5">
+                        <span className="text-gray-400">⚙</span> Administrator: enable Microsoft sign-in
+                      </summary>
+                      <div className="px-3 pb-3 pt-1 space-y-2">
+                        <p className="text-xs text-gray-600">
+                          Set these environment variables on the ServiceHub API to enable the
+                          "Sign in with Microsoft" button for all users:
+                        </p>
+                        <code className="block text-[10px] bg-white rounded border border-gray-200 p-2 text-gray-800 font-mono whitespace-pre">
+{`AzureOAuth__Enabled=true
+AzureOAuth__ClientId=<App Registration Client ID>
+AzureOAuth__ClientSecret=<Client Secret>
+AzureOAuth__RedirectUri=https://your-servicehub-url/api/v1/auth/azure/callback
+AzureOAuth__FrontendBaseUrl=https://your-servicehub-url`}
+                        </code>
+                        <div className="space-y-1 pt-1">
+                          <a
+                            href="https://github.com/debdevops/servicehub/blob/main/azure-entra-id/oauth/README.md"
+                            target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-blue-600 underline hover:text-blue-800 block"
+                          >
+                            Full OAuth 2.0 setup guide <ExternalLink className="w-3 h-3" />
+                          </a>
+                          <a
+                            href="https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app"
+                            target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-blue-600 underline hover:text-blue-800 block"
+                          >
+                            Register an app in Azure Portal <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                      </div>
+                    </details>
                   </div>
                 )}
               </>
