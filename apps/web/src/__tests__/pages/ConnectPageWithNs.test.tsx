@@ -41,6 +41,17 @@ vi.mock('@/hooks/useNamespaces', () => ({
     mutateAsync: mockDeleteNs,
     isPending: false,
   }),
+  useEntraIdStatus: () => ({
+    data: { isAvailable: false, isConfigured: false, isDefaultCredentialMode: false, clientId: null },
+    isLoading: false,
+  }),
+}));
+
+vi.mock('@/hooks/useAzureAuth', () => ({
+  useAzureAuthStatus: () => ({ data: { isConfigured: false, isSignedIn: false }, isLoading: false }),
+  useAzureNamespaces: () => ({ data: [], isLoading: false }),
+  useAzureSignIn: () => ({ mutate: vi.fn(), isPending: false }),
+  useAzureSignOut: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock('react-hot-toast', () => ({
