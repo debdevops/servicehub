@@ -15,6 +15,7 @@ import {
   Zap,
   Activity,
   HelpCircle,
+  Shield,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useState } from 'react';
@@ -608,8 +609,21 @@ export function Sidebar() {
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border border-gray-200 hover:border-primary-300 shadow-sm"
           >
             <HelpCircle className="w-4 h-4 text-primary-500" />
-            <span className="flex-1 text-left">Help & Guide</span>
+            <span className="flex-1 text-left">Help &amp; Guide</span>
             <span className="text-xs text-primary-600 font-medium">?</span>
+          </NavLink>
+          <NavLink
+            to="/security"
+            className={({ isActive }) =>
+              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                isActive
+                  ? 'bg-green-50 text-green-700 border-green-300'
+                  : 'bg-white hover:bg-green-50 text-gray-700 hover:text-green-700 border-gray-200 hover:border-green-300'
+              }`
+            }
+          >
+            <Shield className="w-4 h-4 text-green-500" />
+            <span className="flex-1 text-left">Security &amp; Privacy</span>
           </NavLink>
         </nav>
         )}
