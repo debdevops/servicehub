@@ -7,3 +7,4 @@ export { RulesPage } from './RulesPage';
 export { HealthPage } from './HealthPage';
 export { HelpPage } from './HelpPage';
 export { ScheduledMessagesPage } from './ScheduledMessagesPage';
+export { SecurityPage } from './SecurityPage';

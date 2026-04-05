@@ -38,7 +38,11 @@ public static class TelemetryExtensions
         // Add custom telemetry initializer for correlation IDs
         services.AddSingleton<ITelemetryInitializer, CorrelationTelemetryInitializer>();
 
-        // Add telemetry processor to filter health checks
+        // Strip sensitive data (connection strings, API keys, tokens) before sending to Application Insights
+        // Must be registered BEFORE HealthCheckTelemetryFilter so it runs first in the pipeline
+        services.AddApplicationInsightsTelemetryProcessor<SensitiveDataTelemetryProcessor>();
+
+        // Filter out health check and internal endpoint telemetry to reduce cost
         services.AddApplicationInsightsTelemetryProcessor<HealthCheckTelemetryFilter>();
 
         return services;
