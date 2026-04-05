@@ -102,4 +102,53 @@ public sealed class ErrorTests
 
         error1.GetHashCode().Should().Be(error2.GetHashCode());
     }
+
+    [Fact]
+    public void ExternalService_WhenCreated_ShouldHaveCorrectType()
+    {
+        var error = Error.ExternalService("EXT_ERROR", "External service failed");
+
+        error.Type.Should().Be(ErrorType.ExternalService);
+        error.Code.Should().Be("EXT_ERROR");
+    }
+
+    [Fact]
+    public void Timeout_WhenCreated_ShouldHaveCorrectType()
+    {
+        var error = Error.Timeout("TIMEOUT", "Request timed out");
+
+        error.Type.Should().Be(ErrorType.Timeout);
+    }
+
+    [Fact]
+    public void RateLimited_WhenCreated_ShouldHaveCorrectType()
+    {
+        var error = Error.RateLimited("RATE_LIMIT", "Too many requests");
+
+        error.Type.Should().Be(ErrorType.RateLimited);
+    }
+
+    [Fact]
+    public void WithDetails_WhenOriginalDetailsNull_ReturnsErrorWithNewDetails()
+    {
+        var error = Error.Validation("E", "msg"); // Details == null by default
+        var extra = new Dictionary<string, object> { ["key"] = "value" };
+
+        var result = error.WithDetails(extra);
+
+        result.Details.Should().ContainKey("key");
+    }
+
+    [Fact]
+    public void WithDetails_WhenOriginalDetailsNotNull_MergesDetails()
+    {
+        var existing = new Dictionary<string, object> { ["existing"] = 1 };
+        var error = new Error("E", "msg", ErrorType.Validation, existing);
+        var extra = new Dictionary<string, object> { ["new"] = 2 };
+
+        var result = error.WithDetails(extra);
+
+        result.Details.Should().ContainKey("existing");
+        result.Details.Should().ContainKey("new");
+    }
 }

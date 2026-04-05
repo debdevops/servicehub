@@ -156,4 +156,37 @@ public sealed class ConnectionStringProtectorTests
         result.Value.Should().StartWith("PROTECTED:");
         result.Value.Should().NotStartWith("ENC:V2:");
     }
+
+    [Fact]
+    public void Unprotect_WithLegacyProtectedFormat_ShouldReturnOriginalString()
+    {
+        // Create a legacy-format protected string by using encryption-disabled config
+        var disabledConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Security:EncryptionKey"] = "test-encryption-key-for-unit-tests-32bytes-minimum-length",
+                ["Security:EnableConnectionStringEncryption"] = "false"
+            })
+            .Build();
+        var legacyProtector = new ConnectionStringProtector(disabledConfig, _loggerMock.Object);
+        var legacyProtected = legacyProtector.Protect(ValidConnectionString).Value;
+
+        // Unprotect using a normal (encryption-enabled) protector
+        var protector = new ConnectionStringProtector(_configuration, _loggerMock.Object);
+        var result = protector.Unprotect(legacyProtected);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(ValidConnectionString);
+    }
+
+    [Fact]
+    public void Mask_WithLegacyV2PrefixString_ShouldReturnV2LegacyIndicator()
+    {
+        var protector = new ConnectionStringProtector(_configuration, _loggerMock.Object);
+
+        // A string starting with the LegacyV2 prefix
+        var masked = protector.Mask("ENC:V2:someencrypteddata");
+
+        masked.Should().Be("[ENCRYPTED:V2-LEGACY]");
+    }
 }

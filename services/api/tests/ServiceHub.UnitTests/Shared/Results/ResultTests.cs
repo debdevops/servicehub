@@ -98,4 +98,38 @@ public sealed class ResultTests
         result.IsFailure.Should().BeTrue();
         result.Error.Should().Be(error);
     }
+
+    [Fact]
+    public void Switch_WhenSuccess_ExecutesOnSuccess()
+    {
+        var result = Result.Success();
+        var executed = false;
+
+        result.Switch(() => { executed = true; }, _ => { });
+
+        executed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Switch_WhenFailure_ExecutesOnFailure()
+    {
+        var error = Error.Validation("ERR", "msg");
+        var result = Result.Failure(error);
+        Error? captured = null;
+
+        result.Switch(() => { }, e => { captured = e; });
+
+        captured.Should().Be(error);
+    }
+
+    [Fact]
+    public void Failure_WithMultipleErrors_StoresAllErrors()
+    {
+        var errors = new[] { Error.Validation("E1", "msg1"), Error.Validation("E2", "msg2") };
+        var result = Result.Failure(errors);
+
+        result.IsFailure.Should().BeTrue();
+        result.Errors.Should().HaveCount(2);
+        result.Error.Code.Should().Be("E1");
+    }
 }
