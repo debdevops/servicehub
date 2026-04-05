@@ -458,26 +458,58 @@ public sealed class QueuesController : ApiControllerBase
             namespaceId);
 
         var pageSize = Math.Clamp(take, 1, 1000);
-        var request = new GetMessagesRequest(
-            NamespaceId: namespaceId,
-            EntityName: queueName,
-            SubscriptionName: null,
-            FromDeadLetter: false,
-            MaxMessages: GetMessagesRequest.MaxAllowedMessages,
-            FromSequenceNumber: null);
 
-        var result = await _messageReceiver.PeekMessagesAsync(request, cancellationToken);
+        // Use the dedicated scheduled-message retrieval so that we scan beyond the active-message
+        // window.  A plain PeekMessagesAsync is capped at MaxAllowedMessages (100) and misses
+        // scheduled messages that have higher sequence numbers than the active backlog.
+        var result = await _messageReceiver.GetScheduledMessagesAsync(
+            namespaceId,
+            queueName,
+            subscriptionName: null,
+            maxMessages: 1000,
+            cancellationToken);
 
         if (result.IsFailure)
         {
             return ToActionResult<PaginatedResponse<MessageResponse>>(result.Error);
         }
 
-        var scheduledItems = result.Value
-            .Where(m => m.State == MessageState.Scheduled)
-            .ToList();
+        var scheduledItems = result.Value;
 
+        // The Azure Service Bus data-plane PeekMessages API cannot access the scheduled-message
+        // broker store; only the active-message store is reachable via peek.  Use the queue
+        // runtime properties for the accurate scheduled-message count so that the UI always
+        // shows the correct total even though individual message content cannot be retrieved.
         var totalScheduled = scheduledItems.Count;
+        if (totalScheduled == 0)
+        {
+            try
+            {
+                var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+                if (namespaceResult.IsSuccess && namespaceResult.Value.ConnectionString is not null)
+                {
+                    var unprotectResult = _connectionStringProtector.Unprotect(namespaceResult.Value.ConnectionString);
+                    if (unprotectResult.IsSuccess)
+                    {
+                        var wrapper = _clientCache.GetOrCreate(namespaceResult.Value.Id, unprotectResult.Value);
+                        var queuesResult = await wrapper.GetQueuesAsync(cancellationToken);
+                        if (queuesResult.IsSuccess)
+                        {
+                            var queueInfo = queuesResult.Value.FirstOrDefault(q =>
+                                string.Equals(q.Name, queueName, StringComparison.OrdinalIgnoreCase));
+                            if (queueInfo is not null)
+                            {
+                                totalScheduled = (int)queueInfo.ScheduledMessageCount;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to get queue runtime properties for scheduled message count");
+            }
+        }
 
         var items = scheduledItems
             .Skip(Math.Max(skip, 0))
