@@ -213,22 +213,26 @@ You're now back on the API permissions page. You should see Microsoft Graph list
 #### 2d. Add Azure Service Management API permissions
 
 1. Click **+ Add a permission** again
-2. Search box appears — type: **Azure Service Management**
-3. Click on **Azure Service Management** in the results
-4. Select **Delegated permissions** (radio button)
-5. Search for and check: ✅ **user_impersonation**
-6. Click **Add permissions**
+2. A panel slides out titled **"Request API permissions"**
+3. **IMPORTANT:** At the top of this panel, click on the **"Microsoft APIs"** tab (not "APIs my organization uses")
+4. Search box appears — type: **Azure Service Management**
+5. Click on **Azure Service Management** in the results (owned by Microsoft)
+6. Select **Delegated permissions** (radio button)
+7. Search for and check: ✅ **user_impersonation**
+8. Click **Add permissions**
 
 Back on the API permissions page, you should now see both Microsoft Graph and Azure Service Management listed.
 
 #### 2e. Add Azure Service Bus API permissions
 
 1. Click **+ Add a permission** one more time
-2. Search box appears — type: **Azure Service Bus**
-3. Click on **Azure Service Bus** in the results (if you see multiple results, pick the one owned by Microsoft)
-4. Select **Delegated permissions** (radio button)
-5. Search for and check: ✅ **user_impersonation**
-6. Click **Add permissions**
+2. The **"Request API permissions"** panel slides out again
+3. **Again, click on the "Microsoft APIs"** tab at the top
+4. Search box appears — type: **Azure Service Bus**
+5. Click on **Azure Service Bus** in the results (owned by Microsoft)
+6. Select **Delegated permissions** (radio button)
+7. Search for and check: ✅ **user_impersonation**
+8. Click **Add permissions**
 
 You should now see three APIs listed: Microsoft Graph, Azure Service Management, and Azure Service Bus.
 
@@ -378,23 +382,41 @@ OAuth 2.0 Authorization Code + PKCE is the industry standard for user-delegated 
 
 ### Step 2 — API Permissions Setup (Common Issues)
 
+#### "No results" when searching for Azure Service Management or Azure Service Bus
+
+**This is the #1 mistake!** You're searching in the wrong tab.
+
+**Fix:**
+1. Click **+ Add a permission**
+2. The **"Request API permissions"** panel appears with tabs at the top:
+   - **"Microsoft APIs"** ← Click this one
+   - "APIs my organization uses"
+   - "My APIs"
+3. Make sure you're on the **"Microsoft APIs"** tab
+4. Now search for **Azure Service Management** or **Azure Service Bus**
+5. It should appear in the results
+
+**Visual indicator:** You should see a search field with placeholder text. If you see "No results", you're on the wrong tab.
+
 #### "I can't find Azure Service Management in the API list"
 1. Click **+ Add a permission**
-2. In the search box that appears, type exactly: **Azure Service Management**
-3. Look for the result owned by **Microsoft** (not a third-party app)
-4. Click on it
-5. Select **Delegated permissions**
-6. Check ✅ **user_impersonation**
-7. Click **Add permissions**
+2. Make sure the **"Microsoft APIs"** tab is selected (not "APIs my organization uses")
+3. In the search box, type exactly: **Azure Service Management**
+4. Look for the result owned by **Microsoft** (not a third-party app)
+5. Click on it
+6. Select **Delegated permissions**
+7. Check ✅ **user_impersonation**
+8. Click **Add permissions**
 
 #### "I can't find Azure Service Bus in the API list"
 1. Click **+ Add a permission**
-2. In the search box, type: **Azure Service Bus**
-3. Look for results — you want the one that says "Azure Service Bus" as the title owned by **Microsoft**
-4. Click on it
-5. Select **Delegated permissions**
-6. Check ✅ **user_impersonation**
-7. Click **Add permissions**
+2. Confirm you're in the **"Microsoft APIs"** tab (top of the panel)
+3. In the search box, type: **Azure Service Bus**
+4. Look for the result owned by **Microsoft**
+5. Click on it
+6. Select **Delegated permissions**
+7. Check ✅ **user_impersonation**
+8. Click **Add permissions**
 
 #### "I don't see a 'Grant admin consent' button"
 The button is at the **top of the API permissions page**, not at the bottom.

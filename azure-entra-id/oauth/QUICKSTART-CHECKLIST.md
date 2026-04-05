@@ -45,6 +45,7 @@ Use this checklist to set up ServiceHub OAuth 2.0. Estimated time: **10 minutes*
 ### Add Azure Service Management Permissions
 
 - [ ] Click **+ Add a permission**
+- [ ] **IMPORTANT:** Click on the **"Microsoft APIs"** tab at the top of the panel
 - [ ] Search for: `Azure Service Management`
 - [ ] Click on it (owned by Microsoft)
 - [ ] Select **Delegated permissions** (radio button)
@@ -55,6 +56,7 @@ Use this checklist to set up ServiceHub OAuth 2.0. Estimated time: **10 minutes*
 ### Add Azure Service Bus Permissions
 
 - [ ] Click **+ Add a permission**
+- [ ] **Again, click on the "Microsoft APIs"** tab (not "APIs my organization uses")
 - [ ] Search for: `Azure Service Bus`
 - [ ] Click on it (owned by Microsoft)
 - [ ] Select **Delegated permissions** (radio button)
