@@ -6,6 +6,14 @@
 
 ---
 
+### 🚀 Quick Setup for Administrators
+
+**Want to set up OAuth in 10 minutes?** Use the [**Setup Checklist**](QUICKSTART-CHECKLIST.md) — it's a step-by-step guide with checkboxes and copy-paste values.
+
+[→ **Open Setup Checklist**](QUICKSTART-CHECKLIST.md)
+
+---
+
 ## What This Is
 
 ServiceHub supports **passwordless Azure sign-in** via OAuth 2.0 Authorization Code + PKCE (RFC 7636). When this is configured:
@@ -141,6 +149,19 @@ User ──► clicks Connect → ServiceHub uses token to connect to Service Bu
 
 ## For DevOps / SRE: One-Time Setup
 
+### Quick Reference — What You Need to Add
+
+Before diving into the steps, here's what the final API permissions table should look like in Azure Portal:
+
+| API | Permissions | Type |
+|---|---|---|
+| **Microsoft Graph** | `User.Read`, `openid`, `profile`, `email`, `offline_access` | Delegated |
+| **Azure Service Management** | `user_impersonation` | Delegated |
+| **Azure Service Bus** | `user_impersonation` | Delegated |
+| | **Status: All should show ✓ Granted** | |
+
+---
+
 ### Step 1 — Register ServiceHub in Azure Portal
 
 1. Go to [Azure Portal](https://portal.azure.com) → **Microsoft Entra ID** → **App registrations**
@@ -156,15 +177,96 @@ User ──► clicks Connect → ServiceHub uses token to connect to Service Bu
 
 ### Step 2 — Add API Permissions
 
-1. In your App Registration → **API permissions** → **+ Add a permission**
-2. **Microsoft Graph**:
-   - Delegated → `User.Read` (already added by default)
-   - Delegated → `openid`, `profile`, `email`, `offline_access`
-3. **Azure Service Management**:
-   - Delegated → `user_impersonation`
-4. **Azure Service Bus** (search "Azure Service Bus"):
-   - Delegated → `user_impersonation`
-5. Click **Grant admin consent** (if you have Global Admin)
+The goal is to add three groups of permissions so ServiceHub can:
+- Read your user profile and sign you in (Microsoft Graph)
+- List your Service Bus namespaces (Azure Service Management)
+- Connect to Service Bus namespaces (Azure Service Bus)
+
+**Detailed steps:**
+
+#### 2a. Go to API Permissions page
+
+In your App Registration (from Step 1) → left sidebar → **API permissions**
+
+You should see a page with a table showing existing permissions. There's typically `User.Read` from Microsoft Graph already listed.
+
+#### 2b. Add permissions button
+
+Click **+ Add a permission** button (top left of the permissions table).
+
+A right panel will slide out with a list of APIs.
+
+#### 2c. Add Microsoft Graph permissions
+
+1. In the right panel, find and click **Microsoft Graph**
+2. Select **Delegated permissions** (radio button — usually already selected)
+3. Search and add these permissions by checking their checkboxes:
+   - ✅ `User.Read` (likely already added)
+   - ✅ `openid`
+   - ✅ `profile`
+   - ✅ `email`
+   - ✅ `offline_access`
+4. Click **Add permissions** button at the bottom
+
+You're now back on the API permissions page. You should see Microsoft Graph listed with the 5 permissions you just added.
+
+#### 2d. Add Azure Service Management API permissions
+
+1. Click **+ Add a permission** again
+2. Search box appears — type: **Azure Service Management**
+3. Click on **Azure Service Management** in the results
+4. Select **Delegated permissions** (radio button)
+5. Search for and check: ✅ **user_impersonation**
+6. Click **Add permissions**
+
+Back on the API permissions page, you should now see both Microsoft Graph and Azure Service Management listed.
+
+#### 2e. Add Azure Service Bus API permissions
+
+1. Click **+ Add a permission** one more time
+2. Search box appears — type: **Azure Service Bus**
+3. Click on **Azure Service Bus** in the results (if you see multiple results, pick the one owned by Microsoft)
+4. Select **Delegated permissions** (radio button)
+5. Search for and check: ✅ **user_impersonation**
+6. Click **Add permissions**
+
+You should now see three APIs listed: Microsoft Graph, Azure Service Management, and Azure Service Bus.
+
+#### 2f. Grant admin consent
+
+> **You need Global Admin role or Application Administrator role in your Azure tenant to complete this step.**
+
+At the top of the **API permissions** page, find the button labeled:
+**✓ Grant admin consent for Default Directory** (or your tenant name)
+
+Click this button. Azure will ask for confirmation. Confirm it.
+
+Once complete, you should see all permissions show **Status: Granted** (green checkmark) instead of "Needs admin consent".
+
+**Summary view:**
+```
+┌─────────────────────────────────────────────────────────┐
+│ API Permissions                                         │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  ✓ Grant admin consent for Default Directory            │
+│                                                         │
+│  API / Permissions name        Type        Status       │
+│  ─────────────────────────────────────────────────      │
+│  Microsoft Graph (3)                                    │
+│    • User.Read                 Delegated   ✓ Granted   │
+│    • openid                    Delegated   ✓ Granted   │
+│    • profile                   Delegated   ✓ Granted   │
+│    + 2 more...                                          │
+│                                                         │
+│  Azure Service Management                               │
+│    • user_impersonation        Delegated   ✓ Granted   │
+│                                                         │
+│  Azure Service Bus                                      │
+│    • user_impersonation        Delegated   ✓ Granted   │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
 
 ### Step 3 — Create a Client Secret
 
@@ -273,6 +375,51 @@ OAuth 2.0 Authorization Code + PKCE is the industry standard for user-delegated 
 ---
 
 ## Troubleshooting
+
+### Step 2 — API Permissions Setup (Common Issues)
+
+#### "I can't find Azure Service Management in the API list"
+1. Click **+ Add a permission**
+2. In the search box that appears, type exactly: **Azure Service Management**
+3. Look for the result owned by **Microsoft** (not a third-party app)
+4. Click on it
+5. Select **Delegated permissions**
+6. Check ✅ **user_impersonation**
+7. Click **Add permissions**
+
+#### "I can't find Azure Service Bus in the API list"
+1. Click **+ Add a permission**
+2. In the search box, type: **Azure Service Bus**
+3. Look for results — you want the one that says "Azure Service Bus" as the title owned by **Microsoft**
+4. Click on it
+5. Select **Delegated permissions**
+6. Check ✅ **user_impersonation**
+7. Click **Add permissions**
+
+#### "I don't see a 'Grant admin consent' button"
+The button is at the **top of the API permissions page**, not at the bottom.
+
+1. Go back to **API permissions** in your App Registration
+2. Look at the **top left** corner of the page — you should see a blue button labeled:
+   - **✓ Grant admin consent for Default Directory** (or your tenant name)
+3. Click it
+4. Azure will ask for confirmation — confirm it
+5. Wait 30 seconds, then refresh the page
+6. Check that all permissions now show **Status: ✓ Granted**
+
+> **Note:** You must have **Global Admin** or **Application Administrator** role in your Azure AD tenant to grant consent.
+
+#### "I granted consent but the permissions still show 'Needs consent'"
+1. Refresh the page (Ctrl+R / Cmd+R)
+2. If permissions still show orange/yellow status, wait 1-2 minutes and refresh again
+3. If they still don't show ✓ Granted after 2 minutes, try clicking **Grant admin consent** again
+
+#### "It says permission was added, but I don't see it in the table"
+The permissions table sometimes needs a refresh to show the newly added APIs.
+1. Press **Refresh** button or Ctrl+R (Cmd+R on Mac)
+2. Scroll to the bottom of the table — new APIs may appear there
+
+---
 
 ### "Microsoft sign-in is not available on this instance" (amber warning, no sign-in button)
 This is the most common source of confusion. It means the administrator has not configured OAuth.
