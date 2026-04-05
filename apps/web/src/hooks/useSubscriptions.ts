@@ -26,6 +26,7 @@ export function useSubscriptions(namespaceId: string, topicName: string, autoRef
     refetchIntervalInBackground: false, // Don't refetch when tab is not visible
     retry: (failureCount, error: ApiError) => {
       // Don't retry on 404 or Service Bus connectivity errors
+      if (error?.response?.status === 400) return false;
       if (error?.response?.status === 404) return false;
       if ((error?.response?.status ?? 0) >= 500) return false;
       return failureCount < 2;

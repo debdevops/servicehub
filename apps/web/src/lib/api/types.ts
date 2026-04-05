@@ -57,6 +57,8 @@ export interface CreateNamespaceRequest {
   displayName?: string;
   description?: string;
   environment?: EnvironmentType;
+  subscriptionId?: string;
+  resourceGroup?: string;
 }
 
 export interface EntraIdStatus {

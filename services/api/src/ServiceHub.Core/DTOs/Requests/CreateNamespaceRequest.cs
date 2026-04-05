@@ -12,6 +12,8 @@ namespace ServiceHub.Core.DTOs.Requests;
 /// <param name="DisplayName">Optional display name for the namespace.</param>
 /// <param name="Description">Optional description for the namespace.</param>
 /// <param name="Environment">The deployment environment (Dev, Uat, Prod). Defaults to Dev.</param>
+/// <param name="SubscriptionId">Azure subscription ID. Required for UserDelegated auth to enable ARM key retrieval.</param>
+/// <param name="ResourceGroup">Azure resource group. Required for UserDelegated auth to enable ARM key retrieval.</param>
 public sealed record CreateNamespaceRequest(
     [Required(ErrorMessage = "Namespace name is required")]
     [StringLength(256, MinimumLength = 6, ErrorMessage = "Namespace name must be between 6 and 256 characters")]
@@ -29,4 +31,10 @@ public sealed record CreateNamespaceRequest(
     [StringLength(512, ErrorMessage = "Description cannot exceed 512 characters")]
     string? Description = null,
     
-    EnvironmentType Environment = EnvironmentType.Dev);
+    EnvironmentType Environment = EnvironmentType.Dev,
+
+    [StringLength(64)]
+    string? SubscriptionId = null,
+
+    [StringLength(256)]
+    string? ResourceGroup = null);

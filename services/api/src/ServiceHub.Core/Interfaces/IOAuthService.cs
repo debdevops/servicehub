@@ -68,4 +68,22 @@ public interface IOAuthService
     /// <param name="sessionId">The session ID to retrieve credentials for.</param>
     /// <returns>A TokenCredential for Azure Service Bus SDK operations, or null.</returns>
     TokenCredential? GetTokenCredential(string sessionId);
+
+    /// <summary>
+    /// Uses the user's ARM token to retrieve a Service Bus namespace connection string via the ARM
+    /// listKeys API. Prefers non-root authorization rules; falls back to RootManageSharedAccessKey.
+    /// Does not require the <c>https://servicebus.azure.com</c> enterprise app to be provisioned.
+    /// </summary>
+    /// <param name="sessionId">The session ID from the HttpOnly session cookie.</param>
+    /// <param name="subscriptionId">The Azure subscription ID that owns the namespace.</param>
+    /// <param name="resourceGroup">The resource group containing the namespace.</param>
+    /// <param name="namespaceName">The short namespace name (e.g. my-servicebus, not the FQDN).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The primary connection string on success, or an error.</returns>
+    Task<Result<string>> GetConnectionStringAsync(
+        string sessionId,
+        string subscriptionId,
+        string resourceGroup,
+        string namespaceName,
+        CancellationToken cancellationToken = default);
 }

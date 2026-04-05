@@ -76,18 +76,23 @@ public sealed class QueuesController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
-        if (ns.ConnectionString is null)
+        IServiceBusClientWrapper wrapper;
+        if (ns.ConnectionString is not null)
         {
-            return BadRequest("Namespace does not have a connection string configured.");
+            var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
+            if (unprotectResult.IsFailure)
+                return ToActionResult<IReadOnlyList<QueueRuntimePropertiesDto>>(unprotectResult.Error);
+            wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+        }
+        else
+        {
+            var cached = _clientCache.TryGet(ns.Id);
+            if (cached is null)
+                return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                    "Service Bus client not initialized. Please reconnect the namespace.");
+            wrapper = cached;
         }
 
-        var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
-        if (unprotectResult.IsFailure)
-        {
-            return ToActionResult<IReadOnlyList<QueueRuntimePropertiesDto>>(unprotectResult.Error);
-        }
-
-        var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
         var queuesResult = await wrapper.GetQueuesAsync(cancellationToken);
         if (queuesResult.IsFailure)
         {
@@ -134,18 +139,23 @@ public sealed class QueuesController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
-        if (ns.ConnectionString is null)
+        IServiceBusClientWrapper wrapper;
+        if (ns.ConnectionString is not null)
         {
-            return BadRequest("Namespace does not have a connection string configured.");
+            var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
+            if (unprotectResult.IsFailure)
+                return ToActionResult<QueueRuntimePropertiesDto>(unprotectResult.Error);
+            wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+        }
+        else
+        {
+            var cached = _clientCache.TryGet(ns.Id);
+            if (cached is null)
+                return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                    "Service Bus client not initialized. Please reconnect the namespace.");
+            wrapper = cached;
         }
 
-        var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
-        if (unprotectResult.IsFailure)
-        {
-            return ToActionResult<QueueRuntimePropertiesDto>(unprotectResult.Error);
-        }
-
-        var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
         var queueResult = await wrapper.GetQueueAsync(queueName, cancellationToken);
         if (queueResult.IsFailure)
         {
@@ -556,18 +566,23 @@ public sealed class QueuesController : ApiControllerBase
                 detail: "Cancelling scheduled messages in production namespaces is not permitted via ServiceHub.");
         }
 
-        if (ns.ConnectionString is null)
+        IServiceBusClientWrapper wrapper;
+        if (ns.ConnectionString is not null)
         {
-            return BadRequest("Namespace does not have a connection string configured.");
+            var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
+            if (unprotectResult.IsFailure)
+                return ToActionResult(Shared.Results.Result.Failure(unprotectResult.Error));
+            wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+        }
+        else
+        {
+            var cached = _clientCache.TryGet(ns.Id);
+            if (cached is null)
+                return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                    "Service Bus client not initialized. Please reconnect the namespace.");
+            wrapper = cached;
         }
 
-        var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
-        if (unprotectResult.IsFailure)
-        {
-            return ToActionResult(Shared.Results.Result.Failure(unprotectResult.Error));
-        }
-
-        var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
         var result = await wrapper.CancelScheduledMessageAsync(queueName, sequenceNumber, cancellationToken);
 
         if (result.IsFailure)

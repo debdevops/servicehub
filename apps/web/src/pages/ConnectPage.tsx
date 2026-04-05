@@ -184,11 +184,17 @@ export function ConnectPage() {
     e.preventDefault();
     if (!selectedFqns || !oauthDisplayName.trim()) return;
     try {
+      // Find the full namespace info so we can pass subscriptionId + resourceGroup.
+      // These are used by the backend to retrieve the SAS connection string via ARM listKeys,
+      // avoiding the need for the https://servicebus.azure.com enterprise app in the tenant.
+      const nsInfo = azureNamespaces?.find(n => n.fullyQualifiedHostname === selectedFqns);
       await createNamespace.mutateAsync({
         name: selectedFqns,
         authType: 'UserDelegated',
         displayName: oauthDisplayName.trim(),
         environment: oauthEnvironment,
+        subscriptionId: nsInfo?.subscriptionId,
+        resourceGroup: nsInfo?.resourceGroup,
       });
       setOauthDisplayName('');
       setSelectedFqns('');

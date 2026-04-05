@@ -32,7 +32,14 @@ public sealed class ApiKeyAuthenticationMiddleware
         "/api/v1/health/version",
         "/api/v1/health/status",
         "/api/health/version",
-        "/api/health/status"
+        "/api/health/status",
+        // OAuth endpoints: callback is called by Microsoft's redirect (no SPA token/API key possible);
+        // status and sign-in are called from the UI before/during authentication.
+        "/api/v1/auth/azure/callback",
+        "/api/v1/auth/azure/status",
+        "/api/v1/auth/azure/sign-in",
+        "/api/v1/auth/azure/namespaces",
+        "/api/v1/auth/azure/session",
     };
 
     /// <summary>

@@ -157,12 +157,49 @@ public sealed class NamespacesController : ApiControllerBase
                 return Unauthorized(new { detail = "Your Azure sign-in session has expired. Please sign in again." });
             }
 
-            createResult = Namespace.CreateWithUserDelegated(
-                request.Name,
-                sessionId,
-                request.DisplayName,
-                request.Description,
-                request.Environment);
+            // When subscriptionId + resourceGroup are provided, retrieve the SAS connection string
+            // from ARM (listKeys). This avoids requiring the https://servicebus.azure.com enterprise
+            // app to be provisioned in the tenant, and works for all Azure AD tenants.
+            if (!string.IsNullOrEmpty(request.SubscriptionId) && !string.IsNullOrEmpty(request.ResourceGroup))
+            {
+                // Extract short namespace name from FQDN (e.g. "my-ns.servicebus.windows.net" → "my-ns")
+                var shortName = request.Name.Contains('.')
+                    ? request.Name.Split('.')[0]
+                    : request.Name;
+
+                var connStringResult = await _oauthService.GetConnectionStringAsync(
+                    sessionId,
+                    request.SubscriptionId,
+                    request.ResourceGroup,
+                    shortName,
+                    cancellationToken);
+
+                if (connStringResult.IsFailure)
+                    return ToActionResult<NamespaceResponse>(connStringResult.Error);
+
+                // Encrypt directly — skip the RootManageSharedAccessKey guard because this
+                // connection string was retrieved on behalf of an authenticated Owner via ARM.
+                var protectedResult = _connectionStringProtector.Protect(connStringResult.Value);
+                if (protectedResult.IsFailure)
+                    return ToActionResult<NamespaceResponse>(protectedResult.Error);
+
+                createResult = Namespace.Create(
+                    request.Name,
+                    protectedResult.Value,
+                    request.DisplayName,
+                    request.Description,
+                    request.Environment);
+            }
+            else
+            {
+                // Fallback: store as UserDelegated (uses token-credential data-plane path).
+                createResult = Namespace.CreateWithUserDelegated(
+                    request.Name,
+                    sessionId,
+                    request.DisplayName,
+                    request.Description,
+                    request.Environment);
+            }
         }
         else
         {
@@ -183,7 +220,10 @@ public sealed class NamespacesController : ApiControllerBase
 
         // For Entra ID auth types, validate connectivity before persisting.
         // This ensures the role assignment is in place before the namespace is saved.
-        if (request.AuthType != ConnectionAuthType.ConnectionString)
+        // Skip when ns.AuthType is ConnectionString — this happens when UserDelegated auth
+        // retrieved the connection string via ARM listKeys (already validated by ARM).
+        if (request.AuthType != ConnectionAuthType.ConnectionString &&
+            ns.AuthType != ConnectionAuthType.ConnectionString)
         {
             var createClientResult = await _clientFactory.CreateClientAsync(ns, cancellationToken);
             if (createClientResult.IsFailure)

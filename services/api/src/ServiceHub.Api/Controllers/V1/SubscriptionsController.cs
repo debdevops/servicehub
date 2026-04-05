@@ -71,18 +71,23 @@ public sealed class SubscriptionsController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
-        if (ns.ConnectionString is null)
+        IServiceBusClientWrapper wrapper;
+        if (ns.ConnectionString is not null)
         {
-            return BadRequest("Namespace does not have a connection string configured.");
+            var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
+            if (unprotectResult.IsFailure)
+                return ToActionResult<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(unprotectResult.Error);
+            wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+        }
+        else
+        {
+            var cached = _clientCache.TryGet(ns.Id);
+            if (cached is null)
+                return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                    "Service Bus client not initialized. Please reconnect the namespace.");
+            wrapper = cached;
         }
 
-        var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
-        if (unprotectResult.IsFailure)
-        {
-            return ToActionResult<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(unprotectResult.Error);
-        }
-
-        var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
         var subscriptionsResult = await wrapper.GetSubscriptionsAsync(topicName, cancellationToken);
         if (subscriptionsResult.IsFailure)
         {
@@ -133,18 +138,23 @@ public sealed class SubscriptionsController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
-        if (ns.ConnectionString is null)
+        IServiceBusClientWrapper wrapper;
+        if (ns.ConnectionString is not null)
         {
-            return BadRequest("Namespace does not have a connection string configured.");
+            var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
+            if (unprotectResult.IsFailure)
+                return ToActionResult<SubscriptionRuntimePropertiesDto>(unprotectResult.Error);
+            wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+        }
+        else
+        {
+            var cached = _clientCache.TryGet(ns.Id);
+            if (cached is null)
+                return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                    "Service Bus client not initialized. Please reconnect the namespace.");
+            wrapper = cached;
         }
 
-        var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
-        if (unprotectResult.IsFailure)
-        {
-            return ToActionResult<SubscriptionRuntimePropertiesDto>(unprotectResult.Error);
-        }
-
-        var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
         var subscriptionResult = await wrapper.GetSubscriptionAsync(topicName, subscriptionName, cancellationToken);
         if (subscriptionResult.IsFailure)
         {

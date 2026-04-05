@@ -34,6 +34,15 @@ public interface IServiceBusClientCache : IAsyncDisposable
     Task RemoveAsync(Guid namespaceId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns the cached client wrapper for the specified namespace, or null if not cached.
+    /// Use this to access an existing credential-based client (UserDelegated, Entra ID) without
+    /// needing to re-supply the credential.
+    /// </summary>
+    /// <param name="namespaceId">The namespace identifier.</param>
+    /// <returns>The cached wrapper, or null if no client is cached for this namespace.</returns>
+    IServiceBusClientWrapper? TryGet(Guid namespaceId);
+
+    /// <summary>
     /// Checks if a client exists for the specified namespace.
     /// </summary>
     /// <param name="namespaceId">The namespace identifier.</param>

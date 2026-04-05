@@ -15,6 +15,7 @@ const queuesQueryOptions = (namespaceId: string, autoRefresh: boolean) => ({
   refetchInterval: autoRefresh ? 7000 : (false as const),
   refetchIntervalInBackground: false,
   retry: (failureCount: number, error: ApiError) => {
+    if (error?.response?.status === 400) return false;
     if (error?.response?.status === 404) return false;
     if ((error?.response?.status ?? 0) >= 500) return false;
     return failureCount < 2;

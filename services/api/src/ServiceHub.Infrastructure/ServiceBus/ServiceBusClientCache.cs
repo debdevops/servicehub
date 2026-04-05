@@ -95,6 +95,13 @@ public sealed class ServiceBusClientCache : IServiceBusClientCache
     }
 
     /// <inheritdoc/>
+    public IServiceBusClientWrapper? TryGet(Guid namespaceId)
+    {
+        _clients.TryGetValue(namespaceId, out var wrapper);
+        return wrapper;
+    }
+
+    /// <inheritdoc/>
     public async Task RemoveAsync(Guid namespaceId, CancellationToken cancellationToken = default)
     {
         if (_clients.TryRemove(namespaceId, out var wrapper))

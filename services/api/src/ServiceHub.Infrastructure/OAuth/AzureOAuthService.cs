@@ -225,6 +225,119 @@ internal sealed class AzureOAuthService : IOAuthService
         return new OAuthSessionCredential(session, RefreshServiceBusTokenAsync);
     }
 
+    // ── ARM listKeys: connection string retrieval ─────────────────────────────
+
+    /// <inheritdoc/>
+    public async Task<Result<string>> GetConnectionStringAsync(
+        string sessionId,
+        string subscriptionId,
+        string resourceGroup,
+        string namespaceName,
+        CancellationToken cancellationToken = default)
+    {
+        var session = _store.GetSession(sessionId);
+        if (session is null)
+        {
+            return Result<string>.Failure(Error.Validation("OAuth.SessionExpired",
+                "Your Azure sign-in session has expired. Please sign in again."));
+        }
+
+        var armToken = await EnsureArmTokenAsync(session, cancellationToken);
+        if (armToken is null)
+        {
+            return Result<string>.Failure(Error.ExternalService("OAuth.ArmTokenFailed",
+                "Failed to obtain an ARM access token. Please sign in again."));
+        }
+
+        try
+        {
+            // List authorization rules — prefer a non-root rule to minimise privilege.
+            var rulesUrl = $"https://management.azure.com/subscriptions/{subscriptionId}" +
+                           $"/resourceGroups/{resourceGroup}" +
+                           $"/providers/Microsoft.ServiceBus/namespaces/{namespaceName}" +
+                           $"/authorizationRules?api-version={SbrmApiVersion}";
+
+            using var rulesReq = new HttpRequestMessage(HttpMethod.Get, rulesUrl);
+            rulesReq.Headers.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", armToken);
+
+            var rulesResp = await _httpClient.SendAsync(rulesReq, cancellationToken).ConfigureAwait(false);
+            if (!rulesResp.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("ARM listAuthorizationRules returned {Status} for namespace {Name}",
+                    rulesResp.StatusCode, namespaceName);
+                return Result<string>.Failure(Error.ExternalService("OAuth.ArmError",
+                    "Failed to list authorization rules. Verify you have at least Contributor access on the namespace."));
+            }
+
+            var rulesJson = await rulesResp.Content
+                .ReadFromJsonAsync<JsonObject>(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            // Prefer any non-root rule; fall back to RootManageSharedAccessKey.
+            string? selectedRule = null;
+            string? rootRule = null;
+            var rules = rulesJson?["value"]?.AsArray();
+            if (rules is not null)
+            {
+                foreach (var rule in rules)
+                {
+                    var ruleName = rule?["name"]?.GetValue<string>();
+                    if (string.IsNullOrEmpty(ruleName)) continue;
+                    if (ruleName.Equals("RootManageSharedAccessKey", StringComparison.OrdinalIgnoreCase))
+                        rootRule = ruleName;
+                    else
+                        selectedRule ??= ruleName;
+                }
+            }
+
+            selectedRule ??= rootRule ?? "RootManageSharedAccessKey";
+
+            // Retrieve the connection string for the selected rule.
+            var keysUrl = $"https://management.azure.com/subscriptions/{subscriptionId}" +
+                          $"/resourceGroups/{resourceGroup}" +
+                          $"/providers/Microsoft.ServiceBus/namespaces/{namespaceName}" +
+                          $"/authorizationRules/{selectedRule}/listKeys?api-version={SbrmApiVersion}";
+
+            using var keysReq = new HttpRequestMessage(HttpMethod.Post, keysUrl);
+            keysReq.Headers.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", armToken);
+            keysReq.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+
+            var keysResp = await _httpClient.SendAsync(keysReq, cancellationToken).ConfigureAwait(false);
+            if (!keysResp.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("ARM listKeys returned {Status} for rule {Rule} on namespace {Name}",
+                    keysResp.StatusCode, selectedRule, namespaceName);
+                return Result<string>.Failure(Error.ExternalService("OAuth.ArmError",
+                    "Failed to retrieve the connection string. Verify you have at least Contributor access on the namespace."));
+            }
+
+            var keysJson = await keysResp.Content
+                .ReadFromJsonAsync<JsonObject>(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            var primaryConnStr = keysJson?["primaryConnectionString"]?.GetValue<string>();
+            if (string.IsNullOrEmpty(primaryConnStr))
+            {
+                return Result<string>.Failure(Error.ExternalService("OAuth.ArmError",
+                    "ARM returned an empty connection string."));
+            }
+
+            _logger.LogInformation(
+                "Retrieved connection string for namespace {Name} via ARM rule {Rule}",
+                namespaceName, selectedRule);
+
+            return Result<string>.Success(primaryConnStr);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve connection string for namespace {Name} via ARM", namespaceName);
+            return Result<string>.Failure(Error.ExternalService("OAuth.ArmError",
+                "An unexpected error occurred while retrieving the connection string."));
+        }
+    }
+
     // ── Internal helpers ──────────────────────────────────────────────────────
 
     private async Task<string?> EnsureArmTokenAsync(OAuthSession session, CancellationToken ct)
