@@ -19,7 +19,9 @@ namespace ServiceHub.Infrastructure.ServiceBus;
 public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 {
     private readonly ServiceBusClient _client;
-    private readonly string _connectionString;
+    private readonly string? _connectionString;
+    private readonly string? _fullyQualifiedNamespace;
+    private readonly Azure.Core.TokenCredential? _credential;
     private readonly ILogger<ServiceBusClientWrapper> _logger;
     private volatile bool _disposed;
 
@@ -49,6 +51,30 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         NamespaceId = namespaceId;
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Initializes a new instance for token-based (Entra ID) authentication.
+    /// </summary>
+    /// <param name="namespaceId">The namespace identifier.</param>
+    /// <param name="client">The underlying Service Bus client.</param>
+    /// <param name="fullyQualifiedNamespace">The FQDN for creating the admin client.</param>
+    /// <param name="credential">The token credential for admin client authentication.</param>
+    /// <param name="logger">The logger instance.</param>
+    public ServiceBusClientWrapper(
+        Guid namespaceId,
+        ServiceBusClient client,
+        string fullyQualifiedNamespace,
+        Azure.Core.TokenCredential credential,
+        ILogger<ServiceBusClientWrapper> logger)
+    {
+        NamespaceId = namespaceId;
+        _client = client ?? throw new ArgumentNullException(nameof(client));
+        _connectionString = null;
+        _fullyQualifiedNamespace = fullyQualifiedNamespace
+            ?? throw new ArgumentNullException(nameof(fullyQualifiedNamespace));
+        _credential = credential ?? throw new ArgumentNullException(nameof(credential));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -290,6 +316,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
     /// <summary>
     /// Gets or creates the cached ServiceBusAdministrationClient.
     /// CRITICAL FIX: Ensures only ONE admin client per namespace to prevent socket exhaustion.
+    /// Supports both connection string and token-based (Entra ID) authentication.
     /// </summary>
     private async ValueTask<ServiceBusAdministrationClient> GetOrCreateAdminClientAsync()
     {
@@ -306,7 +333,9 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             // Double-check after acquiring lock
             if (_adminClient == null)
             {
-                _adminClient = new ServiceBusAdministrationClient(_connectionString);
+                _adminClient = _connectionString is not null
+                    ? new ServiceBusAdministrationClient(_connectionString)
+                    : new ServiceBusAdministrationClient(_fullyQualifiedNamespace!, _credential!);
 
                 _logger.LogDebug(
                     "Created ServiceBusAdministrationClient for namespace {NamespaceId}",

@@ -31,6 +31,8 @@ public sealed class SensitiveDataTelemetryProcessor : ITelemetryProcessor
         "password",
         "apikey",
         "api_key",
+        "clientsecret",
+        "client_secret",
     };
 
     private static readonly string[] SensitiveDependencyPatterns =

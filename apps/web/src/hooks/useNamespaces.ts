@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { namespacesApi } from '@/lib/api/namespaces';
-import { CreateNamespaceRequest, ApiError } from '@/lib/api/types';
+import { CreateNamespaceRequest, EntraIdStatus, ApiError } from '@/lib/api/types';
 import toast from 'react-hot-toast';
+import { apiClient } from '@/lib/api/client';
 
 export function useNamespaces() {
   return useQuery({
@@ -77,5 +78,17 @@ export function useTestConnection() {
         duration: 5000,
       });
     },
+  });
+}
+
+export function useEntraIdStatus() {
+  return useQuery({
+    queryKey: ['entra-id-status'],
+    queryFn: async (): Promise<EntraIdStatus> => {
+      const response = await apiClient.get<EntraIdStatus>('/namespaces/entra-id/status');
+      return response.data;
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: false,
   });
 }

@@ -1,8 +1,10 @@
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Configuration;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 
@@ -10,22 +12,32 @@ namespace ServiceHub.Infrastructure.ServiceBus;
 
 /// <summary>
 /// Factory for creating and validating Azure Service Bus client instances.
+/// Supports connection string, Entra ID (service principal/managed identity),
+/// DefaultAzureCredential, and user-delegated OAuth authentication flows.
 /// </summary>
 public sealed class ServiceBusClientFactory : IServiceBusClientFactory
 {
     private readonly IServiceBusClientCache _clientCache;
+    private readonly IOptions<EntraIdOptions> _entraIdOptions;
+    private readonly IOAuthService _oauthService;
     private readonly ILogger<ServiceBusClientFactory> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ServiceBusClientFactory"/> class.
     /// </summary>
     /// <param name="clientCache">The client cache for storing created clients.</param>
+    /// <param name="entraIdOptions">The Entra ID configuration options.</param>
+    /// <param name="oauthService">The OAuth service for user-delegated credentials.</param>
     /// <param name="logger">The logger instance.</param>
     public ServiceBusClientFactory(
         IServiceBusClientCache clientCache,
+        IOptions<EntraIdOptions> entraIdOptions,
+        IOAuthService oauthService,
         ILogger<ServiceBusClientFactory> logger)
     {
         _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
+        _entraIdOptions = entraIdOptions ?? throw new ArgumentNullException(nameof(entraIdOptions));
+        _oauthService = oauthService ?? throw new ArgumentNullException(nameof(oauthService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -39,18 +51,24 @@ public sealed class ServiceBusClientFactory : IServiceBusClientFactory
                 "Namespace cannot be null.")));
         }
 
-        if (@namespace.AuthType != ConnectionAuthType.ConnectionString)
+        return @namespace.AuthType switch
         {
-            _logger.LogWarning(
-                "Attempted to create client for namespace {NamespaceId} with unsupported auth type {AuthType}",
-                @namespace.Id,
-                @namespace.AuthType);
-
-            return Task.FromResult(Result.Failure(Error.Validation(
+            ConnectionAuthType.ConnectionString       => CreateConnectionStringClientAsync(@namespace),
+            ConnectionAuthType.ManagedIdentity        => CreateEntraIdClientAsync(@namespace, cancellationToken),
+            ConnectionAuthType.ServicePrincipal       => CreateEntraIdClientAsync(@namespace, cancellationToken),
+            ConnectionAuthType.DefaultAzureCredential => CreateDefaultCredentialClientAsync(@namespace),
+            ConnectionAuthType.UserDelegated          => CreateUserDelegatedClientAsync(@namespace),
+            _ => Task.FromResult(Result.Failure(Error.Validation(
                 ErrorCodes.Namespace.ConnectionStringInvalid,
-                $"Authentication type '{@namespace.AuthType}' is not yet supported. Use ConnectionString authentication.")));
-        }
+                $"Unsupported authentication type: {@namespace.AuthType}")))
+        };
+    }
 
+    /// <summary>
+    /// Creates a client using SAS connection string authentication.
+    /// </summary>
+    private Task<Result> CreateConnectionStringClientAsync(Namespace @namespace)
+    {
         if (string.IsNullOrWhiteSpace(@namespace.ConnectionString))
         {
             return Task.FromResult(Result.Failure(Error.Validation(
@@ -66,8 +84,7 @@ public sealed class ServiceBusClientFactory : IServiceBusClientFactory
 
         try
         {
-            // Get or create the cached client - this validates the connection string format
-            var clientWrapper = _clientCache.GetOrCreate(@namespace.Id, @namespace.ConnectionString);
+            _clientCache.GetOrCreate(@namespace.Id, @namespace.ConnectionString);
 
             _logger.LogInformation(
                 "Service Bus client created/retrieved for namespace {NamespaceId} ({NamespaceName})",
@@ -105,6 +122,143 @@ public sealed class ServiceBusClientFactory : IServiceBusClientFactory
             return Task.FromResult(Result.Failure(Error.Validation(
                 ErrorCodes.Namespace.ConnectionStringInvalid,
                 $"Invalid connection string: {ex.Message}")));
+        }
+    }
+
+    /// <summary>
+    /// Creates a client using Entra ID (ClientSecretCredential) authentication.
+    /// ServiceHub authenticates as its own App Registration, which must be granted
+    /// "Azure Service Bus Data Receiver" on the user's namespace.
+    /// </summary>
+    private Task<Result> CreateEntraIdClientAsync(
+        Namespace @namespace,
+        CancellationToken cancellationToken)
+    {
+        var options = _entraIdOptions.Value;
+
+        if (!options.IsConfigured)
+        {
+            _logger.LogWarning(
+                "Entra ID authentication requested for namespace {NamespaceId} but EntraId is not configured. " +
+                "Set EntraId:ClientId, EntraId:ClientSecret, and EntraId:TenantId in configuration.",
+                @namespace.Id);
+
+            return Task.FromResult(Result.Failure(Error.Validation(
+                ErrorCodes.Namespace.ConnectionStringInvalid,
+                "Azure Entra ID authentication is not configured on this ServiceHub instance. " +
+                "Contact your administrator or use connection string authentication.")));
+        }
+
+        var fqns = @namespace.Name.Contains('.')
+            ? @namespace.Name
+            : $"{@namespace.Name}.servicebus.windows.net";
+
+        try
+        {
+            // ClientSecretCredential: ServiceHub authenticates as its App Registration,
+            // which must have been granted "Azure Service Bus Data Receiver" on the user's namespace.
+            var credential = new Azure.Identity.ClientSecretCredential(
+                options.TenantId,
+                options.ClientId,
+                options.ClientSecret);
+
+            _clientCache.GetOrCreate(@namespace.Id, credential, fqns);
+
+            _logger.LogInformation(
+                "Entra ID Service Bus client created for namespace {NamespaceId} ({Fqns})",
+                @namespace.Id, fqns);
+
+            return Task.FromResult(Result.Success());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to create Entra ID Service Bus client for namespace {NamespaceId}",
+                @namespace.Id);
+
+            return Task.FromResult(Result.Failure(Error.ExternalService(
+                ErrorCodes.Namespace.ConnectionFailed,
+                "Failed to create Entra ID Service Bus client. Verify the namespace hostname and that ServiceHub has been granted the required role.")));
+        }
+    }
+
+    /// <summary>
+    /// Creates a client using DefaultAzureCredential (az login, managed identity, env vars).
+    /// Useful for local development and Azure-hosted scenarios without explicit credentials.
+    /// </summary>
+    private Task<Result> CreateDefaultCredentialClientAsync(Namespace @namespace)
+    {
+        var fqns = @namespace.Name.Contains('.')
+            ? @namespace.Name
+            : $"{@namespace.Name}.servicebus.windows.net";
+
+        try
+        {
+            var credential = new Azure.Identity.DefaultAzureCredential();
+            _clientCache.GetOrCreate(@namespace.Id, credential, fqns);
+
+            _logger.LogInformation(
+                "DefaultAzureCredential Service Bus client created for namespace {NamespaceId}",
+                @namespace.Id);
+
+            return Task.FromResult(Result.Success());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to create DefaultAzureCredential client for namespace {NamespaceId}",
+                @namespace.Id);
+
+            return Task.FromResult(Result.Failure(Error.ExternalService(
+                ErrorCodes.Namespace.ConnectionFailed,
+                "DefaultAzureCredential failed. Run 'az login' or ensure a managed identity is available.")));
+        }
+    }
+
+    /// <summary>
+    /// Creates a client using the user's own Azure OAuth delegated token.
+    /// Retrieves the TokenCredential from the in-memory OAuth session referenced by the namespace.
+    /// The user must be signed in via the Azure Entra ID tab in the Connect page.
+    /// </summary>
+    private Task<Result> CreateUserDelegatedClientAsync(Namespace @namespace)
+    {
+        if (string.IsNullOrEmpty(@namespace.OAuthSessionId))
+        {
+            return Task.FromResult(Result.Failure(Error.Validation(
+                ErrorCodes.Namespace.ConnectionStringRequired,
+                "User-delegated namespace is missing the OAuth session reference.")));
+        }
+
+        var credential = _oauthService.GetTokenCredential(@namespace.OAuthSessionId);
+        if (credential is null)
+        {
+            return Task.FromResult(Result.Failure(Error.Validation(
+                ErrorCodes.Namespace.ConnectionFailed,
+                "Your Azure sign-in session has expired. Please sign in again via the Azure Entra ID tab.")));
+        }
+
+        var fqns = @namespace.Name.Contains('.')
+            ? @namespace.Name
+            : $"{@namespace.Name}.servicebus.windows.net";
+
+        try
+        {
+            _clientCache.GetOrCreate(@namespace.Id, credential, fqns);
+
+            _logger.LogInformation(
+                "User-delegated Service Bus client created for namespace {NamespaceId}",
+                @namespace.Id);
+
+            return Task.FromResult(Result.Success());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to create user-delegated client for namespace {NamespaceId}", @namespace.Id);
+
+            return Task.FromResult(Result.Failure(Error.ExternalService(
+                ErrorCodes.Namespace.ConnectionFailed,
+                "Failed to connect to Service Bus with your Azure identity. Ensure you have the 'Azure Service Bus Data Owner' role on the namespace.")));
         }
     }
 
@@ -146,7 +300,6 @@ public sealed class ServiceBusClientFactory : IServiceBusClientFactory
         }
 
         // SECURITY: Reject RootManageSharedAccessKey - use dedicated policies
-        // ServiceHub should use a dedicated policy with Manage, Send, and Listen permissions
         if (connectionString.Contains("RootManageSharedAccessKey", StringComparison.OrdinalIgnoreCase))
         {
             return Result.Failure(Error.Validation(

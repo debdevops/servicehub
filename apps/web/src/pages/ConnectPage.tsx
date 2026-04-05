@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight } from 'lucide-react';
-import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@/hooks/useNamespaces';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight, Lock, CheckCircle2, ExternalLink, Loader2, LogOut } from 'lucide-react';
+import { useNamespaces, useCreateNamespace, useDeleteNamespace, useEntraIdStatus } from '@/hooks/useNamespaces';
+import { useAzureAuthStatus, useAzureNamespaces, useAzureSignIn, useAzureSignOut } from '@/hooks/useAzureAuth';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { HelpTooltip } from '@/components/help';
 import { tooltips } from '@/lib/helpContent';
@@ -15,9 +16,11 @@ import toast from 'react-hot-toast';
  */
 export function ConnectPage() {
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<'connectionstring' | 'entra'>('entra');
   const [showPassword, setShowPassword] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [connectionString, setConnectionString] = useState('');
+  const [entraHostname, setEntraHostname] = useState('');
   const [environment, setEnvironment] = useState<EnvironmentType>('Dev');
   
   // Delete confirmation dialog state
@@ -28,8 +31,36 @@ export function ConnectPage() {
   });
 
   const { data: namespaces, isLoading } = useNamespaces();
+  const { data: entraIdStatus } = useEntraIdStatus();
   const createNamespace = useCreateNamespace();
   const deleteNamespace = useDeleteNamespace();
+
+  // Handle OAuth callback redirect (Azure returns ?tab=entra&auth=success|error&msg=...)
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const auth = searchParams.get('auth');
+    if (auth === 'success') {
+      toast.success('Signed in with Azure successfully!');
+      setActiveTab('entra');
+      setSearchParams({}, { replace: true });
+    } else if (auth === 'error') {
+      const msg = searchParams.get('msg') ?? 'Azure sign-in failed';
+      toast.error(msg);
+      setSearchParams({}, { replace: true });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Azure OAuth 2.0 (user-delegated) flow
+  const { data: azureAuthStatus, isLoading: azureStatusLoading } = useAzureAuthStatus();
+  const { data: azureNamespaces, isLoading: azureNamespacesLoading } = useAzureNamespaces(
+    azureAuthStatus?.isSignedIn ?? false
+  );
+  const azureSignIn = useAzureSignIn();
+  const azureSignOut = useAzureSignOut();
+  const [selectedFqns, setSelectedFqns] = useState('');
+  const [oauthDisplayName, setOauthDisplayName] = useState('');
+  const [oauthEnvironment, setOauthEnvironment] = useState<EnvironmentType>('Dev');
 
   const extractNamespaceFromConnectionString = (connString: string): string | null => {
     try {
@@ -86,6 +117,7 @@ export function ConnectPage() {
       const createdNamespace = await createNamespace.mutateAsync({
         name: namespaceName,
         connectionString: connectionString.trim(),
+        authType: 'ConnectionString',
         displayName: displayName.trim(),
         environment,
       });
@@ -118,6 +150,50 @@ export function ConnectPage() {
       setConnectionString('');
       setShowPassword(false);
       setEnvironment('Dev');
+      setEntraHostname('');
+    } catch {
+      // Error handled by mutation hook
+    }
+  };
+
+  const handleEntraConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!displayName.trim() || !entraHostname.trim()) return;
+
+    // Use DefaultAzureCredential for local-dev mode (no app registration credentials),
+    // otherwise use ServicePrincipal (full App Registration configured).
+    const authType = entraIdStatus?.isDefaultCredentialMode ? 'DefaultAzureCredential' : 'ServicePrincipal';
+
+    try {
+      await createNamespace.mutateAsync({
+        name: entraHostname.trim(),
+        authType,
+        displayName: displayName.trim(),
+        environment,
+      });
+
+      setDisplayName('');
+      setEntraHostname('');
+      setEnvironment('Dev');
+    } catch {
+      // Error handled by mutation hook
+    }
+  };
+
+  const handleOAuthConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedFqns || !oauthDisplayName.trim()) return;
+    try {
+      await createNamespace.mutateAsync({
+        name: selectedFqns,
+        authType: 'UserDelegated',
+        displayName: oauthDisplayName.trim(),
+        environment: oauthEnvironment,
+      });
+      setOauthDisplayName('');
+      setSelectedFqns('');
+      setOauthEnvironment('Dev');
+      toast.success('Namespace connected via Azure Entra ID');
     } catch {
       // Error handled by mutation hook
     }
@@ -175,148 +251,522 @@ export function ConnectPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start mb-6">
           {/* Left: Connect Form */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-            <div className="flex items-center gap-3 mb-5">
+            <div className="flex items-center gap-3 mb-4">
               <div className="w-9 h-9 bg-primary-50 border border-primary-100 rounded-lg flex items-center justify-center">
                 <span className="text-base">☁️</span>
               </div>
               <div>
                 <h2 className="text-base font-semibold text-gray-900">Connect to Service Bus</h2>
-                <p className="text-xs text-gray-500">
-                  A Listen-only SAS policy is all you need.
-                </p>
+                <p className="text-xs text-gray-500">Choose your authentication method</p>
               </div>
             </div>
 
-            {/* Trust & Security panel */}
-            <div className="mb-4 rounded-lg bg-green-50 border border-green-100 p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <Shield className="w-4 h-4 text-green-600 flex-shrink-0" />
-                <span className="text-xs font-semibold text-green-800">Your data stays yours</span>
-              </div>
-              <div className="space-y-1">
-                {[
-                  { label: 'Connection string', value: 'AES-256-GCM encrypted before saving — never returned to browser' },
-                  { label: 'Message content', value: 'Never logged or stored by ServiceHub' },
-                  { label: 'Your encryption key', value: 'Lives only in your own Azure App Service config' },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex items-start gap-2 text-xs">
-                    <span className="text-green-500 mt-0.5 flex-shrink-0">✓</span>
-                    <span><span className="font-medium text-green-800">{label}:</span>{' '}
-                      <span className="text-green-700">{value}</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center gap-3 mt-2 pt-2 border-t border-green-100">
-                <a
-                  href="https://github.com/debdevops/servicehub/blob/main/services/api/src/ServiceHub.Infrastructure/Security/ConnectionStringProtector.cs"
-                  target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
-                >
-                  Verify encryption code →
-                </a>
-                <Link
-                  to="/security"
-                  className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
-                >
-                  Security overview →
-                </Link>
-              </div>
-            </div>
-
-            <form onSubmit={handleConnect}>
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Display Name <span className="text-red-500">*</span>
-                  <HelpTooltip {...tooltips.connect.displayName} position="right" className="ml-1" />
-                </label>
-                <input
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="e.g., Production Service Bus"
-                  required
-                  className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
-                />
-              </div>
-
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Connection String <span className="text-red-500">*</span>
-                  <HelpTooltip {...tooltips.connect.connectionString} position="right" className="ml-1" />
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={connectionString}
-                    onChange={(e) => setConnectionString(e.target.value)}
-                    placeholder="Endpoint=sb://...;SharedAccessKey=..."
-                    required
-                    className="w-full px-3 py-2 pr-10 rounded-lg text-sm font-mono bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                <div className="flex items-center gap-1 mt-1.5 text-xs text-green-700">
-                  <Shield className="w-3 h-3 text-green-600 shrink-0" />
-                  AES-GCM encrypted at rest — never stored in plaintext.
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Environment <span className="text-red-500">*</span>
-                  <HelpTooltip {...tooltips.connect.environment} position="right" className="ml-1" />
-                </label>
-                <select
-                  value={environment}
-                  onChange={(e) => setEnvironment(e.target.value as EnvironmentType)}
-                  className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
-                >
-                  <option value="Dev">DEV — Development</option>
-                  <option value="Uat">UAT — User Acceptance Testing</option>
-                  <option value="Prod">PROD — Production</option>
-                </select>
-                <p className="text-xs text-gray-500 mt-1">Production disables Quick Actions for safety.</p>
-              </div>
-
+            {/* Tab switcher */}
+            <div className="flex gap-1 mb-5 bg-gray-100 p-1 rounded-lg">
               <button
-                type="submit"
-                disabled={createNamespace.isPending}
-                className="w-full px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 text-white bg-primary-500 hover:bg-primary-600 disabled:bg-primary-300"
+                type="button"
+                onClick={() => setActiveTab('connectionstring')}
+                className={`flex-1 px-3 py-2 text-xs font-semibold rounded-md transition-colors ${
+                  activeTab === 'connectionstring'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
               >
-                {createNamespace.isPending ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Connecting...
-                  </>
-                ) : (
-                  <>Connect</>
-                )}
+                Connection String
               </button>
-            </form>
-
-            {/* SAS instructions — always visible */}
-            <div className="mt-3 rounded-r-lg border-l-2 border-blue-300 bg-blue-50 pl-3 pr-2 py-2">
-              <p className="text-xs font-semibold text-blue-800 mb-1">
-                💡 A Listen-only key is all you need — and it's the safest option
-              </p>
-              <p className="text-xs text-blue-700 mb-1">
-                A Listen-only policy can <strong>only read</strong> messages. It cannot delete, send, or
-                modify anything. Even if this key were ever exposed, your data remains safe.
-              </p>
-              <ol className="text-xs text-blue-700 space-y-0.5 list-decimal list-inside">
-                <li>Azure Portal → your Service Bus namespace</li>
-                <li>Shared access policies → + Add policy</li>
-                <li>Name it <code className="bg-blue-100 px-1 rounded">servicehub</code>, tick <strong>Listen only</strong></li>
-                <li>Save → copy Primary Connection String → paste above</li>
-              </ol>
+              <button
+                type="button"
+                onClick={() => setActiveTab('entra')}
+                className={`flex-1 px-3 py-2 text-xs font-semibold rounded-md transition-colors ${
+                  activeTab === 'entra'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+              Azure Entra ID
+              </button>
             </div>
+
+            {activeTab === 'connectionstring' ? (
+              <>
+                {/* Trust & Security panel */}
+                <div className="mb-4 rounded-lg bg-green-50 border border-green-100 p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Shield className="w-4 h-4 text-green-600 flex-shrink-0" />
+                    <span className="text-xs font-semibold text-green-800">Your data stays yours</span>
+                  </div>
+                  <div className="space-y-1">
+                    {[
+                      { label: 'Connection string', value: 'AES-256-GCM encrypted before saving — never returned to browser' },
+                      { label: 'Message content', value: 'Never logged or stored by ServiceHub' },
+                      { label: 'Your encryption key', value: 'Lives only in your own Azure App Service config' },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="flex items-start gap-2 text-xs">
+                        <span className="text-green-500 mt-0.5 flex-shrink-0">✓</span>
+                        <span><span className="font-medium text-green-800">{label}:</span>{' '}
+                          <span className="text-green-700">{value}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-3 mt-2 pt-2 border-t border-green-100">
+                    <a
+                      href="https://github.com/debdevops/servicehub/blob/main/services/api/src/ServiceHub.Infrastructure/Security/ConnectionStringProtector.cs"
+                      target="_blank" rel="noopener noreferrer"
+                      className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
+                    >
+                      Verify encryption code →
+                    </a>
+                    <Link
+                      to="/security"
+                      className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
+                    >
+                      Security overview →
+                    </Link>
+                  </div>
+                </div>
+
+                <form onSubmit={handleConnect}>
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Display Name <span className="text-red-500">*</span>
+                      <HelpTooltip {...tooltips.connect.displayName} position="right" className="ml-1" />
+                    </label>
+                    <input
+                      type="text"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      placeholder="e.g., Production Service Bus"
+                      required
+                      className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
+                    />
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Connection String <span className="text-red-500">*</span>
+                      <HelpTooltip {...tooltips.connect.connectionString} position="right" className="ml-1" />
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={connectionString}
+                        onChange={(e) => setConnectionString(e.target.value)}
+                        placeholder="Endpoint=sb://...;SharedAccessKey=..."
+                        required
+                        className="w-full px-3 py-2 pr-10 rounded-lg text-sm font-mono bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-1 mt-1.5 text-xs text-green-700">
+                      <Shield className="w-3 h-3 text-green-600 shrink-0" />
+                      AES-GCM encrypted at rest — never stored in plaintext.
+                    </div>
+                  </div>
+
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Environment <span className="text-red-500">*</span>
+                      <HelpTooltip {...tooltips.connect.environment} position="right" className="ml-1" />
+                    </label>
+                    <select
+                      value={environment}
+                      onChange={(e) => setEnvironment(e.target.value as EnvironmentType)}
+                      className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
+                    >
+                      <option value="Dev">DEV — Development</option>
+                      <option value="Uat">UAT — User Acceptance Testing</option>
+                      <option value="Prod">PROD — Production</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Production disables Quick Actions for safety.</p>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={createNamespace.isPending}
+                    className="w-full px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 text-white bg-primary-500 hover:bg-primary-600 disabled:bg-primary-300"
+                  >
+                    {createNamespace.isPending ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Connecting...
+                      </>
+                    ) : (
+                      <>Connect</>
+                    )}
+                  </button>
+                </form>
+
+                {/* SAS instructions — always visible */}
+                <div className="mt-3 rounded-r-lg border-l-2 border-blue-300 bg-blue-50 pl-3 pr-2 py-2">
+                  <p className="text-xs font-semibold text-blue-800 mb-1">
+                    💡 A Listen-only key is all you need — and it's the safest option
+                  </p>
+                  <p className="text-xs text-blue-700 mb-1">
+                    A Listen-only policy can <strong>only read</strong> messages. It cannot delete, send, or
+                    modify anything. Even if this key were ever exposed, your data remains safe.
+                  </p>
+                  <ol className="text-xs text-blue-700 space-y-0.5 list-decimal list-inside">
+                    <li>Azure Portal → your Service Bus namespace</li>
+                    <li>Shared access policies → + Add policy</li>
+                    <li>Name it <code className="bg-blue-100 px-1 rounded">servicehub</code>, tick <strong>Listen only</strong></li>
+                    <li>Save → copy Primary Connection String → paste above</li>
+                  </ol>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* ── Azure Entra ID tab ── */}
+                {azureStatusLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-5 h-5 animate-spin text-primary-500" />
+                  </div>
+
+                ) : azureAuthStatus?.isConfigured ? (
+                  /* ════ OAUTH MODE (Azure OAuth 2.0 configured) ════ */
+                  azureAuthStatus.isSignedIn ? (
+                    /* ── Signed in: namespace picker ── */
+                    <>
+                      {/* Signed-in banner */}
+                      <div className="mb-4 rounded-lg bg-green-50 border border-green-200 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+                            <div>
+                              <p className="text-xs font-semibold text-green-800">Signed in with Azure</p>
+                              <p className="text-xs text-green-700 truncate max-w-[200px]">
+                                {azureAuthStatus.userPrincipalName}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => azureSignOut.mutate()}
+                            disabled={azureSignOut.isPending}
+                            className="flex items-center gap-1 text-xs text-green-700 hover:text-green-900 underline"
+                          >
+                            <LogOut className="w-3 h-3" />
+                            Sign out
+                          </button>
+                        </div>
+                      </div>
+
+                      <form onSubmit={handleOAuthConnect}>
+                        <div className="mb-3">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Display Name <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={oauthDisplayName}
+                            onChange={(e) => setOauthDisplayName(e.target.value)}
+                            placeholder="e.g., Production Service Bus"
+                            required
+                            className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
+                          />
+                        </div>
+
+                        <div className="mb-3">
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-sm font-medium text-gray-700">
+                              Select Namespace <span className="text-red-500">*</span>
+                            </label>
+                            {azureNamespacesLoading && (
+                              <span className="flex items-center gap-1 text-xs text-gray-400">
+                                <Loader2 className="w-3 h-3 animate-spin" /> Loading…
+                              </span>
+                            )}
+                          </div>
+                          <select
+                            value={selectedFqns}
+                            onChange={(e) => setSelectedFqns(e.target.value)}
+                            required
+                            disabled={azureNamespacesLoading}
+                            className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300 disabled:bg-gray-50"
+                          >
+                            <option value="">— Choose a namespace —</option>
+                            {(azureNamespaces ?? []).map((ns) => (
+                              <option key={ns.fullyQualifiedHostname} value={ns.fullyQualifiedHostname}>
+                                {ns.name} ({ns.location} · {ns.sku})
+                              </option>
+                            ))}
+                          </select>
+                          {!azureNamespacesLoading && (azureNamespaces?.length ?? 0) === 0 && (
+                            <p className="text-xs text-amber-700 mt-1">
+                              No Service Bus namespaces found in your subscriptions.
+                              Ensure you have at least one namespace and the "Azure Service Bus Data Reader/Owner" role.
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Environment <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            value={oauthEnvironment}
+                            onChange={(e) => setOauthEnvironment(e.target.value as EnvironmentType)}
+                            className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
+                          >
+                            <option value="Dev">DEV — Development</option>
+                            <option value="Uat">UAT — User Acceptance Testing</option>
+                            <option value="Prod">PROD — Production</option>
+                          </select>
+                          <p className="text-xs text-gray-500 mt-1">Production disables Quick Actions for safety.</p>
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={!selectedFqns || !oauthDisplayName.trim() || createNamespace.isPending}
+                          className="w-full px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 text-white bg-primary-500 hover:bg-primary-600 disabled:bg-primary-300 disabled:cursor-not-allowed"
+                        >
+                          {createNamespace.isPending ? (
+                            <><Loader2 className="w-4 h-4 animate-spin" /> Connecting…</>
+                          ) : (
+                            <>Connect</>
+                          )}
+                        </button>
+                      </form>
+
+                      {/* Security note */}
+                      <div className="mt-3 rounded-r-lg border-l-2 border-blue-300 bg-blue-50 pl-3 pr-2 py-2">
+                        <p className="text-xs font-semibold text-blue-800 mb-1">
+                          🔒 Zero-secret connection — how it works
+                        </p>
+                        <p className="text-xs text-blue-700">
+                          No connection strings or SAS keys are ever typed or stored. ServiceHub connects using
+                          your own Azure identity. Your RBAC roles on the namespace determine what you can see —
+                          nothing more.
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    /* ── Not signed in: sign-in prompt ── */
+                    <>
+                      {/* What is Azure Entra ID */}
+                      <div className="mb-4 rounded-lg bg-blue-50 border border-blue-100 p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-[#0078d4] flex items-center justify-center flex-shrink-0">
+                            <Shield className="w-4 h-4 text-white" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-blue-900 mb-1">What is Azure Entra ID (formerly Azure AD)?</p>
+                            <p className="text-xs text-blue-800 mb-2">
+                              Microsoft's enterprise identity platform. When you sign in with your company Microsoft account,
+                              ServiceHub receives a short-lived token scoped only to the namespaces you already
+                              have permission to access — no extra configuration needed. Your password is never shared.
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              <a href="https://learn.microsoft.com/en-us/entra/fundamentals/whatis" target="_blank" rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-blue-700 underline hover:text-blue-900">
+                                What is Microsoft Entra ID? <ExternalLink className="w-3 h-3" />
+                              </a>
+                              <a href="https://learn.microsoft.com/en-us/azure/service-bus-messaging/authenticate-application" target="_blank" rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-blue-700 underline hover:text-blue-900">
+                                RBAC for Service Bus <ExternalLink className="w-3 h-3" />
+                              </a>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Security guarantees */}
+                      <div className="mb-4 rounded-lg bg-green-50 border border-green-100 p-3 space-y-1.5">
+                        {[
+                          { label: 'No passwords typed here', detail: "You authenticate directly on Microsoft's login page" },
+                          { label: 'No connection strings needed', detail: 'Your Azure RBAC roles control access automatically' },
+                          { label: 'Short-lived tokens only', detail: 'Sessions expire in 8 hours; no refresh token stored client-side' },
+                          { label: 'Conforms to zero-trust', detail: 'ServiceHub only receives a scoped, delegated token' },
+                        ].map(({ label, detail }) => (
+                          <div key={label} className="flex items-start gap-2 text-xs">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-green-600 flex-shrink-0 mt-0.5" />
+                            <span><span className="font-semibold text-green-800">{label}:</span>{' '}
+                              <span className="text-green-700">{detail}</span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Sign-in button (Microsoft-branded) */}
+                      <button
+                        type="button"
+                        onClick={() => azureSignIn.mutate()}
+                        disabled={azureSignIn.isPending}
+                        className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors disabled:opacity-60 mb-3 shadow-sm"
+                      >
+                        {/* Microsoft logo SVG */}
+                        <svg width="18" height="18" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+                          <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+                          <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+                          <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+                          <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+                        </svg>
+                        <span className="text-sm font-semibold text-gray-700">
+                          {azureSignIn.isPending ? 'Redirecting to Microsoft…' : 'Sign in with Microsoft'}
+                        </span>
+                        {azureSignIn.isPending && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
+                      </button>
+
+                      {/* DevOps/SRE setup note */}
+                      <div className="rounded-r-lg border-l-2 border-blue-300 bg-blue-50 pl-3 pr-2 py-2">
+                        <p className="text-xs font-semibold text-blue-800 mb-1">
+                          ⚙️ Administrator: one-time Azure setup required
+                        </p>
+                        <p className="text-xs text-blue-700 mb-1">
+                          To enable this sign-in button your administrator must register ServiceHub as an
+                          Azure app and configure these environment variables:
+                        </p>
+                        <code className="block text-[10px] bg-blue-100 rounded p-1.5 text-blue-900 font-mono mb-1">
+                          AzureOAuth__ClientId=&lt;App Registration Client ID&gt;<br/>
+                          AzureOAuth__ClientSecret=&lt;Client Secret&gt;<br/>
+                          AzureOAuth__RedirectUri=https://servicehub.example.com/api/v1/auth/azure/callback<br/>
+                          AzureOAuth__FrontendBaseUrl=https://servicehub.example.com<br/>
+                          AzureOAuth__Enabled=true
+                        </code>
+                        <a href="https://github.com/debdevops/servicehub/blob/main/azure-entra-id/oauth/README.md"
+                          target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-blue-700 underline hover:text-blue-900">
+                          Full setup guide for DevOps/SRE <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </>
+                  )
+
+                ) : entraIdStatus?.isAvailable ? (
+                  /* ════ CLASSIC ENTRA ID (service principal / managed identity) ════ */
+                  <>
+                    {/* Classic Entra ID availability banner */}
+                    <div className="mb-4 rounded-lg bg-green-50 border border-green-100 p-3">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+                        <span className="text-xs font-semibold text-green-800">
+                          {entraIdStatus.isDefaultCredentialMode
+                            ? 'Azure Entra ID available (DefaultAzureCredential mode)'
+                            : 'Azure Entra ID available via App Registration'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-green-700 mt-1">
+                        {entraIdStatus.isDefaultCredentialMode
+                          ? 'Connect using az login or Managed Identity — no connection string required.'
+                          : 'Connect without a connection string. Your Azure AD admin must grant ServiceHub the "Azure Service Bus Data Owner" role on your namespace.'}
+                      </p>
+                    </div>
+
+                    <form onSubmit={handleEntraConnect}>
+                      <div className="mb-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Display Name <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={displayName}
+                          onChange={(e) => setDisplayName(e.target.value)}
+                          placeholder="e.g., Production Service Bus"
+                          required
+                          className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
+                        />
+                      </div>
+
+                      <div className="mb-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Namespace Hostname <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={entraHostname}
+                          onChange={(e) => setEntraHostname(e.target.value)}
+                          placeholder="yournamespace.servicebus.windows.net"
+                          required
+                          className="w-full px-3 py-2 rounded-lg text-sm font-mono bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
+                        />
+                      </div>
+
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Environment <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          value={environment}
+                          onChange={(e) => setEnvironment(e.target.value as EnvironmentType)}
+                          className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
+                        >
+                          <option value="Dev">DEV — Development</option>
+                          <option value="Uat">UAT — User Acceptance Testing</option>
+                          <option value="Prod">PROD — Production</option>
+                        </select>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={createNamespace.isPending}
+                        className="w-full px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 text-white bg-primary-500 hover:bg-primary-600 disabled:bg-primary-300"
+                      >
+                        {createNamespace.isPending
+                          ? <><Loader2 className="w-4 h-4 animate-spin" /> Connecting…</>
+                          : <>Connect with Azure Entra ID</>}
+                      </button>
+                    </form>
+
+                    <div className="mt-3 rounded-r-lg border-l-2 border-blue-300 bg-blue-50 pl-3 pr-2 py-2">
+                      {entraIdStatus.isDefaultCredentialMode ? (
+                        <>
+                          <p className="text-xs font-semibold text-blue-800 mb-1">💡 Prerequisites</p>
+                          <ol className="text-xs text-blue-700 space-y-0.5 list-decimal list-inside">
+                            <li>Run <code className="bg-blue-100 px-1 rounded">az login</code> in your terminal</li>
+                            <li>Azure Portal → your namespace → Access Control (IAM)</li>
+                            <li>Add role → "Azure Service Bus Data Owner" → your account</li>
+                          </ol>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xs font-semibold text-blue-800 mb-1">💡 Prerequisites</p>
+                          <ol className="text-xs text-blue-700 space-y-0.5 list-decimal list-inside">
+                            <li>Azure Portal → your namespace → Access Control (IAM)</li>
+                            <li>Add role → "Azure Service Bus Data Owner" → ServiceHub app registration</li>
+                          </ol>
+                        </>
+                      )}
+                    </div>
+                  </>
+
+                ) : (
+                  /* ════ NOTHING CONFIGURED ════ */
+                  <div className="rounded-lg bg-amber-50 border border-amber-200 p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Lock className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                      <span className="text-xs font-semibold text-amber-800">Azure Entra ID not configured</span>
+                    </div>
+                    <p className="text-xs text-amber-700 mb-3">
+                      This ServiceHub instance has not been configured with an Azure App Registration.
+                      You can still connect using a Connection String, or self-host ServiceHub with your own App Registration to enable passwordless sign-in.
+                    </p>
+                    <div className="space-y-1">
+                      <a href="https://github.com/debdevops/servicehub/blob/main/azure-entra-id/oauth/README.md" target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-amber-700 underline hover:text-amber-900 block">
+                        OAuth 2.0 setup guide (DevOps/SRE) <ExternalLink className="w-3 h-3" />
+                      </a>
+                      <a href="https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app" target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-amber-700 underline hover:text-amber-900 block">
+                        Register an app in Azure Portal <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('connectionstring')}
+                      className="mt-3 w-full px-3 py-2 rounded-lg text-xs font-medium border border-amber-300 text-amber-800 hover:bg-amber-100 transition-colors"
+                    >
+                      Use Connection String instead →
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           {/* Right: Saved Connections + Demo callout */}
@@ -350,6 +800,11 @@ export function ConnectPage() {
                             }`}>
                               {ns.environment || 'Dev'}
                             </span>
+                            {ns.authType && ns.authType !== 'ConnectionString' && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-blue-100 text-blue-700">
+                                Entra ID
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-gray-500">
                             {ns.name}

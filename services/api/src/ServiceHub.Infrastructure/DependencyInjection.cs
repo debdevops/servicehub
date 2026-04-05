@@ -2,10 +2,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.AI;
 using ServiceHub.Infrastructure.BackgroundServices;
+using ServiceHub.Infrastructure.Configuration;
+using ServiceHub.Infrastructure.OAuth;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Persistence.InMemory;
 using ServiceHub.Infrastructure.Security;
@@ -28,6 +31,9 @@ public static class DependencyInjection
     {
         // Service Bus
         services.AddServiceBus();
+
+        // OAuth user-delegated authentication
+        services.AddOAuth();
 
         // Persistence
         services.AddPersistence();
@@ -57,6 +63,9 @@ public static class DependencyInjection
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddServiceBus(this IServiceCollection services)
     {
+        services.AddOptions<EntraIdOptions>()
+            .BindConfiguration(EntraIdOptions.SectionName);
+
         services.TryAddSingleton<IServiceBusClientCache, ServiceBusClientCache>();
         services.TryAddScoped<IServiceBusClientFactory, ServiceBusClientFactory>();
         services.TryAddScoped<IMessageSender, MessageSender>();
@@ -65,6 +74,32 @@ public static class DependencyInjection
         // Health check
         services.AddHealthChecks()
             .AddCheck<ServiceBusHealthCheck>("servicebus", tags: ["ready", "servicebus"]);
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds Azure OAuth 2.0 user-delegated authentication services.
+    /// Enables users to sign in with their own Microsoft identity — no connection strings needed.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddOAuth(this IServiceCollection services)
+    {
+        services.AddOptions<OAuthOptions>()
+            .BindConfiguration(OAuthOptions.SectionName);
+
+        // Session store: singleton so sessions survive across requests
+        services.TryAddSingleton<InMemoryOAuthStore>();
+
+        // HTTP client for Azure AD token endpoint and ARM API calls
+        services.AddHttpClient<IOAuthService, AzureOAuthService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+
+        // Background cleanup: purges expired sessions every 15 minutes
+        services.AddHostedService<OAuthCleanupWorker>();
 
         return services;
     }

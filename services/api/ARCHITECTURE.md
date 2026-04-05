@@ -817,6 +817,26 @@ Client receives HTTP 200 + JSON
 
 ---
 
+## Azure Entra ID Authentication
+
+ServiceHub supports four Service Bus authentication modes, dispatched through `ServiceBusClientFactory.CreateClientAsync`:
+
+| Auth Type | Credential | Configuration |
+|---|---|---|
+| `ConnectionString` | SAS key via connection string | `Namespace.ConnectionString` (AES-GCM encrypted at rest) |
+| `ServicePrincipal` | `ClientSecretCredential` | `EntraId:ClientId`, `EntraId:ClientSecret`, `EntraId:TenantId` |
+| `ManagedIdentity` | `ClientSecretCredential` (same as ServicePrincipal) | uses EntraId options |
+| `DefaultAzureCredential` | `DefaultAzureCredential` (az login, MSI, env vars) | `EntraId:Enabled=true` with no credentials |
+
+**Key design decisions:**
+- `EntraIdOptions.IsConfigured` — true when all three credential fields are non-empty
+- `EntraIdOptions.IsDefaultCredentialMode` — true when Enabled but credentials are empty
+- `EntraIdOptions.IsAvailable` — union of both (exposed via `GET /api/v1/namespaces/entra-id/status`)
+- Entra ID connectivity is **validated at namespace creation time** before the namespace is persisted
+- `TestConnection` re-tests Entra ID namespaces via `CreateClientAsync` (not connection string decryption)
+
+---
+
 ## Next Steps
 
 - Review source code in `src/ServiceHub.Api/` directory

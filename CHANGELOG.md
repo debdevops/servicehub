@@ -1,5 +1,90 @@
 # ServiceHub Changelog
 
+## [Unreleased] — Azure OAuth 2.0 User-Delegated Sign-In
+
+### Added
+- **OAuth 2.0 Authorization Code + PKCE flow** — users sign in with their own Microsoft identity directly in the browser. No connection strings, SAS keys, or operator-managed credentials required.
+  — New `UserDelegated = 4` value in `ConnectionAuthType` enum
+  — Five new API endpoints under `GET|DELETE /api/v1/auth/azure/*`:
+    - `GET /api/v1/auth/azure/status` — returns current sign-in state (`isConfigured`, `isSignedIn`, `userPrincipalName`, `tenantId`, `expiresAt`)
+    - `GET /api/v1/auth/azure/sign-in` — returns PKCE-protected Azure authorization URL; browser navigates to it
+    - `GET /api/v1/auth/azure/callback` — OAuth redirect target; exchanges code for tokens, sets `HttpOnly` session cookie, redirects to frontend
+    - `GET /api/v1/auth/azure/namespaces` — lists user's Service Bus namespaces via Azure Resource Manager API (no secrets returned)
+    - `DELETE /api/v1/auth/azure/session` — signs out; revokes session and clears cookie
+  — `AzureAuthController` implements the full flow with CSRF state verification
+- **`AzureOAuthService`** — PKCE code verifier + code challenge generation (`SHA-256`), CSRF state token, Azure AD token exchange, ARM subscription + namespace listing, token refresh via refresh token, JWT id_token parsing for UPN + tenant ID
+- **`InMemoryOAuthStore`** — singleton, thread-safe `ConcurrentDictionary` store for OAuth sessions (8-hour TTL) and PKCE pending states (10-minute TTL); one-time-use PKCE verifier prevents replay attacks
+- **`OAuthSessionCredential`** — `TokenCredential` adapter that wraps a user's OAuth session; caches Service Bus-scoped tokens and uses refresh tokens to transparently renew them; used by the Azure Service Bus SDK on behalf of the signed-in user
+- **`OAuthSession`** — internal token model (ARM + Service Bus access tokens, refresh token, UPN, tenant ID, expiry)
+- **`OAuthSessionInfo`** — public session DTO returned by `GetSessionInfo()`
+- **`AzureNamespaceInfo`** DTO — describes a Service Bus namespace (name, FQNS, subscription ID, resource group, location, SKU)
+- **`OAuthOptions`** configuration section (`AzureOAuth:ClientId`, `AzureOAuth:ClientSecret`, `AzureOAuth:TenantId`, `AzureOAuth:RedirectUri`, `AzureOAuth:FrontendBaseUrl`, `AzureOAuth:Enabled`)
+  — `IsConfigured` property: true when `Enabled=true` and all four OAuth credentials + URIs are non-empty
+- **`OAuthCleanupWorker`** — `BackgroundService` that calls `InMemoryOAuthStore.PurgeExpired()` every 15 minutes to prevent unbounded memory growth
+- **Frontend: "Sign in with Microsoft" UI on ConnectPage** — "Azure Entra ID" tab is now the **default** (was "Connection String")
+  — Shows sign-in status banner, user principal name, session expiry
+  — "Sign in with Microsoft" button triggers full-page navigation to Azure login
+  — After sign-in, a namespace picker dropdown lists all accessible Service Bus namespaces (name, location, SKU) fetched via ARM
+  — Sign-out button clears the session
+- **`useAzureAuth.ts`** — four React Query hooks: `useAzureAuthStatus` (polls every 60 s), `useAzureNamespaces`, `useAzureSignIn` (mutation), `useAzureSignOut` (mutation, invalidates queries)
+- **`apps/web/src/lib/api/oauth.ts`** — typed API client for all five OAuth endpoints
+- **`azure-entra-id/oauth/README.md`** — operator guide for configuring the App Registration and required `AzureOAuth__*` environment variables
+
+### Changed
+- `appsettings.json`: Added `AzureOAuth` section (all fields empty, `Enabled: false` by default — no sign-in button shown unless configured)
+- `appsettings.Production.json`: Added `AzureOAuth` section (`Enabled: true`, empty credentials — `IsConfigured = false` until env vars are set)
+- `ServiceBusClientFactory`: Added `UserDelegated` case — creates a `ServiceBusClient` using `OAuthSessionCredential` (token credential) for the chosen namespace's FQNS
+- `IServiceBusClientCache` / `ServiceBusClientCache`: new `GetOrCreate(Guid, OAuthSessionCredential, string)` overload for user-delegated connections
+- `Namespace.cs`: Added `OAuthSessionId` property and `CreateWithUserDelegated()` factory method
+- `NamespacesController`: Injects `IOAuthService`; handles `UserDelegated` authType by building a credential-based namespace via `CreateWithUserDelegated()`
+- `DependencyInjection.AddOAuth()`: Registers `OAuthOptions`, `InMemoryOAuthStore` (singleton), `AzureOAuthService` (via `AddHttpClient`), and `OAuthCleanupWorker` (hosted service)
+- `ConnectPage.tsx`: "Azure Entra ID" tab renamed and promoted to default; full OAuth sign-in/sign-out/namespace-picker UI added; "Connection String" tab remains available
+
+### Fixed
+- `InMemoryOAuthStore` memory growth: `PurgeExpired()` is now called on a 15-minute schedule by `OAuthCleanupWorker` (previously defined but never called)
+
+---
+
+## [Unreleased] — Azure Entra ID Authentication
+
+### Added
+- **Azure Entra ID authentication** — Connect to Service Bus namespaces without SAS connection strings.
+  — Three auth modes supported: `ServicePrincipal` (App Registration), `ManagedIdentity`, and `DefaultAzureCredential`
+  — New `GET /api/v1/namespaces/entra-id/status` endpoint returns availability, Client ID, and auth mode
+  — Entra ID auth verified at namespace creation time (role assignment check before persisting)
+  — `DefaultAzureCredential` mode: enabled automatically when `EntraId:Enabled=true` with no credentials set
+  — `ServicePrincipal` mode: uses `ClientSecretCredential` with operator-configured App Registration
+- **EntraIdOptions** configuration section (`EntraId:ClientId`, `EntraId:ClientSecret`, `EntraId:TenantId`, `EntraId:Enabled`)
+  — `IsConfigured` property: true when Enabled and all three credentials are non-empty
+  — `IsDefaultCredentialMode` property: true when Enabled with no credentials (picks up az login / Managed Identity)
+  — `IsAvailable` property: true when either IsConfigured or IsDefaultCredentialMode
+- **ConnectPage two-tab UI**: "Connection String" and "Entra ID" tabs
+  — Availability banner shows green (available) or amber (not configured) based on live status API
+  — "Entra ID" badge on saved connections when `authType ≠ ConnectionString`
+  — Disabled form fields and button when Entra ID is not configured so as not to mislead users
+- **`TestConnection` fix**: Entra ID namespaces now test connectivity via `CreateClientAsync`; previously returned an incorrect "no connection string" failure
+- **Telemetry & logging redaction** updated: `clientsecret` and `client_secret` added to sensitive query params in `SensitiveDataTelemetryProcessor` and `LogRedactor.IsSensitiveKey`
+- **`IServiceBusClientCache`** new overload: `GetOrCreate(Guid, TokenCredential, string)` for token-based auth
+  — `ServiceBusClientWrapper` gains second constructor for credential-based admin client creation
+- **New documentation folder** `azure-entra-id/`:
+  — `README.md`: End-user guide for granting ServiceHub IAM access (Portal, CLI, PowerShell)
+  — `app-registration/README.md`: Self-hoster guide for creating an App Registration (Portal, CLI, PowerShell)
+  — `local-testing/README.md`: Two options for local Entra ID testing (DefaultAzureCredential, test App Registration)
+  — `images/IMAGES.md`: Screenshot placeholder table
+
+### Changed
+- `appsettings.json`: Added `EntraId` section (all empty/disabled by default)
+- `appsettings.Production.json`: `EntraId` section with `Enabled: true` and empty credential fields (safe default — `IsConfigured = false` until env vars are set)
+- `ServiceHub.Core.csproj`: Added `Azure.Core 1.44.1` for `TokenCredential` interface
+- `DependencyInjection.AddServiceBus()`: Registers `EntraIdOptions` via `AddOptions<T>().BindConfiguration()`
+
+### Fixed
+- `ConnectPage.tsx` was not passing `authType` to `CreateNamespaceRequest` (TypeScript error: property `authType` missing)
+- `appsettings.Production.json`: Changed credential placeholder from `"SET_VIA_ENV_VAR"` to `""` — prevents `IsConfigured` returning `true` when env vars are not actually configured
+- `TestConnection` endpoint: Previously returned `IsConnected: false, Message: "Namespace does not have a connection string configured"` for all non-connection-string namespaces; now properly tests Entra ID connectivity
+
+---
+
 ## [3.0.2] - 2026-03-31
 
 ### Fixed

@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Controllers.V1;
@@ -10,6 +11,7 @@ using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Configuration;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 
@@ -21,6 +23,7 @@ public class NamespacesControllerTests
     private readonly Mock<IServiceBusClientFactory> _clientFactory;
     private readonly Mock<IServiceBusClientCache> _clientCache;
     private readonly Mock<IConnectionStringProtector> _connectionStringProtector;
+    private readonly Mock<IOAuthService> _oauthService;
     private readonly Mock<ILogger<NamespacesController>> _logger;
     private readonly NamespacesController _controller;
 
@@ -30,13 +33,18 @@ public class NamespacesControllerTests
         _clientFactory = new Mock<IServiceBusClientFactory>();
         _clientCache = new Mock<IServiceBusClientCache>();
         _connectionStringProtector = new Mock<IConnectionStringProtector>();
+        _oauthService = new Mock<IOAuthService>();
         _logger = new Mock<ILogger<NamespacesController>>();
+
+        var entraIdOptions = Options.Create(new EntraIdOptions());
 
         _controller = new NamespacesController(
             _namespaceRepository.Object,
             _clientFactory.Object,
             _clientCache.Object,
             _connectionStringProtector.Object,
+            entraIdOptions,
+            _oauthService.Object,
             _logger.Object)
         {
             ControllerContext = new ControllerContext
@@ -69,6 +77,8 @@ public class NamespacesControllerTests
             _clientFactory.Object,
             _clientCache.Object,
             _connectionStringProtector.Object,
+            Options.Create(new EntraIdOptions()),
+            _oauthService.Object,
             _logger.Object);
 
         act.Should().Throw<ArgumentNullException>();
@@ -82,6 +92,8 @@ public class NamespacesControllerTests
             null!,
             _clientCache.Object,
             _connectionStringProtector.Object,
+            Options.Create(new EntraIdOptions()),
+            _oauthService.Object,
             _logger.Object);
 
         act.Should().Throw<ArgumentNullException>();
@@ -95,6 +107,8 @@ public class NamespacesControllerTests
             _clientFactory.Object,
             _clientCache.Object,
             _connectionStringProtector.Object,
+            Options.Create(new EntraIdOptions()),
+            _oauthService.Object,
             null!);
 
         act.Should().Throw<ArgumentNullException>();
@@ -270,6 +284,10 @@ public class NamespacesControllerTests
         _namespaceRepository.Setup(r => r.AddAsync(It.IsAny<Namespace>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
 
+        // Connectivity check now runs for non-ConnectionString auth types
+        _clientFactory.Setup(f => f.CreateClientAsync(It.IsAny<Namespace>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
         var result = await _controller.Create(request);
 
         result.Result.Should().BeOfType<CreatedAtActionResult>();
@@ -292,13 +310,42 @@ public class NamespacesControllerTests
     }
 
     [Fact]
-    public async Task TestConnection_NoConnectionString_ShouldReturnNotConnected()
+    public async Task TestConnection_EntraIdNamespace_UsesFactory_ShouldReturnConnected()
     {
         var nsResult = Namespace.CreateWithManagedIdentity("test-managed-id", ConnectionAuthType.ManagedIdentity, "Test MI");
         var ns = nsResult.Value;
 
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _clientFactory.Setup(f => f.CreateClientAsync(ns, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        _namespaceRepository.Setup(r => r.UpdateAsync(It.IsAny<Namespace>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var result = await _controller.TestConnection(ns.Id);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<ConnectionTestResponse>().Subject;
+        response.IsConnected.Should().BeTrue();
+        response.Message.Should().Contain("Entra ID");
+    }
+
+    [Fact]
+    public async Task TestConnection_EntraIdNamespace_FactoryFails_ShouldReturnNotConnected()
+    {
+        var nsResult = Namespace.CreateWithManagedIdentity("test-managed-id", ConnectionAuthType.ManagedIdentity, "Test MI");
+        var ns = nsResult.Value;
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _clientFactory.Setup(f => f.CreateClientAsync(ns, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.ExternalService("NS001", "Entra ID not configured")));
+
+        _namespaceRepository.Setup(r => r.UpdateAsync(It.IsAny<Namespace>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
 
         var result = await _controller.TestConnection(ns.Id);
 

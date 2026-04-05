@@ -41,7 +41,7 @@ Production breaks at 2 AM. Azure Portal shows **5,000 messages in Dead-Letter Qu
 
 ### Connect to Azure Service Bus
 
-Enter your connection string and you're in. Supports Listen-only (read-only) or Manage (full access) policies.
+Sign in with your Microsoft identity (no connection strings required) or paste a SAS connection string. The **Azure Entra ID** tab is selected by default — click "Sign in with Microsoft" to see all your accessible namespaces in a dropdown.
 
 ![Connect Page](docs/screenshots/01-connect-page.png)
 
@@ -226,6 +226,8 @@ Interactive API documentation with Scalar — test endpoints directly from the b
 ### Security & Safety
 - **Read-only by default** — Uses Azure SDK PeekMessagesAsync; messages are never removed
 - **Listen-only supported** — Works with Listen permission for browse-only access
+- **OAuth 2.0 user-delegated sign-in** — Sign in with your own Microsoft identity; no connection strings or operator-managed secrets required
+- **Entra ID service principal / Managed Identity** — Connect without SAS keys using App Registration or Managed Identity (self-hosted)
 - **Encrypted at rest** — Connection strings encrypted with AES-GCM
 - **No external API calls** — AI analysis runs entirely in the browser
 - **No data persistence** — Messages displayed in-memory only
@@ -258,6 +260,8 @@ Auto-installed by `run.sh`:
 
 You provide:
 - Azure Service Bus connection string (Listen permission minimum)
+- **Or** — sign in with your own Microsoft identity via OAuth 2.0 (see [azure-entra-id/oauth/README.md](azure-entra-id/oauth/README.md))
+- **Or** — for service principal / Managed Identity auth: grant ServiceHub's App Registration "Azure Service Bus Data Owner" on your namespace (see [azure-entra-id/README.md](azure-entra-id/README.md))
 
 ### Create a Service Bus Policy
 
@@ -383,12 +387,18 @@ ServiceHub exposes a REST API documented with Scalar (OpenAPI). Access interacti
 
 Key endpoints:
 - `GET /api/v1/namespaces` — List connected namespaces
+- `GET /api/v1/namespaces/entra-id/status` — Check Entra ID service principal availability on this instance
 - `GET /api/v1/namespaces/{id}/queues` — List queues with message counts
 - `GET /api/v1/namespaces/{id}/topics` — List topics with subscription counts
 - `GET /api/v1/namespaces/{id}/queues/{name}/messages` — Browse messages
 - `POST /api/v1/namespaces/{id}/queues/{name}/messages` — Send a message
 - `GET /api/v1/dlq-history` — DLQ Intelligence records
 - `GET /api/v1/replay-rules` — Auto-replay rules
+- `GET /api/v1/auth/azure/status` — Azure OAuth sign-in status for current session
+- `GET /api/v1/auth/azure/sign-in` — Generate PKCE-protected Azure authorization URL
+- `GET /api/v1/auth/azure/callback` — OAuth redirect target (exchange code, set session cookie)
+- `GET /api/v1/auth/azure/namespaces` — List user's Service Bus namespaces via ARM (user-delegated)
+- `DELETE /api/v1/auth/azure/session` — Sign out and clear session cookie
 
 ---
 
@@ -411,6 +421,9 @@ Yes. ServiceHub is a standard ASP.NET Core + React SPA. Containerize with Docker
 
 **Q: Does it support topics with subscriptions?**
 Yes. Browse messages from both queues and topic subscriptions independently.
+
+**Q: Can I sign in with my Microsoft account instead of a connection string?**
+Yes. ServiceHub supports OAuth 2.0 Authorization Code + PKCE — click "Sign in with Microsoft" on the Connect page and pick your namespace from the dropdown. No connection strings or SAS keys required. See [azure-entra-id/oauth/README.md](azure-entra-id/oauth/README.md) to configure the App Registration.
 
 ---
 

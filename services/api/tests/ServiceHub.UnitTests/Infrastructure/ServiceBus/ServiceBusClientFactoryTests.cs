@@ -1,9 +1,11 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Configuration;
 using ServiceHub.Infrastructure.ServiceBus;
 using ServiceHub.Shared.Constants;
 
@@ -12,6 +14,7 @@ namespace ServiceHub.UnitTests.Infrastructure.ServiceBus;
 public sealed class ServiceBusClientFactoryTests
 {
     private readonly Mock<IServiceBusClientCache> _cacheMock = new();
+    private readonly Mock<IOAuthService> _oauthServiceMock = new();
     private readonly ServiceBusClientFactory _sut;
 
     private const string ValidConnectionString =
@@ -21,6 +24,8 @@ public sealed class ServiceBusClientFactoryTests
     {
         _sut = new ServiceBusClientFactory(
             _cacheMock.Object,
+            Options.Create(new EntraIdOptions()),
+            _oauthServiceMock.Object,
             NullLogger<ServiceBusClientFactory>.Instance);
     }
 
@@ -29,14 +34,14 @@ public sealed class ServiceBusClientFactoryTests
     [Fact]
     public void Constructor_NullCache_Throws()
     {
-        var act = () => new ServiceBusClientFactory(null!, NullLogger<ServiceBusClientFactory>.Instance);
+        var act = () => new ServiceBusClientFactory(null!, Options.Create(new EntraIdOptions()), _oauthServiceMock.Object, NullLogger<ServiceBusClientFactory>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("clientCache");
     }
 
     [Fact]
     public void Constructor_NullLogger_Throws()
     {
-        var act = () => new ServiceBusClientFactory(_cacheMock.Object, null!);
+        var act = () => new ServiceBusClientFactory(_cacheMock.Object, Options.Create(new EntraIdOptions()), _oauthServiceMock.Object, null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -148,11 +153,12 @@ public sealed class ServiceBusClientFactoryTests
     [Fact]
     public async Task CreateClient_UnsupportedAuthType_ReturnsFailure()
     {
+        // ManagedIdentity is now supported but fails when EntraId is not configured
         var ns = Namespace.CreateWithManagedIdentity("test-ns", ConnectionAuthType.ManagedIdentity).Value;
         var result = await _sut.CreateClientAsync(ns);
 
         result.IsFailure.Should().BeTrue();
-        result.Error.Message.Should().Contain("not yet supported");
+        result.Error.Message.Should().Contain("not configured");
     }
 
     [Fact]

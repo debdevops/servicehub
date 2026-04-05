@@ -170,7 +170,9 @@ public static partial class LogRedactor
                key.Contains("token", StringComparison.OrdinalIgnoreCase) ||
                key.Contains("credential", StringComparison.OrdinalIgnoreCase) ||
                key.Contains("connectionstring", StringComparison.OrdinalIgnoreCase) ||
-               key.Contains("apikey", StringComparison.OrdinalIgnoreCase);
+               key.Contains("apikey", StringComparison.OrdinalIgnoreCase) ||
+               key.Contains("clientsecret", StringComparison.OrdinalIgnoreCase) ||
+               key.Contains("client_secret", StringComparison.OrdinalIgnoreCase);
     }
 
     // Regex patterns for sensitive data detection

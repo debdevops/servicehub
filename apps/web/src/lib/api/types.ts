@@ -1,6 +1,28 @@
 // Environment type matching backend EnvironmentType enum
 export type EnvironmentType = 'Dev' | 'Uat' | 'Prod';
 
+// Auth type matching backend ConnectionAuthType enum
+export type ConnectionAuthType = 'ConnectionString' | 'ManagedIdentity' | 'ServicePrincipal' | 'DefaultAzureCredential' | 'UserDelegated';
+
+/** Azure OAuth 2.0 sign-in status for the current browser session. */
+export interface AzureAuthStatus {
+  isConfigured: boolean;
+  isSignedIn: boolean;
+  userPrincipalName?: string;
+  tenantId?: string;
+  expiresAt?: string;
+}
+
+/** Azure Service Bus namespace discovered via ARM (no secrets). */
+export interface AzureNamespaceInfo {
+  name: string;
+  fullyQualifiedHostname: string;
+  subscriptionId: string;
+  resourceGroup: string;
+  location: string;
+  sku: string;
+}
+
 /** Shape of errors returned by the axios API client. Used for typed error handling in hooks. */
 export type ApiError = {
   response?: {
@@ -24,14 +46,24 @@ export interface Namespace {
   hasSendPermission?: boolean;
   hasManagePermission?: boolean;
   environment?: EnvironmentType;
+  authType?: ConnectionAuthType;
+  fullyQualifiedNamespace?: string;
 }
 
 export interface CreateNamespaceRequest {
   name: string;
-  connectionString: string;
+  connectionString?: string;
+  authType: ConnectionAuthType;
   displayName?: string;
   description?: string;
   environment?: EnvironmentType;
+}
+
+export interface EntraIdStatus {
+  isAvailable: boolean;
+  clientId: string | null;
+  isDefaultCredentialMode: boolean;
+  message: string;
 }
 
 // Message DTOs (match your backend MessageResponse)

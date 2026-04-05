@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Infrastructure.Configuration;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
@@ -23,6 +25,8 @@ public sealed class NamespacesController : ApiControllerBase
     private readonly IServiceBusClientFactory _clientFactory;
     private readonly IServiceBusClientCache _clientCache;
     private readonly IConnectionStringProtector _connectionStringProtector;
+    private readonly EntraIdOptions _entraIdOptions;
+    private readonly IOAuthService _oauthService;
     private readonly ILogger<NamespacesController> _logger;
 
     /// <summary>
@@ -32,18 +36,24 @@ public sealed class NamespacesController : ApiControllerBase
     /// <param name="clientFactory">The Service Bus client factory.</param>
     /// <param name="clientCache">The Service Bus client cache.</param>
     /// <param name="connectionStringProtector">The connection string protector.</param>
+    /// <param name="entraIdOptions">The Entra ID configuration options.</param>
+    /// <param name="oauthService">The OAuth service for user-delegated auth.</param>
     /// <param name="logger">The logger.</param>
     public NamespacesController(
         INamespaceRepository namespaceRepository,
         IServiceBusClientFactory clientFactory,
         IServiceBusClientCache clientCache,
         IConnectionStringProtector connectionStringProtector,
+        IOptions<EntraIdOptions> entraIdOptions,
+        IOAuthService oauthService,
         ILogger<NamespacesController> logger)
     {
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
         _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
+        _entraIdOptions = (entraIdOptions ?? throw new ArgumentNullException(nameof(entraIdOptions))).Value;
+        _oauthService = oauthService ?? throw new ArgumentNullException(nameof(oauthService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -132,6 +142,28 @@ public sealed class NamespacesController : ApiControllerBase
                 request.Description,
                 request.Environment);
         }
+        else if (request.AuthType == ConnectionAuthType.UserDelegated)
+        {
+            // Read session ID from HttpOnly cookie — never from the request body
+            var sessionId = Request.Cookies["servicehub_oauth_session"];
+            if (string.IsNullOrEmpty(sessionId))
+            {
+                return Unauthorized(new { detail = "No active Azure sign-in session. Please sign in with Azure Entra ID first." });
+            }
+
+            var sessionInfo = _oauthService.GetSessionInfo(sessionId);
+            if (sessionInfo is null || sessionInfo.IsExpired)
+            {
+                return Unauthorized(new { detail = "Your Azure sign-in session has expired. Please sign in again." });
+            }
+
+            createResult = Namespace.CreateWithUserDelegated(
+                request.Name,
+                sessionId,
+                request.DisplayName,
+                request.Description,
+                request.Environment);
+        }
         else
         {
             createResult = Namespace.CreateWithManagedIdentity(
@@ -149,6 +181,17 @@ public sealed class NamespacesController : ApiControllerBase
 
         var ns = createResult.Value;
 
+        // For Entra ID auth types, validate connectivity before persisting.
+        // This ensures the role assignment is in place before the namespace is saved.
+        if (request.AuthType != ConnectionAuthType.ConnectionString)
+        {
+            var createClientResult = await _clientFactory.CreateClientAsync(ns, cancellationToken);
+            if (createClientResult.IsFailure)
+            {
+                return ToActionResult<NamespaceResponse>(createClientResult.Error);
+            }
+        }
+
         // Save to repository
         var saveResult = await _namespaceRepository.AddAsync(ns, cancellationToken);
         if (saveResult.IsFailure)
@@ -164,6 +207,25 @@ public sealed class NamespacesController : ApiControllerBase
             nameof(GetById),
             new { id = ns.Id },
             response);
+    }
+
+    /// <summary>Gets whether Entra ID authentication is available on this instance.</summary>
+    [HttpGet("entra-id/status")]
+    [ProducesResponseType(typeof(EntraIdStatusResponse), StatusCodes.Status200OK)]
+    public IActionResult GetEntraIdStatus()
+    {
+        var isAvailable = _entraIdOptions.IsAvailable;
+        var isDefaultCred = _entraIdOptions.IsDefaultCredentialMode;
+
+        return Ok(new EntraIdStatusResponse(
+            IsAvailable: isAvailable,
+            ClientId: _entraIdOptions.IsConfigured ? _entraIdOptions.ClientId : null,
+            IsDefaultCredentialMode: isDefaultCred,
+            Message: _entraIdOptions.IsConfigured
+                ? "Azure Entra ID authentication is available. Users can connect without a connection string."
+                : isDefaultCred
+                    ? "Azure Entra ID is available via DefaultAzureCredential (az login or Managed Identity). No App Registration credentials configured."
+                    : "Azure Entra ID is not configured on this instance. Use connection string authentication or self-host with your own App Registration."));
     }
 
     /// <summary>
@@ -271,8 +333,27 @@ public sealed class NamespacesController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+
+        // For Entra ID namespaces there is no stored connection string;
+        // connectivity is validated at registration time and again via CreateClientAsync.
         if (ns.ConnectionString is null)
         {
+            if (ns.AuthType != ConnectionAuthType.ConnectionString)
+            {
+                var entraTestResult = await _clientFactory.CreateClientAsync(ns, cancellationToken);
+                var connected = entraTestResult.IsSuccess;
+
+                ns.RecordConnectionTest(connected);
+                await _namespaceRepository.UpdateAsync(ns, cancellationToken);
+
+                return Ok(new ConnectionTestResponse(
+                    IsConnected: connected,
+                    Message: connected
+                        ? "Entra ID connection verified successfully."
+                        : entraTestResult.Error.Message,
+                    TestedAt: DateTimeOffset.UtcNow));
+            }
+
             return Ok(new ConnectionTestResponse(
                 IsConnected: false,
                 Message: "Namespace does not have a connection string configured.",
@@ -422,3 +503,16 @@ public sealed record ConnectionTestResponse(
     bool IsConnected,
     string Message,
     DateTimeOffset TestedAt);
+
+/// <summary>
+/// Response model for Entra ID availability status.
+/// </summary>
+/// <param name="IsAvailable">Whether Entra ID authentication is configured and available.</param>
+/// <param name="ClientId">ServiceHub's App Registration Client ID (if available).</param>
+/// <param name="IsDefaultCredentialMode">True when using DefaultAzureCredential (no explicit App Registration).</param>
+/// <param name="Message">Human-readable status message.</param>
+public sealed record EntraIdStatusResponse(
+    bool IsAvailable,
+    string? ClientId,
+    bool IsDefaultCredentialMode,
+    string Message);

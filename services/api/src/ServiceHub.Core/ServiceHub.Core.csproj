@@ -18,4 +18,9 @@
     <ProjectReference Include="..\ServiceHub.Shared\ServiceHub.Shared.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Azure.Core: lightweight abstractions package for TokenCredential used in IServiceBusClientCache -->
+    <PackageReference Include="Azure.Core" Version="1.44.1" />
+  </ItemGroup>
+
 </Project>

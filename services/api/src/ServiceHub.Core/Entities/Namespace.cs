@@ -102,6 +102,13 @@ public sealed class Namespace
     public EnvironmentType Environment { get; private set; }
 
     /// <summary>
+    /// Gets the OAuth session ID for user-delegated auth (UserDelegated auth type only).
+    /// This is an opaque reference to the in-memory session that holds the user's tokens.
+    /// Null for all other authentication types.
+    /// </summary>
+    public string? OAuthSessionId { get; private set; }
+
+    /// <summary>
     /// Private constructor to enforce factory method usage.
     /// </summary>
     private Namespace()
@@ -197,6 +204,58 @@ public sealed class Namespace
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
             // Managed identity typically has full permissions
+            HasListenPermission = true,
+            HasSendPermission = true,
+            HasManagePermission = true,
+            Environment = environment
+        };
+
+        return Result<Namespace>.Success(ns);
+    }
+
+    /// <summary>
+    /// Creates a new namespace configuration using Azure OAuth 2.0 user-delegated authentication.
+    /// The user has signed in via Microsoft — their tokens are referenced via the session ID.
+    /// No connection string or SAS key is stored.
+    /// </summary>
+    /// <param name="name">The fully qualified namespace hostname (e.g. mybus.servicebus.windows.net).</param>
+    /// <param name="sessionId">The OAuth session ID (opaque; references the in-memory session).</param>
+    /// <param name="displayName">Optional display name.</param>
+    /// <param name="description">Optional description.</param>
+    /// <param name="environment">The deployment environment (defaults to Dev).</param>
+    /// <returns>A result containing the namespace or validation errors.</returns>
+    public static Result<Namespace> CreateWithUserDelegated(
+        string name,
+        string sessionId,
+        string? displayName = null,
+        string? description = null,
+        EnvironmentType environment = EnvironmentType.Dev)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return Result<Namespace>.Failure(Error.Validation(
+                ErrorCodes.Namespace.ConnectionStringRequired,
+                "A valid OAuth session is required for user-delegated authentication."));
+        }
+
+        var validationResult = ValidateManagedIdentityAuth(name, displayName, description);
+        if (validationResult.IsFailure)
+        {
+            return Result<Namespace>.Failure(validationResult.Errors);
+        }
+
+        var ns = new Namespace
+        {
+            Id = Guid.NewGuid(),
+            Name = name.Trim().ToLowerInvariant(),
+            ConnectionString = null,
+            DisplayName = displayName?.Trim(),
+            Description = description?.Trim(),
+            AuthType = ConnectionAuthType.UserDelegated,
+            OAuthSessionId = sessionId,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            // User-delegated inherits the user's own RBAC permissions on the namespace
             HasListenPermission = true,
             HasSendPermission = true,
             HasManagePermission = true,

@@ -1,3 +1,5 @@
+using Azure.Core;
+
 namespace ServiceHub.Core.Interfaces;
 
 /// <summary>
@@ -13,6 +15,15 @@ public interface IServiceBusClientCache : IAsyncDisposable
     /// <param name="connectionString">The connection string for the namespace.</param>
     /// <returns>A cached client wrapper.</returns>
     IServiceBusClientWrapper GetOrCreate(Guid namespaceId, string connectionString);
+
+    /// <summary>
+    /// Gets or creates a cached client wrapper using token-based authentication (Entra ID).
+    /// </summary>
+    /// <param name="namespaceId">The namespace identifier.</param>
+    /// <param name="credential">The token credential (ClientSecretCredential, ManagedIdentityCredential, etc.).</param>
+    /// <param name="fullyQualifiedNamespace">The fully qualified namespace hostname (e.g. mybus.servicebus.windows.net).</param>
+    /// <returns>A cached client wrapper.</returns>
+    IServiceBusClientWrapper GetOrCreate(Guid namespaceId, TokenCredential credential, string fullyQualifiedNamespace);
 
     /// <summary>
     /// Removes and disposes the client for the specified namespace.

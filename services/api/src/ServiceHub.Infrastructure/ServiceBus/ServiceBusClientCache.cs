@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Azure.Core;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Interfaces;
@@ -53,6 +54,43 @@ public sealed class ServiceBusClientCache : IServiceBusClientCache
             var wrapperLogger = _loggerFactory.CreateLogger<ServiceBusClientWrapper>();
 
             return new ServiceBusClientWrapper(id, client, connectionString, wrapperLogger);
+        });
+    }
+
+    /// <inheritdoc/>
+    public IServiceBusClientWrapper GetOrCreate(
+        Guid namespaceId,
+        TokenCredential credential,
+        string fullyQualifiedNamespace)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(credential);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fullyQualifiedNamespace);
+
+        return _clients.GetOrAdd(namespaceId, id =>
+        {
+            _logger.LogDebug(
+                "Creating new token-based ServiceBusClient for namespace {NamespaceId} ({Fqns})",
+                id, fullyQualifiedNamespace);
+
+            var clientOptions = new ServiceBusClientOptions
+            {
+                TransportType = ServiceBusTransportType.AmqpTcp,
+                RetryOptions = new ServiceBusRetryOptions
+                {
+                    Mode = ServiceBusRetryMode.Exponential,
+                    MaxRetries = 3,
+                    Delay = TimeSpan.FromSeconds(1),
+                    MaxDelay = TimeSpan.FromSeconds(30),
+                    TryTimeout = TimeSpan.FromSeconds(60)
+                }
+            };
+
+            var client = new ServiceBusClient(fullyQualifiedNamespace, credential, clientOptions);
+            var wrapperLogger = _loggerFactory.CreateLogger<ServiceBusClientWrapper>();
+
+            return new ServiceBusClientWrapper(
+                id, client, fullyQualifiedNamespace, credential, wrapperLogger);
         });
     }
 
