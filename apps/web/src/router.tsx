@@ -1,6 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { MainLayout } from '@/components/layout';
-import { DashboardPage, CorrelationExplorerPage, MessagesPage, ConnectPage, DlqHistoryPage, RulesPage, HealthPage, HelpPage, ScheduledMessagesPage } from '@/pages';
+import { DashboardPage, CorrelationExplorerPage, MessagesPage, ConnectPage, DlqHistoryPage, RulesPage, HealthPage, HelpPage, ScheduledMessagesPage, SecurityPage } from '@/pages';
 
 export const router = createBrowserRouter([
   {
@@ -46,6 +46,10 @@ export const router = createBrowserRouter([
       {
         path: 'correlation',
         element: <CorrelationExplorerPage />,
+      },
+      {
+        path: 'security',
+        element: <SecurityPage />,
       },
       {
         path: '*',

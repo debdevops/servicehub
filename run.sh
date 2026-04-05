@@ -108,8 +108,15 @@ detect_os() {
             exit 1
             ;;
         CYGWIN*|MINGW*|MSYS*)
-            echo -e "${RED}✗ Error: Please use WSL (Windows Subsystem for Linux) on Windows${NC}"
-            echo -e "${YELLOW}Instructions: https://docs.microsoft.com/windows/wsl/install${NC}"
+            echo -e "${RED}✗ Native Windows detected. run.sh requires WSL or bash.${NC}"
+            echo ""
+            echo -e "${YELLOW}Option 1 (recommended): Use WSL${NC}"
+            echo -e "  wsl --install"
+            echo -e "  Then re-run: ./run.sh"
+            echo ""
+            echo -e "${YELLOW}Option 2: Use PowerShell${NC}"
+            echo -e "  A PowerShell equivalent is available: .\\run.ps1"
+            echo ""
             exit 1
             ;;
         *)
@@ -267,7 +274,14 @@ check_and_install_dotnet() {
         else
             echo -e "${RED}✗ Error: .NET 10 SDK installation failed or wrong version installed.${NC}"
             echo -e "${YELLOW}Installed: $(dotnet --version 2>/dev/null || echo 'none') — required: 10.x${NC}"
-            echo -e "${YELLOW}Install manually: https://dotnet.microsoft.com/download/dotnet/10.0${NC}"
+            echo ""
+            echo -e "${YELLOW}Manual installation options:${NC}"
+            echo -e "  macOS:    brew install --cask dotnet-sdk"
+            echo -e "  Ubuntu:   sudo apt-get install -y dotnet-sdk-10.0"
+            echo -e "  RHEL:     sudo dnf install -y dotnet-sdk-10.0"
+            echo -e "  Arch:     sudo pacman -S dotnet-sdk"
+            echo -e "  Windows:  winget install Microsoft.DotNet.SDK.10"
+            echo -e "  Manual:   https://dotnet.microsoft.com/download/dotnet/10.0"
             exit 1
         fi
     else
@@ -321,7 +335,14 @@ check_and_install_nodejs() {
             echo -e "${GREEN}✓ npm installed successfully (v$(npm --version))${NC}"
         else
             echo -e "${RED}✗ Error: Node.js installation failed${NC}"
-            echo -e "${YELLOW}Please install Node.js 18+ manually from: https://nodejs.org/${NC}"
+            echo ""
+            echo -e "${YELLOW}Manual installation options:${NC}"
+            echo -e "  macOS:    brew install node"
+            echo -e "  Ubuntu:   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs"
+            echo -e "  RHEL:     curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -"
+            echo -e "  Arch:     sudo pacman -S nodejs npm"
+            echo -e "  Windows:  winget install OpenJS.NodeJS.LTS"
+            echo -e "  Manual:   https://nodejs.org/"
             exit 1
         fi
     else
@@ -455,6 +476,15 @@ echo -e "${YELLOW}║   Detecting System & Prerequisites     ║${NC}"
 echo -e "${YELLOW}╚════════════════════════════════════════╝${NC}"
 echo ""
 
+# Verify we are running in Development mode (never Production locally)
+if [ "${ASPNETCORE_ENVIRONMENT:-Development}" = "Production" ]; then
+    echo -e "${YELLOW}⚠ Warning: ASPNETCORE_ENVIRONMENT is set to Production.${NC}"
+    echo -e "   run.sh is intended for local development only."
+    echo -e "   For Azure deployment, use the self-hosting guide: ./self-hosting/README.md${NC}"
+    read -r -p "Continue anyway? (y/N): " confirm
+    [[ "$confirm" =~ ^[Yy]$ ]] || exit 0
+fi
+
 detect_os
 echo -e "${GREEN}✓ Detected OS: $OS ($PACKAGE_MANAGER)${NC}"
 if [ "$OS" = "linux" ]; then
@@ -496,6 +526,9 @@ echo -e "${YELLOW}║      Generating Local Secrets          ║${NC}"
 echo -e "${YELLOW}╚════════════════════════════════════════╝${NC}"
 echo ""
 
+# NOTE: appsettings.Local.json is git-ignored and only loaded in Development mode.
+#       It does NOT affect Azure App Service deployments.
+#       Azure uses Application Settings (env vars) from appsettings.Production.json instead.
 LOCAL_SETTINGS="$SCRIPT_DIR/services/api/src/ServiceHub.Api/appsettings.Local.json"
 if [[ -f "$LOCAL_SETTINGS" ]]; then
     echo -e "${GREEN}✓ appsettings.Local.json already exists — keeping existing secrets${NC}"

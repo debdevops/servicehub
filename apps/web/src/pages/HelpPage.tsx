@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { Search, BookOpen, ChevronDown, ChevronRight, Play, HelpCircle } from 'lucide-react';
 import { helpSections } from '@/lib/helpContent';
 import { resetTour } from '@/components/help/GuidedTour';
@@ -175,9 +176,17 @@ export function HelpPage() {
         </div>
 
         {/* Footer */}
-        <p className="text-center text-xs text-gray-400 mt-8 pb-4">
-          ServiceHub — Azure Service Bus Management Dashboard
-        </p>
+        <div className="mt-8 pb-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-gray-400">
+            ServiceHub — Azure Service Bus Management Dashboard
+          </p>
+          <Link
+            to="/security"
+            className="text-xs text-green-600 hover:text-green-800 hover:underline font-medium"
+          >
+            Security &amp; Privacy →
+          </Link>
+        </div>
       </div>
     </div>
   );
