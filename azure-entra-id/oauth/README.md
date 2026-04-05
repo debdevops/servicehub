@@ -157,8 +157,9 @@ Before diving into the steps, here's what the final API permissions table should
 |---|---|---|
 | **Microsoft Graph** | `User.Read`, `openid`, `profile`, `email`, `offline_access` | Delegated |
 | **Azure Service Management** | `user_impersonation` | Delegated |
-| **Azure Service Bus** | `user_impersonation` | Delegated |
 | | **Status: All should show ✓ Granted** | |
+
+> **Note about Azure Service Bus:** Azure Service Bus does not appear in the app registration API permissions list. ServiceHub requests the `servicebus.azure.com/user_impersonation` scope at runtime during token exchange. You do NOT need to add it as an explicit permission.
 
 ---
 
@@ -223,18 +224,17 @@ You're now back on the API permissions page. You should see Microsoft Graph list
 
 Back on the API permissions page, you should now see both Microsoft Graph and Azure Service Management listed.
 
-#### 2e. Add Azure Service Bus API permissions
+#### 2e. Azure Service Bus — Not Required
 
-1. Click **+ Add a permission** one more time
-2. The **"Request API permissions"** panel slides out again
-3. **Again, click on the "Microsoft APIs"** tab at the top
-4. Search box appears — type: **Azure Service Bus**
-5. Click on **Azure Service Bus** in the results (owned by Microsoft)
-6. Select **Delegated permissions** (radio button)
-7. Search for and check: ✅ **user_impersonation**
-8. Click **Add permissions**
+**Important:** You do NOT need to add "Azure Service Bus" as an explicit API permission.
 
-You should now see three APIs listed: Microsoft Graph, Azure Service Management, and Azure Service Bus.
+ServiceHub automatically requests the `servicebus.azure.com/user_impersonation` scope at runtime when users sign in. This is called a "dynamic scope request" and does not require pre-configuration of the API in your app registration.
+
+You should now have **two APIs configured** on the API permissions page:
+- ✅ Microsoft Graph (5 permissions)
+- ✅ Azure Service Management (user_impersonation)
+
+That's all you need for Step 2. Move on to Step 3 to create a client secret.
 
 #### 2f. Grant admin consent
 
@@ -408,15 +408,18 @@ OAuth 2.0 Authorization Code + PKCE is the industry standard for user-delegated 
 7. Check ✅ **user_impersonation**
 8. Click **Add permissions**
 
-#### "I can't find Azure Service Bus in the API list"
-1. Click **+ Add a permission**
-2. Confirm you're in the **"Microsoft APIs"** tab (top of the panel)
-3. In the search box, type: **Azure Service Bus**
-4. Look for the result owned by **Microsoft**
-5. Click on it
-6. Select **Delegated permissions**
-7. Check ✅ **user_impersonation**
-8. Click **Add permissions**
+#### "I can't find Azure Service Bus in the API permissions list"
+
+This is correct — **Azure Service Bus does not appear in the API permissions list**.
+
+**Why?** Azure Service Bus uses dynamic scope requests at token time. ServiceHub requests the `servicebus.azure.com/user_impersonation` scope automatically when users authenticate. It does not need to be pre-configured in your app registration.
+
+**What to do:**
+1. Do NOT try to add Azure Service Bus as an API permission
+2. You only need Microsoft Graph and Azure Service Management configured
+3. Proceed to Step 3 to create a client secret
+
+When users sign in, ServiceHub will prompt them to consent to the Service Bus scope if needed.
 
 #### "I don't see a 'Grant admin consent' button"
 The button is at the **top of the API permissions page**, not at the bottom.

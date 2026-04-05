@@ -53,16 +53,17 @@ Use this checklist to set up ServiceHub OAuth 2.0. Estimated time: **10 minutes*
   - [ ] `user_impersonation`
 - [ ] Click **Add permissions**
 
-### Add Azure Service Bus Permissions
+### Add Azure Service Bus Permissions — NOT REQUIRED
 
-- [ ] Click **+ Add a permission**
-- [ ] **Again, click on the "Microsoft APIs"** tab (not "APIs my organization uses")
-- [ ] Search for: `Azure Service Bus`
-- [ ] Click on it (owned by Microsoft)
-- [ ] Select **Delegated permissions** (radio button)
-- [ ] Check:
-  - [ ] `user_impersonation`
-- [ ] Click **Add permissions**
+⚠️ **Azure Service Bus is not available in the API permissions list — and you don't need to add it.**
+
+ServiceHub requests the `servicebus.azure.com/user_impersonation` scope at runtime when users sign in. This is handled automatically and does not require explicit API permission configuration.
+
+**You are done with Step 2!** You have configured:
+- ✅ Microsoft Graph (5 permissions)
+- ✅ Azure Service Management (user_impersonation)
+
+Proceed to **Step 3 — Create Client Secret** below.
 
 ### Grant Admin Consent
 
