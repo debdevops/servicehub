@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Moq;
 using ServiceHub.Infrastructure.Security;
@@ -10,12 +11,15 @@ namespace ServiceHub.UnitTests.Infrastructure.Security;
 public sealed class ConnectionStringProtectorTests
 {
     private readonly Mock<ILogger<ConnectionStringProtector>> _loggerMock;
+    private readonly Mock<IHostEnvironment> _environmentMock;
     private readonly IConfiguration _configuration;
     private const string ValidConnectionString = "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=secretkey123==";
 
     public ConnectionStringProtectorTests()
     {
         _loggerMock = new Mock<ILogger<ConnectionStringProtector>>();
+        _environmentMock = new Mock<IHostEnvironment>();
+        _environmentMock.Setup(e => e.EnvironmentName).Returns("Development");
         
         var configurationBuilder = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -29,7 +33,7 @@ public sealed class ConnectionStringProtectorTests
     [Fact]
     public void Protect_WithValidConnectionString_ShouldReturnEncryptedString()
     {
-        var protector = new ConnectionStringProtector(_configuration, _loggerMock.Object);
+        var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
 
         var result = protector.Protect(ValidConnectionString);
 
@@ -41,7 +45,7 @@ public sealed class ConnectionStringProtectorTests
     [Fact]
     public void Protect_WithEmptyString_ShouldReturnFailure()
     {
-        var protector = new ConnectionStringProtector(_configuration, _loggerMock.Object);
+        var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
 
         var result = protector.Protect(string.Empty);
 
@@ -52,7 +56,7 @@ public sealed class ConnectionStringProtectorTests
     [Fact]
     public void Protect_WhenAlreadyEncrypted_ShouldReturnSameValue()
     {
-        var protector = new ConnectionStringProtector(_configuration, _loggerMock.Object);
+        var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
         var encrypted = protector.Protect(ValidConnectionString).Value;
 
         var result = protector.Protect(encrypted);
@@ -64,7 +68,7 @@ public sealed class ConnectionStringProtectorTests
     [Fact]
     public void Unprotect_WithEncryptedString_ShouldReturnOriginalValue()
     {
-        var protector = new ConnectionStringProtector(_configuration, _loggerMock.Object);
+        var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
         var encrypted = protector.Protect(ValidConnectionString).Value;
 
         var result = protector.Unprotect(encrypted);
@@ -76,7 +80,7 @@ public sealed class ConnectionStringProtectorTests
     [Fact]
     public void Unprotect_WithUnprotectedString_ShouldReturnSameValue()
     {
-        var protector = new ConnectionStringProtector(_configuration, _loggerMock.Object);
+        var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
 
         var result = protector.Unprotect(ValidConnectionString);
 
@@ -87,7 +91,7 @@ public sealed class ConnectionStringProtectorTests
     [Fact]
     public void Unprotect_WithEmptyString_ShouldReturnFailure()
     {
-        var protector = new ConnectionStringProtector(_configuration, _loggerMock.Object);
+        var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
 
         var result = protector.Unprotect(string.Empty);
 
@@ -97,7 +101,7 @@ public sealed class ConnectionStringProtectorTests
     [Fact]
     public void Mask_WithConnectionString_ShouldMaskSecrets()
     {
-        var protector = new ConnectionStringProtector(_configuration, _loggerMock.Object);
+        var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
 
         var masked = protector.Mask(ValidConnectionString);
 
@@ -108,7 +112,7 @@ public sealed class ConnectionStringProtectorTests
     [Fact]
     public void Mask_WithEncryptedString_ShouldReturnEncryptedIndicator()
     {
-        var protector = new ConnectionStringProtector(_configuration, _loggerMock.Object);
+        var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
         var encrypted = protector.Protect(ValidConnectionString).Value;
 
         var masked = protector.Mask(encrypted);
@@ -119,7 +123,7 @@ public sealed class ConnectionStringProtectorTests
     [Fact]
     public void Mask_WithEmptyString_ShouldReturnEmpty()
     {
-        var protector = new ConnectionStringProtector(_configuration, _loggerMock.Object);
+        var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
 
         var masked = protector.Mask(string.Empty);
 
@@ -129,7 +133,7 @@ public sealed class ConnectionStringProtectorTests
     [Fact]
     public void ProtectAndUnprotect_RoundTrip_ShouldPreserveValue()
     {
-        var protector = new ConnectionStringProtector(_configuration, _loggerMock.Object);
+        var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
 
         var protected1 = protector.Protect(ValidConnectionString);
         var unprotected = protector.Unprotect(protected1.Value);
@@ -148,7 +152,7 @@ public sealed class ConnectionStringProtectorTests
                 ["Security:EnableConnectionStringEncryption"] = "false"
             });
         var config = configurationBuilder.Build();
-        var protector = new ConnectionStringProtector(config, _loggerMock.Object);
+        var protector = new ConnectionStringProtector(config, _environmentMock.Object, _loggerMock.Object);
 
         var result = protector.Protect(ValidConnectionString);
 

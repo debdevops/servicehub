@@ -325,7 +325,7 @@ public sealed class NamespacesController : ApiControllerBase
         {
             _logger.LogWarning(
                 ex,
-                "Connection test failed for namespace {NamespaceId}",
+                "Connection test exception for {Id}",
                 id);
 
             // Update the namespace with failed test
@@ -334,7 +334,7 @@ public sealed class NamespacesController : ApiControllerBase
 
             return Ok(new ConnectionTestResponse(
                 IsConnected: false,
-                Message: $"Connection test failed: {ex.Message}",
+                Message: "An error occurred while testing the connection.",
                 TestedAt: DateTimeOffset.UtcNow));
         }
     }

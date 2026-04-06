@@ -178,6 +178,14 @@ public sealed class ServiceBusClientFactory : IServiceBusClientFactory
                     ErrorCodes.Namespace.EndpointInvalid,
                     "The Endpoint scheme must be 'sb://'."));
             }
+
+            // SECURITY: SSRF prevention — only allow Azure Service Bus hostnames.
+            if (!uri.Host.EndsWith(".servicebus.windows.net", StringComparison.OrdinalIgnoreCase))
+            {
+                return Result.Failure(Error.Validation(
+                    ErrorCodes.Namespace.EndpointInvalid,
+                    "Endpoint must be a *.servicebus.windows.net host."));
+            }
         }
         catch
         {
