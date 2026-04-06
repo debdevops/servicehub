@@ -52,26 +52,6 @@ export function ConnectPage() {
       return;
     }
 
-    // SECURITY WARNING: RootManageSharedAccessKey has full namespace access.
-    // Warn the user but do not block — it still works for debugging.
-    if (connectionString.includes('RootManageSharedAccessKey')) {
-      toast(
-        '⚠️ You are using RootManageSharedAccessKey which has full namespace access. ' +
-        'Consider creating a dedicated "servicehub" policy with Listen-only permission for better security. ' +
-        'Connecting anyway...',
-        {
-          duration: 8000,
-          style: {
-            background: '#fef3c7',
-            color: '#92400e',
-            border: '1px solid #fbbf24',
-          },
-          icon: '⚠️',
-        }
-      );
-      // Do NOT return — allow the connection to proceed
-    }
-
     // Extract namespace from connection string
     const namespaceName = extractNamespaceFromConnectionString(connectionString.trim());
     

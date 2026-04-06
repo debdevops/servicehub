@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Shared.Constants;
@@ -37,9 +38,11 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
     /// Initializes a new instance of the <see cref="ConnectionStringProtector"/> class.
     /// </summary>
     /// <param name="configuration">The configuration.</param>
+    /// <param name="environment">The host environment.</param>
     /// <param name="logger">The logger instance.</param>
     public ConnectionStringProtector(
         IConfiguration configuration,
+        IHostEnvironment environment,
         ILogger<ConnectionStringProtector> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -69,6 +72,13 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
                 "Security warning: Encryption key appears to be a placeholder or development key. " +
                 "Set a cryptographically random value via the SECURITY__ENCRYPTIONKEY environment variable " +
                 "or Azure App Service Application Settings before using in production.");
+
+            if (!environment.IsDevelopment())
+            {
+                throw new InvalidOperationException(
+                    "Security:EncryptionKey must be set to a cryptographically random value via " +
+                    "the SECURITY__ENCRYPTIONKEY environment variable in non-Development environments.");
+            }
         }
     }
 
