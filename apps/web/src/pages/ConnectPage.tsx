@@ -177,7 +177,6 @@ export function ConnectPage() {
                 {[
                   { label: 'Connection string', value: 'AES-256-GCM encrypted before saving — never returned to browser' },
                   { label: 'Message content', value: 'Never logged or stored by ServiceHub' },
-                  { label: 'Your encryption key', value: 'Lives only in your own Azure App Service config' },
                 ].map(({ label, value }) => (
                   <div key={label} className="flex items-start gap-2 text-xs">
                     <span className="text-green-500 mt-0.5 flex-shrink-0">✓</span>
