@@ -79,8 +79,8 @@ export function MainLayout() {
   // Resolve current namespace to check environment and permissions
   const { data: namespaces } = useNamespaces();
   const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
-  const isProd = currentNamespace?.environment === 'Prod';
-  const canUseFab = !isProd && currentNamespace?.hasSendPermission !== false;
+  // FAB only visible in DEV with Manage permission (required for send, generate, and dead-letter)
+  const canUseFab = currentNamespace?.environment === 'Dev' && currentNamespace?.hasManagePermission === true;
 
   // Determine entity type and names for FAB
   const entityType: 'queue' | 'topic' = topicName ? 'topic' : 'queue';
@@ -120,7 +120,7 @@ export function MainLayout() {
         </main>
       </div>
 
-      {/* FAB - Only show on messages page, NOT in production, and only with Send permission */}
+      {/* FAB - Only show on messages page, in DEV environment, and only with Manage permission */}
       {isMessagesPage && canUseFab && (
         <MessageFAB 
           namespaceId={namespaceId}
