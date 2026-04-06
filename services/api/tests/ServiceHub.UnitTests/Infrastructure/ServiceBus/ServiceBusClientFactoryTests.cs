@@ -217,6 +217,7 @@ public sealed class ServiceBusClientFactoryTests
         var result = await _sut.CreateClientAsync(ns);
 
         result.IsFailure.Should().BeTrue();
-        result.Error.Message.Should().Contain("Invalid");
+        // Message is intentionally generic to avoid leaking Azure SDK internals.
+        result.Error.Message.Should().Contain("invalid", Exactly.Once(), "because the safe error message says 'connection string is invalid'");
     }
 }

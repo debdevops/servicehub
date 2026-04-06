@@ -76,6 +76,11 @@ public sealed class TopicsController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
+
         if (ns.ConnectionString is null)
         {
             return BadRequest("Namespace does not have a connection string configured.");
@@ -134,6 +139,11 @@ public sealed class TopicsController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
+
         if (ns.ConnectionString is null)
         {
             return BadRequest("Namespace does not have a connection string configured.");
@@ -194,6 +204,10 @@ public sealed class TopicsController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
 
         // Check if namespace has Send permission (required to send messages)
         if (!ns.HasSendPermission)
@@ -389,6 +403,10 @@ public sealed class TopicsController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
         
         // Check if namespace has Send permission (required to dead-letter messages)
         if (!ns.HasSendPermission)

@@ -1,5 +1,8 @@
+using System.Security.Cryptography;
+using System.Text;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Security;
+using ServiceHub.Core.Entities;
 using ServiceHub.Infrastructure.Security;
 
 namespace ServiceHub.Api.Middleware;
@@ -164,6 +167,8 @@ public sealed class ApiKeyAuthenticationMiddleware
             {
                 context.Items["Authenticated"] = true;
                 context.Items["AuthMethod"] = "SpaToken";
+                // SPA token identifies the instance admin — all SPA sessions share the SPA owner scope.
+                context.Items["OwnerId"] = Namespace.SpaOwnerId;
 
                 _logger.LogDebug(
                     "SPA token authentication successful for {Method} {Path}",
@@ -211,6 +216,12 @@ public sealed class ApiKeyAuthenticationMiddleware
         context.Items["Authenticated"] = true;
         context.Items["AuthMethod"] = "ApiKey";
         context.Items["ApiKeyConfig"] = keyConfig;
+        // Tenant isolation: admin keys (no explicit scopes) share the SPA owner scope so they
+        // can see the same namespaces as the browser. Scoped keys get a deterministic owner ID
+        // derived from the key itself, isolating their namespace pool from other callers.
+        context.Items["OwnerId"] = keyConfig.IsAdminKey
+            ? Namespace.SpaOwnerId
+            : ComputeScopedOwnerId(apiKey);
 
         _logger.LogDebug(
             "Authentication successful for {Method} {Path} with key {KeyPrefix}",
@@ -273,5 +284,18 @@ public sealed class ApiKeyAuthenticationMiddleware
         };
 
         await context.Response.WriteAsJsonAsync(response);
+    }
+
+    /// <summary>
+    /// Derives a stable, short owner ID from a scoped API key using SHA-256.
+    /// The hash is safe to store in repository data — it reveals nothing about the key value
+    /// but produces a consistent identity string per unique key.
+    /// </summary>
+    private static string ComputeScopedOwnerId(string apiKey)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(apiKey));
+        // Use first 12 bytes → 24 hex chars. Collision probability is negligible
+        // for the number of API keys any single ServiceHub instance will have.
+        return "key_" + Convert.ToHexString(hash[..12]).ToLowerInvariant();
     }
 }

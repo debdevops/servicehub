@@ -55,7 +55,10 @@ public sealed class RedactingLogger : ILogger
     /// <inheritdoc/>
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull
     {
-        return null; // No scope support for simplicity
+        // Return a no-op disposable rather than null. Callers use `using var scope = ...`
+        // and will null-dereference on dispose if null is returned. The NullScope pattern
+        // is the same approach used by Microsoft.Extensions.Logging.Abstractions.
+        return NullScope.Instance;
     }
 
     /// <inheritdoc/>
@@ -90,5 +93,15 @@ public sealed class RedactingLogger : ILogger
         var logOutput = $"[{timestamp}] [{levelString}] [{_categoryName}] {redactedMessage}{exceptionInfo}";
         
         Console.WriteLine(logOutput);
+    }
+
+    /// <summary>
+    /// A no-op <see cref="IDisposable"/> returned from <see cref="BeginScope{TState}"/>.
+    /// </summary>
+    private sealed class NullScope : IDisposable
+    {
+        public static readonly NullScope Instance = new();
+        private NullScope() { }
+        public void Dispose() { }
     }
 }

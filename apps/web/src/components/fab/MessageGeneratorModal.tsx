@@ -229,13 +229,13 @@ export function MessageGeneratorModal({
           `Generated ${successCount} messages (${errorCount} failed).\nCheck console for details.`,
           { duration: 5000 }
         );
-        console.error('Message generation errors:', errors);
+        if (import.meta.env.DEV) console.error('Message generation errors:', errors);
       } else {
         toast.error(
           `Failed to generate messages. ${errors[0] || 'Unknown error'}`,
           { duration: 5000 }
         );
-        console.error('All messages failed:', errors);
+        if (import.meta.env.DEV) console.error('All messages failed:', errors);
       }
 
       // Only call onGenerated if at least some messages succeeded
@@ -249,7 +249,7 @@ export function MessageGeneratorModal({
       }
     } catch (error) {
       toast.dismiss(toastId);
-      console.error('Generation failed:', error);
+      if (import.meta.env.DEV) console.error('Generation failed:', error);
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       toast.error(`Failed to generate messages: ${errorMsg}`, { duration: 5000 });
     } finally {

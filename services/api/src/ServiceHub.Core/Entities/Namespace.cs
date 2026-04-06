@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using ServiceHub.Core.Enums;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
@@ -102,11 +104,49 @@ public sealed class Namespace
     public EnvironmentType Environment { get; private set; }
 
     /// <summary>
+    /// Gets the owner identifier for this namespace.
+    /// Used to enforce tenant isolation — each caller identity maps to a stable owner ID.
+    /// SPA token sessions and admin keys share "__spa__"; scoped API keys get a key-derived ID.
+    /// Defaults to "__spa__" for backward compatibility with data created before isolation was added.
+    /// </summary>
+    public string OwnerId { get; private set; } = SpaOwnerId;
+
+    /// <summary>
+    /// Gets the SHA-256 hash of the plaintext connection string.
+    /// Stored alongside the encrypted value to enable fast duplicate detection
+    /// without decrypting all stored namespaces (O(1) hash lookup vs O(n) decryption).
+    /// </summary>
+    public string? ConnectionStringHash { get; private set; }
+
+    /// <summary>
+    /// The stable owner-ID used for SPA token sessions and admin API keys.
+    /// All traffic authenticated via the instance-level SPA secret shares this owner scope.
+    /// </summary>
+    public const string SpaOwnerId = "__spa__";
+
+    /// <summary>
     /// Private constructor to enforce factory method usage.
     /// </summary>
     private Namespace()
     {
         Name = string.Empty;
+    }
+
+    /// <summary>
+    /// Computes a SHA-256 hash of the given connection string for deduplication.
+    /// The hash is safe to store alongside an encrypted connection string — it reveals
+    /// nothing about the plaintext but allows exact-match comparison at O(1) cost.
+    /// </summary>
+    /// <param name="connectionString">The plaintext connection string.</param>
+    /// <returns>Lowercase hex-encoded SHA-256 hash, or null if the input is null/empty.</returns>
+    public static string? ComputeConnectionStringHash(string? connectionString)
+    {
+        if (string.IsNullOrEmpty(connectionString))
+            return null;
+
+        var normalised = connectionString.Trim();
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(normalised));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
     /// <summary>
@@ -117,13 +157,17 @@ public sealed class Namespace
     /// <param name="displayName">Optional display name.</param>
     /// <param name="description">Optional description.</param>
     /// <param name="environment">The deployment environment (defaults to Dev).</param>
+    /// <param name="ownerId">The caller-identity owner ID for tenant isolation. Defaults to the SPA owner.</param>
+    /// <param name="connectionStringHash">Pre-computed SHA-256 hash of the plaintext connection string for deduplication.</param>
     /// <returns>A result containing the namespace or validation errors.</returns>
     public static Result<Namespace> Create(
         string name,
         string connectionString,
         string? displayName = null,
         string? description = null,
-        EnvironmentType environment = EnvironmentType.Dev)
+        EnvironmentType environment = EnvironmentType.Dev,
+        string? ownerId = null,
+        string? connectionStringHash = null)
     {
         var validationResult = ValidateConnectionStringAuth(name, connectionString, displayName, description);
         if (validationResult.IsFailure)
@@ -147,7 +191,9 @@ public sealed class Namespace
             HasListenPermission = permissions.HasListen,
             HasSendPermission = permissions.HasSend,
             HasManagePermission = permissions.HasManage,
-            Environment = environment
+            Environment = environment,
+            OwnerId = ownerId ?? SpaOwnerId,
+            ConnectionStringHash = connectionStringHash,
         };
 
         return Result<Namespace>.Success(ns);
@@ -161,13 +207,15 @@ public sealed class Namespace
     /// <param name="displayName">Optional display name.</param>
     /// <param name="description">Optional description.</param>
     /// <param name="environment">The deployment environment (defaults to Dev).</param>
+    /// <param name="ownerId">The caller-identity owner ID for tenant isolation. Defaults to the SPA owner.</param>
     /// <returns>A result containing the namespace or validation errors.</returns>
     public static Result<Namespace> CreateWithManagedIdentity(
         string name,
         ConnectionAuthType authType = ConnectionAuthType.ManagedIdentity,
         string? displayName = null,
         string? description = null,
-        EnvironmentType environment = EnvironmentType.Dev)
+        EnvironmentType environment = EnvironmentType.Dev,
+        string? ownerId = null)
     {
         // Allowlist: only accept known managed-identity types; reject ConnectionString
         // and any future/unknown enum values to prevent user-controlled bypass.
@@ -200,7 +248,8 @@ public sealed class Namespace
             HasListenPermission = true,
             HasSendPermission = true,
             HasManagePermission = true,
-            Environment = environment
+            Environment = environment,
+            OwnerId = ownerId ?? SpaOwnerId,
         };
 
         return Result<Namespace>.Success(ns);

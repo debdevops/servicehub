@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using ServiceHub.Core.Entities;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Api.Controllers;
@@ -10,6 +11,15 @@ namespace ServiceHub.Api.Controllers;
 [Produces("application/json")]
 public abstract class ApiControllerBase : ControllerBase
 {
+    /// <summary>
+    /// The owner ID for the current request, derived from authentication context.
+    /// Used for tenant isolation across all data-access operations.
+    /// </summary>
+    protected string OwnerId =>
+        HttpContext.Items.TryGetValue("OwnerId", out var v) && v is string s
+            ? s
+            : Namespace.SpaOwnerId;
+
     /// <summary>
     /// Converts a Result to an appropriate ActionResult.
     /// </summary>

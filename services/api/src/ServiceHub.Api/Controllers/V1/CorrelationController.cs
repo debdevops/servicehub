@@ -95,11 +95,15 @@ public sealed class CorrelationController : ApiControllerBase
             {
                 return ToActionResult<CorrelationTimelineResponse>(nsResult.Error);
             }
+            if (!string.Equals(nsResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
+            {
+                return NotFound();
+            }
             namespacesToSearch = [nsResult.Value];
         }
         else
         {
-            var allNsResult = await _namespaceRepository.GetAllAsync(cancellationToken);
+            var allNsResult = await _namespaceRepository.GetByOwnerAsync(OwnerId, cancellationToken);
             if (allNsResult.IsFailure)
             {
                 return ToActionResult<CorrelationTimelineResponse>(allNsResult.Error);

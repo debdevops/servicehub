@@ -81,7 +81,9 @@ public sealed class SensitiveDataTelemetryProcessor : ITelemetryProcessor
         var query = HttpUtility.ParseQueryString(url.Query);
         var modified = false;
 
-        foreach (string? key in query.Keys)
+        // Materialize keys first to avoid modifying the collection during enumeration
+        var keys = query.Keys.Cast<string?>().ToList();
+        foreach (var key in keys)
         {
             if (key is not null && SensitiveQueryParams.Contains(key))
             {

@@ -38,11 +38,28 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        var dataDir = configuration["NamespaceRepository:DataDirectory"]
+        var rawDataDir = configuration["NamespaceRepository:DataDirectory"]
             ?? Path.Combine(AppContext.BaseDirectory, "data");
 
-        Directory.CreateDirectory(dataDir);
-        _storagePath = Path.Combine(dataDir, "servicehub-namespaces.json");
+        // Resolve to absolute path and verify it doesn't escape outside the application root.
+        // This guards against path-traversal in the DataDirectory configuration value,
+        // e.g. "../../etc" supplied via an environment variable.
+        var resolvedDataDir = Path.GetFullPath(rawDataDir);
+        var appBaseDir = Path.GetFullPath(AppContext.BaseDirectory);
+
+        // Allow paths under the app base OR common hosting directories (e.g. /home/data on Azure App Service)
+        if (!resolvedDataDir.StartsWith(appBaseDir, StringComparison.OrdinalIgnoreCase)
+            && !resolvedDataDir.StartsWith("/home", StringComparison.OrdinalIgnoreCase)
+            && !resolvedDataDir.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "DataDirectory '{Resolved}' is outside allowed paths; falling back to app base directory.",
+                resolvedDataDir);
+            resolvedDataDir = Path.Combine(appBaseDir, "data");
+        }
+
+        Directory.CreateDirectory(resolvedDataDir);
+        _storagePath = Path.Combine(resolvedDataDir, "servicehub-namespaces.json");
 
         LoadFromDisk();
     }
@@ -104,6 +121,23 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
     }
 
     /// <inheritdoc/>
+    public Task<Result<IReadOnlyList<Namespace>>> GetByOwnerAsync(string ownerId, CancellationToken cancellationToken = default)
+    {
+        // SPA owner also owns legacy namespaces that pre-date the OwnerId field
+        // (they were written without an OwnerId and deserialise to the default value).
+        var namespaces = _namespaces.Values
+            .Where(n => string.Equals(n.OwnerId, ownerId, StringComparison.Ordinal))
+            .ToList();
+
+        _logger.LogDebug(
+            "Retrieved {Count} namespaces for owner {OwnerId}",
+            namespaces.Count,
+            ownerId);
+
+        return Task.FromResult(Result.Success<IReadOnlyList<Namespace>>(namespaces));
+    }
+
+    /// <inheritdoc/>
     public Task<Result<IReadOnlyList<Namespace>>> GetActiveAsync(CancellationToken cancellationToken = default)
     {
         var activeNamespaces = _namespaces.Values
@@ -124,9 +158,10 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
                 "Namespace cannot be null.")));
         }
 
-        // Check for duplicate name
+        // Check for duplicate name within the same tenant
         var existingByName = _namespaces.Values.FirstOrDefault(n =>
-            n.Name.Equals(@namespace.Name, StringComparison.OrdinalIgnoreCase));
+            n.Name.Equals(@namespace.Name, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(n.OwnerId, @namespace.OwnerId, StringComparison.Ordinal));
 
         if (existingByName is not null)
         {
@@ -177,10 +212,24 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
                 $"Namespace with ID '{@namespace.Id}' was not found.")));
         }
 
-        // Check for duplicate name (excluding current namespace)
+        // Prevent OwnerId from being changed — immutable after creation
+        var existing = _namespaces[@namespace.Id];
+        if (!string.Equals(existing.OwnerId, @namespace.OwnerId, StringComparison.Ordinal))
+        {
+            _logger.LogWarning(
+                "Attempted to change OwnerId on namespace {NamespaceId}",
+                @namespace.Id);
+
+            return Task.FromResult(Result.Failure(Error.Validation(
+                ErrorCodes.Namespace.NotFound,
+                "Cannot modify the owner of a namespace.")));
+        }
+
+        // Check for duplicate name (excluding current namespace) within the same tenant
         var existingByName = _namespaces.Values.FirstOrDefault(n =>
             n.Id != @namespace.Id &&
-            n.Name.Equals(@namespace.Name, StringComparison.OrdinalIgnoreCase));
+            n.Name.Equals(@namespace.Name, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(n.OwnerId, @namespace.OwnerId, StringComparison.Ordinal));
 
         if (existingByName is not null)
         {
@@ -290,7 +339,14 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
                 .ToList();
 
             var json = JsonSerializer.Serialize(snapshots, JsonOptions);
-            File.WriteAllText(_storagePath, json);
+
+            // CRITICAL FIX: Atomic write via temp file + rename.
+            // File.WriteAllText truncates then writes — a crash mid-write produces a
+            // zero-byte or partial file, losing ALL stored namespaces permanently.
+            // File.Move is atomic on the same volume (single directory rename syscall).
+            var tempPath = _storagePath + ".tmp";
+            File.WriteAllText(tempPath, json);
+            File.Move(tempPath, _storagePath, overwrite: true);
 
             _logger.LogDebug("Persisted {Count} namespace(s) to {Path}", snapshots.Count, _storagePath);
         }
@@ -317,7 +373,9 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
             HasListenPermission = ns.HasListenPermission,
             HasSendPermission = ns.HasSendPermission,
             HasManagePermission = ns.HasManagePermission,
-            Environment = ns.Environment
+            Environment = ns.Environment,
+            OwnerId = ns.OwnerId,
+            ConnectionStringHash = ns.ConnectionStringHash,
         };
 
     private Namespace? Rehydrate(NamespaceSnapshot snapshot)
@@ -330,13 +388,16 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
                     snapshot.ConnectionString ?? string.Empty,
                     snapshot.DisplayName,
                     snapshot.Description,
-                    snapshot.Environment)
+                    snapshot.Environment,
+                    ownerId: snapshot.OwnerId,
+                    connectionStringHash: snapshot.ConnectionStringHash)
                 : Namespace.CreateWithManagedIdentity(
                     snapshot.Name,
                     snapshot.AuthType,
                     snapshot.DisplayName,
                     snapshot.Description,
-                    snapshot.Environment);
+                    snapshot.Environment,
+                    ownerId: snapshot.OwnerId);
 
             if (createResult.IsFailure)
             {
@@ -398,5 +459,12 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
         public bool HasSendPermission { get; init; }
         public bool HasManagePermission { get; init; }
         public EnvironmentType Environment { get; init; }
+        /// <summary>
+        /// Owner identifier for tenant isolation. Defaults to the SPA owner so that
+        /// namespaces written before this field existed remain visible to the instance admin.
+        /// </summary>
+        public string OwnerId { get; init; } = Namespace.SpaOwnerId;
+        /// <summary>SHA-256 hash of the plaintext connection string for fast deduplication.</summary>
+        public string? ConnectionStringHash { get; init; }
     }
 }

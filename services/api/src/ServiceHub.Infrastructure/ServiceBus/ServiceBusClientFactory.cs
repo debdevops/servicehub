@@ -104,7 +104,7 @@ public sealed class ServiceBusClientFactory : IServiceBusClientFactory
 
             return Task.FromResult(Result.Failure(Error.Validation(
                 ErrorCodes.Namespace.ConnectionStringInvalid,
-                $"Invalid connection string: {ex.Message}")));
+                "The connection string is invalid. Verify the format and credentials.")));
         }
     }
 
