@@ -10,7 +10,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10-purple.svg)](https://dotnet.microsoft.com/)
-[![React 18](https://img.shields.io/badge/React-18-61dafb.svg)](https://react.dev/)
+[![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6.svg)](https://www.typescriptlang.org/)
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Azure-0078D4.svg)](https://app-servicehub-prod.azurewebsites.net/)
 
@@ -294,7 +294,7 @@ az servicebus namespace authorization-rule create \
 
 ```
 servicehub/
-├── apps/web/                    # React 18 + TypeScript + Vite frontend
+├── apps/web/                    # React 19 + TypeScript + Vite frontend
 │   └── src/
 │       ├── components/          # UI components (messages, DLQ, rules, FAB)
 │       ├── hooks/               # React Query hooks for API communication
@@ -315,7 +315,7 @@ servicehub/
 **Tech Stack:**
 | Layer | Technology |
 |---|---|
-| Frontend | React 18, TypeScript, Tailwind CSS, TanStack Query |
+| Frontend | React 19, TypeScript, Tailwind CSS, TanStack Query |
 | Backend | ASP.NET Core 10, Azure.Messaging.ServiceBus SDK |
 | AI Analysis | Client-side pattern detection (no external API) |
 | Database | SQLite (DLQ Intelligence), in-memory cache |

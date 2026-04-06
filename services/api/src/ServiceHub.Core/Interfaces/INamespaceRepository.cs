@@ -74,10 +74,11 @@ public interface INamespaceRepository
     Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Checks if a namespace with the given name exists.
+    /// Checks if a namespace with the given name exists for a specific owner.
     /// </summary>
     /// <param name="name">The namespace name.</param>
+    /// <param name="ownerId">The owner identifier to scope the check to.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True if exists; otherwise, false.</returns>
-    Task<bool> ExistsAsync(string name, CancellationToken cancellationToken = default);
+    /// <returns>True if exists for the given owner; otherwise, false.</returns>
+    Task<bool> ExistsAsync(string name, string ownerId, CancellationToken cancellationToken = default);
 }

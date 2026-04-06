@@ -128,6 +128,7 @@ export function MainLayout() {
           entityType={entityType}
           topicName={topicName}
           subscriptionName={subscriptionName}
+          environment={currentNamespace?.environment}
           onMessageSent={handleMessageSent}
           onMessagesGenerated={handleMessagesGenerated}
         />

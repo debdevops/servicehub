@@ -143,6 +143,43 @@ public static class WebApplicationExtensions
             }
         }
 
+        // Sitemap for search engine indexing
+        app.MapGet("/sitemap.xml", (IConfiguration config) =>
+        {
+            var baseUrl = (config.GetValue<string>("SiteUrl")
+                ?? "https://app-servicehub-prod.azurewebsites.net").TrimEnd('/');
+
+            var sitemap = $"""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+                  <url>
+                    <loc>{baseUrl}/</loc>
+                    <changefreq>monthly</changefreq>
+                    <priority>1.0</priority>
+                  </url>
+                  <url>
+                    <loc>{baseUrl}/connect</loc>
+                    <changefreq>monthly</changefreq>
+                    <priority>0.9</priority>
+                  </url>
+                  <url>
+                    <loc>{baseUrl}/security</loc>
+                    <changefreq>monthly</changefreq>
+                    <priority>0.8</priority>
+                  </url>
+                  <url>
+                    <loc>{baseUrl}/help</loc>
+                    <changefreq>monthly</changefreq>
+                    <priority>0.7</priority>
+                  </url>
+                </urlset>
+                """;
+
+            return Results.Content(sitemap, "application/xml");
+        })
+        .ExcludeFromDescription()
+        .AllowAnonymous();
+
         return app;
     }
 }

@@ -282,7 +282,7 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
     }
 
     /// <inheritdoc/>
-    public Task<bool> ExistsAsync(string name, CancellationToken cancellationToken = default)
+    public Task<bool> ExistsAsync(string name, string ownerId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -290,7 +290,8 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
         }
 
         var exists = _namespaces.Values.Any(n =>
-            n.Name.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase));
+            n.Name.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(n.OwnerId, ownerId, StringComparison.Ordinal));
 
         return Task.FromResult(exists);
     }

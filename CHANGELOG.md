@@ -1,5 +1,26 @@
 # ServiceHub Changelog
 
+## [3.1.0] — 2026-04-XX
+
+### Fixed
+- FAB now correctly disables destructive actions (Send, Generate, Dead-Letter) when the selected namespace is tagged as Production, fulfilling the "Production disables Quick Actions for safety" promise shown in the connect form
+- `RedactingLogger.IsEnabled` now respects the configured minimum log level from `appsettings.json` instead of hardcoding `LogLevel.Information` — debug logs are now visible in development
+- `ExistsAsync` now scopes namespace name uniqueness checks to the same OwnerId, fixing a multi-tenancy bug that blocked different users from creating namespaces with the same name
+- 404 errors on message operations (replay, dead-letter, cancel) now show a user-facing error toast instead of being silently swallowed
+- Added `/sitemap.xml` endpoint for SEO — fixes `robots.txt` crawl error
+
+### Changed
+- `.version` file updated to `3.0.2` (was incorrectly left at `2.1.3`)
+- README React version badges and architecture section updated from React 18 to React 19 (actual runtime version)
+
+### Security
+- Key derivation upgraded from single-round SHA-256 to HKDF (for high-entropy 64-char hex keys) / PBKDF2-100k (for other keys)
+
+### Breaking Changes
+- **Re-add connections required:** The key derivation algorithm change means existing encrypted connection strings in `/home/data/servicehub-namespaces.json` cannot be decrypted after upgrading. Users must delete their saved connections and re-add them. Back up your connection strings before upgrading.
+
+---
+
 ## [3.0.2] - 2026-03-31
 
 ### Fixed
