@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Infrastructure.Security;
 
@@ -8,13 +9,19 @@ namespace ServiceHub.Api.Logging;
 /// </summary>
 public sealed class RedactingLoggerProvider : ILoggerProvider
 {
+    private readonly LogLevel _minimumLevel;
     private bool _disposed = false;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RedactingLoggerProvider"/> class.
     /// </summary>
-    public RedactingLoggerProvider()
+    public RedactingLoggerProvider(IConfiguration configuration)
     {
+        // Read the configured minimum level, defaulting to Information
+        var levelString = configuration["Logging:LogLevel:Default"] ?? "Information";
+        _minimumLevel = Enum.TryParse<LogLevel>(levelString, ignoreCase: true, out var parsed)
+            ? parsed
+            : LogLevel.Information;
     }
 
     /// <inheritdoc/>
@@ -23,7 +30,7 @@ public sealed class RedactingLoggerProvider : ILoggerProvider
         if (_disposed)
             throw new ObjectDisposedException(nameof(RedactingLoggerProvider));
         
-        return new RedactingLogger(categoryName);
+        return new RedactingLogger(categoryName, _minimumLevel);
     }
 
     /// <inheritdoc/>
@@ -42,14 +49,17 @@ public sealed class RedactingLoggerProvider : ILoggerProvider
 public sealed class RedactingLogger : ILogger
 {
     private readonly string _categoryName;
+    private readonly LogLevel _minimumLevel;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RedactingLogger"/> class.
     /// </summary>
     /// <param name="categoryName">The logger category name.</param>
-    public RedactingLogger(string categoryName)
+    /// <param name="minimumLevel">The minimum log level to emit.</param>
+    public RedactingLogger(string categoryName, LogLevel minimumLevel)
     {
         _categoryName = categoryName;
+        _minimumLevel = minimumLevel;
     }
 
     /// <inheritdoc/>
@@ -64,8 +74,7 @@ public sealed class RedactingLogger : ILogger
     /// <inheritdoc/>
     public bool IsEnabled(LogLevel logLevel)
     {
-        // Log at Information level and above by default
-        return logLevel >= LogLevel.Information;
+        return logLevel >= _minimumLevel;
     }
 
     /// <inheritdoc/>
