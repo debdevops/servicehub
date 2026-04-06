@@ -70,12 +70,76 @@ public static class WebApplicationExtensions
             // instance that has a different ephemeral key. The endpoint is intentionally
             // NOT under /api/ so the ApiKeyAuthenticationMiddleware bypass rule lets it
             // through without any credential, which is necessary to bootstrap auth.
+            // Security hardening: same-origin enforcement + tight rate limit.
             // Use GetService (returns null if not found) instead of GetRequiredService
             var spaTokenProvider = app.Services.GetService<SpaTokenProvider>();
             if (spaTokenProvider?.IsEnabled == true)
             {
-                app.MapGet("/internal/spa-token", () => Results.Text(spaTokenProvider.GenerateToken()))
-                   .ExcludeFromDescription();
+                // Per-IP token request counter for rate limiting this unauthenticated endpoint.
+                var tokenRateLimit = new System.Collections.Concurrent.ConcurrentDictionary<string, (int Count, DateTime WindowStart)>();
+
+                // Background cleanup: prune entries older than 5 minutes to prevent unbounded growth.
+                var cts = new System.Threading.CancellationTokenSource();
+                _ = Task.Run(async () =>
+                {
+                    while (!cts.Token.IsCancellationRequested)
+                    {
+                        await Task.Delay(TimeSpan.FromMinutes(2), cts.Token).ConfigureAwait(false);
+                        var cutoff = DateTime.UtcNow - TimeSpan.FromMinutes(5);
+                        foreach (var kvp in tokenRateLimit)
+                        {
+                            if (kvp.Value.WindowStart < cutoff)
+                                tokenRateLimit.TryRemove(kvp.Key, out _);
+                        }
+                    }
+                }, cts.Token);
+
+                // Register cleanup on app shutdown
+                var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+                lifetime.ApplicationStopping.Register(() => cts.Cancel());
+
+                app.MapGet("/internal/spa-token", (HttpContext ctx) =>
+                {
+                    // Same-origin enforcement: only serve a token to requests that originated
+                    // from our own HTML page (Origin or Referer must match the host).
+                    // This blocks bare curl/wget calls that don't send an Origin header.
+                    var host = ctx.Request.Host.Host;
+                    var origin = ctx.Request.Headers.Origin.FirstOrDefault() ?? string.Empty;
+                    var referer = ctx.Request.Headers.Referer.FirstOrDefault() ?? string.Empty;
+
+                    // In production the request MUST carry an Origin or Referer from our host.
+                    if (!app.Environment.IsDevelopment())
+                    {
+                        var hasValidOrigin = origin.Contains(host, StringComparison.OrdinalIgnoreCase);
+                        var hasValidReferer = referer.Contains(host, StringComparison.OrdinalIgnoreCase);
+                        if (!hasValidOrigin && !hasValidReferer)
+                        {
+                            return Results.StatusCode(403);
+                        }
+                    }
+
+                    // Tight per-IP rate limit: 10 requests per minute (covers tab refreshes
+                    // + load-balancer re-routing). Uses AddOrUpdate to avoid TOCTOU race condition.
+                    var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+                    var now = DateTime.UtcNow;
+                    var entry = tokenRateLimit.AddOrUpdate(
+                        ip,
+                        _ => (1, now),
+                        (_, existing) =>
+                        {
+                            if (now - existing.WindowStart > TimeSpan.FromMinutes(1))
+                                return (1, now);
+                            return (existing.Count + 1, existing.WindowStart);
+                        });
+
+                    if (entry.Count > 10)
+                    {
+                        ctx.Response.Headers.RetryAfter = "60";
+                        return Results.StatusCode(429);
+                    }
+
+                    return Results.Text(spaTokenProvider.GenerateToken());
+                }).ExcludeFromDescription();
             }
         }
 

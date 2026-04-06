@@ -157,7 +157,7 @@ public class CorrelationControllerTests : IDisposable
     [Fact]
     public async Task GetTimeline_GetAllNamespacesFails_ReturnsErrorResult()
     {
-        _namespaceRepository.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Failure(
                 Error.Internal("DB_ERROR", "Database unavailable")));
 
@@ -173,7 +173,7 @@ public class CorrelationControllerTests : IDisposable
         var ns2 = CreateTestNamespace("ns-two-long");
         var namespaces = new List<Namespace> { ns1, ns2 };
 
-        _namespaceRepository.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(namespaces));
 
         SetupDefaultWrapper(ns1);
@@ -202,7 +202,7 @@ public class CorrelationControllerTests : IDisposable
         var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var response = ok.Value.Should().BeOfType<CorrelationTimelineResponse>().Subject;
         response.NamespacesSearched.Should().Be(1);
-        _namespaceRepository.Verify(r => r.GetAllAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _namespaceRepository.Verify(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ─── Live messages ────────────────────────────────────────────────────────
@@ -215,7 +215,7 @@ public class CorrelationControllerTests : IDisposable
         var matchingMsg = CreateTestMessage(correlationId, "msg-match");
         var otherMsg = CreateTestMessage("different-corr", "msg-other");
 
-        _namespaceRepository.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
 
         SetupDefaultWrapper(ns, new List<Message> { matchingMsg, otherMsg });
@@ -253,7 +253,7 @@ public class CorrelationControllerTests : IDisposable
         _dlqContext.DlqMessages.Add(dlqMsg);
         await _dlqContext.SaveChangesAsync();
 
-        _namespaceRepository.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
 
         SetupDefaultWrapper(ns);
@@ -294,7 +294,7 @@ public class CorrelationControllerTests : IDisposable
 
         var liveMsg = CreateTestMessage(correlationId, sharedMessageId);
 
-        _namespaceRepository.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
 
         SetupDefaultWrapper(ns, new List<Message> { liveMsg });
@@ -315,7 +315,7 @@ public class CorrelationControllerTests : IDisposable
         const string correlationId = "corr-skip";
         var ns = CreateTestNamespace();
 
-        _namespaceRepository.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
 
         _connectionStringProtector.Setup(p => p.Unprotect(It.IsAny<string>()))
@@ -337,7 +337,7 @@ public class CorrelationControllerTests : IDisposable
         const string correlationId = "no-match-corr";
         var ns = CreateTestNamespace();
 
-        _namespaceRepository.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
 
         SetupDefaultWrapper(ns); // returns no messages

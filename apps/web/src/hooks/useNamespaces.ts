@@ -35,7 +35,10 @@ export function useCreateNamespace() {
         error?.message || 
         'Failed to connect namespace. Verify the connection string format and permissions.';
       
-      console.error('Namespace creation error:', error);
+      // Log error name only in dev; never log the full error object (may contain response data)
+      if (import.meta.env.DEV) {
+        console.error('Namespace creation error:', error?.message ?? 'unknown');
+      }
       toast.error(errorMessage, {
         duration: 6000,
       });

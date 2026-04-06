@@ -184,7 +184,7 @@ export function DlqHistoryPage() {
         toast.success(newCount > 0 ? `Found ${newCount} new DLQ message(s)` : 'No new DLQ messages');
       }, 1500);
     } catch (error) {
-      console.error('Scan failed:', error);
+      if (import.meta.env.DEV) console.error('Scan failed:', error);
       toast.error('DLQ scan failed');
       setIsScanning(false);
     }
@@ -200,7 +200,7 @@ export function DlqHistoryPage() {
       refetch();
       toast.success(`Analysed ${result.analysed} messages, updated ${result.updated}`);
     } catch (error) {
-      console.error('Batch analysis failed:', error);
+      if (import.meta.env.DEV) console.error('Batch analysis failed:', error);
       toast.error('Batch forensic analysis failed');
     } finally {
       setIsAnalysing(false);

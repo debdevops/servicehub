@@ -159,7 +159,7 @@ export function MessageFAB({
       const err = error as { response?: { data?: { detail?: string; message?: string } }; message?: string };
       const errorDetail = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Failed to dead-letter messages';
       toast.error(`DLQ Error: ${errorDetail}`);
-      console.error('Dead-letter error:', error);
+      if (import.meta.env.DEV) console.error('Dead-letter error:', error);
     } finally {
       setIsDeadLettering(false);
     }
