@@ -1,6 +1,6 @@
 # ServiceHub Changelog
 
-## [3.1.0] — 2026-04-XX
+## [3.1.0] — 2026-04-07
 
 ### Fixed
 - FAB now correctly disables destructive actions (Send, Generate, Dead-Letter) when the selected namespace is tagged as Production, fulfilling the "Production disables Quick Actions for safety" promise shown in the connect form
@@ -10,7 +10,7 @@
 - Added `/sitemap.xml` endpoint for SEO — fixes `robots.txt` crawl error
 
 ### Changed
-- `.version` file updated to `3.0.2` (was incorrectly left at `2.1.3`)
+- `.version` file updated to `3.1.0` (was incorrectly left at `2.1.3`)
 - README React version badges and architecture section updated from React 18 to React 19 (actual runtime version)
 
 ### Security

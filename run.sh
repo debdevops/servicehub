@@ -540,7 +540,6 @@ fi
 # Pre-flight checks
 echo -e "${YELLOW}Running pre-flight checks...${NC}"
 check_connectivity
-check_xcode_clt
 
 detect_os
 echo -e "${GREEN}✓ Detected OS: $OS ($PACKAGE_MANAGER)${NC}"
@@ -549,6 +548,8 @@ if [ "$OS" = "linux" ]; then
     [ "$IS_WSL" = true ] && echo -e "${CYAN}  ℹ Running under WSL${NC}"
 fi
 echo ""
+
+check_xcode_clt
 
 install_homebrew
 

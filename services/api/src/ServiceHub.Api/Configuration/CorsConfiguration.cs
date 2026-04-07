@@ -66,7 +66,7 @@ public static class CorsConfiguration
 
                 builder
                     .AllowAnyMethod()
-                    .WithHeaders("Content-Type", "Authorization", "Accept", "Origin", "X-Correlation-Id", "X-Api-Key")
+                    .WithHeaders("Content-Type", "Authorization", "Accept", "Origin", "X-Correlation-Id", "X-Api-Key", "X-SPA-Token")
                     .AllowCredentials()
                     .WithExposedHeaders(headersOptions.GetExposedHeaders());
             });
@@ -105,7 +105,7 @@ public static class CorsConfiguration
 
                 builder
                     .AllowAnyMethod()
-                    .WithHeaders("Content-Type", "Authorization", "Accept", "Origin", "X-Correlation-Id", "X-Api-Key")
+                    .WithHeaders("Content-Type", "Authorization", "Accept", "Origin", "X-Correlation-Id", "X-Api-Key", "X-SPA-Token")
                     .AllowCredentials()
                     .WithExposedHeaders(headersOptions.GetExposedHeaders());
             });
