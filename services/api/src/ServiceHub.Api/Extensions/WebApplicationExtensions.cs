@@ -11,6 +11,32 @@ namespace ServiceHub.Api.Extensions;
 public static class WebApplicationExtensions
 {
     /// <summary>
+    /// Validates that the Origin or Referer header matches the request host.
+    /// Performs exact host matching to prevent bypasses like "example.com.evil.com".
+    /// </summary>
+    private static bool IsValidOrigin(string headerValue, string expectedHost)
+    {
+        if (string.IsNullOrEmpty(headerValue))
+            return false;
+
+        try
+        {
+            if (Uri.TryCreate(headerValue, UriKind.Absolute, out var uri))
+            {
+                // Compare the host portion exactly (IdnHost handles internationalized domain names)
+                return string.Equals(uri.Host, expectedHost, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+        catch
+        {
+            // Invalid URI format — reject
+            return false;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Maps all ServiceHub API endpoints.
     /// </summary>
     /// <param name="app">The web application.</param>
@@ -110,8 +136,8 @@ public static class WebApplicationExtensions
                     // In production the request MUST carry an Origin or Referer from our host.
                     if (!app.Environment.IsDevelopment())
                     {
-                        var hasValidOrigin = origin.Contains(host, StringComparison.OrdinalIgnoreCase);
-                        var hasValidReferer = referer.Contains(host, StringComparison.OrdinalIgnoreCase);
+                        var hasValidOrigin = IsValidOrigin(origin, host);
+                        var hasValidReferer = IsValidOrigin(referer, host);
                         if (!hasValidOrigin && !hasValidReferer)
                         {
                             return Results.StatusCode(403);
