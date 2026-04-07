@@ -69,6 +69,22 @@ export default defineConfig({
     // This means one dotnet publish produces both the API and the SPA.
     outDir: '../../services/api/src/ServiceHub.Api/wwwroot',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Code splitting strategy: extract heavy dependencies and pages into separate chunks
+        // This reduces initial bundle size and improves cold-start performance on Azure App Service
+        manualChunks: {
+          // Vendor chunk for heavy UI libraries
+          'vendor-ui': ['recharts', '@tanstack/react-table', '@tanstack/react-virtual'],
+          // Routing and HTTP
+          'vendor-http': ['react-router-dom', 'axios'],
+          // Heavy pages (lazy loaded)
+          'page-dashboard': ['./src/pages/DashboardPage.tsx'],
+          'page-correlation': ['./src/pages/CorrelationExplorerPage.tsx'],
+          'page-dlq-history': ['./src/pages/DlqHistoryPage.tsx'],
+        },
+      },
+    },
   },
   test: {
     globals: true,
