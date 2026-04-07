@@ -109,6 +109,27 @@ export function AIInsightsTab({ message, onViewPattern, insights: providedInsigh
   const entityName = queueName || (topicName && subscriptionName ? `${topicName}/subscriptions/${subscriptionName}` : topicName) || '';
   const entityType: 'queue' | 'topic' = topicName ? 'topic' : 'queue';
 
+  // Call hooks unconditionally at component level (must be before any conditional returns)
+  const { data: messagesData, isLoading: messagesLoading } = useMessages({
+    namespaceId: namespaceId || '',
+    queueOrTopicName: entityName,
+    entityType,
+    queueType: message.queueType || 'active',
+    skip: 0,
+    take: 1000,
+  });
+
+  const { data: insights, isLoading: insightsLoading, isError } = useClientSideInsights(
+    messagesData?.items,
+    {
+      namespaceId: namespaceId || '',
+      entityName,
+      subscriptionName: subscriptionName || undefined,
+      entityType,
+    },
+    !!namespaceId && !!entityName && !messagesLoading && providedInsights === undefined
+  );
+
   // If insights are provided, use them directly
   if (providedInsights !== undefined) {
     // Find patterns this message belongs to
@@ -174,28 +195,6 @@ export function AIInsightsTab({ message, onViewPattern, insights: providedInsigh
       </div>
     );
   }
-
-  // Fallback: Fetch messages for client-side AI analysis
-  const { data: messagesData, isLoading: messagesLoading } = useMessages({
-    namespaceId: namespaceId || '',
-    queueOrTopicName: entityName,
-    entityType,
-    queueType: message.queueType || 'active',
-    skip: 0,
-    take: 1000,
-  });
-
-  // Perform client-side AI analysis
-  const { data: insights, isLoading: insightsLoading, isError } = useClientSideInsights(
-    messagesData?.items,
-    {
-      namespaceId: namespaceId || '',
-      entityName,
-      subscriptionName: subscriptionName || undefined,
-      entityType,
-    },
-    !!namespaceId && !!entityName && !messagesLoading
-  );
 
   const isLoading = messagesLoading || insightsLoading;
 

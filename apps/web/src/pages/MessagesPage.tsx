@@ -362,7 +362,11 @@ export function MessagesPage() {
       }));
   }, [isDemo, demoMessages]);
   
-  const displayInsights = isDemo ? demoInsights : (insights || []);
+  // Memoize displayInsights to provide stable reference for dependents
+  const displayInsights = useMemo(
+    () => isDemo ? demoInsights : (insights || []),
+    [isDemo, demoInsights, insights]
+  );
 
   // Fetch AI insights summary for badge (from backend if available)
   const { data: insightsSummary } = useInsightsSummary(
