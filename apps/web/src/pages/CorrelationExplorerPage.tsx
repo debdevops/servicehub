@@ -664,3 +664,5 @@ export function CorrelationExplorerPage() {
     </div>
   );
 }
+
+export default CorrelationExplorerPage;
