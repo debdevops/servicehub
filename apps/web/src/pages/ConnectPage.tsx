@@ -20,6 +20,16 @@ export function ConnectPage() {
   const [connectionString, setConnectionString] = useState('');
   const [environment, setEnvironment] = useState<EnvironmentType>('Dev');
   
+  // v3.1.0 HKDF upgrade notice
+  const [showHkdfNotice, setShowHkdfNotice] = useState(
+    () => localStorage.getItem('servicehub_v310_hkdf_notice_dismissed') !== 'true'
+  );
+
+  const dismissHkdfNotice = () => {
+    localStorage.setItem('servicehub_v310_hkdf_notice_dismissed', 'true');
+    setShowHkdfNotice(false);
+  };
+
   // Delete confirmation dialog state
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; id: string; name: string }>({
     isOpen: false,
@@ -148,6 +158,26 @@ export function ConnectPage() {
             Browse messages, pinpoint DLQ failures, replay dead-lettered events — all from your browser.
           </p>
         </div>
+
+        {/* ══════════════════════════════════════════════════════════════
+            v3.1.0 UPGRADE NOTICE
+        ══════════════════════════════════════════════════════════════ */}
+        {showHkdfNotice && (
+          <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 p-3 flex items-start justify-between gap-3">
+            <p className="text-xs text-amber-800">
+              <span className="font-semibold">ServiceHub v3.1.0</span> upgrades encryption key derivation (HKDF).
+              {' '}If you have existing saved connections, they must be re-added —
+              delete them and add them again with your connection string.
+            </p>
+            <button
+              type="button"
+              onClick={dismissHkdfNotice}
+              className="shrink-0 text-xs font-medium text-amber-700 hover:text-amber-900 whitespace-nowrap"
+            >
+              I understand, don&apos;t show again
+            </button>
+          </div>
+        )}
 
         {/* ══════════════════════════════════════════════════════════════
             CONNECT FORM + SAVED CONNECTIONS  (primary action — above fold)
