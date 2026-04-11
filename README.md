@@ -4,9 +4,9 @@
 
 ### The Forensic Debugger for Azure Service Bus
 
-**See what's inside your queues — not just message counts.**
+**Debug Azure Service Bus in seconds. See what's REALLY inside your queues — not just message counts.**
 
-![ServiceHub Demo](docs/screenshots/servicehub-demo.gif)
+![ServiceHub Demo](docs/screenshots/ServiceHub-Demo.gif)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10-purple.svg)](https://dotnet.microsoft.com/)
@@ -38,199 +38,198 @@ Production breaks at 2 AM. Azure Portal shows **5,000 messages in Dead-Letter Qu
 
 ---
 
-## 📸 Screenshots
+## � Core Features in Action
 
-### Connect to Azure Service Bus
+### 🔌 Connect to Azure Service Bus — 30 Seconds from Zero to Insights
 
-Enter your connection string and you're in. Supports Listen-only (read-only) or Manage (full access) policies.
+Enter your connection string and you're in. Supports Listen-only (read-only) or Manage (full access) policies. No installation, no setup complexity — just instant access to your message data.
 
 ![Connect Page](docs/screenshots/01-connect-page.png)
 
-### Message Browser
+### 📨 Message Browser — View Thousands of Messages Instantly
 
-Browse active messages across queues and topic subscriptions. See message previews, status badges, and metadata at a glance.
+Browse **active** and **dead-letter** messages side by side. See full message previews, status badges, and metadata at a glance. Real-time search across message content and properties — find exactly what you need in seconds, not hours.
 
 ![Messages Queue Active](docs/screenshots/02-messages-queue-active.png)
 
-### Message Detail — Properties
+#### Message Properties & Body — Full Forensic Inspection
 
-Click any message to inspect every detail. System properties show Message ID, enqueue time, TTL, sequence number, delivery count, and content type.
+Click any message for complete forensic analysis:
+- **Properties:** Message ID, enqueue time, TTL, sequence number, delivery count
+- **Body:** Full JSON/XML syntax highlighting with one-click copy
+- **Headers:** All custom properties and correlation IDs
 
 ![Message Properties](docs/screenshots/03-message-detail-properties.png)
-
-### Message Detail — Body
-
-Full JSON body with syntax highlighting and copy button. Supports JSON, XML, and plain text formats.
-
 ![Message Body](docs/screenshots/04-message-detail-body.png)
 
-### Message Detail — AI Insights
+#### 🤖 AI-Powered Insights — Detect Patterns at Scale
 
-AI-powered analysis detects patterns, anomalies, and error clusters across your messages. All processing happens in your browser — no data leaves your environment.
+AI automatically analyzes your messages and detects:
+- Error clusters and patterns
+- Anomalies and outliers
+- Remediation suggestions
+
+All processing happens in your browser — **no data leaves your environment**. Analyze thousands of messages in seconds.
 
 ![AI Insights](docs/screenshots/05-message-detail-ai-insights.png)
-
-### Message Detail — Forensic View
-
-Deep forensic analysis showing message lifecycle, delivery attempts, and processing timeline.
-
 ![Forensic View](docs/screenshots/06-message-detail-forensic.png)
 
-### Message Detail — Headers
+### 💀 Dead-Letter Queue (DLQ) — From Pain to Insight
 
-View all custom application properties and correlation headers.
+Investigate failed messages with full forensic analysis:
+- **DLQ Reason & Error Description:** See exactly why messages failed
+- **AI-Powered Remediation:** Automatic categorization and suggested fixes
+- **One-Click Replay:** Replay messages after fixing root cause
 
-![Headers View](docs/screenshots/07-message-detail-headers.png)
+#### DLQ Intelligence Dashboard — Track & Analyze Your Failures
 
-### Dead-Letter Queue
-
-Investigate failed messages with DLQ reason, error description, and AI-powered remediation guidance. Replay messages back to the original queue with one click.
+Persistent tracking with:
+- 30-day trend visualization
+- Auto-categorization (Transient, MaxDelivery, Expired, DataQuality, Authorization)
+- Live statistics
+- Export to JSON/CSV
 
 ![Dead Letter Queue](docs/screenshots/08-messages-deadletter-queue.png)
-
-### DLQ Message Detail with Replay
-
-See why messages failed and replay them after fixing the root cause.
-
-![DLQ Message Detail](docs/screenshots/09-dlq-message-detail.png)
-
-### DLQ AI Analysis
-
-AI automatically categorizes DLQ failures and suggests remediation steps.
-
+![DLQ History Detail](docs/screenshots/17-dlq-history-detail.png)
 ![DLQ AI Insights](docs/screenshots/10-dlq-message-ai-insights.png)
 
-### Topic Subscriptions
+### 🎯 Quick Actions (FAB) — One-Click Access to Everything
 
-Browse messages from topic subscriptions with the same powerful inspection tools.
+Floating action button provides instant access to:
+- **Send Message** — Ad-hoc testing with custom properties
+- **Generate Messages** — 6 realistic scenarios with configurable volume (30-200) and anomaly rate (0-50%)
+- **Test DLQ** — Move messages to dead-letter queue for testing
+- **Refresh All** — Instant sync
+
+![FAB Quick Actions](docs/screenshots/12-fab-quick-actions-open.png)
+![Send Message](docs/screenshots/13-send-message-dialog.png)
+![Generate Messages](docs/screenshots/14-generate-messages-dialog.png)
+
+### 📌 Topic Subscriptions — Same Power for Topic Messages
+
+Browse messages from topic subscriptions with identical forensic inspection tools.
 
 ![Topic Subscription](docs/screenshots/11-messages-topic-subscription.png)
 
-### Quick Actions (FAB)
+### ⚡ Auto-Replay Rules — Automate Your Recovery
 
-Floating action button provides quick access to Send Message, Generate Messages, Test DLQ, and Refresh All.
+Define conditional replay rules that automatically fix common failure patterns:
 
-![FAB Quick Actions](docs/screenshots/12-fab-quick-actions-open.png)
+#### Intelligent Rule Engine
+- **Flexible Matching:** Match by reason, error description, entity, delivery count, body text
+- **Rich Operators:** Contains, Equals, StartsWith, EndsWith, Regex, GreaterThan, LessThan
+- **Rate Limiting:** Safe replay with configurable max replays/hour
+- **Circuit Breaker:** Auto-disable rules if success rate drops
+- **Live Monitor:** Real-time Pending/Replayed/Success counts
 
-### Send Message
-
-Send single messages to queues or topics for ad-hoc testing. Supports custom properties, content types, and advanced options.
-
-![Send Message](docs/screenshots/13-send-message-dialog.png)
-
-### Generate Test Messages
-
-Generate realistic test messages with built-in scenarios (Order Processing, Payment Gateway, Notification Service, and more). Configure volume and anomaly rate.
-
-![Generate Messages](docs/screenshots/14-generate-messages-dialog.png)
-
-### DLQ Intelligence Dashboard
-
-Persistent tracking and monitoring of dead-letter queue messages with trend chart, status breakdown, and category classification.
-
-![DLQ Intelligence](docs/screenshots/16-dlq-history-overview.png)
-
-### DLQ History Detail
-
-Drill into individual DLQ records with forensic timeline, replay history, and status tracking.
-
-![DLQ History Detail](docs/screenshots/17-dlq-history-detail.png)
-
-### Auto-Replay Rules
-
-Define conditional replay rules with live statistics. Match messages by dead-letter reason, error description, entity name, content type, or body text.
+#### Pre-Built Templates
+Browse rule templates for common scenarios:
+- Transient errors (timeout, throttle)
+- Max delivery exceeded
+- Expired messages
+- Authorization failures
+- Custom patterns
 
 ![Auto-Replay Rules](docs/screenshots/19-rules-page.png)
-
-### Rule Template Gallery
-
-Browse pre-built rule templates for common failure scenarios — transient errors, max delivery exceeded, expired messages, and more.
-
 ![Template Gallery](docs/screenshots/20-rules-template-gallery.png)
-
-### Create Auto-Replay Rule
-
-Build custom rules with field conditions, operators, actions, rate limiting, and target entity configuration.
-
 ![Create Rule](docs/screenshots/21-rules-create-dialog.png)
 
-### System Health
+### 💚 System Health — Monitor Your Setup
 
-Monitor API health, uptime, memory usage, thread count, GC collections, and server information.
+Real-time monitoring dashboard:
+- API health and uptime
+- Memory, thread, and GC metrics
+- Server information
+- Performance trends
 
 ![System Health](docs/screenshots/22-health-page.png)
 
-### Help & Quick Reference
+### 🔍 Advanced Search & Navigation
 
-Searchable help guide covering every feature, Azure Service Bus concepts, and a guided tour.
-
-![Help Page](docs/screenshots/23-help-page.png)
-
-### Message Search & Filter
-
-Find messages by any property — message ID, correlation ID, body content, custom headers.
+**Message Search & Filter**
+Find messages instantly by any property:
+- Message ID, Correlation ID
+- Body content (full-text)
+- Custom headers
+- System properties
 
 ![Message Filter](docs/screenshots/28-message-filter.png)
 
-### Sidebar Navigation
-
-Namespace browser with live message counts, queue/topic tree, and Quick Access panel.
+**Smart Sidebar Navigation**
+Namespace browser with:
+- Live message counts
+- Queue/topic tree
+- Quick Access panel
 
 ![Sidebar Navigation](docs/screenshots/25-sidebar-navigation.png)
 
-### API Documentation (Scalar)
+### 📚 Comprehensive Documentation
 
-Interactive API documentation with Scalar — test endpoints directly from the browser.
+**Built-In Help**
+Searchable help guide with:
+- Feature walkthroughs
+- Azure Service Bus concepts
+- Keyboard shortcuts
+- Guided tour
+
+![Help Page](docs/screenshots/23-help-page.png)
+
+**Interactive API Docs**
+Scalar-powered OpenAPI documentation — test endpoints directly from the browser.
 
 ![API Docs](docs/screenshots/26-scalar-api-docs.png)
 
 ---
 
-## 🚀 Features
+## ✨ Complete Feature Set
 
-### Message Browser
+### 📨 Message Browser
 - Browse **active** and **dead-letter** queue messages side by side
-- View full message body with JSON syntax highlighting
+- View full message body with **JSON/XML syntax highlighting**
 - Inspect system properties, custom headers, and application properties
-- Real-time search across message content and properties
-- Auto-refresh with configurable polling intervals
+- **Real-time full-text search** across message content and properties
+- **Auto-refresh** with configurable polling intervals
+- Filter by entity, status, message age
 
-### AI-Powered Analysis
-- **Pattern detection** — Identify error clusters across thousands of messages
+### 🤖 AI-Powered Analysis (Client-Side)
+- **Pattern detection** — Identify error clusters instantly across thousands of messages
 - **Anomaly identification** — Flag unusual messages automatically
-- **Remediation suggestions** — Actionable guidance for each failure type
-- **Client-side processing** — All analysis runs in your browser; no data leaves your environment
+- **Remediation suggestions** — Actionable remediation guidance
+- **Zero-Trust Privacy** — All analysis runs in your browser; **no data leaves your environment**
+- **Processing speed** — Analyzes 1000s of messages in seconds
 
-### DLQ Intelligence System
-- **Persistent tracking** — DLQ messages stored in local SQLite database
-- **Category classification** — Auto-categorizes: Transient, MaxDelivery, Expired, DataQuality, Authorization
-- **Trend chart** — 30-day DLQ trend visualization (New vs. Resolved)
-- **Instant scanning** — "Scan Now" for immediate DLQ polling
-- **Export** — Download DLQ data as JSON or CSV
-- **Status tracking** — Active → Replayed → ReplayFailed → Resolved
+### 💀 DLQ Intelligence System
+- **Persistent tracking** — SQLite database stores DLQ history locally
+- **Auto-categorization** — 5 failure types: Transient, MaxDelivery, Expired, DataQuality, Authorization
+- **30-Day Trends** — Visualize DLQ patterns over time
+- **Instant scanning** — "Scan Now" button for on-demand polling
+- **Export capabilities** — Download as JSON or CSV for analysis
+- **Status lifecycle** — Track: Active → Replayed → ReplayFailed → Resolved
 
-### Auto-Replay Rules Engine
-- **Conditional matching** — Match messages by reason, error description, entity, delivery count, body text
-- **Operators** — Contains, Equals, StartsWith, EndsWith, Regex, GreaterThan, LessThan, In
-- **Live statistics** — Pending/Replayed/Success counts updated in real time
-- **Rate limiting** — Max replays per hour to prevent overwhelming downstream services
-- **Batch replay** — Replay all matching messages with one click
-- **Template gallery** — Pre-built rules for common failure scenarios
-- **Circuit breaker** — Auto-disables rules if success rate drops below threshold
+### ⚡ Auto-Replay Rules Engine
+- **Smart Matching** — Match by reason, error, entity, delivery count, body content
+- **8 Operators** — Contains, Equals, StartsWith, EndsWith, Regex, GreaterThan, LessThan, In
+- **Real-Time Stats** — Live Pending/Replayed/Success counting
+- **Safe Replay** — Rate limiting prevents downstream service overload
+- **Batch Operations** — Replay all matching messages with one click
+- **9+ Templates** — Pre-built rules for common failure patterns
+- **Smart Protection** — Circuit breaker auto-disables unsafe rules
 
-### Testing & Development Tools
-- **Send Message** — Send single messages to queues or topics with custom properties
-- **Generate Messages** — 6 built-in scenarios with configurable volume (30–200) and anomaly rate (0–50%)
-- **Test DLQ** — Move test messages to dead-letter queue for testing DLQ workflows
-- **Tagged messages** — All generated messages tagged with `ServiceHub-Generated` for easy cleanup
+### 🧪 Testing & Development Tools
+- **Send Message** — Single message testing with custom properties and headers
+- **Scenario Generator** — 6 built-in realistic scenarios (Orders, Payments, Notifications, etc.)
+- **Configurable Testing** — Generate 30-200 messages with 0-50% anomaly rate
+- **Test DLQ Workflows** — Move messages to DLQ for end-to-end testing
+- **Auto-Cleanup** — All generated messages tagged `ServiceHub-Generated` for easy filtering
 
-### Security & Safety
-- **Read-only by default** — Uses Azure SDK PeekMessagesAsync; messages are never removed
-- **Listen-only supported** — Works with Listen permission for browse-only access
-- **Encrypted at rest** — Connection strings encrypted with AES-GCM
-- **No external API calls** — AI analysis runs entirely in the browser
-- **No data persistence** — Messages displayed in-memory only
-- **Safe for production** — Will not interfere with your consumers
+### 🔐 Enterprise Security & Safety
+- **Read-Only by Default** — Uses PeekMessagesAsync; **messages never removed**
+- **Minimal Permissions** — Works with Listen-only access (no Manage required)
+- **Encrypted at Rest** — Connection strings encrypted with **AES-GCM**
+- **Zero External Calls** — AI analysis runs entirely in-browser
+- **No Data Persistence** — Messages displayed in-memory only
+- **Production-Safe** — Won't interfere with your message consumers
+- **Private Deployment** — Deploy in your own network
 
 ---
 
