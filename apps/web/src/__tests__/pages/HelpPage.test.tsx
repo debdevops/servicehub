@@ -31,12 +31,12 @@ describe('HelpPage', () => {
 
   it('renders the help page header', () => {
     renderHelpPage();
-    expect(screen.getByText('Help & Quick Reference')).toBeInTheDocument();
+    expect(screen.getByText('Help & Support')).toBeInTheDocument();
   });
 
   it('renders the search input', () => {
     renderHelpPage();
-    expect(screen.getByPlaceholderText('Search help topics…')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Search help topics/)).toBeInTheDocument();
   });
 
   it('renders all help sections', () => {
@@ -50,7 +50,7 @@ describe('HelpPage', () => {
   it('renders the description text', () => {
     renderHelpPage();
     expect(
-      screen.getByText(/Everything you need to know about ServiceHub/),
+      screen.getByText(/Everything you need to debug Azure Service Bus/),
     ).toBeInTheDocument();
   });
 
@@ -70,7 +70,7 @@ describe('HelpPage', () => {
 
   it('filters sections by search query', async () => {
     renderHelpPage();
-    const input = screen.getByPlaceholderText('Search help topics…');
+    const input = screen.getByPlaceholderText(/Search help topics/);
     // Pick a unique question from the first section
     const firstQuestion = helpSections[0].items[0].question;
     await userEvent.type(input, firstQuestion.slice(0, 10));
@@ -80,14 +80,14 @@ describe('HelpPage', () => {
 
   it('shows no-results message when search matches nothing', async () => {
     renderHelpPage();
-    const input = screen.getByPlaceholderText('Search help topics…');
+    const input = screen.getByPlaceholderText(/Search help topics/);
     await userEvent.type(input, 'xyznosuchtopic123');
     expect(screen.getByText(/No results for/)).toBeInTheDocument();
   });
 
   it('clears search when X button is clicked', async () => {
     renderHelpPage();
-    const input = screen.getByPlaceholderText('Search help topics…');
+    const input = screen.getByPlaceholderText(/Search help topics/);
     await userEvent.type(input, 'something');
     // Should see clear button
     const clearButton = screen.getByLabelText('Clear search');
@@ -116,9 +116,10 @@ describe('HelpPage', () => {
 
   it('displays item counts in sections', () => {
     renderHelpPage();
-    // Multiple sections may share the same count text, so use getAllByText
+    // Item counts are displayed in the section header - verify at least one is present
     const section = helpSections[0];
-    const countText = `${section.items.length} ${section.items.length === 1 ? 'item' : 'items'}`;
-    expect(screen.getAllByText(countText).length).toBeGreaterThan(0);
+    const countText = `${section.items.length} ${section.items.length === 1 ? 'topic' : 'topics'}`;
+    // The count appears in the subtitle of the section header
+    expect(screen.getAllByText(new RegExp(countText)).length).toBeGreaterThan(0);
   });
 });
