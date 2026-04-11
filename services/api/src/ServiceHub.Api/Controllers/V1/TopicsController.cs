@@ -258,7 +258,7 @@ public sealed class TopicsController : ApiControllerBase
     /// <param name="subscriptionName">The subscription name.</param>
     /// <param name="queueType">Queue type: active or deadletter.</param>
     /// <param name="skip">Number of items to skip.</param>
-    /// <param name="take">Number of items to take.</param>
+    /// <param name="take">Number of items to take (clamped to max 1000).</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A paginated list of messages.</returns>
     /// <response code="200">Messages retrieved successfully.</response>

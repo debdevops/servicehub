@@ -3,6 +3,7 @@ import { Outlet, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
+import { Footer } from './Footer';
 import { MessageFAB } from '@/components/fab';
 import { GuidedTour, isTourCompleted } from '@/components/help/GuidedTour';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -142,6 +143,9 @@ export function MainLayout() {
 
       {/* Keyboard Shortcuts Overlay */}
       <KeyboardShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
+      {/* Footer */}
+      <Footer />
     </div>
   );
 }
