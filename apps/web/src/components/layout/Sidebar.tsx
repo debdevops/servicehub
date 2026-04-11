@@ -73,11 +73,12 @@ function QueueItem({ queue, namespaceId }: QueueItemProps) {
       key={queue.name}
       to={`/messages?namespace=${namespaceId}&queue=${queue.name}`}
       className={({ isActive }) => {
-        // Only show selected state if this exact queue is in the route (not just namespace)
+        // Only show selected state if this exact queue in this exact namespace is in the route
         const searchParams = new URLSearchParams(window.location.search);
+        const namespaceParam = searchParams.get('namespace');
         const queueParam = searchParams.get('queue');
         const topicParam = searchParams.get('topic');
-        const isExactMatch = isActive && queueParam === queue.name && !topicParam;
+        const isExactMatch = isActive && namespaceParam === namespaceId && queueParam === queue.name && !topicParam;
         
         return `flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${
           isExactMatch
@@ -88,9 +89,10 @@ function QueueItem({ queue, namespaceId }: QueueItemProps) {
     >
       {() => {
         const searchParams = new URLSearchParams(window.location.search);
+        const namespaceParam = searchParams.get('namespace');
         const queueParam = searchParams.get('queue');
         const topicParam = searchParams.get('topic');
-        const isExactMatch = queueParam === queue.name && !topicParam;
+        const isExactMatch = namespaceParam === namespaceId && queueParam === queue.name && !topicParam;
         
         return (
         <>
@@ -184,11 +186,12 @@ function SubscriptionItem({ subscription, namespaceId, topicName }: Subscription
     <NavLink
       to={`/messages?namespace=${namespaceId}&topic=${topicName}&subscription=${subscription.name}`}
       className={({ isActive }) => {
-        // Only show selected state if this exact subscription is in the route
+        // Only show selected state if this exact subscription in this exact namespace is in the route
         const searchParams = new URLSearchParams(window.location.search);
+        const namespaceParam = searchParams.get('namespace');
         const subscriptionParam = searchParams.get('subscription');
         const topicParam = searchParams.get('topic');
-        const isExactMatch = isActive && subscriptionParam === subscription.name && topicParam === topicName;
+        const isExactMatch = isActive && namespaceParam === namespaceId && subscriptionParam === subscription.name && topicParam === topicName;
         
         return `flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${
           isExactMatch
@@ -199,9 +202,10 @@ function SubscriptionItem({ subscription, namespaceId, topicName }: Subscription
     >
       {() => {
         const searchParams = new URLSearchParams(window.location.search);
+        const namespaceParam = searchParams.get('namespace');
         const subscriptionParam = searchParams.get('subscription');
         const topicParam = searchParams.get('topic');
-        const isExactMatch = subscriptionParam === subscription.name && topicParam === topicName;
+        const isExactMatch = namespaceParam === namespaceId && subscriptionParam === subscription.name && topicParam === topicName;
         
         return (
           <>
