@@ -295,4 +295,12 @@ public sealed class LogRedactorTests
         result!["Count"].Should().Be(42);
         result["Enabled"].Should().Be(true);
     }
+
+    [Fact]
+    public void SanitiseForLog_Long_ReturnsStringRepresentation()
+    {
+        LogRedactor.SanitiseForLog(42L).Should().Be("42");
+        LogRedactor.SanitiseForLog(-1L).Should().Be("-1");
+        LogRedactor.SanitiseForLog(0L).Should().Be("0");
+    }
 }

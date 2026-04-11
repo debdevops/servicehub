@@ -13,7 +13,7 @@ export function Footer() {
           </span>
           <span className="text-white/50">•</span>
           <span className="text-white/70">
-            .NET 10 • React 18
+            .NET 10 • React 19
           </span>
         </div>
 

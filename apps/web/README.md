@@ -58,16 +58,16 @@ apps/web/
 
 | Technology | Version | Purpose |
 |-----------|---------|---------|
-| **React** | 18.3 | UI library with concurrent features |
-| **TypeScript** | 5.7 | Type safety & IntelliSense |
+| **React** | 19.2 | UI library with concurrent features |
+| **TypeScript** | 5.9 | Type safety & IntelliSense |
 | **Vite** | 6.0 | Build tool & dev server |
-| **React Query** | 5.62 | Server state management |
-| **React Router** | 7.1 | Client-side routing |
-| **Tailwind CSS** | 3.4 | Utility-first styling |
-| **Axios** | 1.7 | HTTP client |
-| **Lucide React** | 0.468 | Icon library |
-| **React Hot Toast** | 2.4 | Notifications |
-| **@tanstack/react-virtual** | 3.11 | Virtualized lists |
+| **React Query** | 5.95 | Server state management |
+| **React Router** | 7.12 | Client-side routing |
+| **Tailwind CSS** | 4.1 | Utility-first styling |
+| **Axios** | 1.15 | HTTP client |
+| **Lucide React** | 0.562 | Icon library |
+| **React Hot Toast** | 2.6 | Notifications |
+| **@tanstack/react-virtual** | 3.13 | Virtualized lists |
 | **Prism React Renderer** | 2.4 | Syntax highlighting |
 
 ---
