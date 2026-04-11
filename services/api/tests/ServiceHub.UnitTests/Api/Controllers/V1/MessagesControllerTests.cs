@@ -113,7 +113,7 @@ public class MessagesControllerTests
     {
         var nsId = Guid.NewGuid();
         _messageReceiver.Setup(r => r.PeekMessagesAsync(
-            It.Is<GetMessagesRequest>(req => req.MaxMessages <= 100 && req.MaxMessages >= 1),
+            It.Is<GetMessagesRequest>(req => req.MaxMessages <= 1000 && req.MaxMessages >= 1),
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(new List<Message>()));
 
@@ -121,7 +121,7 @@ public class MessagesControllerTests
 
         _messageReceiver.Verify(
             r => r.PeekMessagesAsync(
-                It.Is<GetMessagesRequest>(req => req.MaxMessages == 100),
+                It.Is<GetMessagesRequest>(req => req.MaxMessages == 999),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }

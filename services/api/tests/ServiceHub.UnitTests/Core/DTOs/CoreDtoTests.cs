@@ -484,7 +484,7 @@ public class CoreDtoTests
     [Fact]
     public void GetMessagesRequest_ShouldHaveConstants()
     {
-        GetMessagesRequest.MaxAllowedMessages.Should().Be(100);
+        GetMessagesRequest.MaxAllowedMessages.Should().Be(1000);
         GetMessagesRequest.MinAllowedMessages.Should().Be(1);
     }
 
