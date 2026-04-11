@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Plus, Zap, RefreshCw, ToggleLeft, ToggleRight, Pencil, Trash2, FlaskConical, Play, AlertTriangle, X, Shield, Brain } from 'lucide-react';
 import { RuleBuilderDialog, TemplateGalleryDialog, RuleTestDialog } from '@/components/rules';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { HelpTooltip } from '@/components/help';
 import { tooltips } from '@/lib/helpContent';
 import {
@@ -36,6 +37,7 @@ export function RulesPage() {
   const [editRule, setEditRule] = useState<RuleResponse | null>(null);
   const [testRule, setTestRule] = useState<RuleResponse | null>(null);
   const [replayAllRule, setReplayAllRule] = useState<RuleResponse | null>(null);
+  const [deleteRule, setDeleteRule] = useState<RuleResponse | null>(null);
   const [templatePrefill, setTemplatePrefill] = useState<{
     conditions: RuleCondition[];
     action: RuleAction;
@@ -77,9 +79,14 @@ export function RulesPage() {
   };
 
   const handleDelete = (rule: RuleResponse) => {
-    if (confirm(`Delete rule "${rule.name}"? This cannot be undone.`)) {
-      deleteMutation.mutate(rule.id);
-    }
+    setDeleteRule(rule);
+  };
+
+  const confirmDelete = () => {
+    if (!deleteRule) return;
+    deleteMutation.mutate(deleteRule.id, {
+      onSettled: () => setDeleteRule(null),
+    });
   };
 
   const handleReplayAll = (rule: RuleResponse) => {
@@ -200,6 +207,17 @@ export function RulesPage() {
         isExecuting={replayAllMutation.isPending}
         onConfirm={confirmReplayAll}
         onCancel={() => setReplayAllRule(null)}
+      />
+
+      <ConfirmDialog
+        isOpen={deleteRule !== null}
+        title="Delete Rule"
+        message={`Delete rule "${deleteRule?.name}"? This cannot be undone. Rules that have already matched messages will lose their history statistics.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteRule(null)}
       />
     </div>
   );

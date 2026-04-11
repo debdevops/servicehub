@@ -246,34 +246,28 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
     }
 
     /// <inheritdoc/>
-    public Task<Result<bool>> TestConnectionAsync(CancellationToken cancellationToken = default)
+    public async Task<Result<bool>> TestConnectionAsync(CancellationToken cancellationToken = default)
     {
         if (_disposed || _client.IsClosed)
         {
-            return Task.FromResult(Result.Failure<bool>(Error.Internal(
+            return Result.Failure<bool>(Error.Internal(
                 ErrorCodes.General.ServiceUnavailable,
-                "The Service Bus client has been disposed or closed.")));
+                "The Service Bus client has been disposed or closed."));
         }
 
         try
         {
-            // Use the connection string to create an administration client for health check
-            // This is a lightweight operation that validates connectivity
-            var fullyQualifiedNamespace = _client.FullyQualifiedNamespace;
-
-            if (string.IsNullOrEmpty(fullyQualifiedNamespace))
-            {
-                return Task.FromResult(Result.Failure<bool>(Error.ExternalService(
-                    ErrorCodes.Namespace.ConnectionFailed,
-                    "Unable to determine the Service Bus namespace.")));
-            }
+            // Make a real network call to verify credentials and connectivity.
+            // GetNamespacePropertiesAsync is the lightest admin operation available.
+            var adminClient = await GetOrCreateAdminClientAsync().ConfigureAwait(false);
+            await adminClient.GetNamespacePropertiesAsync(cancellationToken).ConfigureAwait(false);
 
             _logger.LogDebug(
                 "Connection test successful for namespace {NamespaceId} ({Namespace})",
                 NamespaceId,
-                fullyQualifiedNamespace);
+                _client.FullyQualifiedNamespace);
 
-            return Task.FromResult(Result.Success(true));
+            return Result.Success(true);
         }
         catch (ServiceBusException ex)
         {
@@ -281,19 +275,19 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
                 "Connection test failed for namespace {NamespaceId}",
                 NamespaceId);
 
-            return Task.FromResult(Result.Failure<bool>(Error.ExternalService(
+            return Result.Failure<bool>(Error.ExternalService(
                 ErrorCodes.Namespace.ConnectionFailed,
-                $"Connection test failed: {ex.Reason}")));
+                $"Connection test failed: {ex.Reason}"));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
-                "Unexpected error during connection test for namespace {NamespaceId}",
+            _logger.LogWarning(ex,
+                "Connection test failed for namespace {NamespaceId}",
                 NamespaceId);
 
-            return Task.FromResult(Result.Failure<bool>(Error.Internal(
-                ErrorCodes.General.UnexpectedError,
-                "An unexpected error occurred during the connection test.")));
+            return Result.Failure<bool>(Error.ExternalService(
+                ErrorCodes.Namespace.ConnectionFailed,
+                "Unable to connect to the Service Bus namespace. Check that the connection string is valid and the namespace exists."));
         }
     }
 
@@ -1033,10 +1027,12 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
                 dlqReceiver = _client.CreateReceiver(entityName, receiverOptions);
             }
 
-            // Receive messages in batches to find the target message more efficiently
+            // Receive messages in batches to find the target message.
+            // Scan up to 5,000 messages (100 batches × 50) before giving up.
             ServiceBusReceivedMessage? targetMessage = null;
-            const int maxAttempts = 10;
+            const int maxAttempts = 100;
             const int batchSize = 50;
+            const int maxScanDepth = maxAttempts * batchSize;
             
             for (int attempt = 0; attempt < maxAttempts && targetMessage == null; attempt++)
             {
@@ -1065,9 +1061,13 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
             if (targetMessage == null)
             {
+                var scanned = messagesToAbandon.Count;
+                var hint = scanned >= maxScanDepth
+                    ? $" The DLQ was scanned up to {maxScanDepth:N0} messages without finding it. Your DLQ may contain more messages than the scan limit. Consider purging older messages first."
+                    : string.Empty;
                 return Result.Failure(Error.NotFound(
                     ErrorCodes.Message.NotFound,
-                    $"Message with sequence number {sequenceNumber} not found in dead-letter queue."));
+                    $"Message with sequence number {sequenceNumber} not found in dead-letter queue.{hint}"));
             }
 
             // Create a new message with the same content
@@ -1208,8 +1208,9 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             var pending = new HashSet<long>(sequenceNumbers);
             var foundMessages = new Dictionary<long, ServiceBusReceivedMessage>();
 
-            // Receive messages in batches until we find all targets or exhaust the DLQ
-            const int maxAttempts = 5;
+            // Receive messages in batches until we find all targets or exhaust the DLQ.
+            // Scan up to 5,000 messages (50 batches × 100) before giving up.
+            const int maxAttempts = 50;
             const int batchSize = 100;
 
             for (int attempt = 0; attempt < maxAttempts && pending.Count > 0; attempt++)

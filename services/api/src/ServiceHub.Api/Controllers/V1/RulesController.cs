@@ -261,31 +261,20 @@ public sealed class RulesController : ApiControllerBase
                 return ToActionResult<RuleResponse>(
                     Error.Conflict(ErrorCodes.Rule.AlreadyExists, $"A rule named '{request.Name}' already exists"));
 
-            // AutoReplayRule uses init-only properties for Name/ConditionsJson/ActionsJson/Description,
-            // so we need to remove the old entity and add a new one preserving stats.
-            var updatedRule = new AutoReplayRule
-            {
-                Name = request.Name,
-                Description = request.Description,
-                Enabled = request.Enabled,
-                ConditionsJson = JsonSerializer.Serialize(request.Conditions, JsonOptions),
-                ActionsJson = JsonSerializer.Serialize(request.Action, JsonOptions),
-                CreatedAt = rule.CreatedAt,
-                UpdatedAt = DateTimeOffset.UtcNow,
-                MatchCount = rule.MatchCount,
-                SuccessCount = rule.SuccessCount,
-                MaxReplaysPerHour = request.MaxReplaysPerHour,
-            };
+            // Update properties in-place — preserves the same ID, stats, and external references.
+            rule.Name = request.Name;
+            rule.Description = request.Description;
+            rule.Enabled = request.Enabled;
+            rule.ConditionsJson = JsonSerializer.Serialize(request.Conditions, JsonOptions);
+            rule.ActionsJson = JsonSerializer.Serialize(request.Action, JsonOptions);
+            rule.UpdatedAt = DateTimeOffset.UtcNow;
+            rule.MaxReplaysPerHour = request.MaxReplaysPerHour;
 
-            _dbContext.AutoReplayRules.Remove(rule);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            _dbContext.AutoReplayRules.Add(updatedRule);
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation("Updated auto-replay rule {RuleId}/{RuleName}", rule.Id, LogRedactor.SanitiseForLog(rule.Name));
 
-            _logger.LogInformation("Updated auto-replay rule {RuleId}/{RuleName}", updatedRule.Id, LogRedactor.SanitiseForLog(updatedRule.Name));
-
-            return Ok(MapToResponse(updatedRule));
+            return Ok(MapToResponse(rule));
         }
         catch (Exception ex)
         {

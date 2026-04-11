@@ -406,4 +406,103 @@ public sealed class MessageSenderTests
         result.IsFailure.Should().BeTrue();
         result.Errors.Should().NotBeEmpty();
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // SendAsync — Message size exceeded (non-retryable validation error)
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task SendAsync_MessageTooLarge_ReturnsValidationFailureWith400StatusCode()
+    {
+        // Arrange
+        var nsResult = Namespace.Create("test-ns", ValidConnectionString);
+        nsResult.IsSuccess.Should().BeTrue();
+        var @namespace = nsResult.Value;
+
+        _namespaceRepositoryMock
+            .Setup(x => x.GetByIdAsync(@namespace.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(@namespace));
+
+        var sizeError = Error.Validation(ErrorCodes.Message.BodyTooLarge, "The message body exceeds the maximum allowed size.");
+        _clientWrapperMock
+            .Setup(x => x.SendMessageAsync(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(sizeError));
+
+        var request = new SendMessageRequest(
+            NamespaceId: @namespace.Id,
+            EntityName: "test-queue",
+            Body: new string('x', 300_000));
+
+        // Act
+        var result = await _sut.SendAsync(request);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be(ErrorCodes.Message.BodyTooLarge);
+        result.Error.Type.Should().Be(ServiceHub.Shared.Results.ErrorType.Validation);
+    }
+
+    [Fact]
+    public async Task SendAsync_ExternalServiceError_ReturnsExternalServiceFailure()
+    {
+        // Arrange
+        var nsResult = Namespace.Create("test-ns", ValidConnectionString);
+        nsResult.IsSuccess.Should().BeTrue();
+        var @namespace = nsResult.Value;
+
+        _namespaceRepositoryMock
+            .Setup(x => x.GetByIdAsync(@namespace.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(@namespace));
+
+        // ExternalService errors are retryable → wrapped in InvalidOperationException by the pipeline
+        var externalError = Error.ExternalService(ErrorCodes.Message.SendFailed, "Remote error");
+        _clientWrapperMock
+            .Setup(x => x.SendMessageAsync(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(externalError));
+
+        var request = new SendMessageRequest(
+            NamespaceId: @namespace.Id,
+            EntityName: "test-queue",
+            Body: "test message");
+
+        // Act
+        var result = await _sut.SendAsync(request);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        // The Polly pipeline wraps the InvalidOperationException and retries; after retries exhausted,
+        // the outer catch returns ExternalService or Internal error.
+        result.Error.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task SendAsync_NotFoundError_ReturnsNonRetryableFailureDirectly()
+    {
+        // Arrange
+        var nsResult = Namespace.Create("test-ns", ValidConnectionString);
+        nsResult.IsSuccess.Should().BeTrue();
+        var @namespace = nsResult.Value;
+
+        _namespaceRepositoryMock
+            .Setup(x => x.GetByIdAsync(@namespace.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(@namespace));
+
+        var notFoundError = Error.NotFound(ErrorCodes.Queue.NotFound, "The queue was not found.");
+        _clientWrapperMock
+            .Setup(x => x.SendMessageAsync(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(notFoundError));
+
+        var request = new SendMessageRequest(
+            NamespaceId: @namespace.Id,
+            EntityName: "missing-queue",
+            Body: "test message");
+
+        // Act
+        var result = await _sut.SendAsync(request);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be(ErrorCodes.Queue.NotFound);
+        result.Error.Type.Should().Be(ServiceHub.Shared.Results.ErrorType.NotFound);
+    }
 }

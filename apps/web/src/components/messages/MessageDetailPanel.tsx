@@ -126,7 +126,7 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
       setConfirmState({
         isOpen: true,
         title: 'Replay Message',
-        message: `Are you sure you want to replay message ${shortId}?\n\nThis will re-send the message to the queue for processing.`,
+        message: `Are you sure you want to replay message ${shortId}?\n\nThis will re-send the message to the queue for processing.\n\n⚠️ Replay is best-effort and not atomic. If a transient error occurs after the message is sent but before it is removed from the DLQ, both the original DLQ entry and the new copy may briefly coexist. Check ApplicationProperties for "Replayed=true" if you see unexpected duplicates.`,
         variant: 'default',
         action: 'replay',
       });
