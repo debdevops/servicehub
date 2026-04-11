@@ -652,6 +652,4 @@ export function generateMockMessages(count: number): Message[] {
 // Export 100,000 messages for UI stress testing
 // ============================================================================
 
-console.time('Generating 100,000 mock messages');
 export const MOCK_MESSAGES = generateMockMessages(100000);
-console.timeEnd('Generating 100,000 mock messages');
