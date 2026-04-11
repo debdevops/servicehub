@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight, AlertTriangle } from 'lucide-react';
 import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@/hooks/useNamespaces';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { HelpTooltip } from '@/components/help';
@@ -178,6 +178,18 @@ export function ConnectPage() {
             </button>
           </div>
         )}
+
+        {/* ══════════════════════════════════════════════════════════════
+            MULTI-INSTANCE STORAGE NOTICE
+        ══════════════════════════════════════════════════════════════ */}
+        <div className="mb-4 rounded-lg bg-sky-50 border border-sky-200 p-3 flex items-start gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+          <p className="text-xs text-sky-800">
+            <span className="font-semibold">Single-instance storage:</span> Namespace connections are stored locally on the server running ServiceHub.
+            {' '}If you are running <strong>multiple instances</strong> (e.g., Azure App Service with scale-out), each instance has its own connection list.
+            {' '}Use <strong>sticky sessions</strong> or ensure all instances share the same storage path to avoid inconsistent connection lists across page refreshes.
+          </p>
+        </div>
 
         {/* ══════════════════════════════════════════════════════════════
             CONNECT FORM + SAVED CONNECTIONS  (primary action — above fold)

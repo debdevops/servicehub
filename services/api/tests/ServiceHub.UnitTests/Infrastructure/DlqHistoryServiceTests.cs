@@ -455,4 +455,30 @@ public class DlqHistoryServiceTests : IDisposable
             999, FailureCategory.Transient, 0.5, "Root cause", "Safe");
         result.IsFailure.Should().BeTrue();
     }
+
+    // ── LookupAsync ─────────────────────────────────────────
+
+    [Fact]
+    public async Task LookupAsync_ExistingMessage_ReturnsMessage()
+    {
+        var nsId = Guid.NewGuid();
+        var msg = CreateMessage(seq: 42, namespaceId: nsId, entityName: "my-queue");
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.LookupAsync(nsId, "my-queue", 42);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.SequenceNumber.Should().Be(42);
+        result.Value.NamespaceId.Should().Be(nsId);
+    }
+
+    [Fact]
+    public async Task LookupAsync_NotFound_ReturnsFailure()
+    {
+        var result = await _service.LookupAsync(Guid.NewGuid(), "no-such-queue", 99999);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Dlq.NotFound");
+    }
 }

@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Core.DTOs.Requests;
+using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Security;
@@ -310,14 +311,71 @@ public sealed class MessageReceiverTests
     }
 
     [Fact]
-    public async Task GetMessageCountAsync_NotImplemented_ReturnsFailure()
+    public async Task GetMessageCountAsync_Queue_ReturnsActiveMessageCount()
     {
+        // Arrange
+        var nsResult = Namespace.Create("test-ns", ValidConnectionString);
+        nsResult.IsSuccess.Should().BeTrue();
+        var @namespace = nsResult.Value;
+
+        _namespaceRepositoryMock
+            .Setup(x => x.GetByIdAsync(@namespace.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(@namespace));
+
+        var queueDto = new QueueRuntimePropertiesDto(
+            Name: "my-queue", ActiveMessageCount: 42, DeadLetterMessageCount: 3,
+            ScheduledMessageCount: 0, TransferMessageCount: 0, TransferDeadLetterMessageCount: 0,
+            SizeInBytes: 1024, Status: "Active", CreatedAt: DateTimeOffset.UtcNow,
+            UpdatedAt: DateTimeOffset.UtcNow, AccessedAt: DateTimeOffset.UtcNow,
+            RequiresSession: false, RequiresDuplicateDetection: false, EnablePartitioning: false,
+            EnableBatchedOperations: true, MaxSizeInMegabytes: 1024, MaxDeliveryCount: 10,
+            DefaultMessageTimeToLive: TimeSpan.MaxValue, LockDuration: TimeSpan.FromMinutes(1),
+            AutoDeleteOnIdle: TimeSpan.MaxValue);
+
+        _clientWrapperMock
+            .Setup(x => x.GetQueueAsync("my-queue", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(queueDto));
+
         // Act
-        var result = await _sut.GetMessageCountAsync(Guid.NewGuid(), "queue");
+        var result = await _sut.GetMessageCountAsync(@namespace.Id, "my-queue");
 
         // Assert
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be(ErrorCodes.General.UnexpectedError);
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(42);
+    }
+
+    [Fact]
+    public async Task GetMessageCountAsync_Subscription_ReturnsActiveMessageCount()
+    {
+        // Arrange
+        var nsResult = Namespace.Create("test-ns", ValidConnectionString);
+        nsResult.IsSuccess.Should().BeTrue();
+        var @namespace = nsResult.Value;
+
+        _namespaceRepositoryMock
+            .Setup(x => x.GetByIdAsync(@namespace.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(@namespace));
+
+        var subDto = new SubscriptionRuntimePropertiesDto(
+            Name: "sub1", TopicName: "my-topic", ActiveMessageCount: 15,
+            DeadLetterMessageCount: 1, TransferMessageCount: 0, TransferDeadLetterMessageCount: 0,
+            Status: "Active", CreatedAt: DateTimeOffset.UtcNow, UpdatedAt: DateTimeOffset.UtcNow,
+            AccessedAt: DateTimeOffset.UtcNow, RequiresSession: false, EnableBatchedOperations: true,
+            EnableDeadLetteringOnMessageExpiration: false, EnableDeadLetteringOnFilterEvaluationExceptions: false,
+            MaxDeliveryCount: 10, DefaultMessageTimeToLive: TimeSpan.MaxValue,
+            LockDuration: TimeSpan.FromMinutes(1), AutoDeleteOnIdle: TimeSpan.MaxValue,
+            ForwardTo: null, ForwardDeadLetteredMessagesTo: null);
+
+        _clientWrapperMock
+            .Setup(x => x.GetSubscriptionAsync("my-topic", "sub1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(subDto));
+
+        // Act
+        var result = await _sut.GetMessageCountAsync(@namespace.Id, "my-topic", "sub1");
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(15);
     }
 
     // ═══════════════════════════════════════════════════════════════
