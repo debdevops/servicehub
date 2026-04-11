@@ -139,8 +139,10 @@ export function MessagesPage() {
   // Auto-refresh control
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
 
-  // Pagination constant
-  const BATCH_SIZE = 1000;
+  // Pagination constants and state
+  const BATCH_SIZE = 50; // Load 50 messages per batch for optimal performance
+  const [paginationState, setPaginationState] = useState({ skip: 0, allMessages: [] as APIMessage[] });
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // Sync queueTab with URL parameter on mount and when it changes
   useEffect(() => {
@@ -155,6 +157,11 @@ export function MessagesPage() {
   useEffect(() => {
     setSelectedMessageId(null);
   }, [namespaceId, queueName, topicName, subscriptionName]);
+
+  // Reset pagination when queue/topic/tab changes
+  useEffect(() => {
+    setPaginationState({ skip: 0, allMessages: [] });
+  }, [namespaceId, queueName, topicName, subscriptionName, queueTab]);
 
   // After-demo conversion nudge — fires 90 seconds into demo mode
   useEffect(() => {
@@ -206,14 +213,32 @@ export function MessagesPage() {
     queueOrTopicName: entityName,
     entityType,
     queueType: queueTab,
-    skip: 0,
-    take: 1000,
-    autoRefresh: autoRefreshEnabled,
+    skip: paginationState.skip,
+    take: 50, // Initial fetch: 50 messages for fast load times
+    autoRefresh: autoRefreshEnabled && paginationState.skip === 0, // Only auto-refresh on first fetch
   });
 
   // Fetch authoritative counts from queue/subscription metadata
   const { data: queuesData, refetch: refetchQueues } = useQueues(namespaceId || '', autoRefreshEnabled);
   const { data: subscriptionsData, refetch: refetchSubscriptions } = useSubscriptions(namespaceId || '', topicName || '', autoRefreshEnabled);
+
+  // Accumulate messages when new data arrives
+  useEffect(() => {
+    if (messagesData?.items) {
+      setPaginationState(prev => {
+        // If skip is 0, replace all messages; otherwise append to existing ones
+        if (prev.skip === 0) {
+          return { ...prev, allMessages: messagesData.items };
+        } else {
+          // Avoid duplicates when appending
+          const existingIds = new Set(prev.allMessages.map(m => m.messageId));
+          const newMessages = messagesData.items.filter(m => !existingIds.has(m.messageId));
+          return { ...prev, allMessages: [...prev.allMessages, ...newMessages] };
+        }
+      });
+      setIsLoadingMore(false);
+    }
+  }, [messagesData?.items, paginationState.skip]);
 
   // Force refresh metadata counts when entity changes
   useEffect(() => {
@@ -401,7 +426,7 @@ export function MessagesPage() {
     ? demoMessages
         .filter(m => m.queueType === queueTab)
         .sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime())
-    : (messagesData?.items || [])
+    : paginationState.allMessages
       .map(msg => transformMessage(msg, insightMessageIds, queueTab))
       .sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime());
 
@@ -444,7 +469,13 @@ export function MessagesPage() {
 
   // Check if we're showing a partial view due to batch limit
   const totalMessagesInQueue = messagesData?.totalCount || 0;
-  const isPartialView = totalMessagesInQueue > messages.length && messages.length >= BATCH_SIZE;
+  const hasMoreMessages = paginationState.skip + BATCH_SIZE < totalMessagesInQueue && messages.length < totalMessagesInQueue;
+
+  // Load more messages handler
+  const handleLoadMore = () => {
+    setIsLoadingMore(true);
+    setPaginationState(prev => ({ ...prev, skip: prev.skip + BATCH_SIZE }));
+  };
 
   // Handle message selection
   const handleSelectMessage = (id: string) => {
@@ -758,13 +789,13 @@ export function MessagesPage() {
         </div>
       )}
 
-      {/* Partial View Warning */}
-      {isPartialView && !evidenceFilter && (
-        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-          <span className="text-xs text-amber-800">
-            <span className="font-semibold">Partial View:</span> Showing first {messages.length.toLocaleString()} of {totalMessagesInQueue.toLocaleString()} messages.
-            Older messages not loaded. Use search or refresh to view different messages.
+      {/* More Messages Available Banner */}
+      {hasMoreMessages && !evidenceFilter && (
+        <div className="bg-blue-50 border-b border-blue-200 px-4 py-2.5 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-blue-600 shrink-0" />
+          <span className="text-xs text-blue-800 flex-1">
+            <span className="font-semibold">More messages available:</span> Showing {messages.length.toLocaleString()} of {totalMessagesInQueue.toLocaleString()} messages.
+            Scroll down or click "Load More" to view additional messages.
           </span>
         </div>
       )}
@@ -782,6 +813,9 @@ export function MessagesPage() {
             active: messageCounts.active,
             deadletter: messageCounts.deadletter,
           }}
+          hasMoreMessages={hasMoreMessages}
+          isLoadingMore={isLoadingMore}
+          onLoadMore={handleLoadMore}
         />
 
         {/* Right: Detail Panel */}
