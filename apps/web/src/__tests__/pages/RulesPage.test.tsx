@@ -307,7 +307,7 @@ describe('RulesPage', () => {
     // Filter to delete buttons (they do not have title attribute unlike toggle)
     // Click the first delete button
     const deleteBtn = screen.getAllByRole('button').find(
-      btn => btn.className.includes('text-red-500') && !btn.disabled
+      btn => btn.className.includes('text-red-500') && !(btn as HTMLButtonElement).disabled
     );
     if (deleteBtn) {
       fireEvent.click(deleteBtn);
@@ -328,7 +328,7 @@ describe('RulesPage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><RulesPage /></Wrapper>);
     const deleteBtn = screen.getAllByRole('button').find(
-      btn => btn.className.includes('text-red-500') && !btn.disabled
+      btn => btn.className.includes('text-red-500') && !(btn as HTMLButtonElement).disabled
     );
     if (deleteBtn) {
       fireEvent.click(deleteBtn);
