@@ -148,6 +148,7 @@ public sealed class CorrelationController : ApiControllerBase
                     {
                         try
                         {
+                            // Search active messages
                             var peekReq = new GetMessagesRequest(
                                 NamespaceId: ns.Id,
                                 EntityName: q.Name,
@@ -156,27 +157,65 @@ public sealed class CorrelationController : ApiControllerBase
                                 MaxMessages: GetMessagesRequest.MaxAllowedMessages);
 
                             var peekResult = await wrapper.PeekMessagesAsync(peekReq, searchToken).ConfigureAwait(false);
-                            if (peekResult.IsFailure) return;
-
-                            foreach (var msg in peekResult.Value)
+                            if (peekResult.IsSuccess)
                             {
-                                if (string.Equals(msg.CorrelationId, correlationId, StringComparison.OrdinalIgnoreCase))
+                                foreach (var msg in peekResult.Value)
                                 {
-                                    liveEntries.Add(new CorrelationTimelineEntry(
-                                        Source: "Live",
-                                        NamespaceId: ns.Id,
-                                        NamespaceDisplayName: nsDisplayName,
-                                        EntityName: q.Name,
-                                        EntityPath: q.Name,
-                                        MessageId: msg.MessageId,
-                                        SequenceNumber: msg.SequenceNumber,
-                                        State: msg.State.ToString(),
-                                        Timestamp: msg.EnqueuedTime,
-                                        DeadLetterReason: msg.DeadLetterReason,
-                                        BodyPreview: msg.Body != null && msg.Body.Length > 200
-                                            ? msg.Body[..200]
-                                            : msg.Body,
-                                        SizeInBytes: msg.SizeInBytes));
+                                    if (string.Equals(msg.CorrelationId, correlationId, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        liveEntries.Add(new CorrelationTimelineEntry(
+                                            Source: "Live",
+                                            NamespaceId: ns.Id,
+                                            NamespaceDisplayName: nsDisplayName,
+                                            EntityName: q.Name,
+                                            EntityPath: q.Name,
+                                            MessageId: msg.MessageId,
+                                            SequenceNumber: msg.SequenceNumber,
+                                            State: msg.State.ToString(),
+                                            Timestamp: msg.EnqueuedTime,
+                                            DeadLetterReason: msg.DeadLetterReason,
+                                            BodyPreview: msg.Body != null && msg.Body.Length > 200
+                                                ? msg.Body[..200]
+                                                : msg.Body,
+                                            SizeInBytes: msg.SizeInBytes));
+                                    }
+                                }
+                            }
+
+                            // Search dead-letter messages
+                            if (q.DeadLetterMessageCount > 0)
+                            {
+                                var dlqPeekReq = new GetMessagesRequest(
+                                    NamespaceId: ns.Id,
+                                    EntityName: q.Name,
+                                    SubscriptionName: null,
+                                    FromDeadLetter: true,
+                                    MaxMessages: GetMessagesRequest.MaxAllowedMessages);
+
+                                var dlqPeekResult = await wrapper.PeekMessagesAsync(dlqPeekReq, searchToken).ConfigureAwait(false);
+                                if (dlqPeekResult.IsSuccess)
+                                {
+                                    foreach (var msg in dlqPeekResult.Value)
+                                    {
+                                        if (string.Equals(msg.CorrelationId, correlationId, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            liveEntries.Add(new CorrelationTimelineEntry(
+                                                Source: "Live",
+                                                NamespaceId: ns.Id,
+                                                NamespaceDisplayName: nsDisplayName,
+                                                EntityName: q.Name,
+                                                EntityPath: q.Name,
+                                                MessageId: msg.MessageId,
+                                                SequenceNumber: msg.SequenceNumber,
+                                                State: "DeadLettered",
+                                                Timestamp: msg.EnqueuedTime,
+                                                DeadLetterReason: msg.DeadLetterReason,
+                                                BodyPreview: msg.Body != null && msg.Body.Length > 200
+                                                    ? msg.Body[..200]
+                                                    : msg.Body,
+                                                SizeInBytes: msg.SizeInBytes));
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -205,6 +244,7 @@ public sealed class CorrelationController : ApiControllerBase
                             {
                                 try
                                 {
+                                    // Search active messages
                                     var peekReq = new GetMessagesRequest(
                                         NamespaceId: ns.Id,
                                         EntityName: topic.Name,
@@ -213,28 +253,67 @@ public sealed class CorrelationController : ApiControllerBase
                                         MaxMessages: GetMessagesRequest.MaxAllowedMessages);
 
                                     var peekResult = await wrapper.PeekMessagesAsync(peekReq, searchToken).ConfigureAwait(false);
-                                    if (peekResult.IsFailure) return;
-
                                     var entityPath = $"{topic.Name}/subscriptions/{sub.Name}";
-                                    foreach (var msg in peekResult.Value)
+
+                                    if (peekResult.IsSuccess)
                                     {
-                                        if (string.Equals(msg.CorrelationId, correlationId, StringComparison.OrdinalIgnoreCase))
+                                        foreach (var msg in peekResult.Value)
                                         {
-                                            liveEntries.Add(new CorrelationTimelineEntry(
-                                                Source: "Live",
-                                                NamespaceId: ns.Id,
-                                                NamespaceDisplayName: nsDisplayName,
-                                                EntityName: sub.Name,
-                                                EntityPath: entityPath,
-                                                MessageId: msg.MessageId,
-                                                SequenceNumber: msg.SequenceNumber,
-                                                State: msg.State.ToString(),
-                                                Timestamp: msg.EnqueuedTime,
-                                                DeadLetterReason: msg.DeadLetterReason,
-                                                BodyPreview: msg.Body != null && msg.Body.Length > 200
-                                                    ? msg.Body[..200]
-                                                    : msg.Body,
-                                                SizeInBytes: msg.SizeInBytes));
+                                            if (string.Equals(msg.CorrelationId, correlationId, StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                liveEntries.Add(new CorrelationTimelineEntry(
+                                                    Source: "Live",
+                                                    NamespaceId: ns.Id,
+                                                    NamespaceDisplayName: nsDisplayName,
+                                                    EntityName: sub.Name,
+                                                    EntityPath: entityPath,
+                                                    MessageId: msg.MessageId,
+                                                    SequenceNumber: msg.SequenceNumber,
+                                                    State: msg.State.ToString(),
+                                                    Timestamp: msg.EnqueuedTime,
+                                                    DeadLetterReason: msg.DeadLetterReason,
+                                                    BodyPreview: msg.Body != null && msg.Body.Length > 200
+                                                        ? msg.Body[..200]
+                                                        : msg.Body,
+                                                    SizeInBytes: msg.SizeInBytes));
+                                            }
+                                        }
+                                    }
+
+                                    // Search dead-letter messages
+                                    if (sub.DeadLetterMessageCount > 0)
+                                    {
+                                        var dlqPeekReq = new GetMessagesRequest(
+                                            NamespaceId: ns.Id,
+                                            EntityName: topic.Name,
+                                            SubscriptionName: sub.Name,
+                                            FromDeadLetter: true,
+                                            MaxMessages: GetMessagesRequest.MaxAllowedMessages);
+
+                                        var dlqPeekResult = await wrapper.PeekMessagesAsync(dlqPeekReq, searchToken).ConfigureAwait(false);
+                                        if (dlqPeekResult.IsSuccess)
+                                        {
+                                            foreach (var msg in dlqPeekResult.Value)
+                                            {
+                                                if (string.Equals(msg.CorrelationId, correlationId, StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    liveEntries.Add(new CorrelationTimelineEntry(
+                                                        Source: "Live",
+                                                        NamespaceId: ns.Id,
+                                                        NamespaceDisplayName: nsDisplayName,
+                                                        EntityName: sub.Name,
+                                                        EntityPath: entityPath,
+                                                        MessageId: msg.MessageId,
+                                                        SequenceNumber: msg.SequenceNumber,
+                                                        State: "DeadLettered",
+                                                        Timestamp: msg.EnqueuedTime,
+                                                        DeadLetterReason: msg.DeadLetterReason,
+                                                        BodyPreview: msg.Body != null && msg.Body.Length > 200
+                                                            ? msg.Body[..200]
+                                                            : msg.Body,
+                                                        SizeInBytes: msg.SizeInBytes));
+                                                }
+                                            }
                                         }
                                     }
                                 }

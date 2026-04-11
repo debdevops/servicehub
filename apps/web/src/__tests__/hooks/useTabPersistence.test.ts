@@ -45,13 +45,13 @@ describe('useTabPersistence', () => {
   it('persists the new tab to localStorage', () => {
     const { result } = renderHook(() => useTabPersistence());
     act(() => {
-      result.current[1]('forensic');
+      result.current[1]('headers');
     });
-    expect(localStorage.getItem(STORAGE_KEY)).toBe('forensic');
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('headers');
   });
 
   it('accepts all valid tab values', () => {
-    const validTabs = ['properties', 'body', 'ai', 'forensic', 'headers'] as const;
+    const validTabs = ['properties', 'body', 'ai', 'headers'] as const;
     const { result } = renderHook(() => useTabPersistence());
 
     for (const tab of validTabs) {

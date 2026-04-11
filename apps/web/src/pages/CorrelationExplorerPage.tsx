@@ -223,8 +223,8 @@ function TimelineEntryCard({
       </div>
 
       {/* Right column: entry card */}
-      <div className="flex-1 mb-4">
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
+      <div className="flex-1 min-w-0 mb-4">
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 overflow-hidden">
           {/* Header row */}
           <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
             <div className="flex items-center gap-2 min-w-0 flex-wrap">
@@ -282,10 +282,10 @@ function TimelineEntryCard({
 
           {/* Body preview — expandable */}
           {entry.bodyPreview && (
-            <div className="mt-1">
+            <div className="mt-1 min-w-0 max-w-full overflow-hidden">
               <div
-                className={`text-xs text-gray-600 font-mono bg-gray-50 border border-gray-100 rounded px-2 py-1.5 ${
-                  expanded ? 'whitespace-pre-wrap break-words' : 'truncate'
+                className={`text-xs text-gray-600 font-mono bg-gray-50 border border-gray-100 rounded px-2 py-1.5 overflow-hidden ${
+                  expanded ? 'whitespace-pre-wrap break-all' : 'truncate'
                 }`}
               >
                 {expanded ? entry.bodyPreview : entry.bodyPreview.slice(0, 200) + (entry.bodyPreview.length > 200 ? '…' : '')}
@@ -548,7 +548,7 @@ export function CorrelationExplorerPage() {
       </div>
 
       {/* Content area */}
-      <div className="flex-1 overflow-auto bg-gray-50">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-50">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-500">
             <div className="animate-spin rounded-full border-4 border-violet-200 border-t-violet-600 w-10 h-10" />

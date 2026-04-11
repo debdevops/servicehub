@@ -72,3 +72,13 @@ public sealed record RuleTemplateResponse(
     RuleAction Action,
     int UsageCount,
     double Rating);
+
+/// <summary>
+/// Response DTO for the intelligent auto-replay rule generation.
+/// </summary>
+public sealed record GenerateRulesResponse(
+    int AnalysedMessages,
+    int PatternsDetected,
+    int RulesCreated,
+    int RulesSkipped,
+    IReadOnlyList<RuleResponse> Rules);

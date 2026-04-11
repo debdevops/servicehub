@@ -124,22 +124,3 @@ public sealed record DlqTrendPointResponse(
 /// Request DTO for updating notes on a DLQ message.
 /// </summary>
 public sealed record UpdateDlqNotesRequest(string Notes);
-
-/// <summary>
-/// Response DTO for a single forensic analysis result.
-/// </summary>
-public sealed record ForensicResultResponse(
-    long MessageId,
-    string FailureCategory,
-    double Confidence,
-    string RootCause,
-    string ReplaySafety,
-    string Tier);
-
-/// <summary>
-/// Summary response for a batch forensic analysis run.
-/// </summary>
-public sealed record ForensicBatchSummaryResponse(
-    int Analysed,
-    int Updated,
-    IReadOnlyDictionary<string, int> ByCategory);

@@ -62,21 +62,21 @@ function LiveBadge({ secondsAgo }: { secondsAgo: number }) {
 // ============================================================================
 
 function EnvironmentBadge({ env }: { env?: EnvironmentType }) {
-  if (env === 'Prod') {
+  if (env === 'prod') {
     return (
       <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-red-100 text-red-700 border border-red-200">
         PROD
       </span>
     );
   }
-  if (env === 'Uat') {
+  if (env === 'uat') {
     return (
       <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-amber-100 text-amber-700 border border-amber-200">
         UAT
       </span>
     );
   }
-  if (env === 'Dev') {
+  if (env === 'dev') {
     return (
       <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
         DEV
@@ -308,8 +308,8 @@ function SkeletonCard() {
         <div className="h-5 w-32 bg-gray-200 rounded" />
       </div>
       <div className="h-3 w-48 bg-gray-100 rounded mb-4" />
-      <div className="grid grid-cols-4 gap-2 mb-4">
-        {[0, 1, 2, 3].map((i) => (
+      <div className="grid grid-cols-5 gap-2 mb-4">
+        {[0, 1, 2, 3, 4].map((i) => (
           <div key={i} className="bg-gray-100 rounded-lg p-3">
             <div className="h-3 w-8 bg-gray-200 rounded mb-2 mx-auto" />
             <div className="h-6 w-6 bg-gray-200 rounded mx-auto" />
@@ -339,7 +339,7 @@ function DlqTrendSparkline({ namespaceId }: { namespaceId: string }) {
   const { data: trendData } = useQuery<TrendPoint[]>({
     queryKey: ['dlq-trend', namespaceId],
     queryFn: async () => {
-      const res = await apiClient.get(`/api/v1/dlq/trend`, {
+      const res = await apiClient.get(`/dlq/trend`, {
         params: { namespaceId, days: 7 },
       });
       return (res.data as Array<{ date: string; newMessages: number; resolvedMessages: number }>).map(d => ({
@@ -382,12 +382,34 @@ export interface NamespaceCardProps {
 
 export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }: NamespaceCardProps) {
   const navigate = useNavigate();
-  const { data: queues, isLoading, isError } = useQueues(namespace.id, true);
+  const { data: queues, isLoading: queuesLoading, isError } = useQueues(namespace.id, true);
 
-  const totalQueues = queues?.length ?? 0;
-  const totalActive = queues?.reduce((s, q) => s + q.activeMessageCount, 0) ?? 0;
-  const totalDlq = queues?.reduce((s, q) => s + q.deadLetterMessageCount, 0) ?? 0;
-  const totalScheduled = queues?.reduce((s, q) => s + q.scheduledMessageCount, 0) ?? 0;
+  // Use the stats endpoint for accurate totals (includes subscription DLQs)
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ['namespace-stats', namespace.id],
+    queryFn: async () => {
+      const response = await apiClient.get<{
+        totalQueues: number;
+        totalTopics: number;
+        totalSubscriptions: number;
+        totalActive: number;
+        totalDlq: number;
+        totalScheduled: number;
+      }>(`/namespaces/${namespace.id}/stats`, { _silent: true } as Record<string, unknown>);
+      return response.data;
+    },
+    enabled: !!namespace.id,
+    staleTime: 2000,
+    refetchInterval: 7000,
+    refetchIntervalInBackground: false,
+  });
+
+  const isLoading = queuesLoading || statsLoading;
+  const totalQueues = stats?.totalQueues ?? queues?.length ?? 0;
+  const totalTopics = stats?.totalTopics ?? 0;
+  const totalActive = stats?.totalActive ?? queues?.reduce((s, q) => s + q.activeMessageCount, 0) ?? 0;
+  const totalDlq = stats?.totalDlq ?? queues?.reduce((s, q) => s + q.deadLetterMessageCount, 0) ?? 0;
+  const totalScheduled = stats?.totalScheduled ?? queues?.reduce((s, q) => s + q.scheduledMessageCount, 0) ?? 0;
   const isDlqSpike = totalDlq > dlqThreshold;
 
   // Track previous DLQ count to detect sudden increases
@@ -434,8 +456,9 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }:
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-4 gap-2 px-5 pb-3">
+      <div className="grid grid-cols-5 gap-2 px-5 pb-3">
         <StatCell label="Queues" value={isError ? '—' : totalQueues} />
+        <StatCell label="Topics" value={isError ? '—' : totalTopics} colorClass="text-indigo-700" />
         <StatCell
           label="Active"
           value={isError ? '—' : totalActive}
@@ -552,8 +575,8 @@ export function DashboardPage() {
   });
 
   // Prod vs Non-Prod comparison (only shown when both exist)
-  const prodNamespaces = (namespaces ?? []).filter((ns) => ns.environment === 'Prod');
-  const nonProdNamespaces = (namespaces ?? []).filter((ns) => ns.environment !== 'Prod');
+  const prodNamespaces = (namespaces ?? []).filter((ns) => ns.environment === 'prod');
+  const nonProdNamespaces = (namespaces ?? []).filter((ns) => ns.environment !== 'prod');
   const hasBothEnvs = prodNamespaces.length > 0 && nonProdNamespaces.length > 0;
 
   function envTotals(nsList: Namespace[]) {

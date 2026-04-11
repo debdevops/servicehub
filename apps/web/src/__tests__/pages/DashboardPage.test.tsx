@@ -31,7 +31,7 @@ const mockNamespace = {
   name: 'my-servicebus.servicebus.windows.net',
   displayName: 'My Namespace',
   isActive: true,
-  environment: 'Dev' as const,
+  environment: 'dev' as const,
   hasListenPermission: true,
   hasSendPermission: true,
   hasManagePermission: true,
@@ -114,12 +114,12 @@ describe('DashboardPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/connect');
   });
 
-  it('renders one NamespaceCard per namespace (displayName visible)', () => {
+  it('renders one NamespaceCard per namespace (displayName visible)', async () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
-    expect(screen.getByText('My Namespace')).toBeInTheDocument();
+    expect(await screen.findByText('My Namespace')).toBeInTheDocument();
   });
 
-  it('renders multiple NamespaceCards for multiple namespaces', () => {
+  it('renders multiple NamespaceCards for multiple namespaces', async () => {
     const ns2 = { ...mockNamespace, id: 'ns2', displayName: 'Second Namespace', name: 'second.servicebus.windows.net' };
     mockUseNamespaces.mockReturnValue({
       data: [mockNamespace, ns2],
@@ -132,8 +132,8 @@ describe('DashboardPage', () => {
       { namespaceId: 'ns2', queues: mockQueues, totalActive: 3, totalDlq: 0, totalScheduled: 0, totalQueues: 1, isLoading: false, isError: false },
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
-    expect(screen.getByText('My Namespace')).toBeInTheDocument();
-    expect(screen.getByText('Second Namespace')).toBeInTheDocument();
+    expect(await screen.findByText('My Namespace')).toBeInTheDocument();
+    expect(await screen.findByText('Second Namespace')).toBeInTheDocument();
   });
 
   it('shows loading skeletons while namespaces are loading', () => {
@@ -148,12 +148,12 @@ describe('DashboardPage', () => {
     expect(container.querySelector('.animate-pulse')).toBeTruthy();
   });
 
-  it('shows Healthy status when DLQ count is within threshold', () => {
+  it('shows Healthy status when DLQ count is within threshold', async () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
-    expect(screen.getByText('✅ Healthy')).toBeInTheDocument();
+    expect(await screen.findByText('✅ Healthy')).toBeInTheDocument();
   });
 
-  it('shows DLQ spike banner when DLQ count exceeds threshold', () => {
+  it('shows DLQ spike banner when DLQ count exceeds threshold', async () => {
     mockUseQueues.mockReturnValue({
       data: [{ ...mockQueues[0], deadLetterMessageCount: 15 }],
       isLoading: false,
@@ -172,29 +172,29 @@ describe('DashboardPage', () => {
       },
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
-    expect(screen.getByText(/DLQ: 15 messages need attention/i)).toBeInTheDocument();
+    expect(await screen.findByText(/DLQ: 15 messages need attention/i)).toBeInTheDocument();
   });
 
-  it('Browse Queues button navigates to messages page', () => {
+  it('Browse Queues button navigates to messages page', async () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole('button', { name: /browse queues/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /browse queues/i }));
     expect(mockNavigate).toHaveBeenCalledWith('/messages?namespace=ns1');
   });
 
-  it('View DLQ History button navigates to dlq-history page', () => {
+  it('View DLQ History button navigates to dlq-history page', async () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole('button', { name: /view dlq history/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /view dlq history/i }));
     expect(mockNavigate).toHaveBeenCalledWith('/dlq-history?namespace=ns1');
   });
 
-  it('shows DEV badge for Dev environment', () => {
+  it('shows DEV badge for Dev environment', async () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
-    expect(screen.getByText('DEV')).toBeInTheDocument();
+    expect(await screen.findByText('DEV')).toBeInTheDocument();
   });
 
-  it('shows PROD badge for Prod environment', () => {
+  it('shows PROD badge for Prod environment', async () => {
     mockUseNamespaces.mockReturnValue({
-      data: [{ ...mockNamespace, environment: 'Prod' }],
+      data: [{ ...mockNamespace, environment: 'prod' }],
       isLoading: false,
       isFetching: false,
       refetch: vi.fn(),
@@ -203,12 +203,12 @@ describe('DashboardPage', () => {
       { namespaceId: 'ns1', queues: mockQueues, totalActive: 5, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
-    expect(screen.getByText('PROD')).toBeInTheDocument();
+    expect(await screen.findByText('PROD')).toBeInTheDocument();
   });
 
-  it('shows UAT badge for Uat environment', () => {
+  it('shows UAT badge for Uat environment', async () => {
     mockUseNamespaces.mockReturnValue({
-      data: [{ ...mockNamespace, environment: 'Uat' }],
+      data: [{ ...mockNamespace, environment: 'uat' }],
       isLoading: false,
       isFetching: false,
       refetch: vi.fn(),
@@ -217,10 +217,10 @@ describe('DashboardPage', () => {
       { namespaceId: 'ns1', queues: mockQueues, totalActive: 5, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
-    expect(screen.getByText('UAT')).toBeInTheDocument();
+    expect(await screen.findByText('UAT')).toBeInTheDocument();
   });
 
-  it('shows fallback badge when environment is undefined', () => {
+  it('shows fallback badge when environment is undefined', async () => {
     const { environment: _env, ...nsNoEnv } = mockNamespace;
     mockUseNamespaces.mockReturnValue({
       data: [nsNoEnv],
@@ -232,6 +232,6 @@ describe('DashboardPage', () => {
       { namespaceId: 'ns1', queues: mockQueues, totalActive: 5, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
-    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(await screen.findByText('—')).toBeInTheDocument();
   });
 });

@@ -11,6 +11,7 @@ vi.mock('@/hooks/useRules', () => ({
   useDeleteRule: vi.fn(),
   useToggleRule: vi.fn(),
   useReplayAll: vi.fn(),
+  useGenerateRules: vi.fn(),
 }));
 
 vi.mock('@/components/rules', () => ({
@@ -29,6 +30,7 @@ import {
   useDeleteRule,
   useToggleRule,
   useReplayAll,
+  useGenerateRules,
 } from '@/hooks/useRules';
 
 const mockUseRules = useRules as ReturnType<typeof vi.fn>;
@@ -37,6 +39,7 @@ const mockUseUpdateRule = useUpdateRule as ReturnType<typeof vi.fn>;
 const mockUseDeleteRule = useDeleteRule as ReturnType<typeof vi.fn>;
 const mockUseToggleRule = useToggleRule as ReturnType<typeof vi.fn>;
 const mockUseReplayAll = useReplayAll as ReturnType<typeof vi.fn>;
+const mockUseGenerateRules = useGenerateRules as ReturnType<typeof vi.fn>;
 
 const mockRules = [
   {
@@ -91,6 +94,7 @@ beforeEach(() => {
   mockUseDeleteRule.mockReturnValue({ ...mockMutation });
   mockUseToggleRule.mockReturnValue({ ...mockMutation });
   mockUseReplayAll.mockReturnValue({ ...mockMutation, isPending: false });
+  mockUseGenerateRules.mockReturnValue({ ...mockMutation, isPending: false });
 });
 
 describe('RulesPage', () => {

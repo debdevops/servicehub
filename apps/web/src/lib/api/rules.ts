@@ -77,6 +77,14 @@ export interface RuleTemplateResponse {
   rating: number;
 }
 
+export interface GenerateRulesResponse {
+  analysedMessages: number;
+  patternsDetected: number;
+  rulesCreated: number;
+  rulesSkipped: number;
+  rules: RuleResponse[];
+}
+
 export interface CreateRuleRequest {
   name: string;
   description?: string;
@@ -152,6 +160,13 @@ export const rulesApi = {
   /** Get rule templates */
   getTemplates: async (): Promise<RuleTemplateResponse[]> => {
     const { data } = await apiClient.get<RuleTemplateResponse[]>(`${BASE}/templates`);
+    return data;
+  },
+
+  /** Generate intelligent auto-replay rules from DLQ patterns */
+  generateRules: async (namespaceId?: string): Promise<GenerateRulesResponse> => {
+    const params = namespaceId ? { namespaceId } : undefined;
+    const { data } = await apiClient.post<GenerateRulesResponse>(`${BASE}/generate`, null, { params });
     return data;
   },
 };

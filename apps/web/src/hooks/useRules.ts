@@ -144,3 +144,26 @@ export function useReplayAll() {
     onError: () => toast.error('Failed to execute replay-all'),
   });
 }
+
+/**
+ * Hook for generating intelligent auto-replay rules from DLQ patterns.
+ */
+export function useGenerateRules() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (namespaceId?: string) => rulesApi.generateRules(namespaceId),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: RULES_KEY });
+      if (result.rulesCreated > 0) {
+        toast.success(
+          `Analysed ${result.analysedMessages} messages — created ${result.rulesCreated} intelligent rules`,
+        );
+      } else if (result.analysedMessages === 0) {
+        toast('No active DLQ messages to analyse', { icon: 'ℹ️' });
+      } else {
+        toast('All detected patterns already have rules', { icon: 'ℹ️' });
+      }
+    },
+    onError: () => toast.error('Failed to generate intelligent rules'),
+  });
+}

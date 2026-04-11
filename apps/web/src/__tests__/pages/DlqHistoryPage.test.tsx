@@ -26,7 +26,6 @@ vi.mock('@/lib/api/dlqHistory', () => ({
   dlqHistoryApi: {
     getExportUrl: vi.fn(() => 'http://test-export-url'),
     triggerScan: vi.fn(),
-    analyseBatch: vi.fn(),
   },
 }));
 vi.mock('react-hot-toast', () => ({
@@ -132,12 +131,6 @@ describe('DlqHistoryPage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><DlqHistoryPage /></Wrapper>);
     expect(screen.getByText('Scan Now')).toBeInTheDocument();
-  });
-
-  it('renders Analyse All button', () => {
-    const Wrapper = createWrapper();
-    render(<Wrapper><DlqHistoryPage /></Wrapper>);
-    expect(screen.getByText('Analyse All')).toBeInTheDocument();
   });
 
   it('renders CSV export button', () => {

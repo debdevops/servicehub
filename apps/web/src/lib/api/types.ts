@@ -1,5 +1,5 @@
-// Environment type matching backend EnvironmentType enum
-export type EnvironmentType = 'Dev' | 'Uat' | 'Prod';
+// Environment type matching backend EnvironmentType enum (camelCase, as serialized by API)
+export type EnvironmentType = 'dev' | 'uat' | 'prod';
 
 /** Shape of errors returned by the axios API client. Used for typed error handling in hooks. */
 export type ApiError = {

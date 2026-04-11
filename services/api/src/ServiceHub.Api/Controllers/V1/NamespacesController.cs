@@ -420,6 +420,90 @@ public sealed class NamespacesController : ApiControllerBase
     }
 
     /// <summary>
+    /// Gets aggregate statistics for a namespace, including both queue and subscription DLQ counts.
+    /// </summary>
+    /// <param name="id">The namespace ID.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Aggregate stats across queues and topic subscriptions.</returns>
+    [HttpGet("{id:guid}/stats")]
+    [RequireScope(ApiKeyScopes.MessagesPeek)]
+    [ProducesResponseType(typeof(NamespaceStatsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<NamespaceStatsResponse>> GetStats(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        var nsResult = await _namespaceRepository.GetByIdAsync(id, cancellationToken);
+        if (nsResult.IsFailure)
+            return ToActionResult<NamespaceStatsResponse>(nsResult.Error);
+
+        var ns = nsResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+            return NotFound();
+
+        if (string.IsNullOrEmpty(ns.ConnectionString))
+            return Ok(new NamespaceStatsResponse(0, 0, 0, 0, 0, 0));
+
+        var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
+        if (unprotectResult.IsFailure)
+            return Ok(new NamespaceStatsResponse(0, 0, 0, 0, 0, 0));
+
+        try
+        {
+            var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+
+            long totalActive = 0, totalDlq = 0, totalScheduled = 0;
+            int totalQueues = 0, totalTopics = 0, totalSubscriptions = 0;
+
+            // Aggregate queue stats
+            var queuesResult = await wrapper.GetQueuesAsync(cancellationToken);
+            if (queuesResult.IsSuccess)
+            {
+                totalQueues = queuesResult.Value.Count;
+                foreach (var q in queuesResult.Value)
+                {
+                    totalActive += q.ActiveMessageCount;
+                    totalDlq += q.DeadLetterMessageCount;
+                    totalScheduled += q.ScheduledMessageCount;
+                }
+            }
+
+            // Aggregate topic subscription stats
+            var topicsResult = await wrapper.GetTopicsAsync(cancellationToken);
+            if (topicsResult.IsSuccess)
+            {
+                totalTopics = topicsResult.Value.Count;
+                foreach (var topic in topicsResult.Value)
+                {
+                    var subsResult = await wrapper.GetSubscriptionsAsync(topic.Name, cancellationToken);
+                    if (subsResult.IsSuccess)
+                    {
+                        totalSubscriptions += subsResult.Value.Count;
+                        foreach (var sub in subsResult.Value)
+                        {
+                            totalActive += sub.ActiveMessageCount;
+                            totalDlq += sub.DeadLetterMessageCount;
+                        }
+                    }
+                }
+            }
+
+            return Ok(new NamespaceStatsResponse(
+                TotalQueues: totalQueues,
+                TotalTopics: totalTopics,
+                TotalSubscriptions: totalSubscriptions,
+                TotalActive: totalActive,
+                TotalDlq: totalDlq,
+                TotalScheduled: totalScheduled));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get stats for namespace {NamespaceId}", id);
+            return Ok(new NamespaceStatsResponse(0, 0, 0, 0, 0, 0));
+        }
+    }
+
+    /// <summary>
     /// Maps a Namespace entity to a NamespaceResponse DTO.
     /// </summary>
     /// <param name="ns">The namespace entity.</param>
@@ -454,3 +538,14 @@ public sealed record ConnectionTestResponse(
     bool IsConnected,
     string Message,
     DateTimeOffset TestedAt);
+
+/// <summary>
+/// Response model for namespace aggregate statistics including both queue and subscription data.
+/// </summary>
+public sealed record NamespaceStatsResponse(
+    int TotalQueues,
+    int TotalTopics,
+    int TotalSubscriptions,
+    long TotalActive,
+    long TotalDlq,
+    long TotalScheduled);
