@@ -43,11 +43,11 @@ export function Header() {
             <span className="font-medium">{currentNamespace.displayName || currentNamespace.name}</span>
             {/* Environment badge */}
             <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded uppercase leading-none ${
-              currentNamespace.environment === 'Prod' ? 'bg-red-500 text-white' :
-              currentNamespace.environment === 'Uat' ? 'bg-amber-400 text-amber-900' :
+              currentNamespace.environment === 'prod' ? 'bg-red-500 text-white' :
+              currentNamespace.environment === 'uat' ? 'bg-amber-400 text-amber-900' :
               'bg-green-400 text-green-900'
             }`}>
-              {currentNamespace.environment || 'DEV'}
+              {(currentNamespace.environment ?? 'dev').toUpperCase()}
             </span>
           </div>
         ) : (

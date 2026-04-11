@@ -84,30 +84,6 @@ describe('dlqHistoryApi', () => {
     });
   });
 
-  describe('getForensicResult()', () => {
-    it('calls GET /dlq/history/:id/forensic', async () => {
-      const forensic = { messageId: 1, failureCategory: 'MaxDelivery', confidence: 0.9, rootCause: 'Consumer error', replaySafety: 'Safe', tier: 'Tier 1' };
-      mocked.get.mockResolvedValueOnce({ data: forensic } as any);
-
-      const result = await dlqHistoryApi.getForensicResult(1);
-
-      expect(mocked.get).toHaveBeenCalledWith('/dlq/history/1/forensic');
-      expect(result.replaySafety).toBe('Safe');
-    });
-  });
-
-  describe('analyseBatch()', () => {
-    it('calls POST /dlq/analyse-batch/:namespaceId', async () => {
-      const summary = { analysed: 10, updated: 8, byCategory: {} };
-      mocked.post.mockResolvedValueOnce({ data: summary } as any);
-
-      const result = await dlqHistoryApi.analyseBatch('ns-1');
-
-      expect(mocked.post).toHaveBeenCalledWith('/dlq/analyse-batch/ns-1');
-      expect(result.analysed).toBe(10);
-    });
-  });
-
   describe('getExportUrl()', () => {
     it('builds export URL with json format by default', () => {
       const url = dlqHistoryApi.getExportUrl();

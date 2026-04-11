@@ -12,9 +12,6 @@ vi.mock('@/lib/api/dlqHistory', () => ({
     updateNotes: vi.fn(),
     setStatus: vi.fn(),
     batchSetStatus: vi.fn(),
-    getForensicResult: vi.fn(),
-    runForensic: vi.fn(),
-    runBatchForensic: vi.fn(),
     exportCsv: vi.fn(),
   },
 }));

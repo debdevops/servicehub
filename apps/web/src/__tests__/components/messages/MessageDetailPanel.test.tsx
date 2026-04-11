@@ -16,7 +16,6 @@ vi.mock('@/components/messages/tabs', () => ({
   ),
   BodyTab: () => <div data-testid="body-tab">Body Content</div>,
   AIInsightsTab: () => <div data-testid="ai-insights-tab">AI Insights</div>,
-  ForensicTab: () => <div data-testid="forensic-tab">Forensic</div>,
   HeadersTab: () => <div data-testid="headers-tab">Headers</div>,
 }));
 vi.mock('@/components/ConfirmDialog', () => ({
@@ -121,7 +120,6 @@ describe('MessageDetailPanel', () => {
     expect(screen.getByText('Properties')).toBeInTheDocument();
     expect(screen.getByText('Body')).toBeInTheDocument();
     expect(screen.getByText('AI Insights')).toBeInTheDocument();
-    expect(screen.getByText('Forensic')).toBeInTheDocument();
     expect(screen.getByText('Headers')).toBeInTheDocument();
   });
 
@@ -207,13 +205,6 @@ describe('MessageDetailPanel', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
     expect(screen.getByTestId('ai-insights-tab')).toBeInTheDocument();
-  });
-
-  it('shows forensic tab content when Forensic tab is active', () => {
-    mockUseTabPersistence.mockReturnValue(['forensic', vi.fn()]);
-    const Wrapper = createWrapper();
-    render(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
-    expect(screen.getByTestId('forensic-tab')).toBeInTheDocument();
   });
 
   it('shows headers tab content when Headers tab is active', () => {

@@ -1,10 +1,10 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Security;
-using Microsoft.EntityFrameworkCore;
 
 namespace ServiceHub.Infrastructure.BackgroundServices;
 
@@ -96,6 +96,51 @@ public sealed class DlqMonitorWorker : BackgroundService
                             var notifier = innerScope.ServiceProvider.GetRequiredService<IWebhookNotifier>();
                             await notifier.NotifyDlqSpikeAsync(
                                 ns.Id, ns.Name, scanResult.Value, stoppingToken);
+                        }
+
+                        // Evaluate auto-replay rules against active DLQ messages
+                        try
+                        {
+                            var ruleEngine = innerScope.ServiceProvider.GetRequiredService<IRuleEngine>();
+                            var replayExecutor = innerScope.ServiceProvider.GetRequiredService<IAutoReplayExecutor>();
+                            var dbContext = innerScope.ServiceProvider.GetRequiredService<Persistence.DlqDbContext>();
+
+                            var enabledRules = await dbContext.AutoReplayRules
+                                .Where(r => r.Enabled)
+                                .ToListAsync(stoppingToken);
+
+                            if (enabledRules.Count > 0)
+                            {
+                                var activeMessages = await dbContext.DlqMessages
+                                    .Where(m => m.NamespaceId == ns.Id
+                                                && m.Status == Core.Enums.DlqMessageStatus.Active)
+                                    .ToListAsync(stoppingToken);
+
+                                foreach (var message in activeMessages)
+                                {
+                                    var matchingRules = ruleEngine.FindMatchingRules(message, enabledRules);
+                                    foreach (var (rule, action) in matchingRules)
+                                    {
+                                        var replayResult = await replayExecutor.ExecuteAsync(
+                                            message, rule, action, stoppingToken);
+
+                                        if (replayResult.IsSuccess)
+                                        {
+                                            _logger.LogInformation(
+                                                "Auto-replay rule {RuleName} replayed message {MessageId}",
+                                                Security.LogRedactor.SanitiseForLog(rule.Name),
+                                                Security.LogRedactor.SanitiseForLog(message.MessageId));
+                                        }
+
+                                        break; // Only apply first matching rule per message
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ruleEx)
+                        {
+                            _logger.LogWarning(ruleEx,
+                                "Error evaluating auto-replay rules for namespace {NamespaceId}", ns.Id);
                         }
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

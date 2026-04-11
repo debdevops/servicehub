@@ -413,6 +413,10 @@ public sealed class RulesController : ApiControllerBase
         long id,
         CancellationToken cancellationToken = default)
     {
+        // Apply a 30-second timeout to prevent the endpoint from hanging indefinitely
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
+        var ct = timeoutCts.Token;
         // When authentication is enabled, enforce write scope in-method so
         // static-analysis tools can trace the authorization check before the data access.
         // SPA token auth gets full access — scope restrictions only apply to API keys.
@@ -448,7 +452,7 @@ public sealed class RulesController : ApiControllerBase
             var activeMessages = await _dbContext.DlqMessages
                 .Where(m => m.Status == DlqMessageStatus.Active)
                 .OrderBy(m => m.DetectedAtUtc)
-                .ToListAsync(cancellationToken);
+                .ToListAsync(ct);
 
             // Evaluate the rule against each message
             var matched = new List<DlqMessage>();
@@ -471,7 +475,7 @@ public sealed class RulesController : ApiControllerBase
 
             // Rate-limit check (once for the entire batch, not per message)
             var executor = HttpContext.RequestServices.GetRequiredService<IAutoReplayExecutor>();
-            if (!await executor.CanReplayAsync(rule.Id, cancellationToken))
+            if (!await executor.CanReplayAsync(rule.Id, ct))
             {
                 return Ok(new ReplayAllResponse(
                     TotalMatched: matched.Count,
@@ -526,7 +530,7 @@ public sealed class RulesController : ApiControllerBase
 
             foreach (var group in entityGroups)
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                ct.ThrowIfCancellationRequested();
 
                 // Resolve namespace connection once per group
                 var nsResult = await nsRepo.GetByIdAsync(group.Key.NamespaceId);
@@ -576,7 +580,7 @@ public sealed class RulesController : ApiControllerBase
 
                 // Batch replay: ONE DLQ receiver, finds all targets at once, replays all
                 var batchResults = await client.ReplayMessagesAsync(
-                    entityName, subscriptionName, sequenceNumbers, cancellationToken);
+                    entityName, subscriptionName, sequenceNumbers, ct);
 
                 // Process results and record history
                 foreach (var msg in messagesInGroup)
@@ -627,7 +631,7 @@ public sealed class RulesController : ApiControllerBase
             }
 
             rule.UpdatedAt = DateTimeOffset.UtcNow;
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _dbContext.SaveChangesAsync(ct);
 
             _logger.LogInformation(
                 "Replay-all for rule {RuleId}/{RuleName}: {Matched} matched, {Replayed} replayed, {Failed} failed, {Skipped} skipped",
@@ -639,6 +643,17 @@ public sealed class RulesController : ApiControllerBase
                 Failed: failed,
                 Skipped: skipped,
                 Results: results));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Timeout from our 30-second CTS, not client disconnect
+            _logger.LogWarning("Replay-all for rule {RuleId} timed out after 30 seconds", id);
+            return StatusCode(StatusCodes.Status504GatewayTimeout, new ProblemDetails
+            {
+                Title = "Replay operation timed out",
+                Detail = "The replay operation took too long. Some messages may have been replayed. Please check and retry.",
+                Status = 504,
+            });
         }
         catch (OperationCanceledException)
         {
@@ -892,5 +907,271 @@ public sealed class RulesController : ApiControllerBase
                 Rating: 4.1
             ),
         };
+    }
+
+    // ── 10. POST /api/v1/dlq/rules/generate — Intelligent Auto-Replay ──
+
+    /// <summary>
+    /// Analyses active DLQ messages and generates intelligent auto-replay rules
+    /// based on observed patterns (dead-letter reasons, failure categories, entity groupings).
+    /// Rules that duplicate existing rules are skipped.
+    /// </summary>
+    /// <param name="namespaceId">Optional namespace filter.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>List of generated rules.</returns>
+    [HttpPost("generate")]
+    [RequireScope(ApiKeyScopes.DlqWrite)]
+    [ProducesResponseType(typeof(GenerateRulesResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<GenerateRulesResponse>> GenerateRules(
+        [FromQuery] Guid? namespaceId = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Load active DLQ messages, optionally filtered by namespace
+            var query = _dbContext.DlqMessages
+                .AsNoTracking()
+                .Where(m => m.Status == DlqMessageStatus.Active);
+
+            if (namespaceId.HasValue)
+                query = query.Where(m => m.NamespaceId == namespaceId.Value);
+
+            var activeMessages = await query
+                .OrderBy(m => m.DetectedAtUtc)
+                .ToListAsync(cancellationToken);
+
+            if (activeMessages.Count == 0)
+            {
+                return Ok(new GenerateRulesResponse(
+                    AnalysedMessages: 0,
+                    PatternsDetected: 0,
+                    RulesCreated: 0,
+                    RulesSkipped: 0,
+                    Rules: []));
+            }
+
+            // Load existing rules to avoid duplicates
+            var existingRules = await _dbContext.AutoReplayRules
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+
+            var existingConditionSets = new HashSet<string>(
+                existingRules.Select(r => r.ConditionsJson),
+                StringComparer.OrdinalIgnoreCase);
+
+            // ── Pattern Detection ──────────────────────────────────────
+
+            var candidates = new List<(string Name, string Description, List<RuleCondition> Conditions, RuleAction Action, int MatchCount)>();
+
+            // Pattern 1: Group by DeadLetterReason (most common pattern)
+            var byReason = activeMessages
+                .Where(m => !string.IsNullOrWhiteSpace(m.DeadLetterReason))
+                .GroupBy(m => m.DeadLetterReason!.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() >= 2) // At least 2 messages with same reason
+                .OrderByDescending(g => g.Count());
+
+            foreach (var group in byReason)
+            {
+                var reason = group.Key;
+                var count = group.Count();
+                var delaySeconds = InferDelay(reason, group.First().FailureCategory);
+                var maxRetries = InferMaxRetries(group.First().FailureCategory);
+                var backoff = group.First().FailureCategory is FailureCategory.Transient or FailureCategory.QuotaExceeded;
+
+                candidates.Add((
+                    Name: $"Auto: {TruncateReason(reason)}",
+                    Description: $"Automatically generated rule for {count} DLQ messages with reason: {reason}",
+                    Conditions: [new RuleCondition { Field = "DeadLetterReason", Operator = "Contains", Value = reason }],
+                    Action: new RuleAction { AutoReplay = true, DelaySeconds = delaySeconds, MaxRetries = maxRetries, ExponentialBackoff = backoff },
+                    MatchCount: count
+                ));
+            }
+
+            // Pattern 2: Group by FailureCategory (broader patterns)
+            var byCategory = activeMessages
+                .Where(m => m.FailureCategory != FailureCategory.Unknown)
+                .GroupBy(m => m.FailureCategory)
+                .Where(g => g.Count() >= 2)
+                .OrderByDescending(g => g.Count());
+
+            foreach (var group in byCategory)
+            {
+                var category = group.Key;
+                var count = group.Count();
+                var delaySeconds = InferDelay(null, category);
+                var maxRetries = InferMaxRetries(category);
+                var backoff = category is FailureCategory.Transient or FailureCategory.QuotaExceeded;
+
+                candidates.Add((
+                    Name: $"Auto: {category} failures",
+                    Description: $"Automatically generated rule for {count} DLQ messages categorised as {category}",
+                    Conditions: [new RuleCondition { Field = "FailureCategory", Operator = "Equals", Value = category.ToString() }],
+                    Action: new RuleAction { AutoReplay = true, DelaySeconds = delaySeconds, MaxRetries = maxRetries, ExponentialBackoff = backoff },
+                    MatchCount: count
+                ));
+            }
+
+            // Pattern 3: Group by Entity + Reason (entity-specific patterns)
+            var byEntityReason = activeMessages
+                .Where(m => !string.IsNullOrWhiteSpace(m.DeadLetterReason))
+                .GroupBy(m => new { m.EntityName, Reason = m.DeadLetterReason!.Trim() })
+                .Where(g => g.Count() >= 3) // Higher threshold for entity-specific rules
+                .OrderByDescending(g => g.Count());
+
+            foreach (var group in byEntityReason)
+            {
+                var count = group.Count();
+                var first = group.First();
+                var delaySeconds = InferDelay(group.Key.Reason, first.FailureCategory);
+
+                candidates.Add((
+                    Name: $"Auto: {group.Key.EntityName} — {TruncateReason(group.Key.Reason)}",
+                    Description: $"Entity-specific rule for {count} DLQ messages in {group.Key.EntityName} with reason: {group.Key.Reason}",
+                    Conditions: [
+                        new RuleCondition { Field = "EntityName", Operator = "Equals", Value = group.Key.EntityName },
+                        new RuleCondition { Field = "DeadLetterReason", Operator = "Contains", Value = group.Key.Reason },
+                    ],
+                    Action: new RuleAction { AutoReplay = true, DelaySeconds = delaySeconds, MaxRetries = InferMaxRetries(first.FailureCategory) },
+                    MatchCount: count
+                ));
+            }
+
+            // Pattern 4: Delivery count threshold (max delivery exceeded)
+            var maxDeliveryMessages = activeMessages
+                .Where(m => m.DeliveryCount >= 10)
+                .ToList();
+
+            if (maxDeliveryMessages.Count >= 2)
+            {
+                candidates.Add((
+                    Name: "Auto: Max delivery exceeded",
+                    Description: $"Rule for {maxDeliveryMessages.Count} messages that reached max delivery count (≥10 attempts)",
+                    Conditions: [new RuleCondition { Field = "DeliveryCount", Operator = "GreaterThan", Value = "9" }],
+                    Action: new RuleAction { AutoReplay = true, DelaySeconds = 300, MaxRetries = 1 },
+                    MatchCount: maxDeliveryMessages.Count
+                ));
+            }
+
+            // ── De-duplicate and Create ────────────────────────────────
+
+            var created = new List<(AutoReplayRule Entity, int PendingCount)>();
+            var skippedCount = 0;
+
+            // Sort by match count descending — create rules that cover the most messages first
+            foreach (var candidate in candidates.OrderByDescending(c => c.MatchCount))
+            {
+                var conditionsJson = JsonSerializer.Serialize(candidate.Conditions, JsonOptions);
+
+                // Skip if a rule with the same conditions already exists
+                if (existingConditionSets.Contains(conditionsJson))
+                {
+                    skippedCount++;
+                    continue;
+                }
+
+                // Skip if a rule with the same name already exists
+                var nameExists = existingRules.Any(r =>
+                    string.Equals(r.Name, candidate.Name, StringComparison.OrdinalIgnoreCase));
+                if (nameExists)
+                {
+                    skippedCount++;
+                    continue;
+                }
+
+                var entity = new AutoReplayRule
+                {
+                    Name = candidate.Name,
+                    Description = candidate.Description,
+                    Enabled = true,
+                    ConditionsJson = conditionsJson,
+                    ActionsJson = JsonSerializer.Serialize(candidate.Action, JsonOptions),
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    MaxReplaysPerHour = 50,
+                };
+
+                _dbContext.AutoReplayRules.Add(entity);
+                existingConditionSets.Add(conditionsJson); // Prevent duplicates within the same batch
+                existingRules.Add(entity);
+
+                // Compute pending match count for this new rule
+                var pendingCount = 0;
+                foreach (var msg in activeMessages)
+                {
+                    var evalResult = _ruleEngine.Evaluate(msg, candidate.Conditions);
+                    if (evalResult.IsMatch)
+                        pendingCount++;
+                }
+
+                created.Add((entity, pendingCount));
+            }
+
+            if (created.Count > 0)
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+
+            var createdResponses = created
+                .Select(x => MapToResponse(x.Entity, x.PendingCount))
+                .ToList();
+
+            _logger.LogInformation(
+                "Intelligent auto-replay: analysed {MessageCount} messages, detected {PatternCount} patterns, " +
+                "created {Created} rules, skipped {Skipped} duplicates",
+                activeMessages.Count, candidates.Count, createdResponses.Count, skippedCount);
+
+            return Ok(new GenerateRulesResponse(
+                AnalysedMessages: activeMessages.Count,
+                PatternsDetected: candidates.Count,
+                RulesCreated: createdResponses.Count,
+                RulesSkipped: skippedCount,
+                Rules: createdResponses));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate intelligent auto-replay rules");
+            return ToActionResult<GenerateRulesResponse>(
+                Error.Internal(ErrorCodes.General.UnexpectedError, "Failed to generate rules"));
+        }
+    }
+
+    // ── Intelligent Rule Helper Methods ──────────────────────────
+
+    private static int InferDelay(string? reason, FailureCategory category)
+    {
+        if (category == FailureCategory.Transient) return 30;
+        if (category == FailureCategory.QuotaExceeded) return 300;
+        if (category == FailureCategory.Expired) return 10;
+        if (category == FailureCategory.ResourceNotFound) return 120;
+
+        if (reason is not null)
+        {
+            var r = reason.ToUpperInvariant();
+            if (r.Contains("TIMEOUT") || r.Contains("TIMED OUT")) return 60;
+            if (r.Contains("THROTTL") || r.Contains("RATE LIMIT") || r.Contains("429")) return 300;
+            if (r.Contains("CONNECTION") || r.Contains("NETWORK")) return 30;
+            if (r.Contains("UNAUTHORIZED") || r.Contains("FORBIDDEN") || r.Contains("403")) return 0; // Don't replay auth errors quickly
+        }
+
+        return 60; // Default moderate delay
+    }
+
+    private static int InferMaxRetries(FailureCategory category)
+    {
+        return category switch
+        {
+            FailureCategory.Transient => 3,
+            FailureCategory.QuotaExceeded => 2,
+            FailureCategory.MaxDelivery => 1,
+            FailureCategory.Expired => 1,
+            FailureCategory.DataQuality => 0, // No retry — data is bad
+            FailureCategory.Authorization => 0, // No retry — auth issue
+            _ => 2,
+        };
+    }
+
+    private static string TruncateReason(string reason)
+    {
+        const int maxLen = 60;
+        return reason.Length <= maxLen ? reason : reason[..maxLen] + "…";
     }
 }

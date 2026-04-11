@@ -26,7 +26,6 @@ import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useInsightsSummary } from '@/hooks/useInsights';
 import { useQueries } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
-import type { Queue } from '@/lib/api/types';
 
 interface NamespaceItemProps {
   namespace: {
@@ -369,22 +368,31 @@ export function Sidebar() {
   const { data: queues } = useQueues(activeNamespace?.id || '');
   const { data: topics } = useTopics(activeNamespace?.id || '');
 
-  // Aggregate DLQ counts across all namespaces for the Sidebar badge
+  // Aggregate DLQ counts across all namespaces using the stats endpoint (includes subscription DLQs)
   const allNamespaceIds = namespaces?.map(ns => ns.id) ?? [];
-  const allQueuesResults = useQueries({
+  const allStatsResults = useQueries({
     queries: allNamespaceIds.map(id => ({
-      queryKey: ['queues', id] as const,
+      queryKey: ['namespace-stats', id] as const,
       queryFn: async () => {
-        const response = await apiClient.get<Queue[]>(`/namespaces/${id}/queues`, { _silent: true } as Record<string, unknown>);
+        const response = await apiClient.get<{
+          totalQueues: number;
+          totalTopics: number;
+          totalSubscriptions: number;
+          totalActive: number;
+          totalDlq: number;
+          totalScheduled: number;
+        }>(`/namespaces/${id}/stats`, { _silent: true } as Record<string, unknown>);
         return response.data;
       },
       enabled: !!id,
       staleTime: 2000,
+      refetchInterval: 7000,
+      refetchIntervalInBackground: false,
     })),
   });
-  const totalDlqCount = allQueuesResults.reduce((total, result) => {
+  const totalDlqCount = allStatsResults.reduce((total, result) => {
     if (!result.data) return total;
-    return total + result.data.reduce((sum, q) => sum + q.deadLetterMessageCount, 0);
+    return total + result.data.totalDlq;
   }, 0);
 
   return (

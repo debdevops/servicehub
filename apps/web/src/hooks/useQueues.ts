@@ -32,6 +32,7 @@ export interface NamespaceQueueStats {
   totalDlq: number;
   totalScheduled: number;
   totalQueues: number;
+  totalTopics: number;
   isLoading: boolean;
   isError: boolean;
 }
@@ -48,16 +49,45 @@ export function useAllNamespacesQueues(
     queries: namespaceIds.map((id) => queuesQueryOptions(id, autoRefresh)),
   });
 
+  // Also fetch stats (with subscription DLQs) for each namespace
+  const statsResults = useQueries({
+    queries: namespaceIds.map((id) => ({
+      queryKey: ['namespace-stats', id] as const,
+      queryFn: async () => {
+        const response = await apiClient.get<{
+          totalQueues: number;
+          totalTopics: number;
+          totalSubscriptions: number;
+          totalActive: number;
+          totalDlq: number;
+          totalScheduled: number;
+        }>(`/namespaces/${id}/stats`, { _silent: true });
+        return response.data;
+      },
+      enabled: !!id,
+      staleTime: 2000,
+      refetchInterval: autoRefresh ? 7000 : (false as const),
+      refetchIntervalInBackground: false,
+      retry: (failureCount: number, error: ApiError) => {
+        if (error?.response?.status === 404) return false;
+        if ((error?.response?.status ?? 0) >= 500) return false;
+        return failureCount < 2;
+      },
+    })),
+  });
+
   return results.map((result, i) => {
     const queues = result.data;
+    const stats = statsResults[i]?.data;
     return {
       namespaceId: namespaceIds[i],
       queues,
-      totalActive: queues?.reduce((s, q) => s + q.activeMessageCount, 0) ?? 0,
-      totalDlq: queues?.reduce((s, q) => s + q.deadLetterMessageCount, 0) ?? 0,
-      totalScheduled: queues?.reduce((s, q) => s + q.scheduledMessageCount, 0) ?? 0,
-      totalQueues: queues?.length ?? 0,
-      isLoading: result.isLoading,
+      totalActive: stats?.totalActive ?? queues?.reduce((s, q) => s + q.activeMessageCount, 0) ?? 0,
+      totalDlq: stats?.totalDlq ?? queues?.reduce((s, q) => s + q.deadLetterMessageCount, 0) ?? 0,
+      totalScheduled: stats?.totalScheduled ?? queues?.reduce((s, q) => s + q.scheduledMessageCount, 0) ?? 0,
+      totalQueues: stats?.totalQueues ?? queues?.length ?? 0,
+      totalTopics: stats?.totalTopics ?? 0,
+      isLoading: result.isLoading || (statsResults[i]?.isLoading ?? false),
       isError: result.isError,
     };
   });

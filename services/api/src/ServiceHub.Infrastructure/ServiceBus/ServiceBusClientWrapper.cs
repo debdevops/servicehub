@@ -1209,8 +1209,8 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             var foundMessages = new Dictionary<long, ServiceBusReceivedMessage>();
 
             // Receive messages in batches until we find all targets or exhaust the DLQ
-            const int maxAttempts = 10;
-            const int batchSize = 100; // Larger batch for bulk operations
+            const int maxAttempts = 5;
+            const int batchSize = 100;
 
             for (int attempt = 0; attempt < maxAttempts && pending.Count > 0; attempt++)
             {
@@ -1218,7 +1218,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
                 var messages = await dlqReceiver.ReceiveMessagesAsync(
                     maxMessages: batchSize,
-                    maxWaitTime: TimeSpan.FromSeconds(5),
+                    maxWaitTime: TimeSpan.FromSeconds(2),
                     cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 if (messages == null || messages.Count == 0)
@@ -1536,10 +1536,6 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         {
             receiver = CreateReceiver(entityName, subscriptionName, fromDeadLetter: false);
 
-            var peekedMessages = await receiver
-                .PeekMessagesAsync(peekCount, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-
             var request = new GetMessagesRequest(
                 NamespaceId: NamespaceId,
                 EntityName: entityName,
@@ -1548,17 +1544,41 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
                 MaxMessages: peekCount,
                 FromSequenceNumber: null);
 
-            var scheduledMessages = peekedMessages
-                .Where(m => m.State == ServiceBusMessageState.Scheduled)
-                .Select(m => MapToMessage(m, request))
-                .ToList();
+            // Peek in batches to find scheduled messages beyond the active backlog.
+            // Azure SB peek starts from a sequence number; we keep advancing until
+            // we've found enough or exhausted the queue.
+            var scheduledMessages = new List<Message>();
+            long fromSequenceNumber = 0;
+            const int batchSize = 100;
+            const int maxBatches = 50; // up to 5000 messages scanned
+
+            for (int batch = 0; batch < maxBatches && scheduledMessages.Count < peekCount; batch++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var peekedMessages = fromSequenceNumber == 0
+                    ? await receiver.PeekMessagesAsync(batchSize, cancellationToken: cancellationToken).ConfigureAwait(false)
+                    : await receiver.PeekMessagesAsync(batchSize, fromSequenceNumber, cancellationToken).ConfigureAwait(false);
+
+                if (peekedMessages == null || peekedMessages.Count == 0)
+                    break;
+
+                foreach (var m in peekedMessages)
+                {
+                    if (m.State == ServiceBusMessageState.Scheduled && scheduledMessages.Count < peekCount)
+                    {
+                        scheduledMessages.Add(MapToMessage(m, request));
+                    }
+                }
+
+                // Advance past the last peeked message
+                fromSequenceNumber = peekedMessages[^1].SequenceNumber + 1;
+            }
 
             _logger.LogDebug(
-                "Found {Count} scheduled messages in {EntityName} via peek (peeked {PeekedCount}). " +
-                "Note: Azure Service Bus scheduled-message broker store is not accessible via PeekMessages.",
+                "Found {Count} scheduled messages in {EntityName} via iterative peek.",
                 scheduledMessages.Count,
-                LogRedactor.SanitiseForLog(entityName),
-                peekedMessages.Count);
+                LogRedactor.SanitiseForLog(entityName));
 
             return Result.Success<IReadOnlyList<Message>>(scheduledMessages);
         }

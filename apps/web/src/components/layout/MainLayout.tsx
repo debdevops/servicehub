@@ -80,7 +80,7 @@ export function MainLayout() {
   const { data: namespaces } = useNamespaces();
   const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
   // FAB only visible in DEV with Manage permission (required for send, generate, and dead-letter)
-  const canUseFab = currentNamespace?.environment === 'Dev' && currentNamespace?.hasManagePermission === true;
+  const canUseFab = currentNamespace?.environment === 'dev' && currentNamespace?.hasManagePermission === true;
 
   // Determine entity type and names for FAB
   const entityType: 'queue' | 'topic' = topicName ? 'topic' : 'queue';

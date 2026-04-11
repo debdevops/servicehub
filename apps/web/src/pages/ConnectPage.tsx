@@ -18,7 +18,7 @@ export function ConnectPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [connectionString, setConnectionString] = useState('');
-  const [environment, setEnvironment] = useState<EnvironmentType>('Dev');
+  const [environment, setEnvironment] = useState<EnvironmentType>('dev');
   
   // v3.1.0 HKDF upgrade notice
   const [showHkdfNotice, setShowHkdfNotice] = useState(
@@ -107,7 +107,7 @@ export function ConnectPage() {
       setDisplayName('');
       setConnectionString('');
       setShowPassword(false);
-      setEnvironment('Dev');
+      setEnvironment('dev');
     } catch {
       // Error handled by mutation hook
     }
@@ -287,9 +287,9 @@ export function ConnectPage() {
                   onChange={(e) => setEnvironment(e.target.value as EnvironmentType)}
                   className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
                 >
-                  <option value="Dev">DEV — Development</option>
-                  <option value="Uat">UAT — User Acceptance Testing</option>
-                  <option value="Prod">PROD — Production</option>
+                  <option value="dev">DEV — Development</option>
+                  <option value="uat">UAT — User Acceptance Testing</option>
+                  <option value="prod">PROD — Production</option>
                 </select>
                 <p className="text-xs text-gray-500 mt-1">Production disables Quick Actions for safety.</p>
               </div>
@@ -353,11 +353,11 @@ export function ConnectPage() {
                           <div className="flex items-center gap-2">
                             <h3 className="font-medium text-gray-900">{ns.displayName || ns.name}</h3>
                             <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase ${
-                              ns.environment === 'Prod' ? 'bg-red-100 text-red-700' :
-                              ns.environment === 'Uat' ? 'bg-amber-100 text-amber-700' :
+                              ns.environment === 'prod' ? 'bg-red-100 text-red-700' :
+                              ns.environment === 'uat' ? 'bg-amber-100 text-amber-700' :
                               'bg-green-100 text-green-700'
                             }`}>
-                              {ns.environment || 'Dev'}
+                              {ns.environment || 'dev'}
                             </span>
                           </div>
                           <p className="text-xs text-gray-500">

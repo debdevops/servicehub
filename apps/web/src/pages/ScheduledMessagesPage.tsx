@@ -596,12 +596,35 @@ export function ScheduledMessagesPage() {
             </button>
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <Inbox className="w-10 h-10 text-gray-300" />
-            <p className="text-gray-500 font-medium">No scheduled messages</p>
-            <p className="text-gray-400 text-sm">
-              This queue has no messages pending future delivery
-            </p>
+          <div className="flex flex-col items-center justify-center h-full gap-3 px-6 text-center">
+            {scheduledCount > 0 ? (
+              <>
+                <CalendarClock className="w-10 h-10 text-sky-300" />
+                <p className="text-gray-600 font-medium">
+                  {scheduledCount} message{scheduledCount !== 1 ? 's are' : ' is'} scheduled but content cannot be displayed
+                </p>
+                <p className="text-gray-400 text-sm max-w-md">
+                  Azure Service Bus reports <strong>{scheduledCount} scheduled message{scheduledCount !== 1 ? 's' : ''}</strong> in this queue.
+                  Message content is stored in a separate scheduling store and can only be retrieved after the messages are delivered to the active queue.
+                  Scheduled delivery times remain accurate.
+                </p>
+                <button
+                  onClick={() => refetch()}
+                  className="mt-2 flex items-center gap-1.5 px-4 py-2 text-sm text-sky-600 border border-sky-300 rounded-lg hover:bg-sky-50 transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Refresh
+                </button>
+              </>
+            ) : (
+              <>
+                <Inbox className="w-10 h-10 text-gray-300" />
+                <p className="text-gray-500 font-medium">No scheduled messages</p>
+                <p className="text-gray-400 text-sm">
+                  This queue has no messages pending future delivery
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <div className="p-6">

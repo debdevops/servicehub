@@ -16,7 +16,6 @@ namespace ServiceHub.UnitTests.Api.Controllers.V1;
 public class DlqHistoryControllerTests
 {
     private readonly Mock<IDlqHistoryService> _historyService = new();
-    private readonly Mock<IForensicEngine> _forensicEngine = new();
     private readonly Mock<ILogger<DlqHistoryController>> _logger = new();
     private readonly DlqHistoryController _controller;
 
@@ -24,7 +23,6 @@ public class DlqHistoryControllerTests
     {
         _controller = new DlqHistoryController(
             _historyService.Object,
-            _forensicEngine.Object,
             _logger.Object);
         _controller.ControllerContext = new ControllerContext
         {
@@ -65,21 +63,14 @@ public class DlqHistoryControllerTests
     [Fact]
     public void Constructor_NullHistoryService_Throws()
     {
-        var act = () => new DlqHistoryController(null!, _forensicEngine.Object, _logger.Object);
+        var act = () => new DlqHistoryController(null!, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("historyService");
-    }
-
-    [Fact]
-    public void Constructor_NullForensicEngine_Throws()
-    {
-        var act = () => new DlqHistoryController(_historyService.Object, null!, _logger.Object);
-        act.Should().Throw<ArgumentNullException>().WithParameterName("forensicEngine");
     }
 
     [Fact]
     public void Constructor_NullLogger_Throws()
     {
-        var act = () => new DlqHistoryController(_historyService.Object, _forensicEngine.Object, null!);
+        var act = () => new DlqHistoryController(_historyService.Object, null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -314,88 +305,6 @@ public class DlqHistoryControllerTests
         result.Result.Should().NotBeOfType<OkObjectResult>();
     }
 
-    // ── GetForensicResult ───────────────────────────────────
-
-    [Fact]
-    public async Task GetForensicResult_Success_ReturnsForensicAnalysis()
-    {
-        var msg = CreateTestMessage(1);
-        _historyService.Setup(s => s.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<DlqMessage>.Success(msg));
-
-        var forensicResult = new ForensicEngineResult(
-            FailureCategory.MaxDelivery, 0.95, "Max delivery count exceeded", "RequiresReview", "Deterministic");
-        _forensicEngine.Setup(f => f.Analyse(msg)).Returns(forensicResult);
-
-        _historyService.Setup(s => s.UpdateForensicResultAsync(
-            1, FailureCategory.MaxDelivery, 0.95, "Max delivery count exceeded", "RequiresReview",
-            It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<DlqMessage>.Success(msg));
-
-        var result = await _controller.GetForensicResult(1);
-        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
-        var response = ok.Value.Should().BeOfType<ForensicResultResponse>().Subject;
-        response.FailureCategory.Should().Be("MaxDelivery");
-        response.Confidence.Should().Be(0.95);
-        response.Tier.Should().Be("Deterministic");
-    }
-
-    [Fact]
-    public async Task GetForensicResult_NotFound_ReturnsError()
-    {
-        _historyService.Setup(s => s.GetByIdAsync(99, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<DlqMessage>.Failure(Error.NotFound("NOT_FOUND", "Not found")));
-
-        var result = await _controller.GetForensicResult(99);
-        result.Result.Should().NotBeOfType<OkObjectResult>();
-    }
-
-    // ── AnalyseBatch ────────────────────────────────────────
-
-    [Fact]
-    public async Task AnalyseBatch_Success_ReturnsBatchSummary()
-    {
-        var nsId = Guid.NewGuid();
-        var messages = new List<DlqMessage> { CreateTestMessage(1), CreateTestMessage(2) };
-        var pageResult = new DlqHistoryPageResult(
-            Items: messages, TotalCount: 2, Page: 1, PageSize: 200,
-            HasNextPage: false, HasPreviousPage: false);
-
-        _historyService.Setup(s => s.GetHistoryAsync(
-            nsId, null, null, null, DlqMessageStatus.Active, null, 1, 200,
-            It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<DlqHistoryPageResult>.Success(pageResult));
-
-        var forensicResult = new ForensicEngineResult(
-            FailureCategory.MaxDelivery, 0.9, "Max delivery", "RequiresReview", "Deterministic");
-        _forensicEngine.Setup(f => f.Analyse(It.IsAny<DlqMessage>())).Returns(forensicResult);
-
-        _historyService.Setup(s => s.UpdateForensicResultAsync(
-            It.IsAny<long>(), It.IsAny<FailureCategory>(), It.IsAny<double>(),
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<DlqMessage>.Success(CreateTestMessage()));
-
-        var result = await _controller.AnalyseBatch(nsId);
-        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
-        var response = ok.Value.Should().BeOfType<ForensicBatchSummaryResponse>().Subject;
-        response.Analysed.Should().Be(2);
-        response.Updated.Should().Be(2);
-    }
-
-    [Fact]
-    public async Task AnalyseBatch_Failure_ReturnsError()
-    {
-        var nsId = Guid.NewGuid();
-        _historyService.Setup(s => s.GetHistoryAsync(
-            nsId, null, null, null, DlqMessageStatus.Active, null, 1, 200,
-            It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<DlqHistoryPageResult>.Failure(
-                Error.Internal("ERR", "Scan failed")));
-
-        var result = await _controller.AnalyseBatch(nsId);
-        result.Result.Should().NotBeOfType<OkObjectResult>();
-    }
-
     // ── TriggerScan ─────────────────────────────────────────
 
     [Fact]
@@ -434,7 +343,6 @@ public class DlqHistoryControllerTests
 
         var controller = new DlqHistoryController(
             _historyService.Object,
-            _forensicEngine.Object,
             _logger.Object);
         controller.ControllerContext = new ControllerContext
         {
