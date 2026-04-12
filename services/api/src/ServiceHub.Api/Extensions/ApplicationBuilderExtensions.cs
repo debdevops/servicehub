@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using ServiceHub.Api.Configuration;
 using ServiceHub.Api.Middleware;
+using Swashbuckle.AspNetCore.SwaggerUI;
 
 namespace ServiceHub.Api.Extensions;
 
@@ -48,6 +49,17 @@ public static class ApplicationBuilderExtensions
 
         // Response compression
         app.UseResponseCompression();
+
+        // Swagger UI (development only) — must be before UseRouting()
+        if (environment.IsDevelopment())
+        {
+            app.UseSwagger();
+            app.UseSwaggerUI(c =>
+            {
+                c.SwaggerEndpoint("/swagger/v1/swagger.json", "ServiceHub API v1");
+                c.RoutePrefix = "swagger"; // serves at /swagger/index.html
+            });
+        }
 
         // OpenAPI document and Scalar UI are mapped in WebApplicationExtensions.cs (requires WebApplication, not IApplicationBuilder)
 
