@@ -116,6 +116,15 @@ export default defineConfig({
         // single-line QueryClient instantiation
         'src/lib/queryClient.ts',
       ],
+      // ── Code Coverage Thresholds ────────────────────────────────────────
+      // BUILD WILL FAIL if coverage falls below these minimums
+      // This ensures code quality and prevents coverage regression
+      thresholds: {
+        lines: 60,       // Minimum 60% line coverage
+        functions: 60,   // Minimum 60% function coverage
+        branches: 50,    // Minimum 50% branch coverage
+        statements: 60,  // Minimum 60% statement coverage
+      },
     },
   },
 })

@@ -2,6 +2,7 @@ using Scalar.AspNetCore;
 using ServiceHub.Api.Configuration;
 using ServiceHub.Api.Middleware;
 using ServiceHub.Api.Security;
+using Swashbuckle.AspNetCore.SwaggerUI;
 
 namespace ServiceHub.Api.Extensions;
 
@@ -79,12 +80,13 @@ public static class WebApplicationExtensions
         }
         else
         {
-            // In development, expose the OpenAPI document and Scalar UI
+            // In development, expose the OpenAPI document and API documentation UIs
             // (Skip if wwwroot doesn't exist — indicates test/non-SPA environment)
             if (Directory.Exists(app.Environment.WebRootPath ?? "wwwroot"))
             {
                 app.MapOpenApi();                          // serves OpenAPI JSON at /openapi/v1.json
                 app.MapScalarApiReference();               // serves Scalar UI at /scalar/v1
+                // Swagger UI is mapped via middleware in ApplicationBuilderExtensions
                 app.MapGet("/", () => Results.Redirect("/scalar/v1")).ExcludeFromDescription();
             }
         }

@@ -296,7 +296,10 @@ az servicebus namespace authorization-rule create \
 | **Live Demo** | **https://app-servicehub-prod.azurewebsites.net/** |
 | UI (local) | http://localhost:3000 |
 | API (local) | http://localhost:5153 |
-| API Docs (local) | http://localhost:5153/scalar/v1 |
+| **API Docs - Scalar** (local) | http://localhost:5153/scalar/v1 |
+| **API Docs - Swagger UI** (local) | http://localhost:5153/swagger/index.html |
+| API OpenAPI JSON (Swagger) | http://localhost:5153/swagger/v1/swagger.json |
+| API OpenAPI JSON (Scalar) | http://localhost:5153/openapi/v1.json |
 
 ---
 
@@ -329,7 +332,7 @@ servicehub/
 | Backend | ASP.NET Core 10, Azure.Messaging.ServiceBus SDK |
 | AI Analysis | Client-side pattern detection (no external API) |
 | Database | SQLite (DLQ Intelligence), in-memory cache |
-| API Docs | Scalar (OpenAPI) |
+| API Docs | Scalar (OpenAPI) + Swagger UI (Swashbuckle) |
 
 For detailed backend architecture, see [services/api/ARCHITECTURE.md](services/api/ARCHITECTURE.md).
 
@@ -385,13 +388,39 @@ For detailed backend architecture, see [services/api/ARCHITECTURE.md](services/a
 
 ## 📖 API Documentation
 
-ServiceHub exposes a REST API documented with Scalar (OpenAPI). Access interactive docs at:
+ServiceHub exposes a comprehensive REST API with both interactive documentation interfaces.
 
-**http://localhost:5153/scalar/v1**
+### Scalar OpenAPI Reference (Modern)
+Scalar is .NET 10's built-in modern API documentation.
+
+**URL:** http://localhost:5153/scalar/v1
+
+### Swagger UI (Traditional)  
+Swashbuckle-powered Swagger UI for traditional API exploration.
+
+**URL:** http://localhost:5153/swagger/index.html
+
+### OpenAPI JSON Specs
+- Swagger JSON: http://localhost:5153/swagger/v1/swagger.json
+- Scalar JSON: http://localhost:5153/openapi/v1.json
 
 ![API Documentation](docs/screenshots/archive/25-scalar-api-docs.png)
 
-Key endpoints:
+### Key Endpoints
+
+### Swagger UI (Traditional)  
+Swashbuckle-powered Swagger UI for traditional API exploration.
+
+**URL:** http://localhost:5153/swagger/index.html
+
+### OpenAPI JSON Specs
+- Swagger JSON: http://localhost:5153/swagger/v1/swagger.json
+- Scalar JSON: http://localhost:5153/openapi/v1.json
+
+![API Documentation](docs/screenshots/archive/25-scalar-api-docs.png)
+
+### Key Endpoints
+
 - `GET /api/v1/namespaces` — List connected namespaces
 - `GET /api/v1/namespaces/{id}/queues` — List queues with message counts
 - `GET /api/v1/namespaces/{id}/topics` — List topics with subscription counts
