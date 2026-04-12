@@ -44,13 +44,15 @@ Production breaks at 2 AM. Azure Portal shows **5,000 messages in Dead-Letter Qu
 
 Enter your connection string and you're in. Supports Listen-only (read-only) or Manage (full access) policies. No installation, no setup complexity — just instant access to your message data.
 
-![Connect Page](docs/screenshots/01-connect-page.png)
+![Connect Page](docs/screenshots/archive/01-connect-page.png)
+![Connected Namespace](docs/screenshots/archive/02-connect-page-namespace-connected.png)
 
 ### 📨 Message Browser — View Thousands of Messages Instantly
 
 Browse **active** and **dead-letter** messages side by side. See full message previews, status badges, and metadata at a glance. Real-time search across message content and properties — find exactly what you need in seconds, not hours.
 
-![Messages Queue Active](docs/screenshots/02-messages-queue-active.png)
+![Messages Queue Overview](docs/screenshots/archive/02-messages-queue-active.png)
+![Message Queue Details](docs/screenshots/archive/04-messages-queue-browser.png)
 
 #### Message Properties & Body — Full Forensic Inspection
 
@@ -59,8 +61,9 @@ Click any message for complete forensic analysis:
 - **Body:** Full JSON/XML syntax highlighting with one-click copy
 - **Headers:** All custom properties and correlation IDs
 
-![Message Properties](docs/screenshots/03-message-detail-properties.png)
-![Message Body](docs/screenshots/04-message-detail-body.png)
+![Message Properties](docs/screenshots/archive/03-message-detail-properties.png)
+![Message Body](docs/screenshots/archive/04-message-detail-body.png)
+![Message Headers](docs/screenshots/archive/08-message-detail-headers.png)
 
 #### 🤖 AI-Powered Insights — Detect Patterns at Scale
 
@@ -71,8 +74,9 @@ AI automatically analyzes your messages and detects:
 
 All processing happens in your browser — **no data leaves your environment**. Analyze thousands of messages in seconds.
 
-![AI Insights](docs/screenshots/05-message-detail-ai-insights.png)
-![Forensic View](docs/screenshots/06-message-detail-forensic.png)
+![AI Insights](docs/screenshots/archive/05-message-detail-ai-insights.png)
+![Forensic Analysis](docs/screenshots/archive/06-message-detail-forensic.png)
+![AI Findings](docs/screenshots/archive/19-feature-ai-findings-1.png)
 
 ### 💀 Dead-Letter Queue (DLQ) — From Pain to Insight
 
@@ -89,9 +93,10 @@ Persistent tracking with:
 - Live statistics
 - Export to JSON/CSV
 
-![Dead Letter Queue](docs/screenshots/08-messages-deadletter-queue.png)
-![DLQ History Detail](docs/screenshots/17-dlq-history-detail.png)
-![DLQ AI Insights](docs/screenshots/10-dlq-message-ai-insights.png)
+![Dead Letter Queue](docs/screenshots/archive/08-messages-deadletter-queue.png)
+![DLQ Message Detail](docs/screenshots/archive/09-dlq-message-detail.png)
+![DLQ History Tracking](docs/screenshots/archive/16-dlq-history-detail.png)
+![DLQ AI Insights](docs/screenshots/archive/10-dlq-message-ai-insights.png)
 
 ### 🎯 Quick Actions (FAB) — One-Click Access to Everything
 
@@ -101,15 +106,17 @@ Floating action button provides instant access to:
 - **Test DLQ** — Move messages to dead-letter queue for testing
 - **Refresh All** — Instant sync
 
-![FAB Quick Actions](docs/screenshots/12-fab-quick-actions-open.png)
-![Send Message](docs/screenshots/13-send-message-dialog.png)
-![Generate Messages](docs/screenshots/14-generate-messages-dialog.png)
+![FAB Quick Actions Menu](docs/screenshots/archive/12-fab-quick-actions-open.png)
+![Send Message Dialog](docs/screenshots/archive/13-send-message-dialog.png)
+![Generate Messages Scenarios](docs/screenshots/archive/14-generate-messages-dialog.png)
+![Test DLQ Dialog](docs/screenshots/archive/15-test-dlq-dialog.png)
 
 ### 📌 Topic Subscriptions — Same Power for Topic Messages
 
 Browse messages from topic subscriptions with identical forensic inspection tools.
 
-![Topic Subscription](docs/screenshots/11-messages-topic-subscription.png)
+![Topic Subscription Messages](docs/screenshots/archive/11-messages-topic-subscription.png)
+![Topic Messages Overview](docs/screenshots/archive/11-topic-subscription-messages.png)
 
 ### ⚡ Auto-Replay Rules — Automate Your Recovery
 
@@ -130,9 +137,9 @@ Browse rule templates for common scenarios:
 - Authorization failures
 - Custom patterns
 
-![Auto-Replay Rules](docs/screenshots/19-rules-page.png)
-![Template Gallery](docs/screenshots/20-rules-template-gallery.png)
-![Create Rule](docs/screenshots/21-rules-create-dialog.png)
+![Auto-Replay Rules](docs/screenshots/archive/18-rules-page.png)
+![Rules Template Gallery](docs/screenshots/archive/20-rules-template-gallery.png)
+![Create Replay Rule](docs/screenshots/archive/21-rules-create-dialog.png)
 
 ### 💚 System Health — Monitor Your Setup
 
@@ -142,7 +149,8 @@ Real-time monitoring dashboard:
 - Server information
 - Performance trends
 
-![System Health](docs/screenshots/22-health-page.png)
+![System Health Dashboard](docs/screenshots/archive/19-health-page.png)
+![Health Monitoring Metrics](docs/screenshots/archive/22-health-page.png)
 
 ### 🔍 Advanced Search & Navigation
 
@@ -153,7 +161,8 @@ Find messages instantly by any property:
 - Custom headers
 - System properties
 
-![Message Filter](docs/screenshots/28-message-filter.png)
+![Message Filter Search](docs/screenshots/archive/28-message-filter.png)
+![Correlation ID Explorer](docs/screenshots/ServiceHub-CorelationId-Explorer.png)
 
 **Smart Sidebar Navigation**
 Namespace browser with:
@@ -161,7 +170,7 @@ Namespace browser with:
 - Queue/topic tree
 - Quick Access panel
 
-![Sidebar Navigation](docs/screenshots/25-sidebar-navigation.png)
+![Sidebar Navigation](docs/screenshots/archive/25-sidebar-navigation.png)
 
 ### 📚 Comprehensive Documentation
 
@@ -172,12 +181,13 @@ Searchable help guide with:
 - Keyboard shortcuts
 - Guided tour
 
-![Help Page](docs/screenshots/23-help-page.png)
+![Help Page](docs/screenshots/archive/20-help-page.png)
+![Help Guide Full](docs/screenshots/archive/21-help-page-full.png)
 
 **Interactive API Docs**
 Scalar-powered OpenAPI documentation — test endpoints directly from the browser.
 
-![API Docs](docs/screenshots/26-scalar-api-docs.png)
+![API Documentation](docs/screenshots/archive/25-scalar-api-docs.png)
 
 ---
 
@@ -379,7 +389,7 @@ ServiceHub exposes a REST API documented with Scalar (OpenAPI). Access interacti
 
 **http://localhost:5153/scalar/v1**
 
-![API Documentation](docs/screenshots/26-scalar-api-docs.png)
+![API Documentation](docs/screenshots/archive/25-scalar-api-docs.png)
 
 Key endpoints:
 - `GET /api/v1/namespaces` — List connected namespaces
