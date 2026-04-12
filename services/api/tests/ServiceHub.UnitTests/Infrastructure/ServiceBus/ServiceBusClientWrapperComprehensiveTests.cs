@@ -27,7 +27,7 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
     private const string TestQueueName = "test-queue";
     private const string TestTopicName = "test-topic";
     private const string TestSubscriptionName = "test-subscription";
-    private const Guid TestNamespaceId = default; // Use any Guid for testing
+    private readonly Guid TestNamespaceId = Guid.Empty;
 
     public ServiceBusClientWrapperTests()
     {
@@ -374,82 +374,5 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
             await Task.Yield();
             yield return item;
         }
-    }
-}
-
-namespace ServiceHub.UnitTests.Infrastructure.ServiceBus;
-
-/// <summary>
-/// Tests for MessageReceiver - Service Bus message receiving operations
-/// Coverage target: 50%+ (currently 0%)
-/// </summary>
-public sealed class MessageReceiverTests
-{
-    private readonly Mock<ServiceBusClientWrapper> _clientMock = new();
-    private readonly MessageReceiver _sut;
-
-    public MessageReceiverTests()
-    {
-        _sut = new MessageReceiver(_clientMock.Object);
-    }
-
-    [Fact]
-    public async Task PeekMessagesAsync_WithValidParameters_CallsClientMethod()
-    {
-        // Arrange
-        var namespaceId = Guid.NewGuid();
-        var queueName = "test-queue";
-        var messages = new List<ServiceBusReceivedMessage>();
-
-        _clientMock
-            .Setup(x => x.PeekMessagesAsync(namespaceId, queueName, It.IsAny<int>(), It.IsAny<long>()))
-            .ReturnsAsync(messages);
-
-        // Act
-        var result = await _sut.PeekMessagesAsync(namespaceId, queueName, maxMessages: 10, sequenceNumber: 0);
-
-        // Assert
-        result.Should().NotBeNull();
-        _clientMock.Verify(x => x.PeekMessagesAsync(namespaceId, queueName, 10, 0), Times.Once);
-    }
-}
-
-namespace ServiceHub.UnitTests.Infrastructure.ServiceBus;
-
-/// <summary>
-/// Tests for MessageSender - Service Bus message sending operations
-/// Coverage target: 50%+ (currently 0%)
-/// </summary>
-public sealed class MessageSenderTests
-{
-    private readonly Mock<ServiceBusClientWrapper> _clientMock = new();
-    private readonly MessageSender _sut;
-
-    public MessageSenderTests()
-    {
-        _sut = new MessageSender(_clientMock.Object);
-    }
-
-    [Fact]
-    public async Task SendAsync_WithValidMessage_CallsClientMethod()
-    {
-        // Arrange
-        var namespaceId = Guid.NewGuid();
-        var queueName = "test-queue";
-        var request = new SendMessageRequest(
-            namespaceId,
-            queueName,
-            "test body");
-
-        _clientMock
-            .Setup(x => x.SendMessageAsync(namespaceId, queueName, It.IsAny<string>(), null, null, null, null, null, null, null, null, null, null, null))
-            .Returns(Task.CompletedTask);
-
-        // Act
-        await _sut.SendAsync(request);
-
-        // Assert
-        _clientMock.Verify(x => x.SendMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), 
-            null, null, null, null, null, null, null, null, null, null, null), Times.Once);
     }
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MessageGeneratorModal } from '@/components/fab/MessageGeneratorModal';
 
 /**
@@ -11,6 +12,7 @@ import { MessageGeneratorModal } from '@/components/fab/MessageGeneratorModal';
 describe('MessageGeneratorModal', () => {
   const mockOnClose = vi.fn();
   const mockOnGenerate = vi.fn();
+  let queryClient: QueryClient;
 
   const defaultProps = {
     isOpen: true,
@@ -21,26 +23,38 @@ describe('MessageGeneratorModal', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
   });
+
+  // Helper function to render with required providers
+  const renderWithProviders = (component: React.ReactElement) => {
+    return render(
+      <QueryClientProvider client={queryClient}>
+        {component}
+      </QueryClientProvider>
+    );
+  };
 
   // ── Visibility ────────────────────────────────────────────────────────────
 
   it('renders nothing when isOpen is false', () => {
-    const { container } = render(
+    const { container } = renderWithProviders(
       <MessageGeneratorModal {...defaultProps} isOpen={false} />
     );
     expect(container.querySelector('[role="dialog"]')).not.toBeInTheDocument();
   });
 
   it('renders modal title when isOpen is true', () => {
-    render(<MessageGeneratorModal {...defaultProps} />);
+    renderWithProviders(<MessageGeneratorModal {...defaultProps} />);
     expect(screen.getByText(/generate test messages/i)).toBeInTheDocument();
   });
 
   // ── Scenario Selection ────────────────────────────────────────────────────
 
   it('displays all scenario options', () => {
-    render(<MessageGeneratorModal {...defaultProps} />);
+    renderWithProviders(<MessageGeneratorModal {...defaultProps} />);
     
     expect(screen.getByText(/orders/i)).toBeInTheDocument();
     expect(screen.getByText(/payments/i)).toBeInTheDocument();
@@ -49,7 +63,7 @@ describe('MessageGeneratorModal', () => {
 
   it('selects a scenario when clicked', async () => {
     const user = userEvent.setup();
-    render(<MessageGeneratorModal {...defaultProps} />);
+    renderWithProviders(<MessageGeneratorModal {...defaultProps} />);
     
     const orderButton = screen.getByRole('button', { name: /orders/i });
     await user.click(orderButton);
@@ -61,7 +75,7 @@ describe('MessageGeneratorModal', () => {
 
   it('allows setting message count', async () => {
     const user = userEvent.setup();
-    render(<MessageGeneratorModal {...defaultProps} />);
+    renderWithProviders(<MessageGeneratorModal {...defaultProps} />);
     
     const volumeInput = screen.getByLabelText(/volume|count|messages/i);
     await user.clear(volumeInput);
@@ -72,7 +86,7 @@ describe('MessageGeneratorModal', () => {
 
   it('enforces minimum message count', async () => {
     const user = userEvent.setup();
-    render(<MessageGeneratorModal {...defaultProps} />);
+    renderWithProviders(<MessageGeneratorModal {...defaultProps} />);
     
     const volumeInput = screen.getByLabelText(/volume|count|messages/i);
     await user.clear(volumeInput);
@@ -85,7 +99,7 @@ describe('MessageGeneratorModal', () => {
 
   it('enforces maximum message count', async () => {
     const user = userEvent.setup();
-    render(<MessageGeneratorModal {...defaultProps} />);
+    renderWithProviders(<MessageGeneratorModal {...defaultProps} />);
     
     const volumeInput = screen.getByLabelText(/volume|count|messages/i);
     await user.clear(volumeInput);
@@ -100,7 +114,7 @@ describe('MessageGeneratorModal', () => {
 
   it('allows setting anomaly rate', async () => {
     const user = userEvent.setup();
-    render(<MessageGeneratorModal {...defaultProps} />);
+    renderWithProviders(<MessageGeneratorModal {...defaultProps} />);
     
     const anomalySlider = screen.getByLabelText(/anomaly|error rate/i);
     fireEvent.change(anomalySlider, { target: { value: '25' } });
@@ -109,7 +123,7 @@ describe('MessageGeneratorModal', () => {
   });
 
   it('shows anomaly rate percentage', () => {
-    render(<MessageGeneratorModal {...defaultProps} />);
+    renderWithProviders(<MessageGeneratorModal {...defaultProps} />);
     
     const anomalySlider = screen.getByLabelText(/anomaly|error rate/i);
     fireEvent.change(anomalySlider, { target: { value: '50' } });
@@ -121,7 +135,7 @@ describe('MessageGeneratorModal', () => {
 
   it('calls onGenerate with correct parameters', async () => {
     const user = userEvent.setup();
-    render(<MessageGeneratorModal {...defaultProps} />);
+    renderWithProviders(<MessageGeneratorModal {...defaultProps} />);
     
     // Select scenario
     const orderButton = screen.getByRole('button', { name: /orders/i });
