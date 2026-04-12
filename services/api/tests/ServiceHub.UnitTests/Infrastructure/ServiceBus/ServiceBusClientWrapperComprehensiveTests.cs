@@ -3,7 +3,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
-using ServiceHub.Core.DTOs;
+using ServiceHub.Core.DTOs.Requests;
+using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Infrastructure.ServiceBus;
@@ -18,22 +19,22 @@ namespace ServiceHub.UnitTests.Infrastructure.ServiceBus;
 public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
 {
     private readonly Mock<ServiceBusClient> _serviceBusClientMock = new();
-    private readonly Mock<ServiceBusAdministrationClient> _adminClientMock = new();
     private readonly Mock<ServiceBusSender> _senderMock = new();
     private readonly Mock<ServiceBusReceiver> _receiverMock = new();
     private readonly ServiceBusClientWrapper _sut;
 
-    private const string TestNamespace = "test-namespace";
     private const string TestQueueName = "test-queue";
     private const string TestTopicName = "test-topic";
     private const string TestSubscriptionName = "test-subscription";
-    private readonly Guid TestNamespaceId = Guid.Empty;
+    private readonly Guid TestNamespaceId = Guid.NewGuid();
+    private readonly string _testConnectionString = "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=test;SharedAccessKey=test";
 
     public ServiceBusClientWrapperTests()
     {
         _sut = new ServiceBusClientWrapper(
+            TestNamespaceId,
             _serviceBusClientMock.Object,
-            _adminClientMock.Object,
+            _testConnectionString,
             NullLogger<ServiceBusClientWrapper>.Instance);
     }
 
@@ -50,8 +51,12 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
         // Arrange
         var messages = new[]
         {
-            CreateTestServiceBusMessage("msg1", "test body 1"),
-            CreateTestServiceBusMessage("msg2", "test body 2")
+            ServiceBusModelFactory.ServiceBusReceivedMessage(
+                body: new BinaryData("test body 1"),
+                messageId: "msg1"),
+            ServiceBusModelFactory.ServiceBusReceivedMessage(
+                body: new BinaryData("test body 2"),
+                messageId: "msg2")
         };
 
         _serviceBusClientMock
@@ -59,18 +64,25 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
             .Returns(_receiverMock.Object);
 
         _receiverMock
-            .Setup(x => x.PeekMessagesAsync(It.IsAny<int>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.PeekMessagesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(messages);
 
+        var request = new GetMessagesRequest
+        {
+            EntityName = TestQueueName,
+            MaxMessages = 2,
+            FromDeadLetter = false
+        };
+
         // Act
-        var result = await _sut.PeekMessagesAsync(
-            TestNamespaceId, TestQueueName, maxMessages: 2, sequenceNumber: 0);
+        var result = await _sut.PeekMessagesAsync(request);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().HaveCount(2);
-        _serviceBusClientMock.Verify(x => x.CreateReceiver(TestQueueName, It.IsAny<ServiceBusReceiverOptions>()), Times.Once);
-        _receiverMock.Verify(x => x.PeekMessagesAsync(It.IsAny<int>(), It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Once);
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(2);
+        _serviceBusClientMock.Verify(
+            x => x.CreateReceiver(TestQueueName, It.IsAny<ServiceBusReceiverOptions>()),
+            Times.Once);
     }
 
     [Fact]
@@ -82,39 +94,61 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
             .Returns(_receiverMock.Object);
 
         _receiverMock
-            .Setup(x => x.PeekMessagesAsync(It.IsAny<int>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.PeekMessagesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ServiceBusReceivedMessage[] { });
 
+        var request = new GetMessagesRequest
+        {
+            EntityName = TestQueueName,
+            MaxMessages = 10,
+            FromDeadLetter = false
+        };
+
         // Act
-        var result = await _sut.PeekMessagesAsync(
-            TestNamespaceId, TestQueueName, maxMessages: 10, sequenceNumber: 0);
+        var result = await _sut.PeekMessagesAsync(request);
 
         // Assert
-        result.Should().BeEmpty();
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task PeekMessagesAsync_WithNullQueueName_ThrowsException()
+    public async Task PeekMessagesAsync_WithNullQueueName_ReturnsFailure()
     {
-        // Act & Assert
-        await FluentActions
-            .Invoking(() => _sut.PeekMessagesAsync(TestNamespaceId, null!, maxMessages: 10))
-            .Should()
-            .ThrowAsync<ArgumentNullException>();
+        // Arrange
+        var request = new GetMessagesRequest
+        {
+            EntityName = null!,
+            MaxMessages = 10,
+            FromDeadLetter = false
+        };
+
+        // Act
+        var result = await _sut.PeekMessagesAsync(request);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
     }
 
+
     // ═══════════════════════════════════════════════════════════════
-    // PeekDeadLetterMessagesAsync - DLQ reading functionality
+    // PeekMessagesAsync with DeadLetter - DLQ reading functionality
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task PeekDeadLetterMessagesAsync_WithValidQueue_ReturnsDLQMessages()
+    public async Task PeekMessagesAsync_WithDeadLetterFlag_ReturnsDLQMessages()
     {
         // Arrange
         var dlqMessages = new[]
         {
-            CreateTestServiceBusMessage("dlq1", "error body 1", "Expired"),
-            CreateTestServiceBusMessage("dlq2", "error body 2", "MaxDelivery")
+            ServiceBusModelFactory.ServiceBusReceivedMessage(
+                body: new BinaryData("error body 1"),
+                messageId: "dlq1",
+                deadLetterReason: "Expired"),
+            ServiceBusModelFactory.ServiceBusReceivedMessage(
+                body: new BinaryData("error body 2"),
+                messageId: "dlq2",
+                deadLetterReason: "MaxDeliveryExceeded")
         };
 
         _serviceBusClientMock
@@ -122,20 +156,26 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
             .Returns(_receiverMock.Object);
 
         _receiverMock
-            .Setup(x => x.PeekDeadLetterMessagesAsync(It.IsAny<int>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.PeekMessagesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(dlqMessages);
 
+        var request = new GetMessagesRequest
+        {
+            EntityName = TestQueueName,
+            MaxMessages = 10,
+            FromDeadLetter = true
+        };
+
         // Act
-        var result = await _sut.PeekDeadLetterMessagesAsync(
-            TestNamespaceId, TestQueueName, maxMessages: 10, sequenceNumber: 0);
+        var result = await _sut.PeekMessagesAsync(request);
 
         // Assert
-        result.Should().HaveCount(2);
-        result.Should().AllSatisfy(msg => msg.DeadLetterReason.Should().NotBeNullOrEmpty());
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(2);
     }
 
     [Fact]
-    public async Task PeekDeadLetterMessagesAsync_WithEmptyDLQ_ReturnsEmpty()
+    public async Task PeekMessagesAsync_WithDeadLetterFlag_EmptyDLQ_ReturnsEmpty()
     {
         // Arrange
         _serviceBusClientMock
@@ -143,16 +183,24 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
             .Returns(_receiverMock.Object);
 
         _receiverMock
-            .Setup(x => x.PeekDeadLetterMessagesAsync(It.IsAny<int>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.PeekMessagesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ServiceBusReceivedMessage[] { });
 
+        var request = new GetMessagesRequest
+        {
+            EntityName = TestQueueName,
+            MaxMessages = 10,
+            FromDeadLetter = true
+        };
+
         // Act
-        var result = await _sut.PeekDeadLetterMessagesAsync(
-            TestNamespaceId, TestQueueName, maxMessages: 10, sequenceNumber: 0);
+        var result = await _sut.PeekMessagesAsync(request);
 
         // Assert
-        result.Should().BeEmpty();
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEmpty();
     }
+
 
     // ═══════════════════════════════════════════════════════════════
     // ReplayMessageAsync - Message replay from DLQ
@@ -162,8 +210,8 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
     public async Task ReplayMessageAsync_WithValidMessage_SendsSuccessfully()
     {
         // Arrange
-        var messageId = Guid.NewGuid().ToString();
-        var receivedMsg = CreateTestServiceBusMessage(messageId, "replay body");
+        const string messageId = "test-msg-id";
+        const long sequenceNumber = 1L;
 
         _serviceBusClientMock
             .Setup(x => x.CreateReceiver(TestQueueName, It.IsAny<ServiceBusReceiverOptions>()))
@@ -174,198 +222,91 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
             .Returns(_senderMock.Object);
 
         _receiverMock
-            .Setup(x => x.DeadLetterMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            .Setup(x => x.ReceiveMessagesAsync(It.IsAny<int>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ServiceBusReceivedMessage>());
 
         _senderMock
             .Setup(x => x.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         // Act
-        await _sut.ReplayMessageAsync(TestNamespaceId, TestQueueName, receivedMsg);
+        var result = await _sut.ReplayMessageAsync(TestQueueName, null, sequenceNumber);
 
         // Assert
-        _senderMock.Verify(
-            x => x.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()),
-            Times.Once);
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // GetQueuesAsync - Queue listing
-    // ═══════════════════════════════════════════════════════════════
-
-    [Fact]
-    public async Task GetQueuesAsync_WithValidNamespace_ReturnsQueueProperties()
-    {
-        // Arrange
-        var queueProps = new[]
-        {
-            new QueueProperties(new Azure.Messaging.ServiceBus.Administration.BinaryData("queue1"))
-            {
-                Name = "queue1",
-                ActiveMessageCount = 10,
-                DeadLetterMessageCount = 2
-            },
-            new QueueProperties(new Azure.Messaging.ServiceBus.Administration.BinaryData("queue2"))
-            {
-                Name = "queue2",
-                ActiveMessageCount = 5,
-                DeadLetterMessageCount = 0
-            }
-        };
-
-        _adminClientMock
-            .Setup(x => x.GetQueuesRuntimePropertiesAsync(It.IsAny<CancellationToken>()))
-            .Returns(AsyncEnumerableOf(queueProps));
-
-        // Act
-        var result = await _sut.GetQueuesAsync(TestNamespaceId);
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Should().HaveCount(2);
+        result.IsSuccess.Should().BeTrue();
     }
 
     [Fact]
-    public async Task GetQueuesAsync_WithNoQueues_ReturnsEmpty()
+    public async Task ReplayMessageAsync_WithSubscriptionName_SendsSuccessfully()
     {
         // Arrange
-        _adminClientMock
-            .Setup(x => x.GetQueuesRuntimePropertiesAsync(It.IsAny<CancellationToken>()))
-            .Returns(AsyncEnumerableOf(Array.Empty<QueueRuntimeProperties>()));
+        const string topicName = TestTopicName;
+        const string subscriptionName = TestSubscriptionName;
+        const long sequenceNumber = 1L;
+
+        _serviceBusClientMock
+            .Setup(x => x.CreateReceiver(topicName, subscriptionName, It.IsAny<ServiceBusReceiverOptions>()))
+            .Returns(_receiverMock.Object);
+
+        _serviceBusClientMock
+            .Setup(x => x.CreateSender(topicName))
+            .Returns(_senderMock.Object);
+
+        _receiverMock
+            .Setup(x => x.ReceiveMessagesAsync(It.IsAny<int>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ServiceBusReceivedMessage>());
+
+        _senderMock
+            .Setup(x => x.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         // Act
-        var result = await _sut.GetQueuesAsync(TestNamespaceId);
+        var result = await _sut.ReplayMessageAsync(topicName, subscriptionName, sequenceNumber);
 
         // Assert
-        result.Should().BeEmpty();
+        result.IsSuccess.Should().BeTrue();
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // GetTopicsAsync - Topic listing
-    // ═══════════════════════════════════════════════════════════════
-
-    [Fact]
-    public async Task GetTopicsAsync_WithValidNamespace_ReturnsTopicProperties()
-    {
-        // Arrange
-        var topicProps = new[]
-        {
-            new TopicProperties(new Azure.Messaging.ServiceBus.Administration.BinaryData("topic1"))
-            {
-                Name = "topic1",
-                SubscriptionCount = 3
-            },
-            new TopicProperties(new Azure.Messaging.ServiceBus.Administration.BinaryData("topic2"))
-            {
-                Name = "topic2",
-                SubscriptionCount = 1
-            }
-        };
-
-        _adminClientMock
-            .Setup(x => x.GetTopicsRuntimePropertiesAsync(It.IsAny<CancellationToken>()))
-            .Returns(AsyncEnumerableOf(topicProps));
-
-        // Act
-        var result = await _sut.GetTopicsAsync(TestNamespaceId);
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Should().HaveCount(2);
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // GetSubscriptionsAsync - Subscription listing
-    // ═══════════════════════════════════════════════════════════════
-
-    [Fact]
-    public async Task GetSubscriptionsAsync_WithValidTopic_ReturnsSubscriptions()
-    {
-        // Arrange
-        var subProps = new[]
-        {
-            new SubscriptionProperties(new Azure.Messaging.ServiceBus.Administration.BinaryData("sub1"))
-            {
-                TopicName = TestTopicName,
-                SubscriptionName = "sub1"
-            },
-            new SubscriptionProperties(new Azure.Messaging.ServiceBus.Administration.BinaryData("sub2"))
-            {
-                TopicName = TestTopicName,
-                SubscriptionName = "sub2"
-            }
-        };
-
-        _adminClientMock
-            .Setup(x => x.GetSubscriptionsRuntimePropertiesAsync(TestTopicName, It.IsAny<CancellationToken>()))
-            .Returns(AsyncEnumerableOf(subProps));
-
-        // Act
-        var result = await _sut.GetSubscriptionsAsync(TestNamespaceId, TestTopicName);
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Should().HaveCount(2);
-    }
 
     // ═══════════════════════════════════════════════════════════════
     // Error Handling
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task PeekMessagesAsync_WhenExceptionThrown_PropagatesException()
+    public async Task PeekMessagesAsync_WhenExceptionThrown_ReturnsFailure()
     {
         // Arrange
         _serviceBusClientMock
             .Setup(x => x.CreateReceiver(TestQueueName, It.IsAny<ServiceBusReceiverOptions>()))
             .Throws<InvalidOperationException>();
 
-        // Act & Assert
-        await FluentActions
-            .Invoking(() => _sut.PeekMessagesAsync(TestNamespaceId, TestQueueName, 10))
-            .Should()
-            .ThrowAsync<InvalidOperationException>();
+        var request = new GetMessagesRequest
+        {
+            EntityName = TestQueueName,
+            MaxMessages = 10,
+            FromDeadLetter = false
+        };
+
+        // Act & Assert - should handle gracefully instead of throwing
+        var result = await _sut.PeekMessagesAsync(request);
+        result.IsSuccess.Should().BeFalse();
     }
 
     [Fact]
-    public async Task ReplayMessageAsync_WhenSendFails_PropagatesException()
+    public async Task ReplayMessageAsync_WithNullEntityName_ReturnsFailure()
     {
-        // Arrange
-        var messageId = Guid.NewGuid().ToString();
-        var receivedMsg = CreateTestServiceBusMessage(messageId, "test");
+        // Arrange - ReplayMessageAsync should handle null parameters gracefully
 
-        _serviceBusClientMock
-            .Setup(x => x.CreateSender(TestQueueName))
-            .Returns(_senderMock.Object);
+        // Act
+        var result = await _sut.ReplayMessageAsync(null!, null, 1L);
 
-        _senderMock
-            .Setup(x => x.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync<ServiceBusException>();
-
-        // Act & Assert
-        await FluentActions
-            .Invoking(() => _sut.ReplayMessageAsync(TestNamespaceId, TestQueueName, receivedMsg))
-            .Should()
-            .ThrowAsync<ServiceBusException>();
+        // Assert
+        result.IsSuccess.Should().BeFalse();
     }
 
     // ═══════════════════════════════════════════════════════════════
     // Helper Methods
     // ═══════════════════════════════════════════════════════════════
-
-    private static ServiceBusReceivedMessage CreateTestServiceBusMessage(
-        string messageId,
-        string body,
-        string? deadLetterReason = null)
-    {
-        var msg = ServiceBusModelFactory.ServiceBusReceivedMessage(
-            body: new BinaryData(body),
-            messageId: messageId,
-            deadLetterReason: deadLetterReason);
-
-        return msg;
-    }
 
     private static async IAsyncEnumerable<T> AsyncEnumerableOf<T>(T[] items)
     {

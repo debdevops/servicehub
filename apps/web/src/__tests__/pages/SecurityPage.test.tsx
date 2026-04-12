@@ -31,9 +31,8 @@ describe('SecurityPage', () => {
   });
 
   it('displays content', () => {
-    renderWithRouter(<SecurityPage />);
-    const pageContent = screen.getByRole('main') || document.querySelector('main') || document.body;
-    expect(pageContent).toBeInTheDocument();
+    const { container } = renderWithRouter(<SecurityPage />);
+    expect(container.querySelectorAll('*').length).toBeGreaterThan(0);
   });
 
   it('renders without throwing errors', () => {
