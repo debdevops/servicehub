@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SendMessageModal } from '@/components/fab/SendMessageModal';
 
 /**
@@ -11,6 +12,7 @@ import { SendMessageModal } from '@/components/fab/SendMessageModal';
 describe('SendMessageModal', () => {
   const mockOnClose = vi.fn();
   const mockOnSend = vi.fn();
+  let queryClient: QueryClient;
 
   const defaultProps = {
     isOpen: true,
@@ -21,19 +23,31 @@ describe('SendMessageModal', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
   });
+
+  // Helper function to render with required providers
+  const renderWithProviders = (component: React.ReactElement) => {
+    return render(
+      <QueryClientProvider client={queryClient}>
+        {component}
+      </QueryClientProvider>
+    );
+  };
 
   // ── Visibility ────────────────────────────────────────────────────────────
 
   it('renders nothing when isOpen is false', () => {
-    const { container } = render(
+    const { container } = renderWithProviders(
       <SendMessageModal {...defaultProps} isOpen={false} />
     );
     expect(container.querySelector('[role="dialog"]')).not.toBeInTheDocument();
   });
 
   it('renders modal with message body field', () => {
-    render(<SendMessageModal {...defaultProps} />);
+    renderWithProviders(<SendMessageModal {...defaultProps} />);
     expect(screen.getByLabelText(/message body|body/i)).toBeInTheDocument();
   });
 
@@ -41,7 +55,7 @@ describe('SendMessageModal', () => {
 
   it('accepts JSON message body', async () => {
     const user = userEvent.setup();
-    render(<SendMessageModal {...defaultProps} />);
+    renderWithProviders(<SendMessageModal {...defaultProps} />);
     
     const bodyInput = screen.getByLabelText(/message body|body/i);
     const jsonBody = '{"id": 123, "name": "test"}';
@@ -53,7 +67,7 @@ describe('SendMessageModal', () => {
 
   it('validates JSON format', async () => {
     const user = userEvent.setup();
-    render(<SendMessageModal {...defaultProps} />);
+    renderWithProviders(<SendMessageModal {...defaultProps} />);
     
     const bodyInput = screen.getByLabelText(/message body|body/i);
     await user.type(bodyInput, 'invalid json{');
@@ -68,7 +82,7 @@ describe('SendMessageModal', () => {
 
   it('allows adding custom properties', async () => {
     const user = userEvent.setup();
-    render(<SendMessageModal {...defaultProps} />);
+    renderWithProviders(<SendMessageModal {...defaultProps} />);
     
     const addPropertyButton = screen.getByRole('button', { name: /add.*property|add property/i });
     await user.click(addPropertyButton);
@@ -85,7 +99,7 @@ describe('SendMessageModal', () => {
 
   it('removes property when remove button clicked', async () => {
     const user = userEvent.setup();
-    render(<SendMessageModal {...defaultProps} />);
+    renderWithProviders(<SendMessageModal {...defaultProps} />);
     
     // Add property
     const addButton = screen.getByRole('button', { name: /add.*property/i });
@@ -102,7 +116,7 @@ describe('SendMessageModal', () => {
 
   it('allows setting correlation ID', async () => {
     const user = userEvent.setup();
-    render(<SendMessageModal {...defaultProps} />);
+    renderWithProviders(<SendMessageModal {...defaultProps} />);
     
     const correlationInput = screen.getByLabelText(/correlation.*id|correlation/i);
     const correlationId = 'corr-123-abc';
@@ -114,7 +128,7 @@ describe('SendMessageModal', () => {
 
   it('allows setting message ID', async () => {
     const user = userEvent.setup();
-    render(<SendMessageModal {...defaultProps} />);
+    renderWithProviders(<SendMessageModal {...defaultProps} />);
     
     const messageIdInput = screen.getByLabelText(/message.*id|message id/i);
     const messageId = 'msg-456-def';
@@ -128,7 +142,7 @@ describe('SendMessageModal', () => {
 
   it('sends message with valid data', async () => {
     const user = userEvent.setup();
-    render(<SendMessageModal {...defaultProps} />);
+    renderWithProviders(<SendMessageModal {...defaultProps} />);
     
     const bodyInput = screen.getByLabelText(/message body|body/i);
     await user.type(bodyInput, '{"test": "data"}');
@@ -146,7 +160,7 @@ describe('SendMessageModal', () => {
   });
 
   it('disables send button with empty body', () => {
-    render(<SendMessageModal {...defaultProps} />);
+    renderWithProviders(<SendMessageModal {...defaultProps} />);
     
     const sendButton = screen.getByRole('button', { name: /send/i });
     expect(sendButton).toBeDisabled();
@@ -156,7 +170,7 @@ describe('SendMessageModal', () => {
 
   it('closes modal on cancel', async () => {
     const user = userEvent.setup();
-    render(<SendMessageModal {...defaultProps} />);
+    renderWithProviders(<SendMessageModal {...defaultProps} />);
     
     const cancelButton = screen.getByRole('button', { name: /cancel/i });
     await user.click(cancelButton);
@@ -165,7 +179,7 @@ describe('SendMessageModal', () => {
   });
 
   it('closes on escape key', () => {
-    render(<SendMessageModal {...defaultProps} />);
+    renderWithProviders(<SendMessageModal {...defaultProps} />);
     
     fireEvent.keyDown(document, { key: 'Escape' });
     
