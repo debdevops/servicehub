@@ -50,7 +50,7 @@ describe('SendMessageModal', () => {
 
   it('renders modal when isOpen is true', () => {
     renderWithProviders(<SendMessageModal {...defaultProps} />);
-    const title = screen.queryByText(/Send Message|Send a Message/i);
+    const title = screen.getByRole('heading', { name: /send message/i });
     expect(title).toBeInTheDocument();
   });
 
@@ -101,12 +101,11 @@ describe('SendMessageModal', () => {
 
   it('displays header with title', () => {
     renderWithProviders(<SendMessageModal {...defaultProps} />);
-    const title = screen.queryByText(/Send|Message/i);
+    const title = screen.getByRole('heading', { name: /send message/i });
     expect(title).toBeInTheDocument();
   });
 
-  it('allows interaction with form elements', async () => {
-    const user = userEvent.setup();
+  it('allows interaction with form elements', () => {
     renderWithProviders(<SendMessageModal {...defaultProps} />);
 
     const buttons = screen.getAllByRole('button');

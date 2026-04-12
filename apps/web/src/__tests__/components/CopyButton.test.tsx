@@ -33,7 +33,10 @@ describe('CopyButton', () => {
   it('calls copyToClipboard with the text when clicked', async () => {
     mockCopy.mockResolvedValue(true);
     render(<CopyButton text="copy-me" />);
-    fireEvent.click(screen.getByRole('button'));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button'));
+      await Promise.resolve();
+    });
     expect(mockCopy).toHaveBeenCalledWith('copy-me');
   });
 
