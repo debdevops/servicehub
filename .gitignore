@@ -249,8 +249,13 @@ project.nuget.cache
 *.nuget.props
 *.nuget.targets
 
-# Agents and prompts (local dev workflows)
-agents/
+# GitHub Copilot AI Workspace (local dev workflows — not for CI)
 .github/agents/
 .github/prompts/
+.github/skills/
 .github/copilot-instructions.md
+.copilot-*
+*.prompt.local.md
+.github/copilot-cache/
+.github/README.md
+How-To-Use.md
