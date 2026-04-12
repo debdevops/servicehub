@@ -162,7 +162,7 @@ public sealed class MessageSenderTests
         var request = new SendMessageRequest(
             NamespaceId: Guid.NewGuid(),
             EntityName: "queue",
-            Body: body);
+            Body: body!);
 
         // Act
         var result = await _sut.SendAsync(request);

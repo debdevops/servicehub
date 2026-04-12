@@ -41,6 +41,20 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
     public Task InitializeAsync() => Task.CompletedTask;
     public Task DisposeAsync() => Task.CompletedTask;
 
+    private GetMessagesRequest CreateRequest(
+        string entityName,
+        bool fromDeadLetter = false,
+        int maxMessages = 10,
+        long? fromSequenceNumber = null,
+        string? subscriptionName = null) =>
+        new(
+            NamespaceId: TestNamespaceId,
+            EntityName: entityName,
+            SubscriptionName: subscriptionName,
+            FromDeadLetter: fromDeadLetter,
+            MaxMessages: maxMessages,
+            FromSequenceNumber: fromSequenceNumber);
+
     // ═══════════════════════════════════════════════════════════════
     // PeekMessagesAsync - Core message reading functionality
     // ═══════════════════════════════════════════════════════════════
@@ -64,15 +78,10 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
             .Returns(_receiverMock.Object);
 
         _receiverMock
-            .Setup(x => x.PeekMessagesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.PeekMessagesAsync(It.IsAny<int>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(messages);
 
-        var request = new GetMessagesRequest
-        {
-            EntityName = TestQueueName,
-            MaxMessages = 2,
-            FromDeadLetter = false
-        };
+        var request = CreateRequest(TestQueueName, maxMessages: 2);
 
         // Act
         var result = await _sut.PeekMessagesAsync(request);
@@ -94,15 +103,10 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
             .Returns(_receiverMock.Object);
 
         _receiverMock
-            .Setup(x => x.PeekMessagesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.PeekMessagesAsync(It.IsAny<int>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ServiceBusReceivedMessage[] { });
 
-        var request = new GetMessagesRequest
-        {
-            EntityName = TestQueueName,
-            MaxMessages = 10,
-            FromDeadLetter = false
-        };
+        var request = CreateRequest(TestQueueName);
 
         // Act
         var result = await _sut.PeekMessagesAsync(request);
@@ -116,12 +120,7 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
     public async Task PeekMessagesAsync_WithNullQueueName_ReturnsFailure()
     {
         // Arrange
-        var request = new GetMessagesRequest
-        {
-            EntityName = null!,
-            MaxMessages = 10,
-            FromDeadLetter = false
-        };
+        var request = CreateRequest(null!);
 
         // Act
         var result = await _sut.PeekMessagesAsync(request);
@@ -143,12 +142,10 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
         {
             ServiceBusModelFactory.ServiceBusReceivedMessage(
                 body: new BinaryData("error body 1"),
-                messageId: "dlq1",
-                deadLetterReason: "Expired"),
+                messageId: "dlq1"),
             ServiceBusModelFactory.ServiceBusReceivedMessage(
                 body: new BinaryData("error body 2"),
-                messageId: "dlq2",
-                deadLetterReason: "MaxDeliveryExceeded")
+                messageId: "dlq2")
         };
 
         _serviceBusClientMock
@@ -156,15 +153,10 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
             .Returns(_receiverMock.Object);
 
         _receiverMock
-            .Setup(x => x.PeekMessagesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.PeekMessagesAsync(It.IsAny<int>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(dlqMessages);
 
-        var request = new GetMessagesRequest
-        {
-            EntityName = TestQueueName,
-            MaxMessages = 10,
-            FromDeadLetter = true
-        };
+        var request = CreateRequest(TestQueueName, fromDeadLetter: true);
 
         // Act
         var result = await _sut.PeekMessagesAsync(request);
@@ -183,15 +175,10 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
             .Returns(_receiverMock.Object);
 
         _receiverMock
-            .Setup(x => x.PeekMessagesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.PeekMessagesAsync(It.IsAny<int>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ServiceBusReceivedMessage[] { });
 
-        var request = new GetMessagesRequest
-        {
-            EntityName = TestQueueName,
-            MaxMessages = 10,
-            FromDeadLetter = true
-        };
+        var request = CreateRequest(TestQueueName, fromDeadLetter: true);
 
         // Act
         var result = await _sut.PeekMessagesAsync(request);
@@ -210,8 +197,11 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
     public async Task ReplayMessageAsync_WithValidMessage_SendsSuccessfully()
     {
         // Arrange
-        const string messageId = "test-msg-id";
         const long sequenceNumber = 1L;
+        var targetMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: new BinaryData("replay body"),
+            messageId: "test-msg-id",
+            sequenceNumber: sequenceNumber);
 
         _serviceBusClientMock
             .Setup(x => x.CreateReceiver(TestQueueName, It.IsAny<ServiceBusReceiverOptions>()))
@@ -223,7 +213,11 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
 
         _receiverMock
             .Setup(x => x.ReceiveMessagesAsync(It.IsAny<int>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<ServiceBusReceivedMessage>());
+            .ReturnsAsync(new List<ServiceBusReceivedMessage> { targetMessage });
+
+        _receiverMock
+            .Setup(x => x.CompleteMessageAsync(targetMessage, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         _senderMock
             .Setup(x => x.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()))
@@ -243,6 +237,10 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
         const string topicName = TestTopicName;
         const string subscriptionName = TestSubscriptionName;
         const long sequenceNumber = 1L;
+        var targetMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: new BinaryData("topic replay body"),
+            messageId: "topic-msg-id",
+            sequenceNumber: sequenceNumber);
 
         _serviceBusClientMock
             .Setup(x => x.CreateReceiver(topicName, subscriptionName, It.IsAny<ServiceBusReceiverOptions>()))
@@ -254,7 +252,11 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
 
         _receiverMock
             .Setup(x => x.ReceiveMessagesAsync(It.IsAny<int>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<ServiceBusReceivedMessage>());
+            .ReturnsAsync(new List<ServiceBusReceivedMessage> { targetMessage });
+
+        _receiverMock
+            .Setup(x => x.CompleteMessageAsync(targetMessage, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         _senderMock
             .Setup(x => x.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()))
@@ -280,12 +282,7 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
             .Setup(x => x.CreateReceiver(TestQueueName, It.IsAny<ServiceBusReceiverOptions>()))
             .Throws<InvalidOperationException>();
 
-        var request = new GetMessagesRequest
-        {
-            EntityName = TestQueueName,
-            MaxMessages = 10,
-            FromDeadLetter = false
-        };
+        var request = CreateRequest(TestQueueName);
 
         // Act & Assert - should handle gracefully instead of throwing
         var result = await _sut.PeekMessagesAsync(request);
@@ -304,16 +301,4 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
         result.IsSuccess.Should().BeFalse();
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // Helper Methods
-    // ═══════════════════════════════════════════════════════════════
-
-    private static async IAsyncEnumerable<T> AsyncEnumerableOf<T>(T[] items)
-    {
-        foreach (var item in items)
-        {
-            await Task.Yield();
-            yield return item;
-        }
-    }
 }

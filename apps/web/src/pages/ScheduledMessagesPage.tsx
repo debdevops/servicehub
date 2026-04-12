@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { Clock, RefreshCw, XCircle, Calendar, AlertCircle, Inbox, CalendarClock, Plus } from 'lucide-react';
 import { useNamespaces } from '@/hooks/useNamespaces';
@@ -101,7 +102,7 @@ function RescheduleModal({ message, namespaceId, queueName, onClose }: Reschedul
     }
   };
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
       role="dialog"
@@ -149,7 +150,8 @@ function RescheduleModal({ message, namespaceId, queueName, onClose }: Reschedul
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

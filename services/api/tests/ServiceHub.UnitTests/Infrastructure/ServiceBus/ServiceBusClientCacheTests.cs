@@ -98,11 +98,11 @@ public sealed class ServiceBusClientCacheTests
     }
 
     [Fact]
-    public void GetOrCreate_WhenDisposed_Throws()
+    public async Task GetOrCreate_WhenDisposed_Throws()
     {
         // Arrange
         var namespaceId = Guid.NewGuid();
-        _sut.DisposeAsync().GetAwaiter().GetResult();
+        await _sut.DisposeAsync();
 
         // Act
         var act = () => _sut.GetOrCreate(namespaceId, ValidConnectionString);
