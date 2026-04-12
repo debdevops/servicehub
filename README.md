@@ -45,14 +45,14 @@ Production breaks at 2 AM. Azure Portal shows **5,000 messages in Dead-Letter Qu
 Enter your connection string and you're in. Supports Listen-only (read-only) or Manage (full access) policies. No installation, no setup complexity — just instant access to your message data.
 
 ![Connect Page](docs/screenshots/archive/01-connect-page.png)
-![Connected Namespace](docs/screenshots/archive/02-connect-page-namespace-connected.png)
+
 
 ### 📨 Message Browser — View Thousands of Messages Instantly
 
 Browse **active** and **dead-letter** messages side by side. See full message previews, status badges, and metadata at a glance. Real-time search across message content and properties — find exactly what you need in seconds, not hours.
 
 ![Messages Queue Overview](docs/screenshots/archive/02-messages-queue-active.png)
-![Message Queue Details](docs/screenshots/archive/04-messages-queue-browser.png)
+
 
 #### Message Properties & Body — Full Forensic Inspection
 
@@ -95,7 +95,7 @@ Persistent tracking with:
 
 ![Dead Letter Queue](docs/screenshots/archive/08-messages-deadletter-queue.png)
 ![DLQ Message Detail](docs/screenshots/archive/09-dlq-message-detail.png)
-![DLQ History Tracking](docs/screenshots/archive/16-dlq-history-detail.png)
+
 ![DLQ AI Insights](docs/screenshots/archive/10-dlq-message-ai-insights.png)
 
 ### 🎯 Quick Actions (FAB) — One-Click Access to Everything
