@@ -24,7 +24,7 @@ Comprehensive guide for deploying, configuring, and operating the ServiceHub API
 ```json
 {
   "ASPNETCORE_ENVIRONMENT": "Development",
-  "ASPNETCORE_URLS": "http://localhost:5000",
+  "ASPNETCORE_URLS": "http://localhost:5153",
   
   "Logging": {
     "LogLevel": {
@@ -195,7 +195,7 @@ dotnet restore
 dotnet watch run --project src/ServiceHub.Api/ServiceHub.Api.csproj
 
 # 4. Access API
-# http://localhost:5000
+# http://localhost:5153
 # http://localhost:5153/scalar/v1
 ```
 
@@ -205,7 +205,7 @@ dotnet watch run --project src/ServiceHub.Api/ServiceHub.Api.csproj
 
 ```dockerfile
 # Build Stage
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /app
 
 COPY . .
@@ -213,7 +213,7 @@ RUN dotnet restore
 RUN dotnet publish -c Release -o /app/publish
 
 # Runtime Stage
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 
 COPY --from=build /app/publish .
@@ -382,15 +382,15 @@ DEPLOYMENT
 
 ```bash
 # Live probe: Is the service running?
-curl http://localhost:5000/health/live
+curl http://localhost:5153/health/live
 # Expected: 200 OK
 
 # Ready probe: Is the service ready to accept traffic?
-curl http://localhost:5000/health/ready
+curl http://localhost:5153/health/ready
 # Expected: 200 OK (if dependencies OK)
 
 # Detailed health status
-curl http://localhost:5000/health
+curl http://localhost:5153/health
 # Shows: ServiceBus connectivity, database status, etc.
 ```
 
@@ -497,7 +497,7 @@ traces
 ```
 DIAGNOSIS:
 1. Check if X-API-KEY header is present
-   $ curl -v http://localhost:5000/api/v1/namespaces
+   $ curl -v http://localhost:5153/api/v1/namespaces
 
 2. Verify API key is configured
    $ dotnet user-secrets list
@@ -507,7 +507,7 @@ DIAGNOSIS:
 
 SOLUTION:
 - Add X-API-KEY header to request:
-  curl -H "X-API-KEY: your-api-key" http://localhost:5000/api/v1/namespaces
+  curl -H "X-API-KEY: your-api-key" http://localhost:5153/api/v1/namespaces
 
 - Or disable for development:
   appsettings.Development.json:

@@ -162,7 +162,7 @@ Find messages instantly by any property:
 - System properties
 
 ![Message Filter Search](docs/screenshots/archive/28-message-filter.png)
-![Correlation ID Explorer](docs/screenshots/ServiceHub-CorelationId-Explorer.png)
+![Correlation ID Explorer](docs/screenshots/27-ServiceHub-CorelationId-Explorer.png)
 
 **Smart Sidebar Navigation**
 Namespace browser with:
