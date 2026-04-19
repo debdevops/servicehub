@@ -3,7 +3,7 @@
 **A Complete Guide for Novices and Experts**  
 *Understanding Azure Service Bus Inspection Made Simple*
 
-**Version:** 2.0 (February 2026) — DLQ Intelligence & Auto-Replay System  
+**Version:** 3.1.0 (April 2026) — DLQ Intelligence, Auto-Replay & Multi-Namespace Support  
 **New Features:** Persistent DLQ tracking, Auto-replay rules, Batch replay operations
 
 ---
@@ -81,7 +81,7 @@ graph TB
     end
 
     subgraph "🔧 Backend API"
-        API[".NET 8 API<br/>Port 5153<br/>━━━━━━━━━<br/>• REST endpoints<br/>• Authentication<br/>• Data transformation<br/>• Business logic"]
+        API[".NET 10 API<br/>Port 5153<br/>━━━━━━━━━<br/>• REST endpoints<br/>• Authentication<br/>• Data transformation<br/>• Business logic"]
     end
 
     subgraph "☁️ Azure Cloud"
@@ -142,7 +142,7 @@ graph TB
         end
     end
     
-    subgraph Backend["Backend API (.NET 8 Clean Architecture)"]
+    subgraph Backend["Backend API (.NET 10 Clean Architecture)"]
         direction TB
         
         subgraph API_Layer["🎯 API Layer"]
@@ -1037,7 +1037,7 @@ graph TB
    COPY dist /usr/share/nginx/html
    
    # Backend
-   FROM mcr.microsoft.com/dotnet/aspnet:8.0
+   FROM mcr.microsoft.com/dotnet/aspnet:10.0
    COPY published /app
    ```
 
@@ -1448,7 +1448,7 @@ ServiceHub solves a critical problem for teams using Azure Service Bus: **visibi
 **Technology Stack:**
 
 - **Frontend**: React + TypeScript + Tailwind CSS + React Query (TanStack Query)
-- **Backend**: .NET 8 + Clean Architecture + Azure SDK + Entity Framework Core
+- **Backend**: .NET 10 + Clean Architecture + Azure SDK + Entity Framework Core
 - **Storage**: SQLite (DLQ Intelligence, rules), Azure Service Bus (messages)
 - **Optional**: AI service for pattern detection
 
@@ -1463,5 +1463,5 @@ ServiceHub solves a critical problem for teams using Azure Service Bus: **visibi
 
 ---
 
-*Last Updated: January 26, 2026*  
-*Version: 1.0.0*
+*Last Updated: April 2026*  
+*Version: 3.1.0*

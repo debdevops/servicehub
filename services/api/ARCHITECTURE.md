@@ -669,7 +669,7 @@ graph TD
 %%{init: {'theme':'dark', 'themeVariables': { 'fontSize':'24px', 'primaryTextColor':'#ffffff'}}}%%
 graph TB
     subgraph Development["🖥️ DEVELOPMENT ENVIRONMENT"]
-        DEV_API["ServiceHub API<br/>localhost:5000<br/>Debug Mode"]
+        DEV_API["ServiceHub API<br/>localhost:5153<br/>Debug Mode"]
         DEV_SB["Local Service Bus<br/>Emulator or Dev Namespace"]
         DEV_CONFIG["appsettings.Development.json<br/>- Permissive CORS<br/>- Full CSP for Swagger<br/>- API Key: Optional"]
     end
@@ -821,5 +821,5 @@ Client receives HTTP 200 + JSON
 
 - Review source code in `src/ServiceHub.Api/` directory
 - Run the API: `dotnet run --project src/ServiceHub.Api/ServiceHub.Api.csproj`
-- Test endpoints via Swagger UI: http://localhost:5000/swagger
-- Check health status: http://localhost:5000/health
+- Test endpoints via Scalar UI: http://localhost:5153/scalar/v1
+- Check health status: http://localhost:5153/health
