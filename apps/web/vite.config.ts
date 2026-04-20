@@ -73,15 +73,22 @@ export default defineConfig({
       output: {
         // Code splitting strategy: extract heavy dependencies and pages into separate chunks
         // This reduces initial bundle size and improves cold-start performance on Azure App Service
-        manualChunks: {
+        manualChunks: (id: string) => {
           // Vendor chunk for heavy UI libraries
-          'vendor-ui': ['recharts', '@tanstack/react-table', '@tanstack/react-virtual'],
+          if (id.includes('node_modules/recharts') || 
+              id.includes('node_modules/@tanstack/react-table') || 
+              id.includes('node_modules/@tanstack/react-virtual')) {
+            return 'vendor-ui';
+          }
           // Routing and HTTP
-          'vendor-http': ['react-router-dom', 'axios'],
+          if (id.includes('node_modules/react-router-dom') || 
+              id.includes('node_modules/axios')) {
+            return 'vendor-http';
+          }
           // Heavy pages (lazy loaded)
-          'page-dashboard': ['./src/pages/DashboardPage.tsx'],
-          'page-correlation': ['./src/pages/CorrelationExplorerPage.tsx'],
-          'page-dlq-history': ['./src/pages/DlqHistoryPage.tsx'],
+          if (id.includes('src/pages/DashboardPage.tsx')) return 'page-dashboard';
+          if (id.includes('src/pages/CorrelationExplorerPage.tsx')) return 'page-correlation';
+          if (id.includes('src/pages/DlqHistoryPage.tsx')) return 'page-dlq-history';
         },
       },
     },
