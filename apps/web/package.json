@@ -48,6 +48,10 @@
     "vite": "^8.0.9",
     "vitest": "^4.1.0"
   },
+  "overrides": {
+    "vite": "^8.0.9",
+    "follow-redirects": "^1.16.0"
+  },
   "optionalDependencies": {
     "@esbuild/linux-arm64": "0.25.12",
     "@esbuild/linux-x64": "0.25.12",
