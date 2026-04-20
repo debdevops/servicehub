@@ -82,7 +82,17 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             sender = _client.CreateSender(request.EntityName);
             var message = CreateServiceBusMessage(request);
 
-            await sender.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
+            // When a future scheduled enqueue time is requested, use ScheduleMessageAsync so
+            // the message appears as State=Scheduled in PeekMessages (SendMessageAsync with
+            // ScheduledEnqueueTime uses a different AMQP path that is invisible to peek).
+            if (request.ScheduledEnqueueTimeUtc.HasValue && request.ScheduledEnqueueTimeUtc.Value > DateTimeOffset.UtcNow)
+            {
+                await sender.ScheduleMessageAsync(message, request.ScheduledEnqueueTimeUtc.Value, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await sender.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
+            }
 
             _logger.LogDebug(
                 "Message sent to {EntityName} in namespace {NamespaceId}",
@@ -236,34 +246,28 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
     }
 
     /// <inheritdoc/>
-    public Task<Result<bool>> TestConnectionAsync(CancellationToken cancellationToken = default)
+    public async Task<Result<bool>> TestConnectionAsync(CancellationToken cancellationToken = default)
     {
         if (_disposed || _client.IsClosed)
         {
-            return Task.FromResult(Result.Failure<bool>(Error.Internal(
+            return Result.Failure<bool>(Error.Internal(
                 ErrorCodes.General.ServiceUnavailable,
-                "The Service Bus client has been disposed or closed.")));
+                "The Service Bus client has been disposed or closed."));
         }
 
         try
         {
-            // Use the connection string to create an administration client for health check
-            // This is a lightweight operation that validates connectivity
-            var fullyQualifiedNamespace = _client.FullyQualifiedNamespace;
-
-            if (string.IsNullOrEmpty(fullyQualifiedNamespace))
-            {
-                return Task.FromResult(Result.Failure<bool>(Error.ExternalService(
-                    ErrorCodes.Namespace.ConnectionFailed,
-                    "Unable to determine the Service Bus namespace.")));
-            }
+            // Make a real network call to verify credentials and connectivity.
+            // GetNamespacePropertiesAsync is the lightest admin operation available.
+            var adminClient = await GetOrCreateAdminClientAsync().ConfigureAwait(false);
+            await adminClient.GetNamespacePropertiesAsync(cancellationToken).ConfigureAwait(false);
 
             _logger.LogDebug(
                 "Connection test successful for namespace {NamespaceId} ({Namespace})",
                 NamespaceId,
-                fullyQualifiedNamespace);
+                _client.FullyQualifiedNamespace);
 
-            return Task.FromResult(Result.Success(true));
+            return Result.Success(true);
         }
         catch (ServiceBusException ex)
         {
@@ -271,19 +275,19 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
                 "Connection test failed for namespace {NamespaceId}",
                 NamespaceId);
 
-            return Task.FromResult(Result.Failure<bool>(Error.ExternalService(
+            return Result.Failure<bool>(Error.ExternalService(
                 ErrorCodes.Namespace.ConnectionFailed,
-                $"Connection test failed: {ex.Reason}")));
+                $"Connection test failed: {ex.Reason}"));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
-                "Unexpected error during connection test for namespace {NamespaceId}",
+            _logger.LogWarning(ex,
+                "Connection test failed for namespace {NamespaceId}",
                 NamespaceId);
 
-            return Task.FromResult(Result.Failure<bool>(Error.Internal(
-                ErrorCodes.General.UnexpectedError,
-                "An unexpected error occurred during the connection test.")));
+            return Result.Failure<bool>(Error.ExternalService(
+                ErrorCodes.Namespace.ConnectionFailed,
+                "Unable to connect to the Service Bus namespace. Check that the connection string is valid and the namespace exists."));
         }
     }
 
@@ -1023,10 +1027,12 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
                 dlqReceiver = _client.CreateReceiver(entityName, receiverOptions);
             }
 
-            // Receive messages in batches to find the target message more efficiently
+            // Receive messages in batches to find the target message.
+            // Scan up to 5,000 messages (100 batches × 50) before giving up.
             ServiceBusReceivedMessage? targetMessage = null;
-            const int maxAttempts = 10;
+            const int maxAttempts = 100;
             const int batchSize = 50;
+            const int maxScanDepth = maxAttempts * batchSize;
             
             for (int attempt = 0; attempt < maxAttempts && targetMessage == null; attempt++)
             {
@@ -1055,9 +1061,13 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
             if (targetMessage == null)
             {
+                var scanned = messagesToAbandon.Count;
+                var hint = scanned >= maxScanDepth
+                    ? $" The DLQ was scanned up to {maxScanDepth:N0} messages without finding it. Your DLQ may contain more messages than the scan limit. Consider purging older messages first."
+                    : string.Empty;
                 return Result.Failure(Error.NotFound(
                     ErrorCodes.Message.NotFound,
-                    $"Message with sequence number {sequenceNumber} not found in dead-letter queue."));
+                    $"Message with sequence number {sequenceNumber} not found in dead-letter queue.{hint}"));
             }
 
             // Create a new message with the same content
@@ -1198,9 +1208,10 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             var pending = new HashSet<long>(sequenceNumbers);
             var foundMessages = new Dictionary<long, ServiceBusReceivedMessage>();
 
-            // Receive messages in batches until we find all targets or exhaust the DLQ
-            const int maxAttempts = 10;
-            const int batchSize = 100; // Larger batch for bulk operations
+            // Receive messages in batches until we find all targets or exhaust the DLQ.
+            // Scan up to 5,000 messages (50 batches × 100) before giving up.
+            const int maxAttempts = 50;
+            const int batchSize = 100;
 
             for (int attempt = 0; attempt < maxAttempts && pending.Count > 0; attempt++)
             {
@@ -1208,7 +1219,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
                 var messages = await dlqReceiver.ReceiveMessagesAsync(
                     maxMessages: batchSize,
-                    maxWaitTime: TimeSpan.FromSeconds(5),
+                    maxWaitTime: TimeSpan.FromSeconds(2),
                     cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 if (messages == null || messages.Count == 0)
@@ -1494,6 +1505,283 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
                     }
                 }
                 await receiver.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<IReadOnlyList<Message>>> GetScheduledMessagesAsync(
+        string entityName,
+        string? subscriptionName,
+        int maxMessages,
+        CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure<IReadOnlyList<Message>>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        if (string.IsNullOrWhiteSpace(entityName))
+        {
+            return Result.Failure<IReadOnlyList<Message>>(Error.Validation(
+                ErrorCodes.Message.QueueNameRequired,
+                "Queue or topic name is required."));
+        }
+
+        var peekCount = Math.Clamp(maxMessages, 1, 1000);
+
+        ServiceBusReceiver? receiver = null;
+        try
+        {
+            receiver = CreateReceiver(entityName, subscriptionName, fromDeadLetter: false);
+
+            var request = new GetMessagesRequest(
+                NamespaceId: NamespaceId,
+                EntityName: entityName,
+                SubscriptionName: subscriptionName,
+                FromDeadLetter: false,
+                MaxMessages: peekCount,
+                FromSequenceNumber: null);
+
+            // Peek in batches to find scheduled messages beyond the active backlog.
+            // Azure SB peek starts from a sequence number; we keep advancing until
+            // we've found enough or exhausted the queue.
+            var scheduledMessages = new List<Message>();
+            long fromSequenceNumber = 0;
+            const int batchSize = 100;
+            const int maxBatches = 50; // up to 5000 messages scanned
+
+            for (int batch = 0; batch < maxBatches && scheduledMessages.Count < peekCount; batch++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var peekedMessages = fromSequenceNumber == 0
+                    ? await receiver.PeekMessagesAsync(batchSize, cancellationToken: cancellationToken).ConfigureAwait(false)
+                    : await receiver.PeekMessagesAsync(batchSize, fromSequenceNumber, cancellationToken).ConfigureAwait(false);
+
+                if (peekedMessages == null || peekedMessages.Count == 0)
+                    break;
+
+                foreach (var m in peekedMessages)
+                {
+                    if (m.State == ServiceBusMessageState.Scheduled && scheduledMessages.Count < peekCount)
+                    {
+                        scheduledMessages.Add(MapToMessage(m, request));
+                    }
+                }
+
+                // Advance past the last peeked message
+                fromSequenceNumber = peekedMessages[^1].SequenceNumber + 1;
+            }
+
+            _logger.LogDebug(
+                "Found {Count} scheduled messages in {EntityName} via iterative peek.",
+                scheduledMessages.Count,
+                LogRedactor.SanitiseForLog(entityName));
+
+            return Result.Success<IReadOnlyList<Message>>(scheduledMessages);
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex,
+                "Entity {EntityName} not found in namespace {NamespaceId}",
+                LogRedactor.SanitiseForLog(entityName),
+                NamespaceId);
+
+            return Result.Failure<IReadOnlyList<Message>>(Error.NotFound(
+                ErrorCodes.Queue.NotFound,
+                $"The queue or topic '{entityName}' was not found."));
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogError(ex,
+                "Service Bus error listing scheduled messages from {EntityName}",
+                LogRedactor.SanitiseForLog(entityName));
+
+            return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
+                ErrorCodes.Message.ScheduledListFailed,
+                $"Failed to list scheduled messages: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Unexpected error listing scheduled messages from {EntityName}",
+                LogRedactor.SanitiseForLog(entityName));
+
+            return Result.Failure<IReadOnlyList<Message>>(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while listing scheduled messages."));
+        }
+        finally
+        {
+            if (receiver != null)
+            {
+                await receiver.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<long>> ScheduleMessageAsync(
+        SendMessageRequest request,
+        DateTimeOffset scheduledTimeUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure<long>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.EntityName))
+        {
+            return Result.Failure<long>(Error.Validation(
+                ErrorCodes.Message.QueueNameRequired,
+                "Queue or topic name is required."));
+        }
+
+        ServiceBusSender? sender = null;
+        try
+        {
+            sender = _client.CreateSender(request.EntityName);
+            var message = CreateServiceBusMessage(request);
+            message.ScheduledEnqueueTime = scheduledTimeUtc;
+
+            var sequenceNumber = await sender.ScheduleMessageAsync(message, scheduledTimeUtc, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Scheduled message {SequenceNumber} in {EntityName} for {ScheduledTime} in namespace {NamespaceId}",
+                sequenceNumber,
+                LogRedactor.SanitiseForLog(request.EntityName),
+                scheduledTimeUtc,
+                NamespaceId);
+
+            return Result.Success(sequenceNumber);
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex,
+                "Entity {EntityName} not found when scheduling message",
+                LogRedactor.SanitiseForLog(request.EntityName));
+
+            return Result.Failure<long>(Error.NotFound(
+                ErrorCodes.Queue.NotFound,
+                $"The queue or topic '{request.EntityName}' was not found."));
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogError(ex,
+                "Service Bus error scheduling message to {EntityName}",
+                LogRedactor.SanitiseForLog(request.EntityName));
+
+            return Result.Failure<long>(Error.ExternalService(
+                ErrorCodes.Message.SendFailed,
+                $"Failed to schedule message: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Unexpected error scheduling message to {EntityName}",
+                LogRedactor.SanitiseForLog(request.EntityName));
+
+            return Result.Failure<long>(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while scheduling the message."));
+        }
+        finally
+        {
+            if (sender != null)
+            {
+                await sender.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result> CancelScheduledMessageAsync(
+        string entityName,
+        long sequenceNumber,
+        CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        if (string.IsNullOrWhiteSpace(entityName))
+        {
+            return Result.Failure(Error.Validation(
+                ErrorCodes.Message.QueueNameRequired,
+                "Queue or topic name is required."));
+        }
+
+        ServiceBusSender? sender = null;
+        try
+        {
+            sender = _client.CreateSender(entityName);
+            await sender.CancelScheduledMessageAsync(sequenceNumber, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Cancelled scheduled message {SequenceNumber} from {EntityName} in namespace {NamespaceId}",
+                sequenceNumber,
+                LogRedactor.SanitiseForLog(entityName),
+                NamespaceId);
+
+            return Result.Success();
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex,
+                "Entity {EntityName} not found when cancelling scheduled message",
+                LogRedactor.SanitiseForLog(entityName));
+
+            return Result.Failure(Error.NotFound(
+                ErrorCodes.Queue.NotFound,
+                $"The queue or topic '{entityName}' was not found."));
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessageNotFound)
+        {
+            _logger.LogWarning(ex,
+                "Scheduled message {SequenceNumber} not found in {EntityName}",
+                sequenceNumber,
+                LogRedactor.SanitiseForLog(entityName));
+
+            return Result.Failure(Error.NotFound(
+                ErrorCodes.Message.NotFound,
+                $"Scheduled message with sequence number {sequenceNumber} was not found."));
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogError(ex,
+                "Service Bus error cancelling scheduled message {SequenceNumber} from {EntityName}",
+                sequenceNumber,
+                LogRedactor.SanitiseForLog(entityName));
+
+            return Result.Failure(Error.ExternalService(
+                ErrorCodes.Message.ScheduledCancelFailed,
+                $"Failed to cancel scheduled message: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Unexpected error cancelling scheduled message {SequenceNumber} from {EntityName}",
+                sequenceNumber,
+                LogRedactor.SanitiseForLog(entityName));
+
+            return Result.Failure(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while cancelling the scheduled message."));
+        }
+        finally
+        {
+            if (sender != null)
+            {
+                await sender.DisposeAsync().ConfigureAwait(false);
             }
         }
     }

@@ -319,36 +319,6 @@ public class CoreDtoTests
     }
 
     [Fact]
-    public void ForensicResultResponse_ShouldCreate()
-    {
-        var response = new ForensicResultResponse(
-            MessageId: 42,
-            FailureCategory: "DeliveryFailure",
-            Confidence: 0.95,
-            RootCause: "Consumer timeout",
-            ReplaySafety: "Safe",
-            Tier: "T1");
-
-        response.MessageId.Should().Be(42);
-        response.FailureCategory.Should().Be("DeliveryFailure");
-        response.Confidence.Should().Be(0.95);
-    }
-
-    [Fact]
-    public void ForensicBatchSummaryResponse_ShouldCreate()
-    {
-        var byCategory = new Dictionary<string, int> { ["Transient"] = 5, ["Permanent"] = 2 };
-        var response = new ForensicBatchSummaryResponse(
-            Analysed: 10,
-            Updated: 7,
-            ByCategory: byCategory);
-
-        response.Analysed.Should().Be(10);
-        response.Updated.Should().Be(7);
-        response.ByCategory.Should().HaveCount(2);
-    }
-
-    [Fact]
     public void UpdateDlqNotesRequest_ShouldCreate()
     {
         var request = new UpdateDlqNotesRequest("Some notes about this message");
@@ -514,7 +484,7 @@ public class CoreDtoTests
     [Fact]
     public void GetMessagesRequest_ShouldHaveConstants()
     {
-        GetMessagesRequest.MaxAllowedMessages.Should().Be(100);
+        GetMessagesRequest.MaxAllowedMessages.Should().Be(1000);
         GetMessagesRequest.MinAllowedMessages.Should().Be(1);
     }
 

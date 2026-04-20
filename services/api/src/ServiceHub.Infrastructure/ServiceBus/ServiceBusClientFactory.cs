@@ -104,7 +104,7 @@ public sealed class ServiceBusClientFactory : IServiceBusClientFactory
 
             return Task.FromResult(Result.Failure(Error.Validation(
                 ErrorCodes.Namespace.ConnectionStringInvalid,
-                $"Invalid connection string: {ex.Message}")));
+                "The connection string is invalid. Verify the format and credentials.")));
         }
     }
 
@@ -177,6 +177,14 @@ public sealed class ServiceBusClientFactory : IServiceBusClientFactory
                 return Result.Failure(Error.Validation(
                     ErrorCodes.Namespace.EndpointInvalid,
                     "The Endpoint scheme must be 'sb://'."));
+            }
+
+            // SECURITY: SSRF prevention — only allow Azure Service Bus hostnames.
+            if (!uri.Host.EndsWith(".servicebus.windows.net", StringComparison.OrdinalIgnoreCase))
+            {
+                return Result.Failure(Error.Validation(
+                    ErrorCodes.Namespace.EndpointInvalid,
+                    "Endpoint must be a *.servicebus.windows.net host."));
             }
         }
         catch

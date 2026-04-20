@@ -1,6 +1,6 @@
 import { useRef, useMemo, useEffect, useCallback, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Bot, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import { Bot, AlertTriangle, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/utils';
 import type { Message } from '@/lib/mockData';
 
@@ -17,6 +17,9 @@ interface MessageListProps {
   queueTab: QueueTab;
   onQueueTabChange: (tab: QueueTab) => void;
   activeCounts: { active: number; deadletter: number };
+  hasMoreMessages?: boolean;
+  isLoadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 // ============================================================================
@@ -125,6 +128,12 @@ const MessageCard = memo(function MessageCard({ message, isSelected, onClick }: 
       {/* Row 2: Status and AI Badge - With breathing room */}
       <div className="flex items-center gap-2 mb-3">
         <StatusBadge status={message.status} deliveryCount={message.deliveryCount} />
+        {message.scheduledEnqueueTime && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700" title={`Scheduled for ${new Date(message.scheduledEnqueueTime).toLocaleString()}`}>
+            <Clock size={12} />
+            Scheduled
+          </span>
+        )}
         {message.hasAIInsight && (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-primary-100 text-primary-700">
             <Bot size={12} />
@@ -162,6 +171,9 @@ export function MessageList({
   queueTab,
   onQueueTabChange,
   activeCounts,
+  hasMoreMessages = false,
+  isLoadingMore = false,
+  onLoadMore,
 }: MessageListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -300,6 +312,30 @@ export function MessageList({
           </div>
         )}
       </div>
+
+      {/* Load More Button - shown at bottom when there are more messages to load */}
+      {hasMoreMessages && filteredMessages.length > 0 && onLoadMore && (
+        <div className="border-t border-gray-200 bg-white p-3 shrink-0">
+          <button
+            onClick={onLoadMore}
+            disabled={isLoadingMore}
+            className={`w-full px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+              isLoadingMore
+                ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                : 'bg-primary-50 text-primary-700 hover:bg-primary-100 border border-primary-200'
+            }`}
+          >
+            {isLoadingMore ? (
+              <span className="flex items-center justify-center gap-2">
+                <div className="w-4 h-4 border-2 border-primary-300 border-t-primary-600 rounded-full animate-spin" />
+                Loading more...
+              </span>
+            ) : (
+              '📥 Load More Messages'
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

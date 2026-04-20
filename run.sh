@@ -71,6 +71,30 @@ get_linux_distro() {
     fi
 }
 
+# Check system connectivity before long operations
+check_connectivity() {
+    if ! command -v curl >/dev/null 2>&1; then
+        echo -e "${YELLOW}⚠ Warning: curl not found. Some downloads may fail.${NC}"
+        return 0  # Don't fail here, let tools try anyway
+    fi
+    
+    if ! curl -s --connect-timeout 5 --max-time 5 https://www.google.com >/dev/null 2>&1; then
+        echo -e "${YELLOW}⚠ Warning: Internet connectivity check failed. Some downloads may not work.${NC}"
+    fi
+}
+
+# Check macOS Xcode Command Line Tools
+check_xcode_clt() {
+    if [ "$OS" = "macos" ]; then
+        if ! xcode-select -p >/dev/null 2>&1; then
+            echo -e "${YELLOW}Installing Xcode Command Line Tools (required for npm packages)...${NC}"
+            xcode-select --install
+            echo -e "${YELLOW}Please complete the Xcode CLT installation, then re-run this script.${NC}"
+            exit 1
+        fi
+    fi
+}
+
 # Detect OS
 detect_os() {
     case "$(uname -s)" in
@@ -108,8 +132,15 @@ detect_os() {
             exit 1
             ;;
         CYGWIN*|MINGW*|MSYS*)
-            echo -e "${RED}✗ Error: Please use WSL (Windows Subsystem for Linux) on Windows${NC}"
-            echo -e "${YELLOW}Instructions: https://docs.microsoft.com/windows/wsl/install${NC}"
+            echo -e "${RED}✗ Native Windows detected. run.sh requires WSL or bash.${NC}"
+            echo ""
+            echo -e "${YELLOW}Option 1 (recommended): Use WSL${NC}"
+            echo -e "  wsl --install"
+            echo -e "  Then re-run: ./run.sh"
+            echo ""
+            echo -e "${YELLOW}Option 2: Use PowerShell${NC}"
+            echo -e "  A PowerShell equivalent is available: .\\run.ps1"
+            echo ""
             exit 1
             ;;
         *)
@@ -139,7 +170,7 @@ install_homebrew() {
 # Install .NET 10 via Microsoft's official install script (works on any Linux distro)
 install_dotnet_via_script() {
     echo -e "${YELLOW}  Trying Microsoft .NET install script (works on any distro)...${NC}"
-    local install_dir="$HOME/.dotnet"
+    local install_dir="${DOTNET_ROOT:-$HOME/.dotnet}"
     local install_script="/tmp/dotnet-install.sh"
 
     if ! command -v curl >/dev/null 2>&1; then
@@ -147,25 +178,37 @@ install_dotnet_via_script() {
         return 1
     fi
 
-    curl -fsSL https://dot.net/v1/dotnet-install.sh -o "$install_script" 2>/dev/null
-    if [ ! -f "$install_script" ]; then
+    if ! curl -fsSL https://dot.net/v1/dotnet-install.sh -o "$install_script" 2>/dev/null; then
         echo -e "${RED}  ✗ Failed to download dotnet-install.sh${NC}"
         return 1
     fi
 
+    if [ ! -f "$install_script" ]; then
+        echo -e "${RED}  ✗ dotnet-install.sh not found after download${NC}"
+        return 1
+    fi
+
     chmod +x "$install_script"
-    bash "$install_script" --channel 10.0 --install-dir "$install_dir" 2>/dev/null
+    if ! bash "$install_script" --channel 10.0 --install-dir "$install_dir" 2>/dev/null; then
+        echo -e "${RED}  ✗ .NET installation script failed${NC}"
+        rm -f "$install_script"
+        return 1
+    fi
     rm -f "$install_script"
 
-    # Make dotnet available in PATH for the rest of this script
+    # Ensure PATH is updated for this script execution
     export DOTNET_ROOT="$install_dir"
     export PATH="$install_dir:$PATH"
 
+    # Verify installation
     if command -v dotnet >/dev/null 2>&1 && [ "$(dotnet --version 2>/dev/null | cut -d'.' -f1)" = "10" ]; then
         echo -e "${GREEN}  ✓ .NET 10 SDK installed to $install_dir ($(dotnet --version))${NC}"
-        echo -e "${CYAN}  ℹ Add to your shell profile: export DOTNET_ROOT=\"$install_dir\" && export PATH=\"\$DOTNET_ROOT:\$PATH\"${NC}"
+        echo -e "${CYAN}  ℹ To persist for future shells, add to ~/.bashrc or ~/.zshrc:${NC}"
+        echo -e "    export DOTNET_ROOT=\"$install_dir\""
+        echo -e "    export PATH=\"\$DOTNET_ROOT:\$PATH\""
         return 0
     else
+        echo -e "${RED}  ✗ .NET 10 verification failed after installation${NC}"
         return 1
     fi
 }
@@ -267,7 +310,14 @@ check_and_install_dotnet() {
         else
             echo -e "${RED}✗ Error: .NET 10 SDK installation failed or wrong version installed.${NC}"
             echo -e "${YELLOW}Installed: $(dotnet --version 2>/dev/null || echo 'none') — required: 10.x${NC}"
-            echo -e "${YELLOW}Install manually: https://dotnet.microsoft.com/download/dotnet/10.0${NC}"
+            echo ""
+            echo -e "${YELLOW}Manual installation options:${NC}"
+            echo -e "  macOS:    brew install --cask dotnet-sdk"
+            echo -e "  Ubuntu:   sudo apt-get install -y dotnet-sdk-10.0"
+            echo -e "  RHEL:     sudo dnf install -y dotnet-sdk-10.0"
+            echo -e "  Arch:     sudo pacman -S dotnet-sdk"
+            echo -e "  Windows:  winget install Microsoft.DotNet.SDK.10"
+            echo -e "  Manual:   https://dotnet.microsoft.com/download/dotnet/10.0"
             exit 1
         fi
     else
@@ -321,7 +371,14 @@ check_and_install_nodejs() {
             echo -e "${GREEN}✓ npm installed successfully (v$(npm --version))${NC}"
         else
             echo -e "${RED}✗ Error: Node.js installation failed${NC}"
-            echo -e "${YELLOW}Please install Node.js 18+ manually from: https://nodejs.org/${NC}"
+            echo ""
+            echo -e "${YELLOW}Manual installation options:${NC}"
+            echo -e "  macOS:    brew install node"
+            echo -e "  Ubuntu:   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs"
+            echo -e "  RHEL:     curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -"
+            echo -e "  Arch:     sudo pacman -S nodejs npm"
+            echo -e "  Windows:  winget install OpenJS.NodeJS.LTS"
+            echo -e "  Manual:   https://nodejs.org/"
             exit 1
         fi
     else
@@ -419,7 +476,23 @@ install_npm_packages() {
     if [ ! -d "$WEB_DIR/node_modules" ] || [ ! -f "$WEB_DIR/node_modules/.package-lock.json" ]; then
         echo -e "${YELLOW}Installing npm packages...${NC}"
         cd "$WEB_DIR"
-        npm install
+        
+        # Use npm ci (clean install) if package-lock.json exists for reproducible builds
+        if [ -f "package-lock.json" ]; then
+            npm ci --legacy-peer-deps 2>&1 | tail -5
+            if [ ${PIPESTATUS[0]} -ne 0 ]; then
+                echo -e "${YELLOW}npm ci failed, trying npm install as fallback...${NC}"
+                npm install --legacy-peer-deps || {
+                    echo -e "${RED}✗ Error: npm package installation failed${NC}"
+                    exit 1
+                }
+            fi
+        else
+            npm install --legacy-peer-deps || {
+                echo -e "${RED}✗ Error: npm package installation failed${NC}"
+                exit 1
+            }
+        fi
         echo -e "${GREEN}✓ npm packages installed${NC}"
     else
         echo -e "${GREEN}✓ npm packages already installed${NC}"
@@ -455,6 +528,19 @@ echo -e "${YELLOW}║   Detecting System & Prerequisites     ║${NC}"
 echo -e "${YELLOW}╚════════════════════════════════════════╝${NC}"
 echo ""
 
+# Verify we are running in Development mode (never Production locally)
+if [ "${ASPNETCORE_ENVIRONMENT:-Development}" = "Production" ]; then
+    echo -e "${YELLOW}⚠ Warning: ASPNETCORE_ENVIRONMENT is set to Production.${NC}"
+    echo -e "   run.sh is intended for local development only."
+    echo -e "   For Azure deployment, use the self-hosting guide: ./self-hosting/README.md${NC}"
+    read -r -p "Continue anyway? (y/N): " confirm
+    [[ "$confirm" =~ ^[Yy]$ ]] || exit 0
+fi
+
+# Pre-flight checks
+echo -e "${YELLOW}Running pre-flight checks...${NC}"
+check_connectivity
+
 detect_os
 echo -e "${GREEN}✓ Detected OS: $OS ($PACKAGE_MANAGER)${NC}"
 if [ "$OS" = "linux" ]; then
@@ -462,6 +548,8 @@ if [ "$OS" = "linux" ]; then
     [ "$IS_WSL" = true ] && echo -e "${CYAN}  ℹ Running under WSL${NC}"
 fi
 echo ""
+
+check_xcode_clt
 
 install_homebrew
 
@@ -496,11 +584,23 @@ echo -e "${YELLOW}║      Generating Local Secrets          ║${NC}"
 echo -e "${YELLOW}╚════════════════════════════════════════╝${NC}"
 echo ""
 
+# NOTE: appsettings.Local.json is git-ignored and only loaded in Development mode.
+#       It does NOT affect Azure App Service deployments.
+#       Azure uses Application Settings (env vars) from appsettings.Production.json instead.
 LOCAL_SETTINGS="$SCRIPT_DIR/services/api/src/ServiceHub.Api/appsettings.Local.json"
 if [[ -f "$LOCAL_SETTINGS" ]]; then
     echo -e "${GREEN}✓ appsettings.Local.json already exists — keeping existing secrets${NC}"
 else
-    bash "$SCRIPT_DIR/scripts/generate-keys.sh" --local
+    KEYS_SCRIPT="$SCRIPT_DIR/scripts/generate-keys.sh"
+    if [ -f "$KEYS_SCRIPT" ]; then
+        if bash "$KEYS_SCRIPT" --local 2>&1; then
+            echo -e "${GREEN}✓ Secrets generated successfully${NC}"
+        else
+            echo -e "${YELLOW}⚠ Warning: Secrets generation had issues, but continuing${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠ Warning: generate-keys.sh not found, skipping secret generation${NC}"
+    fi
 fi
 echo ""
 
@@ -526,11 +626,23 @@ sleep 1
 # Force kill any stubborn processes on the ports
 echo -e "${YELLOW}Force-closing ports 5153 and 3000...${NC}"
 if command -v lsof >/dev/null 2>&1; then
-    # Use xargs -r to avoid errors when no input (GNU xargs)
-    # Use || true for BSD xargs which doesn't have -r
-    lsof -ti:5153 2>/dev/null | xargs -r kill -9 2>/dev/null || lsof -ti:5153 2>/dev/null | xargs kill -9 2>/dev/null || true
-    lsof -ti:3000 2>/dev/null | xargs -r kill -9 2>/dev/null || lsof -ti:3000 2>/dev/null | xargs kill -9 2>/dev/null || true
-    lsof -ti:5173 2>/dev/null | xargs -r kill -9 2>/dev/null || lsof -ti:5173 2>/dev/null | xargs kill -9 2>/dev/null || true
+    # Kill processes on port 5153
+    PIDS=$(lsof -ti:5153 2>/dev/null || true)
+    if [ -n "$PIDS" ]; then
+        echo "$PIDS" | xargs kill -9 2>/dev/null || echo "$PIDS" | xargs -x kill -9 2>/dev/null || true
+    fi
+    
+    # Kill processes on port 3000
+    PIDS=$(lsof -ti:3000 2>/dev/null || true)
+    if [ -n "$PIDS" ]; then
+        echo "$PIDS" | xargs kill -9 2>/dev/null || echo "$PIDS" | xargs -x kill -9 2>/dev/null || true
+    fi
+    
+    # Kill processes on port 5173
+    PIDS=$(lsof -ti:5173 2>/dev/null || true)
+    if [ -n "$PIDS" ]; then
+        echo "$PIDS" | xargs kill -9 2>/dev/null || echo "$PIDS" | xargs -x kill -9 2>/dev/null || true
+    fi
 else
     echo -e "${YELLOW}⚠ lsof not available, skipping port cleanup${NC}"
 fi
@@ -605,28 +717,53 @@ echo ""
 # Start API in background with Development environment
 echo -e "${BLUE}Starting API...${NC}"
 cd "$API_DIR"
+# Ensure environment variables are set for .NET
+export ASPNETCORE_ENVIRONMENT=Development
+export ASPNETCORE_URLS="http://localhost:5153"
 ASPNETCORE_ENVIRONMENT=Development bash run-api.sh > /tmp/servicehub_api_startup.log 2>&1 &
 API_PID=$!
 echo -e "${GREEN}✓ API process started (PID: $API_PID)${NC}"
 
-# Wait for API to be ready (max 15 seconds)
+# Wait for API to be ready (max 30 seconds on first run)
 echo -e "${YELLOW}Waiting for API to be ready...${NC}"
 WAIT_COUNT=0
-MAX_WAIT=15
+MAX_WAIT=30
 API_READY=false
+API_ERROR=""
 while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
     if curl -s http://localhost:5153/health >/dev/null 2>&1; then
         API_READY=true
         break
+    fi
+    
+    # Check if process died
+    if ! kill -0 $API_PID 2>/dev/null; then
+        API_ERROR="API process died (PID $API_PID)"
+        break
+    fi
+    
+    # Show progress every 5 seconds
+    if [ $((WAIT_COUNT % 5)) -eq 0 ]; then
+        printf "  .."
     fi
     sleep 1
     WAIT_COUNT=$((WAIT_COUNT + 1))
 done
 
 if [ "$API_READY" = true ]; then
-    echo -e "${GREEN}✓ API is ready${NC}"
+    echo -e " ${GREEN}✓ API is ready (${WAIT_COUNT}s)${NC}"
+elif [ -n "$API_ERROR" ]; then
+    echo -e " ${RED}✗ $API_ERROR${NC}"
+    echo -e "${YELLOW}API startup log:${NC}"
+    head -20 /tmp/servicehub_api_startup.log 2>/dev/null || echo "  (no log available)"
+    cleanup
 else
-    echo -e "${YELLOW}⚠ API startup check timed out (continuing anyway)${NC}"
+    echo -e " ${YELLOW}⚠ API startup check timed out after ${MAX_WAIT}s${NC}"
+    if [ -f /tmp/servicehub_api_startup.log ] && [ -s /tmp/servicehub_api_startup.log ]; then
+        echo -e "${YELLOW}Last 5 API log entries:${NC}"
+        tail -5 /tmp/servicehub_api_startup.log | sed 's/^/  /'
+    fi
+    echo -e "${YELLOW}Continuing anyway... (check http://localhost:5153/health manually)${NC}"
 fi
 
 echo ""
@@ -642,7 +779,7 @@ echo -e "${GREEN}✓ UI process started (PID: $WEB_PID)${NC}"
 # keeps connections open and curl hangs waiting for a response on macOS)
 echo -e "${YELLOW}Waiting for UI to be ready...${NC}"
 WAIT_COUNT=0
-MAX_WAIT=15
+MAX_WAIT=30
 UI_READY=false
 while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
     if command -v lsof >/dev/null 2>&1; then
@@ -652,26 +789,51 @@ while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
         fi
     else
         # Fallback: give it time to start
-        sleep 5
-        UI_READY=true
-        break
+        if [ $WAIT_COUNT -ge 10 ]; then
+            UI_READY=true
+            break
+        fi
+    fi
+    # Show progress every 5 seconds
+    if [ $((WAIT_COUNT % 5)) -eq 0 ]; then
+        printf "  .."
     fi
     sleep 1
     WAIT_COUNT=$((WAIT_COUNT + 1))
 done
 
 if [ "$UI_READY" = true ]; then
-    echo -e "${GREEN}✓ UI is ready${NC}"
+    echo -e " ${GREEN}✓ UI is ready (${WAIT_COUNT}s)${NC}"
 else
-    echo -e "${YELLOW}⚠ UI startup check timed out (continuing anyway)${NC}"
+    echo -e " ${YELLOW}⚠ UI startup check timed out after ${MAX_WAIT}s${NC}"
+    if [ -f /tmp/servicehub_ui_startup.log ]; then
+        echo -e "${YELLOW}Last UI log entries:${NC}"
+        tail -3 /tmp/servicehub_ui_startup.log || true
+    fi
 fi
 
 echo ""
 
 # PHASE 5: SERVICES READY
 # Detect server IP and hostname for remote access guidance
-SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || hostname -i 2>/dev/null | awk '{print $1}' || echo "")
+SERVER_IP=""
 SERVER_HOSTNAME=$(hostname 2>/dev/null || echo "")
+
+# Try multiple methods to get server IP (hostname -I doesn't work on macOS)
+if command -v hostname >/dev/null 2>&1; then
+    # Try hostname -I (Linux)
+    SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+fi
+
+# Fallback: use ip command (Linux, WSL)
+if [ -z "$SERVER_IP" ] && command -v ip >/dev/null 2>&1; then
+    SERVER_IP=$(ip route get 1 2>/dev/null | awk '{print $NF; exit}' || true)
+fi
+
+# Fallback: use ifconfig (macOS, BSD)
+if [ -z "$SERVER_IP" ] && command -v ifconfig >/dev/null 2>&1; then
+    SERVER_IP=$(ifconfig 2>/dev/null | grep -E 'inet[^6]' | grep -v '127.0.0.1' | head -1 | awk '{print $2}' || true)
+fi
 
 echo -e "${YELLOW}╔════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║   ✓ All Services Running Successfully!  ║${NC}"
@@ -682,7 +844,7 @@ echo -e "  • ${GREEN}HTTP:  ${API_HTTP_URL}${NC}"
 if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ]; then
     echo -e "  • ${GREEN}Remote: http://${SERVER_IP}:5153${NC}"
 fi
-echo -e "  • ${GREEN}Scalar:  ${API_HTTP_URL}/scalar/v1${NC}"
+echo -e "  • ${GREEN}Docs:   ${API_HTTP_URL}/scalar/v1${NC}"
 echo ""
 echo -e "${BLUE}🌐 Web UI:${NC}"
 echo -e "  • ${GREEN}http://localhost:${WEB_PORT}${NC}   ← from this machine"
@@ -703,10 +865,11 @@ echo -e "${YELLOW}════════════════════�
 echo ""
 if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ]; then
     echo -e "${CYAN}ℹ  Remote access detected. If connection is refused from another machine:${NC}"
-    echo -e "   ${YELLOW}Ubuntu/Debian:${NC}  sudo ufw allow 3000/tcp && sudo ufw allow 5153/tcp"
-    echo -e "   ${YELLOW}RHEL/CentOS:${NC}    sudo firewall-cmd --add-port=3000/tcp --permanent && sudo firewall-cmd --add-port=5153/tcp --permanent && sudo firewall-cmd --reload"
-    echo -e "   ${YELLOW}Or set:${NC}         export SERVICEHUB_ALLOWED_ORIGINS=\"http://${SERVER_IP}:3000\""
-    echo ""
+    echo -e "   ${YELLOW}Linux (UFW):${NC}    sudo ufw allow 3000/tcp && sudo ufw allow 5153/tcp && sudo ufw reload"
+    echo -e "   ${YELLOW}Linux (Firewall):${NC} sudo firewall-cmd --add-port=3000/tcp --permanent && sudo firewall-cmd --add-port=5153/tcp --permanent && sudo firewall-cmd --reload"
+    echo -e "   ${YELLOW}Windows (PowerShell):${NC} New-NetFirewallRule -DisplayName 'ServiceHub API' -Direction Inbound -LocalPort 5153 -Action Allow -Protocol tcp"
+    echo -e "   ${YELLOW}macOS:${NC}          Check System Preferences → Security & Privacy → Firewall"
+    echo -e ""
 fi
 
 # Keep services running

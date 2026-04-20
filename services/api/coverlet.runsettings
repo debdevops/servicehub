@@ -31,6 +31,21 @@
 
           <!-- Skip auto-property getters/setters — no testable logic -->
           <SkipAutoProps>true</SkipAutoProps>
+
+          <!-- ─────────────────────────────────────────────────────── -->
+          <!-- Code Coverage Thresholds                                -->
+          <!-- BUILD WILL FAIL if coverage falls below these minimums  -->
+          <!-- ─────────────────────────────────────────────────────── -->
+          <Threshold>
+            <Metric>Line</Metric>
+            <Acceptable>60</Acceptable>
+            <Warning>70</Warning>
+          </Threshold>
+          <Threshold>
+            <Metric>Branch</Metric>
+            <Acceptable>50</Acceptable>
+            <Warning>65</Warning>
+          </Threshold>
         </Configuration>
       </DataCollector>
     </DataCollectors>

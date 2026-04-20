@@ -76,6 +76,11 @@ public sealed class QueuesController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
+
         if (ns.ConnectionString is null)
         {
             return BadRequest("Namespace does not have a connection string configured.");
@@ -134,6 +139,11 @@ public sealed class QueuesController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
+
         if (ns.ConnectionString is null)
         {
             return BadRequest("Namespace does not have a connection string configured.");
@@ -194,6 +204,10 @@ public sealed class QueuesController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
 
         // Check if namespace has Send permission (required to send messages)
         if (!ns.HasSendPermission)
@@ -243,7 +257,7 @@ public sealed class QueuesController : ApiControllerBase
     /// <param name="queueName">The queue name.</param>
     /// <param name="queueType">Queue type: active or deadletter.</param>
     /// <param name="skip">Number of items to skip.</param>
-    /// <param name="take">Number of items to take.</param>
+    /// <param name="take">Number of items to take (clamped to max 1000).</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A paginated list of messages.</returns>
     /// <response code="200">Messages retrieved successfully.</response>
@@ -382,6 +396,10 @@ public sealed class QueuesController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
         
         // Check if namespace has Send permission (required to dead-letter messages)
         if (!ns.HasSendPermission)
@@ -426,6 +444,197 @@ public sealed class QueuesController : ApiControllerBase
             LogRedactor.SanitiseForLog(queueName));
 
         return Ok(new DeadLetterResponse(result.Value, reason));
+    }
+
+    /// <summary>
+    /// Lists scheduled messages in a queue (messages with a future enqueue time).
+    /// </summary>
+    /// <param name="namespaceId">The namespace ID.</param>
+    /// <param name="queueName">The queue name.</param>
+    /// <param name="skip">Number of messages to skip for pagination.</param>
+    /// <param name="take">Maximum number of messages to return (default 100, max 1000).</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A paginated list of scheduled messages.</returns>
+    /// <response code="200">Scheduled messages retrieved successfully.</response>
+    /// <response code="404">Namespace or queue not found.</response>
+    /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.MessagesPeek)]
+    [HttpGet("{queueName}/scheduled")]
+    [ProducesResponseType(typeof(PaginatedResponse<MessageResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<PaginatedResponse<MessageResponse>>> GetScheduledMessages(
+        [FromRoute] Guid namespaceId,
+        [FromRoute] string queueName,
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = 100,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Listing scheduled messages in queue {QueueName} for namespace {NamespaceId}",
+            LogRedactor.SanitiseForLog(queueName),
+            namespaceId);
+
+        var pageSize = Math.Clamp(take, 1, 1000);
+
+        // Use the dedicated scheduled-message retrieval so that we scan beyond the active-message
+        // window.  A plain PeekMessagesAsync is capped at MaxAllowedMessages (100) and misses
+        // scheduled messages that have higher sequence numbers than the active backlog.
+        var result = await _messageReceiver.GetScheduledMessagesAsync(
+            namespaceId,
+            queueName,
+            subscriptionName: null,
+            maxMessages: 1000,
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ToActionResult<PaginatedResponse<MessageResponse>>(result.Error);
+        }
+
+        var scheduledItems = result.Value;
+
+        // The Azure Service Bus data-plane PeekMessages API cannot access the scheduled-message
+        // broker store; only the active-message store is reachable via peek.  Use the queue
+        // runtime properties for the accurate scheduled-message count so that the UI always
+        // shows the correct total even though individual message content cannot be retrieved.
+        var totalScheduled = scheduledItems.Count;
+        if (totalScheduled == 0)
+        {
+            try
+            {
+                var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+                if (namespaceResult.IsSuccess && namespaceResult.Value.ConnectionString is not null)
+                {
+                    var unprotectResult = _connectionStringProtector.Unprotect(namespaceResult.Value.ConnectionString);
+                    if (unprotectResult.IsSuccess)
+                    {
+                        var wrapper = _clientCache.GetOrCreate(namespaceResult.Value.Id, unprotectResult.Value);
+                        var queuesResult = await wrapper.GetQueuesAsync(cancellationToken);
+                        if (queuesResult.IsSuccess)
+                        {
+                            var queueInfo = queuesResult.Value.FirstOrDefault(q =>
+                                string.Equals(q.Name, queueName, StringComparison.OrdinalIgnoreCase));
+                            if (queueInfo is not null)
+                            {
+                                totalScheduled = (int)queueInfo.ScheduledMessageCount;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to get queue runtime properties for scheduled message count");
+            }
+        }
+
+        var items = scheduledItems
+            .Skip(Math.Max(skip, 0))
+            .Take(pageSize)
+            .Select(MapToResponse)
+            .ToList();
+
+        var page = pageSize > 0 ? (skip / pageSize) + 1 : 1;
+        var response = new PaginatedResponse<MessageResponse>(
+            Items: items,
+            TotalCount: totalScheduled,
+            Page: page,
+            PageSize: pageSize,
+            HasNextPage: skip + pageSize < totalScheduled,
+            HasPreviousPage: skip > 0);
+
+        _logger.LogInformation(
+            "Found {Count} scheduled messages in queue {QueueName}",
+            totalScheduled,
+            LogRedactor.SanitiseForLog(queueName));
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Cancels a scheduled message by its sequence number.
+    /// </summary>
+    /// <param name="namespaceId">The namespace ID.</param>
+    /// <param name="queueName">The queue name.</param>
+    /// <param name="sequenceNumber">The sequence number of the scheduled message to cancel.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>No content on success.</returns>
+    /// <response code="204">Scheduled message cancelled successfully.</response>
+    /// <response code="404">Namespace, queue, or scheduled message not found.</response>
+    /// <response code="502">Service Bus communication error.</response>
+    [RequireScope(ApiKeyScopes.MessagesSend)]
+    [HttpDelete("{queueName}/scheduled/{sequenceNumber:long}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
+    public async Task<IActionResult> CancelScheduledMessage(
+        [FromRoute] Guid namespaceId,
+        [FromRoute] string queueName,
+        [FromRoute] long sequenceNumber,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Cancelling scheduled message {SequenceNumber} in queue {QueueName} for namespace {NamespaceId}",
+            sequenceNumber,
+            LogRedactor.SanitiseForLog(queueName),
+            namespaceId);
+
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult(Shared.Results.Result.Failure(namespaceResult.Error));
+        }
+
+        var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
+
+        // Cancelling a scheduled message requires Send permission
+        if (!ns.HasSendPermission)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Insufficient Permissions",
+                detail: "Cancelling scheduled messages requires 'Send' permission.");
+        }
+
+        // Production safety guard
+        if (ns.Environment == EnvironmentType.Prod)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Production Restriction",
+                detail: "Cancelling scheduled messages in production namespaces is not permitted via ServiceHub.");
+        }
+
+        if (ns.ConnectionString is null)
+        {
+            return BadRequest("Namespace does not have a connection string configured.");
+        }
+
+        var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
+        if (unprotectResult.IsFailure)
+        {
+            return ToActionResult(Shared.Results.Result.Failure(unprotectResult.Error));
+        }
+
+        var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+        var result = await wrapper.CancelScheduledMessageAsync(queueName, sequenceNumber, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ToActionResult(result);
+        }
+
+        _logger.LogInformation(
+            "Cancelled scheduled message {SequenceNumber} in queue {QueueName}",
+            sequenceNumber,
+            LogRedactor.SanitiseForLog(queueName));
+
+        return NoContent();
     }
 
     private static MessageResponse MapToResponse(ServiceHub.Core.Entities.Message message)

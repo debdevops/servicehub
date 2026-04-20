@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Shared.Constants;
@@ -37,9 +38,11 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
     /// Initializes a new instance of the <see cref="ConnectionStringProtector"/> class.
     /// </summary>
     /// <param name="configuration">The configuration.</param>
+    /// <param name="environment">The host environment.</param>
     /// <param name="logger">The logger instance.</param>
     public ConnectionStringProtector(
         IConfiguration configuration,
+        IHostEnvironment environment,
         ILogger<ConnectionStringProtector> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -69,6 +72,13 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
                 "Security warning: Encryption key appears to be a placeholder or development key. " +
                 "Set a cryptographically random value via the SECURITY__ENCRYPTIONKEY environment variable " +
                 "or Azure App Service Application Settings before using in production.");
+
+            if (!environment.IsDevelopment())
+            {
+                throw new InvalidOperationException(
+                    "Security:EncryptionKey must be set to a cryptographically random value via " +
+                    "the SECURITY__ENCRYPTIONKEY environment variable in non-Development environments.");
+            }
         }
     }
 
@@ -316,11 +326,41 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
     }
 
     /// <summary>
-    /// Derives a 256-bit key from the configured key string using SHA256.
+    /// Derives a 256-bit AES key from the configured key material.
+    ///
+    /// BREAKING CHANGE: This method was changed from single-round SHA-256 to
+    /// HKDF (for 64-char hex keys) / PBKDF2-100k (for other keys) in v3.1.0.
+    /// Any connection strings encrypted before this upgrade must be re-added —
+    /// they cannot be decrypted with the new derived key.
     /// </summary>
     private static byte[] DeriveKey(string keyString)
     {
-        return SHA256.HashData(Encoding.UTF8.GetBytes(keyString));
+        // High-entropy path: 64 hex chars = 32 bytes from `openssl rand -hex 32`
+        // HKDF is appropriate when the input key material is already random.
+        if (keyString.Length == 64)
+        {
+            try
+            {
+                var rawKey = Convert.FromHexString(keyString);
+                return HKDF.DeriveKey(
+                    hashAlgorithmName: HashAlgorithmName.SHA256,
+                    ikm: rawKey,
+                    outputLength: KeySizeBytes,
+                    info: "servicehub-connection-string-v1"u8.ToArray());
+            }
+            catch (FormatException)
+            {
+                // Not valid hex — fall through to PBKDF2
+            }
+        }
+
+        // Low-entropy / password path: PBKDF2 with 100,000 iterations
+        return Rfc2898DeriveBytes.Pbkdf2(
+            password: keyString,
+            salt: "servicehub-key-derivation-salt-v1"u8.ToArray(),
+            iterations: 100_000,
+            hashAlgorithm: HashAlgorithmName.SHA256,
+            outputLength: KeySizeBytes);
     }
 
     [GeneratedRegex(@"SharedAccessKey=[^;]+", RegexOptions.IgnoreCase)]

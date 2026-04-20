@@ -434,4 +434,184 @@ public class RulesControllerTests : IDisposable
         templates.Should().Contain(t => t.Id == "max-delivery-exceeded");
         templates.Should().Contain(t => t.Id == "transient-network-errors");
     }
+
+    // ── GenerateRules ──────────────────────────────────────
+
+    [Fact]
+    public async Task GenerateRules_NoActiveMessages_ReturnsEmptySummary()
+    {
+        var result = await _controller.GenerateRules();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<GenerateRulesResponse>().Subject;
+
+        response.AnalysedMessages.Should().Be(0);
+        response.PatternsDetected.Should().Be(0);
+        response.RulesCreated.Should().Be(0);
+        response.RulesSkipped.Should().Be(0);
+        response.Rules.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GenerateRules_WithMatchingPatterns_CreatesRulesWithPersistedIds()
+    {
+        var namespaceId = Guid.NewGuid();
+        var reason = "Timeout while calling downstream payment gateway";
+
+        _dbContext.DlqMessages.AddRange(
+            new DlqMessage
+            {
+                MessageId = "msg-101",
+                SequenceNumber = 101,
+                BodyHash = "hash-101",
+                NamespaceId = namespaceId,
+                EntityName = "orders",
+                EntityType = ServiceBusEntityType.Queue,
+                EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-10),
+                DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-9),
+                DeadLetterReason = reason,
+                DeliveryCount = 3,
+                Status = DlqMessageStatus.Active,
+                FailureCategory = FailureCategory.Transient,
+            },
+            new DlqMessage
+            {
+                MessageId = "msg-102",
+                SequenceNumber = 102,
+                BodyHash = "hash-102",
+                NamespaceId = namespaceId,
+                EntityName = "orders",
+                EntityType = ServiceBusEntityType.Queue,
+                EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-8),
+                DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-7),
+                DeadLetterReason = reason,
+                DeliveryCount = 4,
+                Status = DlqMessageStatus.Active,
+                FailureCategory = FailureCategory.Transient,
+            },
+            new DlqMessage
+            {
+                MessageId = "msg-103",
+                SequenceNumber = 103,
+                BodyHash = "hash-103",
+                NamespaceId = namespaceId,
+                EntityName = "orders",
+                EntityType = ServiceBusEntityType.Queue,
+                EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-6),
+                DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5),
+                DeadLetterReason = reason,
+                DeliveryCount = 5,
+                Status = DlqMessageStatus.Active,
+                FailureCategory = FailureCategory.Transient,
+            });
+
+        await _dbContext.SaveChangesAsync();
+
+        _ruleEngine
+            .Setup(r => r.Evaluate(It.IsAny<DlqMessage>(), It.IsAny<IReadOnlyList<RuleCondition>>()))
+            .Returns(new RuleMatchResult
+            {
+                MessageId = 1,
+                ServiceBusMessageId = "msg",
+                EntityName = "orders",
+                IsMatch = true,
+            });
+
+        var result = await _controller.GenerateRules(namespaceId);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<GenerateRulesResponse>().Subject;
+
+        response.AnalysedMessages.Should().Be(3);
+        response.PatternsDetected.Should().BeGreaterThan(0);
+        response.RulesCreated.Should().BeGreaterThan(0);
+        response.Rules.Should().NotBeEmpty();
+        response.Rules.Should().OnlyContain(r => r.Id > 0);
+    }
+
+    [Fact]
+    public async Task GenerateRules_WhenPatternsAlreadyExist_SkipsDuplicates()
+    {
+        var namespaceId = Guid.NewGuid();
+        const string reason = "Quota exceeded on downstream API";
+
+        _dbContext.DlqMessages.AddRange(
+            new DlqMessage
+            {
+                MessageId = "msg-201",
+                SequenceNumber = 201,
+                BodyHash = "hash-201",
+                NamespaceId = namespaceId,
+                EntityName = "billing",
+                EntityType = ServiceBusEntityType.Queue,
+                EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-10),
+                DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-9),
+                DeadLetterReason = reason,
+                DeliveryCount = 2,
+                Status = DlqMessageStatus.Active,
+                FailureCategory = FailureCategory.Transient,
+            },
+            new DlqMessage
+            {
+                MessageId = "msg-202",
+                SequenceNumber = 202,
+                BodyHash = "hash-202",
+                NamespaceId = namespaceId,
+                EntityName = "billing",
+                EntityType = ServiceBusEntityType.Queue,
+                EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-8),
+                DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-7),
+                DeadLetterReason = reason,
+                DeliveryCount = 2,
+                Status = DlqMessageStatus.Active,
+                FailureCategory = FailureCategory.Transient,
+            });
+
+        var reasonConditionsJson = JsonSerializer.Serialize(
+            new List<RuleCondition>
+            {
+                new() { Field = "DeadLetterReason", Operator = "Contains", Value = reason }
+            },
+            JsonOptions);
+
+        var categoryConditionsJson = JsonSerializer.Serialize(
+            new List<RuleCondition>
+            {
+                new() { Field = "FailureCategory", Operator = "Equals", Value = FailureCategory.Transient.ToString() }
+            },
+            JsonOptions);
+
+        _dbContext.AutoReplayRules.AddRange(
+            new AutoReplayRule
+            {
+                Name = "Existing reason rule",
+                Description = "existing",
+                Enabled = true,
+                ConditionsJson = reasonConditionsJson,
+                ActionsJson = JsonSerializer.Serialize(new RuleAction { AutoReplay = true }, JsonOptions),
+                CreatedAt = DateTimeOffset.UtcNow,
+                MaxReplaysPerHour = 50,
+            },
+            new AutoReplayRule
+            {
+                Name = "Existing category rule",
+                Description = "existing",
+                Enabled = true,
+                ConditionsJson = categoryConditionsJson,
+                ActionsJson = JsonSerializer.Serialize(new RuleAction { AutoReplay = true }, JsonOptions),
+                CreatedAt = DateTimeOffset.UtcNow,
+                MaxReplaysPerHour = 50,
+            });
+
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _controller.GenerateRules(namespaceId);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<GenerateRulesResponse>().Subject;
+
+        response.AnalysedMessages.Should().Be(2);
+        response.RulesCreated.Should().Be(0);
+        response.RulesSkipped.Should().BeGreaterThanOrEqualTo(2);
+    }
 }

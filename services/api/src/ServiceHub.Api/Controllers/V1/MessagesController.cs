@@ -317,6 +317,10 @@ public sealed class MessagesController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
         
         // Check if namespace has Send permission
         if (!ns.HasSendPermission)

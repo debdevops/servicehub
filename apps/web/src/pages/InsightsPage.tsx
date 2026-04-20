@@ -49,6 +49,19 @@ export function InsightsPage() {
         </div>
       </div>
 
+      {/* Preview Banner */}
+      <div className="bg-amber-50 border-b border-amber-200 px-6 py-3 shrink-0">
+        <div className="flex items-center gap-3">
+          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-200 text-amber-800 text-xs font-bold">
+            !
+          </span>
+          <p className="text-sm text-amber-900">
+            <span className="font-semibold">Preview Mode:</span> This page displays sample data for demonstration purposes.
+            Actual AI insights will be available once production features are enabled.
+          </p>
+        </div>
+      </div>
+
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar */}

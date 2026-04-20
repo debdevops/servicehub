@@ -76,6 +76,11 @@ public sealed class TopicsController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
+
         if (ns.ConnectionString is null)
         {
             return BadRequest("Namespace does not have a connection string configured.");
@@ -134,6 +139,11 @@ public sealed class TopicsController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
+
         if (ns.ConnectionString is null)
         {
             return BadRequest("Namespace does not have a connection string configured.");
@@ -194,6 +204,10 @@ public sealed class TopicsController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
 
         // Check if namespace has Send permission (required to send messages)
         if (!ns.HasSendPermission)
@@ -244,7 +258,7 @@ public sealed class TopicsController : ApiControllerBase
     /// <param name="subscriptionName">The subscription name.</param>
     /// <param name="queueType">Queue type: active or deadletter.</param>
     /// <param name="skip">Number of items to skip.</param>
-    /// <param name="take">Number of items to take.</param>
+    /// <param name="take">Number of items to take (clamped to max 1000).</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A paginated list of messages.</returns>
     /// <response code="200">Messages retrieved successfully.</response>
@@ -389,6 +403,10 @@ public sealed class TopicsController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
         
         // Check if namespace has Send permission (required to dead-letter messages)
         if (!ns.HasSendPermission)

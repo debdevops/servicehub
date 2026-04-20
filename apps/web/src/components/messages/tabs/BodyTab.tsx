@@ -15,7 +15,7 @@ function formatJSON(jsonString: string): string {
   try {
     const parsed = JSON.parse(jsonString);
     return JSON.stringify(parsed, null, 2);
-  } catch (err) {
+  } catch {
     // If parsing fails, return original
     return jsonString;
   }
@@ -44,7 +44,7 @@ function highlightJSON(json: string): React.ReactNode {
           // Render line with syntax highlighting
           const renderLine = () => {
             // Just brackets/braces/commas
-            if (/^[{}\[\],]*$/.test(trimmed)) {
+            if (/^[{}[\],]*$/.test(trimmed)) {
               return (
                 <>
                   {indent}
@@ -112,7 +112,7 @@ function highlightJSON(json: string): React.ReactNode {
               return <span className="text-gray-500">{value}</span>;
             }
             // Array/Object start
-            else if (trimmedValue.match(/^[\[{]/)) {
+            else if (trimmedValue.match(/^[[{]/)) {
               return <span className="text-gray-400">{value}</span>;
             }
             // Default
@@ -129,7 +129,7 @@ function highlightJSON(json: string): React.ReactNode {
         })}
       </div>
     );
-  } catch (err) {
+  } catch {
     return <span className="text-gray-300">{json}</span>;
   }
 }
@@ -153,7 +153,7 @@ export function BodyTab({ body, contentType }: BodyTabProps) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.error('Failed to copy:', err);
+      if (import.meta.env.DEV) console.error('Failed to copy:', err);
     }
   };
 

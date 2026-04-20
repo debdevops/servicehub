@@ -15,9 +15,8 @@ import { useNamespaces } from '@/hooks/useNamespaces';
 import { dlqHistoryApi } from '@/lib/api/dlqHistory';
 import { HelpTooltip } from '@/components/help';
 import { tooltips } from '@/lib/helpContent';
-import type { ForensicBatchSummary } from '@/lib/api/dlqHistory';
 import toast from 'react-hot-toast';
-import { Zap, Shield } from 'lucide-react';
+import { Zap } from 'lucide-react';
 
 // ─── Inline Trend Chart (pure SVG, no chart library) ───────────────
 
@@ -135,8 +134,6 @@ export function DlqHistoryPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTimelineId, setSelectedTimelineId] = useState<number | null>(null);
   const [isScanning, setIsScanning] = useState(false);
-  const [isAnalysing, setIsAnalysing] = useState(false);
-  const [batchSummary, setBatchSummary] = useState<ForensicBatchSummary | null>(null);
 
   const pageSize = 50;
 
@@ -150,7 +147,42 @@ export function DlqHistoryPage() {
   }), [namespaceId, entityFilter, statusFilter, categoryFilter, page]);
 
   const { data, isLoading, refetch, isFetching } = useDlqHistory(params, !!namespaceId);
-  const { data: summary } = useDlqSummary(namespaceId);
+  const { data: summary, refetch: refetchSummary } = useDlqSummary(namespaceId);
+
+  // Auto-trigger initial scan when summary shows all zeros (no data in DB yet)
+  const [autoScanned, setAutoScanned] = useState(false);
+  useEffect(() => {
+    if (
+      !autoScanned &&
+      namespaceId &&
+      summary &&
+      summary.totalMessages === 0 &&
+      !isScanning
+    ) {
+      setAutoScanned(true);
+      setIsScanning(true);
+      dlqHistoryApi
+        .triggerScan(namespaceId)
+        .then((newCount) => {
+          setTimeout(() => {
+            refetch();
+            refetchSummary();
+            setIsScanning(false);
+            if (newCount > 0) {
+              toast.success(`Auto-scan found ${newCount} new DLQ message(s)`);
+            }
+          }, 1500);
+        })
+        .catch(() => {
+          setIsScanning(false);
+        });
+    }
+  }, [namespaceId, summary, autoScanned, isScanning, refetch, refetchSummary]);
+
+  // Reset auto-scan flag when namespace changes
+  useEffect(() => {
+    setAutoScanned(false);
+  }, [namespaceId]);
 
   const activeFilters = [statusFilter, categoryFilter, entityFilter].filter(Boolean).length;
 
@@ -184,28 +216,12 @@ export function DlqHistoryPage() {
         toast.success(newCount > 0 ? `Found ${newCount} new DLQ message(s)` : 'No new DLQ messages');
       }, 1500);
     } catch (error) {
-      console.error('Scan failed:', error);
+      if (import.meta.env.DEV) console.error('Scan failed:', error);
       toast.error('DLQ scan failed');
       setIsScanning(false);
     }
   };
 
-  const handleAnalyseAll = async () => {
-    if (!namespaceId || isAnalysing) return;
-    setIsAnalysing(true);
-    setBatchSummary(null);
-    try {
-      const result = await dlqHistoryApi.analyseBatch(namespaceId);
-      setBatchSummary(result);
-      refetch();
-      toast.success(`Analysed ${result.analysed} messages, updated ${result.updated}`);
-    } catch (error) {
-      console.error('Batch analysis failed:', error);
-      toast.error('Batch forensic analysis failed');
-    } finally {
-      setIsAnalysing(false);
-    }
-  };
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -251,15 +267,6 @@ export function DlqHistoryPage() {
               {isScanning ? 'Scanning...' : 'Scan Now'}
             </button>
             <button
-              onClick={handleAnalyseAll}
-              disabled={isAnalysing}
-              className="flex items-center gap-1.5 px-3 py-2 border border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-              title="Run forensic analysis on all active DLQ messages"
-            >
-              <Shield className={`w-4 h-4 ${isAnalysing ? 'animate-pulse' : ''}`} />
-              {isAnalysing ? 'Analysing...' : 'Analyse All'}
-            </button>
-            <button
               onClick={handleRefresh}
               disabled={isFetching}
               className="flex items-center gap-1.5 px-3 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
@@ -303,27 +310,6 @@ export function DlqHistoryPage() {
         {/* DLQ Trend Chart */}
         {summary?.dailyTrend && summary.dailyTrend.length > 0 && (
           <TrendChart trend={summary.dailyTrend} />
-        )}
-
-        {/* Batch Forensic Summary */}
-        {batchSummary && (
-          <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 mb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-purple-600" />
-                <span className="text-sm font-medium text-purple-800">
-                  Forensic Analysis: {batchSummary.analysed} analysed, {batchSummary.updated} updated
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-purple-600">
-                {Object.entries(batchSummary.byCategory).map(([cat, count]) => (
-                  <span key={cat} className="bg-purple-100 px-2 py-0.5 rounded-full">
-                    {cat}: {count}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
         )}
 
         {/* Filter Bar */}
@@ -463,3 +449,5 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
     </span>
   );
 }
+
+export default DlqHistoryPage;

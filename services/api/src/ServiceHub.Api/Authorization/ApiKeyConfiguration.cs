@@ -51,4 +51,10 @@ public sealed class ApiKeyConfiguration
     {
         return Key.Length > 8 ? $"{Key[..8]}***" : "***";
     }
+
+    /// <summary>
+    /// Returns true if this key has admin (unrestricted) access — i.e. no explicit scopes were defined.
+    /// Admin keys share the SPA owner scope so they see the same namespace pool as the browser.
+    /// </summary>
+    public bool IsAdminKey => Scopes == null || Scopes.Length == 0;
 }

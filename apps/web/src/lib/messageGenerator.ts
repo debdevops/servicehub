@@ -31,7 +31,7 @@ export type AnomalyType =
 export interface GeneratedMessage {
   body: string;
   contentType: string;
-  properties: Record<string, any>;
+  properties: Record<string, unknown>;
   correlationId: string;
   sessionId?: string;
   scenario: MessageScenario;
@@ -785,7 +785,7 @@ export function generateMessages(config: GenerationConfig): GeneratedMessage[] {
 
 export const GENERATOR_PROPERTY_KEY = GENERATOR_TAG;
 
-export function isGeneratedMessage(properties: Record<string, any>): boolean {
+export function isGeneratedMessage(properties: Record<string, unknown>): boolean {
   return properties[GENERATOR_TAG] === 'true';
 }
 

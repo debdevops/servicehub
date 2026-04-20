@@ -151,11 +151,6 @@ function isSilent404(url: string): boolean {
     '/%24deadletterqueue', // URL-encoded version
   ];
   
-  // Special check for message-specific operations (DELETE /messages/{id})
-  if (url.match(/\/messages\/[a-f0-9-]+$/i)) {
-    return true;
-  }
-  
   return silentPatterns.some(pattern => url.includes(pattern));
 }
 
@@ -225,11 +220,17 @@ apiClient.interceptors.response.use(
         break;
       }
       case 404: {
-        // Silently handle 404s for known missing endpoints
         if (!isSilent404(url)) {
-          // Only log warnings for unexpected 404s in development
-          if (import.meta.env.DEV) {
-            console.warn(`Resource not found: ${url}`);
+          // Show feedback for message operation 404s (replay, dead-letter, cancel)
+          const isMessageOp = url.match(/\/messages\/[a-f0-9-]+/i);
+          const errorKey = `404-${url}`;
+          if (shouldShowError(errorKey)) {
+            toast.error(
+              isMessageOp
+                ? 'Message not found — it may have been consumed, expired, or already replayed.'
+                : 'Resource not found.',
+              { duration: 4000 }
+            );
           }
         }
         break;

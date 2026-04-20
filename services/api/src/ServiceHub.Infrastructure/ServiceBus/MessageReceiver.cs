@@ -183,7 +183,7 @@ public sealed class MessageReceiver : IMessageReceiver
     }
 
     /// <inheritdoc/>
-    public Task<Result<long>> GetMessageCountAsync(
+    public async Task<Result<long>> GetMessageCountAsync(
         Guid namespaceId,
         string entityName,
         string? subscriptionName = null,
@@ -191,28 +191,60 @@ public sealed class MessageReceiver : IMessageReceiver
     {
         if (namespaceId == Guid.Empty)
         {
-            return Task.FromResult(Result.Failure<long>(Error.Validation(
+            return Result.Failure<long>(Error.Validation(
                 ErrorCodes.Namespace.NotFound,
-                "Namespace ID is required.")));
+                "Namespace ID is required."));
         }
 
         if (string.IsNullOrWhiteSpace(entityName))
         {
-            return Task.FromResult(Result.Failure<long>(Error.Validation(
+            return Result.Failure<long>(Error.Validation(
                 ErrorCodes.Message.QueueNameRequired,
-                "Queue or topic name is required.")));
+                "Queue or topic name is required."));
         }
 
-        // Message count requires ServiceBusAdministrationClient which needs the connection string
-        // For now, return an indication that this feature requires admin access
-        _logger.LogWarning(
-            "GetMessageCountAsync is not yet implemented for namespace {NamespaceId}, entity {EntityName}",
-            namespaceId,
-            LogRedactor.SanitiseForLog(entityName));
+        var clientResult = await GetClientWrapperAsync(namespaceId, cancellationToken).ConfigureAwait(false);
+        if (clientResult.IsFailure)
+        {
+            return Result.Failure<long>(clientResult.Error);
+        }
 
-        return Task.FromResult(Result.Failure<long>(Error.Internal(
-            ErrorCodes.General.UnexpectedError,
-            "Message count retrieval is not yet implemented. This feature requires the Service Bus Administration API.")));
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(subscriptionName))
+            {
+                var subResult = await clientResult.Value
+                    .GetSubscriptionAsync(entityName, subscriptionName, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (subResult.IsFailure)
+                    return Result.Failure<long>(subResult.Error);
+
+                return Result.Success(subResult.Value.ActiveMessageCount);
+            }
+            else
+            {
+                var queueResult = await clientResult.Value
+                    .GetQueueAsync(entityName, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (queueResult.IsFailure)
+                    return Result.Failure<long>(queueResult.Error);
+
+                return Result.Success(queueResult.Value.ActiveMessageCount);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Unexpected error getting message count for {EntityName} in namespace {NamespaceId}",
+                LogRedactor.SanitiseForLog(entityName),
+                namespaceId);
+
+            return Result.Failure<long>(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while retrieving the message count."));
+        }
     }
 
     /// <inheritdoc/>
@@ -453,6 +485,62 @@ public sealed class MessageReceiver : IMessageReceiver
             return Result.Failure(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
                 "An unexpected error occurred while purging the message."));
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<IReadOnlyList<Message>>> GetScheduledMessagesAsync(
+        Guid namespaceId,
+        string entityName,
+        string? subscriptionName,
+        int maxMessages,
+        CancellationToken cancellationToken = default)
+    {
+        if (namespaceId == Guid.Empty)
+        {
+            return Result.Failure<IReadOnlyList<Message>>(Error.Validation(
+                ErrorCodes.Namespace.NotFound,
+                "Namespace ID is required."));
+        }
+
+        if (string.IsNullOrWhiteSpace(entityName))
+        {
+            return Result.Failure<IReadOnlyList<Message>>(Error.Validation(
+                ErrorCodes.Message.QueueNameRequired,
+                "Queue or topic name is required."));
+        }
+
+        var clientResult = await GetClientWrapperAsync(namespaceId, cancellationToken).ConfigureAwait(false);
+        if (clientResult.IsFailure)
+        {
+            return Result.Failure<IReadOnlyList<Message>>(clientResult.Error);
+        }
+
+        try
+        {
+            var result = await _resiliencePipeline.ExecuteAsync(async ct =>
+                await clientResult.Value.GetScheduledMessagesAsync(entityName, subscriptionName, maxMessages, ct).ConfigureAwait(false),
+                cancellationToken).ConfigureAwait(false);
+
+            if (result.IsFailure)
+            {
+                return result;
+            }
+
+            _logger.LogDebug(
+                "Found {Count} scheduled messages in {EntityName} for namespace {NamespaceId}",
+                result.Value.Count,
+                LogRedactor.SanitiseForLog(entityName),
+                namespaceId);
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error retrieving scheduled messages");
+            return Result.Failure<IReadOnlyList<Message>>(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while retrieving scheduled messages."));
         }
     }
 }

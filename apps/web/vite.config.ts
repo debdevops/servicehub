@@ -69,6 +69,29 @@ export default defineConfig({
     // This means one dotnet publish produces both the API and the SPA.
     outDir: '../../services/api/src/ServiceHub.Api/wwwroot',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Code splitting strategy: extract heavy dependencies and pages into separate chunks
+        // This reduces initial bundle size and improves cold-start performance on Azure App Service
+        manualChunks: (id: string) => {
+          // Vendor chunk for heavy UI libraries
+          if (id.includes('node_modules/recharts') || 
+              id.includes('node_modules/@tanstack/react-table') || 
+              id.includes('node_modules/@tanstack/react-virtual')) {
+            return 'vendor-ui';
+          }
+          // Routing and HTTP
+          if (id.includes('node_modules/react-router-dom') || 
+              id.includes('node_modules/axios')) {
+            return 'vendor-http';
+          }
+          // Heavy pages (lazy loaded)
+          if (id.includes('src/pages/DashboardPage.tsx')) return 'page-dashboard';
+          if (id.includes('src/pages/CorrelationExplorerPage.tsx')) return 'page-correlation';
+          if (id.includes('src/pages/DlqHistoryPage.tsx')) return 'page-dlq-history';
+        },
+      },
+    },
   },
   test: {
     globals: true,
@@ -100,6 +123,15 @@ export default defineConfig({
         // single-line QueryClient instantiation
         'src/lib/queryClient.ts',
       ],
+      // ── Code Coverage Thresholds ────────────────────────────────────────
+      // BUILD WILL FAIL if coverage falls below these minimums
+      // This ensures code quality and prevents coverage regression
+      thresholds: {
+        lines: 60,       // Minimum 60% line coverage
+        functions: 60,   // Minimum 60% function coverage
+        branches: 50,    // Minimum 50% branch coverage
+        statements: 60,  // Minimum 60% statement coverage
+      },
     },
   },
 })

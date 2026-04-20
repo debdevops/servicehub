@@ -3,6 +3,8 @@ import {
   ChevronDown,
   ChevronRight,
   Inbox,
+  LayoutDashboard,
+  GitMerge,
   Plus,
   AlertCircle,
   Clock,
@@ -13,6 +15,7 @@ import {
   Zap,
   Activity,
   HelpCircle,
+  Shield,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useState } from 'react';
@@ -21,6 +24,8 @@ import { useQueues } from '@/hooks/useQueues';
 import { useTopics } from '@/hooks/useTopics';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useInsightsSummary } from '@/hooks/useInsights';
+import { useQueries } from '@tanstack/react-query';
+import { apiClient } from '@/lib/api/client';
 
 interface NamespaceItemProps {
   namespace: {
@@ -68,11 +73,12 @@ function QueueItem({ queue, namespaceId }: QueueItemProps) {
       key={queue.name}
       to={`/messages?namespace=${namespaceId}&queue=${queue.name}`}
       className={({ isActive }) => {
-        // Only show selected state if this exact queue is in the route (not just namespace)
+        // Only show selected state if this exact queue in this exact namespace is in the route
         const searchParams = new URLSearchParams(window.location.search);
+        const namespaceParam = searchParams.get('namespace');
         const queueParam = searchParams.get('queue');
         const topicParam = searchParams.get('topic');
-        const isExactMatch = isActive && queueParam === queue.name && !topicParam;
+        const isExactMatch = isActive && namespaceParam === namespaceId && queueParam === queue.name && !topicParam;
         
         return `flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${
           isExactMatch
@@ -83,9 +89,10 @@ function QueueItem({ queue, namespaceId }: QueueItemProps) {
     >
       {() => {
         const searchParams = new URLSearchParams(window.location.search);
+        const namespaceParam = searchParams.get('namespace');
         const queueParam = searchParams.get('queue');
         const topicParam = searchParams.get('topic');
-        const isExactMatch = queueParam === queue.name && !topicParam;
+        const isExactMatch = namespaceParam === namespaceId && queueParam === queue.name && !topicParam;
         
         return (
         <>
@@ -179,11 +186,12 @@ function SubscriptionItem({ subscription, namespaceId, topicName }: Subscription
     <NavLink
       to={`/messages?namespace=${namespaceId}&topic=${topicName}&subscription=${subscription.name}`}
       className={({ isActive }) => {
-        // Only show selected state if this exact subscription is in the route
+        // Only show selected state if this exact subscription in this exact namespace is in the route
         const searchParams = new URLSearchParams(window.location.search);
+        const namespaceParam = searchParams.get('namespace');
         const subscriptionParam = searchParams.get('subscription');
         const topicParam = searchParams.get('topic');
-        const isExactMatch = isActive && subscriptionParam === subscription.name && topicParam === topicName;
+        const isExactMatch = isActive && namespaceParam === namespaceId && subscriptionParam === subscription.name && topicParam === topicName;
         
         return `flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${
           isExactMatch
@@ -194,9 +202,10 @@ function SubscriptionItem({ subscription, namespaceId, topicName }: Subscription
     >
       {() => {
         const searchParams = new URLSearchParams(window.location.search);
+        const namespaceParam = searchParams.get('namespace');
         const subscriptionParam = searchParams.get('subscription');
         const topicParam = searchParams.get('topic');
-        const isExactMatch = subscriptionParam === subscription.name && topicParam === topicName;
+        const isExactMatch = namespaceParam === namespaceId && subscriptionParam === subscription.name && topicParam === topicName;
         
         return (
           <>
@@ -353,12 +362,42 @@ export function Sidebar() {
   const { data: namespaces, isLoading, refetch } = useNamespaces();
   const [quickAccessOpen, setQuickAccessOpen] = useState(false);
   
+  // Detect demo mode from URL
+  const isDemo = new URLSearchParams(window.location.search).get('demo') === 'true';
+  
   // Get active namespace for Quick Access
   const activeNamespace = namespaces?.find(ns => ns.isActive);
   
   // Fetch queues and topics for Quick Access buttons
   const { data: queues } = useQueues(activeNamespace?.id || '');
   const { data: topics } = useTopics(activeNamespace?.id || '');
+
+  // Aggregate DLQ counts across all namespaces using the stats endpoint (includes subscription DLQs)
+  const allNamespaceIds = namespaces?.map(ns => ns.id) ?? [];
+  const allStatsResults = useQueries({
+    queries: allNamespaceIds.map(id => ({
+      queryKey: ['namespace-stats', id] as const,
+      queryFn: async () => {
+        const response = await apiClient.get<{
+          totalQueues: number;
+          totalTopics: number;
+          totalSubscriptions: number;
+          totalActive: number;
+          totalDlq: number;
+          totalScheduled: number;
+        }>(`/namespaces/${id}/stats`, { _silent: true } as Record<string, unknown>);
+        return response.data;
+      },
+      enabled: !!id,
+      staleTime: 2000,
+      refetchInterval: 7000,
+      refetchIntervalInBackground: false,
+    })),
+  });
+  const totalDlqCount = allStatsResults.reduce((total, result) => {
+    if (!result.data) return total;
+    return total + result.data.totalDlq;
+  }, 0);
 
   return (
     <aside className="w-[260px] bg-white border-r border-gray-200 flex flex-col overflow-hidden" data-tour="sidebar">
@@ -408,6 +447,30 @@ export function Sidebar() {
             </NavLink>
           </div>
         )}
+
+        {/* Demo Mode Namespace */}
+        {isDemo && (
+          <div className="mb-2">
+            <div className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200">
+              <div className="w-2 h-2 rounded-full bg-blue-500" />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm text-blue-900">Demo Namespace</div>
+                <div className="text-xs text-blue-500">Sample data</div>
+              </div>
+            </div>
+            <div className="mt-1 ml-4 space-y-0.5">
+              {['orders-queue', 'payment-queue', 'notification-queue'].map((q) => (
+                <NavLink
+                  key={q}
+                  to={`/messages?demo=true&queue=${q}`}
+                  className="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm bg-white text-gray-700 hover:bg-sky-50 hover:text-sky-700 border border-gray-200 hover:border-sky-300 transition-all duration-200"
+                >
+                  <span className="truncate">{q}</span>
+                </NavLink>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Quick Filters — collapsible so Service Bus entities stay visible */}
@@ -422,6 +485,26 @@ export function Sidebar() {
         </button>
         {quickAccessOpen && (
         <nav className="space-y-1 px-3 pb-3">
+          {/* Dashboard - moved to top */}
+          <NavLink
+            to="/dashboard"
+            className={({ isActive }) =>
+              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                isActive
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-300 font-medium'
+                  : 'bg-white hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 border-gray-200 hover:border-indigo-300'
+              }`
+            }
+          >
+            <LayoutDashboard className="w-4 h-4 text-indigo-500" />
+            <span className="flex-1 text-left">Dashboard</span>
+            {totalDlqCount > 0 && (
+              <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium">
+                {totalDlqCount}
+              </span>
+            )}
+          </NavLink>
+
           <button
             onClick={() => {
               const activeNamespace = namespaces?.find(ns => ns.isActive);
@@ -506,26 +589,53 @@ export function Sidebar() {
             <span className="flex-1 text-left">System Health</span>
             <span className="text-xs text-emerald-600 font-medium">Status</span>
           </NavLink>
-          <button
-            onClick={() => {
-              toast('Scheduled messages feature coming soon!', {
-                icon: '⏰',
-                duration: 2000
-              });
-            }}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border border-gray-200 hover:border-sky-300 shadow-sm opacity-75"
+          <NavLink
+            to="/scheduled"
+            className={({ isActive }) =>
+              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                isActive
+                  ? 'bg-sky-50 text-sky-700 border-sky-300 font-medium'
+                  : 'bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border-gray-200 hover:border-sky-300'
+              }`
+            }
           >
             <Clock className="w-4 h-4 text-sky-500" />
             <span className="flex-1 text-left">Scheduled</span>
-            <span className="text-xs text-gray-400 font-medium">Soon</span>
-          </button>
+            <span className="text-xs text-sky-600 font-medium">View</span>
+          </NavLink>
+          <NavLink
+            to="/correlation"
+            className={({ isActive }) =>
+              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                isActive
+                  ? 'bg-violet-50 text-violet-700 border-violet-300'
+                  : 'bg-white hover:bg-violet-50 text-gray-700 hover:text-violet-700 border-gray-200 hover:border-violet-300'
+              }`
+            }
+          >
+            <GitMerge className="w-4 h-4 text-violet-500" />
+            <span className="flex-1 text-left">Correlation</span>
+          </NavLink>
           <NavLink
             to="/help"
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border border-gray-200 hover:border-primary-300 shadow-sm"
           >
             <HelpCircle className="w-4 h-4 text-primary-500" />
-            <span className="flex-1 text-left">Help & Guide</span>
+            <span className="flex-1 text-left">Help &amp; Guide</span>
             <span className="text-xs text-primary-600 font-medium">?</span>
+          </NavLink>
+          <NavLink
+            to="/security"
+            className={({ isActive }) =>
+              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                isActive
+                  ? 'bg-green-50 text-green-700 border-green-300'
+                  : 'bg-white hover:bg-green-50 text-gray-700 hover:text-green-700 border-gray-200 hover:border-green-300'
+              }`
+            }
+          >
+            <Shield className="w-4 h-4 text-green-500" />
+            <span className="flex-1 text-left">Security &amp; Privacy</span>
           </NavLink>
         </nav>
         )}

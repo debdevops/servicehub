@@ -1,6 +1,7 @@
 export { useTabPersistence } from './useTabPersistence';
 export type { DetailTab } from './useTabPersistence';
-export { useQueues } from './useQueues';
+export { useQueues, useAllNamespacesQueues } from './useQueues';
+export type { NamespaceQueueStats } from './useQueues';
 export { useTopics } from './useTopics';
 export { useSubscriptions } from './useSubscriptions';
 export { useNamespaces } from './useNamespaces';

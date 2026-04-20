@@ -18,6 +18,7 @@ interface MessageFABProps {
   entityType?: 'queue' | 'topic';
   topicName?: string | null;
   subscriptionName?: string | null;
+  environment?: string | null;
   onMessageSent?: (payload: MessagePayload) => void;
   onMessagesGenerated?: () => void;
 }
@@ -30,9 +31,11 @@ export function MessageFAB({
   entityType = 'queue',
   topicName,
   subscriptionName,
+  environment,
   onMessageSent,
   onMessagesGenerated,
 }: MessageFABProps) {
+  const isProd = environment?.toLowerCase() === 'prod';
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [isDeadLettering, setIsDeadLettering] = useState(false);
@@ -155,10 +158,11 @@ export function MessageFAB({
       } else if (result && result.deadLetteredCount === 0) {
         toast('No messages available to dead-letter', { icon: 'ℹ️' });
       }
-    } catch (error: any) {
-      const errorDetail = error?.response?.data?.detail || error?.response?.data?.message || error?.message || 'Failed to dead-letter messages';
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string; message?: string } }; message?: string };
+      const errorDetail = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Failed to dead-letter messages';
       toast.error(`DLQ Error: ${errorDetail}`);
-      console.error('Dead-letter error:', error);
+      if (import.meta.env.DEV) console.error('Dead-letter error:', error);
     } finally {
       setIsDeadLettering(false);
     }
@@ -215,32 +219,38 @@ export function MessageFAB({
             </div>
           </button>
 
+          {isProd && (
+            <div className="px-3 py-1.5 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg mb-2 flex items-center gap-1.5">
+              <span>⚠</span> Production — destructive actions disabled
+            </div>
+          )}
+
           {/* Dead-Letter Messages Option */}
           <button
-            onClick={handleDeadLetter}
-            disabled={!hasValidEntity || isDeadLettering}
+            onClick={isProd ? undefined : handleDeadLetter}
+            disabled={!hasValidEntity || isDeadLettering || isProd}
             className={`
               flex items-center gap-3
               px-4 py-3
               border rounded-xl shadow-lg
               transition-all duration-150
               group
-              ${!hasValidEntity 
-                ? 'bg-gray-100 border-gray-200 cursor-not-allowed opacity-60'
+              ${!hasValidEntity || isProd
+                ? 'bg-gray-100 border-gray-200 cursor-not-allowed opacity-50'
                 : 'bg-white hover:bg-red-50 border-gray-200 hover:border-red-300 hover:shadow-xl'
               }
             `}
-            title="For testing: moves up to 3 messages from the active queue to the dead-letter queue"
+            title={isProd ? 'Quick Actions are disabled for Production namespaces' : 'For testing: moves up to 3 messages from the active queue to the dead-letter queue'}
           >
             <div className={`p-2 rounded-lg transition-colors ${
-              !hasValidEntity 
+              !hasValidEntity || isProd
                 ? 'bg-gray-200' 
                 : 'bg-red-100 group-hover:bg-red-200'
             }`}>
-              <Skull className={`w-5 h-5 ${!hasValidEntity ? 'text-gray-400' : 'text-red-600'}`} />
+              <Skull className={`w-5 h-5 ${!hasValidEntity || isProd ? 'text-gray-400' : 'text-red-600'}`} />
             </div>
             <div className="text-left">
-              <div className={`text-sm font-semibold ${!hasValidEntity ? 'text-gray-400' : 'text-gray-800'}`}>
+              <div className={`text-sm font-semibold ${!hasValidEntity || isProd ? 'text-gray-400' : 'text-gray-800'}`}>
                 {isDeadLettering ? 'Moving...' : 'Test DLQ'}
               </div>
               <div className="text-xs text-gray-500 max-w-[180px]">
@@ -252,15 +262,19 @@ export function MessageFAB({
           {/* Generate Messages Option */}
           <button
             onClick={handleOpenGenerate}
-            className="
+            disabled={isProd}
+            className={`
               flex items-center gap-3
               px-4 py-3
-              bg-white hover:bg-amber-50
-              border border-gray-200 hover:border-amber-300
-              rounded-xl shadow-lg hover:shadow-xl
+              border rounded-xl shadow-lg
               transition-all duration-150
               group
-            "
+              ${isProd
+                ? 'bg-gray-100 border-gray-200 cursor-not-allowed opacity-50'
+                : 'bg-white hover:bg-amber-50 border-gray-200 hover:border-amber-300 hover:shadow-xl'
+              }
+            `}
+            title={isProd ? 'Quick Actions are disabled for Production namespaces' : undefined}
           >
             <div className="p-2 bg-amber-100 rounded-lg group-hover:bg-amber-200 transition-colors">
               <Wand2 className="w-5 h-5 text-amber-600" />
@@ -274,15 +288,19 @@ export function MessageFAB({
           {/* Send Message Option */}
           <button
             onClick={handleOpenSend}
-            className="
+            disabled={isProd}
+            className={`
               flex items-center gap-3
               px-4 py-3
-              bg-white hover:bg-sky-50
-              border border-gray-200 hover:border-sky-300
-              rounded-xl shadow-lg hover:shadow-xl
+              border rounded-xl shadow-lg
               transition-all duration-150
               group
-            "
+              ${isProd
+                ? 'bg-gray-100 border-gray-200 cursor-not-allowed opacity-50'
+                : 'bg-white hover:bg-sky-50 border-gray-200 hover:border-sky-300 hover:shadow-xl'
+              }
+            `}
+            title={isProd ? 'Quick Actions are disabled for Production namespaces' : undefined}
           >
             <div className="p-2 bg-sky-100 rounded-lg group-hover:bg-sky-200 transition-colors">
               <Send className="w-5 h-5 text-sky-600" />

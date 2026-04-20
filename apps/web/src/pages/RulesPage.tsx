@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Plus, Zap, RefreshCw, ToggleLeft, ToggleRight, Pencil, Trash2, FlaskConical, Play, AlertTriangle, X, Shield } from 'lucide-react';
+import { Plus, Zap, RefreshCw, ToggleLeft, ToggleRight, Pencil, Trash2, FlaskConical, Play, AlertTriangle, X, Shield, Brain } from 'lucide-react';
 import { RuleBuilderDialog, TemplateGalleryDialog, RuleTestDialog } from '@/components/rules';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { HelpTooltip } from '@/components/help';
 import { tooltips } from '@/lib/helpContent';
 import {
@@ -10,6 +11,7 @@ import {
   useDeleteRule,
   useToggleRule,
   useReplayAll,
+  useGenerateRules,
 } from '@/hooks/useRules';
 import type {
   RuleResponse,
@@ -26,6 +28,7 @@ export function RulesPage() {
   const deleteMutation = useDeleteRule();
   const toggleMutation = useToggleRule();
   const replayAllMutation = useReplayAll();
+  const generateMutation = useGenerateRules();
 
   // Dialog state
   const [showBuilder, setShowBuilder] = useState(false);
@@ -34,6 +37,7 @@ export function RulesPage() {
   const [editRule, setEditRule] = useState<RuleResponse | null>(null);
   const [testRule, setTestRule] = useState<RuleResponse | null>(null);
   const [replayAllRule, setReplayAllRule] = useState<RuleResponse | null>(null);
+  const [deleteRule, setDeleteRule] = useState<RuleResponse | null>(null);
   const [templatePrefill, setTemplatePrefill] = useState<{
     conditions: RuleCondition[];
     action: RuleAction;
@@ -75,9 +79,14 @@ export function RulesPage() {
   };
 
   const handleDelete = (rule: RuleResponse) => {
-    if (confirm(`Delete rule "${rule.name}"? This cannot be undone.`)) {
-      deleteMutation.mutate(rule.id);
-    }
+    setDeleteRule(rule);
+  };
+
+  const confirmDelete = () => {
+    if (!deleteRule) return;
+    deleteMutation.mutate(deleteRule.id, {
+      onSettled: () => setDeleteRule(null),
+    });
   };
 
   const handleReplayAll = (rule: RuleResponse) => {
@@ -106,6 +115,15 @@ export function RulesPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => generateMutation.mutate(undefined)}
+              disabled={generateMutation.isPending}
+              className="flex items-center gap-1.5 px-3 py-2 bg-violet-50 border border-violet-200 rounded-lg text-sm text-violet-700 hover:bg-violet-100 transition-colors disabled:opacity-50"
+              title="Analyse DLQ patterns and automatically create smart rules"
+            >
+              <Brain className={`w-4 h-4 ${generateMutation.isPending ? 'animate-pulse' : ''}`} />
+              {generateMutation.isPending ? 'Analysing...' : 'Generate Intelligent Rules'}
+            </button>
             <button
               onClick={() => setShowTemplates(true)}
               className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
@@ -155,6 +173,8 @@ export function RulesPage() {
           <EmptyState
             onCreate={handleCreate}
             onBrowseTemplates={() => setShowTemplates(true)}
+            onGenerateRules={() => generateMutation.mutate(undefined)}
+            isGenerating={generateMutation.isPending}
           />
         )}
       </div>
@@ -187,6 +207,17 @@ export function RulesPage() {
         isExecuting={replayAllMutation.isPending}
         onConfirm={confirmReplayAll}
         onCancel={() => setReplayAllRule(null)}
+      />
+
+      <ConfirmDialog
+        isOpen={deleteRule !== null}
+        title="Delete Rule"
+        message={`Delete rule "${deleteRule?.name}"? This cannot be undone. Rules that have already matched messages will lose their history statistics.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteRule(null)}
       />
     </div>
   );
@@ -232,6 +263,11 @@ function RuleCard({
               rule.enabled ? 'bg-green-400' : 'bg-gray-300'
             }`}
           />
+          {rule.name.startsWith('Auto:') && (
+            <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-bold text-violet-700 bg-violet-100 border border-violet-200 rounded">
+              AI
+            </span>
+          )}
           <h3 className="text-sm font-bold text-gray-900 truncate">{rule.name}</h3>
         </div>
         <button
@@ -357,19 +393,31 @@ function RuleCard({
 function EmptyState({
   onCreate,
   onBrowseTemplates,
+  onGenerateRules,
+  isGenerating,
 }: {
   onCreate: () => void;
   onBrowseTemplates: () => void;
+  onGenerateRules: () => void;
+  isGenerating: boolean;
 }) {
   return (
     <div className="py-16 text-center">
-      <Zap className="w-12 h-12 text-primary-300 mx-auto mb-4" />
+      <Brain className="w-12 h-12 text-violet-300 mx-auto mb-4" />
       <h3 className="text-lg font-semibold text-gray-900 mb-1">No auto-replay rules yet</h3>
       <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">
-        Create rules that automatically replay dead-letter messages when they match specific
-        conditions. Start from scratch or use a template.
+        Let ServiceHub analyse your DLQ messages and automatically create intelligent replay rules,
+        or create rules manually from scratch or templates.
       </p>
       <div className="flex items-center justify-center gap-3">
+        <button
+          onClick={onGenerateRules}
+          disabled={isGenerating}
+          className="flex items-center gap-1.5 px-4 py-2 bg-violet-500 hover:bg-violet-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+        >
+          <Brain className={`w-4 h-4 ${isGenerating ? 'animate-pulse' : ''}`} />
+          {isGenerating ? 'Analysing DLQ Patterns...' : 'Generate Intelligent Rules'}
+        </button>
         <button
           onClick={onBrowseTemplates}
           className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
@@ -379,7 +427,7 @@ function EmptyState({
         </button>
         <button
           onClick={onCreate}
-          className="flex items-center gap-1.5 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors"
+          className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
         >
           <Plus className="w-4 h-4" />
           Create Rule
@@ -459,8 +507,8 @@ function ReplayAllConfirmDialog({
             <div className="flex items-start gap-2.5">
               <Shield className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
               <div className="text-sm text-gray-700">
-                <strong className="text-red-700">Messages will be removed from the DLQ</strong> and
-                re-sent to their original queue/topic. This cannot be undone.
+                <strong className="text-red-700">Messages will be moved from the DLQ back to the active queue.</strong>{' '}
+                This cannot be undone. The <strong>active message count will increase</strong> — this is expected.
               </div>
             </div>
             <div className="flex items-start gap-2.5">

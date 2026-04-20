@@ -1,9 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
 
-export type DetailTab = 'properties' | 'body' | 'ai' | 'forensic' | 'headers';
+export type DetailTab = 'properties' | 'body' | 'ai' | 'headers';
 
 const STORAGE_KEY = 'servicehub:detail-tab';
-const VALID_TABS: DetailTab[] = ['properties', 'body', 'ai', 'forensic', 'headers'];
+const VALID_TABS: DetailTab[] = ['properties', 'body', 'ai', 'headers'];
 const DEFAULT_TAB: DetailTab = 'properties';
 
 /**
@@ -24,7 +24,7 @@ export function useTabPersistence(): [DetailTab, (tab: DetailTab) => void] {
       }
     } catch {
       // localStorage might be unavailable or throw
-      console.warn('Failed to read tab persistence from localStorage');
+      if (import.meta.env.DEV) console.warn('Failed to read tab persistence from localStorage');
     }
     
     return DEFAULT_TAB;
@@ -33,7 +33,7 @@ export function useTabPersistence(): [DetailTab, (tab: DetailTab) => void] {
   // Persist to localStorage when tab changes
   const setActiveTab = useCallback((tab: DetailTab) => {
     if (!VALID_TABS.includes(tab)) {
-      console.warn(`Invalid tab "${tab}", falling back to "${DEFAULT_TAB}"`);
+      if (import.meta.env.DEV) console.warn(`Invalid tab "${tab}", falling back to "${DEFAULT_TAB}"`);
       tab = DEFAULT_TAB;
     }
     
@@ -42,7 +42,7 @@ export function useTabPersistence(): [DetailTab, (tab: DetailTab) => void] {
     try {
       localStorage.setItem(STORAGE_KEY, tab);
     } catch {
-      console.warn('Failed to persist tab to localStorage');
+      if (import.meta.env.DEV) console.warn('Failed to persist tab to localStorage');
     }
   }, []);
 

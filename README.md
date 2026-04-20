@@ -4,17 +4,26 @@
 
 ### The Forensic Debugger for Azure Service Bus
 
-**See what's inside your queues — not just message counts.**
+**See what's REALLY inside your queues. Browse, search, replay, and analyze messages in real time — everything the Azure Portal can't show you.**
 
-![ServiceHub Demo](docs/screenshots/servicehub-demo.gif)
+</div>
+
+<div align="center">
+
+![ServiceHub Demo](docs/screenshots/ServiceHub-Demo.gif)
+
+</div>
+
+<div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10-purple.svg)](https://dotnet.microsoft.com/)
-[![React 18](https://img.shields.io/badge/React-18-61dafb.svg)](https://react.dev/)
+[![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6.svg)](https://www.typescriptlang.org/)
+[![Version](https://img.shields.io/badge/version-3.1.0-brightgreen.svg)](.version)
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Azure-0078D4.svg)](https://app-servicehub-prod.azurewebsites.net/)
 
-[Live Demo](https://app-servicehub-prod.azurewebsites.net/) · [Get Started](#-quick-start) · [Features](#-features) · [Screenshots](#-screenshots) · [API Docs](#-api-documentation) · [Contributing](#-contributing)
+[🚀 Live Demo](https://app-servicehub-prod.azurewebsites.net/) · [⚡ Quick Start](#-quick-start) · [✨ Features](#-features) · [📸 Screenshots](#-screenshots) · [🏗️ Architecture](#-architecture) · [🤝 Contributing](#-contributing)
 
 </div>
 
@@ -22,220 +31,162 @@
 
 ## Why ServiceHub?
 
-Production breaks at 2 AM. Azure Portal shows **5,000 messages in Dead-Letter Queue** but you can't read them — only counts and metadata. You manually sample messages one by one, spending hours on what should take minutes.
+Production breaks at 2 AM. Azure Portal shows **5,000 messages in Dead-Letter Queue** — but you can't read them, only counts. You manually sample messages one by one, spending hours on what should take minutes.
 
-**ServiceHub is a self-hosted web application that lets you browse, search, and analyze Azure Service Bus messages in real time** — like email for your message queues.
+**ServiceHub is a self-hosted web application that gives engineers full forensic visibility into Azure Service Bus** — like a debugger, but for your message queues.
 
 | Capability | Azure Portal | ServiceHub |
 |---|---|---|
-| View message content | Count only | Full body + properties |
-| Search messages | Not available | Full-text search |
-| DLQ investigation | One at a time | Batch analysis + AI |
-| Pattern detection | Not available | AI-powered clustering |
-| Replay from DLQ | Not available | One-click replay |
-| Access | Cloud portal | Any browser |
+| View message body & content | ❌ Count only | ✅ Full body + syntax highlighting |
+| Search across message content | ❌ Not available | ✅ Real-time full-text search |
+| Dead-letter queue investigation | ❌ One at a time | ✅ Batch analysis + AI patterns |
+| AI pattern detection | ❌ Not available | ✅ Client-side clustering, zero data sent |
+| Replay from DLQ | ❌ Not available | ✅ One-click or auto-replay rules |
+| Multi-namespace support | ❌ Portal only | ✅ Manage multiple connections |
+| Correlation ID tracing | ❌ Not available | ✅ Trace journeys across all queues |
+| Scheduled message management | ❌ Not available | ✅ View, reschedule, and cancel |
+
+---
+
+## ✨ Features
+
+### 🔌 Connect in 30 Seconds — Zero Configuration
+
+Enter your connection string once and you're browsing messages instantly. Supports Listen-only (read-only), Send, and Manage policies. Connection strings are **AES-GCM encrypted at rest** — no plain-text secrets stored anywhere.
+
+![Connect to Azure Service Bus](docs/screenshots/01-ServiceHub-Connect-Page-1.png)
+
+---
+
+### 📨 Message Browser — 1,000s of Messages at Your Fingertips
+
+Browse **Active** and **Dead-Letter** queue messages side by side. See full message previews, status badges, enqueue times, and metadata in a virtualized grid that handles thousands of records without breaking a sweat. Auto-refresh every 7 seconds keeps your view live during incidents.
+
+![Message Browser](docs/screenshots/07-ServiceHub-Home-Page-2.png)
+
+---
+
+### 🔍 Forensic Message Inspection — Every Byte Visible
+
+Click any message for complete forensic analysis:
+- **Body** — Full JSON/XML with syntax highlighting and one-click copy
+- **Properties** — Message ID, sequence number, TTL, delivery count, enqueue time
+- **Headers** — All custom application properties and correlation IDs
+- **AI Insights** — Pattern context and remediation hints, computed entirely in-browser
+
+![Message Detail - JSON Body Inspection](docs/screenshots/12-ServiceHub-Message-Detail-Expanded.png)
+
+---
+
+### 🤖 AI Findings — Detect Patterns Across Thousands of Messages
+
+Click **AI Findings** to see error pattern clusters detected across your current queue view. The engine groups messages by error type, calculates confidence scores, and surfaces the most impactful clusters — so you know exactly where to look first.
+
+> **Zero-trust privacy:** All analysis runs entirely in your browser. No message content ever leaves your environment.
+
+![AI Pattern Detection](docs/screenshots/25-ServiceHub-AI-Findings.png)
+
+---
+
+### 💀 Dead-Letter Queue Investigation — From Confusion to Root Cause
+
+Select the **Dead-Letter** tab to inspect failed messages in full. Each DLQ message shows:
+- **DLQ Reason** — Exactly why Azure moved the message to the dead-letter queue
+- **DLQ Error Description** — Full error text from the Azure Service Bus broker
+- **AI Assessment** — ServiceHub's categorization and interpretation
+- **One-click Replay** — Resend to the active queue after fixing the root cause
+
+![DLQ Forensic Investigation](docs/screenshots/14-ServiceHub-Home-DLQ-1.png)
+
+---
+
+### 📊 DLQ Intelligence — Persistent History & 30-Day Trends
+
+DLQ Intelligence automatically scans your dead-letter queues and stores every finding in a local SQLite database — so you can track failures over time, not just during the current session.
+
+- **30-day trend chart** — Visualize DLQ spikes and resolution curves
+- **Auto-categorization** — 5 failure types: Transient, MaxDelivery, Expired, DataQuality, Authorization
+- **Replay Safety rating** — Know which messages are safe to replay automatically
+- **Export** — Download the full history as CSV or JSON for post-mortem analysis
+
+![DLQ Intelligence Dashboard](docs/screenshots/20-ServiceHub-DLQ-Intelligence.png)
+
+---
+
+### ⚡ Auto-Replay Rules — Automate Your Recovery
+
+Define rules that watch DLQ messages and automatically replay them when conditions match. Recover from common failures without manual intervention.
+
+- **AI-generated rules** — One click generates rules based on your actual DLQ patterns
+- **Template gallery** — Pre-built rules for timeouts, throttle errors, and expired messages
+- **Flexible matching** — Match by DLQ reason, error description, entity, delivery count, body content, or regex
+- **Safety controls** — Rate limiting and circuit breaker prevent overwhelming downstream services
+- **Live stats** — Real-time Pending / Replayed / Success counters per rule
+
+![Auto-Replay Rules Engine](docs/screenshots/22-ServiceHub-Auto-Replay-1.png)
+
+---
+
+### 🔎 Real-Time Search — Find Any Message in Seconds
+
+Search across message body, properties, and headers instantly. Filter 1,000+ messages down to exactly what you need in under a second — no waiting, no pagination round-trips.
+
+![Real-Time Message Search](docs/screenshots/24-ServiceHub-Search-Messages.png)
+
+---
+
+### 🔗 Correlation Explorer — Trace Message Journeys
+
+Paste any Correlation ID and instantly trace a message's full journey across all queues, topics, and namespaces. Invaluable during incident investigations — find where an order, payment, or event ended up and whether it's in the active queue or dead-letter.
+
+![Correlation ID Explorer](docs/screenshots/27-ServiceHub-CorelationId-Explorer.png)
+
+---
+
+### 🏢 Multi-Namespace Support — Manage All Your Environments
+
+Connect to multiple Azure Service Bus namespaces simultaneously. Switch between DEV, UAT, and PROD without disconnecting. All namespaces visible in the sidebar with live, color-coded message counts.
+
+![Multi-Namespace Dashboard](docs/screenshots/13-5-ServiceHub-Multi-Namespace-DashBoard.png)
+
+---
+
+### 🕐 Scheduled Messages — View, Reschedule, Cancel
+
+See every message queued for future delivery across your namespaces. Reschedule or cancel individual messages directly from the UI — no SDK, no scripts required.
+
+![Scheduled Messages Manager](docs/screenshots/28-ServiceHub-Schedule-Message.png)
+
+---
+
+### 💚 System Health — Monitor Your Deployment
+
+Real-time runtime metrics for the ServiceHub API itself: uptime, memory usage, thread count, GC generation counts, and full server information including .NET version and environment name.
+
+![System Health Dashboard](docs/screenshots/29-ServiceHub-System-Health-Status.png)
 
 ---
 
 ## 📸 Screenshots
 
-### Connect to Azure Service Bus
-
-Enter your connection string and you're in. Supports Listen-only (read-only) or Manage (full access) policies.
-
-![Connect Page](docs/screenshots/01-connect-page.png)
-
-### Message Browser
-
-Browse active messages across queues and topic subscriptions. See message previews, status badges, and metadata at a glance.
-
-![Messages Queue Active](docs/screenshots/02-messages-queue-active.png)
-
-### Message Detail — Properties
-
-Click any message to inspect every detail. System properties show Message ID, enqueue time, TTL, sequence number, delivery count, and content type.
-
-![Message Properties](docs/screenshots/03-message-detail-properties.png)
-
-### Message Detail — Body
-
-Full JSON body with syntax highlighting and copy button. Supports JSON, XML, and plain text formats.
-
-![Message Body](docs/screenshots/04-message-detail-body.png)
-
-### Message Detail — AI Insights
-
-AI-powered analysis detects patterns, anomalies, and error clusters across your messages. All processing happens in your browser — no data leaves your environment.
-
-![AI Insights](docs/screenshots/05-message-detail-ai-insights.png)
-
-### Message Detail — Forensic View
-
-Deep forensic analysis showing message lifecycle, delivery attempts, and processing timeline.
-
-![Forensic View](docs/screenshots/06-message-detail-forensic.png)
-
-### Message Detail — Headers
-
-View all custom application properties and correlation headers.
-
-![Headers View](docs/screenshots/07-message-detail-headers.png)
-
-### Dead-Letter Queue
-
-Investigate failed messages with DLQ reason, error description, and AI-powered remediation guidance. Replay messages back to the original queue with one click.
-
-![Dead Letter Queue](docs/screenshots/08-messages-deadletter-queue.png)
-
-### DLQ Message Detail with Replay
-
-See why messages failed and replay them after fixing the root cause.
-
-![DLQ Message Detail](docs/screenshots/09-dlq-message-detail.png)
-
-### DLQ AI Analysis
-
-AI automatically categorizes DLQ failures and suggests remediation steps.
-
-![DLQ AI Insights](docs/screenshots/10-dlq-message-ai-insights.png)
-
-### Topic Subscriptions
-
-Browse messages from topic subscriptions with the same powerful inspection tools.
-
-![Topic Subscription](docs/screenshots/11-messages-topic-subscription.png)
-
-### Quick Actions (FAB)
-
-Floating action button provides quick access to Send Message, Generate Messages, Test DLQ, and Refresh All.
-
-![FAB Quick Actions](docs/screenshots/12-fab-quick-actions-open.png)
-
-### Send Message
-
-Send single messages to queues or topics for ad-hoc testing. Supports custom properties, content types, and advanced options.
-
-![Send Message](docs/screenshots/13-send-message-dialog.png)
-
-### Generate Test Messages
-
-Generate realistic test messages with built-in scenarios (Order Processing, Payment Gateway, Notification Service, and more). Configure volume and anomaly rate.
-
-![Generate Messages](docs/screenshots/14-generate-messages-dialog.png)
-
-### DLQ Intelligence Dashboard
-
-Persistent tracking and monitoring of dead-letter queue messages with trend chart, status breakdown, and category classification.
-
-![DLQ Intelligence](docs/screenshots/16-dlq-history-overview.png)
-
-### DLQ History Detail
-
-Drill into individual DLQ records with forensic timeline, replay history, and status tracking.
-
-![DLQ History Detail](docs/screenshots/17-dlq-history-detail.png)
-
-### Auto-Replay Rules
-
-Define conditional replay rules with live statistics. Match messages by dead-letter reason, error description, entity name, content type, or body text.
-
-![Auto-Replay Rules](docs/screenshots/19-rules-page.png)
-
-### Rule Template Gallery
-
-Browse pre-built rule templates for common failure scenarios — transient errors, max delivery exceeded, expired messages, and more.
-
-![Template Gallery](docs/screenshots/20-rules-template-gallery.png)
-
-### Create Auto-Replay Rule
-
-Build custom rules with field conditions, operators, actions, rate limiting, and target entity configuration.
-
-![Create Rule](docs/screenshots/21-rules-create-dialog.png)
-
-### System Health
-
-Monitor API health, uptime, memory usage, thread count, GC collections, and server information.
-
-![System Health](docs/screenshots/22-health-page.png)
-
-### Help & Quick Reference
-
-Searchable help guide covering every feature, Azure Service Bus concepts, and a guided tour.
-
-![Help Page](docs/screenshots/23-help-page.png)
-
-### Message Search & Filter
-
-Find messages by any property — message ID, correlation ID, body content, custom headers.
-
-![Message Filter](docs/screenshots/28-message-filter.png)
-
-### Sidebar Navigation
-
-Namespace browser with live message counts, queue/topic tree, and Quick Access panel.
-
-![Sidebar Navigation](docs/screenshots/25-sidebar-navigation.png)
-
-### API Documentation (Scalar)
-
-Interactive API documentation with Scalar — test endpoints directly from the browser.
-
-![API Docs](docs/screenshots/26-scalar-api-docs.png)
-
----
-
-## 🚀 Features
-
-### Message Browser
-- Browse **active** and **dead-letter** queue messages side by side
-- View full message body with JSON syntax highlighting
-- Inspect system properties, custom headers, and application properties
-- Real-time search across message content and properties
-- Auto-refresh with configurable polling intervals
-
-### AI-Powered Analysis
-- **Pattern detection** — Identify error clusters across thousands of messages
-- **Anomaly identification** — Flag unusual messages automatically
-- **Remediation suggestions** — Actionable guidance for each failure type
-- **Client-side processing** — All analysis runs in your browser; no data leaves your environment
-
-### DLQ Intelligence System
-- **Persistent tracking** — DLQ messages stored in local SQLite database
-- **Category classification** — Auto-categorizes: Transient, MaxDelivery, Expired, DataQuality, Authorization
-- **Trend chart** — 30-day DLQ trend visualization (New vs. Resolved)
-- **Instant scanning** — "Scan Now" for immediate DLQ polling
-- **Export** — Download DLQ data as JSON or CSV
-- **Status tracking** — Active → Replayed → ReplayFailed → Resolved
-
-### Auto-Replay Rules Engine
-- **Conditional matching** — Match messages by reason, error description, entity, delivery count, body text
-- **Operators** — Contains, Equals, StartsWith, EndsWith, Regex, GreaterThan, LessThan, In
-- **Live statistics** — Pending/Replayed/Success counts updated in real time
-- **Rate limiting** — Max replays per hour to prevent overwhelming downstream services
-- **Batch replay** — Replay all matching messages with one click
-- **Template gallery** — Pre-built rules for common failure scenarios
-- **Circuit breaker** — Auto-disables rules if success rate drops below threshold
-
-### Testing & Development Tools
-- **Send Message** — Send single messages to queues or topics with custom properties
-- **Generate Messages** — 6 built-in scenarios with configurable volume (30–200) and anomaly rate (0–50%)
-- **Test DLQ** — Move test messages to dead-letter queue for testing DLQ workflows
-- **Tagged messages** — All generated messages tagged with `ServiceHub-Generated` for easy cleanup
-
-### Security & Safety
-- **Read-only by default** — Uses Azure SDK PeekMessagesAsync; messages are never removed
-- **Listen-only supported** — Works with Listen permission for browse-only access
-- **Encrypted at rest** — Connection strings encrypted with AES-GCM
-- **No external API calls** — AI analysis runs entirely in the browser
-- **No data persistence** — Messages displayed in-memory only
-- **Safe for production** — Will not interfere with your consumers
+| Feature | Preview |
+|---|---|
+| Connect Page | ![Connect](docs/screenshots/01-ServiceHub-Connect-Page-1.png) |
+| Message Browser | ![Browser](docs/screenshots/07-ServiceHub-Home-Page-2.png) |
+| Message Detail (JSON body) | ![Detail](docs/screenshots/12-ServiceHub-Message-Detail-Expanded.png) |
+| DLQ Investigation | ![DLQ](docs/screenshots/14-ServiceHub-Home-DLQ-1.png) |
+| AI Pattern Findings | ![AI](docs/screenshots/25-ServiceHub-AI-Findings.png) |
+| DLQ Intelligence | ![Intelligence](docs/screenshots/20-ServiceHub-DLQ-Intelligence.png) |
+| Auto-Replay Rules | ![Rules](docs/screenshots/22-ServiceHub-Auto-Replay-1.png) |
+| Correlation Explorer | ![Correlation](docs/screenshots/27-ServiceHub-CorelationId-Explorer.png) |
+| Scheduled Messages | ![Scheduled](docs/screenshots/28-ServiceHub-Schedule-Message.png) |
+| System Health | ![Health](docs/screenshots/29-ServiceHub-System-Health-Status.png) |
 
 ---
 
 ## ⚡ Quick Start
 
-### Automated Setup (Recommended)
+### One-Command Setup (Recommended)
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git
@@ -243,30 +194,27 @@ cd servicehub
 ./run.sh
 ```
 
-The script automatically:
-- Installs .NET 10 SDK (if not present)
-- Installs Node.js 18+ (if not present)
-- Builds and starts both API and UI servers
+Open **http://localhost:3000** — then connect with your Azure Service Bus connection string.
 
-Open **http://localhost:3000** and connect with your Azure Service Bus connection string.
+The script automatically installs .NET 10 SDK and Node.js 18+ if not already present.
 
 ### Prerequisites
+
+You provide:
+- Azure Service Bus connection string (Listen permission minimum)
 
 Auto-installed by `run.sh`:
 - .NET 10.0 SDK
 - Node.js 18+
 
-You provide:
-- Azure Service Bus connection string (Listen permission minimum)
+### Create a Dedicated Policy
 
-### Create a Service Bus Policy
-
-For read-only browsing:
+For read-only browsing (recommended for production):
 ```bash
 az servicebus namespace authorization-rule create \
   --namespace-name <your-namespace> \
   --resource-group <your-rg> \
-  --name servicehub \
+  --name servicehub-readonly \
   --rights Listen
 ```
 
@@ -279,85 +227,71 @@ az servicebus namespace authorization-rule create \
   --rights Listen Send Manage
 ```
 
-### URLs
+### Service URLs
 
 | Service | URL |
 |---|---|
 | **Live Demo** | **https://app-servicehub-prod.azurewebsites.net/** |
 | UI (local) | http://localhost:3000 |
 | API (local) | http://localhost:5153 |
-| API Docs (local) | http://localhost:5153/scalar/v1 |
+| API Docs — Scalar | http://localhost:5153/scalar/v1 |
+| API Docs — Swagger UI | http://localhost:5153/swagger/index.html |
+| OpenAPI JSON | http://localhost:5153/openapi/v1.json |
 
 ---
 
 ## 🏗️ Architecture
 
 ```
+Browser (React 19 SPA)
+  └── TanStack Query hooks (useMessages, useQueues, useRules, …)
+        └── Axios API client → Vite dev proxy
+              └── ASP.NET Core 10 API (port 5153)
+                    ├── NamespacesController   → AES-GCM encrypted connections
+                    ├── MessagesController     → PeekMessagesAsync (read-only)
+                    ├── QueuesController       → queue metadata + counts
+                    ├── TopicsController       → topic + subscription metadata
+                    ├── DlqHistoryController   → SQLite DLQ intelligence
+                    ├── RulesController        → auto-replay rule engine
+                    ├── ScheduledMessagesController
+                    ├── CorrelationController  → cross-queue message tracing
+                    └── HealthController       → runtime health metrics
+                          └── Azure.Messaging.ServiceBus SDK
+```
+
+**Project layout:**
+```
 servicehub/
-├── apps/web/                    # React 18 + TypeScript + Vite frontend
+├── apps/web/                    # React 19 + TypeScript + Vite (port 3000)
 │   └── src/
 │       ├── components/          # UI components (messages, DLQ, rules, FAB)
-│       ├── hooks/               # React Query hooks for API communication
-│       ├── lib/                 # API client, utilities, help content
-│       └── pages/               # Page components (Messages, Connect, Rules, Health, Help)
+│       ├── hooks/               # TanStack Query hooks for all API calls
+│       ├── lib/                 # Axios client, AI engine, utilities
+│       └── pages/               # 10 page routes
 │
-├── services/api/                # ASP.NET Core 10 backend
+├── services/api/                # ASP.NET Core 10 backend (port 5153)
 │   └── src/
-│       ├── ServiceHub.Api/      # REST controllers, middleware, auth
+│       ├── ServiceHub.Api/      # Controllers, middleware, auth
 │       ├── ServiceHub.Core/     # Domain entities, DTOs, interfaces
-│       ├── ServiceHub.Infrastructure/  # Azure SDK integration, SQLite
-│       └── ServiceHub.Shared/   # Common types and utilities
+│       ├── ServiceHub.Infrastructure/  # Azure SDK, SQLite, AES-GCM encryption
+│       └── ServiceHub.Shared/   # Result<T>, Error, constants
 │
-├── scripts/                     # Setup and utility scripts
+├── scripts/                     # Key generation + Azure setup scripts
 └── run.sh                       # One-command startup
 ```
 
 **Tech Stack:**
+
 | Layer | Technology |
 |---|---|
-| Frontend | React 18, TypeScript, Tailwind CSS, TanStack Query |
+| Frontend | React 19, TypeScript 5, Tailwind CSS v4, TanStack Query v5 |
 | Backend | ASP.NET Core 10, Azure.Messaging.ServiceBus SDK |
-| AI Analysis | Client-side pattern detection (no external API) |
-| Database | SQLite (DLQ Intelligence), in-memory cache |
-| API Docs | Scalar (OpenAPI) |
+| AI Analysis | Client-side heuristic engine (no external API calls) |
+| Database | SQLite (DLQ Intelligence history), in-memory message cache |
+| API Docs | Scalar (OpenAPI) + Swagger UI |
+| Security | AES-GCM encrypted connections, HMAC SPA token, read-only by default |
 
-For detailed backend architecture, see [services/api/ARCHITECTURE.md](services/api/ARCHITECTURE.md).
-
----
-
-## 💡 Real-World Scenarios
-
-### Scenario 1: Dead-Letter Queue Incident
-**Problem:** 5,000 orders stuck in DLQ at 2 AM.
-
-**With ServiceHub:**
-1. Browse all 5,000 DLQ messages instantly
-2. AI detects 3 error patterns: Payment Timeout (40%), Invalid Address (35%), Duplicate Order (25%)
-3. Search for specific customer orders by correlation ID
-4. Create auto-replay rule for Payment Timeout — replay all 2,000 messages
-
-**Time saved:** 6 hours → 45 minutes
-
-### Scenario 2: Message Correlation
-**Problem:** Customer reports order never processed.
-
-**With ServiceHub:**
-1. Search across message body and properties
-2. Find order in 3 seconds across 10,000 messages
-3. Review full message properties and delivery history
-
-**Time saved:** 30 minutes → 30 seconds
-
-### Scenario 3: Integration Testing
-**Problem:** Need to test error handling with 100 realistic failure scenarios.
-
-**With ServiceHub:**
-1. Select Payment Gateway scenario in Message Generator
-2. Generate 100 messages with 30% anomaly rate
-3. Verify error handling and DLQ behavior
-4. Clean up test messages filtered by ServiceHub-Generated tag
-
-**Time saved:** Manual testing → Automated in 2 minutes
+For deep-dive architecture details, see [services/api/ARCHITECTURE.md](services/api/ARCHITECTURE.md).
 
 ---
 
@@ -365,62 +299,116 @@ For detailed backend architecture, see [services/api/ARCHITECTURE.md](services/a
 
 | Permission Level | Capabilities |
 |---|---|
-| **Listen only** | Browse messages, inspect DLQ, search, AI insights, view health |
+| **Listen only** | Browse messages, inspect DLQ, search, AI insights, correlation explorer, health |
 | **Listen + Send** | All above + replay from DLQ + send test messages |
-| **Manage** | All above + generate messages, test DLQ, full management |
+| **Manage** | All above + generate test messages, schedule messages, full queue management |
 
-> **Tip:** Create a dedicated `servicehub` policy instead of using `RootManageSharedAccessKey`.
+> **Tip:** Create a dedicated `servicehub` policy — never use `RootManageSharedAccessKey`.
+
+---
+
+## 💡 Real-World Scenarios
+
+### Scenario 1: DLQ Incident at 2 AM
+**Problem:** 5,000 orders stuck in Dead-Letter Queue. Azure Portal shows counts only.
+
+**With ServiceHub:**
+1. Browse all 5,000 DLQ messages in seconds
+2. AI detects 3 error clusters: Payment Timeout (40%), Invalid Address (35%), Duplicate (25%)
+3. Search by Correlation ID to find a specific customer's order instantly
+4. Create an auto-replay rule for Payment Timeout → replay 2,000 messages automatically
+
+**Time saved:** 6 hours → 45 minutes
+
+### Scenario 2: Missing Order Investigation
+**Problem:** Customer reports order never processed. Which queue did it land in?
+
+**With ServiceHub:**
+1. Open Correlation Explorer
+2. Paste the order's Correlation ID
+3. Trace the message journey across all queues and namespaces in one search
+
+**Time saved:** 30 minutes → 30 seconds
+
+### Scenario 3: Integration Testing
+**Problem:** Need 100 realistic failure scenarios to test error handling.
+
+**With ServiceHub:**
+1. Open Message Generator → select Payment Gateway scenario
+2. Generate 100 messages with 30% anomaly rate
+3. Verify DLQ behavior and error handling
+4. Filter by `ServiceHub-Generated` tag to clean up when done
+
+**Time saved:** Hours of manual test data → 2 minutes
+
+---
+
+## 🛡️ Security & Safety
+
+- **Read-only by default** — Uses `PeekMessagesAsync`; messages are **never removed or consumed**
+- **Minimal permissions** — Full functionality with Listen-only access
+- **AES-GCM encryption** — Connection strings encrypted at rest; key stored in local config
+- **Zero external calls** — AI analysis runs entirely in-browser; no message data leaves your environment
+- **No message persistence** — Messages displayed in-memory only during your session
+- **Production-safe** — Won't interfere with your active message consumers
 
 ---
 
 ## 📖 API Documentation
 
-ServiceHub exposes a REST API documented with Scalar (OpenAPI). Access interactive docs at:
+ServiceHub exposes a full REST API with two interactive documentation interfaces:
 
-**http://localhost:5153/scalar/v1**
+| Interface | URL |
+|---|---|
+| **Scalar** (Modern) | http://localhost:5153/scalar/v1 |
+| **Swagger UI** | http://localhost:5153/swagger/index.html |
+| OpenAPI JSON | http://localhost:5153/openapi/v1.json |
 
-![API Documentation](docs/screenshots/26-scalar-api-docs.png)
-
-Key endpoints:
-- `GET /api/v1/namespaces` — List connected namespaces
-- `GET /api/v1/namespaces/{id}/queues` — List queues with message counts
-- `GET /api/v1/namespaces/{id}/topics` — List topics with subscription counts
-- `GET /api/v1/namespaces/{id}/queues/{name}/messages` — Browse messages
-- `POST /api/v1/namespaces/{id}/queues/{name}/messages` — Send a message
-- `GET /api/v1/dlq-history` — DLQ Intelligence records
-- `GET /api/v1/replay-rules` — Auto-replay rules
+**Key endpoints:**
+```
+GET    /api/v1/namespaces                              List connected namespaces
+POST   /api/v1/namespaces                              Add a namespace connection
+GET    /api/v1/namespaces/{id}/queues                  List queues with counts
+GET    /api/v1/namespaces/{id}/queues/{name}/messages  Browse messages (peek only)
+POST   /api/v1/namespaces/{id}/queues/{name}/messages  Send a message
+GET    /api/v1/namespaces/{id}/topics                  List topics + subscriptions
+GET    /api/v1/dlq-history                             DLQ Intelligence records
+GET    /api/v1/replay-rules                            Auto-replay rules
+POST   /api/v1/replay-rules                            Create a replay rule
+GET    /api/v1/health                                  Runtime health metrics
+```
 
 ---
 
 ## ❓ FAQ
 
-**Q: Does ServiceHub remove messages from queues?**
-No. ServiceHub uses PeekMessagesAsync which reads messages without removing them. Your consumers continue processing normally.
+**Does ServiceHub remove messages from queues?**
+No. ServiceHub only uses `PeekMessagesAsync`. Your consumers continue processing normally, completely unaffected.
 
-**Q: Is it safe for production?**
-Yes. ServiceHub only requires Listen permission and operates in read-only mode. Messages remain in queues for your actual consumers.
+**Is it safe to point at production?**
+Yes. Listen-only mode is fully read-only. Deploy ServiceHub inside your private network for extra safety.
 
-**Q: How does AI analysis work?**
-ServiceHub analyzes message content using heuristic algorithms entirely in your browser. No data leaves your environment.
+**How does AI analysis work without an API key?**
+ServiceHub uses client-side heuristic pattern detection — pure JavaScript in your browser. No GPT, no external service, no data exfiltration.
 
-**Q: What about sensitive data?**
-Messages are displayed only in your browser session — not persisted. Deploy ServiceHub in your private network and restrict access.
+**What about sensitive message content?**
+Messages are displayed only in your current browser session — never stored in a database or sent anywhere. Deploy on-premises for maximum data sovereignty.
 
-**Q: Can I deploy to Azure App Service / Kubernetes?**
-Yes. ServiceHub is a standard ASP.NET Core + React SPA. Containerize with Docker and deploy anywhere supporting .NET 10.
+**Can I run it in Docker / Kubernetes / Azure App Service?**
+Yes. ServiceHub is a standard ASP.NET Core + React SPA. Deploy to any .NET 10-compatible host. See [self-hosting/](self-hosting/) for guides.
 
-**Q: Does it support topics with subscriptions?**
-Yes. Browse messages from both queues and topic subscriptions independently.
+**Does it support topics with subscriptions?**
+Yes. Browse messages from both queues and topic subscriptions independently. Both show Active and Dead-Letter tabs.
 
 ---
 
 ## 🤝 Contributing
 
-We welcome contributions! Bug fixes, features, and documentation improvements.
+Bug fixes, features, and documentation improvements are all welcome.
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes with tests
+3. Make your changes with tests (`cd apps/web && npm run test:coverage`)
 4. Commit and push
 5. Open a Pull Request
 
@@ -438,6 +426,6 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 Built for DevOps, Platform, and SRE Engineers.
 
-[Live Demo](https://app-servicehub-prod.azurewebsites.net/) · [Get Started](#-quick-start) · [View Features](#-features) · [Report Issue](https://github.com/debdevops/servicehub/issues)
+[Live Demo](https://app-servicehub-prod.azurewebsites.net/) · [Quick Start](#-quick-start) · [Report Issue](https://github.com/debdevops/servicehub/issues)
 
 </div>

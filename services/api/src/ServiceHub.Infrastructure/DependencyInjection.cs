@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.AI;
@@ -44,8 +45,10 @@ public static class DependencyInjection
         // Webhooks
         services.AddWebhooks(configuration);
 
-        // Background Services
-        services.AddHostedService<DlqMonitorWorker>();
+        // Background Services — DlqMonitorWorker is also registered here for
+        // direct AddInfrastructure callers that do not call AddBackgroundWorkers separately.
+        // NOTE: do NOT add DlqMonitorWorker here; AddBackgroundWorkers registers it.
+        // Historically this line caused a duplicate-worker bug.
 
         return services;
     }
@@ -144,10 +147,17 @@ public static class DependencyInjection
         var dbPath = Path.Combine(dataDir, "servicehub-dlq.db");
         var connectionString = $"Data Source={dbPath}";
 
-        services.AddDbContext<DlqDbContext>(options =>
+        services.AddDbContext<DlqDbContext>((serviceProvider, options) =>
         {
             options.UseSqlite(connectionString);
-            options.EnableDetailedErrors();
+
+            // EnableDetailedErrors surfaces EF Core internals (SQL, schema) in error messages.
+            // Only enable in Development to prevent information leakage in production.
+            var env = serviceProvider.GetService<IHostEnvironment>();
+            if (env?.IsDevelopment() == true)
+            {
+                options.EnableDetailedErrors();
+            }
         });
 
         // Register DLQ services

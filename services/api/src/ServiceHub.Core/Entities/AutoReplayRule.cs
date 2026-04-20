@@ -11,19 +11,19 @@ public sealed class AutoReplayRule
     public long Id { get; private set; }
 
     /// <summary>Human-readable name of the rule.</summary>
-    public required string Name { get; init; }
+    public required string Name { get; set; }
 
     /// <summary>Description of what the rule does.</summary>
-    public string? Description { get; init; }
+    public string? Description { get; set; }
 
     /// <summary>Whether the rule is currently active.</summary>
     public bool Enabled { get; set; } = true;
 
     /// <summary>JSON-serialized conditions that must match for the rule to trigger.</summary>
-    public required string ConditionsJson { get; init; }
+    public required string ConditionsJson { get; set; }
 
     /// <summary>JSON-serialized actions to execute when the rule triggers.</summary>
-    public required string ActionsJson { get; init; }
+    public required string ActionsJson { get; set; }
 
     /// <summary>When the rule was created.</summary>
     public required DateTimeOffset CreatedAt { get; init; }
@@ -38,7 +38,7 @@ public sealed class AutoReplayRule
     public long SuccessCount { get; set; }
 
     /// <summary>Maximum number of replays per hour (rate limiting).</summary>
-    public int MaxReplaysPerHour { get; init; } = 100;
+    public int MaxReplaysPerHour { get; set; } = 100;
 
     /// <summary>Navigation property: replay history entries triggered by this rule.</summary>
     public ICollection<ReplayHistory> ReplayHistories { get; init; } = new List<ReplayHistory>();

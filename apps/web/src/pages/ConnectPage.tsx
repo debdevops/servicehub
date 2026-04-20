@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Trash2 } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight, AlertTriangle } from 'lucide-react';
 import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@/hooks/useNamespaces';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { HelpTooltip } from '@/components/help';
@@ -18,8 +18,18 @@ export function ConnectPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [connectionString, setConnectionString] = useState('');
-  const [environment, setEnvironment] = useState<EnvironmentType>('Dev');
+  const [environment, setEnvironment] = useState<EnvironmentType>('dev');
   
+  // v3.1.0 HKDF upgrade notice
+  const [showHkdfNotice, setShowHkdfNotice] = useState(
+    () => localStorage.getItem('servicehub_v310_hkdf_notice_dismissed') !== 'true'
+  );
+
+  const dismissHkdfNotice = () => {
+    localStorage.setItem('servicehub_v310_hkdf_notice_dismissed', 'true');
+    setShowHkdfNotice(false);
+  };
+
   // Delete confirmation dialog state
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; id: string; name: string }>({
     isOpen: false,
@@ -50,26 +60,6 @@ export function ConnectPage() {
     
     if (!displayName.trim() || !connectionString.trim()) {
       return;
-    }
-
-    // SECURITY WARNING: RootManageSharedAccessKey has full namespace access.
-    // Warn the user but do not block — it still works for debugging.
-    if (connectionString.includes('RootManageSharedAccessKey')) {
-      toast(
-        '⚠️ You are using RootManageSharedAccessKey which has full namespace access. ' +
-        'Consider creating a dedicated "servicehub" policy with Listen-only permission for better security. ' +
-        'Connecting anyway...',
-        {
-          duration: 8000,
-          style: {
-            background: '#fef3c7',
-            color: '#92400e',
-            border: '1px solid #fbbf24',
-          },
-          icon: '⚠️',
-        }
-      );
-      // Do NOT return — allow the connection to proceed
     }
 
     // Extract namespace from connection string
@@ -117,8 +107,8 @@ export function ConnectPage() {
       setDisplayName('');
       setConnectionString('');
       setShowPassword(false);
-      setEnvironment('Dev');
-    } catch (error) {
+      setEnvironment('dev');
+    } catch {
       // Error handled by mutation hook
     }
   };
@@ -136,41 +126,6 @@ export function ConnectPage() {
     setDeleteConfirm({ isOpen: false, id: '', name: '' });
   };
 
-  const CloudHero = () => (
-    <svg
-      viewBox="0 0 520 220"
-      className="absolute right-6 bottom-0 h-[190px] w-auto opacity-90"
-      aria-hidden="true"
-    >
-      <defs>
-        <linearGradient id="sh_cloud" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#ffffff" stopOpacity="0.95" />
-          <stop offset="1" stopColor="#e0f2fe" stopOpacity="0.90" />
-        </linearGradient>
-        <linearGradient id="sh_gear" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#38bdf8" stopOpacity="0.95" />
-          <stop offset="1" stopColor="#0ea5e9" stopOpacity="0.95" />
-        </linearGradient>
-      </defs>
-
-      {/* Clouds */}
-      <path
-        d="M150 150c-26 0-47-18-52-41-3 1-7 1-10 1-22 0-40-16-43-36-1-6 0-12 1-17 6-26 31-44 59-39 10-20 32-33 57-33 33 0 60 23 63 52 25 1 45 19 45 42 0 24-22 44-49 44H150z"
-        fill="url(#sh_cloud)"
-      />
-      <path
-        d="M300 170c-24 0-44-16-48-37-3 1-6 1-9 1-20 0-36-14-39-33-1-5 0-11 1-15 6-23 28-38 53-34 9-17 28-29 49-29 29 0 54 20 56 47 22 1 39 17 39 38 0 22-19 40-43 40H300z"
-        fill="url(#sh_cloud)"
-        opacity="0.95"
-      />
-
-      {/* Simple "gear" circles (hint of 3D without purple) */}
-      <circle cx="420" cy="110" r="42" fill="url(#sh_gear)" opacity="0.95" />
-      <circle cx="420" cy="110" r="20" fill="#ffffff" opacity="0.85" />
-      <circle cx="470" cy="140" r="28" fill="url(#sh_gear)" opacity="0.85" />
-      <circle cx="470" cy="140" r="12" fill="#ffffff" opacity="0.85" />
-    </svg>
-  );
 
   if (isLoading) {
     return (
@@ -184,146 +139,213 @@ export function ConnectPage() {
   }
 
   return (
-    <div className="flex-1 overflow-auto p-10">
-      <div className="max-w-6xl mx-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-          {/* Left: Hero + Form */}
-          <div>
-            <div className="mb-8">
-              <h1 className="text-3xl font-semibold text-gray-900 leading-tight">
-                Connect to <span className="text-primary-600">Azure Service Bus</span>
-              </h1>
-              <p className="text-base text-gray-600 mt-2">
-                Connect using a Shared Access Policy connection string. A Listen-only policy is sufficient
-                for DLQ investigation, message browsing, and replay operations.
-              </p>
+    <div className="flex-1 overflow-auto bg-gradient-to-b from-white to-gray-50 p-6 md:p-8">
+      <div className="max-w-5xl mx-auto">
+
+        {/* ══════════════════════════════════════════════════════════════
+            HEADER — compact tagline
+        ══════════════════════════════════════════════════════════════ */}
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse" />
+            <span className="text-xs font-semibold text-sky-700">Free · Open Source · No installation</span>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 leading-tight">
+            Debug Azure Service Bus{' '}
+            <span className="text-primary-600">in seconds.</span>
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Browse messages, pinpoint DLQ failures, replay dead-lettered events — all from your browser.
+          </p>
+        </div>
+
+        {/* ══════════════════════════════════════════════════════════════
+            v3.1.0 UPGRADE NOTICE
+        ══════════════════════════════════════════════════════════════ */}
+        {showHkdfNotice && (
+          <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 p-3 flex items-start justify-between gap-3">
+            <p className="text-xs text-amber-800">
+              <span className="font-semibold">ServiceHub v3.1.0</span> upgrades encryption key derivation (HKDF).
+              {' '}If you have existing saved connections, they must be re-added —
+              delete them and add them again with your connection string.
+            </p>
+            <button
+              type="button"
+              onClick={dismissHkdfNotice}
+              className="shrink-0 text-xs font-medium text-amber-700 hover:text-amber-900 whitespace-nowrap"
+            >
+              I understand, don&apos;t show again
+            </button>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════
+            MULTI-INSTANCE STORAGE NOTICE
+        ══════════════════════════════════════════════════════════════ */}
+        <div className="mb-4 rounded-lg bg-sky-50 border border-sky-200 p-3 flex items-start gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+          <p className="text-xs text-sky-800">
+            <span className="font-semibold">Single-instance storage:</span> Namespace connections are stored locally on the server running ServiceHub.
+            {' '}If you are running <strong>multiple instances</strong> (e.g., Azure App Service with scale-out), each instance has its own connection list.
+            {' '}Use <strong>sticky sessions</strong> or ensure all instances share the same storage path to avoid inconsistent connection lists across page refreshes.
+          </p>
+        </div>
+
+        {/* ══════════════════════════════════════════════════════════════
+            CONNECT FORM + SAVED CONNECTIONS  (primary action — above fold)
+        ══════════════════════════════════════════════════════════════ */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start mb-6">
+          {/* Left: Connect Form */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-9 h-9 bg-primary-50 border border-primary-100 rounded-lg flex items-center justify-center">
+                <span className="text-base">☁️</span>
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Connect to Service Bus</h2>
+                <p className="text-xs text-gray-500">
+                  A Listen-only SAS policy is all you need.
+                </p>
+              </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-primary-50 border border-primary-100 rounded-xl flex items-center justify-center">
-                  <span className="text-2xl">☁️</span>
+            {/* Trust & Security panel */}
+            <div className="mb-4 rounded-lg bg-green-50 border border-green-100 p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Shield className="w-4 h-4 text-green-600 flex-shrink-0" />
+                <span className="text-xs font-semibold text-green-800">Your data stays yours</span>
+              </div>
+              <div className="space-y-1">
+                {[
+                  { label: 'Connection string', value: 'AES-256-GCM encrypted before saving — never returned to browser' },
+                  { label: 'Message content', value: 'Never logged or stored by ServiceHub' },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex items-start gap-2 text-xs">
+                    <span className="text-green-500 mt-0.5 flex-shrink-0">✓</span>
+                    <span><span className="font-medium text-green-800">{label}:</span>{' '}
+                      <span className="text-green-700">{value}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-3 mt-2 pt-2 border-t border-green-100">
+                <a
+                  href="https://github.com/debdevops/servicehub/blob/main/services/api/src/ServiceHub.Infrastructure/Security/ConnectionStringProtector.cs"
+                  target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
+                >
+                  Verify encryption code →
+                </a>
+                <Link
+                  to="/security"
+                  className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
+                >
+                  Security overview →
+                </Link>
+              </div>
+            </div>
+
+            <form onSubmit={handleConnect}>
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Display Name <span className="text-red-500">*</span>
+                  <HelpTooltip {...tooltips.connect.displayName} position="right" className="ml-1" />
+                </label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="e.g., Production Service Bus"
+                  required
+                  className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
+                />
+              </div>
+
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Connection String <span className="text-red-500">*</span>
+                  <HelpTooltip {...tooltips.connect.connectionString} position="right" className="ml-1" />
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={connectionString}
+                    onChange={(e) => setConnectionString(e.target.value)}
+                    placeholder="Endpoint=sb://...;SharedAccessKey=..."
+                    required
+                    className="w-full px-3 py-2 pr-10 rounded-lg text-sm font-mono bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Connect to Service Bus</h2>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Enter your connection configuration and save it for later.
-                  </p>
+                <div className="flex items-center gap-1 mt-1.5 text-xs text-green-700">
+                  <Shield className="w-3 h-3 text-green-600 shrink-0" />
+                  AES-GCM encrypted at rest — never stored in plaintext.
                 </div>
               </div>
 
-              <form onSubmit={handleConnect}>
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Display Name <span className="text-red-500">*</span>
-                    <HelpTooltip {...tooltips.connect.displayName} position="right" className="ml-1" />
-                  </label>
-                  <input
-                    type="text"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="e.g., Production Service Bus"
-                    required
-                    className="w-full px-4 py-2.5 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Friendly name for your Service Bus namespace</p>
-                </div>
-
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Connection String <span className="text-red-500">*</span>
-                    <HelpTooltip {...tooltips.connect.connectionString} position="right" className="ml-1" />
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={connectionString}
-                      onChange={(e) => setConnectionString(e.target.value)}
-                      placeholder="Endpoint=sb://...;SharedAccessKey=..."
-                      required
-                      className="w-full px-4 py-2.5 pr-12 rounded-lg text-sm font-mono bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                    </button>
-                  </div>
-                  <div className="mt-2 space-y-2">
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                      <p className="text-xs text-blue-800 font-medium mb-1">
-                        Create a dedicated SAS policy for ServiceHub
-                      </p>
-                      <ol className="text-xs text-blue-700 space-y-0.5 list-decimal list-inside">
-                        <li>Azure Portal → your Service Bus namespace</li>
-                        <li>Shared access policies → + Add policy</li>
-                        <li>Name it <code className="bg-blue-100 px-1 rounded">servicehub</code></li>
-                        <li>Save → copy Primary Connection String → paste above</li>
-                      </ol>
-                      <div className="mt-2 space-y-1">
-                        <p className="text-xs text-blue-700">
-                          <strong>Listen only</strong> — Browse messages, inspect DLQ, view metrics (read-only)
-                        </p>
-                        <p className="text-xs text-blue-700">
-                          <strong>Manage</strong> — Full access: send messages, generate test data, dead-letter, replay (Dev/UAT only)
-                        </p>
-                      </div>
-                      <p className="text-xs text-blue-600 mt-1.5">
-                        ⚠️ The Quick Actions button (FAB) requires a policy with <strong>Manage</strong> permission. Production namespaces always hide the FAB for safety.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Environment <span className="text-red-500">*</span>
-                    <HelpTooltip {...tooltips.connect.environment} position="right" className="ml-1" />
-                  </label>
-                  <select
-                    value={environment}
-                    onChange={(e) => setEnvironment(e.target.value as EnvironmentType)}
-                    className="w-full px-4 py-2.5 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
-                  >
-                    <option value="Dev">DEV — Development</option>
-                    <option value="Uat">UAT — User Acceptance Testing</option>
-                    <option value="Prod">PROD — Production</option>
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Production namespaces have safety guards — Quick Actions (FAB), message sending, dead-lettering, and replay are all disabled.
-                  </p>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={createNamespace.isPending}
-                  className="w-full px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 text-white bg-primary-500 hover:bg-primary-600 disabled:bg-primary-300"
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Environment <span className="text-red-500">*</span>
+                  <HelpTooltip {...tooltips.connect.environment} position="right" className="ml-1" />
+                </label>
+                <select
+                  value={environment}
+                  onChange={(e) => setEnvironment(e.target.value as EnvironmentType)}
+                  className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
                 >
-                  {createNamespace.isPending ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Connecting...
-                    </>
-                  ) : (
-                    <>Connect</>
-                  )}
-                </button>
-              </form>
+                  <option value="dev">DEV — Development</option>
+                  <option value="uat">UAT — User Acceptance Testing</option>
+                  <option value="prod">PROD — Production</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Production disables Quick Actions for safety.</p>
+              </div>
+
+              <button
+                type="submit"
+                disabled={createNamespace.isPending}
+                className="w-full px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 text-white bg-primary-500 hover:bg-primary-600 disabled:bg-primary-300"
+              >
+                {createNamespace.isPending ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>Connect</>
+                )}
+              </button>
+            </form>
+
+            {/* SAS instructions — always visible */}
+            <div className="mt-3 rounded-r-lg border-l-2 border-blue-300 bg-blue-50 pl-3 pr-2 py-2">
+              <p className="text-xs font-semibold text-blue-800 mb-1">
+                💡 A Listen-only key is all you need — and it's the safest option
+              </p>
+              <p className="text-xs text-blue-700 mb-1">
+                A Listen-only policy can <strong>only read</strong> messages. It cannot delete, send, or
+                modify anything. Even if this key were ever exposed, your data remains safe.
+              </p>
+              <ol className="text-xs text-blue-700 space-y-0.5 list-decimal list-inside">
+                <li>Azure Portal → your Service Bus namespace</li>
+                <li>Shared access policies → + Add policy</li>
+                <li>Name it <code className="bg-blue-100 px-1 rounded">servicehub</code>, tick <strong>Listen only</strong></li>
+                <li>Save → copy Primary Connection String → paste above</li>
+              </ol>
             </div>
           </div>
 
-          {/* Right: Illustration + Saved Connections */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="relative h-52 bg-gradient-to-r from-primary-50 to-blue-50 border-b border-gray-100">
-              <CloudHero />
-            </div>
-
-            <div className="p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          {/* Right: Saved Connections + Demo callout */}
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+              <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-1.5">
                 Saved Connections
-                <HelpTooltip {...tooltips.connect.savedConnections} position="bottom" className="ml-1.5" />
+                <HelpTooltip {...tooltips.connect.savedConnections} position="bottom" className="ml-1" />
               </h2>
 
               <div className="space-y-3">
@@ -343,11 +365,11 @@ export function ConnectPage() {
                           <div className="flex items-center gap-2">
                             <h3 className="font-medium text-gray-900">{ns.displayName || ns.name}</h3>
                             <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase ${
-                              ns.environment === 'Prod' ? 'bg-red-100 text-red-700' :
-                              ns.environment === 'Uat' ? 'bg-amber-100 text-amber-700' :
+                              ns.environment === 'prod' ? 'bg-red-100 text-red-700' :
+                              ns.environment === 'uat' ? 'bg-amber-100 text-amber-700' :
                               'bg-green-100 text-green-700'
                             }`}>
-                              {ns.environment || 'Dev'}
+                              {ns.environment || 'dev'}
                             </span>
                           </div>
                           <p className="text-xs text-gray-500">
@@ -381,14 +403,191 @@ export function ConnectPage() {
                     <div className="w-12 h-12 bg-gray-100 border border-gray-200 rounded-full flex items-center justify-center mx-auto mb-3">
                       <span className="text-2xl">📭</span>
                     </div>
-                    <h3 className="font-medium text-gray-900 mb-1">No saved connections</h3>
-                    <p className="text-sm text-gray-500">Connect to your first namespace to get started</p>
+                    <h3 className="font-medium text-gray-900 mb-1">No saved connections yet</h3>
+                    <p className="text-sm text-gray-500">Add your first Service Bus to get started</p>
                   </div>
                 )}
               </div>
             </div>
+
+            {/* Demo callout — compact secondary card */}
+            <div className="bg-gradient-to-r from-slate-800 to-primary-900 rounded-xl border border-slate-700 p-4 flex items-center gap-4">
+              <div className="w-9 h-9 bg-amber-400/20 border border-amber-400/30 rounded-lg flex items-center justify-center shrink-0">
+                <Play className="w-4 h-4 text-amber-300 fill-current" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-white">No Service Bus? Try the live demo</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">50 production-realistic messages, DLQ scenarios, AI root-cause analysis — no credentials needed.</p>
+              </div>
+              <button
+                onClick={() => navigate('/messages?demo=true')}
+                className="shrink-0 px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-900 font-semibold text-xs rounded-lg transition-colors flex items-center gap-1.5"
+              >
+                Launch
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+
+            {/* Self-host callout */}
+            <div className="bg-white rounded-xl border border-blue-100 p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Shield className="w-4 h-4 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-900 mb-0.5">
+                    Prefer zero-trust? Run it yourself.
+                  </p>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Deploy ServiceHub inside your own Azure subscription in under 10 minutes.
+                    Your data never leaves your infrastructure.
+                  </p>
+                  <a
+                    href="https://github.com/debdevops/servicehub/blob/main/self-hosting/README.md"
+                    target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800"
+                  >
+                    Self-hosting guide <ArrowRight className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
+
+        {/* ══════════════════════════════════════════════════════════════
+            HOW IT WORKS
+        ══════════════════════════════════════════════════════════════ */}
+        <div className="mb-10">
+          <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">How it works</h3>
+          <p className="text-sm text-gray-500 text-center mb-6">From zero to full message visibility in under 60 seconds</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="text-center p-5 bg-white rounded-xl border border-gray-200 shadow-sm">
+              <div className="w-9 h-9 bg-primary-50 border border-primary-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <span className="text-sm font-bold text-primary-600">1</span>
+              </div>
+              <p className="text-sm font-semibold text-gray-900">60 seconds to your first message view</p>
+              <p className="text-xs text-gray-500 mt-1.5">Paste a Listen-only connection string — no admin rights, no Azure Portal clutter, no SDK to install</p>
+            </div>
+            <div className="text-center p-5 bg-white rounded-xl border border-gray-200 shadow-sm">
+              <div className="w-9 h-9 bg-primary-50 border border-primary-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <span className="text-sm font-bold text-primary-600">2</span>
+              </div>
+              <p className="text-sm font-semibold text-gray-900">Find the failing message in seconds, not hours</p>
+              <p className="text-xs text-gray-500 mt-1.5">Filter by status, search by content, jump to the DLQ, and let AI pinpoint the root cause automatically</p>
+            </div>
+            <div className="text-center p-5 bg-white rounded-xl border border-gray-200 shadow-sm">
+              <div className="w-9 h-9 bg-primary-50 border border-primary-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <span className="text-sm font-bold text-primary-600">3</span>
+              </div>
+              <p className="text-sm font-semibold text-gray-900">Fix and replay without switching tools</p>
+              <p className="text-xs text-gray-500 mt-1.5">Bulk-replay dead-lettered messages, set auto-replay rules, and trace correlation chains — all in one browser tab</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ══════════════════════════════════════════════════════════════
+            WHY SERVICEHUB — Use-case specific wins
+        ══════════════════════════════════════════════════════════════ */}
+        <div className="mb-12">
+          <h3 className="text-xl font-semibold text-gray-900 text-center mb-2">Built for these exact scenarios</h3>
+          <p className="text-sm text-gray-500 text-center mb-8">Real problems that ServiceHub solves in minutes, not hours</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="p-6 bg-white rounded-xl border border-gray-200 shadow-sm">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-50 border border-red-200 text-red-700 text-xs font-semibold mb-4">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Dead-Letter Flood
+              </div>
+              <h4 className="font-semibold text-gray-900 mb-2">847 messages failing? Find the pattern in 30 seconds.</h4>
+              <p className="text-xs text-gray-600">
+                Group by error, spot the duplicate root cause (null ref, version mismatch, timeout), apply a fix, 1-click bulk replay.
+                Azure Portal: 30 min. ServiceHub: 2 min.
+              </p>
+            </div>
+
+            <div className="p-6 bg-white rounded-xl border border-gray-200 shadow-sm">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold mb-4">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Retry Loop
+              </div>
+              <h4 className="font-semibold text-gray-900 mb-2">Message stuck reprocessing infinitely? Diagnose in 20 seconds.</h4>
+              <p className="text-xs text-gray-600">
+                View retry count, delivery history, peek the exact error, check for circuit-breaker miss or config bug.
+                Dead-letter before it cascades.
+              </p>
+            </div>
+
+            <div className="p-6 bg-white rounded-xl border border-gray-200 shadow-sm">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mb-4">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" /> Correlation Tracing
+              </div>
+              <h4 className="font-semibold text-gray-900 mb-2">Payment failed → trace all downstream effects in one view.</h4>
+              <p className="text-xs text-gray-600">
+                Jump from OrderCreated → PaymentProcessed → InventoryReserved. See what order #12847 touched. Replay the chain together.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* ══════════════════════════════════════════════════════════════
+            COMPARISON + BOTTOM CTA
+        ══════════════════════════════════════════════════════════════ */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+          {/* vs Azure Portal */}
+          <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl border border-gray-200 p-6">
+            <h4 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <span className="text-base">⚡</span>
+              ServiceHub vs Azure Portal
+            </h4>
+            <div className="space-y-3 text-sm">
+              {[
+                { task: 'Find a failed message', portal: '8–15 min', hub: '< 30 sec', hubClass: 'text-green-700 font-semibold' },
+                { task: 'Replay DLQ batch', portal: 'Not possible', hub: '1 click', hubClass: 'text-green-700 font-semibold' },
+                { task: 'AI root-cause analysis', portal: 'Not available', hub: 'Automatic', hubClass: 'text-green-700 font-semibold' },
+                { task: 'Share message link', portal: 'Not possible', hub: 'Deep link', hubClass: 'text-green-700 font-semibold' },
+                { task: 'Works on Mac/Linux', portal: '✓', hub: '✓', hubClass: 'text-gray-700' },
+              ].map((row) => (
+                <div key={row.task} className="flex items-center text-xs">
+                  <span className="flex-1 text-gray-700">{row.task}</span>
+                  <span className="w-24 text-center text-gray-400">{row.portal}</span>
+                  <span className={`w-24 text-center ${row.hubClass}`}>{row.hub}</span>
+                </div>
+              ))}
+              <div className="flex items-center text-[10px] text-gray-400 pt-1 border-t border-gray-100">
+                <span className="flex-1" />
+                <span className="w-24 text-center">Azure Portal</span>
+                <span className="w-24 text-center text-primary-600 font-semibold">ServiceHub</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Star CTA */}
+          <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl border border-slate-700 p-6 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Star className="w-5 h-5 text-amber-400 fill-current" />
+                <span className="text-sm font-bold text-white">Open Source</span>
+              </div>
+              <p className="text-slate-300 text-sm leading-relaxed mb-4">
+                ServiceHub is free, open-source, and built by engineers for engineers.
+                If it saved your 2 AM, consider starring the repo — it takes 3 seconds and
+                helps other developers find it.
+              </p>
+              <div className="flex items-center gap-2 text-xs text-slate-500 mb-5">
+                <Shield className="w-3.5 h-3.5" />
+                Connection strings encrypted · No telemetry on message content · Self-hostable
+              </div>
+            </div>
+            <a
+              href="https://github.com/debdevops/servicehub"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-white text-sm font-medium transition-colors"
+            >
+              <Github className="w-4 h-4" />
+              View on GitHub · ⭐ Star
+            </a>
+          </div>
+        </div>
+
       </div>
 
       {/* Delete Confirmation Dialog */}

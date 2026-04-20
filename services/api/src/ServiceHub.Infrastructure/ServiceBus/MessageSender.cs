@@ -101,14 +101,24 @@ public sealed class MessageSender : IMessageSender
 
             var clientWrapper = _clientCache.GetOrCreate(@namespace.Id, unprotectResult.Value);
 
+            Result? nonRetryableFailure = null;
             await _resiliencePipeline.ExecuteAsync(async ct =>
             {
                 var result = await clientWrapper.SendMessageAsync(request, ct).ConfigureAwait(false);
                 if (result.IsFailure)
                 {
+                    // Validation and not-found errors are not retryable — propagate them directly.
+                    if (result.Error.Type is ErrorType.Validation or ErrorType.NotFound)
+                    {
+                        nonRetryableFailure = result;
+                        return;
+                    }
                     throw new InvalidOperationException(result.Error.Message);
                 }
             }, cancellationToken).ConfigureAwait(false);
+
+            if (nonRetryableFailure is not null)
+                return nonRetryableFailure;
 
             _logger.LogInformation(
                 "Message sent to {EntityName} in namespace {NamespaceId}",

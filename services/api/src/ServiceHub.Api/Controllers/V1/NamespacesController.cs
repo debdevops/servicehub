@@ -67,36 +67,35 @@ public sealed class NamespacesController : ApiControllerBase
     {
         _logger.LogInformation("Creating namespace with name {Name}", LogRedactor.SanitiseForLog(request.Name));
 
-        // Check for existing namespace with same name
-        var existingResult = await _namespaceRepository.GetByNameAsync(request.Name, cancellationToken);
-        if (existingResult.IsSuccess)
+        // Owner-scoped duplicate checks: only look within the same tenant's pool.
+        var ownerNamespaces = await _namespaceRepository.GetByOwnerAsync(OwnerId, cancellationToken);
+        if (ownerNamespaces.IsSuccess)
         {
-            var error = Error.Conflict(
-                ErrorCodes.Namespace.AlreadyExists,
-                $"A namespace with name '{request.Name}' already exists.");
-            return ToActionResult<NamespaceResponse>(error);
-        }
-
-        // Check for duplicate connection string (prevent same connection string with different display names)
-        if (request.AuthType == ConnectionAuthType.ConnectionString && !string.IsNullOrEmpty(request.ConnectionString))
-        {
-            var allNamespacesResult = await _namespaceRepository.GetAllAsync(cancellationToken);
-            if (allNamespacesResult.IsSuccess)
+            // Check for existing namespace with same name (within this owner's pool)
+            var nameConflict = ownerNamespaces.Value.FirstOrDefault(n =>
+                string.Equals(n.Name, request.Name.Trim().ToLowerInvariant(), StringComparison.OrdinalIgnoreCase));
+            if (nameConflict is not null)
             {
-                foreach (var existingNs in allNamespacesResult.Value)
+                var error = Error.Conflict(
+                    ErrorCodes.Namespace.AlreadyExists,
+                    $"A namespace with name '{request.Name}' already exists.");
+                return ToActionResult<NamespaceResponse>(error);
+            }
+
+            // Hash-based duplicate connection string check — O(1) hash compare, no decryption needed.
+            if (request.AuthType == ConnectionAuthType.ConnectionString && !string.IsNullOrEmpty(request.ConnectionString))
+            {
+                var incomingHash = Namespace.ComputeConnectionStringHash(request.ConnectionString);
+                var connStringConflict = ownerNamespaces.Value.FirstOrDefault(n =>
+                    n.ConnectionStringHash is not null &&
+                    string.Equals(n.ConnectionStringHash, incomingHash, StringComparison.Ordinal));
+
+                if (connStringConflict is not null)
                 {
-                    if (existingNs.ConnectionString is not null)
-                    {
-                        var unprotectResult = _connectionStringProtector.Unprotect(existingNs.ConnectionString);
-                        if (unprotectResult.IsSuccess && 
-                            string.Equals(unprotectResult.Value, request.ConnectionString, StringComparison.OrdinalIgnoreCase))
-                        {
-                            var error = Error.Conflict(
-                                ErrorCodes.Namespace.AlreadyExists,
-                                $"A namespace with this connection string already exists (Display Name: '{existingNs.DisplayName ?? existingNs.Name}'). Please use a different connection string.");
-                            return ToActionResult<NamespaceResponse>(error);
-                        }
-                    }
+                    var error = Error.Conflict(
+                        ErrorCodes.Namespace.AlreadyExists,
+                        $"A namespace with this connection string already exists (Display Name: '{connStringConflict.DisplayName ?? connStringConflict.Name}'). Please use a different connection string.");
+                    return ToActionResult<NamespaceResponse>(error);
                 }
             }
         }
@@ -118,6 +117,9 @@ public sealed class NamespacesController : ApiControllerBase
                 return ToActionResult<NamespaceResponse>(validationResult.Error);
             }
 
+            // Compute hash of plaintextconnection string BEFORE encryption for deduplication
+            var connectionStringHash = Namespace.ComputeConnectionStringHash(request.ConnectionString);
+
             // Protect the connection string before storing
             var protectedConnectionStringResult = _connectionStringProtector.Protect(request.ConnectionString);
             if (protectedConnectionStringResult.IsFailure)
@@ -130,7 +132,9 @@ public sealed class NamespacesController : ApiControllerBase
                 protectedConnectionStringResult.Value,
                 request.DisplayName,
                 request.Description,
-                request.Environment);
+                request.Environment,
+                ownerId: OwnerId,
+                connectionStringHash: connectionStringHash);
         }
         else
         {
@@ -139,7 +143,8 @@ public sealed class NamespacesController : ApiControllerBase
                 request.AuthType,
                 request.DisplayName,
                 request.Description,
-                request.Environment);
+                request.Environment,
+                ownerId: OwnerId);
         }
 
         if (createResult.IsFailure)
@@ -180,7 +185,8 @@ public sealed class NamespacesController : ApiControllerBase
     {
         _logger.LogInformation("Getting all namespaces");
 
-        var result = await _namespaceRepository.GetAllAsync(cancellationToken);
+        // TENANT ISOLATION: Only return namespaces owned by the authenticated caller.
+        var result = await _namespaceRepository.GetByOwnerAsync(OwnerId, cancellationToken);
         if (result.IsFailure)
         {
             return ToActionResult<IReadOnlyList<NamespaceResponse>>(result.Error);
@@ -229,6 +235,15 @@ public sealed class NamespacesController : ApiControllerBase
             return ToActionResult<NamespaceResponse>(result.Error);
         }
 
+        // TENANT ISOLATION: Return 404 (not 403) when the namespace exists but belongs
+        // to a different owner, to avoid leaking that the ID is in use.
+        if (!string.Equals(result.Value.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return ToActionResult<NamespaceResponse>(Error.NotFound(
+                ErrorCodes.Namespace.NotFound,
+                $"Namespace with ID '{id}' was not found."));
+        }
+
         var response = MapToResponse(result.Value);
         return Ok(response);
     }
@@ -268,6 +283,14 @@ public sealed class NamespacesController : ApiControllerBase
         if (namespaceResult.IsFailure)
         {
             return ToActionResult<ConnectionTestResponse>(namespaceResult.Error);
+        }
+
+        // TENANT ISOLATION: Return 404 when the namespace exists but belongs to a different owner.
+        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return ToActionResult<ConnectionTestResponse>(Error.NotFound(
+                ErrorCodes.Namespace.NotFound,
+                $"Namespace with ID '{id}' was not found."));
         }
 
         var ns = namespaceResult.Value;
@@ -325,7 +348,7 @@ public sealed class NamespacesController : ApiControllerBase
         {
             _logger.LogWarning(
                 ex,
-                "Connection test failed for namespace {NamespaceId}",
+                "Connection test exception for {Id}",
                 id);
 
             // Update the namespace with failed test
@@ -334,7 +357,7 @@ public sealed class NamespacesController : ApiControllerBase
 
             return Ok(new ConnectionTestResponse(
                 IsConnected: false,
-                Message: $"Connection test failed: {ex.Message}",
+                Message: "An error occurred while testing the connection.",
                 TestedAt: DateTimeOffset.UtcNow));
         }
     }
@@ -374,6 +397,15 @@ public sealed class NamespacesController : ApiControllerBase
             return ToActionResult(Result.Failure(getResult.Error));
 
         var ns = getResult.Value;
+
+        // TENANT ISOLATION: Return 404 when namespace exists but belongs to a different owner.
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return ToActionResult(Result.Failure(Error.NotFound(
+                ErrorCodes.Namespace.NotFound,
+                $"Namespace with ID '{id}' was not found.")));
+        }
+
         _logger.LogInformation("Deleting namespace {NamespaceId}", ns.Id);
 
         if (_clientCache.Contains(ns.Id))
@@ -385,6 +417,90 @@ public sealed class NamespacesController : ApiControllerBase
 
         _logger.LogInformation("Namespace {NamespaceId} deleted successfully", ns.Id);
         return NoContent();
+    }
+
+    /// <summary>
+    /// Gets aggregate statistics for a namespace, including both queue and subscription DLQ counts.
+    /// </summary>
+    /// <param name="id">The namespace ID.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Aggregate stats across queues and topic subscriptions.</returns>
+    [HttpGet("{id:guid}/stats")]
+    [RequireScope(ApiKeyScopes.MessagesPeek)]
+    [ProducesResponseType(typeof(NamespaceStatsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<NamespaceStatsResponse>> GetStats(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        var nsResult = await _namespaceRepository.GetByIdAsync(id, cancellationToken);
+        if (nsResult.IsFailure)
+            return ToActionResult<NamespaceStatsResponse>(nsResult.Error);
+
+        var ns = nsResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+            return NotFound();
+
+        if (string.IsNullOrEmpty(ns.ConnectionString))
+            return Ok(new NamespaceStatsResponse(0, 0, 0, 0, 0, 0));
+
+        var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
+        if (unprotectResult.IsFailure)
+            return Ok(new NamespaceStatsResponse(0, 0, 0, 0, 0, 0));
+
+        try
+        {
+            var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+
+            long totalActive = 0, totalDlq = 0, totalScheduled = 0;
+            int totalQueues = 0, totalTopics = 0, totalSubscriptions = 0;
+
+            // Aggregate queue stats
+            var queuesResult = await wrapper.GetQueuesAsync(cancellationToken);
+            if (queuesResult.IsSuccess)
+            {
+                totalQueues = queuesResult.Value.Count;
+                foreach (var q in queuesResult.Value)
+                {
+                    totalActive += q.ActiveMessageCount;
+                    totalDlq += q.DeadLetterMessageCount;
+                    totalScheduled += q.ScheduledMessageCount;
+                }
+            }
+
+            // Aggregate topic subscription stats
+            var topicsResult = await wrapper.GetTopicsAsync(cancellationToken);
+            if (topicsResult.IsSuccess)
+            {
+                totalTopics = topicsResult.Value.Count;
+                foreach (var topic in topicsResult.Value)
+                {
+                    var subsResult = await wrapper.GetSubscriptionsAsync(topic.Name, cancellationToken);
+                    if (subsResult.IsSuccess)
+                    {
+                        totalSubscriptions += subsResult.Value.Count;
+                        foreach (var sub in subsResult.Value)
+                        {
+                            totalActive += sub.ActiveMessageCount;
+                            totalDlq += sub.DeadLetterMessageCount;
+                        }
+                    }
+                }
+            }
+
+            return Ok(new NamespaceStatsResponse(
+                TotalQueues: totalQueues,
+                TotalTopics: totalTopics,
+                TotalSubscriptions: totalSubscriptions,
+                TotalActive: totalActive,
+                TotalDlq: totalDlq,
+                TotalScheduled: totalScheduled));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get stats for namespace {NamespaceId}", id);
+            return Ok(new NamespaceStatsResponse(0, 0, 0, 0, 0, 0));
+        }
     }
 
     /// <summary>
@@ -422,3 +538,14 @@ public sealed record ConnectionTestResponse(
     bool IsConnected,
     string Message,
     DateTimeOffset TestedAt);
+
+/// <summary>
+/// Response model for namespace aggregate statistics including both queue and subscription data.
+/// </summary>
+public sealed record NamespaceStatsResponse(
+    int TotalQueues,
+    int TotalTopics,
+    int TotalSubscriptions,
+    long TotalActive,
+    long TotalDlq,
+    long TotalScheduled);

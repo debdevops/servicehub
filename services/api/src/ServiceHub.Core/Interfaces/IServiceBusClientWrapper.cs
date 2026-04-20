@@ -155,4 +155,42 @@ public interface IServiceBusClientWrapper : IAsyncDisposable
         long sequenceNumber,
         bool fromDeadLetter,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists scheduled messages from a queue or subscription by peeking and filtering for Scheduled state.
+    /// </summary>
+    /// <param name="entityName">The queue or topic name.</param>
+    /// <param name="subscriptionName">Optional subscription name for topics.</param>
+    /// <param name="maxMessages">Maximum number of messages to peek when searching.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A result containing the list of scheduled messages.</returns>
+    Task<Result<IReadOnlyList<Message>>> GetScheduledMessagesAsync(
+        string entityName,
+        string? subscriptionName,
+        int maxMessages,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Cancels a previously scheduled message using its sequence number.
+    /// </summary>
+    /// <param name="entityName">The queue or topic name.</param>
+    /// <param name="sequenceNumber">The sequence number of the scheduled message to cancel.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A result indicating success or failure.</returns>
+    Task<Result> CancelScheduledMessageAsync(
+        string entityName,
+        long sequenceNumber,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Schedules a message for future delivery and returns its sequence number.
+    /// </summary>
+    /// <param name="request">The message send request containing body, headers, and entity name.</param>
+    /// <param name="scheduledTimeUtc">The UTC time at which the message should be enqueued.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A result containing the sequence number assigned to the scheduled message.</returns>
+    Task<Result<long>> ScheduleMessageAsync(
+        SendMessageRequest request,
+        DateTimeOffset scheduledTimeUtc,
+        CancellationToken cancellationToken = default);
 }

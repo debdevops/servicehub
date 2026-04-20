@@ -18,7 +18,6 @@ namespace ServiceHub.Api.Controllers.V1;
 public sealed class DlqHistoryController : ApiControllerBase
 {
     private readonly IDlqHistoryService _historyService;
-    private readonly IForensicEngine _forensicEngine;
     private readonly ILogger<DlqHistoryController> _logger;
 
     /// <summary>
@@ -26,11 +25,9 @@ public sealed class DlqHistoryController : ApiControllerBase
     /// </summary>
     public DlqHistoryController(
         IDlqHistoryService historyService,
-        IForensicEngine forensicEngine,
         ILogger<DlqHistoryController> logger)
     {
         _historyService = historyService ?? throw new ArgumentNullException(nameof(historyService));
-        _forensicEngine = forensicEngine ?? throw new ArgumentNullException(nameof(forensicEngine));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -377,6 +374,36 @@ public sealed class DlqHistoryController : ApiControllerBase
         return Ok(response);
     }
 
+    /// <summary>
+    /// Gets a 7-day DLQ trend for a specific namespace.
+    /// Returns daily new and resolved message counts.
+    /// </summary>
+    /// <param name="namespaceId">The namespace to get trend data for.</param>
+    /// <param name="days">Number of days (1–30, default 7).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Array of daily trend data points.</returns>
+    [HttpGet("trend")]
+    [RequireScope(ApiKeyScopes.DlqRead)]
+    [ProducesResponseType(typeof(IReadOnlyList<DlqTrendPointResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<DlqTrendPointResponse>>> GetTrend(
+        [FromQuery] Guid? namespaceId = null,
+        [FromQuery] int days = 7,
+        CancellationToken cancellationToken = default)
+    {
+        days = Math.Clamp(days, 1, 30);
+        var result = await _historyService.GetSummaryAsync(namespaceId, days, cancellationToken);
+        if (result.IsFailure)
+            return ToActionResult<IReadOnlyList<DlqTrendPointResponse>>(result.Error);
+
+        var trend = result.Value.DailyTrend.Select(t => new DlqTrendPointResponse(
+            Date: t.Date,
+            NewMessages: t.NewMessages,
+            ResolvedMessages: t.ResolvedMessages
+        )).ToList();
+
+        return Ok(trend);
+    }
+
     private static string GenerateCsv(IReadOnlyList<Core.Entities.DlqMessage> messages)
     {
         var sb = new StringBuilder();
@@ -402,90 +429,6 @@ public sealed class DlqHistoryController : ApiControllerBase
 
         return sb.ToString();
     }
-    /// <summary>
-    /// Returns the forensic analysis result for a single DLQ message.
-    /// Re-runs the analysis engine on the stored message data.
-    /// </summary>
-    /// <param name="id">The DLQ message ID.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Forensic analysis result.</returns>
-    [HttpGet("history/{id:long}/forensic")]
-    [RequireScope(ApiKeyScopes.DlqRead)]
-    [ProducesResponseType(typeof(ForensicResultResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ForensicResultResponse>> GetForensicResult(
-        long id,
-        CancellationToken cancellationToken = default)
-    {
-        var result = await _historyService.GetByIdAsync(id, cancellationToken);
-        if (result.IsFailure)
-            return ToActionResult<ForensicResultResponse>(result.Error);
-
-        var msg = result.Value;
-        var forensic = _forensicEngine.Analyse(msg);
-
-        // Persist the result
-        await _historyService.UpdateForensicResultAsync(
-            id, forensic.Category, forensic.Confidence,
-            forensic.RootCause, forensic.ReplaySafety, cancellationToken);
-
-        return Ok(new ForensicResultResponse(
-            MessageId: id,
-            FailureCategory: forensic.Category.ToString(),
-            Confidence: forensic.Confidence,
-            RootCause: forensic.RootCause,
-            ReplaySafety: forensic.ReplaySafety,
-            Tier: forensic.Tier));
-    }
-
-    /// <summary>
-    /// Runs the forensic engine across all Active DLQ messages in a namespace
-    /// and persists the results.
-    /// </summary>
-    /// <param name="namespaceId">The namespace to analyse.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Batch analysis summary.</returns>
-    [HttpPost("analyse-batch/{namespaceId:guid}")]
-    [RequireScope(ApiKeyScopes.DlqWrite)]
-    [ProducesResponseType(typeof(ForensicBatchSummaryResponse), StatusCodes.Status200OK)]
-    public async Task<ActionResult<ForensicBatchSummaryResponse>> AnalyseBatch(
-        Guid namespaceId,
-        CancellationToken cancellationToken = default)
-    {
-        var historyResult = await _historyService.GetHistoryAsync(
-            namespaceId: namespaceId,
-            status: DlqMessageStatus.Active,
-            page: 1,
-            pageSize: 200,
-            cancellationToken: cancellationToken);
-
-        if (historyResult.IsFailure)
-            return ToActionResult<ForensicBatchSummaryResponse>(historyResult.Error);
-
-        var messages = historyResult.Value.Items;
-        var byCategory = new Dictionary<string, int>();
-        var updated = 0;
-
-        foreach (var msg in messages)
-        {
-            var forensic = _forensicEngine.Analyse(msg);
-
-            var updateResult = await _historyService.UpdateForensicResultAsync(
-                msg.Id, forensic.Category, forensic.Confidence,
-                forensic.RootCause, forensic.ReplaySafety, cancellationToken);
-
-            if (updateResult.IsSuccess)
-                updated++;
-
-            var key = forensic.Category.ToString();
-            byCategory[key] = byCategory.TryGetValue(key, out var count) ? count + 1 : 1;
-        }
-
-        return Ok(new ForensicBatchSummaryResponse(
-            Analysed: messages.Count,
-            Updated: updated,
-            ByCategory: byCategory));
-    }
 
     /// <summary>
     /// Manually triggers a DLQ scan for a namespace for instant updates.
@@ -505,6 +448,7 @@ public sealed class DlqHistoryController : ApiControllerBase
 
         return result.IsSuccess ? Ok(result.Value) : Problem(result.Error.Message);
     }
+
     private static string EscapeCsv(string value)
     {
         if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))

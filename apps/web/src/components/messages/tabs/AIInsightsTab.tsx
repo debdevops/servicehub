@@ -18,6 +18,7 @@ import type { AIInsight } from '@/lib/api/types';
 interface AIInsightsTabProps {
   message: Message;
   onViewPattern?: (messageIds: string[]) => void;
+  insights?: AIInsight[];
 }
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -97,7 +98,7 @@ function PatternCard({
   );
 }
 
-export function AIInsightsTab({ message, onViewPattern }: AIInsightsTabProps) {
+export function AIInsightsTab({ message, onViewPattern, insights: providedInsights }: AIInsightsTabProps) {
   const [searchParams] = useSearchParams();
   const namespaceId = searchParams.get('namespace');
   const queueName = searchParams.get('queue');
@@ -108,7 +109,7 @@ export function AIInsightsTab({ message, onViewPattern }: AIInsightsTabProps) {
   const entityName = queueName || (topicName && subscriptionName ? `${topicName}/subscriptions/${subscriptionName}` : topicName) || '';
   const entityType: 'queue' | 'topic' = topicName ? 'topic' : 'queue';
 
-  // Fetch messages for client-side AI analysis
+  // Call hooks unconditionally at component level (must be before any conditional returns)
   const { data: messagesData, isLoading: messagesLoading } = useMessages({
     namespaceId: namespaceId || '',
     queueOrTopicName: entityName,
@@ -118,7 +119,6 @@ export function AIInsightsTab({ message, onViewPattern }: AIInsightsTabProps) {
     take: 1000,
   });
 
-  // Perform client-side AI analysis
   const { data: insights, isLoading: insightsLoading, isError } = useClientSideInsights(
     messagesData?.items,
     {
@@ -127,8 +127,74 @@ export function AIInsightsTab({ message, onViewPattern }: AIInsightsTabProps) {
       subscriptionName: subscriptionName || undefined,
       entityType,
     },
-    !!namespaceId && !!entityName && !messagesLoading
+    !!namespaceId && !!entityName && !messagesLoading && providedInsights === undefined
   );
+
+  // If insights are provided, use them directly
+  if (providedInsights !== undefined) {
+    // Find patterns this message belongs to
+    const memberPatterns = (providedInsights || []).filter((insight) => {
+      const affectedIds = insight.evidence.affectedMessageIds;
+      const exampleIds = insight.evidence.exampleMessageIds;
+      return affectedIds.includes(message.id) || exampleIds.includes(message.id);
+    });
+
+    // Empty state when not part of any pattern
+    if (memberPatterns.length === 0) {
+      return (
+        <div className="p-6">
+          <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+            <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mb-4">
+              <Sparkles size={32} className="text-green-400" />
+            </div>
+            <p className="text-lg font-medium text-gray-700">No Patterns Detected</p>
+            <p className="text-sm text-gray-400 mt-1 text-center max-w-sm">
+              This message is not part of any AI-detected patterns. It appears to be processing normally.
+            </p>
+            <p className="text-xs text-gray-400 mt-3 text-center max-w-xs">
+              AI analysis found no anomalies or recurring issues associated with this message.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="p-6">
+        {/* Trust Disclaimer Banner */}
+        <div className="mb-4 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-start gap-2">
+            <Info size={14} className="text-blue-500 mt-0.5 shrink-0" />
+            <p className="text-xs text-blue-700">
+              <strong>⚠️ ServiceHub Interpretation (Not Azure Data):</strong> These patterns are heuristic analysis 
+              based on message characteristics. They represent possible explanations, not confirmed facts. 
+              Always verify findings in Azure Portal before taking operational action.
+            </p>
+          </div>
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center gap-2 mb-4 text-sm text-gray-600">
+          <AlertCircle size={16} className="text-primary-500" />
+          <span>
+            This message is part of <strong className="text-gray-900">{memberPatterns.length}</strong> detected pattern{memberPatterns.length > 1 ? 's' : ''}
+          </span>
+        </div>
+
+        {/* Pattern Cards */}
+        <div className="space-y-4">
+          {memberPatterns.map((pattern) => (
+            <PatternCard
+              key={pattern.id}
+              pattern={pattern}
+              messageId={message.id}
+              onViewPattern={onViewPattern}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const isLoading = messagesLoading || insightsLoading;
 

@@ -71,6 +71,11 @@ public sealed class SubscriptionsController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
+
         if (ns.ConnectionString is null)
         {
             return BadRequest("Namespace does not have a connection string configured.");
@@ -133,6 +138,11 @@ public sealed class SubscriptionsController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
+
         if (ns.ConnectionString is null)
         {
             return BadRequest("Namespace does not have a connection string configured.");

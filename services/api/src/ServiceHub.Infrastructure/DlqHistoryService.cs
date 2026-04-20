@@ -410,4 +410,35 @@ public sealed class DlqHistoryService : IDlqHistoryService
                 Error.Internal("Dlq.ForensicUpdateFailed", $"Failed to update forensic result: {ex.Message}"));
         }
     }
+
+    /// <inheritdoc />
+    public async Task<Result<DlqMessage>> LookupAsync(
+        Guid namespaceId,
+        string entityName,
+        long sequenceNumber,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var message = await _dbContext.DlqMessages
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    m => m.NamespaceId == namespaceId
+                         && m.EntityName == entityName
+                         && m.SequenceNumber == sequenceNumber,
+                    cancellationToken);
+
+            if (message == null)
+                return Result<DlqMessage>.Failure(
+                    Error.NotFound("Dlq.NotFound", "No DLQ history record found for this message"));
+
+            return message;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to lookup DLQ message");
+            return Result<DlqMessage>.Failure(
+                Error.Internal("Dlq.LookupFailed", $"Failed to lookup DLQ message: {ex.Message}"));
+        }
+    }
 }

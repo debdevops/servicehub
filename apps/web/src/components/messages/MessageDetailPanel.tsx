@@ -1,14 +1,15 @@
-import { useState, useEffect } from 'react';
-import { FileText, Code, Bot, List, Inbox, AlertTriangle, Shield } from 'lucide-react';
+import { useState } from 'react';
+import { FileText, Code, Bot, List, Inbox, AlertTriangle } from 'lucide-react';
 import { Play, Clipboard } from 'lucide-react'; // Trash2 removed - purge feature disabled
 import { useSearchParams } from 'react-router-dom';
 import { useTabPersistence, type DetailTab } from '@/hooks/useTabPersistence';
-import { PropertiesTab, BodyTab, AIInsightsTab, HeadersTab, ForensicTab } from './tabs';
+import { PropertiesTab, BodyTab, AIInsightsTab, HeadersTab } from './tabs';
 import { useReplayMessage } from '@/hooks/useMessages';
 import { useNamespaces } from '@/hooks/useNamespaces';
-// usePurgeMessage removed - Azure Service Bus limitation prevents reliable individual message deletion
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { CopyButton } from '@/components/CopyButton';
 import type { Message } from '@/lib/mockData';
+import type { AIInsight } from '@/lib/api/types';
 import toast from 'react-hot-toast';
 
 // ============================================================================
@@ -18,6 +19,7 @@ import toast from 'react-hot-toast';
 interface MessageDetailPanelProps {
   message: Message | null;
   onViewPattern?: (messageIds: string[]) => void;
+  insights?: AIInsight[];
 }
 
 // ============================================================================
@@ -28,7 +30,6 @@ const TABS: { id: DetailTab; label: string; icon: typeof FileText }[] = [
   { id: 'properties', label: 'Properties', icon: FileText },
   { id: 'body', label: 'Body', icon: Code },
   { id: 'ai', label: 'AI Insights', icon: Bot },
-  { id: 'forensic', label: 'Forensic', icon: Shield },
   { id: 'headers', label: 'Headers', icon: List },
 ];
 
@@ -54,7 +55,7 @@ function EmptyState() {
 // Tab Content Renderer
 // ============================================================================
 
-function TabContent({ tab, message, onViewPattern, onForensicResult }: { tab: DetailTab; message: Message; onViewPattern?: (messageIds: string[]) => void; onForensicResult?: (replaySafety: string | null) => void }) {
+function TabContent({ tab, message, onViewPattern, insights }: { tab: DetailTab; message: Message; onViewPattern?: (messageIds: string[]) => void; insights?: AIInsight[] }) {
   switch (tab) {
     case 'properties':
       return <PropertiesTab message={message} />;
@@ -65,13 +66,7 @@ function TabContent({ tab, message, onViewPattern, onForensicResult }: { tab: De
         <AIInsightsTab 
           message={message}
           onViewPattern={onViewPattern}
-        />
-      );
-    case 'forensic':
-      return (
-        <ForensicTab
-          message={message}
-          onForensicResult={onForensicResult}
+          insights={insights}
         />
       );
     case 'headers':
@@ -88,7 +83,6 @@ function TabContent({ tab, message, onViewPattern, onForensicResult }: { tab: De
 interface ActionButtonsProps {
   message: Message;
   namespaceId: string | null;
-  forensicSafety: string | null;
 }
 
 interface ConfirmState {
@@ -99,11 +93,11 @@ interface ConfirmState {
   action: 'replay' | null; // 'purge' removed - Azure Service Bus limitation
 }
 
-function ActionButtons({ message, namespaceId, forensicSafety }: ActionButtonsProps) {
+function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
   const replayMessage = useReplayMessage();
   const { data: namespaces } = useNamespaces();
   const currentNs = namespaces?.find(ns => ns.id === namespaceId);
-  const isProd = currentNs?.environment === 'Prod';
+  const isProd = currentNs?.environment === 'prod';
   const hasSendPermission = currentNs?.hasSendPermission !== false;
   // const purgeMessage = usePurgeMessage(); // Removed - Azure Service Bus limitation
   const [searchParams] = useSearchParams();
@@ -132,7 +126,7 @@ function ActionButtons({ message, namespaceId, forensicSafety }: ActionButtonsPr
       setConfirmState({
         isOpen: true,
         title: 'Replay Message',
-        message: `Are you sure you want to replay message ${shortId}?\n\nThis will re-send the message to the queue for processing.`,
+        message: `Are you sure you want to replay message ${shortId}?\n\nThis will re-send the message to the queue for processing.\n\n⚠️ Replay is best-effort and not atomic. If a transient error occurs after the message is sent but before it is removed from the DLQ, both the original DLQ entry and the new copy may briefly coexist. Check ApplicationProperties for "Replayed=true" if you see unexpected duplicates.`,
         variant: 'default',
         action: 'replay',
       });
@@ -181,7 +175,7 @@ function ActionButtons({ message, namespaceId, forensicSafety }: ActionButtonsPr
         });
       }
       */
-    } catch (error) {
+    } catch {
       // Error handled by mutation hook
     } finally {
       setConfirmState(prev => ({ ...prev, isOpen: false, action: null }));
@@ -204,14 +198,9 @@ function ActionButtons({ message, namespaceId, forensicSafety }: ActionButtonsPr
   return (
     <>
       <div className="flex items-center gap-3 p-4 border-t border-gray-200 bg-white">
-        {/* Replay Button — gated by forensic safety verdict */}
+        {/* Replay Button */}
         <div className="flex items-center gap-2">
           {(() => {
-            const isUnsafe = forensicSafety === 'Unsafe';
-            const requiresReview = forensicSafety === 'RequiresReview';
-            const isSafe = forensicSafety === 'Safe';
-            const hasVerdict = forensicSafety !== null;
-
             // Production environment guard — block all replay actions
             if (isProd) {
               return (
@@ -261,52 +250,16 @@ function ActionButtons({ message, namespaceId, forensicSafety }: ActionButtonsPr
               );
             }
 
-            if (hasVerdict && isUnsafe) {
-              return (
-                <button
-                  disabled
-                  title="Forensic analysis classified this message as Unsafe to replay. Fix the root cause first."
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-400 rounded-lg font-medium cursor-not-allowed border border-red-200"
-                  aria-label="Replay blocked"
-                >
-                  <Play size={16} />
-                  \uD83D\uDD12 Replay Blocked
-                </button>
-              );
-            }
-
-            if (hasVerdict && requiresReview) {
-              return (
-                <button
-                  onClick={() => {
-                    if (window.confirm(
-                      '\u26A0\uFE0F Forensic analysis marked this message as "Requires Review" before replaying.\n\n' +
-                      'Are you sure you want to replay this message?'
-                    )) {
-                      openConfirm('replay');
-                    }
-                  }}
-                  disabled={replayMessage.isPending || !namespaceId}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Forensic analysis recommends reviewing before replay"
-                  aria-label="Replay with review"
-                >
-                  <Play size={16} />
-                  {replayMessage.isPending ? 'Replaying...' : '\u26A0\uFE0F Replay (Review First)'}
-                </button>
-              );
-            }
-
             return (
               <button
                 className="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition-colors disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
                 onClick={() => openConfirm('replay')}
                 disabled={replayMessage.isPending || !namespaceId}
-                title={isSafe ? '\u2713 Forensic analysis: Safe to replay' : 'Re-send this message from DLQ back to the main queue for reprocessing'}
+                title="Re-send this message from DLQ back to the main queue for reprocessing"
                 aria-label="Replay message"
               >
                 <Play size={16} />
-                {replayMessage.isPending ? 'Replaying...' : (isSafe ? '\u2713 Replay' : 'Replay')}
+                {replayMessage.isPending ? 'Replaying...' : 'Replay'}
               </button>
             );
           })()}
@@ -400,18 +353,10 @@ function extractMessageTitle(message: Message): { title: string; subtitle: strin
   return { title: 'Message', subtitle: shortId };
 }
 
-export function MessageDetailPanel({ message, onViewPattern }: MessageDetailPanelProps) {
+export function MessageDetailPanel({ message, onViewPattern, insights }: MessageDetailPanelProps) {
   const [activeTab, setActiveTab] = useTabPersistence();
   const [searchParams] = useSearchParams();
   const namespaceId = searchParams.get('namespace');
-  const [forensicSafety, setForensicSafety] = useState<string | null>(
-    message?.replaySafety ?? null
-  );
-
-  // Reset forensic verdict when the selected message changes
-  useEffect(() => {
-    setForensicSafety(message?.replaySafety ?? null);
-  }, [message?.id]);
 
   if (!message) {
     return <EmptyState />;
@@ -442,12 +387,33 @@ export function MessageDetailPanel({ message, onViewPattern }: MessageDetailPane
       <div className={`shrink-0 px-6 py-4 border-b border-gray-200 ${
         isDLQ && dlqSeverity === 'critical' ? 'bg-red-50' : 'bg-white'
       }`}>
-        <h2 className="text-xl font-semibold text-gray-900">
-          {title}
-        </h2>
-        {subtitle && (
-          <p className="text-sm text-gray-500 mt-1 font-mono">{subtitle}</p>
-        )}
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">
+              {title}
+            </h2>
+            {subtitle && (
+              <p className="text-sm text-gray-500 mt-1 font-mono">{subtitle}</p>
+            )}
+          </div>
+          <CopyButton
+            text={(() => {
+              const base = `${window.location.origin}/messages?namespace=${namespaceId || ''}`;
+              const queueParam = searchParams.get('queue');
+              const topicParam = searchParams.get('topic');
+              const subParam = searchParams.get('subscription');
+              const entityPart = queueParam
+                ? `&queue=${queueParam}`
+                : topicParam
+                  ? `&topic=${topicParam}${subParam ? `&subscription=${subParam}` : ''}`
+                  : '';
+              return `${base}${entityPart}&messageId=${message.id}`;
+            })()}
+            label="Copy Link"
+            className="shrink-0 ml-3 px-2 py-1 border border-gray-200 rounded-lg"
+            iconSize="w-4 h-4"
+          />
+        </div>
         {isDLQ && (
           <div className="mt-2 flex items-center gap-2">
             <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
@@ -487,11 +453,11 @@ export function MessageDetailPanel({ message, onViewPattern }: MessageDetailPane
 
       {/* Tab Content */}
       <div className="flex-1 overflow-auto bg-gray-50">
-        <TabContent tab={activeTab} message={message} onViewPattern={onViewPattern} onForensicResult={setForensicSafety} />
+        <TabContent tab={activeTab} message={message} onViewPattern={onViewPattern} insights={insights} />
       </div>
 
       {/* Action Buttons */}
-      <ActionButtons message={message} namespaceId={namespaceId} forensicSafety={forensicSafety} />
+      <ActionButtons message={message} namespaceId={namespaceId} />
     </div>
   );
 }

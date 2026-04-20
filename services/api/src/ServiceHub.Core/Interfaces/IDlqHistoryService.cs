@@ -68,6 +68,16 @@ public interface IDlqHistoryService
         string rootCause,
         string replaySafety,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Looks up a DLQ history record by namespace, entity name, and sequence number.
+    /// Returns the DLQ record ID if found.
+    /// </summary>
+    Task<Result<DlqMessage>> LookupAsync(
+        Guid namespaceId,
+        string entityName,
+        long sequenceNumber,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

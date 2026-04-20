@@ -29,10 +29,16 @@ if [[ "${1:-}" == "--local" ]]; then
 {
   "Security": {
     "EncryptionKey": "$ENCRYPTION_KEY",
+    "EnableConnectionStringEncryption": true,
     "SpaToken": {
-      "Enabled": true,
-      "Secret": "$SPA_TOKEN_SECRET"
+      "Enabled": false
+    },
+    "Authentication": {
+      "Enabled": false
     }
+  },
+  "ApplicationInsights": {
+    "ConnectionString": ""
   }
 }
 EOF

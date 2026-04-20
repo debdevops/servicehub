@@ -251,14 +251,14 @@ public sealed class InMemoryNamespaceRepositoryTests : IDisposable
         var ns = MakeNamespace(ValidName);
         await _sut.AddAsync(ns);
 
-        var exists = await _sut.ExistsAsync(ValidName);
+        var exists = await _sut.ExistsAsync(ValidName, ns.OwnerId);
         exists.Should().BeTrue();
     }
 
     [Fact]
     public async Task ExistsAsync_NameDoesNotExist_ReturnsFalse()
     {
-        var exists = await _sut.ExistsAsync("ghost.servicebus.windows.net");
+        var exists = await _sut.ExistsAsync("ghost.servicebus.windows.net", "__spa__");
         exists.Should().BeFalse();
     }
 

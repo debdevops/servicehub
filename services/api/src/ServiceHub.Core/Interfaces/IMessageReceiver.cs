@@ -81,4 +81,22 @@ public interface IMessageReceiver
         long sequenceNumber,
         bool fromDeadLetter,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets scheduled messages from a queue or subscription by scanning beyond the active message window.
+    /// Unlike PeekMessagesAsync, this method is optimised for finding scheduled messages even when
+    /// there are many active messages with lower sequence numbers.
+    /// </summary>
+    /// <param name="namespaceId">The namespace identifier.</param>
+    /// <param name="entityName">The queue or topic name.</param>
+    /// <param name="subscriptionName">Optional subscription name for topics.</param>
+    /// <param name="maxMessages">Maximum number of scheduled messages to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A result containing the list of scheduled messages.</returns>
+    Task<Result<IReadOnlyList<Message>>> GetScheduledMessagesAsync(
+        Guid namespaceId,
+        string entityName,
+        string? subscriptionName,
+        int maxMessages,
+        CancellationToken cancellationToken = default);
 }

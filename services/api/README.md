@@ -1,6 +1,6 @@
 # ServiceHub API
 
-**AI-Powered Azure Service Bus Inspector API** built with .NET 8 and Clean Architecture.
+**AI-Powered Azure Service Bus Inspector API** built with .NET 10 and Clean Architecture.
 
 > This README provides quick start instructions and API reference. For complete documentation with architecture diagrams, design patterns, and detailed flows, see:
 > - **[Comprehensive Guide](../../docs/COMPREHENSIVE-GUIDE.md)** — Complete guide with Mermaid diagrams
@@ -32,19 +32,17 @@ cd /path/to/servicehub
 ```
 
 This automatically:
-- ✅ Installs .NET 8 SDK (if needed)
+- ✅ Installs .NET 10 SDK (if needed)
 - ✅ Installs Node.js & npm (for the web UI)
 - ✅ Restores all packages
 - ✅ Starts both API and Web UI
-
-See **[SETUP.md](../../SETUP.md)** for detailed setup instructions.
 
 ### Manual API-Only Setup
 
 If you only want to run the API server:
 
 #### Prerequisites
-- **.NET 8 SDK** — Auto-installed by root `run.sh`, or [download manually](https://dotnet.microsoft.com/download/dotnet/8.0)
+- **.NET 10 SDK** — Auto-installed by root `run.sh`, or [download manually](https://dotnet.microsoft.com/download/dotnet/10.0)
 - **Azure Service Bus namespace** (for testing)
 - **VS Code** or **Visual Studio 2022**
 
@@ -66,11 +64,11 @@ dotnet watch --project src/ServiceHub.Api/ServiceHub.Api.csproj
 
 ### Access Points
 
-- **API**: http://localhost:5000
+- **API**: http://localhost:5153
 - **API Docs (Scalar)**: http://localhost:5153/scalar/v1
-- **Health Check**: http://localhost:5000/health
-- **Ready Check**: http://localhost:5000/health/ready
-- **Live Check**: http://localhost:5000/health/live
+- **Health Check**: http://localhost:5153/health
+- **Ready Check**: http://localhost:5153/health/ready
+- **Live Check**: http://localhost:5153/health/live
 
 ---
 
@@ -79,7 +77,7 @@ dotnet watch --project src/ServiceHub.Api/ServiceHub.Api.csproj
 ### 1. Create a Namespace Connection
 
 ```bash
-curl -X POST http://localhost:5000/api/v1/namespaces \
+curl -X POST http://localhost:5153/api/v1/namespaces \
   -H "Content-Type: application/json" \
   -d '{
     "name": "my-servicebus",
@@ -109,7 +107,7 @@ curl -X POST http://localhost:5000/api/v1/namespaces \
 ### 2. Test Namespace Connection
 
 ```bash
-curl -X GET http://localhost:5000/api/v1/namespaces/{namespaceId}/test
+curl -X GET http://localhost:5153/api/v1/namespaces/{namespaceId}/test
 ```
 
 **Response:**
@@ -124,7 +122,7 @@ curl -X GET http://localhost:5000/api/v1/namespaces/{namespaceId}/test
 ### 3. List All Queues
 
 ```bash
-curl -X GET "http://localhost:5000/api/v1/queues?namespaceId={namespaceId}"
+curl -X GET "http://localhost:5153/api/v1/queues?namespaceId={namespaceId}"
 ```
 
 **Response:**
@@ -147,7 +145,7 @@ curl -X GET "http://localhost:5000/api/v1/queues?namespaceId={namespaceId}"
 ### 4. Send a Message to Queue
 
 ```bash
-curl -X POST http://localhost:5000/api/v1/messages/queue/my-queue \
+curl -X POST http://localhost:5153/api/v1/messages/queue/my-queue \
   -H "Content-Type: application/json" \
   -d '{
     "namespaceId": "{namespaceId}",
@@ -167,7 +165,7 @@ curl -X POST http://localhost:5000/api/v1/messages/queue/my-queue \
 ### 5. Peek Messages from Queue
 
 ```bash
-curl -X GET "http://localhost:5000/api/v1/messages/queue/my-queue?namespaceId={namespaceId}&maxMessages=10"
+curl -X GET "http://localhost:5153/api/v1/messages/queue/my-queue?namespaceId={namespaceId}&maxMessages=10"
 ```
 
 **Response:**
@@ -192,31 +190,31 @@ curl -X GET "http://localhost:5000/api/v1/messages/queue/my-queue?namespaceId={n
 ### 6. List Topics
 
 ```bash
-curl -X GET "http://localhost:5000/api/v1/topics?namespaceId={namespaceId}"
+curl -X GET "http://localhost:5153/api/v1/topics?namespaceId={namespaceId}"
 ```
 
 ### 7. List Subscriptions for a Topic
 
 ```bash
-curl -X GET "http://localhost:5000/api/v1/subscriptions?namespaceId={namespaceId}&topicName=my-topic"
+curl -X GET "http://localhost:5153/api/v1/subscriptions?namespaceId={namespaceId}&topicName=my-topic"
 ```
 
 ### 8. Peek Dead Letter Messages
 
 ```bash
-curl -X GET "http://localhost:5000/api/v1/messages/queue/my-queue/deadletter?namespaceId={namespaceId}&maxMessages=10"
+curl -X GET "http://localhost:5153/api/v1/messages/queue/my-queue/deadletter?namespaceId={namespaceId}&maxMessages=10"
 ```
 
 ### 9. Get All Namespaces
 
 ```bash
-curl -X GET http://localhost:5000/api/v1/namespaces
+curl -X GET http://localhost:5153/api/v1/namespaces
 ```
 
 ### 10. Delete a Namespace
 
 ```bash
-curl -X DELETE http://localhost:5000/api/v1/namespaces/{namespaceId}
+curl -X DELETE http://localhost:5153/api/v1/namespaces/{namespaceId}
 ```
 
 ---
@@ -427,7 +425,7 @@ docker run -p 5000:5000 servicehub-api
 
 ### Prerequisites
 ```bash
-dotnet --version  # Should be 8.0 or higher
+dotnet --version  # Should be 10.0 or higher
 ```
 
 ### Build
@@ -455,7 +453,7 @@ dotnet watch run --project src/ServiceHub.Api/ServiceHub.Api.csproj
 ## 📚 Additional Resources
 
 - [Azure Service Bus Documentation](https://docs.microsoft.com/azure/service-bus-messaging/)
-- [.NET 8 Documentation](https://docs.microsoft.com/dotnet/core/whats-new/dotnet-8)
+- [.NET 10 Documentation](https://docs.microsoft.com/dotnet/core/whats-new/dotnet-10)
 - [Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
 - [Result Pattern](https://enterprisecraftsmanship.com/posts/error-handling-exception-or-result/)
 
@@ -527,4 +525,4 @@ For issues, questions, or feature requests:
 
 ---
 
-**Built with ❤️ using .NET 8, Clean Architecture, and Azure Service Bus**
+**Built with ❤️ using .NET 10, Clean Architecture, and Azure Service Bus**
