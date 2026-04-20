@@ -145,45 +145,4 @@ export function useReplayMessage() {
   });
 }
 
-/* PURGE HOOK DISABLED - Azure Service Bus Limitation
- * The Service Bus SDK doesn't support direct access to messages by sequence number.
- * Scanning through messages times out for large queues.
- * Re-enable if Microsoft adds targeted message deletion support.
- *
-export function usePurgeMessage() {
-  const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: ({ 
-      namespaceId, 
-      sequenceNumber, 
-      entityName, 
-      subscriptionName,
-      fromDeadLetter 
-    }: { 
-      namespaceId: string; 
-      sequenceNumber: number; 
-      entityName: string;
-      subscriptionName?: string;
-      fromDeadLetter?: boolean;
-    }) => 
-      messagesApi.purge(namespaceId, sequenceNumber, entityName, subscriptionName, fromDeadLetter),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
-      toast.success('Message purged successfully');
-    },
-    onError: (error: any) => {
-      // Check if it's a 404 - feature not implemented yet
-      if (error?.response?.status === 404) {
-        toast.error('Purge feature is not yet available in the API', {
-          duration: 4000,
-          icon: '🚧',
-        });
-      } else {
-        const errorMsg = error?.response?.data?.message || error?.message || 'Failed to purge message';
-        toast.error(errorMsg);
-      }
-    },
-  });
-}
-*/

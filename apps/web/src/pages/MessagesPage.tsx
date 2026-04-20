@@ -116,7 +116,7 @@ export function MessagesPage() {
       if (!namespaceExists) {
         // Namespace ID in URL is invalid (likely from previous API session with in-memory storage)
         const firstNamespace = namespaces[0];
-        console.warn(`[MessagesPage] Invalid namespace ID "${namespaceId}" - redirecting to "${firstNamespace.id}"`);
+        if (import.meta.env.DEV) console.warn(`[MessagesPage] Invalid namespace ID "${namespaceId}" - redirecting to "${firstNamespace.id}"`);
         
         // Update URL with valid namespace ID while preserving other parameters
         const newParams = new URLSearchParams(searchParams);
