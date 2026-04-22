@@ -102,8 +102,14 @@ export interface DlqHistoryParams {
 }
 
 // ─── API Client ────────────────────────────────────────────────────
-
-export interface DlqTrendPoint {
+/**
+ * Sparkline data point for daily DLQ trend visualization.
+ * Used in getTrend() for dashboard charts.
+ *//**
+ * Sparkline data point for daily DLQ trend visualization.
+ * Used in getTrend() for dashboard charts.
+ */
+export interface DlqSparklinePoint {
   date: string;
   newCount: number;
   resolvedCount: number;
@@ -166,7 +172,7 @@ export const dlqHistoryApi = {
   /**
    * Get DLQ trend data for sparklines (daily new/resolved counts).
    */
-  getTrend: async (namespaceId: string, days: number = 7): Promise<DlqTrendPoint[]> => {
+  getTrend: async (namespaceId: string, days: number = 7): Promise<DlqSparklinePoint[]> => {
     const response = await apiClient.get<Array<{ date: string; newMessages: number; resolvedMessages: number }>>(
       '/dlq/trend',
       { params: { namespaceId, days } }
@@ -175,7 +181,7 @@ export const dlqHistoryApi = {
       date: d.date,
       newCount: d.newMessages,
       resolvedCount: d.resolvedMessages,
-    })) as DlqTrendPoint[];
+    })) as DlqSparklinePoint[];
   },
 
   /**
@@ -203,7 +209,10 @@ export const dlqHistoryApi = {
     document.body.appendChild(anchor);
     anchor.click();
     document.body.removeChild(anchor);
-    URL.revokeObjectURL(url);
+    // Defer URL cleanup to prevent Safari download cancellation
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 0);
   },
 
   /**
