@@ -197,9 +197,12 @@ public sealed class DlqHistoryController : ApiControllerBase
             Details: e.Details
         )).ToList();
 
+        var messageResult = await _historyService.GetByIdAsync(id, cancellationToken);
+        var entityName = messageResult.IsSuccess ? messageResult.Value.EntityName : string.Empty;
+
         var response = new DlqTimelineResponse(
             MessageId: id,
-            EntityName: string.Empty, // Will be populated from the message
+            EntityName: entityName,
             Events: events);
 
         return Ok(response);

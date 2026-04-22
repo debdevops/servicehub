@@ -193,10 +193,13 @@ export function DlqHistoryPage() {
     setPage(1);
   };
 
-  const handleExport = (format: 'json' | 'csv') => {
-    const url = dlqHistoryApi.getExportUrl(format, params);
-    window.open(url, '_blank');
-    toast.success(`Exporting DLQ messages as ${format.toUpperCase()}`);
+  const handleExport = async (format: 'json' | 'csv') => {
+    try {
+      await dlqHistoryApi.downloadExport(format, params);
+      toast.success(`DLQ messages exported as ${format.toUpperCase()}`);
+    } catch {
+      toast.error('Export failed. Please try again.');
+    }
   };
 
   const handleRefresh = () => {

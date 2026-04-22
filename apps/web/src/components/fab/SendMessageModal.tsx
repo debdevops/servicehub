@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Send, X, Plus, Trash2, Clock, Zap } from 'lucide-react';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues } from '@/hooks/useQueues';
@@ -162,7 +163,7 @@ export function SendMessageModal({
   const isValid = selectedNamespace && entity && body.trim().length > 0 && validateJson() &&
     (deliveryMode === 'now' || (deliveryMode === 'scheduled' && !!scheduledEnqueueTime));
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div
@@ -497,6 +498,7 @@ export function SendMessageModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
