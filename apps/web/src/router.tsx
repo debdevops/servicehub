@@ -15,6 +15,7 @@ import {
 const DashboardPageLazy = lazy(() => import('./pages/DashboardPage'));
 const DlqHistoryPageLazy = lazy(() => import('./pages/DlqHistoryPage'));
 const CorrelationExplorerPageLazy = lazy(() => import('./pages/CorrelationExplorerPage'));
+const InsightsPageLazy = lazy(() => import('./pages/InsightsPage').then(m => ({ default: m.InsightsPage })));
 
 // Loading fallback component
 function PageLoading() {
@@ -85,6 +86,14 @@ export const router = createBrowserRouter([
       {
         path: 'security',
         element: <SecurityPage />,
+      },
+      {
+        path: 'insights',
+        element: (
+          <Suspense fallback={<PageLoading />}>
+            <InsightsPageLazy />
+          </Suspense>
+        ),
       },
       {
         path: '*',
