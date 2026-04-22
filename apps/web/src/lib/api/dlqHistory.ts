@@ -175,7 +175,7 @@ export const dlqHistoryApi = {
       date: d.date,
       newCount: d.newMessages,
       resolvedCount: d.resolvedMessages,
-    }));
+    })) as DlqTrendPoint[];
   },
 
   /**
