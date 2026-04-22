@@ -23,7 +23,7 @@
 [![Version](https://img.shields.io/badge/version-3.1.0-brightgreen.svg)](.version)
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Azure-0078D4.svg)](https://app-servicehub-prod.azurewebsites.net/)
 
-[🚀 Live Demo](https://app-servicehub-prod.azurewebsites.net/) · [⚡ Quick Start](#quick-start) · [✨ Features](#features) · [📸 Screenshots](#screenshots) · [🏗️ Architecture](#architecture) · [🤝 Contributing](#contributing)
+[🚀 Live Demo](https://app-servicehub-prod.azurewebsites.net/) · [⚡ Quick Start](#️-quick-start) · [✨ Features](#️-features) · [📸 Screenshots](#️-screenshots) · [🏗️ Architecture](#️-architecture) · [🤝 Contributing](#️-contributing)
 
 </div>
 
