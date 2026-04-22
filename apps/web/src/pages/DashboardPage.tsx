@@ -21,7 +21,7 @@ import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues, useAllNamespacesQueues, NamespaceQueueStats } from '@/hooks/useQueues';
 import { Namespace, EnvironmentType } from '@/lib/api/types';
 import { namespacesApi } from '@/lib/api/namespaces';
-import { dlqHistoryApi, DlqTrendPoint } from '@/lib/api/dlqHistory';
+import { dlqHistoryApi, DlqSparklinePoint } from '@/lib/api/dlqHistory';
 
 const DLQ_SPIKE_THRESHOLD = 10;
 
@@ -331,7 +331,7 @@ function SkeletonCard() {
 // ============================================================================
 
 function DlqTrendSparkline({ namespaceId }: { namespaceId: string }) {
-  const { data: trendData } = useQuery<DlqTrendPoint[]>({
+  const { data: trendData } = useQuery<DlqSparklinePoint[]>({
     queryKey: ['dlq-trend', namespaceId],
     queryFn: () => dlqHistoryApi.getTrend(namespaceId, 7),
     refetchInterval: 30000,

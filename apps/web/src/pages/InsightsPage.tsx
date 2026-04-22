@@ -28,6 +28,8 @@ const CATEGORY_TITLES: Record<InsightCategory, string> = {
 export function InsightsPage() {
   const [selectedCategory, setSelectedCategory] = useState<InsightCategory>('critical');
   const { data: namespaces } = useNamespaces();
+  // Use first namespace as active (or fallback when no namespace selected)
+  // In the future, consider reading from URL search params for multi-namespace support
   const activeNamespace = namespaces?.[0];
 
   // Filter insights by selected category
