@@ -128,6 +128,7 @@ public sealed class AnomaliesController : ApiControllerBase
     /// <returns>The anomaly details.</returns>
     /// <response code="200">Anomaly retrieved successfully.</response>
     /// <response code="404">Anomaly not found.</response>
+    [RequireScope(ApiKeyScopes.AnomaliesRead)]
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(AnomalyInfo), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

@@ -135,6 +135,11 @@ export function useReplayMessage() {
           duration: 4000,
           icon: '🚧',
         });
+      } else if (error?.response?.status === 403) {
+        toast.error(
+          'Insufficient permissions to replay this message. Ensure your connection string has Send permission.',
+          { duration: 6000 }
+        );
       } else {
         const errorMsg = error?.response?.data?.message || error?.message || 'Failed to replay message';
         toast.error(errorMsg, {
