@@ -178,7 +178,7 @@ describe('dlqHistoryApi', () => {
       const mockBlob = new Blob(['test']);
       mocked.get.mockResolvedValueOnce({ data: mockBlob } as any);
 
-      const setTimeoutSpy = vi.spyOn(global, 'setTimeout');
+      const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
       vi.spyOn(document.body, 'appendChild').mockImplementation(() => document.body);
       vi.spyOn(document.body, 'removeChild').mockImplementation(() => document.body);
       vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url');
