@@ -20,7 +20,8 @@ import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues, useAllNamespacesQueues, NamespaceQueueStats } from '@/hooks/useQueues';
 import { Namespace, EnvironmentType } from '@/lib/api/types';
-import { apiClient } from '@/lib/api/client';
+import { namespacesApi } from '@/lib/api/namespaces';
+import { dlqHistoryApi, DlqSparklinePoint } from '@/lib/api/dlqHistory';
 
 const DLQ_SPIKE_THRESHOLD = 10;
 
@@ -329,25 +330,10 @@ function SkeletonCard() {
 // DLQ Trend Sparkline
 // ============================================================================
 
-interface TrendPoint {
-  date: string;
-  newCount: number;
-  resolvedCount: number;
-}
-
 function DlqTrendSparkline({ namespaceId }: { namespaceId: string }) {
-  const { data: trendData } = useQuery<TrendPoint[]>({
+  const { data: trendData } = useQuery<DlqSparklinePoint[]>({
     queryKey: ['dlq-trend', namespaceId],
-    queryFn: async () => {
-      const res = await apiClient.get(`/dlq/trend`, {
-        params: { namespaceId, days: 7 },
-      });
-      return (res.data as Array<{ date: string; newMessages: number; resolvedMessages: number }>).map(d => ({
-        date: d.date,
-        newCount: d.newMessages,
-        resolvedCount: d.resolvedMessages,
-      }));
-    },
+    queryFn: () => dlqHistoryApi.getTrend(namespaceId, 7),
     refetchInterval: 30000,
   });
 
@@ -387,17 +373,7 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }:
   // Use the stats endpoint for accurate totals (includes subscription DLQs)
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['namespace-stats', namespace.id],
-    queryFn: async () => {
-      const response = await apiClient.get<{
-        totalQueues: number;
-        totalTopics: number;
-        totalSubscriptions: number;
-        totalActive: number;
-        totalDlq: number;
-        totalScheduled: number;
-      }>(`/namespaces/${namespace.id}/stats`, { _silent: true } as Record<string, unknown>);
-      return response.data;
-    },
+    queryFn: () => namespacesApi.getStats(namespace.id),
     enabled: !!namespace.id,
     staleTime: 2000,
     refetchInterval: 7000,

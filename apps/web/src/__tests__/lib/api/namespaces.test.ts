@@ -91,4 +91,48 @@ describe('namespacesApi', () => {
       expect(response.message).toBe('Connection refused');
     });
   });
+
+  describe('getStats()', () => {
+    it('calls GET /namespaces/:id/stats with _silent config', async () => {
+      const mockStats = {
+        totalQueues: 5,
+        totalTopics: 3,
+        totalSubscriptions: 8,
+        totalActive: 150,
+        totalDlq: 12,
+        totalScheduled: 3,
+      };
+      mockedClient.get.mockResolvedValueOnce({ data: mockStats } as any);
+
+      const result = await namespacesApi.getStats('ns-1');
+
+      expect(mockedClient.get).toHaveBeenCalledWith('/namespaces/ns-1/stats', {
+        _silent: true,
+      });
+      expect(result).toEqual(mockStats);
+      expect(result.totalQueues).toBe(5);
+      expect(result.totalDlq).toBe(12);
+    });
+
+    it('returns namespace statistics with correct shape', async () => {
+      const mockStats = {
+        totalQueues: 10,
+        totalTopics: 4,
+        totalSubscriptions: 12,
+        totalActive: 500,
+        totalDlq: 25,
+        totalScheduled: 8,
+      };
+      mockedClient.get.mockResolvedValueOnce({ data: mockStats } as any);
+
+      const result = await namespacesApi.getStats('ns-2');
+
+      expect(result).toHaveProperty('totalQueues', 10);
+      expect(result).toHaveProperty('totalTopics', 4);
+      expect(result).toHaveProperty('totalSubscriptions', 12);
+      expect(result).toHaveProperty('totalActive', 500);
+      expect(result).toHaveProperty('totalDlq', 25);
+      expect(result).toHaveProperty('totalScheduled', 8);
+    });
+  });
 });

@@ -5,6 +5,7 @@ import {
   INSIGHT_COUNTS,
   type InsightCategory,
 } from '@/lib/insightsMockData';
+import { useNamespaces } from '@/hooks/useNamespaces';
 
 // Category title mapping
 const CATEGORY_TITLES: Record<InsightCategory, string> = {
@@ -26,6 +27,10 @@ const CATEGORY_TITLES: Record<InsightCategory, string> = {
  */
 export function InsightsPage() {
   const [selectedCategory, setSelectedCategory] = useState<InsightCategory>('critical');
+  const { data: namespaces } = useNamespaces();
+  // Use first namespace as active (or fallback when no namespace selected)
+  // In the future, consider reading from URL search params for multi-namespace support
+  const activeNamespace = namespaces?.[0];
 
   // Filter insights by selected category
   const filteredInsights = useMemo(
@@ -39,13 +44,15 @@ export function InsightsPage() {
       <div className="bg-gradient-to-r from-primary-600 to-primary-500 px-6 py-4 shrink-0">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold text-white">AI Insights Dashboard</h1>
-          <div className="flex items-center gap-2 text-primary-100">
-            <span className="text-sm">Analyzing:</span>
-            <span className="px-2 py-1 bg-white/20 rounded text-white font-medium text-sm">
-              OrdersQueue
-            </span>
-            <span className="w-2 h-2 rounded-full bg-green-400 ml-1" />
-          </div>
+          {activeNamespace && (
+            <div className="flex items-center gap-2 text-primary-100">
+              <span className="text-sm">Namespace:</span>
+              <span className="px-2 py-1 bg-white/20 rounded text-white font-medium text-sm">
+                {activeNamespace.name}
+              </span>
+              <span className="w-2 h-2 rounded-full bg-green-400 ml-1" />
+            </div>
+          )}
         </div>
       </div>
 

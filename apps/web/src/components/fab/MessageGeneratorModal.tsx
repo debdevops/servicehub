@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   X, 
   Wand2, 
@@ -259,7 +260,7 @@ export function MessageGeneratorModal({
 
   const isValid = selectedNamespace && selectedEntity && selectedScenarios.length > 0;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
@@ -536,6 +537,7 @@ export function MessageGeneratorModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
