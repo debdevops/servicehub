@@ -107,4 +107,111 @@ describe('dlqHistoryApi', () => {
       expect(url).toContain('status=active');
     });
   });
+
+  describe('getTrend()', () => {
+    it('calls GET /dlq/trend with namespaceId and days params', async () => {
+      const mockTrend = [
+        { date: '2026-04-20', newMessages: 5, resolvedMessages: 2 },
+        { date: '2026-04-21', newMessages: 8, resolvedMessages: 3 },
+      ];
+      mocked.get.mockResolvedValueOnce({ data: mockTrend } as any);
+
+      const result = await dlqHistoryApi.getTrend('ns-1', 7);
+
+      expect(mocked.get).toHaveBeenCalledWith('/dlq/trend', {
+        params: { namespaceId: 'ns-1', days: 7 },
+      });
+      expect(result).toEqual([
+        { date: '2026-04-20', newCount: 5, resolvedCount: 2 },
+        { date: '2026-04-21', newCount: 8, resolvedCount: 3 },
+      ]);
+    });
+
+    it('maps response field names correctly (newMessages → newCount, resolvedMessages → resolvedCount)', async () => {
+      const mockTrend = [{ date: '2026-04-22', newMessages: 10, resolvedMessages: 4 }];
+      mocked.get.mockResolvedValueOnce({ data: mockTrend } as any);
+
+      const result = await dlqHistoryApi.getTrend('ns-1');
+
+      expect(result[0]).toHaveProperty('newCount', 10);
+      expect(result[0]).toHaveProperty('resolvedCount', 4);
+      expect(result[0]).not.toHaveProperty('newMessages');
+      expect(result[0]).not.toHaveProperty('resolvedMessages');
+    });
+
+    it('uses default days=7 when not specified', async () => {
+      mocked.get.mockResolvedValueOnce({ data: [] } as any);
+
+      await dlqHistoryApi.getTrend('ns-1');
+
+      expect(mocked.get).toHaveBeenCalledWith(
+        '/dlq/trend',
+        expect.objectContaining({ params: expect.objectContaining({ days: 7 }) })
+      );
+    });
+  });
+
+  describe('downloadExport()', () => {
+    it('calls GET /dlq/export with format and params', async () => {
+      const mockBlob = new Blob(['test data']);
+      mocked.get.mockResolvedValueOnce({ data: mockBlob } as any);
+
+      // Mock DOM methods
+      const createElementSpy = vi.spyOn(document, 'createElement');
+      const appendChildSpy = vi.spyOn(document.body, 'appendChild');
+      const removeChildSpy = vi.spyOn(document.body, 'removeChild');
+
+      await dlqHistoryApi.downloadExport('json', { namespaceId: 'ns-1' });
+
+      expect(mocked.get).toHaveBeenCalledWith(
+        expect.stringContaining('/dlq/export'),
+        expect.objectContaining({ responseType: 'blob' })
+      );
+      expect(createElementSpy).toHaveBeenCalledWith('a');
+
+      createElementSpy.mockRestore();
+      appendChildSpy.mockRestore();
+      removeChildSpy.mockRestore();
+    });
+
+    it('defers URL.revokeObjectURL cleanup with setTimeout', async () => {
+      const mockBlob = new Blob(['test']);
+      mocked.get.mockResolvedValueOnce({ data: mockBlob } as any);
+
+      const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+      vi.spyOn(document.body, 'appendChild').mockImplementation(() => document.body);
+      vi.spyOn(document.body, 'removeChild').mockImplementation(() => document.body);
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url');
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+      await dlqHistoryApi.downloadExport('csv');
+
+      // Verify setTimeout was called to defer cleanup
+      expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 0);
+
+      setTimeoutSpy.mockRestore();
+    });
+
+    it('creates download link with correct filename', async () => {
+      const mockBlob = new Blob(['test']);
+      mocked.get.mockResolvedValueOnce({ data: mockBlob } as any);
+
+      const createElementSpy = vi.spyOn(document, 'createElement');
+      vi.spyOn(document.body, 'appendChild').mockImplementation(() => document.body);
+      vi.spyOn(document.body, 'removeChild').mockImplementation(() => document.body);
+
+      // Mock today's date
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-04-22'));
+
+      await dlqHistoryApi.downloadExport('json');
+
+      expect(createElementSpy).toHaveBeenCalledWith('a');
+      const anchor = createElementSpy.mock.results.find(r => r.value.tagName === 'A')?.value;
+      expect(anchor?.download).toMatch(/dlq-export-2026-04-22\.json/);
+
+      vi.useRealTimers();
+      createElementSpy.mockRestore();
+    });
+  });
 });

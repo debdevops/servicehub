@@ -102,6 +102,18 @@ export interface DlqHistoryParams {
 }
 
 // ─── API Client ────────────────────────────────────────────────────
+/**
+ * Sparkline data point for daily DLQ trend visualization.
+ * Used in getTrend() for dashboard charts.
+ *//**
+ * Sparkline data point for daily DLQ trend visualization.
+ * Used in getTrend() for dashboard charts.
+ */
+export interface DlqSparklinePoint {
+  date: string;
+  newCount: number;
+  resolvedCount: number;
+}
 
 export const dlqHistoryApi = {
   /**
@@ -158,7 +170,54 @@ export const dlqHistoryApi = {
   },
 
   /**
-   * Get export download URL.
+   * Get DLQ trend data for sparklines (daily new/resolved counts).
+   */
+  getTrend: async (namespaceId: string, days: number = 7): Promise<DlqSparklinePoint[]> => {
+    const response = await apiClient.get<Array<{ date: string; newMessages: number; resolvedMessages: number }>>(
+      '/dlq/trend',
+      { params: { namespaceId, days } }
+    );
+    return response.data.map(d => ({
+      date: d.date,
+      newCount: d.newMessages,
+      resolvedCount: d.resolvedMessages,
+    })) as DlqSparklinePoint[];
+  },
+
+  /**
+   * Download a DLQ export via the axios client (includes SPA auth token).
+   * Creates a Blob URL and triggers browser download — no window.open needed.
+   */
+  downloadExport: async (format: 'json' | 'csv' = 'json', params?: DlqHistoryParams): Promise<void> => {
+    const queryParams = new URLSearchParams({ format });
+    if (params?.namespaceId) queryParams.set('namespaceId', params.namespaceId);
+    if (params?.entityName) queryParams.set('entityName', params.entityName);
+    if (params?.from) queryParams.set('from', params.from);
+    if (params?.to) queryParams.set('to', params.to);
+    if (params?.status) queryParams.set('status', params.status);
+
+    const response = await apiClient.get(`/dlq/export?${queryParams.toString()}`, {
+      responseType: 'blob',
+    });
+
+    const mimeType = format === 'csv' ? 'text/csv' : 'application/json';
+    const blob = new Blob([response.data as BlobPart], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `dlq-export-${new Date().toISOString().slice(0, 10)}.${format}`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    // Defer URL cleanup to prevent Safari download cancellation
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 0);
+  },
+
+  /**
+   * Get export download URL (kept for backwards compatibility).
+   * @deprecated Use downloadExport() instead — window.open bypasses SPA auth headers.
    */
   getExportUrl: (format: 'json' | 'csv' = 'json', params?: DlqHistoryParams): string => {
     const baseUrl = apiClient.defaults.baseURL || '';

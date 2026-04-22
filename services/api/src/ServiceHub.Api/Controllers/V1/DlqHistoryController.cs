@@ -199,7 +199,7 @@ public sealed class DlqHistoryController : ApiControllerBase
 
         var response = new DlqTimelineResponse(
             MessageId: id,
-            EntityName: string.Empty, // Will be populated from the message
+            EntityName: string.Empty,
             Events: events);
 
         return Ok(response);

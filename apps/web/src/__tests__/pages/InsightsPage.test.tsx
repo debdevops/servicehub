@@ -1,6 +1,14 @@
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { InsightsPage } from '@/pages/InsightsPage';
 import { MOCK_INSIGHTS } from '@/lib/insightsMockData';
+
+vi.mock('@/hooks/useNamespaces', () => ({
+  useNamespaces: vi.fn(() => ({
+    data: [{ id: '1', name: 'Test Namespace', displayName: 'Test Namespace' }],
+    isLoading: false,
+  })),
+}));
 
 describe('InsightsPage', () => {
   it('renders the AI Insights Dashboard heading', () => {
@@ -8,10 +16,10 @@ describe('InsightsPage', () => {
     expect(screen.getByText('AI Insights Dashboard')).toBeInTheDocument();
   });
 
-  it('shows "Analyzing: OrdersQueue" in the header', () => {
+  it('shows namespace in header', () => {
     render(<InsightsPage />);
-    expect(screen.getByText('OrdersQueue')).toBeInTheDocument();
-    expect(screen.getByText('Analyzing:')).toBeInTheDocument();
+    expect(screen.getByText('Test Namespace')).toBeInTheDocument();
+    expect(screen.getByText('Namespace:')).toBeInTheDocument();
   });
 
   it('renders the insights sidebar', () => {
