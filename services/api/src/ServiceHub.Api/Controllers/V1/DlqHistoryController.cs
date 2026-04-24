@@ -62,7 +62,7 @@ public sealed class DlqHistoryController : ApiControllerBase
         page = Math.Max(page, 1);
 
         var result = await _historyService.GetHistoryAsync(
-            namespaceId, entityName, from, to, status, category,
+            OwnerId, namespaceId, entityName, from, to, status, category,
             page, pageSize, cancellationToken);
 
         if (result.IsFailure)

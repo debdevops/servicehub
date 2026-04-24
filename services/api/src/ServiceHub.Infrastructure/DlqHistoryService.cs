@@ -27,6 +27,7 @@ public sealed class DlqHistoryService : IDlqHistoryService
 
     /// <inheritdoc />
     public async Task<Result<DlqHistoryPageResult>> GetHistoryAsync(
+        string ownerId,
         Guid? namespaceId = null,
         string? entityName = null,
         DateTimeOffset? from = null,
@@ -40,6 +41,9 @@ public sealed class DlqHistoryService : IDlqHistoryService
         try
         {
             var query = _dbContext.DlqMessages.AsNoTracking().AsQueryable();
+
+            // TENANT ISOLATION: Filter messages by owner
+            query = query.Where(m => m.OwnerId == ownerId);
 
             if (namespaceId.HasValue)
                 query = query.Where(m => m.NamespaceId == namespaceId.Value);
