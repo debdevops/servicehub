@@ -78,7 +78,7 @@ export function Header() {
 
         {/* Help */}
         <RouterLink
-          to="/help"
+          to="/app/help"
           className="p-2 hover:bg-white/10 rounded-lg transition-colors"
           title="Help & Quick Reference"
           aria-label="Help"

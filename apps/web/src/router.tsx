@@ -9,6 +9,7 @@ import {
   HelpPage,
   ScheduledMessagesPage,
   SecurityPage,
+  WelcomePage,
 } from '@/pages';
 
 // Lazy-load heavy pages to improve initial bundle size and cold-start performance
@@ -29,11 +30,19 @@ function PageLoading() {
 export const router = createBrowserRouter([
   {
     path: '/',
+    element: <WelcomePage />,
+  },
+  {
+    path: '/welcome',
+    element: <WelcomePage />,
+  },
+  {
+    path: '/app',
     element: <MainLayout />,
     children: [
       {
         index: true,
-        element: <Navigate to="/connect" replace />,
+        element: <Navigate to="/app/connect" replace />,
       },
       {
         path: 'dashboard',
@@ -97,7 +106,7 @@ export const router = createBrowserRouter([
       },
       {
         path: '*',
-        element: <Navigate to="/connect" replace />,
+        element: <Navigate to="/app/connect" replace />,
       },
     ],
   },
