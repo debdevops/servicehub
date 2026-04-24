@@ -79,13 +79,15 @@ export function WelcomePage() {
 
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
-            <Link
-              to="/app/connect"
+            <a
+              href="https://app-servicehub-prod.azurewebsites.net/"
+              target="_blank"
+              rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-8 py-3 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 transition-colors shadow-lg hover:shadow-xl"
             >
-              Try Free Demo
+              🚀 Try Free Demo (Live)
               <ArrowRight className="w-4 h-4" />
-            </Link>
+            </a>
             <a
               href="https://github.com/debdevops/servicehub"
               target="_blank"
@@ -173,7 +175,147 @@ export function WelcomePage() {
         </div>
       </section>
 
-      {/* Why ServiceHub */}
+      {/* Azure Portal Comparison */}
+      <section className="py-20 px-6 bg-gradient-to-r from-red-50/30 to-blue-50/30">
+        <div className="max-w-5xl mx-auto">
+          <h2 className="text-3xl font-bold text-gray-900 text-center mb-12">
+            ServiceHub vs Azure Portal: Feature Comparison
+          </h2>
+
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-100 border-b border-gray-200">
+                  <th className="px-6 py-4 text-left font-semibold text-gray-900">Capability</th>
+                  <th className="px-6 py-4 text-center font-semibold text-gray-600">Azure Portal</th>
+                  <th className="px-6 py-4 text-center font-semibold text-primary-600">ServiceHub</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-gray-100 hover:bg-white/50">
+                  <td className="px-6 py-3 text-gray-900">View Message Body & Content</td>
+                  <td className="px-6 py-3 text-center text-red-600">❌ Count Only</td>
+                  <td className="px-6 py-3 text-center text-green-600">✅ Full Body + Syntax</td>
+                </tr>
+                <tr className="border-b border-gray-100 hover:bg-white/50">
+                  <td className="px-6 py-3 text-gray-900">Search Across Message Content</td>
+                  <td className="px-6 py-3 text-center text-red-600">❌ Not Available</td>
+                  <td className="px-6 py-3 text-center text-green-600">✅ Real-Time Full-Text</td>
+                </tr>
+                <tr className="border-b border-gray-100 hover:bg-white/50">
+                  <td className="px-6 py-3 text-gray-900">DLQ Investigation</td>
+                  <td className="px-6 py-3 text-center text-red-600">❌ One at a Time</td>
+                  <td className="px-6 py-3 text-center text-green-600">✅ Batch Analysis</td>
+                </tr>
+                <tr className="border-b border-gray-100 hover:bg-white/50">
+                  <td className="px-6 py-3 text-gray-900">AI Pattern Detection</td>
+                  <td className="px-6 py-3 text-center text-red-600">❌ Not Available</td>
+                  <td className="px-6 py-3 text-center text-green-600">✅ Client-Side Clustering</td>
+                </tr>
+                <tr className="border-b border-gray-100 hover:bg-white/50">
+                  <td className="px-6 py-3 text-gray-900">Replay from DLQ</td>
+                  <td className="px-6 py-3 text-center text-red-600">❌ Not Available</td>
+                  <td className="px-6 py-3 text-center text-green-600">✅ One-Click or Auto-Rules</td>
+                </tr>
+                <tr className="border-b border-gray-100 hover:bg-white/50">
+                  <td className="px-6 py-3 text-gray-900">30-Day DLQ Trends</td>
+                  <td className="px-6 py-3 text-center text-red-600">❌ Not Available</td>
+                  <td className="px-6 py-3 text-center text-green-600">✅ Full History + Charts</td>
+                </tr>
+                <tr className="border-b border-gray-100 hover:bg-white/50">
+                  <td className="px-6 py-3 text-gray-900">Correlation ID Tracing</td>
+                  <td className="px-6 py-3 text-center text-red-600">❌ Not Available</td>
+                  <td className="px-6 py-3 text-center text-green-600">✅ Cross-Queue Journeys</td>
+                </tr>
+                <tr className="border-b border-gray-100 hover:bg-white/50">
+                  <td className="px-6 py-3 text-gray-900">Multi-Namespace Support</td>
+                  <td className="px-6 py-3 text-center text-red-600">❌ Portal Only</td>
+                  <td className="px-6 py-3 text-center text-green-600">✅ Simultaneous Management</td>
+                </tr>
+                <tr className="border-b border-gray-100 hover:bg-white/50">
+                  <td className="px-6 py-3 text-gray-900">Scheduled Message Management</td>
+                  <td className="px-6 py-3 text-center text-red-600">❌ Not Available</td>
+                  <td className="px-6 py-3 text-center text-green-600">✅ View, Reschedule, Cancel</td>
+                </tr>
+                <tr className="hover:bg-white/50">
+                  <td className="px-6 py-3 text-gray-900">Auto-Replay Rules Engine</td>
+                  <td className="px-6 py-3 text-center text-red-600">❌ Not Available</td>
+                  <td className="px-6 py-3 text-center text-green-600">✅ Smart Matching + Safety</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-8 p-6 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-center text-gray-700 font-semibold">
+              🎯 Bottom line: <span className="text-primary-600">ServiceHub does in minutes what takes hours in the Portal.</span>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Lucrative Use Cases */}
+      <section className="py-20 px-6">
+        <div className="max-w-5xl mx-auto">
+          <h2 className="text-3xl font-bold text-gray-900 text-center mb-12">
+            Real-World Scenarios Where ServiceHub Shines
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="p-6 bg-gradient-to-br from-amber-50 to-white rounded-xl border border-amber-200">
+              <div className="text-4xl mb-3">🚨</div>
+              <h3 className="text-lg font-bold text-gray-900 mb-3">Production Incident @ 2 AM</h3>
+              <p className="text-gray-600 mb-3">10,000 messages pile up in DLQ. Azure Portal shows counts but no visibility into why. With ServiceHub, you search all messages in 10 seconds, find the pattern, and auto-replay in minutes instead of hours.</p>
+              <p className="text-xs text-amber-700 font-semibold">⏱️ Time saved: ~4 hours</p>
+            </div>
+
+            <div className="p-6 bg-gradient-to-br from-purple-50 to-white rounded-xl border border-purple-200">
+              <div className="text-4xl mb-3">🔍</div>
+              <h3 className="text-lg font-bold text-gray-900 mb-3">Post-Mortem Analysis</h3>
+              <p className="text-gray-600 mb-3">DLQ Intelligence stores 30 days of failure history. Graph trends over time, categorize failures (Transient, MaxDelivery, Expired), and extract patterns for prevention. Export CSV for stakeholder reports.</p>
+              <p className="text-xs text-purple-700 font-semibold">📊 Data-driven insights</p>
+            </div>
+
+            <div className="p-6 bg-gradient-to-br from-green-50 to-white rounded-xl border border-green-200">
+              <div className="text-4xl mb-3">🎯</div>
+              <h3 className="text-lg font-bold text-gray-900 mb-3">Automated Recovery</h3>
+              <p className="text-gray-600 mb-3">Deploy auto-replay rules that watch for transient failures and replay them automatically. ServiceHub templates cover throttling errors, timeouts, and TTL expiry — set it and forget it.</p>
+              <p className="text-xs text-green-700 font-semibold">⚡ Zero manual intervention</p>
+            </div>
+
+            <div className="p-6 bg-gradient-to-br from-blue-50 to-white rounded-xl border border-blue-200">
+              <div className="text-4xl mb-3">🔗</div>
+              <h3 className="text-lg font-bold text-gray-900 mb-3">Distributed Debugging</h3>
+              <p className="text-gray-600 mb-3">Trace a Correlation ID across all queues, topics, and subscriptions to see where a message ended up. Debug multi-hop workflows and find where processing broke.</p>
+              <p className="text-xs text-blue-700 font-semibold">🕵️ End-to-end visibility</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Trust & Enterprise */}
+      <section className="py-16 px-6 bg-gradient-to-r from-primary-50 to-blue-50">
+        <div className="max-w-4xl mx-auto text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-8">Enterprise-Grade, But Developer-Friendly</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="p-5 bg-white rounded-lg border border-gray-200">
+              <div className="text-2xl mb-2">🔐</div>
+              <h4 className="font-semibold text-gray-900 mb-2">Zero-Trust Privacy</h4>
+              <p className="text-sm text-gray-600">All AI analysis runs client-side. No message content leaves your browser. AES-GCM encryption for connection strings at rest.</p>
+            </div>
+            <div className="p-5 bg-white rounded-lg border border-gray-200">
+              <div className="text-2xl mb-2">⚙️</div>
+              <h4 className="font-semibold text-gray-900 mb-2">One-Command Setup</h4>
+              <p className="text-sm text-gray-600">Clone the repo, run <span className="font-mono text-xs bg-gray-100 px-2 py-1">./run.sh</span>, paste your connection string. Live in 30 seconds.</p>
+            </div>
+            <div className="p-5 bg-white rounded-lg border border-gray-200">
+              <div className="text-2xl mb-2">📦</div>
+              <h4 className="font-semibold text-gray-900 mb-2">Self-Hosted Control</h4>
+              <p className="text-sm text-gray-600">Deploy to your own infrastructure (Docker, Azure App Service, Kubernetes) or use our free hosted demo. You decide.</p>
+            </div>
+          </div>
+        </div>
+      </section>
       <section className="py-20 px-6">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-3xl font-bold text-gray-900 mb-12 text-center">
@@ -257,15 +399,26 @@ export function WelcomePage() {
         <div className="max-w-3xl mx-auto bg-gradient-to-r from-primary-600 to-blue-600 rounded-2xl p-12 text-white text-center shadow-xl">
           <h2 className="text-3xl font-bold mb-4">Ready to Debug Your DLQs Like a Pro?</h2>
           <p className="text-lg mb-8 text-white/90">
-            No credit card needed. No setup required. Try the demo right now.
+            No credit card needed. No setup required. Try the demo right now — connect any Azure Service Bus in 30 seconds.
           </p>
-          <Link
-            to="/app/connect"
-            className="inline-flex items-center gap-2 px-8 py-4 bg-white text-primary-600 font-bold rounded-lg hover:bg-gray-100 transition-colors shadow-lg"
-          >
-            Launch Free Demo
-            <ArrowRight className="w-5 h-5" />
-          </Link>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <a
+              href="https://app-servicehub-prod.azurewebsites.net/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-white text-primary-600 font-bold rounded-lg hover:bg-gray-100 transition-colors shadow-lg"
+            >
+              🚀 Launch Free Demo
+              <ArrowRight className="w-5 h-5" />
+            </a>
+            <Link
+              to="/app/connect"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-white/20 text-white font-bold rounded-lg border-2 border-white hover:bg-white/30 transition-colors"
+            >
+              💻 Self-Host on localhost
+              <ArrowRight className="w-5 h-5" />
+            </Link>
+          </div>
         </div>
       </section>
 
