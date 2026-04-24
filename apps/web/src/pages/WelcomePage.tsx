@@ -80,7 +80,7 @@ export function WelcomePage() {
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
             <Link
-              to="/connect"
+              to="/app/connect"
               className="inline-flex items-center gap-2 px-8 py-3 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 transition-colors shadow-lg hover:shadow-xl"
             >
               Try Free Demo
@@ -130,6 +130,45 @@ export function WelcomePage() {
                 <p className="text-gray-600">{description}</p>
               </div>
             ))}
+          </div>
+
+          {/* Additional Capabilities */}
+          <div className="mt-16 pt-16 border-t border-gray-200">
+            <h3 className="text-2xl font-bold text-gray-900 text-center mb-12">
+              Advanced Capabilities Built for Production
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="p-5 bg-gradient-to-br from-blue-50 to-white rounded-lg border border-blue-100">
+                <div className="text-3xl mb-3">🔥</div>
+                <h4 className="font-semibold text-gray-900 mb-2">Lightning-Fast Search</h4>
+                <p className="text-sm text-gray-600">Search across millions of messages by body, headers, properties, or correlation ID in milliseconds</p>
+              </div>
+              <div className="p-5 bg-gradient-to-br from-purple-50 to-white rounded-lg border border-purple-100">
+                <div className="text-3xl mb-3">🤖</div>
+                <h4 className="font-semibold text-gray-900 mb-2">AI Pattern Detection</h4>
+                <p className="text-sm text-gray-600">Automatic anomaly detection and pattern analysis to understand message failures at scale</p>
+              </div>
+              <div className="p-5 bg-gradient-to-br from-green-50 to-white rounded-lg border border-green-100">
+                <div className="text-3xl mb-3">🎯</div>
+                <h4 className="font-semibold text-gray-900 mb-2">Smart Auto-Replay</h4>
+                <p className="text-sm text-gray-600">Create intelligent replay rules with conditional logic, scheduling, and automatic success/failure handling</p>
+              </div>
+              <div className="p-5 bg-gradient-to-br from-orange-50 to-white rounded-lg border border-orange-100">
+                <div className="text-3xl mb-3">📈</div>
+                <h4 className="font-semibold text-gray-900 mb-2">Real-Time Analytics</h4>
+                <p className="text-sm text-gray-600">Live dashboards with queue metrics, message trends, failure rates, and performance insights</p>
+              </div>
+              <div className="p-5 bg-gradient-to-br from-pink-50 to-white rounded-lg border border-pink-100">
+                <div className="text-3xl mb-3">🔗</div>
+                <h4 className="font-semibold text-gray-900 mb-2">Correlation Explorer</h4>
+                <p className="text-sm text-gray-600">Trace message flow across topics, queues, and subscriptions with built-in correlation tracking</p>
+              </div>
+              <div className="p-5 bg-gradient-to-br from-cyan-50 to-white rounded-lg border border-cyan-100">
+                <div className="text-3xl mb-3">📅</div>
+                <h4 className="font-semibold text-gray-900 mb-2">Scheduled Messages</h4>
+                <p className="text-sm text-gray-600">View, manage, and test scheduled messages with timing validation and retry scheduling</p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -221,7 +260,7 @@ export function WelcomePage() {
             No credit card needed. No setup required. Try the demo right now.
           </p>
           <Link
-            to="/connect"
+            to="/app/connect"
             className="inline-flex items-center gap-2 px-8 py-4 bg-white text-primary-600 font-bold rounded-lg hover:bg-gray-100 transition-colors shadow-lg"
           >
             Launch Free Demo
@@ -248,7 +287,7 @@ export function WelcomePage() {
                   </a>
                 </li>
                 <li>
-                  <Link to="/security" className="hover:text-primary-600">
+                  <Link to="/app/security" className="hover:text-primary-600">
                     Security & Privacy
                   </Link>
                 </li>
