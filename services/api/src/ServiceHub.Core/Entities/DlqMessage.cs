@@ -24,6 +24,9 @@ public sealed class DlqMessage
     /// <summary>Namespace identifier (matches the registered namespace ID).</summary>
     public required Guid NamespaceId { get; init; }
 
+    /// <summary>Owner ID (tenant) for multi-user isolation. Format: 'entra:{oid}'.</summary>
+    public required string OwnerId { get; init; }
+
     /// <summary>The queue or subscription name.</summary>
     public required string EntityName { get; init; }
 

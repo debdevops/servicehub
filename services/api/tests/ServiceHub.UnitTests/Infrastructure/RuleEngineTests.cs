@@ -30,6 +30,7 @@ public sealed class RuleEngineTests
             SequenceNumber = 1,
             BodyHash = "hash",
             NamespaceId = Guid.NewGuid(),
+            OwnerId = TestConstants.TestOwnerId,
             EntityName = entityName ?? "orders-queue",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow,
@@ -414,6 +415,7 @@ public sealed class RuleEngineTests
         return new AutoReplayRule
         {
             Name = "Test Rule",
+            OwnerId = TestConstants.TestOwnerId,
             Enabled = enabled,
             ConditionsJson = conditionsJson,
             ActionsJson = actionsJson ?? """{"autoReplay":true,"delaySeconds":30}""",
