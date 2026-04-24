@@ -2,7 +2,6 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { User, Cloud, HelpCircle, Search } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
 import { useNamespaces } from '@/hooks/useNamespaces';
-import { getStoredUser } from '@/components/WelcomeDialog';
 
 export function Header() {
   const [searchParams] = useSearchParams();
@@ -12,9 +11,6 @@ export function Header() {
   // Find the current namespace from URL params
   const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
   const isConnected = !!currentNamespace;
-
-  // Read user identity collected by WelcomeDialog
-  const user = getStoredUser();
 
   return (
     <>
@@ -95,7 +91,7 @@ export function Header() {
         <button 
           className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
           aria-label="User menu"
-          title={user ? `${user.fullName} (${user.email})` : 'ServiceHub User'}
+          title="ServiceHub User"
         >
           <User className="w-4 h-4" />
         </button>

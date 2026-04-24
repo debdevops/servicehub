@@ -7,6 +7,7 @@ using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Shared.Constants;
+using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Api.Controllers.V1;
 
@@ -74,6 +75,20 @@ public sealed class MessagesController : ApiControllerBase
             LogRedactor.SanitiseForLog(queueName),
             namespaceId);
 
+        // TENANT ISOLATION: Verify the namespace belongs to the current authenticated user.
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult<IReadOnlyList<MessageResponse>>(namespaceResult.Error);
+        }
+
+        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return ToActionResult<IReadOnlyList<MessageResponse>>(Error.NotFound(
+                ErrorCodes.Namespace.NotFound,
+                $"Namespace with ID '{namespaceId}' was not found."));
+        }
+
         var request = new GetMessagesRequest(
             NamespaceId: namespaceId,
             EntityName: queueName,
@@ -127,6 +142,20 @@ public sealed class MessagesController : ApiControllerBase
             LogRedactor.SanitiseForLog(topicName),
             namespaceId);
 
+        // TENANT ISOLATION: Verify the namespace belongs to the current authenticated user.
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult<IReadOnlyList<MessageResponse>>(namespaceResult.Error);
+        }
+
+        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return ToActionResult<IReadOnlyList<MessageResponse>>(Error.NotFound(
+                ErrorCodes.Namespace.NotFound,
+                $"Namespace with ID '{namespaceId}' was not found."));
+        }
+
         var request = new GetMessagesRequest(
             NamespaceId: namespaceId,
             EntityName: topicName,
@@ -176,6 +205,20 @@ public sealed class MessagesController : ApiControllerBase
             maxMessages,
             LogRedactor.SanitiseForLog(queueName),
             namespaceId);
+
+        // TENANT ISOLATION: Verify the namespace belongs to the current authenticated user.
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult<IReadOnlyList<MessageResponse>>(namespaceResult.Error);
+        }
+
+        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return ToActionResult<IReadOnlyList<MessageResponse>>(Error.NotFound(
+                ErrorCodes.Namespace.NotFound,
+                $"Namespace with ID '{namespaceId}' was not found."));
+        }
 
         var request = new GetMessagesRequest(
             NamespaceId: namespaceId,
@@ -229,6 +272,20 @@ public sealed class MessagesController : ApiControllerBase
             LogRedactor.SanitiseForLog(subscriptionName),
             LogRedactor.SanitiseForLog(topicName),
             namespaceId);
+
+        // TENANT ISOLATION: Verify the namespace belongs to the current authenticated user.
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult<IReadOnlyList<MessageResponse>>(namespaceResult.Error);
+        }
+
+        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return ToActionResult<IReadOnlyList<MessageResponse>>(Error.NotFound(
+                ErrorCodes.Namespace.NotFound,
+                $"Namespace with ID '{namespaceId}' was not found."));
+        }
 
         var request = new GetMessagesRequest(
             NamespaceId: namespaceId,

@@ -43,7 +43,10 @@ public class RulesControllerTests : IDisposable
         _controller = new RulesController(_dbContext, _ruleEngine.Object, _logger.Object);
         _controller.ControllerContext = new ControllerContext
         {
-            HttpContext = new DefaultHttpContext()
+            HttpContext = new DefaultHttpContext
+            {
+                Items = { { "OwnerId", TestConstants.TestOwnerId } }
+            }
         };
 
         // Provide a valid ApiKeyConfig so in-method scope checks pass
@@ -71,6 +74,7 @@ public class RulesControllerTests : IDisposable
         return new AutoReplayRule
         {
             Name = name,
+            OwnerId = TestConstants.TestOwnerId,
             Description = "A test rule",
             Enabled = enabled,
             ConditionsJson = JsonSerializer.Serialize(conditions, JsonOptions),
@@ -88,6 +92,7 @@ public class RulesControllerTests : IDisposable
             SequenceNumber = seq,
             BodyHash = $"hash-{seq}",
             NamespaceId = Guid.NewGuid(),
+            OwnerId = TestConstants.TestOwnerId,
             EntityName = "test-queue",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddHours(-1),
@@ -465,6 +470,7 @@ public class RulesControllerTests : IDisposable
                 SequenceNumber = 101,
                 BodyHash = "hash-101",
                 NamespaceId = namespaceId,
+                OwnerId = TestConstants.TestOwnerId,
                 EntityName = "orders",
                 EntityType = ServiceBusEntityType.Queue,
                 EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-10),
@@ -480,6 +486,7 @@ public class RulesControllerTests : IDisposable
                 SequenceNumber = 102,
                 BodyHash = "hash-102",
                 NamespaceId = namespaceId,
+                OwnerId = TestConstants.TestOwnerId,
                 EntityName = "orders",
                 EntityType = ServiceBusEntityType.Queue,
                 EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-8),
@@ -495,6 +502,7 @@ public class RulesControllerTests : IDisposable
                 SequenceNumber = 103,
                 BodyHash = "hash-103",
                 NamespaceId = namespaceId,
+                OwnerId = TestConstants.TestOwnerId,
                 EntityName = "orders",
                 EntityType = ServiceBusEntityType.Queue,
                 EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-6),
@@ -542,6 +550,7 @@ public class RulesControllerTests : IDisposable
                 SequenceNumber = 201,
                 BodyHash = "hash-201",
                 NamespaceId = namespaceId,
+                OwnerId = TestConstants.TestOwnerId,
                 EntityName = "billing",
                 EntityType = ServiceBusEntityType.Queue,
                 EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-10),
@@ -557,6 +566,7 @@ public class RulesControllerTests : IDisposable
                 SequenceNumber = 202,
                 BodyHash = "hash-202",
                 NamespaceId = namespaceId,
+                OwnerId = TestConstants.TestOwnerId,
                 EntityName = "billing",
                 EntityType = ServiceBusEntityType.Queue,
                 EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-8),
@@ -585,7 +595,8 @@ public class RulesControllerTests : IDisposable
             new AutoReplayRule
             {
                 Name = "Existing reason rule",
-                Description = "existing",
+                OwnerId = TestConstants.TestOwnerId,
+            Description = "existing",
                 Enabled = true,
                 ConditionsJson = reasonConditionsJson,
                 ActionsJson = JsonSerializer.Serialize(new RuleAction { AutoReplay = true }, JsonOptions),
@@ -595,7 +606,8 @@ public class RulesControllerTests : IDisposable
             new AutoReplayRule
             {
                 Name = "Existing category rule",
-                Description = "existing",
+                OwnerId = TestConstants.TestOwnerId,
+            Description = "existing",
                 Enabled = true,
                 ConditionsJson = categoryConditionsJson,
                 ActionsJson = JsonSerializer.Serialize(new RuleAction { AutoReplay = true }, JsonOptions),

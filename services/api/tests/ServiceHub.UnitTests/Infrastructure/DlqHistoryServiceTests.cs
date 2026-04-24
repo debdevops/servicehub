@@ -48,6 +48,7 @@ public class DlqHistoryServiceTests : IDisposable
             SequenceNumber = seq,
             BodyHash = $"hash-{seq}",
             NamespaceId = namespaceId ?? Guid.NewGuid(),
+            OwnerId = TestConstants.TestOwnerId,
             EntityName = entityName,
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddHours(-2),
@@ -86,7 +87,7 @@ public class DlqHistoryServiceTests : IDisposable
     [Fact]
     public async Task GetHistory_NoMessages_ReturnsEmptyPage()
     {
-        var result = await _service.GetHistoryAsync();
+        var result = await _service.GetHistoryAsync(TestConstants.TestOwnerId);
         result.IsSuccess.Should().BeTrue();
         result.Value.Items.Should().BeEmpty();
         result.Value.TotalCount.Should().Be(0);
@@ -99,7 +100,7 @@ public class DlqHistoryServiceTests : IDisposable
             _dbContext.DlqMessages.Add(CreateMessage(i));
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.GetHistoryAsync(page: 1, pageSize: 3);
+        var result = await _service.GetHistoryAsync(TestConstants.TestOwnerId, page: 1, pageSize: 3);
         result.IsSuccess.Should().BeTrue();
         result.Value.Items.Should().HaveCount(3);
         result.Value.TotalCount.Should().Be(5);
@@ -114,7 +115,7 @@ public class DlqHistoryServiceTests : IDisposable
             _dbContext.DlqMessages.Add(CreateMessage(i));
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.GetHistoryAsync(page: 2, pageSize: 3);
+        var result = await _service.GetHistoryAsync(TestConstants.TestOwnerId, page: 2, pageSize: 3);
         result.IsSuccess.Should().BeTrue();
         result.Value.Items.Should().HaveCount(2);
         result.Value.HasPreviousPage.Should().BeTrue();
@@ -129,7 +130,7 @@ public class DlqHistoryServiceTests : IDisposable
         _dbContext.DlqMessages.Add(CreateMessage(2, namespaceId: Guid.NewGuid()));
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.GetHistoryAsync(namespaceId: nsId);
+        var result = await _service.GetHistoryAsync(TestConstants.TestOwnerId, namespaceId: nsId);
         result.IsSuccess.Should().BeTrue();
         result.Value.TotalCount.Should().Be(1);
     }
@@ -141,7 +142,7 @@ public class DlqHistoryServiceTests : IDisposable
         _dbContext.DlqMessages.Add(CreateMessage(2, entityName: "payments-queue"));
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.GetHistoryAsync(entityName: "orders");
+        var result = await _service.GetHistoryAsync(TestConstants.TestOwnerId, entityName: "orders");
         result.IsSuccess.Should().BeTrue();
         result.Value.TotalCount.Should().Be(1);
     }
@@ -153,7 +154,7 @@ public class DlqHistoryServiceTests : IDisposable
         _dbContext.DlqMessages.Add(CreateMessage(2, status: DlqMessageStatus.Replayed));
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.GetHistoryAsync(status: DlqMessageStatus.Active);
+        var result = await _service.GetHistoryAsync(TestConstants.TestOwnerId, status: DlqMessageStatus.Active);
         result.IsSuccess.Should().BeTrue();
         result.Value.TotalCount.Should().Be(1);
     }
@@ -165,7 +166,7 @@ public class DlqHistoryServiceTests : IDisposable
         _dbContext.DlqMessages.Add(CreateMessage(2, category: FailureCategory.Authorization));
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.GetHistoryAsync(category: FailureCategory.Transient);
+        var result = await _service.GetHistoryAsync(TestConstants.TestOwnerId, category: FailureCategory.Transient);
         result.IsSuccess.Should().BeTrue();
         result.Value.TotalCount.Should().Be(1);
     }
@@ -180,7 +181,7 @@ public class DlqHistoryServiceTests : IDisposable
         _dbContext.DlqMessages.Add(msg2);
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.GetHistoryAsync(from: now.AddHours(-1), to: now.AddHours(1));
+        var result = await _service.GetHistoryAsync(TestConstants.TestOwnerId, from: now.AddHours(-1), to: now.AddHours(1));
         result.IsSuccess.Should().BeTrue();
     }
 
@@ -349,6 +350,7 @@ public class DlqHistoryServiceTests : IDisposable
             SequenceNumber = 99,
             BodyHash = "hash-old",
             NamespaceId = nsId,
+            OwnerId = TestConstants.TestOwnerId,
             EntityName = "test-queue",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddDays(-61),

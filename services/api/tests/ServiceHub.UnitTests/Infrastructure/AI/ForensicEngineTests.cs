@@ -25,6 +25,7 @@ public sealed class ForensicEngineTests
             SequenceNumber = 1,
             BodyHash = "abc",
             NamespaceId = Guid.NewGuid(),
+            OwnerId = TestConstants.TestOwnerId,
             EntityName = "test-queue",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow,

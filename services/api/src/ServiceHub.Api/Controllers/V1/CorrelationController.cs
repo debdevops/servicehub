@@ -95,10 +95,6 @@ public sealed class CorrelationController : ApiControllerBase
             {
                 return ToActionResult<CorrelationTimelineResponse>(nsResult.Error);
             }
-            if (!string.Equals(nsResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
-            {
-                return NotFound();
-            }
             namespacesToSearch = [nsResult.Value];
         }
         else
@@ -365,8 +361,9 @@ public sealed class CorrelationController : ApiControllerBase
         var historicalEntries = new List<CorrelationTimelineEntry>();
         try
         {
+            // TENANT ISOLATION: Filter DLQ records by owner
             var dlqMessages = await _dlqContext.DlqMessages
-                .Where(m => m.CorrelationId == correlationId)
+                .Where(m => m.CorrelationId == correlationId && m.OwnerId == OwnerId)
                 .OrderBy(m => m.DetectedAtUtc)
                 .Take(200)
                 .ToListAsync(cancellationToken)
