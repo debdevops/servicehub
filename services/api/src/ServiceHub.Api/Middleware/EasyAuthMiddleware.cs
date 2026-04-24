@@ -36,11 +36,14 @@ public sealed class EasyAuthMiddleware
     {
         _next = next ?? throw new ArgumentNullException(nameof(next));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
 
-        // Easy Auth is always enabled when this middleware is registered.
+        // Read EasyAuth enabled setting from configuration.
         // In Development, Azure Easy Auth is OFF so this middleware sees no headers
         // and passes through without setting OwnerId (allowing legacy SPA token path).
-        _enabled = true;
+        // Defaults to enabled to preserve current behavior when setting is absent.
+        var easyAuthEnabledSetting = configuration["Security:EasyAuth:Enabled"];
+        _enabled = !bool.TryParse(easyAuthEnabledSetting, out var enabled) || enabled;
     }
 
     /// <summary>
@@ -61,11 +64,19 @@ public sealed class EasyAuthMiddleware
                 context.Items["Authenticated"] = true;
                 context.Items["AuthMethod"] = "EasyAuth";
 
+                // Sanitize log inputs to prevent log injection
+                var safeMethod = (context.Request.Method ?? string.Empty)
+                    .Replace("\r", string.Empty)
+                    .Replace("\n", string.Empty);
+                var safePath = context.Request.Path.ToString()
+                    .Replace("\r", string.Empty)
+                    .Replace("\n", string.Empty);
+
                 _logger.LogDebug(
                     "EasyAuth authentication successful for {Method} {Path} with OwnerId {OwnerId}",
-                    context.Request.Method,
-                    context.Request.Path,
-                    principalId);
+                    safeMethod,
+                    safePath,
+                    ownerId);
 
                 // Continue to next middleware (skip ApiKeyAuthenticationMiddleware logic)
                 await _next(context);

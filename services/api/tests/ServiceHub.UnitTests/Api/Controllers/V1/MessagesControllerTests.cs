@@ -168,7 +168,7 @@ public class MessagesControllerTests
         var namespace_ = CreateTestNamespace();
         var messages = new List<Message>
         {
-            new() { MessageId = "dlq-msg-1", SequenceNumber = 1, EnqueuedTime = DateTimeOffset.UtcNow }
+            new() { MessageId = "dlq-msg-1", SequenceNumber = 1, EnqueuedTime = DateTimeOffset.UtcNow, IsFromDeadLetter = true }
         };
 
         _namespaceRepository.Setup(r => r.GetByIdAsync(namespace_.Id, It.IsAny<CancellationToken>()))
@@ -178,7 +178,13 @@ public class MessagesControllerTests
 
         var result = await _controller.PeekQueueDeadLetterMessages(namespace_.Id, "my-queue");
 
-        result.Should().NotBeNull();
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeAssignableTo<IEnumerable<MessageResponse>>().Subject.ToList();
+        
+        response.Should().HaveCount(1);
+        response[0].MessageId.Should().Be("dlq-msg-1");
+        response[0].SequenceNumber.Should().Be(1);
+        response[0].IsFromDeadLetter.Should().BeTrue();
     }
 
     #endregion
@@ -201,7 +207,13 @@ public class MessagesControllerTests
 
         var result = await _controller.PeekSubscriptionDeadLetterMessages(namespace_.Id, "my-topic", "my-sub");
 
-        result.Should().NotBeNull();
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeAssignableTo<IEnumerable<MessageResponse>>().Subject.ToList();
+        
+        response.Should().HaveCount(1);
+        response[0].MessageId.Should().Be("dlq-1");
+        response[0].SequenceNumber.Should().Be(1);
+        response[0].IsFromDeadLetter.Should().BeTrue();
     }
 
     #endregion

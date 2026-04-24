@@ -49,6 +49,14 @@ var app = builder.Build();
 app.UseForwardedHeaders();
 
 // Ensure DLQ Intelligence database schema exists before serving requests
+// ⚠️  IMPORTANT: For existing deployments upgrading to Phase 2 with OwnerId (multi-tenant support):
+// EnsureCreatedAsync() only creates new databases. It does NOT add new required columns to existing databases.
+// Existing SQLite databases MUST be upgraded manually:
+//   Option A: Backup and delete the old database file (/home/data/dlq-intelligence.db)
+//              EnsureCreatedAsync() will create a new one with OwnerId columns.
+//   Option B: Apply an ALTER TABLE migration (see DEPLOYMENT-GUIDE.md for SQL scripts).
+//   Option C: Use EF Core Migrations with Migrate() instead of EnsureCreatedAsync().
+// Failure to upgrade will result in "no such column: OwnerId" runtime errors.
 using (var scope = app.Services.CreateScope())
 {
     try
