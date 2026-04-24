@@ -48,7 +48,10 @@ public class CorrelationControllerTests : IDisposable
         {
             ControllerContext = new ControllerContext
             {
-                HttpContext = new DefaultHttpContext()
+                HttpContext = new DefaultHttpContext
+                {
+                    Items = { { "OwnerId", TestConstants.TestOwnerId } }
+                }
             }
         };
     }

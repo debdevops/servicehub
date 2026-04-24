@@ -43,7 +43,10 @@ public class RulesControllerTests : IDisposable
         _controller = new RulesController(_dbContext, _ruleEngine.Object, _logger.Object);
         _controller.ControllerContext = new ControllerContext
         {
-            HttpContext = new DefaultHttpContext()
+            HttpContext = new DefaultHttpContext
+            {
+                Items = { { "OwnerId", TestConstants.TestOwnerId } }
+            }
         };
 
         // Provide a valid ApiKeyConfig so in-method scope checks pass

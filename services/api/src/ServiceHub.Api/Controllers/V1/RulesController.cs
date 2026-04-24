@@ -65,6 +65,9 @@ public sealed class RulesController : ApiControllerBase
         {
             var query = _dbContext.AutoReplayRules.AsNoTracking().AsQueryable();
 
+            // TENANT ISOLATION: Filter rules by owner
+            query = query.Where(r => r.OwnerId == OwnerId);
+
             if (enabledOnly == true)
                 query = query.Where(r => r.Enabled);
 
@@ -131,9 +134,10 @@ public sealed class RulesController : ApiControllerBase
             return Forbid();
         }
 
+        // TENANT ISOLATION: Verify rule belongs to current owner
         var rule = await _dbContext.AutoReplayRules
             .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(r => r.Id == id && r.OwnerId == OwnerId, cancellationToken);
 
         if (rule is null)
             return ToActionResult<RuleResponse>(
@@ -177,9 +181,9 @@ public sealed class RulesController : ApiControllerBase
     {
         try
         {
-            // Check for duplicate name
+            // TENANT ISOLATION: Check for duplicate name within current owner's rules
             var exists = await _dbContext.AutoReplayRules
-                .AnyAsync(r => r.Name == request.Name, cancellationToken);
+                .AnyAsync(r => r.Name == request.Name && r.OwnerId == OwnerId, cancellationToken);
 
             if (exists)
                 return ToActionResult<RuleResponse>(
@@ -247,16 +251,17 @@ public sealed class RulesController : ApiControllerBase
 
         try
         {
+            // TENANT ISOLATION: Verify rule belongs to current owner
             var rule = await _dbContext.AutoReplayRules
-                .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+                .FirstOrDefaultAsync(r => r.Id == id && r.OwnerId == OwnerId, cancellationToken);
 
             if (rule is null)
                 return ToActionResult<RuleResponse>(
                     Error.NotFound(ErrorCodes.Rule.NotFound, $"Rule {id} not found"));
 
-            // Check for duplicate name (excluding current rule)
+            // Check for duplicate name (excluding current rule, within current owner's rules)
             var duplicate = await _dbContext.AutoReplayRules
-                .AnyAsync(r => r.Name == request.Name && r.Id != id, cancellationToken);
+                .AnyAsync(r => r.Name == request.Name && r.Id != id && r.OwnerId == OwnerId, cancellationToken);
 
             if (duplicate)
                 return ToActionResult<RuleResponse>(
@@ -318,8 +323,9 @@ public sealed class RulesController : ApiControllerBase
 
         try
         {
+            // TENANT ISOLATION: Verify rule belongs to current owner
             var rule = await _dbContext.AutoReplayRules
-                .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+                .FirstOrDefaultAsync(r => r.Id == id && r.OwnerId == OwnerId, cancellationToken);
 
             if (rule is null)
                 return ToActionResult(
@@ -368,8 +374,9 @@ public sealed class RulesController : ApiControllerBase
             return Forbid();
         }
 
+        // TENANT ISOLATION: Verify rule belongs to current owner
         var rule = await _dbContext.AutoReplayRules
-            .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(r => r.Id == id && r.OwnerId == OwnerId, cancellationToken);
 
         if (rule is null)
             return ToActionResult<RuleResponse>(
@@ -421,8 +428,9 @@ public sealed class RulesController : ApiControllerBase
 
         try
         {
+            // TENANT ISOLATION: Verify rule belongs to current owner
             var rule = await _dbContext.AutoReplayRules
-                .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+                .FirstOrDefaultAsync(r => r.Id == id && r.OwnerId == OwnerId, cancellationToken);
 
             if (rule is null)
                 return ToActionResult<ReplayAllResponse>(
