@@ -110,7 +110,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                             LogRedactor.SanitiseForLog(queue.Name), queue.DeadLetterMessageCount);
                         var (newCount, liveSequenceNumbers) = await ScanEntityDlqAsync(
                             client, namespaceId, queue.Name, null,
-                            ServiceBusEntityType.Queue, cancellationToken);
+                            ServiceBusEntityType.Queue, ns.OwnerId, cancellationToken);
                         totalNew += newCount;
                         scannedEntities[queue.Name] = liveSequenceNumbers;
                     }
@@ -147,7 +147,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                                     LogRedactor.SanitiseForLog(topic.Name), LogRedactor.SanitiseForLog(sub.Name), sub.DeadLetterMessageCount);
                                 var (newCount, liveSequenceNumbers) = await ScanEntityDlqAsync(
                                     client, namespaceId, sub.Name, topic.Name,
-                                    ServiceBusEntityType.Subscription, cancellationToken);
+                                    ServiceBusEntityType.Subscription, ns.OwnerId, cancellationToken);
                                 totalNew += newCount;
                                 scannedEntities[fullEntityName] = liveSequenceNumbers;
                             }
@@ -208,6 +208,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
         string entityName,
         string? topicName,
         ServiceBusEntityType entityType,
+        string ownerId,
         CancellationToken cancellationToken)
     {
         var newCount = 0;
@@ -278,6 +279,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                     SequenceNumber = msg.SequenceNumber,
                     BodyHash = bodyHash,
                     NamespaceId = namespaceId,
+                    OwnerId = ownerId,
                     EntityName = fullEntityName,
                     EntityType = entityType,
                     EnqueuedTimeUtc = msg.EnqueuedTime,

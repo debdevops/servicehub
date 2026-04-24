@@ -8,7 +8,6 @@ import { router } from './router';
 import { queryClient } from './lib/queryClient';
 import { reactPlugin } from './lib/telemetry';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { WelcomeDialog } from './components/WelcomeDialog';
 import './styles/index.css';
 
 createRoot(document.getElementById('root')!).render(
@@ -16,7 +15,6 @@ createRoot(document.getElementById('root')!).render(
     <AppInsightsContext.Provider value={reactPlugin}>
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <WelcomeDialog />
         <RouterProvider router={router} />
       <Toaster
       position="top-right"
