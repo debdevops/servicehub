@@ -10,6 +10,14 @@
 
 <div align="center">
 
+## 🚀 [Try the Free Demo →](https://app-servicehub-prod.azurewebsites.net/)
+
+### No install, no credit card. Debug your Service Bus in 30 seconds.
+
+</div>
+
+<div align="center">
+
 ![ServiceHub Demo](docs/screenshots/ServiceHub-Demo.gif)
 
 </div>
