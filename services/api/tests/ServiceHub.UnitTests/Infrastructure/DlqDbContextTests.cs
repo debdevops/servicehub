@@ -36,6 +36,7 @@ public class DlqDbContextTests : IDisposable
             SequenceNumber = 1,
             BodyHash = "hash-1",
             NamespaceId = Guid.NewGuid(),
+            OwnerId = TestConstants.TestOwnerId,
             EntityName = "test-queue",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow,
@@ -63,7 +64,7 @@ public class DlqDbContextTests : IDisposable
         var msg1 = new DlqMessage
         {
             MessageId = "msg-1", SequenceNumber = 1, BodyHash = "hash-1",
-            NamespaceId = nsId, EntityName = "q1",
+            NamespaceId = nsId, OwnerId = TestConstants.TestOwnerId, EntityName = "q1",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow,
             DetectedAtUtc = DateTimeOffset.UtcNow,
@@ -72,7 +73,7 @@ public class DlqDbContextTests : IDisposable
         var msg2 = new DlqMessage
         {
             MessageId = "msg-2", SequenceNumber = 1, BodyHash = "hash-2",
-            NamespaceId = nsId, EntityName = "q1",
+            NamespaceId = nsId, OwnerId = TestConstants.TestOwnerId, EntityName = "q1",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow,
             DetectedAtUtc = DateTimeOffset.UtcNow,
@@ -93,6 +94,7 @@ public class DlqDbContextTests : IDisposable
         var rule = new AutoReplayRule
         {
             Name = "Test Rule",
+            OwnerId = TestConstants.TestOwnerId,
             Description = "A test",
             Enabled = true,
             ConditionsJson = "[{\"field\":\"FailureCategory\",\"operator\":\"Equals\",\"value\":\"Transient\"}]",
@@ -115,7 +117,7 @@ public class DlqDbContextTests : IDisposable
         var msg = new DlqMessage
         {
             MessageId = "msg-1", SequenceNumber = 1, BodyHash = "hash-1",
-            NamespaceId = Guid.NewGuid(), EntityName = "q1",
+            NamespaceId = Guid.NewGuid(), OwnerId = TestConstants.TestOwnerId, EntityName = "q1",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow,
             DetectedAtUtc = DateTimeOffset.UtcNow,
@@ -149,7 +151,7 @@ public class DlqDbContextTests : IDisposable
         var msg = new DlqMessage
         {
             MessageId = "msg-1", SequenceNumber = 1, BodyHash = "hash-1",
-            NamespaceId = Guid.NewGuid(), EntityName = "q1",
+            NamespaceId = Guid.NewGuid(), OwnerId = TestConstants.TestOwnerId, EntityName = "q1",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = now,
             DetectedAtUtc = now,
@@ -176,7 +178,7 @@ public class DlqDbContextTests : IDisposable
         var msg = new DlqMessage
         {
             MessageId = "msg-1", SequenceNumber = 1, BodyHash = "hash-1",
-            NamespaceId = Guid.NewGuid(), EntityName = "q1",
+            NamespaceId = Guid.NewGuid(), OwnerId = TestConstants.TestOwnerId, EntityName = "q1",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow,
             DetectedAtUtc = DateTimeOffset.UtcNow,
@@ -208,7 +210,7 @@ public class DlqDbContextTests : IDisposable
     {
         var rule = new AutoReplayRule
         {
-            Name = "Test", Enabled = true,
+            Name = "Test", OwnerId = TestConstants.TestOwnerId, Enabled = true,
             ConditionsJson = "[]", ActionsJson = "{}",
             CreatedAt = DateTimeOffset.UtcNow
         };
@@ -232,7 +234,7 @@ public class DlqDbContextTests : IDisposable
     {
         var rule = new AutoReplayRule
         {
-            Name = "Test", Enabled = true,
+            Name = "Test", OwnerId = TestConstants.TestOwnerId, Enabled = true,
             ConditionsJson = "[]", ActionsJson = "{}",
             CreatedAt = DateTimeOffset.UtcNow
         };
@@ -240,7 +242,7 @@ public class DlqDbContextTests : IDisposable
         var msg = new DlqMessage
         {
             MessageId = "msg-1", SequenceNumber = 1, BodyHash = "hash-1",
-            NamespaceId = Guid.NewGuid(), EntityName = "q1",
+            NamespaceId = Guid.NewGuid(), OwnerId = TestConstants.TestOwnerId, EntityName = "q1",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow,
             DetectedAtUtc = DateTimeOffset.UtcNow,

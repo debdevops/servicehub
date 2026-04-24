@@ -48,7 +48,10 @@ public class CorrelationControllerTests : IDisposable
         {
             ControllerContext = new ControllerContext
             {
-                HttpContext = new DefaultHttpContext()
+                HttpContext = new DefaultHttpContext
+                {
+                    Items = { { "OwnerId", TestConstants.TestOwnerId } }
+                }
             }
         };
     }
@@ -243,6 +246,7 @@ public class CorrelationControllerTests : IDisposable
             SequenceNumber = 42,
             BodyHash = "hash-1",
             NamespaceId = ns.Id,
+            OwnerId = TestConstants.TestOwnerId,
             EntityName = "test-queue",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddHours(-2),
@@ -282,6 +286,7 @@ public class CorrelationControllerTests : IDisposable
             SequenceNumber = 1,
             BodyHash = "hash-2",
             NamespaceId = ns.Id,
+            OwnerId = TestConstants.TestOwnerId,
             EntityName = "test-queue",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddHours(-2),

@@ -18,6 +18,7 @@ public class HeuristicAnalyserTests
             SequenceNumber = 1,
             BodyHash = "hash",
             NamespaceId = Guid.NewGuid(),
+            OwnerId = TestConstants.TestOwnerId,
             EntityName = "test-queue",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow,

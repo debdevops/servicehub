@@ -24,6 +24,12 @@ public sealed class DlqMessage
     /// <summary>Namespace identifier (matches the registered namespace ID).</summary>
     public required Guid NamespaceId { get; init; }
 
+    /// <summary>
+    /// Owner ID for multi-user isolation. Supported formats include <c>entra:{oid}</c> (Azure AD users),
+    /// <c>__spa__</c> (SPA/admin), and <c>key_{hash}</c> (scoped API keys).
+    /// </summary>
+    public required string OwnerId { get; init; }
+
     /// <summary>The queue or subscription name.</summary>
     public required string EntityName { get; init; }
 
