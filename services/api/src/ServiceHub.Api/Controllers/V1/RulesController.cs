@@ -188,6 +188,7 @@ public sealed class RulesController : ApiControllerBase
             var entity = new AutoReplayRule
             {
                 Name = request.Name,
+                OwnerId = OwnerId,
                 Description = request.Description,
                 Enabled = request.Enabled,
                 ConditionsJson = JsonSerializer.Serialize(request.Conditions, JsonOptions),
@@ -1070,6 +1071,7 @@ public sealed class RulesController : ApiControllerBase
                 var entity = new AutoReplayRule
                 {
                     Name = candidate.Name,
+                    OwnerId = OwnerId,
                     Description = candidate.Description,
                     Enabled = true,
                     ConditionsJson = conditionsJson,

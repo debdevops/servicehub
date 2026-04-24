@@ -46,7 +46,7 @@ public class AutoReplayExecutorTests : IDisposable
         var msg = new DlqMessage
         {
             MessageId = $"msg-{seq}", SequenceNumber = seq, BodyHash = $"hash-{seq}",
-            NamespaceId = Guid.NewGuid(), EntityName = "test-queue",
+            NamespaceId = Guid.NewGuid(), OwnerId = TestConstants.TestOwnerId, EntityName = "test-queue",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddHours(-1),
             DetectedAtUtc = DateTimeOffset.UtcNow,
@@ -62,7 +62,9 @@ public class AutoReplayExecutorTests : IDisposable
     {
         var rule = new AutoReplayRule
         {
-            Name = name, Enabled = true,
+            Name = name,
+            OwnerId = TestConstants.TestOwnerId,
+            Enabled = true,
             ConditionsJson = "[]", ActionsJson = "{}",
             CreatedAt = DateTimeOffset.UtcNow,
             MaxReplaysPerHour = maxPerHour

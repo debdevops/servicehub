@@ -13,6 +13,9 @@ public sealed class AutoReplayRule
     /// <summary>Human-readable name of the rule.</summary>
     public required string Name { get; set; }
 
+    /// <summary>Owner ID (tenant) for multi-user isolation. Format: 'entra:{oid}'.</summary>
+    public required string OwnerId { get; set; }
+
     /// <summary>Description of what the rule does.</summary>
     public string? Description { get; set; }
 

@@ -88,6 +88,10 @@ public sealed class DlqDbContext : DbContext
             .HasMaxLength(512)
             .IsRequired();
 
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
         entity.Property(e => e.EntityType)
             .HasConversion<string>()
             .HasMaxLength(32);
@@ -136,18 +140,18 @@ public sealed class DlqDbContext : DbContext
         entity.Property(e => e.TopicName)
             .HasMaxLength(512);
 
-        // Unique constraint for deduplication: same message in same entity
-        entity.HasIndex(e => new { e.NamespaceId, e.EntityName, e.SequenceNumber })
+        // Unique constraint for deduplication: same message in same entity (per owner)
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.EntityName, e.SequenceNumber })
             .IsUnique()
-            .HasDatabaseName("IX_DlqMessages_Namespace_Entity_Sequence");
+            .HasDatabaseName("IX_DlqMessages_Owner_Namespace_Entity_Sequence");
 
         // Index for querying by body hash (dedup across entities)
         entity.HasIndex(e => e.BodyHash)
             .HasDatabaseName("IX_DlqMessages_BodyHash");
 
-        // Index for filtering by namespace and status
-        entity.HasIndex(e => new { e.NamespaceId, e.Status })
-            .HasDatabaseName("IX_DlqMessages_Namespace_Status");
+        // Index for owner-scoped queries
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.Status })
+            .HasDatabaseName("IX_DlqMessages_Owner_Namespace_Status");
 
         // Index for time-based queries
         entity.HasIndex(e => e.DetectedAtUtc)
@@ -220,6 +224,10 @@ public sealed class DlqDbContext : DbContext
 
         entity.Property(e => e.Name)
             .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
             .IsRequired();
 
         entity.Property(e => e.Description)

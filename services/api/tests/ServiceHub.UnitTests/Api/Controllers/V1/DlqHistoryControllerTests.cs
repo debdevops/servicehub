@@ -38,6 +38,7 @@ public class DlqHistoryControllerTests
             SequenceNumber = id,
             BodyHash = $"hash-{id}",
             NamespaceId = Guid.NewGuid(),
+            OwnerId = TestConstants.TestOwnerId,
             EntityName = "test-queue",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddHours(-1),
