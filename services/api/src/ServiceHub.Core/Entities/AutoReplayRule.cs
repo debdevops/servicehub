@@ -13,7 +13,10 @@ public sealed class AutoReplayRule
     /// <summary>Human-readable name of the rule.</summary>
     public required string Name { get; set; }
 
-    /// <summary>Owner ID (tenant) for multi-user isolation. Format: 'entra:{oid}'.</summary>
+    /// <summary>
+    /// Owner ID for multi-user isolation. Supported formats include <c>entra:{oid}</c> (Azure AD users),
+    /// <c>__spa__</c> (SPA/admin), and <c>key_{hash}</c> (scoped API keys).
+    /// </summary>
     public required string OwnerId { get; set; }
 
     /// <summary>Description of what the rule does.</summary>

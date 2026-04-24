@@ -163,10 +163,16 @@ public sealed class ApiKeyAuthenticationMiddleware
         // This ensures EasyAuth-authenticated requests bypass the SPA-token-only path.
         if (context.Items.ContainsKey("OwnerId") && context.Items["AuthMethod"] is "EasyAuth")
         {
-            _logger.LogDebug("EasyAuth already authenticated request for {Method} {Path}, skipping API key auth", 
-                context.Request.Method, path);
-            await _next(context);
-            return;
+            // Sanitize log inputs to prevent log injection
+            var safeMethod = (context.Request.Method ?? string.Empty)
+                .Replace("\r", string.Empty)
+                .Replace("\n", string.Empty);
+            var safePath = path
+                .Replace("\r", string.Empty)
+                .Replace("\n", string.Empty);
+
+            _logger.LogDebug("EasyAuth already authenticated request for {Method} {Path}, skipping API key auth",
+                safeMethod, safePath);
         }
 
         // Try SPA token first (co-hosted browser requests)
