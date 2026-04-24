@@ -66,10 +66,10 @@ export function WelcomePage() {
           </div>
 
           <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight">
-            Debug Azure Service Bus Dead-Letter Queues
-            <span className="block text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-blue-600">
-              in Minutes
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-blue-600 block mb-2">
+              Debug Azure Service Bus
             </span>
+            <span>Dead-Letter Queues in Minutes</span>
           </h1>
 
           <p className="text-xl text-gray-600 mb-10 max-w-2xl mx-auto leading-relaxed">
@@ -99,10 +99,6 @@ export function WelcomePage() {
 
           {/* Trust Indicators */}
           <div className="flex items-center justify-center gap-8 text-sm text-gray-600 pb-12 border-b border-gray-200">
-            <div>
-              <span className="font-semibold text-gray-900">1,000+</span> GitHub Stars
-            </div>
-            <div className="w-px h-4 bg-gray-300" />
             <div>
               <span className="font-semibold text-gray-900">100%</span> Open Source
             </div>
