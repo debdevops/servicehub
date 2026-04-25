@@ -14,11 +14,13 @@ export function useDlqHistory(params: DlqHistoryParams, enabled = true) {
     queryFn: () => dlqHistoryApi.getHistory(params),
     enabled,
     staleTime: 5_000,
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
     refetchIntervalInBackground: false,
     retry: (failureCount, error: unknown) => {
       const err = error as { response?: { status?: number } };
       if (err?.response?.status === 404) return false;
+      if (err?.response?.status === 429) return false;
+      if ((err?.response?.status ?? 0) >= 500) return false;
       return failureCount < 2;
     },
   });
@@ -57,11 +59,13 @@ export function useDlqSummary(namespaceId?: string) {
     queryFn: () => dlqHistoryApi.getSummary(namespaceId),
     enabled: !!namespaceId,
     staleTime: 5_000,
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
     refetchIntervalInBackground: false,
     retry: (failureCount, error: unknown) => {
       const err = error as { response?: { status?: number } };
       if (err?.response?.status === 404) return false;
+      if (err?.response?.status === 429) return false;
+      if ((err?.response?.status ?? 0) >= 500) return false;
       return failureCount < 2;
     },
   });
