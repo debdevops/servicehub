@@ -165,12 +165,19 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // Network error
+    // Network error (includes timeout, connection refused, etc.)
     if (!error.response) {
-      const errorKey = 'network-error';
+      const errorKey = error.code === 'ECONNABORTED' || error.message?.includes('timeout')
+        ? 'timeout-error'
+        : 'network-error';
+      
       if (shouldShowError(errorKey)) {
-        toast.error('Cannot reach the API. If running on a remote server, ensure port 5153 is accessible.', {
-          duration: 5000,
+        const message = errorKey === 'timeout-error'
+          ? 'Request timed out (30s). The API server may be busy or unresponsive. Try again in a moment.'
+          : 'Cannot reach the API. If running on a remote server, ensure port 5153 is accessible.';
+        
+        toast.error(message, {
+          duration: 6000,
         });
       }
       return Promise.reject(error);
