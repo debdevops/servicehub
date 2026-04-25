@@ -398,7 +398,7 @@ export function MessageDetailPanel({ message, onViewPattern, insights }: Message
           </div>
           <CopyButton
             text={(() => {
-              const base = `${window.location.origin}/messages?namespace=${namespaceId || ''}`;
+              const base = `${window.location.origin}/app/messages?namespace=${namespaceId || ''}`;
               const queueParam = searchParams.get('queue');
               const topicParam = searchParams.get('topic');
               const subParam = searchParams.get('subscription');

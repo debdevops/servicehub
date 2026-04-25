@@ -181,7 +181,7 @@ export function MessagesPage() {
             </p>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => { navigate('/connect'); toast.dismiss(t.id); }}
+                onClick={() => { navigate('/app/connect'); toast.dismiss(t.id); }}
                 className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-lg transition-colors"
               >
                 Connect now →
@@ -619,14 +619,14 @@ export function MessagesPage() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => navigate('/messages?demo=true&queueType=deadletter')}
+              onClick={() => navigate('/app/messages?demo=true&queueType=deadletter')}
               className="text-xs font-medium text-blue-700 hover:bg-blue-100 px-2.5 py-1 rounded transition-colors"
               title="View Dead-Letter Queue"
             >
               📬 View DLQ
             </button>
             <button
-              onClick={() => navigate('/connect')}
+              onClick={() => navigate('/app/connect')}
               className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 rounded transition-colors"
               title="Return to Connect page"
             >

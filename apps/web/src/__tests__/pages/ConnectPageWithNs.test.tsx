@@ -105,7 +105,7 @@ describe('ConnectPage - Saved Connections', () => {
     renderConnectPage();
     const openButtons = screen.getAllByRole('button', { name: /Open Production/i });
     fireEvent.click(openButtons[0]);
-    expect(mockNavigate).toHaveBeenCalledWith('/messages?namespace=ns-001');
+    expect(mockNavigate).toHaveBeenCalledWith('/app/messages?namespace=ns-001');
   });
 
   it('renders delete button for each namespace', () => {
