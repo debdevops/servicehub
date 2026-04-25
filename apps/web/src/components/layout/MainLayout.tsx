@@ -88,21 +88,22 @@ export function MainLayout() {
   const entityName = queueName || topicName || '';
 
   const handleMessagesGenerated = () => {
-    // Invalidate messages query to trigger auto-refresh
-    queryClient.invalidateQueries({ queryKey: ['messages'] });
-    // Also invalidate queues and topics to update counts in sidebar
-    queryClient.invalidateQueries({ queryKey: ['queues'] });
-    queryClient.invalidateQueries({ queryKey: ['topics'] });
-    queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
+    // Mark stale without triggering an immediate burst refetch — the next
+    // auto-poll interval (7 s) will pick up the fresh counts. This prevents
+    // simultaneous requests to every namespace that saturate the rate limit.
+    queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'none' });
+    queryClient.invalidateQueries({ queryKey: ['queues'], refetchType: 'none' });
+    queryClient.invalidateQueries({ queryKey: ['topics'], refetchType: 'none' });
+    queryClient.invalidateQueries({ queryKey: ['subscriptions'], refetchType: 'none' });
   };
 
   const handleMessageSent = () => {
-    // Invalidate messages query to trigger auto-refresh
-    queryClient.invalidateQueries({ queryKey: ['messages'] });
-    // Also invalidate queues and topics to update counts in sidebar
-    queryClient.invalidateQueries({ queryKey: ['queues'] });
-    queryClient.invalidateQueries({ queryKey: ['topics'] });
-    queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
+    // Mark stale without immediate burst — useSendMessage onSuccess already
+    // issued refetchType:'active' invalidations for the active queries.
+    queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'none' });
+    queryClient.invalidateQueries({ queryKey: ['queues'], refetchType: 'none' });
+    queryClient.invalidateQueries({ queryKey: ['topics'], refetchType: 'none' });
+    queryClient.invalidateQueries({ queryKey: ['subscriptions'], refetchType: 'none' });
   };
 
   return (

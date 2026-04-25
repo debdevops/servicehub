@@ -12,7 +12,7 @@ const queuesQueryOptions = (namespaceId: string, autoRefresh: boolean) => ({
   },
   enabled: !!namespaceId,
   staleTime: 2000,
-  refetchInterval: autoRefresh ? 7000 : (false as const),
+  refetchInterval: (query: { state: { status: string } }) => query.state.status === 'error' ? false : (autoRefresh ? 7000 : false), // Stop on error to prevent 429 storms
   refetchIntervalInBackground: false,
   retry: (failureCount: number, error: ApiError) => {
     if (error?.response?.status === 404) return false;
@@ -67,7 +67,7 @@ export function useAllNamespacesQueues(
       },
       enabled: !!id,
       staleTime: 15_000,
-      refetchInterval: autoRefresh ? 30_000 : (false as const),
+      refetchInterval: (query: { state: { status: string } }) => query.state.status === 'error' ? false : (autoRefresh ? 30_000 : false), // Stop on error to prevent 429 storms
       refetchIntervalInBackground: false,
       retry: (failureCount: number, error: ApiError) => {
         if (error?.response?.status === 404) return false;
