@@ -10,6 +10,19 @@
 
 <div align="center">
 
+## 🚀 [Open ServiceHub →](https://app-servicehub-prod.azurewebsites.net/)
+
+### No install, no credit card. Connect your Azure Service Bus in 30 seconds.
+
+> 🔒 **Authentication:** The hosted application uses **Microsoft Entra ID** (Azure AD) for access control.
+> You are redirected to Microsoft's own login page — not a ServiceHub login.
+> **No personal data, credentials, or user records are stored.** This is purely a security gate for the shared hosting environment.
+> For full data sovereignty, [self-host ServiceHub](#️-quick-start) on your own infrastructure.
+
+</div>
+
+<div align="center">
+
 ![ServiceHub Demo](docs/screenshots/ServiceHub-Demo.gif)
 
 </div>
@@ -21,9 +34,9 @@
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6.svg)](https://www.typescriptlang.org/)
 [![Version](https://img.shields.io/badge/version-3.1.0-brightgreen.svg)](.version)
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-Azure-0078D4.svg)](https://app-servicehub-prod.azurewebsites.net/)
+[![Live App](https://img.shields.io/badge/Live%20App-Azure-0078D4.svg)](https://app-servicehub-prod.azurewebsites.net/)
 
-[🚀 Live Demo](https://app-servicehub-prod.azurewebsites.net/) · [⚡ Quick Start](#️-quick-start) · [✨ Features](#️-features) · [📸 Screenshots](#️-screenshots) · [🏗️ Architecture](#️-architecture) · [🤝 Contributing](#️-contributing)
+[🚀 Open ServiceHub](https://app-servicehub-prod.azurewebsites.net/) · [⚡ Quick Start](#️-quick-start) · [✨ Features](#️-features) · [📸 Screenshots](#️-screenshots) · [🏗️ Architecture](#️-architecture) · [🤝 Contributing](#️-contributing)
 
 </div>
 
@@ -231,7 +244,7 @@ az servicebus namespace authorization-rule create \
 
 | Service | URL |
 |---|---|
-| **Live Demo** | **https://app-servicehub-prod.azurewebsites.net/** |
+| **ServiceHub (Hosted)** | **https://app-servicehub-prod.azurewebsites.net/** |
 | UI (local) | http://localhost:3000 |
 | API (local) | http://localhost:5153 |
 | API Docs — Scalar | http://localhost:5153/scalar/v1 |
@@ -420,12 +433,30 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
+## 🌐 Welcome Page
+
+ServiceHub ships with a public **landing / welcome page** at the root path (`/`) that serves as the entry point for new users before they log in.
+
+The welcome page includes:
+- **Hero section** with a direct link to open the hosted application
+- **Full feature showcase** — all 10+ capabilities described in detail
+- **Feature comparison table** — ServiceHub vs Azure Portal
+- **Real-world use-case scenarios** with time-saving estimates
+- **Enterprise security section** — AES-GCM, zero-data-exfiltration AI, read-only design
+- **Microsoft Entra authentication notice** — transparent explanation that login redirects to Microsoft's own identity platform for security only (no personal data stored)
+- **How it works** — 3-step quickstart
+- **Self-hosting quickstart** — one-line git clone + run command
+
+The CTA in the welcome page reads **"Open ServiceHub"** rather than "Demo" to reflect that the hosted application is a fully-functional production deployment — not a restricted preview.
+
+---
+
 <div align="center">
 
 **ServiceHub** — Because your Service Bus messages should not be invisible during incidents.
 
 Built for DevOps, Platform, and SRE Engineers.
 
-[Live Demo](https://app-servicehub-prod.azurewebsites.net/) · [Quick Start](#-quick-start) · [Report Issue](https://github.com/debdevops/servicehub/issues)
+[🚀 Open ServiceHub](https://app-servicehub-prod.azurewebsites.net/) · [Quick Start](#-quick-start) · [Report Issue](https://github.com/debdevops/servicehub/issues)
 
 </div>
