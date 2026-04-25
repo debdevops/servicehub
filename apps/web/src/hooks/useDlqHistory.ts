@@ -14,7 +14,7 @@ export function useDlqHistory(params: DlqHistoryParams, enabled = true) {
     queryFn: () => dlqHistoryApi.getHistory(params),
     enabled,
     staleTime: 5_000,
-    refetchInterval: 30_000,
+    refetchInterval: (query) => (query.state.status === 'error' ? false : 30_000),
     refetchIntervalInBackground: false,
     retry: (failureCount, error: unknown) => {
       const err = error as { response?: { status?: number } };
@@ -59,7 +59,7 @@ export function useDlqSummary(namespaceId?: string) {
     queryFn: () => dlqHistoryApi.getSummary(namespaceId),
     enabled: !!namespaceId,
     staleTime: 5_000,
-    refetchInterval: 30_000,
+    refetchInterval: (query) => (query.state.status === 'error' ? false : 30_000),
     refetchIntervalInBackground: false,
     retry: (failureCount, error: unknown) => {
       const err = error as { response?: { status?: number } };
