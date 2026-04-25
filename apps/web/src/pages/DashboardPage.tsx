@@ -234,7 +234,7 @@ function DlqHotSpotsPanel({
               {/* Action */}
               <button
                 onClick={() =>
-                  navigate(`/dlq-history?namespace=${spot.namespace.id}`)
+                  navigate(`/app/dlq-history?namespace=${spot.namespace.id}`)
                 }
                 className="shrink-0 px-3 py-1 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 border border-red-200 rounded-lg transition-colors"
               >
@@ -479,13 +479,13 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }:
       {/* Action Buttons */}
       <div className="flex gap-2 px-5 pb-5">
         <button
-          onClick={() => navigate(`/messages?namespace=${namespace.id}`)}
+          onClick={() => navigate(`/app/messages?namespace=${namespace.id}`)}
           className="flex-1 px-3 py-2 text-sm font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors"
         >
           Browse Queues
         </button>
         <button
-          onClick={() => navigate(`/dlq-history?namespace=${namespace.id}`)}
+          onClick={() => navigate(`/app/dlq-history?namespace=${namespace.id}`)}
           className="flex-1 px-3 py-2 text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
         >
           View DLQ History
@@ -628,7 +628,7 @@ export function DashboardPage() {
               Connect a Service Bus namespace to see it here.
             </p>
             <button
-              onClick={() => navigate('/connect')}
+              onClick={() => navigate('/app/connect')}
               className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
             >
               <Plus className="w-4 h-4" />
@@ -646,28 +646,28 @@ export function DashboardPage() {
                 Quick Actions
               </span>
               <button
-                onClick={() => navigate('/dlq-history')}
+                onClick={() => navigate('/app/dlq-history')}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
               >
                 <Flame className="w-3.5 h-3.5" />
                 Browse All DLQs
               </button>
               <button
-                onClick={() => navigate('/scheduled')}
+                onClick={() => navigate('/app/scheduled')}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors"
               >
                 <Clock className="w-3.5 h-3.5" />
                 All Scheduled
               </button>
               <button
-                onClick={() => navigate('/correlation')}
+                onClick={() => navigate('/app/correlation')}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition-colors"
               >
                 <GitMerge className="w-3.5 h-3.5" />
                 Correlation Explorer
               </button>
               <button
-                onClick={() => navigate('/rules')}
+                onClick={() => navigate('/app/rules')}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors"
               >
                 <Zap className="w-3.5 h-3.5" />

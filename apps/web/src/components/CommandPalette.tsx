@@ -97,15 +97,15 @@ const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
 ];
 
 const PAGE_ROUTES: Record<string, string> = {
-  'page-dashboard': '/',
-  'page-messages': '/messages',
-  'page-scheduled': '/scheduled',
-  'page-correlation': '/correlation',
-  'page-dlq': '/dlq-history',
-  'page-rules': '/rules',
-  'page-health': '/health',
-  'page-connect': '/connect',
-  'page-help': '/help',
+  'page-dashboard': '/app/dashboard',
+  'page-messages': '/app/messages',
+  'page-scheduled': '/app/scheduled',
+  'page-correlation': '/app/correlation',
+  'page-dlq': '/app/dlq-history',
+  'page-rules': '/app/rules',
+  'page-health': '/app/health',
+  'page-connect': '/app/connect',
+  'page-help': '/app/help',
 };
 
 // ── Fuzzy Match ───────────────────────────────────────────────────────────────
@@ -215,7 +215,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         icon: <AlertCircle className="w-4 h-4 text-red-500" />,
         keywords: 'dead letter queue',
         action: () => {
-          navigate(`/messages?namespace=${ns.id}&tab=dlq`);
+          navigate(`/app/messages?namespace=${ns.id}&tab=dlq`);
           onClose();
         },
       },
@@ -227,7 +227,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         icon: <Clock className="w-4 h-4 text-purple-500" />,
         keywords: 'future timed',
         action: () => {
-          navigate(`/scheduled?namespace=${ns.id}`);
+          navigate(`/app/scheduled?namespace=${ns.id}`);
           onClose();
         },
       },

@@ -348,7 +348,7 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
           <button
             onClick={() =>
               navigate(
-                `/correlation?correlationId=${encodeURIComponent(correlationId)}${namespaceId ? `&namespaceId=${encodeURIComponent(namespaceId)}` : ''}`
+                `/app/correlation?correlationId=${encodeURIComponent(correlationId)}${namespaceId ? `&namespaceId=${encodeURIComponent(namespaceId)}` : ''}`
               )
             }
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition-colors"

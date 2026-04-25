@@ -102,7 +102,7 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('button', { name: /connect a namespace/i })).toBeInTheDocument();
   });
 
-  it('Connect button navigates to /connect', () => {
+  it('Connect button navigates to /app/connect', () => {
     mockUseNamespaces.mockReturnValue({
       data: [],
       isLoading: false,
@@ -111,7 +111,7 @@ describe('DashboardPage', () => {
     });
     render(<DashboardPage />, { wrapper: createWrapper() });
     fireEvent.click(screen.getByRole('button', { name: /connect a namespace/i }));
-    expect(mockNavigate).toHaveBeenCalledWith('/connect');
+    expect(mockNavigate).toHaveBeenCalledWith('/app/connect');
   });
 
   it('renders one NamespaceCard per namespace (displayName visible)', async () => {
@@ -178,13 +178,13 @@ describe('DashboardPage', () => {
   it('Browse Queues button navigates to messages page', async () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
     fireEvent.click(await screen.findByRole('button', { name: /browse queues/i }));
-    expect(mockNavigate).toHaveBeenCalledWith('/messages?namespace=ns1');
+    expect(mockNavigate).toHaveBeenCalledWith('/app/messages?namespace=ns1');
   });
 
   it('View DLQ History button navigates to dlq-history page', async () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
     fireEvent.click(await screen.findByRole('button', { name: /view dlq history/i }));
-    expect(mockNavigate).toHaveBeenCalledWith('/dlq-history?namespace=ns1');
+    expect(mockNavigate).toHaveBeenCalledWith('/app/dlq-history?namespace=ns1');
   });
 
   it('shows DEV badge for Dev environment', async () => {
