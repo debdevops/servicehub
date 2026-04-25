@@ -516,7 +516,7 @@ export function Sidebar() {
               // Navigate to first queue if available
               const firstQueue = queues?.[0];
               if (firstQueue) {
-                navigate(`/messages?namespace=${activeNamespace.id}&queue=${firstQueue.name}&queueType=active`);
+                navigate(`/app/messages?namespace=${activeNamespace.id}&queue=${firstQueue.name}&queueType=active`);
                 return;
               }
               
@@ -546,7 +546,7 @@ export function Sidebar() {
               // Navigate to first queue's DLQ if available
               const firstQueue = queues?.[0];
               if (firstQueue) {
-                navigate(`/messages?namespace=${activeNamespace.id}&queue=${firstQueue.name}&queueType=deadletter`);
+                navigate(`/app/messages?namespace=${activeNamespace.id}&queue=${firstQueue.name}&queueType=deadletter`);
                 return;
               }
               
