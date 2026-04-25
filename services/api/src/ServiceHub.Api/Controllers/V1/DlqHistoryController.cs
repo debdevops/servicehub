@@ -446,7 +446,7 @@ public sealed class DlqHistoryController : ApiControllerBase
         var monitorService = HttpContext.RequestServices.GetRequiredService<IDlqMonitorService>();
         var result = await monitorService.ScanNamespaceAsync(namespaceId, cancellationToken);
 
-        return result.IsSuccess ? Ok(result.Value) : Problem(result.Error.Message);
+        return ToActionResult(result);
     }
 
     private static string EscapeCsv(string value)

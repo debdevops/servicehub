@@ -19,7 +19,7 @@ export function useRules(enabledOnly?: boolean) {
     queryKey: [...RULES_KEY, { enabledOnly }],
     queryFn: () => rulesApi.getAll(enabledOnly),
     staleTime: 30_000,
-    refetchInterval: 30_000, // Reduced from 10s to avoid rate limit pressure
+    refetchInterval: (query) => (query.state.status === 'error' ? false : 30_000),
     refetchIntervalInBackground: false,
     retry: (failureCount, error: ApiError) => {
       if (error?.response?.status === 429) return false;
