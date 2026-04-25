@@ -390,7 +390,7 @@ export function Sidebar() {
       },
       enabled: !!id,
       staleTime: 2000,
-      refetchInterval: 7000,
+      refetchInterval: (query: { state: { status: string } }) => query.state.status === 'error' ? false : 7000, // Stop on error to prevent 429 storms
       refetchIntervalInBackground: false,
     })),
   });
