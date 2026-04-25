@@ -168,31 +168,44 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
         // Reconcile: for entities with 0 DLQ messages, mark any remaining Active DB records as Replayed
         var reconciledCount = 0;
-        foreach (var (entityName2, seqNums) in scannedEntities)
+        try
         {
-            if (seqNums.Count == 0)
+            foreach (var (entityName2, seqNums) in scannedEntities)
             {
-                var staleRecords = await _dbContext.DlqMessages
-                    .Where(m => m.NamespaceId == namespaceId
-                                && m.EntityName == entityName2
-                                && m.Status == DlqMessageStatus.Active)
-                    .ToListAsync(cancellationToken);
-
-                foreach (var record in staleRecords)
+                if (seqNums.Count == 0)
                 {
-                    record.Status = DlqMessageStatus.Replayed;
-                    record.ReplayedAt = DateTimeOffset.UtcNow;
-                    reconciledCount++;
+                    var staleRecords = await _dbContext.DlqMessages
+                        .Where(m => m.NamespaceId == namespaceId
+                                    && m.EntityName == entityName2
+                                    && m.Status == DlqMessageStatus.Active)
+                        .ToListAsync(cancellationToken);
+
+                    foreach (var record in staleRecords)
+                    {
+                        record.Status = DlqMessageStatus.Replayed;
+                        record.ReplayedAt = DateTimeOffset.UtcNow;
+                        reconciledCount++;
+                    }
                 }
             }
-        }
 
-        if (reconciledCount > 0)
+            if (reconciledCount > 0)
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                _logger.LogInformation(
+                    "Reconciled {Count} stale DLQ messages as Replayed for namespace {NamespaceId}",
+                    reconciledCount, namespaceId);
+            }
+        }
+        catch (OperationCanceledException)
         {
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            _logger.LogInformation(
-                "Reconciled {Count} stale DLQ messages as Replayed for namespace {NamespaceId}",
-                reconciledCount, namespaceId);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Error during DLQ reconciliation for namespace {NamespaceId} — scan results still usable",
+                namespaceId);
         }
 
         _logger.LogInformation(
