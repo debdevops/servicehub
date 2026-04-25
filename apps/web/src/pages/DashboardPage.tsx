@@ -335,7 +335,7 @@ function DlqTrendSparkline({ namespaceId }: { namespaceId: string }) {
   const { data: trendData } = useQuery<DlqSparklinePoint[]>({
     queryKey: ['dlq-trend', namespaceId],
     queryFn: () => dlqHistoryApi.getTrend(namespaceId, 7),
-    refetchInterval: 30000,
+    refetchInterval: (query) => query.state.status === 'error' ? false : 30000, // Stop on error to prevent 429 storms
   });
 
   if (!trendData || trendData.length < 2) {
@@ -377,7 +377,7 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }:
     queryFn: () => namespacesApi.getStats(namespace.id),
     enabled: !!namespace.id,
     staleTime: 2000,
-    refetchInterval: 7000,
+    refetchInterval: (query) => query.state.status === 'error' ? false : 7000, // Stop on error to prevent 429 storms
     refetchIntervalInBackground: false,
   });
 
