@@ -13,7 +13,7 @@ export function useTopics(namespaceId: string, autoRefresh: boolean = true) {
     },
     enabled: !!namespaceId,
     staleTime: 2000, // Consider data stale after 2 seconds for immediate updates
-    refetchInterval: autoRefresh ? 7000 : false, // Auto-refresh every 7 seconds when enabled
+    refetchInterval: (query) => query.state.status === 'error' ? false : (autoRefresh ? 7000 : false), // Stop on error to prevent 429 storms
     refetchIntervalInBackground: false, // Don't refetch when tab is not visible
     retry: (failureCount, error: ApiError) => {
       // Don't retry on 404 or Service Bus connectivity errors
