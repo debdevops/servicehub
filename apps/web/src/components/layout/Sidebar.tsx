@@ -71,7 +71,7 @@ function QueueItem({ queue, namespaceId }: QueueItemProps) {
   return (
     <NavLink
       key={queue.name}
-      to={`/messages?namespace=${namespaceId}&queue=${queue.name}`}
+      to={`/app/messages?namespace=${namespaceId}&queue=${queue.name}`}
       className={({ isActive }) => {
         // Only show selected state if this exact queue in this exact namespace is in the route
         const searchParams = new URLSearchParams(window.location.search);
@@ -184,7 +184,7 @@ function TopicItem({ topic, namespaceId }: TopicItemProps) {
 function SubscriptionItem({ subscription, namespaceId, topicName }: SubscriptionItemProps) {
   return (
     <NavLink
-      to={`/messages?namespace=${namespaceId}&topic=${topicName}&subscription=${subscription.name}`}
+      to={`/app/messages?namespace=${namespaceId}&topic=${topicName}&subscription=${subscription.name}`}
       className={({ isActive }) => {
         // Only show selected state if this exact subscription in this exact namespace is in the route
         const searchParams = new URLSearchParams(window.location.search);
@@ -462,7 +462,7 @@ export function Sidebar() {
               {['orders-queue', 'payment-queue', 'notification-queue'].map((q) => (
                 <NavLink
                   key={q}
-                  to={`/messages?demo=true&queue=${q}`}
+                  to={`/app/messages?demo=true&queue=${q}`}
                   className="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm bg-white text-gray-700 hover:bg-sky-50 hover:text-sky-700 border border-gray-200 hover:border-sky-300 transition-all duration-200"
                 >
                   <span className="truncate">{q}</span>
@@ -566,7 +566,7 @@ export function Sidebar() {
             <span className="text-xs text-red-600 font-medium">DLQ</span>
           </button>
           <NavLink
-            to={activeNamespace ? `/dlq-history?namespace=${activeNamespace.id}` : '/dlq-history'}
+            to={activeNamespace ? `/app/dlq-history?namespace=${activeNamespace.id}` : '/app/dlq-history'}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-purple-50 text-gray-700 hover:text-purple-700 border border-gray-200 hover:border-purple-300 shadow-sm"
           >
             <BarChart3 className="w-4 h-4 text-purple-500" />
