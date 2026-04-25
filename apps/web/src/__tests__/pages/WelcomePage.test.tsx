@@ -63,11 +63,12 @@ describe('WelcomePage', () => {
     expect(screen.getByRole('heading', { name: /forensic debugger/i })).toBeInTheDocument();
   });
 
-  it('renders the "Open ServiceHub" primary CTA links pointing to the live app', () => {
+  it('renders the "Open ServiceHub" primary CTA links pointing to the connect page', () => {
     renderPage();
+    // CTAs must navigate to /app/connect (not back to root) so users reach the app
     const ctaLinks = screen
       .getAllByRole('link', { name: /open servicehub/i })
-      .filter((l) => l.getAttribute('href') === LIVE_APP_URL);
+      .filter((l) => l.getAttribute('href') === '/app/connect');
     expect(ctaLinks.length).toBeGreaterThan(0);
   });
 
