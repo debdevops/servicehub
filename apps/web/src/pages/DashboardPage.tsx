@@ -252,6 +252,7 @@ function DlqHotSpotsPanel({
 // Health Score Grade
 // ============================================================================
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function getHealthGrade(totalActive: number, totalDlq: number): { grade: string; color: string; bgClass: string; textClass: string; borderClass: string } {
   const dlqRatio = totalDlq / Math.max(totalActive + totalDlq, 1);
   if (dlqRatio === 0) return { grade: 'A', color: 'emerald', bgClass: 'bg-emerald-50', textClass: 'text-emerald-700', borderClass: 'border-emerald-200' };
