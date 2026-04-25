@@ -185,16 +185,14 @@ export function WelcomePage() {
               GitHub
             </a>
           </nav>
-          <a
-            href={LIVE_APP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
+          <Link
+            to="/app/connect"
             className="inline-flex items-center gap-2 px-5 py-2 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
             aria-label="Open ServiceHub application"
           >
             Open App
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
       </header>
 
@@ -224,16 +222,14 @@ export function WelcomePage() {
 
           {/* CTAs */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-14">
-            <a
-              href={LIVE_APP_URL}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              to="/app/connect"
               className="inline-flex items-center gap-2.5 px-8 py-4 bg-primary-600 text-white text-base font-bold rounded-xl hover:bg-primary-700 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
               aria-label="Open the ServiceHub application"
             >
               🚀 Open ServiceHub
               <ArrowRight className="w-5 h-5" />
-            </a>
+            </Link>
             <a
               href={GITHUB_URL}
               target="_blank"
@@ -649,16 +645,14 @@ export function WelcomePage() {
               No credit card. No install required. Connect your Azure Service Bus in 30 seconds.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <a
-                href={LIVE_APP_URL}
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                to="/app/connect"
                 className="inline-flex items-center gap-2.5 px-8 py-4 bg-white text-primary-700 font-bold text-base rounded-xl hover:bg-gray-100 transition-all shadow-lg hover:-translate-y-0.5"
-                aria-label="Open the ServiceHub live application"
+                aria-label="Open the ServiceHub application"
               >
                 🚀 Open ServiceHub
                 <ArrowRight className="w-5 h-5" />
-              </a>
+              </Link>
               <Link
                 to="/app/connect"
                 className="inline-flex items-center gap-2.5 px-8 py-4 bg-white/15 text-white font-bold text-base rounded-xl border-2 border-white/40 hover:bg-white/25 transition-all"
