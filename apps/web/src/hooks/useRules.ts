@@ -4,6 +4,7 @@ import {
   type CreateRuleRequest,
   type TestRuleRequest,
 } from '@/lib/api/rules';
+import { type ApiError } from '@/lib/api/types';
 import toast from 'react-hot-toast';
 
 const RULES_KEY = ['rules'] as const;
@@ -17,9 +18,15 @@ export function useRules(enabledOnly?: boolean) {
   return useQuery({
     queryKey: [...RULES_KEY, { enabledOnly }],
     queryFn: () => rulesApi.getAll(enabledOnly),
-    staleTime: 10_000,
-    refetchInterval: 10_000, // Match DLQ polling interval for real-time stats
-    refetchIntervalInBackground: false, // Pause when tab inactive
+    staleTime: 30_000,
+    refetchInterval: 30_000, // Reduced from 10s to avoid rate limit pressure
+    refetchIntervalInBackground: false,
+    retry: (failureCount, error: ApiError) => {
+      if (error?.response?.status === 429) return false;
+      if (error?.response?.status === 404) return false;
+      if ((error?.response?.status ?? 0) >= 500) return false;
+      return failureCount < 2;
+    },
   });
 }
 
