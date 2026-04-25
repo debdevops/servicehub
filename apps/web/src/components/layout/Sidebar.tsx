@@ -417,7 +417,7 @@ export function Sidebar() {
               <RefreshCw className="w-4 h-4 text-primary-500 group-hover:rotate-180 transition-transform duration-300" />
             </button>
             <NavLink
-              to="/connect"
+              to="/app/connect"
               className="p-1 hover:bg-gray-100 rounded transition-colors"
               title="Add Connection"
               aria-label="Add new connection"
@@ -440,7 +440,7 @@ export function Sidebar() {
           <div className="px-3 py-4 text-sm text-gray-500 text-center">
             <p className="mb-2">No connections yet</p>
             <NavLink
-              to="/connect"
+              to="/app/connect"
               className="text-primary-600 hover:text-primary-700 font-medium"
             >
               Add your first connection
@@ -487,7 +487,7 @@ export function Sidebar() {
         <nav className="space-y-1 px-3 pb-3">
           {/* Dashboard - moved to top */}
           <NavLink
-            to="/dashboard"
+            to="/app/dashboard"
             className={({ isActive }) =>
               `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
                 isActive
@@ -574,7 +574,7 @@ export function Sidebar() {
             <span className="text-xs text-purple-600 font-medium">History</span>
           </NavLink>
           <NavLink
-            to="/rules"
+            to="/app/rules"
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-amber-50 text-gray-700 hover:text-amber-700 border border-gray-200 hover:border-amber-300 shadow-sm"
           >
             <Zap className="w-4 h-4 text-amber-500" />
@@ -582,7 +582,7 @@ export function Sidebar() {
             <span className="text-xs text-amber-600 font-medium">Rules</span>
           </NavLink>
           <NavLink
-            to="/health"
+            to="/app/health"
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border border-gray-200 hover:border-emerald-300 shadow-sm"
           >
             <Activity className="w-4 h-4 text-emerald-500" />
@@ -590,7 +590,7 @@ export function Sidebar() {
             <span className="text-xs text-emerald-600 font-medium">Status</span>
           </NavLink>
           <NavLink
-            to="/scheduled"
+            to="/app/scheduled"
             className={({ isActive }) =>
               `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
                 isActive
@@ -604,7 +604,7 @@ export function Sidebar() {
             <span className="text-xs text-sky-600 font-medium">View</span>
           </NavLink>
           <NavLink
-            to="/correlation"
+            to="/app/correlation"
             className={({ isActive }) =>
               `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
                 isActive
@@ -617,7 +617,7 @@ export function Sidebar() {
             <span className="flex-1 text-left">Correlation</span>
           </NavLink>
           <NavLink
-            to="/help"
+            to="/app/help"
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border border-gray-200 hover:border-primary-300 shadow-sm"
           >
             <HelpCircle className="w-4 h-4 text-primary-500" />
@@ -625,7 +625,7 @@ export function Sidebar() {
             <span className="text-xs text-primary-600 font-medium">?</span>
           </NavLink>
           <NavLink
-            to="/security"
+            to="/app/security"
             className={({ isActive }) =>
               `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
                 isActive
@@ -644,7 +644,7 @@ export function Sidebar() {
       {/* Add Connection CTA */}
       <div className="border-t border-gray-200 p-3 bg-white">
         <NavLink
-          to="/connect"
+          to="/app/connect"
           className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-sm font-medium transition-all shadow-md hover:shadow-lg"
         >
           <Plus className="w-4 h-4" />
