@@ -14,7 +14,7 @@ export function useHealthStatus() {
   return useQuery({
     queryKey: ['health', 'status'],
     queryFn: healthApi.getStatus,
-    refetchInterval: 15_000,
+    refetchInterval: (query) => query.state.status === 'error' ? false : 15_000, // Stop on error
     retry: 1,
   });
 }

@@ -9,7 +9,7 @@ export function useScheduledMessages(namespaceId: string, queueName: string) {
     queryFn: () => scheduledApi.listScheduled(namespaceId, queueName),
     enabled: !!namespaceId && !!queueName,
     staleTime: 5000,
-    refetchInterval: 10000,
+    refetchInterval: (query) => query.state.status === 'error' ? false : 10000, // Stop on error to prevent 429 storms
     refetchIntervalInBackground: false,
     retry: (failureCount, error: ApiError) => {
       const status = error?.response?.status ?? 0;

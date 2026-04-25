@@ -26,8 +26,10 @@ export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean 
         // For 404s or Service Bus connectivity errors, return empty result
         // instead of throwing. This prevents toast spam from background polling
         // when the Service Bus namespace is unavailable.
+        // Note: 429 is NOT swallowed here — it propagates to error state so
+        // refetchInterval stops polling and prevents sustained 429 storms.
         const status = (error as ApiError)?.response?.status;
-        if (status === 404 || status === 429 || status === 502 || status === 503) {
+        if (status === 404 || status === 502 || status === 503) {
           return { items: [], totalCount: 0, hasMore: false };
         }
         throw error;
@@ -35,7 +37,7 @@ export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean 
     },
     enabled: !!sanitizedParams.namespaceId && !!sanitizedParams.queueOrTopicName,
     staleTime: 2000, // Consider data stale after 2 seconds for near real-time updates
-    refetchInterval: params.autoRefresh !== false ? 7000 : false, // Auto-refresh every 7 seconds when enabled
+    refetchInterval: (query) => query.state.status === 'error' ? false : (params.autoRefresh !== false ? 7000 : false), // Stop on error/429 to prevent storms
     refetchIntervalInBackground: false, // Don't refetch when tab is not visible
     retry: (failureCount, error: ApiError) => {
       // Don't retry on 404 errors (entity not found)
