@@ -23,7 +23,7 @@
 
 <div align="center">
 
-![ServiceHub Demo](docs/screenshots/ServiceHub-Demo.gif)
+![ServiceHub Demo](docs/screenshots/servicehub-demo.gif)
 
 </div>
 
@@ -209,7 +209,7 @@ cd servicehub
 
 Open **http://localhost:3000** — then connect with your Azure Service Bus connection string.
 
-The script automatically installs .NET 10 SDK and Node.js 18+ if not already present.
+The script automatically installs .NET 10 SDK and Node.js 20+ if not already present.
 
 ### Prerequisites
 
@@ -218,7 +218,7 @@ You provide:
 
 Auto-installed by `run.sh`:
 - .NET 10.0 SDK
-- Node.js 18+
+- Node.js 20+
 
 ### Create a Dedicated Policy
 
@@ -457,6 +457,6 @@ The CTA in the welcome page reads **"Open ServiceHub"** rather than "Demo" to re
 
 Built for DevOps, Platform, and SRE Engineers.
 
-[🚀 Open ServiceHub](https://app-servicehub-prod.azurewebsites.net/) · [Quick Start](#-quick-start) · [Report Issue](https://github.com/debdevops/servicehub/issues)
+[🚀 Open ServiceHub](https://app-servicehub-prod.azurewebsites.net/) · [Quick Start](#️-quick-start) · [Report Issue](https://github.com/debdevops/servicehub/issues)
 
 </div>
