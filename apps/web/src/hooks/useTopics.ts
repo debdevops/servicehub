@@ -18,6 +18,7 @@ export function useTopics(namespaceId: string, autoRefresh: boolean = true) {
     retry: (failureCount, error: ApiError) => {
       // Don't retry on 404 or Service Bus connectivity errors
       if (error?.response?.status === 404) return false;
+      if (error?.response?.status === 429) return false;
       if ((error?.response?.status ?? 0) >= 500) return false;
       return failureCount < 2;
     },

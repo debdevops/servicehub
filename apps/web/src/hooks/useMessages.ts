@@ -27,7 +27,7 @@ export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean 
         // instead of throwing. This prevents toast spam from background polling
         // when the Service Bus namespace is unavailable.
         const status = (error as ApiError)?.response?.status;
-        if (status === 404 || status === 502 || status === 503) {
+        if (status === 404 || status === 429 || status === 502 || status === 503) {
           return { items: [], totalCount: 0, hasMore: false };
         }
         throw error;
@@ -42,6 +42,8 @@ export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean 
       if (error?.response?.status === 404) return false;
       // Don't retry on 401/403 (auth errors)
       if (error?.response?.status === 401 || error?.response?.status === 403) return false;
+      // Don't retry on 429 — retrying would worsen the rate limit situation
+      if (error?.response?.status === 429) return false;
       // Don't retry on Service Bus connectivity errors
       if ((error?.response?.status ?? 0) >= 500) return false;
       return failureCount < 2;
@@ -96,7 +98,7 @@ export function useSendMessage() {
     onError: (error: ApiError) => {
       const errorMsg = error?.response?.data?.message || error?.message || 'Failed to send message';
       toast.error(errorMsg, {
-        duration: Infinity, // Force user to acknowledge critical failure
+        duration: 8000,
       });
     },
   });
@@ -143,7 +145,7 @@ export function useReplayMessage() {
       } else {
         const errorMsg = error?.response?.data?.message || error?.message || 'Failed to replay message';
         toast.error(errorMsg, {
-          duration: Infinity, // Force user to acknowledge critical failure
+          duration: 8000,
         });
       }
     },
