@@ -348,7 +348,7 @@ function DlqTrendSparkline({ namespaceId }: { namespaceId: string }) {
         resolvedCount: d.resolvedMessages,
       }));
     },
-    refetchInterval: 30000,
+    refetchInterval: 120_000,
   });
 
   if (!trendData || trendData.length < 2) {
@@ -399,8 +399,8 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }:
       return response.data;
     },
     enabled: !!namespace.id,
-    staleTime: 2000,
-    refetchInterval: 7000,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
 

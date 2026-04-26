@@ -8,12 +8,13 @@ export function useScheduledMessages(namespaceId: string, queueName: string) {
     queryKey: ['scheduled-messages', namespaceId, queueName],
     queryFn: () => scheduledApi.listScheduled(namespaceId, queueName),
     enabled: !!namespaceId && !!queueName,
-    staleTime: 5000,
-    refetchInterval: 10000,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
     refetchIntervalInBackground: false,
     retry: (failureCount, error: ApiError) => {
       const status = error?.response?.status ?? 0;
       if (status === 404 || status === 401 || status === 403) return false;
+      if (status === 429) return false;
       if (status >= 500) return false;
       return failureCount < 2;
     },
