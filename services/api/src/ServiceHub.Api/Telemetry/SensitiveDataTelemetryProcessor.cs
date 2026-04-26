@@ -33,6 +33,20 @@ public sealed class SensitiveDataTelemetryProcessor : ITelemetryProcessor
         "api_key",
     };
 
+    // Custom property keys that must never reach Application Insights
+    // regardless of how they are set (e.g. by an AI analyzer or controller).
+    private static readonly HashSet<string> SensitivePropertyKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "messageBody",
+        "message_body",
+        "body",
+        "connectionString",
+        "connection_string",
+        "correlationId",   // Service Bus message-level correlation IDs (not infra tracing IDs)
+        "userInput",
+        "payload",
+    };
+
     private static readonly string[] SensitiveDependencyPatterns =
     [
         "SharedAccessKey",
@@ -55,6 +69,7 @@ public sealed class SensitiveDataTelemetryProcessor : ITelemetryProcessor
 
             case TraceTelemetry trace:
                 trace.Message = LogRedactor.Redact(trace.Message);
+                RedactProperties(trace.Properties);
                 break;
 
             case ExceptionTelemetry exception:
@@ -64,10 +79,35 @@ public sealed class SensitiveDataTelemetryProcessor : ITelemetryProcessor
             case DependencyTelemetry dependency:
                 RedactDependencyTelemetry(dependency);
                 break;
+
+            case EventTelemetry evt:
+                // Custom events must never carry message bodies or connection data
+                RedactProperties(evt.Properties);
+                break;
         }
 
         // Always pass the item through — never drop telemetry in this processor
         _next.Process(item);
+    }
+
+    /// <summary>
+    /// Removes or redacts known-sensitive property keys from a telemetry property bag.
+    /// Runs LogRedactor over all remaining values to catch any accidental leakage.
+    /// </summary>
+    private static void RedactProperties(IDictionary<string, string> properties)
+    {
+        // Remove keys that should never appear in telemetry
+        foreach (var key in properties.Keys.ToList())
+        {
+            if (SensitivePropertyKeys.Contains(key))
+            {
+                properties.Remove(key);
+            }
+            else
+            {
+                properties[key] = LogRedactor.Redact(properties[key]);
+            }
+        }
     }
 
     private static void RedactRequestTelemetry(RequestTelemetry request)
@@ -112,11 +152,8 @@ public sealed class SensitiveDataTelemetryProcessor : ITelemetryProcessor
         // Redact the outer message stored in telemetry properties
         exception.Message = LogRedactor.Redact(exception.Message);
 
-        // Redact any custom properties that may contain secrets
-        foreach (var key in exception.Properties.Keys.ToList())
-        {
-            exception.Properties[key] = LogRedactor.Redact(exception.Properties[key]);
-        }
+        // Redact / remove sensitive custom properties
+        RedactProperties(exception.Properties);
     }
 
     private static void RedactDependencyTelemetry(DependencyTelemetry dependency)

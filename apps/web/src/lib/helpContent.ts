@@ -103,10 +103,10 @@ export const tooltips = {
         'Use the tabs to view Properties (metadata), Body (payload), AI Analysis (pattern detection), System Info, and Actions (replay / complete).',
     } as TooltipContent,
     replay: {
-      text: 'Resubmit this dead-letter message',
+      text: 'Resubmit this dead-letter message — use in DEV/UAT before PROD',
       detail:
-        'Sends the message back to the original queue for reprocessing. Only available in Dev/UAT environments. Production namespaces block this action.',
-      action: 'Fix the root cause first, then click Replay.',
+        'Sends the message back to the original queue for reprocessing. Recommended: validate replay behaviour in DEV or UAT before applying to production traffic. Production namespaces block this action for safety.',
+      action: 'Fix the root cause first, validate in DEV/UAT, then click Replay.',
     } as TooltipContent,
     search: {
       text: 'Filter messages by content',
