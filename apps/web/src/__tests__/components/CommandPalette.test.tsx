@@ -109,7 +109,7 @@ describe('CommandPalette', () => {
   it('navigates to dashboard and calls onClose when Dashboard item is clicked', async () => {
     const { onClose } = renderOpen();
     await userEvent.click(screen.getByText('Dashboard'));
-    expect(mockNavigate).toHaveBeenCalledWith('/');
+    expect(mockNavigate).toHaveBeenCalledWith('/app/dashboard');
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -127,8 +127,8 @@ describe('CommandPalette', () => {
     const { onClose } = renderOpen();
     const input = screen.getByPlaceholderText('Search pages, namespaces, actions…');
     fireEvent.keyDown(input, { key: 'Enter' });
-    // First item is Dashboard → navigate to '/'
-    expect(mockNavigate).toHaveBeenCalledWith('/');
+    // First item is Dashboard → navigate to '/app/dashboard'
+    expect(mockNavigate).toHaveBeenCalledWith('/app/dashboard');
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

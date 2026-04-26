@@ -111,10 +111,11 @@ export function MessagesPage() {
 
   // Auto-fix invalid namespace ID by redirecting to the first available namespace
   useEffect(() => {
-    if (namespaces && namespaces.length > 0 && namespaceId) {
+    if (namespaces && namespaces.length > 0 && namespaceId && !isDemo) {
       const namespaceExists = namespaces.some(ns => ns.id === namespaceId);
       if (!namespaceExists) {
         // Namespace ID in URL is invalid (likely from previous API session with in-memory storage)
+        // Don't redirect in demo mode — allow mock data to load
         const firstNamespace = namespaces[0];
         if (import.meta.env.DEV) console.warn(`[MessagesPage] Invalid namespace ID "${namespaceId}" - redirecting to "${firstNamespace.id}"`);
         
@@ -128,7 +129,7 @@ export function MessagesPage() {
         });
       }
     }
-  }, [namespaces, namespaceId, searchParams, setSearchParams]);
+  }, [namespaces, namespaceId, searchParams, setSearchParams, isDemo]);
 
   // Selected message for detail panel
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
@@ -180,7 +181,7 @@ export function MessagesPage() {
             </p>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => { navigate('/connect'); toast.dismiss(t.id); }}
+                onClick={() => { navigate('/app/connect'); toast.dismiss(t.id); }}
                 className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-lg transition-colors"
               >
                 Connect now →
@@ -618,14 +619,14 @@ export function MessagesPage() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => navigate('/messages?demo=true&queueType=deadletter')}
+              onClick={() => navigate('/app/messages?demo=true&queueType=deadletter')}
               className="text-xs font-medium text-blue-700 hover:bg-blue-100 px-2.5 py-1 rounded transition-colors"
               title="View Dead-Letter Queue"
             >
               📬 View DLQ
             </button>
             <button
-              onClick={() => navigate('/connect')}
+              onClick={() => navigate('/app/connect')}
               className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 rounded transition-colors"
               title="Return to Connect page"
             >

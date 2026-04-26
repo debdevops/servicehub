@@ -62,7 +62,7 @@ public sealed class DlqHistoryController : ApiControllerBase
         page = Math.Max(page, 1);
 
         var result = await _historyService.GetHistoryAsync(
-            namespaceId, entityName, from, to, status, category,
+            OwnerId, namespaceId, entityName, from, to, status, category,
             page, pageSize, cancellationToken);
 
         if (result.IsFailure)
@@ -199,7 +199,7 @@ public sealed class DlqHistoryController : ApiControllerBase
 
         var response = new DlqTimelineResponse(
             MessageId: id,
-            EntityName: string.Empty, // Will be populated from the message
+            EntityName: string.Empty,
             Events: events);
 
         return Ok(response);
@@ -446,7 +446,7 @@ public sealed class DlqHistoryController : ApiControllerBase
         var monitorService = HttpContext.RequestServices.GetRequiredService<IDlqMonitorService>();
         var result = await monitorService.ScanNamespaceAsync(namespaceId, cancellationToken);
 
-        return result.IsSuccess ? Ok(result.Value) : Problem(result.Error.Message);
+        return ToActionResult(result);
     }
 
     private static string EscapeCsv(string value)

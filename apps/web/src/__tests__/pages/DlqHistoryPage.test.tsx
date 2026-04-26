@@ -24,7 +24,7 @@ vi.mock('@/components/dlq', () => ({
 }));
 vi.mock('@/lib/api/dlqHistory', () => ({
   dlqHistoryApi: {
-    getExportUrl: vi.fn(() => 'http://test-export-url'),
+    downloadExport: vi.fn(() => Promise.resolve()),
     triggerScan: vi.fn(),
   },
 }));
@@ -34,6 +34,8 @@ vi.mock('react-hot-toast', () => ({
 
 import { useDlqHistory, useDlqSummary } from '@/hooks/useDlqHistory';
 import { useNamespaces } from '@/hooks/useNamespaces';
+import userEvent from '@testing-library/user-event';
+import { dlqHistoryApi } from '@/lib/api/dlqHistory';
 
 const mockUseDlqHistory = useDlqHistory as ReturnType<typeof vi.fn>;
 const mockUseDlqSummary = useDlqSummary as ReturnType<typeof vi.fn>;
@@ -82,11 +84,10 @@ function createWrapper(initialPath = '/dlq-history?namespace=ns1') {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks();
   mockUseNamespaces.mockReturnValue({ data: mockNamespaces });
   mockUseDlqHistory.mockReturnValue({ data: mockDlqData, isLoading: false, refetch: vi.fn(), isFetching: false });
   mockUseDlqSummary.mockReturnValue({ data: mockSummary });
-  // Reset window.open mock
-  vi.stubGlobal('open', vi.fn());
 });
 
 describe('DlqHistoryPage', () => {
@@ -176,22 +177,22 @@ describe('DlqHistoryPage', () => {
     expect(mockRefetch).toHaveBeenCalled();
   });
 
-  it('opens CSV export URL in new tab when CSV button clicked', () => {
-    const mockOpen = vi.fn();
-    vi.stubGlobal('open', mockOpen);
+  it('opens CSV export URL in new tab when CSV button clicked', async () => {
+    const user = userEvent.setup();
+    const mockDownloadExport = vi.mocked(dlqHistoryApi.downloadExport);
     const Wrapper = createWrapper();
     render(<Wrapper><DlqHistoryPage /></Wrapper>);
-    fireEvent.click(screen.getByText('CSV'));
-    expect(mockOpen).toHaveBeenCalledWith('http://test-export-url', '_blank');
+    await user.click(screen.getByText('CSV'));
+    expect(mockDownloadExport).toHaveBeenCalledWith('csv', expect.anything());
   });
 
-  it('opens JSON export URL in new tab when JSON button clicked', () => {
-    const mockOpen = vi.fn();
-    vi.stubGlobal('open', mockOpen);
+  it('opens JSON export URL in new tab when JSON button clicked', async () => {
+    const user = userEvent.setup();
+    const mockDownloadExport = vi.mocked(dlqHistoryApi.downloadExport);
     const Wrapper = createWrapper();
     render(<Wrapper><DlqHistoryPage /></Wrapper>);
-    fireEvent.click(screen.getByText('JSON'));
-    expect(mockOpen).toHaveBeenCalledWith('http://test-export-url', '_blank');
+    await user.click(screen.getByText('JSON'));
+    expect(mockDownloadExport).toHaveBeenCalledWith('json', expect.anything());
   });
 
   it('shows loading state in table', () => {

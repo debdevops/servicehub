@@ -158,6 +158,23 @@ public sealed class ApiKeyAuthenticationMiddleware
             return;
         }
 
+        // If EasyAuthMiddleware already set OwnerId (Azure Easy Auth was successful),
+        // skip all legacy auth logic (SPA token, API key) and pass through.
+        // This ensures EasyAuth-authenticated requests bypass the SPA-token-only path.
+        if (context.Items.ContainsKey("OwnerId") && context.Items["AuthMethod"] is "EasyAuth")
+        {
+            // Sanitize log inputs to prevent log injection
+            var safeMethod = (context.Request.Method ?? string.Empty)
+                .Replace("\r", string.Empty)
+                .Replace("\n", string.Empty);
+            var safePath = path
+                .Replace("\r", string.Empty)
+                .Replace("\n", string.Empty);
+
+            _logger.LogDebug("EasyAuth already authenticated request for {Method} {Path}, skipping API key auth",
+                safeMethod, safePath);
+        }
+
         // Try SPA token first (co-hosted browser requests)
         if (_spaTokenProvider is { IsEnabled: true }
             && context.Request.Headers.TryGetValue(SpaTokenHeaderName, out var spaTokenHeader))

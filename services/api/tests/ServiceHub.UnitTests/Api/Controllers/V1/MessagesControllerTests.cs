@@ -35,7 +35,10 @@ public class MessagesControllerTests
         {
             ControllerContext = new ControllerContext
             {
-                HttpContext = new DefaultHttpContext()
+                HttpContext = new DefaultHttpContext
+                {
+                    Items = { { "OwnerId", Namespace.SpaOwnerId } }
+                }
             }
         };
     }
@@ -79,17 +82,19 @@ public class MessagesControllerTests
     [Fact]
     public async Task PeekQueueMessages_Success_ShouldReturnOk()
     {
-        var nsId = Guid.NewGuid();
+        var namespace_ = CreateTestNamespace();
         var messages = new List<Message>
         {
             new() { MessageId = "msg-1", SequenceNumber = 1, EnqueuedTime = DateTimeOffset.UtcNow },
             new() { MessageId = "msg-2", SequenceNumber = 2, EnqueuedTime = DateTimeOffset.UtcNow }
         };
 
+        _namespaceRepository.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(namespace_));
         _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
 
-        var result = await _controller.PeekQueueMessages(nsId, "my-queue");
+        var result = await _controller.PeekQueueMessages(namespace_.Id, "my-queue");
 
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var responses = okResult.Value.Should().BeAssignableTo<List<MessageResponse>>().Subject;
@@ -99,11 +104,13 @@ public class MessagesControllerTests
     [Fact]
     public async Task PeekQueueMessages_Failure_ShouldReturnError()
     {
-        var nsId = Guid.NewGuid();
+        var namespace_ = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(namespace_));
         _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Failure(Error.ExternalService("SB_ERR", "Service Bus error")));
 
-        var result = await _controller.PeekQueueMessages(nsId, "my-queue");
+        var result = await _controller.PeekQueueMessages(namespace_.Id, "my-queue");
 
         result.Result.Should().NotBeOfType<OkObjectResult>();
     }
@@ -111,13 +118,15 @@ public class MessagesControllerTests
     [Fact]
     public async Task PeekQueueMessages_ShouldClampMaxMessages()
     {
-        var nsId = Guid.NewGuid();
+        var namespace_ = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(namespace_));
         _messageReceiver.Setup(r => r.PeekMessagesAsync(
             It.Is<GetMessagesRequest>(req => req.MaxMessages <= 1000 && req.MaxMessages >= 1),
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(new List<Message>()));
 
-        await _controller.PeekQueueMessages(nsId, "my-queue", maxMessages: 999);
+        await _controller.PeekQueueMessages(namespace_.Id, "my-queue", maxMessages: 999);
 
         _messageReceiver.Verify(
             r => r.PeekMessagesAsync(
@@ -133,16 +142,18 @@ public class MessagesControllerTests
     [Fact]
     public async Task PeekSubscriptionMessages_Success_ShouldReturnOk()
     {
-        var nsId = Guid.NewGuid();
+        var namespace_ = CreateTestNamespace();
         var messages = new List<Message>
         {
             new() { MessageId = "msg-1", SequenceNumber = 1, EnqueuedTime = DateTimeOffset.UtcNow }
         };
 
+        _namespaceRepository.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(namespace_));
         _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
 
-        var result = await _controller.PeekSubscriptionMessages(nsId, "my-topic", "my-sub");
+        var result = await _controller.PeekSubscriptionMessages(namespace_.Id, "my-topic", "my-sub");
 
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
     }
@@ -154,18 +165,26 @@ public class MessagesControllerTests
     [Fact]
     public async Task PeekQueueDeadLetterMessages_Success_ShouldReturnOk()
     {
-        var nsId = Guid.NewGuid();
+        var namespace_ = CreateTestNamespace();
         var messages = new List<Message>
         {
-            new() { MessageId = "dlq-1", SequenceNumber = 1, EnqueuedTime = DateTimeOffset.UtcNow, IsFromDeadLetter = true }
+            new() { MessageId = "dlq-msg-1", SequenceNumber = 1, EnqueuedTime = DateTimeOffset.UtcNow, IsFromDeadLetter = true }
         };
 
+        _namespaceRepository.Setup(r => r.GetByIdAsync(namespace_.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(namespace_));
         _messageReceiver.Setup(r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
 
-        var result = await _controller.PeekQueueDeadLetterMessages(nsId, "my-queue");
+        var result = await _controller.PeekQueueDeadLetterMessages(namespace_.Id, "my-queue");
 
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeAssignableTo<IEnumerable<MessageResponse>>().Subject.ToList();
+        
+        response.Should().HaveCount(1);
+        response[0].MessageId.Should().Be("dlq-msg-1");
+        response[0].SequenceNumber.Should().Be(1);
+        response[0].IsFromDeadLetter.Should().BeTrue();
     }
 
     #endregion
@@ -175,18 +194,26 @@ public class MessagesControllerTests
     [Fact]
     public async Task PeekSubscriptionDeadLetterMessages_Success_ShouldReturnOk()
     {
-        var nsId = Guid.NewGuid();
+        var namespace_ = CreateTestNamespace();
         var messages = new List<Message>
         {
             new() { MessageId = "dlq-1", SequenceNumber = 1, EnqueuedTime = DateTimeOffset.UtcNow, IsFromDeadLetter = true }
         };
 
+        _namespaceRepository.Setup(r => r.GetByIdAsync(namespace_.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(namespace_));
         _messageReceiver.Setup(r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
 
-        var result = await _controller.PeekSubscriptionDeadLetterMessages(nsId, "my-topic", "my-sub");
+        var result = await _controller.PeekSubscriptionDeadLetterMessages(namespace_.Id, "my-topic", "my-sub");
 
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeAssignableTo<IEnumerable<MessageResponse>>().Subject.ToList();
+        
+        response.Should().HaveCount(1);
+        response[0].MessageId.Should().Be("dlq-1");
+        response[0].SequenceNumber.Should().Be(1);
+        response[0].IsFromDeadLetter.Should().BeTrue();
     }
 
     #endregion
