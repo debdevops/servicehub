@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import { riskIntent, withRiskIntent } from './intentHeaders';
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -146,6 +147,7 @@ export const rulesApi = {
   replayAll: async (ruleId: number): Promise<ReplayAllResponse> => {
     // Use extended timeout — bulk replay can take time for many messages
     const { data } = await apiClient.post<ReplayAllResponse>(`${BASE}/${ruleId}/replay-all`, null, {
+      headers: withRiskIntent(riskIntent.replayAllRules),
       timeout: 120_000, // 2 minutes (override default 30s)
     });
     return data;

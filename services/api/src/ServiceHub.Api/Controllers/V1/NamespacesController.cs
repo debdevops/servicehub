@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Security;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
@@ -23,6 +24,7 @@ public sealed class NamespacesController : ApiControllerBase
     private readonly IServiceBusClientFactory _clientFactory;
     private readonly IServiceBusClientCache _clientCache;
     private readonly IConnectionStringProtector _connectionStringProtector;
+    private readonly IAuditLogger _auditLogger;
     private readonly ILogger<NamespacesController> _logger;
 
     /// <summary>
@@ -33,17 +35,20 @@ public sealed class NamespacesController : ApiControllerBase
     /// <param name="clientCache">The Service Bus client cache.</param>
     /// <param name="connectionStringProtector">The connection string protector.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="auditLogger">The security audit logger.</param>
     public NamespacesController(
         INamespaceRepository namespaceRepository,
         IServiceBusClientFactory clientFactory,
         IServiceBusClientCache clientCache,
         IConnectionStringProtector connectionStringProtector,
-        ILogger<NamespacesController> logger)
+        ILogger<NamespacesController> logger,
+        IAuditLogger? auditLogger = null)
     {
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
         _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
+        _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -378,6 +383,22 @@ public sealed class NamespacesController : ApiControllerBase
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
+        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentDeleteNamespace))
+        {
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: IntentHeaders.IntentDeleteNamespace,
+                outcome: "Denied",
+                namespaceId: id,
+                detail: "Missing explicit intent headers");
+
+            return Problem(
+                statusCode: StatusCodes.Status428PreconditionRequired,
+                title: "Explicit Intent Required",
+                detail: IntentHeaders.BuildIntentRequiredDetail("namespace deletion"));
+        }
+
         // When authentication is enabled, enforce write scope in-method in addition to
         // the [RequireScope] filter, so the check is visible to static-analysis tools.
         // SPA token auth gets full access — scope restrictions only apply to API keys.
@@ -407,13 +428,43 @@ public sealed class NamespacesController : ApiControllerBase
         }
 
         _logger.LogInformation("Deleting namespace {NamespaceId}", ns.Id);
+        _auditLogger.LogCriticalAction(
+            HttpContext,
+            OwnerId,
+            action: IntentHeaders.IntentDeleteNamespace,
+            outcome: "Attempt",
+            namespaceId: ns.Id,
+            environment: ns.Environment,
+            resourceName: ns.Name,
+            detail: "Namespace deletion requested");
 
         if (_clientCache.Contains(ns.Id))
             await _clientCache.RemoveAsync(ns.Id, cancellationToken);
 
         var result = await _namespaceRepository.DeleteAsync(ns.Id, cancellationToken);
         if (result.IsFailure)
+        {
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: IntentHeaders.IntentDeleteNamespace,
+                outcome: "Failed",
+                namespaceId: ns.Id,
+                environment: ns.Environment,
+                resourceName: ns.Name,
+                detail: result.Error.Message);
             return ToActionResult(result);
+        }
+
+        _auditLogger.LogCriticalAction(
+            HttpContext,
+            OwnerId,
+            action: IntentHeaders.IntentDeleteNamespace,
+            outcome: "Succeeded",
+            namespaceId: ns.Id,
+            environment: ns.Environment,
+            resourceName: ns.Name,
+            detail: "Namespace deleted");
 
         _logger.LogInformation("Namespace {NamespaceId} deleted successfully", ns.Id);
         return NoContent();
