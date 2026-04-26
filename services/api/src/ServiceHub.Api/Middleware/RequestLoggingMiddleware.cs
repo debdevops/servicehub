@@ -50,13 +50,11 @@ public sealed class RequestLoggingMiddleware
 
         var correlationId = context.Items["CorrelationId"]?.ToString() ?? "unknown";
         var method = context.Request.Method;
-        var queryString = context.Request.QueryString.HasValue ? context.Request.QueryString.Value : string.Empty;
 
         _logger.LogInformation(
-            "Request started: {Method} {Path}{QueryString} | CorrelationId: {CorrelationId}",
+            "Request started: {Method} {Path} | CorrelationId: {CorrelationId}",
             LogRedactor.SanitiseForLog(method),
             LogRedactor.SanitiseForLog(path),
-            LogRedactor.SanitiseForLog(queryString),
             correlationId);
 
         var stopwatch = Stopwatch.StartNew();

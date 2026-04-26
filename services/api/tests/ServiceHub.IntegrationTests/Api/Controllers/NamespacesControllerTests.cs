@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
+using ServiceHub.Api.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
@@ -138,7 +139,10 @@ public sealed class NamespacesControllerTests : IClassFixture<TestWebApplication
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = await createResponse.Content.ReadFromJsonAsync<NamespaceResponse>(JsonOptions);
 
-        var response = await _client.DeleteAsync($"{BaseUrl}/{created!.Id}");
+        var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, $"{BaseUrl}/{created!.Id}");
+        deleteRequest.Headers.Add(IntentHeaders.IntentHeaderName, IntentHeaders.IntentDeleteNamespace);
+        deleteRequest.Headers.Add(IntentHeaders.ConfirmHeaderName, "true");
+        var response = await _client.SendAsync(deleteRequest);
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
@@ -148,7 +152,10 @@ public sealed class NamespacesControllerTests : IClassFixture<TestWebApplication
     {
         var nonExistentId = Guid.NewGuid();
 
-        var response = await _client.DeleteAsync($"{BaseUrl}/{nonExistentId}");
+        var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, $"{BaseUrl}/{nonExistentId}");
+        deleteRequest.Headers.Add(IntentHeaders.IntentHeaderName, IntentHeaders.IntentDeleteNamespace);
+        deleteRequest.Headers.Add(IntentHeaders.ConfirmHeaderName, "true");
+        var response = await _client.SendAsync(deleteRequest);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }

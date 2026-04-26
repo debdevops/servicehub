@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
 using ServiceHub.Api.Controllers.V1;
+using ServiceHub.Api.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
@@ -80,6 +81,12 @@ public class QueuesControllerTests
             DefaultMessageTimeToLive: TimeSpan.FromDays(14),
             LockDuration: TimeSpan.FromSeconds(30),
             AutoDeleteOnIdle: TimeSpan.MaxValue);
+    }
+
+    private void SetIntentHeaders(string intent)
+    {
+        _controller.ControllerContext.HttpContext.Request.Headers[IntentHeaders.IntentHeaderName] = intent;
+        _controller.ControllerContext.HttpContext.Request.Headers[IntentHeaders.ConfirmHeaderName] = "true";
     }
 
     #region Constructor Tests
@@ -207,6 +214,7 @@ public class QueuesControllerTests
     [Fact]
     public async Task SendMessage_Success_ShouldReturnAccepted()
     {
+        SetIntentHeaders(IntentHeaders.IntentSendMessage);
         var ns = CreateTestNamespace();
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
@@ -311,6 +319,7 @@ public class QueuesControllerTests
     [Fact]
     public async Task DeadLetterMessages_Success_ReturnsOk()
     {
+        SetIntentHeaders(IntentHeaders.IntentDeadLetter);
         var ns = CreateTestNamespace();
 
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
@@ -327,6 +336,7 @@ public class QueuesControllerTests
     [Fact]
     public async Task DeadLetterMessages_NamespaceNotFound_ReturnsError()
     {
+        SetIntentHeaders(IntentHeaders.IntentDeadLetter);
         var nsId = Guid.NewGuid();
 
         _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
@@ -340,6 +350,7 @@ public class QueuesControllerTests
     [Fact]
     public async Task DeadLetterMessages_NoSendPermission_Returns403()
     {
+        SetIntentHeaders(IntentHeaders.IntentDeadLetter);
         var ns = Namespace.Create(
             "test-namespace",
             "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=ListenPolicy;SharedAccessKey=testkey123=",
@@ -378,6 +389,7 @@ public class QueuesControllerTests
     [Fact]
     public async Task SendMessage_ProductionNamespace_Returns403()
     {
+        SetIntentHeaders(IntentHeaders.IntentSendMessage);
         var ns = Namespace.Create(
             "prod-namespace",
             "Endpoint=sb://prod.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
@@ -398,6 +410,7 @@ public class QueuesControllerTests
     [Fact]
     public async Task SendMessage_DevNamespace_Allowed()
     {
+        SetIntentHeaders(IntentHeaders.IntentSendMessage);
         var ns = Namespace.Create(
             "dev-namespace",
             "Endpoint=sb://dev.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
@@ -418,6 +431,7 @@ public class QueuesControllerTests
     [Fact]
     public async Task DeadLetterMessages_ProductionNamespace_Returns403()
     {
+        SetIntentHeaders(IntentHeaders.IntentDeadLetter);
         var ns = Namespace.Create(
             "prod-namespace",
             "Endpoint=sb://prod.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
@@ -437,6 +451,7 @@ public class QueuesControllerTests
     [Fact]
     public async Task DeadLetterMessages_UatNamespace_Allowed()
     {
+        SetIntentHeaders(IntentHeaders.IntentDeadLetter);
         var ns = Namespace.Create(
             "uat-namespace",
             "Endpoint=sb://uat.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
@@ -568,6 +583,7 @@ public class QueuesControllerTests
     [Fact]
     public async Task CancelScheduledMessage_Success_ReturnsNoContent()
     {
+        SetIntentHeaders(IntentHeaders.IntentCancelScheduled);
         var ns = CreateTestNamespace();
 
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
@@ -591,6 +607,7 @@ public class QueuesControllerTests
     [Fact]
     public async Task CancelScheduledMessage_NamespaceNotFound_ReturnsNotFound()
     {
+        SetIntentHeaders(IntentHeaders.IntentCancelScheduled);
         var id = Guid.NewGuid();
         _namespaceRepository.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("NOT_FOUND", "Not found")));
@@ -603,6 +620,7 @@ public class QueuesControllerTests
     [Fact]
     public async Task CancelScheduledMessage_NoSendPermission_Returns403()
     {
+        SetIntentHeaders(IntentHeaders.IntentCancelScheduled);
         var ns = Namespace.Create(
             "listen-namespace",
             "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=ListenPolicy;SharedAccessKey=testkey123=",
@@ -621,6 +639,7 @@ public class QueuesControllerTests
     [Fact]
     public async Task CancelScheduledMessage_ProductionNamespace_Returns403()
     {
+        SetIntentHeaders(IntentHeaders.IntentCancelScheduled);
         var ns = Namespace.Create(
             "prod-namespace",
             "Endpoint=sb://prod.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
@@ -640,6 +659,7 @@ public class QueuesControllerTests
     [Fact]
     public async Task CancelScheduledMessage_MessageNotFound_ReturnsNotFound()
     {
+        SetIntentHeaders(IntentHeaders.IntentCancelScheduled);
         var ns = CreateTestNamespace();
 
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))

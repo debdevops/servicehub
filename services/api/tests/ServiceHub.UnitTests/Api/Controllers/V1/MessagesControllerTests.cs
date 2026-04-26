@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
 using ServiceHub.Api.Controllers.V1;
+using ServiceHub.Api.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
@@ -50,6 +51,12 @@ public class MessagesControllerTests
             "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
             "Test NS");
         return result.Value;
+    }
+
+    private void SetIntentHeaders(string intent)
+    {
+        _controller.ControllerContext.HttpContext.Request.Headers[IntentHeaders.IntentHeaderName] = intent;
+        _controller.ControllerContext.HttpContext.Request.Headers[IntentHeaders.ConfirmHeaderName] = "true";
     }
 
     #region Constructor Tests
@@ -223,6 +230,7 @@ public class MessagesControllerTests
     [Fact]
     public async Task ReplayMessage_Success_ShouldReturnAccepted()
     {
+        SetIntentHeaders(IntentHeaders.IntentReplayMessage);
         var ns = CreateTestNamespace();
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
@@ -250,6 +258,7 @@ public class MessagesControllerTests
     [Fact]
     public async Task ReplayMessage_WithSubscription_ShouldPassSubscriptionName()
     {
+        SetIntentHeaders(IntentHeaders.IntentReplayMessage);
         var ns = CreateTestNamespace();
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
