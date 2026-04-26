@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Security;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
@@ -25,6 +26,7 @@ public sealed class RulesController : ApiControllerBase
 {
     private readonly DlqDbContext _dbContext;
     private readonly IRuleEngine _ruleEngine;
+    private readonly IAuditLogger _auditLogger;
     private readonly ILogger<RulesController> _logger;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -39,10 +41,12 @@ public sealed class RulesController : ApiControllerBase
     public RulesController(
         DlqDbContext dbContext,
         IRuleEngine ruleEngine,
-        ILogger<RulesController> logger)
+        ILogger<RulesController> logger,
+        IAuditLogger? auditLogger = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _ruleEngine = ruleEngine ?? throw new ArgumentNullException(nameof(ruleEngine));
+        _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -78,7 +82,7 @@ public sealed class RulesController : ApiControllerBase
             // Compute live pending match counts for each rule
             var activeMessages = await _dbContext.DlqMessages
                 .AsNoTracking()
-                .Where(m => m.Status == DlqMessageStatus.Active)
+                .Where(m => m.Status == DlqMessageStatus.Active && m.OwnerId == OwnerId)
                 .ToListAsync(cancellationToken);
 
             var response = rules.Select(rule =>
@@ -150,7 +154,7 @@ public sealed class RulesController : ApiControllerBase
         {
             var activeMessages = await _dbContext.DlqMessages
                 .AsNoTracking()
-                .Where(m => m.Status == DlqMessageStatus.Active)
+                .Where(m => m.Status == DlqMessageStatus.Active && m.OwnerId == OwnerId)
                 .ToListAsync(cancellationToken);
             foreach (var msg in activeMessages)
             {
@@ -410,6 +414,21 @@ public sealed class RulesController : ApiControllerBase
         long id,
         CancellationToken cancellationToken = default)
     {
+        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentReplayAllRules))
+        {
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: IntentHeaders.IntentReplayAllRules,
+                outcome: "Denied",
+                detail: "Missing explicit intent headers");
+
+            return Problem(
+                statusCode: StatusCodes.Status428PreconditionRequired,
+                title: "Explicit Intent Required",
+                detail: IntentHeaders.BuildIntentRequiredDetail("rule-based replay-all operations"));
+        }
+
         // Apply a 30-second timeout to prevent the endpoint from hanging indefinitely
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
@@ -440,6 +459,13 @@ public sealed class RulesController : ApiControllerBase
                 return ToActionResult<ReplayAllResponse>(
                     Error.Validation("Rule.Disabled", "Cannot replay-all with a disabled rule. Enable it first."));
 
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: IntentHeaders.IntentReplayAllRules,
+                outcome: "Attempt",
+                detail: $"Replay-all requested for rule {rule.Id}");
+
             var conditions = DeserializeOrDefault<List<RuleCondition>>(rule.ConditionsJson) ?? [];
             var action = DeserializeOrDefault<RuleAction>(rule.ActionsJson) ?? new RuleAction();
 
@@ -448,7 +474,7 @@ public sealed class RulesController : ApiControllerBase
 
             // Load all Active DLQ messages
             var activeMessages = await _dbContext.DlqMessages
-                .Where(m => m.Status == DlqMessageStatus.Active)
+                .Where(m => m.Status == DlqMessageStatus.Active && m.OwnerId == OwnerId)
                 .OrderBy(m => m.DetectedAtUtc)
                 .ToListAsync(ct);
 
@@ -531,7 +557,7 @@ public sealed class RulesController : ApiControllerBase
                 ct.ThrowIfCancellationRequested();
 
                 // Resolve namespace connection once per group
-                var nsResult = await nsRepo.GetByIdAsync(group.Key.NamespaceId);
+                var nsResult = await nsRepo.GetByIdAsync(group.Key.NamespaceId, ct);
                 if (nsResult.IsFailure)
                 {
                     foreach (var msg in group)
@@ -545,6 +571,33 @@ public sealed class RulesController : ApiControllerBase
                 }
 
                 var ns = nsResult.Value;
+
+                // Defense-in-depth tenant isolation for namespace lookups.
+                if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+                {
+                    foreach (var msg in group)
+                    {
+                        skipped++;
+                        results.Add(new ReplayAllItemResponse(
+                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
+                            Outcome: "Skipped", Error: "Namespace is outside caller scope"));
+                    }
+                    continue;
+                }
+
+                // Safety-by-default guard: never replay in production.
+                if (ns.Environment == EnvironmentType.Prod)
+                {
+                    foreach (var msg in group)
+                    {
+                        skipped++;
+                        results.Add(new ReplayAllItemResponse(
+                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
+                            Outcome: "Skipped", Error: "Replay-all is blocked for production namespaces"));
+                    }
+                    continue;
+                }
+
                 if (string.IsNullOrWhiteSpace(ns.ConnectionString))
                 {
                     foreach (var msg in group)
@@ -635,6 +688,13 @@ public sealed class RulesController : ApiControllerBase
                 "Replay-all for rule {RuleId}/{RuleName}: {Matched} matched, {Replayed} replayed, {Failed} failed, {Skipped} skipped",
                 id, LogRedactor.SanitiseForLog(rule.Name), matched.Count, replayed, failed, skipped);
 
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: IntentHeaders.IntentReplayAllRules,
+                outcome: "Succeeded",
+                detail: $"rule={rule.Id}; matched={matched.Count}; replayed={replayed}; failed={failed}; skipped={skipped}");
+
             return Ok(new ReplayAllResponse(
                 TotalMatched: matched.Count,
                 Replayed: replayed,
@@ -646,6 +706,12 @@ public sealed class RulesController : ApiControllerBase
         {
             // Timeout from our 30-second CTS, not client disconnect
             _logger.LogWarning("Replay-all for rule {RuleId} timed out after 30 seconds", id);
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: IntentHeaders.IntentReplayAllRules,
+                outcome: "Failed",
+                detail: "Replay-all timed out after 30 seconds");
             return StatusCode(StatusCodes.Status504GatewayTimeout, new ProblemDetails
             {
                 Title = "Replay operation timed out",
@@ -660,6 +726,12 @@ public sealed class RulesController : ApiControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to execute replay-all for rule {RuleId}", id);
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: IntentHeaders.IntentReplayAllRules,
+                outcome: "Failed",
+                detail: ex.Message);
             return ToActionResult<ReplayAllResponse>(
                 Error.Internal(ErrorCodes.Rule.TestFailed, "Failed to execute replay-all"));
         }
@@ -712,7 +784,7 @@ public sealed class RulesController : ApiControllerBase
             // Get active messages to test against
             var query = _dbContext.DlqMessages
                 .AsNoTracking()
-                .Where(m => m.Status == DlqMessageStatus.Active);
+                .Where(m => m.Status == DlqMessageStatus.Active && m.OwnerId == OwnerId);
 
             if (request.NamespaceId.HasValue)
                 query = query.Where(m => m.NamespaceId == request.NamespaceId.Value);
@@ -929,7 +1001,7 @@ public sealed class RulesController : ApiControllerBase
             // Load active DLQ messages, optionally filtered by namespace
             var query = _dbContext.DlqMessages
                 .AsNoTracking()
-                .Where(m => m.Status == DlqMessageStatus.Active);
+                .Where(m => m.Status == DlqMessageStatus.Active && m.OwnerId == OwnerId);
 
             if (namespaceId.HasValue)
                 query = query.Where(m => m.NamespaceId == namespaceId.Value);
@@ -951,6 +1023,7 @@ public sealed class RulesController : ApiControllerBase
             // Load existing rules to avoid duplicates
             var existingRules = await _dbContext.AutoReplayRules
                 .AsNoTracking()
+                .Where(r => r.OwnerId == OwnerId)
                 .ToListAsync(cancellationToken);
 
             var existingConditionSets = new HashSet<string>(

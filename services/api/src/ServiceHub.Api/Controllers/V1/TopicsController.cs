@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Security;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
@@ -22,6 +23,7 @@ public sealed class TopicsController : ApiControllerBase
     private readonly IConnectionStringProtector _connectionStringProtector;
     private readonly IMessageSender _messageSender;
     private readonly IMessageReceiver _messageReceiver;
+    private readonly IAuditLogger _auditLogger;
     private readonly ILogger<TopicsController> _logger;
 
     /// <summary>
@@ -33,19 +35,22 @@ public sealed class TopicsController : ApiControllerBase
     /// <param name="messageSender">The message sender service.</param>
     /// <param name="messageReceiver">The message receiver service.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="auditLogger">The security audit logger.</param>
     public TopicsController(
         INamespaceRepository namespaceRepository,
         IServiceBusClientCache clientCache,
         IConnectionStringProtector connectionStringProtector,
         IMessageSender messageSender,
         IMessageReceiver messageReceiver,
-        ILogger<TopicsController> logger)
+        ILogger<TopicsController> logger,
+        IAuditLogger? auditLogger = null)
     {
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
         _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
         _messageSender = messageSender ?? throw new ArgumentNullException(nameof(messageSender));
         _messageReceiver = messageReceiver ?? throw new ArgumentNullException(nameof(messageReceiver));
+        _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -191,6 +196,15 @@ public sealed class TopicsController : ApiControllerBase
         [FromBody] SendMessageRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentSendMessage))
+        {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentSendMessage, "Denied", namespaceId, resourceName: topicName, detail: "Missing explicit intent headers");
+            return Problem(
+                statusCode: StatusCodes.Status428PreconditionRequired,
+                title: "Explicit Intent Required",
+                detail: IntentHeaders.BuildIntentRequiredDetail("sending messages"));
+        }
+
         _logger.LogInformation(
             "Sending message to topic {TopicName} in namespace {NamespaceId}",
             LogRedactor.SanitiseForLog(topicName),
@@ -212,6 +226,7 @@ public sealed class TopicsController : ApiControllerBase
         // Check if namespace has Send permission (required to send messages)
         if (!ns.HasSendPermission)
         {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentSendMessage, "Denied", namespaceId, ns.Environment, topicName, detail: "Namespace lacks Send permission");
             return StatusCode(
                 StatusCodes.Status403Forbidden,
                 new ProblemDetails
@@ -226,6 +241,7 @@ public sealed class TopicsController : ApiControllerBase
         // Production safety guard — block direct message sends to production namespaces
         if (ns.Environment == EnvironmentType.Prod)
         {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentSendMessage, "Denied", namespaceId, ns.Environment, topicName, detail: "Send blocked in production environment");
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Production Restriction",
@@ -243,8 +259,11 @@ public sealed class TopicsController : ApiControllerBase
         var result = await _messageSender.SendAsync(sendRequest, cancellationToken);
         if (result.IsFailure)
         {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentSendMessage, "Failed", namespaceId, ns.Environment, topicName, detail: result.Error.Message);
             return ToActionResult(result);
         }
+
+        _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentSendMessage, "Succeeded", namespaceId, ns.Environment, topicName, detail: "Message accepted for delivery");
 
         _logger.LogInformation("Message sent to topic {TopicName}", LogRedactor.SanitiseForLog(topicName));
         return Accepted();
@@ -387,6 +406,15 @@ public sealed class TopicsController : ApiControllerBase
         [FromQuery] string? errorDescription = null,
         CancellationToken cancellationToken = default)
     {
+        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentDeadLetter))
+        {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentDeadLetter, "Denied", namespaceId, resourceName: $"{topicName}/subscriptions/{subscriptionName}", detail: "Missing explicit intent headers");
+            return Problem(
+                statusCode: StatusCodes.Status428PreconditionRequired,
+                title: "Explicit Intent Required",
+                detail: IntentHeaders.BuildIntentRequiredDetail("dead-letter operations"));
+        }
+
         _logger.LogInformation(
             "Dead-lettering {Count} messages from subscription {SubscriptionName} on topic {TopicName} in namespace {NamespaceId} with reason: {Reason}",
             messageCount,
@@ -411,6 +439,7 @@ public sealed class TopicsController : ApiControllerBase
         // Check if namespace has Send permission (required to dead-letter messages)
         if (!ns.HasSendPermission)
         {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentDeadLetter, "Denied", namespaceId, ns.Environment, $"{topicName}/subscriptions/{subscriptionName}", detail: "Namespace lacks Send permission");
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Insufficient Permissions",
@@ -423,6 +452,7 @@ public sealed class TopicsController : ApiControllerBase
         // Production safety guard — block dead-lettering in production namespaces
         if (ns.Environment == EnvironmentType.Prod)
         {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentDeadLetter, "Denied", namespaceId, ns.Environment, $"{topicName}/subscriptions/{subscriptionName}", detail: "Dead-letter blocked in production environment");
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Production Restriction",
@@ -442,8 +472,11 @@ public sealed class TopicsController : ApiControllerBase
 
         if (result.IsFailure)
         {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentDeadLetter, "Failed", namespaceId, ns.Environment, $"{topicName}/subscriptions/{subscriptionName}", detail: result.Error.Message);
             return ToActionResult<DeadLetterResponse>(result.Error);
         }
+
+        _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentDeadLetter, "Succeeded", namespaceId, ns.Environment, $"{topicName}/subscriptions/{subscriptionName}", detail: $"Dead-lettered {result.Value} messages");
 
         _logger.LogInformation(
             "Successfully dead-lettered {Count} messages from subscription {SubscriptionName} on topic {TopicName}",
