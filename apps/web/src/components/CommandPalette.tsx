@@ -97,7 +97,7 @@ const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
 ];
 
 const PAGE_ROUTES: Record<string, string> = {
-  'page-dashboard': '/',
+  'page-dashboard': '/dashboard',
   'page-messages': '/messages',
   'page-scheduled': '/scheduled',
   'page-correlation': '/correlation',

@@ -35,7 +35,13 @@ public static class ApplicationBuilderExtensions
         // middleware. Moving it after auth causes CORS preflights to get 401.
         app.UseCorsConfiguration(environment);
 
-        // API Key authentication
+        // Azure Easy Auth middleware (reads X-MS-CLIENT-PRINCIPAL-ID from Azure's reverse proxy)
+        // Must run BEFORE ApiKeyAuthenticationMiddleware to set per-user OwnerId for tenant isolation.
+        // In Development (Easy Auth disabled): passes through, allows legacy SPA token path.
+        // In Production (Easy Auth enabled): sets OwnerId from Entra Object ID.
+        app.UseMiddleware<EasyAuthMiddleware>();
+
+        // API Key authentication (legacy path for dev or external API clients)
         app.UseMiddleware<ApiKeyAuthenticationMiddleware>();
 
         // Rate limiting (skip in development for easier testing)

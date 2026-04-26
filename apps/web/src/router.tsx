@@ -9,6 +9,7 @@ import {
   HelpPage,
   ScheduledMessagesPage,
   SecurityPage,
+  WelcomePage,
 } from '@/pages';
 
 // Lazy-load heavy pages to improve initial bundle size and cold-start performance
@@ -17,7 +18,8 @@ const DlqHistoryPageLazy = lazy(() => import('./pages/DlqHistoryPage'));
 const CorrelationExplorerPageLazy = lazy(() => import('./pages/CorrelationExplorerPage'));
 const InsightsPageLazy = lazy(() => import('./pages/InsightsPage').then(m => ({ default: m.InsightsPage })));
 
-// Loading fallback component
+// Loading fallback component (co-located here intentionally — used only by router)
+// eslint-disable-next-line react-refresh/only-export-components
 function PageLoading() {
   return (
     <div className="flex items-center justify-center h-full bg-gray-50">
@@ -27,14 +29,22 @@ function PageLoading() {
 }
 
 export const router = createBrowserRouter([
+  // Default route: Welcome page (landing page, no redirect)
+  {
+    path: '/',
+    element: <WelcomePage />,
+  },
+  // Welcome page alias for backwards compatibility
+  {
+    path: '/welcome',
+    element: <WelcomePage />,
+  },
+  // Main application layout with all feature routes
   {
     path: '/',
     element: <MainLayout />,
+    errorElement: <Navigate to="/welcome" replace />,
     children: [
-      {
-        index: true,
-        element: <Navigate to="/connect" replace />,
-      },
       {
         path: 'dashboard',
         element: (
@@ -95,10 +105,11 @@ export const router = createBrowserRouter([
           </Suspense>
         ),
       },
-      {
-        path: '*',
-        element: <Navigate to="/connect" replace />,
-      },
     ],
+  },
+  // Fallback 404: redirect unknown paths to welcome
+  {
+    path: '*',
+    element: <Navigate to="/welcome" replace />,
   },
 ]);

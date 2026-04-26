@@ -118,8 +118,8 @@ describe('MainLayout', () => {
     expect(screen.queryByTestId('message-fab')).not.toBeInTheDocument();
   });
 
-  it('shows FAB on /messages with Dev environment and Manage permission', () => {
-    // Simulate being on the /messages path
+  it('shows FAB on /app/messages with Dev environment and Manage permission', () => {
+    // Simulate being on the /app/messages path
     Object.defineProperty(window, 'location', {
       value: { ...window.location, pathname: '/messages' },
       writable: true,

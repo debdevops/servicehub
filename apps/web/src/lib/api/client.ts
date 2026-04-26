@@ -165,12 +165,19 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // Network error
+    // Network error (includes timeout, connection refused, etc.)
     if (!error.response) {
-      const errorKey = 'network-error';
+      const errorKey = error.code === 'ECONNABORTED' || error.message?.includes('timeout')
+        ? 'timeout-error'
+        : 'network-error';
+      
       if (shouldShowError(errorKey)) {
-        toast.error('Cannot reach the API. If running on a remote server, ensure port 5153 is accessible.', {
-          duration: 5000,
+        const message = errorKey === 'timeout-error'
+          ? 'Request timed out (30s). The API server may be busy or unresponsive. Try again in a moment.'
+          : 'Cannot reach the API. If running on a remote server, ensure port 5153 is accessible.';
+        
+        toast.error(message, {
+          duration: 6000,
         });
       }
       return Promise.reject(error);
@@ -181,6 +188,21 @@ apiClient.interceptors.response.use(
     const url = error.config?.url || 'unknown';
     
     switch (status) {
+      case 429: {
+        // Rate limit exceeded — show user feedback for non-silent requests
+        // and respect the Retry-After header to avoid compounding the problem.
+        // Background polling hooks use _silent:true so they won't toast-spam.
+        const retryAfterRaw = error.response.headers['retry-after'];
+        const retryAfterSec = retryAfterRaw ? parseInt(retryAfterRaw, 10) : 30;
+        const errorKey = '429-rate-limit';
+        if (shouldShowError(errorKey)) {
+          toast.error(
+            `Too many requests. The app is sending too many API calls. Please wait ${retryAfterSec}s.`,
+            { duration: Math.max(retryAfterSec * 1000, 8000) }
+          );
+        }
+        break;
+      }
       case 401: {
         // Auto-refresh the SPA token and retry the request.
         // Handles two production failure modes:
@@ -214,6 +236,17 @@ apiClient.interceptors.response.use(
         const errorKey = `${status}-${url}`;
         if (shouldShowError(errorKey)) {
           toast.error('Access denied. Verify your connection string has the required permissions.', {
+            duration: 5000,
+          });
+        }
+        break;
+      }
+      case 429: {
+        // Rate limit hit — show a single debounced toast, never for silent calls (already exited above)
+        const retryAfter = (error.response.headers as Record<string, string>)?.['retry-after'] ?? '60';
+        const errorKey = '429-rate-limit';
+        if (shouldShowError(errorKey)) {
+          toast.error(`Too many requests. Retry in ${retryAfter}s — try refreshing less frequently.`, {
             duration: 5000,
           });
         }

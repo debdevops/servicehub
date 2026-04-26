@@ -109,7 +109,7 @@ public sealed class Namespace
     /// SPA token sessions and admin keys share "__spa__"; scoped API keys get a key-derived ID.
     /// Defaults to "__spa__" for backward compatibility with data created before isolation was added.
     /// </summary>
-    public string OwnerId { get; private set; } = SpaOwnerId;
+    public string OwnerId { get; init; } = SpaOwnerId;
 
     /// <summary>
     /// Gets the SHA-256 hash of the plaintext connection string.

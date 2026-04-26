@@ -102,7 +102,7 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('button', { name: /connect a namespace/i })).toBeInTheDocument();
   });
 
-  it('Connect button navigates to /connect', () => {
+  it('Connect button navigates to /app/connect', () => {
     mockUseNamespaces.mockReturnValue({
       data: [],
       isLoading: false,
