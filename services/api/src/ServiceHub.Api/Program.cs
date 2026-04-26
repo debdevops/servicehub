@@ -55,6 +55,11 @@ using (var scope = app.Services.CreateScope())
     {
         var dlqDbContext = scope.ServiceProvider.GetRequiredService<DlqDbContext>();
         await dlqDbContext.Database.EnsureCreatedAsync();
+
+        // Apply incremental schema migrations for databases created before OwnerId support.
+        // EnsureCreatedAsync() creates new databases correctly but does NOT alter existing ones.
+        // This runs every startup and is idempotent — safe to run on already-migrated databases.
+        await ApplySchemaUpgradesAsync(dlqDbContext, app.Logger);
     }
     catch (Exception ex)
     {
@@ -74,6 +79,66 @@ app.UseServiceHubApi(app.Environment);
 app.MapServiceHubEndpoints();
 
 app.Run();
+
+// Applies incremental SQLite schema upgrades that EnsureCreatedAsync() cannot handle.
+// Checks for missing columns and adds them with safe defaults. Idempotent.
+static async Task ApplySchemaUpgradesAsync(DlqDbContext dbContext, ILogger logger)
+{
+    var connection = dbContext.Database.GetDbConnection();
+    var wasOpen = connection.State == System.Data.ConnectionState.Open;
+    if (!wasOpen)
+        await connection.OpenAsync();
+
+    try
+    {
+        // Migration: Add OwnerId to DlqMessages (added in v3.1.0 multi-tenant support)
+        if (!await ColumnExistsAsync(connection, "DlqMessages", "OwnerId"))
+        {
+            logger.LogWarning(
+                "DlqMessages table is missing the OwnerId column — applying schema upgrade");
+            await ExecuteNonQueryAsync(connection,
+                "ALTER TABLE \"DlqMessages\" ADD COLUMN \"OwnerId\" TEXT NOT NULL DEFAULT '__spa__'");
+            logger.LogInformation("Schema upgrade applied: DlqMessages.OwnerId added");
+        }
+
+        // Migration: Add OwnerId to AutoReplayRules (added in v3.1.0 multi-tenant support)
+        if (!await ColumnExistsAsync(connection, "AutoReplayRules", "OwnerId"))
+        {
+            logger.LogWarning(
+                "AutoReplayRules table is missing the OwnerId column — applying schema upgrade");
+            await ExecuteNonQueryAsync(connection,
+                "ALTER TABLE \"AutoReplayRules\" ADD COLUMN \"OwnerId\" TEXT NOT NULL DEFAULT '__spa__'");
+            logger.LogInformation("Schema upgrade applied: AutoReplayRules.OwnerId added");
+        }
+    }
+    finally
+    {
+        if (!wasOpen)
+            connection.Close();
+    }
+}
+
+static async Task<bool> ColumnExistsAsync(
+    System.Data.Common.DbConnection connection, string tableName, string columnName)
+{
+    using var cmd = connection.CreateCommand();
+    cmd.CommandText = $"PRAGMA table_info(\"{tableName}\")";
+    using var reader = await cmd.ExecuteReaderAsync();
+    while (await reader.ReadAsync())
+    {
+        // Column 1 is the column name in PRAGMA table_info output
+        if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+            return true;
+    }
+    return false;
+}
+
+static async Task ExecuteNonQueryAsync(System.Data.Common.DbConnection connection, string sql)
+{
+    using var cmd = connection.CreateCommand();
+    cmd.CommandText = sql;
+    await cmd.ExecuteNonQueryAsync();
+}
 
 // Make Program class visible to tests
 public partial class Program { }

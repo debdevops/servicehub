@@ -14,6 +14,7 @@ public interface IDlqHistoryService
     /// Gets paginated DLQ message history with optional filters.
     /// </summary>
     Task<Result<DlqHistoryPageResult>> GetHistoryAsync(
+        string ownerId,
         Guid? namespaceId = null,
         string? entityName = null,
         DateTimeOffset? from = null,

@@ -76,9 +76,10 @@ public sealed class HealthController : ControllerBase
     }
 
     /// <summary>
-    /// Gets the process start time (cached).
+    /// Gets the actual process start time from the OS (cached once on first access).
     /// </summary>
-    private static readonly DateTimeOffset ProcessStartTime = DateTimeOffset.UtcNow;
+    private static readonly DateTimeOffset ProcessStartTime =
+        new DateTimeOffset(System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime());
 }
 
 /// <summary>

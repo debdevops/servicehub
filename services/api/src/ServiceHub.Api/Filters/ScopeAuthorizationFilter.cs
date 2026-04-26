@@ -36,10 +36,10 @@ public sealed class ScopeAuthorizationFilter : IAsyncAuthorizationFilter
             return;
         }
 
-        // SPA token authentication grants full access (the UI needs all scopes).
+        // SPA token and EasyAuth (Azure AD) authentication grant full access.
         // Scope restrictions only apply to external API key consumers.
         if (context.HttpContext.Items.TryGetValue("AuthMethod", out var authMethod)
-            && authMethod is "SpaToken")
+            && authMethod is "SpaToken" or "EasyAuth")
         {
             return;
         }

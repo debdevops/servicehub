@@ -38,6 +38,7 @@ public class DlqHistoryControllerTests
             SequenceNumber = id,
             BodyHash = $"hash-{id}",
             NamespaceId = Guid.NewGuid(),
+            OwnerId = TestConstants.TestOwnerId,
             EntityName = "test-queue",
             EntityType = ServiceBusEntityType.Queue,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddHours(-1),
@@ -85,7 +86,7 @@ public class DlqHistoryControllerTests
             HasNextPage: false, HasPreviousPage: false);
 
         _historyService.Setup(s => s.GetHistoryAsync(
-            It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTimeOffset?>(),
+            It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTimeOffset?>(),
             It.IsAny<DateTimeOffset?>(), It.IsAny<DlqMessageStatus?>(),
             It.IsAny<FailureCategory?>(), It.IsAny<int>(), It.IsAny<int>(),
             It.IsAny<CancellationToken>()))
@@ -102,7 +103,7 @@ public class DlqHistoryControllerTests
     public async Task GetHistory_Failure_ReturnsError()
     {
         _historyService.Setup(s => s.GetHistoryAsync(
-            It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTimeOffset?>(),
+            It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTimeOffset?>(),
             It.IsAny<DateTimeOffset?>(), It.IsAny<DlqMessageStatus?>(),
             It.IsAny<FailureCategory?>(), It.IsAny<int>(), It.IsAny<int>(),
             It.IsAny<CancellationToken>()))
@@ -120,7 +121,7 @@ public class DlqHistoryControllerTests
             HasNextPage: false, HasPreviousPage: false);
 
         _historyService.Setup(s => s.GetHistoryAsync(
-            It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTimeOffset?>(),
+            It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTimeOffset?>(),
             It.IsAny<DateTimeOffset?>(), It.IsAny<DlqMessageStatus?>(),
             It.IsAny<FailureCategory?>(), It.IsAny<int>(), 200,
             It.IsAny<CancellationToken>()))
@@ -353,8 +354,10 @@ public class DlqHistoryControllerTests
         // In test context without ProblemDetailsFactory, it throws.
         // Verify that a non-success result causes non-Ok behavior.
         var act = () => controller.TriggerScan(nsId);
-        // Problem() without ProblemDetailsFactory will throw InvalidOperationException
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        // ToActionResult() properly returns a 500 ObjectResult (no exception thrown)
+        var result = await act.Should().NotThrowAsync();
+        result.Subject.Result.Should().BeOfType<ObjectResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
     }
 
     // ── GetTrend ────────────────────────────────────────────

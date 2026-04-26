@@ -9,6 +9,7 @@ public sealed class AutoReplayRuleTests
         new AutoReplayRule
         {
             Name = "Test Rule",
+            OwnerId = TestConstants.TestOwnerId,
             ConditionsJson = """[{"field":"DeadLetterReason","operator":"Contains","value":"Timeout"}]""",
             ActionsJson = """{"autoReplay":true,"delaySeconds":60}""",
             CreatedAt = DateTimeOffset.UtcNow,
@@ -80,6 +81,7 @@ public sealed class AutoReplayRuleTests
         var rule = new AutoReplayRule
         {
             Name = "Rule",
+            OwnerId = TestConstants.TestOwnerId,
             ConditionsJson = "[]",
             ActionsJson = "{}",
             CreatedAt = DateTimeOffset.UtcNow,
