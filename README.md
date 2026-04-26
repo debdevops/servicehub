@@ -197,6 +197,22 @@ Real-time runtime metrics for the ServiceHub API itself: uptime, memory usage, t
 
 ---
 
+## 🚦 Recommended Usage Flow
+
+Follow this path before connecting to a production namespace. This protects your live environment and gives you confidence in every operation before it matters.
+
+| Step | Environment | Goal |
+|------|-------------|------|
+| **Step 1** | **DEV** | Connect your development Service Bus namespace. Explore message browsing, DLQ inspection, AI pattern analysis, and auto-replay rules in a safe environment where mistakes are harmless. |
+| **Step 2** | **UAT** | Repeat in your UAT namespace with realistic production-like data. Validate replay targets, confirm rule logic, review AI findings, and check that scheduled messages behave as expected. |
+| **Step 3** | **PROD** | Connect only after DEV and UAT validation. Production namespaces enforce read-only browsing by default — Quick Actions (replay, send, generate) are disabled to prevent accidental data modification. |
+
+> ⚠️ **Do NOT connect a production Service Bus namespace without prior validation in DEV and UAT.**
+> While ServiceHub is read-only by default, replay and send operations are destructive.
+> Validate your replay rules and message targets in lower environments first.
+
+---
+
 ## ⚡ Quick Start
 
 ### One-Command Setup (Recommended)
@@ -356,14 +372,45 @@ For deep-dive architecture details, see [services/api/ARCHITECTURE.md](services/
 
 ---
 
-## 🛡️ Security & Safety
+## 🛡️ Security & Privacy
+
+### What ServiceHub guarantees
 
 - **Read-only by default** — Uses `PeekMessagesAsync`; messages are **never removed or consumed**
 - **Minimal permissions** — Full functionality with Listen-only access
-- **AES-GCM encryption** — Connection strings encrypted at rest; key stored in local config
+- **AES-GCM encryption** — Connection strings encrypted at rest; key stored in local config, never returned to the browser
 - **Zero external calls** — AI analysis runs entirely in-browser; no message data leaves your environment
-- **No message persistence** — Messages displayed in-memory only during your session
+- **No message persistence** — Messages are displayed in-memory only during your session; never written to a database
 - **Production-safe** — Won't interfere with your active message consumers
+- **Log redaction** — Backend logging pipeline strips connection strings, API keys, and access tokens before any log output
+
+### What ServiceHub does NOT collect or store
+
+| Data | Stored? | Notes |
+|------|---------|-------|
+| Connection strings | ❌ Never in plaintext | AES-GCM encrypted at rest; decrypted in memory only during use |
+| Message bodies | ❌ Never | Displayed in-browser session memory only; not logged or persisted |
+| User data / PII | ❌ Never | No user database exists |
+| Message correlation IDs (business) | ❌ Never logged | Infrastructure correlation IDs for request tracing only |
+| Customer / tenant data | ❌ Never | Messages never leave your own infrastructure |
+
+### Application Insights telemetry (privacy-safe)
+
+ServiceHub optionally emits telemetry to Azure Application Insights. When enabled, telemetry is strictly limited to:
+
+- **Request durations** and HTTP status codes (not request/response bodies)
+- **Error codes** and exception types (not exception messages containing secrets)
+- **System-level metrics** — memory, GC, thread counts
+
+The following is **explicitly excluded** from telemetry:
+
+- Connection strings (redacted by `SensitiveDataTelemetryProcessor` and `LogRedactor`)
+- Message bodies and payloads (message-body API endpoints excluded from auto-tracking)
+- Business-level correlation IDs from message content
+- User input fields
+- API keys and tokens (redacted from query strings and headers)
+
+Application Insights is **disabled by default** — it only activates when `ApplicationInsights:ConnectionString` is configured in `appsettings.Local.json`.
 
 ---
 

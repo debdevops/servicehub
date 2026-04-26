@@ -303,7 +303,24 @@ export function ConnectPage() {
                   <option value="uat">UAT — User Acceptance Testing</option>
                   <option value="prod">PROD — Production</option>
                 </select>
-                <p className="text-xs text-gray-500 mt-1">Production disables Quick Actions for safety.</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {environment === 'prod' ? (
+                    <>
+                      <span className="text-amber-600 font-semibold">⚠️ Production namespace:</span>
+                      {' '}Quick Actions (replay, send, generate) are disabled for safety. Validate your workflow in DEV and UAT first.
+                    </>
+                  ) : environment === 'uat' ? (
+                    <>
+                      <span className="text-amber-700 font-medium">UAT namespace:</span>
+                      {' '}Validate replay rules and DLQ behaviour here before connecting to PROD.
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-green-700 font-medium">Recommended: start with a DEV namespace.</span>
+                      {' '}Test DLQ inspection, replay rules, and message operations safely before moving to UAT or PROD.
+                    </>
+                  )}
+                </p>
               </div>
 
               <button
