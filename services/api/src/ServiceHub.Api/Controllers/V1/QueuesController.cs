@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Security;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
@@ -22,6 +23,7 @@ public sealed class QueuesController : ApiControllerBase
     private readonly IConnectionStringProtector _connectionStringProtector;
     private readonly IMessageSender _messageSender;
     private readonly IMessageReceiver _messageReceiver;
+    private readonly IAuditLogger _auditLogger;
     private readonly ILogger<QueuesController> _logger;
 
     /// <summary>
@@ -33,19 +35,22 @@ public sealed class QueuesController : ApiControllerBase
     /// <param name="messageSender">The message sender service.</param>
     /// <param name="messageReceiver">The message receiver service.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="auditLogger">The security audit logger.</param>
     public QueuesController(
         INamespaceRepository namespaceRepository,
         IServiceBusClientCache clientCache,
         IConnectionStringProtector connectionStringProtector,
         IMessageSender messageSender,
         IMessageReceiver messageReceiver,
-        ILogger<QueuesController> logger)
+        ILogger<QueuesController> logger,
+        IAuditLogger? auditLogger = null)
     {
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
         _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
         _messageSender = messageSender ?? throw new ArgumentNullException(nameof(messageSender));
         _messageReceiver = messageReceiver ?? throw new ArgumentNullException(nameof(messageReceiver));
+        _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -191,6 +196,15 @@ public sealed class QueuesController : ApiControllerBase
         [FromBody] SendMessageRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentSendMessage))
+        {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentSendMessage, "Denied", namespaceId, resourceName: queueName, detail: "Missing explicit intent headers");
+            return Problem(
+                statusCode: StatusCodes.Status428PreconditionRequired,
+                title: "Explicit Intent Required",
+                detail: IntentHeaders.BuildIntentRequiredDetail("sending messages"));
+        }
+
         _logger.LogInformation(
             "Sending message to queue {QueueName} in namespace {NamespaceId}",
             LogRedactor.SanitiseForLog(queueName),
@@ -212,6 +226,7 @@ public sealed class QueuesController : ApiControllerBase
         // Check if namespace has Send permission (required to send messages)
         if (!ns.HasSendPermission)
         {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentSendMessage, "Denied", namespaceId, ns.Environment, queueName, detail: "Namespace lacks Send permission");
             return StatusCode(
                 StatusCodes.Status403Forbidden,
                 new ProblemDetails
@@ -226,6 +241,7 @@ public sealed class QueuesController : ApiControllerBase
         // Production safety guard — block direct message sends to production namespaces
         if (ns.Environment == EnvironmentType.Prod)
         {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentSendMessage, "Denied", namespaceId, ns.Environment, queueName, detail: "Send blocked in production environment");
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Production Restriction",
@@ -243,8 +259,11 @@ public sealed class QueuesController : ApiControllerBase
         var result = await _messageSender.SendAsync(sendRequest, cancellationToken);
         if (result.IsFailure)
         {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentSendMessage, "Failed", namespaceId, ns.Environment, queueName, detail: result.Error.Message);
             return ToActionResult(result);
         }
+
+        _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentSendMessage, "Succeeded", namespaceId, ns.Environment, queueName, detail: "Message accepted for delivery");
 
         _logger.LogInformation("Message sent to queue {QueueName}", LogRedactor.SanitiseForLog(queueName));
         return Accepted();
@@ -381,6 +400,15 @@ public sealed class QueuesController : ApiControllerBase
         [FromQuery] string? errorDescription = null,
         CancellationToken cancellationToken = default)
     {
+        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentDeadLetter))
+        {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentDeadLetter, "Denied", namespaceId, resourceName: queueName, detail: "Missing explicit intent headers");
+            return Problem(
+                statusCode: StatusCodes.Status428PreconditionRequired,
+                title: "Explicit Intent Required",
+                detail: IntentHeaders.BuildIntentRequiredDetail("dead-letter operations"));
+        }
+
         _logger.LogInformation(
             "Dead-lettering {Count} messages from queue {QueueName} in namespace {NamespaceId} with reason: {Reason}",
             messageCount,
@@ -404,6 +432,7 @@ public sealed class QueuesController : ApiControllerBase
         // Check if namespace has Send permission (required to dead-letter messages)
         if (!ns.HasSendPermission)
         {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentDeadLetter, "Denied", namespaceId, ns.Environment, queueName, detail: "Namespace lacks Send permission");
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Insufficient Permissions",
@@ -416,6 +445,7 @@ public sealed class QueuesController : ApiControllerBase
         // Production safety guard — block dead-lettering in production namespaces
         if (ns.Environment == EnvironmentType.Prod)
         {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentDeadLetter, "Denied", namespaceId, ns.Environment, queueName, detail: "Dead-letter blocked in production environment");
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Production Restriction",
@@ -435,8 +465,11 @@ public sealed class QueuesController : ApiControllerBase
 
         if (result.IsFailure)
         {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentDeadLetter, "Failed", namespaceId, ns.Environment, queueName, detail: result.Error.Message);
             return ToActionResult<DeadLetterResponse>(result.Error);
         }
+
+        _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentDeadLetter, "Succeeded", namespaceId, ns.Environment, queueName, detail: $"Dead-lettered {result.Value} messages");
 
         _logger.LogInformation(
             "Successfully dead-lettered {Count} messages from queue {QueueName}",
@@ -574,6 +607,15 @@ public sealed class QueuesController : ApiControllerBase
         [FromRoute] long sequenceNumber,
         CancellationToken cancellationToken = default)
     {
+        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentCancelScheduled))
+        {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Denied", namespaceId, resourceName: queueName, sequenceNumber: sequenceNumber, detail: "Missing explicit intent headers");
+            return Problem(
+                statusCode: StatusCodes.Status428PreconditionRequired,
+                title: "Explicit Intent Required",
+                detail: IntentHeaders.BuildIntentRequiredDetail("scheduled-message cancellation"));
+        }
+
         _logger.LogInformation(
             "Cancelling scheduled message {SequenceNumber} in queue {QueueName} for namespace {NamespaceId}",
             sequenceNumber,
@@ -595,6 +637,7 @@ public sealed class QueuesController : ApiControllerBase
         // Cancelling a scheduled message requires Send permission
         if (!ns.HasSendPermission)
         {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Denied", namespaceId, ns.Environment, queueName, sequenceNumber, "Namespace lacks Send permission");
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Insufficient Permissions",
@@ -604,6 +647,7 @@ public sealed class QueuesController : ApiControllerBase
         // Production safety guard
         if (ns.Environment == EnvironmentType.Prod)
         {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Denied", namespaceId, ns.Environment, queueName, sequenceNumber, "Cancel scheduled blocked in production environment");
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Production Restriction",
@@ -626,8 +670,11 @@ public sealed class QueuesController : ApiControllerBase
 
         if (result.IsFailure)
         {
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Failed", namespaceId, ns.Environment, queueName, sequenceNumber, result.Error.Message);
             return ToActionResult(result);
         }
+
+        _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Succeeded", namespaceId, ns.Environment, queueName, sequenceNumber, "Scheduled message cancelled");
 
         _logger.LogInformation(
             "Cancelled scheduled message {SequenceNumber} in queue {QueueName}",

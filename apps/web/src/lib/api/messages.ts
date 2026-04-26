@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import { riskIntent, withRiskIntent } from './intentHeaders';
 import { Message, PaginatedResponse, GetMessagesParams } from './types';
 
 /**
@@ -77,7 +78,10 @@ export const messagesApi = {
     
     await apiClient.post(
       `/namespaces/${namespaceId}/${entityPath}/${queueOrTopicName}/messages`,
-      payload
+      payload,
+      {
+        headers: withRiskIntent(riskIntent.sendMessage),
+      }
     );
   },
 
@@ -89,6 +93,7 @@ export const messagesApi = {
     subscriptionName?: string
   ): Promise<void> => {
     await apiClient.post('/messages/replay', null, {
+      headers: withRiskIntent(riskIntent.replayMessage),
       params: {
         namespaceId,
         sequenceNumber,
@@ -147,7 +152,11 @@ export const messagesApi = {
     }
     
     const response = await apiClient.post<{ deadLetteredCount: number; reason: string }>(
-      `${url}?${params.toString()}`
+      `${url}?${params.toString()}`,
+      null,
+      {
+        headers: withRiskIntent(riskIntent.deadLetter),
+      }
     );
     return response.data;
   },

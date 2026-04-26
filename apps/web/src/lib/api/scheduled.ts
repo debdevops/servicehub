@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import { riskIntent, withRiskIntent } from './intentHeaders';
 import { Message, PaginatedResponse } from './types';
 
 export const scheduledApi = {
@@ -29,7 +30,10 @@ export const scheduledApi = {
     sequenceNumber: number
   ): Promise<void> => {
     await apiClient.delete(
-      `/namespaces/${namespaceId}/queues/${queueName}/scheduled/${sequenceNumber}`
+      `/namespaces/${namespaceId}/queues/${queueName}/scheduled/${sequenceNumber}`,
+      {
+        headers: withRiskIntent(riskIntent.cancelScheduled),
+      }
     );
   },
 };

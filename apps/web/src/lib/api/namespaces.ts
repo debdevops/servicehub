@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import { riskIntent, withRiskIntent } from './intentHeaders';
 import { Namespace, CreateNamespaceRequest } from './types';
 
 export interface NamespaceStats {
@@ -31,7 +32,9 @@ export const namespacesApi = {
 
   // DELETE /api/v1/namespaces/{id}
   delete: async (id: string): Promise<void> => {
-    await apiClient.delete(`/namespaces/${id}`);
+    await apiClient.delete(`/namespaces/${id}`, {
+      headers: withRiskIntent(riskIntent.deleteNamespace),
+    });
   },
 
   // POST /api/v1/namespaces/{id}/test-connection
