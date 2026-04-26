@@ -66,7 +66,15 @@ describe('namespacesApi', () => {
 
       await namespacesApi.delete('ns-1');
 
-      expect(mockedClient.delete).toHaveBeenCalledWith('/namespaces/ns-1');
+      expect(mockedClient.delete).toHaveBeenCalledWith(
+        '/namespaces/ns-1',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'X-ServiceHub-Confirm': 'true',
+            'X-ServiceHub-Intent': 'namespaces:delete',
+          }),
+        })
+      );
     });
   });
 

@@ -117,7 +117,13 @@ describe('messagesApi', () => {
 
       expect(mockedClient.post).toHaveBeenCalledWith(
         '/namespaces/ns-1/queues/my-queue/messages',
-        expect.objectContaining({ body: 'hello' })
+        expect.objectContaining({ body: 'hello' }),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'X-ServiceHub-Confirm': 'true',
+            'X-ServiceHub-Intent': 'messages:send',
+          }),
+        })
       );
     });
 
@@ -128,7 +134,13 @@ describe('messagesApi', () => {
 
       expect(mockedClient.post).toHaveBeenCalledWith(
         '/namespaces/ns-1/topics/my-topic/messages',
-        expect.objectContaining({ body: 'hello' })
+        expect.objectContaining({ body: 'hello' }),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'X-ServiceHub-Confirm': 'true',
+            'X-ServiceHub-Intent': 'messages:send',
+          }),
+        })
       );
     });
 
@@ -141,8 +153,14 @@ describe('messagesApi', () => {
       });
 
       expect(mockedClient.post).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ applicationProperties: { key: 'value' } })
+        '/namespaces/ns-1/queues/my-queue/messages',
+        expect.objectContaining({ applicationProperties: { key: 'value' } }),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'X-ServiceHub-Confirm': 'true',
+            'X-ServiceHub-Intent': 'messages:send',
+          }),
+        })
       );
     });
   });

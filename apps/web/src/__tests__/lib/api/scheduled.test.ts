@@ -89,7 +89,13 @@ describe('scheduledApi', () => {
       await scheduledApi.cancelScheduled('ns-1', 'my-queue', 100);
 
       expect(mockedClient.delete).toHaveBeenCalledWith(
-        '/namespaces/ns-1/queues/my-queue/scheduled/100'
+        '/namespaces/ns-1/queues/my-queue/scheduled/100',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'X-ServiceHub-Confirm': 'true',
+            'X-ServiceHub-Intent': 'messages:cancel-scheduled',
+          }),
+        })
       );
     });
 
