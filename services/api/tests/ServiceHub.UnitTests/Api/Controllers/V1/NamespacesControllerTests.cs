@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Controllers.V1;
+using ServiceHub.Api.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
@@ -57,6 +58,12 @@ public class NamespacesControllerTests
     {
         var result = Namespace.Create(name, connectionString, "Test NS", "Test Description");
         return result.Value;
+    }
+
+    private void SetIntentHeaders(string intent)
+    {
+        _controller.ControllerContext.HttpContext.Request.Headers[IntentHeaders.IntentHeaderName] = intent;
+        _controller.ControllerContext.HttpContext.Request.Headers[IntentHeaders.ConfirmHeaderName] = "true";
     }
 
     #region Constructor Tests
@@ -401,6 +408,7 @@ public class NamespacesControllerTests
     [Fact]
     public async Task Delete_Success_ShouldReturnNoContent()
     {
+        SetIntentHeaders(IntentHeaders.IntentDeleteNamespace);
         var ns = CreateTestNamespace();
         var id = ns.Id;
         _namespaceRepository.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
@@ -418,6 +426,7 @@ public class NamespacesControllerTests
     [Fact]
     public async Task Delete_NotFound_ShouldReturnNotFound()
     {
+        SetIntentHeaders(IntentHeaders.IntentDeleteNamespace);
         var id = Guid.NewGuid();
         _namespaceRepository.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Failure<Namespace>(Error.NotFound(ErrorCodes.Namespace.NotFound, "Not found")));
@@ -430,6 +439,7 @@ public class NamespacesControllerTests
     [Fact]
     public async Task Delete_WithCachedClient_ShouldRemoveFromCache()
     {
+        SetIntentHeaders(IntentHeaders.IntentDeleteNamespace);
         var ns = CreateTestNamespace();
         var id = ns.Id;
         _namespaceRepository.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
