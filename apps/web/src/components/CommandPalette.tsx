@@ -97,15 +97,15 @@ const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
 ];
 
 const PAGE_ROUTES: Record<string, string> = {
-  'page-dashboard': '/app/dashboard',
-  'page-messages': '/app/messages',
-  'page-scheduled': '/app/scheduled',
-  'page-correlation': '/app/correlation',
-  'page-dlq': '/app/dlq-history',
-  'page-rules': '/app/rules',
-  'page-health': '/app/health',
-  'page-connect': '/app/connect',
-  'page-help': '/app/help',
+  'page-dashboard': '/dashboard',
+  'page-messages': '/messages',
+  'page-scheduled': '/scheduled',
+  'page-correlation': '/correlation',
+  'page-dlq': '/dlq-history',
+  'page-rules': '/rules',
+  'page-health': '/health',
+  'page-connect': '/connect',
+  'page-help': '/help',
 };
 
 // ── Fuzzy Match ───────────────────────────────────────────────────────────────

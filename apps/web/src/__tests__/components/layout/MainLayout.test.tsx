@@ -121,10 +121,10 @@ describe('MainLayout', () => {
   it('shows FAB on /app/messages with Dev environment and Manage permission', () => {
     // Simulate being on the /app/messages path
     Object.defineProperty(window, 'location', {
-      value: { ...window.location, pathname: '/app/messages' },
+      value: { ...window.location, pathname: '/messages' },
       writable: true,
     });
-    const Wrapper = createWrapper('/app/messages?namespace=ns1&queue=test-queue');
+    const Wrapper = createWrapper('/messages?namespace=ns1&queue=test-queue');
     render(
       <Wrapper>
         <Routes>
