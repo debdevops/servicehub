@@ -71,7 +71,7 @@ function QueueItem({ queue, namespaceId }: QueueItemProps) {
   return (
     <NavLink
       key={queue.name}
-      to={`/app/messages?namespace=${namespaceId}&queue=${queue.name}`}
+      to={`/messages?namespace=${namespaceId}&queue=${queue.name}`}
       className={({ isActive }) => {
         // Only show selected state if this exact queue in this exact namespace is in the route
         const searchParams = new URLSearchParams(window.location.search);
@@ -184,7 +184,7 @@ function TopicItem({ topic, namespaceId }: TopicItemProps) {
 function SubscriptionItem({ subscription, namespaceId, topicName }: SubscriptionItemProps) {
   return (
     <NavLink
-      to={`/app/messages?namespace=${namespaceId}&topic=${topicName}&subscription=${subscription.name}`}
+      to={`/messages?namespace=${namespaceId}&topic=${topicName}&subscription=${subscription.name}`}
       className={({ isActive }) => {
         // Only show selected state if this exact subscription in this exact namespace is in the route
         const searchParams = new URLSearchParams(window.location.search);
@@ -389,8 +389,8 @@ export function Sidebar() {
         return response.data;
       },
       enabled: !!id,
-      staleTime: 2000,
-      refetchInterval: (query: { state: { status: string } }) => query.state.status === 'error' ? false : 7000, // Stop on error to prevent 429 storms
+      staleTime: 30_000,
+      refetchInterval: 60_000,
       refetchIntervalInBackground: false,
     })),
   });
@@ -417,7 +417,7 @@ export function Sidebar() {
               <RefreshCw className="w-4 h-4 text-primary-500 group-hover:rotate-180 transition-transform duration-300" />
             </button>
             <NavLink
-              to="/app/connect"
+              to="/connect"
               className="p-1 hover:bg-gray-100 rounded transition-colors"
               title="Add Connection"
               aria-label="Add new connection"
@@ -440,7 +440,7 @@ export function Sidebar() {
           <div className="px-3 py-4 text-sm text-gray-500 text-center">
             <p className="mb-2">No connections yet</p>
             <NavLink
-              to="/app/connect"
+              to="/connect"
               className="text-primary-600 hover:text-primary-700 font-medium"
             >
               Add your first connection
@@ -462,7 +462,7 @@ export function Sidebar() {
               {['orders-queue', 'payment-queue', 'notification-queue'].map((q) => (
                 <NavLink
                   key={q}
-                  to={`/app/messages?demo=true&queue=${q}`}
+                  to={`/messages?demo=true&queue=${q}`}
                   className="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm bg-white text-gray-700 hover:bg-sky-50 hover:text-sky-700 border border-gray-200 hover:border-sky-300 transition-all duration-200"
                 >
                   <span className="truncate">{q}</span>
@@ -487,7 +487,7 @@ export function Sidebar() {
         <nav className="space-y-1 px-3 pb-3">
           {/* Dashboard - moved to top */}
           <NavLink
-            to="/app/dashboard"
+            to="/dashboard"
             className={({ isActive }) =>
               `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
                 isActive
@@ -516,7 +516,7 @@ export function Sidebar() {
               // Navigate to first queue if available
               const firstQueue = queues?.[0];
               if (firstQueue) {
-                navigate(`/app/messages?namespace=${activeNamespace.id}&queue=${firstQueue.name}&queueType=active`);
+                navigate(`/messages?namespace=${activeNamespace.id}&queue=${firstQueue.name}&queueType=active`);
                 return;
               }
               
@@ -546,7 +546,7 @@ export function Sidebar() {
               // Navigate to first queue's DLQ if available
               const firstQueue = queues?.[0];
               if (firstQueue) {
-                navigate(`/app/messages?namespace=${activeNamespace.id}&queue=${firstQueue.name}&queueType=deadletter`);
+                navigate(`/messages?namespace=${activeNamespace.id}&queue=${firstQueue.name}&queueType=deadletter`);
                 return;
               }
               
@@ -566,7 +566,7 @@ export function Sidebar() {
             <span className="text-xs text-red-600 font-medium">DLQ</span>
           </button>
           <NavLink
-            to={activeNamespace ? `/app/dlq-history?namespace=${activeNamespace.id}` : '/app/dlq-history'}
+            to={activeNamespace ? `/dlq-history?namespace=${activeNamespace.id}` : '/dlq-history'}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-purple-50 text-gray-700 hover:text-purple-700 border border-gray-200 hover:border-purple-300 shadow-sm"
           >
             <BarChart3 className="w-4 h-4 text-purple-500" />
@@ -574,7 +574,7 @@ export function Sidebar() {
             <span className="text-xs text-purple-600 font-medium">History</span>
           </NavLink>
           <NavLink
-            to="/app/rules"
+            to="/rules"
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-amber-50 text-gray-700 hover:text-amber-700 border border-gray-200 hover:border-amber-300 shadow-sm"
           >
             <Zap className="w-4 h-4 text-amber-500" />
@@ -582,7 +582,7 @@ export function Sidebar() {
             <span className="text-xs text-amber-600 font-medium">Rules</span>
           </NavLink>
           <NavLink
-            to="/app/health"
+            to="/health"
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border border-gray-200 hover:border-emerald-300 shadow-sm"
           >
             <Activity className="w-4 h-4 text-emerald-500" />
@@ -590,7 +590,7 @@ export function Sidebar() {
             <span className="text-xs text-emerald-600 font-medium">Status</span>
           </NavLink>
           <NavLink
-            to="/app/scheduled"
+            to="/scheduled"
             className={({ isActive }) =>
               `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
                 isActive
@@ -604,7 +604,7 @@ export function Sidebar() {
             <span className="text-xs text-sky-600 font-medium">View</span>
           </NavLink>
           <NavLink
-            to="/app/correlation"
+            to="/correlation"
             className={({ isActive }) =>
               `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
                 isActive
@@ -617,7 +617,7 @@ export function Sidebar() {
             <span className="flex-1 text-left">Correlation</span>
           </NavLink>
           <NavLink
-            to="/app/help"
+            to="/help"
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border border-gray-200 hover:border-primary-300 shadow-sm"
           >
             <HelpCircle className="w-4 h-4 text-primary-500" />
@@ -625,7 +625,7 @@ export function Sidebar() {
             <span className="text-xs text-primary-600 font-medium">?</span>
           </NavLink>
           <NavLink
-            to="/app/security"
+            to="/security"
             className={({ isActive }) =>
               `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
                 isActive
@@ -644,7 +644,7 @@ export function Sidebar() {
       {/* Add Connection CTA */}
       <div className="border-t border-gray-200 p-3 bg-white">
         <NavLink
-          to="/app/connect"
+          to="/connect"
           className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-sm font-medium transition-all shadow-md hover:shadow-lg"
         >
           <Plus className="w-4 h-4" />

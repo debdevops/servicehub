@@ -332,7 +332,7 @@ export function HelpPage() {
               GitHub Discussions
             </a>
             <Link
-              to="/app/security"
+              to="/security"
               className="inline-flex items-center gap-2 px-6 py-2.5 border border-white text-white hover:bg-primary-800 font-semibold rounded-lg transition-colors"
             >
               <span>🔒</span>
