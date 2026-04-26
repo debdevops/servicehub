@@ -124,13 +124,13 @@ describe('NamespaceCard', () => {
   it('Browse Queues button navigates to messages page', async () => {
     render(<NamespaceCard namespace={mockNamespace} />, { wrapper: createWrapper() });
     fireEvent.click(await screen.findByRole('button', { name: /browse queues/i }));
-    expect(mockNavigate).toHaveBeenCalledWith('/app/messages?namespace=ns1');
+    expect(mockNavigate).toHaveBeenCalledWith('/messages?namespace=ns1');
   });
 
   it('View DLQ History button navigates to dlq-history page', async () => {
     render(<NamespaceCard namespace={mockNamespace} />, { wrapper: createWrapper() });
     fireEvent.click(await screen.findByRole('button', { name: /view dlq history/i }));
-    expect(mockNavigate).toHaveBeenCalledWith('/app/dlq-history?namespace=ns1');
+    expect(mockNavigate).toHaveBeenCalledWith('/dlq-history?namespace=ns1');
   });
 
   it('falls back to namespace.name when displayName is absent', async () => {

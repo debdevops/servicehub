@@ -75,7 +75,7 @@ export function MainLayout() {
   const queueName = searchParams.get('queue');
   const topicName = searchParams.get('topic');
   const subscriptionName = searchParams.get('subscription');
-  const isMessagesPage = window.location.pathname === '/app/messages';
+  const isMessagesPage = window.location.pathname === '/messages';
 
   // Resolve current namespace to check environment and permissions
   const { data: namespaces } = useNamespaces();

@@ -38,18 +38,10 @@ export const router = createBrowserRouter([
     element: <WelcomePage />,
   },
   {
-    // Top-level 404: redirect unknown root paths back to the welcome page
-    path: '*',
-    element: <Navigate to="/" replace />,
-  },
-  {
-    path: '/app',
+    path: '/',
     element: <MainLayout />,
+    errorElement: <Navigate to="/" replace />,
     children: [
-      {
-        index: true,
-        element: <Navigate to="/app/connect" replace />,
-      },
       {
         path: 'dashboard',
         element: (
@@ -111,9 +103,14 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: '*',
-        element: <Navigate to="/app/connect" replace />,
+        index: true,
+        element: <Navigate to="/connect" replace />,
       },
     ],
+  },
+  {
+    // Fallback 404: redirect unknown paths back to welcome
+    path: '*',
+    element: <Navigate to="/" replace />,
   },
 ]);

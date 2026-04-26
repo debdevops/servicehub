@@ -68,7 +68,7 @@ describe('WelcomePage', () => {
     // CTAs must navigate to /app/connect (not back to root) so users reach the app
     const ctaLinks = screen
       .getAllByRole('link', { name: /open servicehub/i })
-      .filter((l) => l.getAttribute('href') === '/app/connect');
+      .filter((l) => l.getAttribute('href') === '/connect');
     expect(ctaLinks.length).toBeGreaterThan(0);
   });
 
@@ -308,7 +308,7 @@ describe('WelcomePage', () => {
     renderPage();
     const secLink = screen
       .getAllByRole('link', { name: /security & privacy/i })
-      .find((l) => l.getAttribute('href') === '/app/security');
+      .find((l) => l.getAttribute('href') === '/security');
     expect(secLink).toBeDefined();
   });
 
