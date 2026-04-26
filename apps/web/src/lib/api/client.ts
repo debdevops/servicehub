@@ -181,6 +181,21 @@ apiClient.interceptors.response.use(
     const url = error.config?.url || 'unknown';
     
     switch (status) {
+      case 429: {
+        // Rate limit exceeded — show user feedback for non-silent requests
+        // and respect the Retry-After header to avoid compounding the problem.
+        // Background polling hooks use _silent:true so they won't toast-spam.
+        const retryAfterRaw = error.response.headers['retry-after'];
+        const retryAfterSec = retryAfterRaw ? parseInt(retryAfterRaw, 10) : 30;
+        const errorKey = '429-rate-limit';
+        if (shouldShowError(errorKey)) {
+          toast.error(
+            `Too many requests. The app is sending too many API calls. Please wait ${retryAfterSec}s.`,
+            { duration: Math.max(retryAfterSec * 1000, 8000) }
+          );
+        }
+        break;
+      }
       case 401: {
         // Auto-refresh the SPA token and retry the request.
         // Handles two production failure modes:

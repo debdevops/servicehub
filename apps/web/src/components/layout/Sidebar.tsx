@@ -389,8 +389,8 @@ export function Sidebar() {
         return response.data;
       },
       enabled: !!id,
-      staleTime: 2000,
-      refetchInterval: 7000,
+      staleTime: 30_000,
+      refetchInterval: 60_000,
       refetchIntervalInBackground: false,
     })),
   });

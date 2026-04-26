@@ -12,12 +12,12 @@ export function useTopics(namespaceId: string, autoRefresh: boolean = true) {
       return response.data;
     },
     enabled: !!namespaceId,
-    staleTime: 2000, // Consider data stale after 2 seconds for immediate updates
-    refetchInterval: autoRefresh ? 7000 : false, // Auto-refresh every 7 seconds when enabled
-    refetchIntervalInBackground: false, // Don't refetch when tab is not visible
+    staleTime: 15_000,
+    refetchInterval: autoRefresh ? 30_000 : false,
+    refetchIntervalInBackground: false,
     retry: (failureCount, error: ApiError) => {
-      // Don't retry on 404 or Service Bus connectivity errors
       if (error?.response?.status === 404) return false;
+      if (error?.response?.status === 429) return false;
       if ((error?.response?.status ?? 0) >= 500) return false;
       return failureCount < 2;
     },
