@@ -290,6 +290,84 @@ export function WelcomePage() {
         </div>
       </section>
 
+      {/* ─── Safe Adoption Path ──────────────────────────────────────────── */}
+      <section className="px-6 pb-10">
+        <div className="max-w-4xl mx-auto">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="flex-shrink-0 w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center">
+                <Shield className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-amber-900">
+                  Recommended Adoption Path
+                </p>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  Follow this flow before connecting to a production namespace.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+              {[
+                {
+                  step: '1',
+                  env: 'DEV',
+                  color: 'green',
+                  title: 'Start in DEV',
+                  desc: 'Connect your development namespace. Explore messages, test DLQ inspection, try auto-replay rules, and verify your workflow in a safe environment.',
+                },
+                {
+                  step: '2',
+                  env: 'UAT',
+                  color: 'amber',
+                  title: 'Validate in UAT',
+                  desc: 'Repeat in your UAT namespace. Confirm replay behaviour with realistic data, validate auto-replay rules, and review AI findings against production-like traffic.',
+                },
+                {
+                  step: '3',
+                  env: 'PROD',
+                  color: 'red',
+                  title: 'Use PROD with confidence',
+                  desc: 'Only after DEV and UAT validation. Production namespaces enforce read-only mode by default — Quick Actions are disabled to prevent accidental modifications.',
+                },
+              ].map(({ step, env, color, title, desc }) => (
+                <div
+                  key={env}
+                  className={`flex flex-col gap-2 rounded-lg border p-3.5 bg-white ${
+                    color === 'green' ? 'border-green-200' :
+                    color === 'amber' ? 'border-amber-200' :
+                    'border-red-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                      color === 'green' ? 'bg-green-100 text-green-700' :
+                      color === 'amber' ? 'bg-amber-100 text-amber-700' :
+                      'bg-red-100 text-red-700'
+                    }`}>
+                      {env}
+                    </span>
+                    <span className="text-xs font-semibold text-gray-600">Step {step}</span>
+                  </div>
+                  <p className="text-xs font-bold text-gray-900">{title}</p>
+                  <p className="text-xs text-gray-600 leading-relaxed">{desc}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-start gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2.5">
+              <span className="text-red-500 text-sm mt-0.5 flex-shrink-0">⚠️</span>
+              <p className="text-xs text-red-800 font-medium">
+                <strong>Do not connect a production Service Bus namespace without prior validation in DEV and UAT.</strong>
+                {' '}While ServiceHub is read-only by default, replay and send operations are destructive.
+                Validate rule logic and replay targets in lower environments first.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ─── Stats Bar ───────────────────────────────────────────────────── */}
       <section className="py-12 px-6 bg-gradient-to-r from-primary-600 to-blue-600">
         <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-6 text-center text-white">

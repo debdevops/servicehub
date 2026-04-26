@@ -13,22 +13,31 @@ const appInsights = new ApplicationInsights({
 
     // Cost-effective settings
     samplingPercentage: Number(import.meta.env.VITE_APPINSIGHTS_SAMPLING_PERCENTAGE) || 50,
-    disableFetchTracking: false,
     enableCorsCorrelation: true,
     enableAutoRouteTracking: true,
+
+    // ── Privacy & security ────────────────────────────────────────────
+    // Never capture request or response bodies — message content must not be sent to telemetry
+    disableAjaxTracking: false,        // Track API call durations and status codes (not bodies)
+    disableFetchTracking: false,       // Track fetch durations and status codes (not bodies)
+    // Do NOT log any user input or identifiers to telemetry
+    disableCookiesUsage: true,
+    // Do NOT add correlation headers to cross-origin Service Bus requests
+    correlationHeaderExcludedDomains: ['*.servicebus.windows.net', '*.azure.com'],
+    // Exclude endpoints that carry message body data from AJAX auto-tracking
+    excludeRequestFromAutoTrackingPatterns: [
+      /\/api\/v1\/namespaces\/[^/]+\/queues\/[^/]+\/messages/i,
+      /\/api\/v1\/namespaces\/[^/]+\/topics\//i,
+      /\/api\/v1\/correlation/i,
+      /\/health/i,
+      /\/internal\//i,
+    ],
+    // ─────────────────────────────────────────────────────────────────
 
     // Reduce telemetry volume
     maxBatchInterval: 15000,           // Batch every 15s instead of default 5s
     maxBatchSizeInBytes: 102400,       // 100KB batch size
-    disableExceptionTracking: false,   // Keep exception tracking (critical)
-    disableAjaxTracking: false,        // Keep API call tracking
-
-    // Exclude health check and noisy internal endpoints from AJAX tracking
-    correlationHeaderExcludedDomains: [],
-    excludeRequestFromAutoTrackingPatterns: [
-      /\/health/i,
-      /\/internal\//i,
-    ],
+    disableExceptionTracking: false,   // Keep exception tracking (critical for error monitoring)
   },
 });
 
