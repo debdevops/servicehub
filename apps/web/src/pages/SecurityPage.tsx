@@ -312,10 +312,10 @@ export function SecurityPage() {
 
         {/* Footer nav */}
         <div className="flex flex-wrap items-center gap-4 pt-4 border-t border-gray-100 text-xs text-gray-500">
-          <Link to="/app/connect" className="hover:text-gray-900 hover:underline">
+          <Link to="/connect" className="hover:text-gray-900 hover:underline">
             ← Back to Connect
           </Link>
-          <Link to="/app/help" className="hover:text-gray-900 hover:underline">
+          <Link to="/help" className="hover:text-gray-900 hover:underline">
             Help &amp; documentation
           </Link>
           <a

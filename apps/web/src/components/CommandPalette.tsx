@@ -215,7 +215,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         icon: <AlertCircle className="w-4 h-4 text-red-500" />,
         keywords: 'dead letter queue',
         action: () => {
-          navigate(`/app/messages?namespace=${ns.id}&tab=dlq`);
+          navigate(`/messages?namespace=${ns.id}&tab=dlq`);
           onClose();
         },
       },
@@ -227,7 +227,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         icon: <Clock className="w-4 h-4 text-purple-500" />,
         keywords: 'future timed',
         action: () => {
-          navigate(`/app/scheduled?namespace=${ns.id}`);
+          navigate(`/scheduled?namespace=${ns.id}`);
           onClose();
         },
       },

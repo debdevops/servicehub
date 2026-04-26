@@ -237,7 +237,7 @@ export function ConnectPage() {
                   Verify encryption code →
                 </a>
                 <Link
-                  to="/app/security"
+                  to="/security"
                   className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
                 >
                   Security overview →
