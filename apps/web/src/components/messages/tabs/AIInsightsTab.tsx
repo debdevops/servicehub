@@ -117,6 +117,7 @@ export function AIInsightsTab({ message, onViewPattern, insights: providedInsigh
     queueType: message.queueType || 'active',
     skip: 0,
     take: 1000,
+    autoRefresh: false,
   });
 
   const { data: insights, isLoading: insightsLoading, isError } = useClientSideInsights(

@@ -26,8 +26,6 @@ export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean 
         // For 404s or Service Bus connectivity errors, return empty result
         // instead of throwing. This prevents toast spam from background polling
         // when the Service Bus namespace is unavailable.
-        // Note: 429 is NOT swallowed here — it propagates to error state so
-        // refetchInterval stops polling and prevents sustained 429 storms.
         const status = (error as ApiError)?.response?.status;
         if (status === 404 || status === 502 || status === 503) {
           return { items: [], totalCount: 0, hasMore: false };
@@ -36,15 +34,15 @@ export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean 
       }
     },
     enabled: !!sanitizedParams.namespaceId && !!sanitizedParams.queueOrTopicName,
-    staleTime: 2000, // Consider data stale after 2 seconds for near real-time updates
-    refetchInterval: (query) => query.state.status === 'error' ? false : (params.autoRefresh !== false ? 7000 : false), // Stop on error/429 to prevent storms
-    refetchIntervalInBackground: false, // Don't refetch when tab is not visible
+    staleTime: 10_000,
+    refetchInterval: params.autoRefresh !== false ? 30_000 : false,
+    refetchIntervalInBackground: false,
     retry: (failureCount, error: ApiError) => {
       // Don't retry on 404 errors (entity not found)
       if (error?.response?.status === 404) return false;
       // Don't retry on 401/403 (auth errors)
       if (error?.response?.status === 401 || error?.response?.status === 403) return false;
-      // Don't retry on 429 — retrying would worsen the rate limit situation
+      // Don't retry on rate-limit errors — retrying makes the storm worse
       if (error?.response?.status === 429) return false;
       // Don't retry on Service Bus connectivity errors
       if ((error?.response?.status ?? 0) >= 500) return false;
@@ -89,9 +87,13 @@ export function useSendMessage() {
       entityType?: 'queue' | 'topic';
     }) => messagesApi.send(namespaceId, queueOrTopicName, message, entityType),
     onSuccess: async (_, variables) => {
-      // Invalidate and refetch ALL related queries for immediate UI update
+      // Invalidate specific queue/topic messages and counts (not all messages)
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' }),
+        queryClient.invalidateQueries({
+          queryKey: ['messages', { namespaceId: variables.namespaceId, queueOrTopicName: variables.queueOrTopicName }],
+          exact: false,
+          refetchType: 'active',
+        }),
         queryClient.invalidateQueries({ queryKey: ['queues', variables.namespaceId], refetchType: 'active' }),
         queryClient.invalidateQueries({ queryKey: ['subscriptions', variables.namespaceId], refetchType: 'active' }),
       ]);
@@ -100,7 +102,7 @@ export function useSendMessage() {
     onError: (error: ApiError) => {
       const errorMsg = error?.response?.data?.message || error?.message || 'Failed to send message';
       toast.error(errorMsg, {
-        duration: 8000,
+        duration: Infinity, // Force user to acknowledge critical failure
       });
     },
   });
@@ -123,10 +125,13 @@ export function useReplayMessage() {
     }) => 
       messagesApi.replay(namespaceId, sequenceNumber, entityName, subscriptionName),
     onSuccess: async (_, variables) => {
-      // Invalidate and refetch ALL related queries for immediate UI update
-      // This includes both DLQ and active message lists + counts
+      // Invalidate specific entity messages and counts (not all messages)
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' }),
+        queryClient.invalidateQueries({
+          queryKey: ['messages', { namespaceId: variables.namespaceId, queueOrTopicName: variables.entityName }],
+          exact: false,
+          refetchType: 'active',
+        }),
         queryClient.invalidateQueries({ queryKey: ['queues', variables.namespaceId], refetchType: 'active' }),
         queryClient.invalidateQueries({ queryKey: ['subscriptions', variables.namespaceId], refetchType: 'active' }),
       ]);
@@ -139,15 +144,10 @@ export function useReplayMessage() {
           duration: 4000,
           icon: '🚧',
         });
-      } else if (error?.response?.status === 403) {
-        toast.error(
-          'Insufficient permissions to replay this message. Ensure your connection string has Send permission.',
-          { duration: 6000 }
-        );
       } else {
         const errorMsg = error?.response?.data?.message || error?.message || 'Failed to replay message';
         toast.error(errorMsg, {
-          duration: 8000,
+          duration: Infinity, // Force user to acknowledge critical failure
         });
       }
     },

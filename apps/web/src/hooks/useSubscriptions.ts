@@ -21,11 +21,10 @@ export function useSubscriptions(namespaceId: string, topicName: string, autoRef
       return response.data;
     },
     enabled: !!namespaceId && !!topicName,
-    staleTime: 2000, // Consider data stale after 2 seconds for immediate count updates
-    refetchInterval: (query) => query.state.status === 'error' ? false : (autoRefresh ? 7000 : false), // Stop on error to prevent 429 storms
-    refetchIntervalInBackground: false, // Don't refetch when tab is not visible
+    staleTime: 15_000,
+    refetchInterval: autoRefresh ? 30_000 : false,
+    refetchIntervalInBackground: false,
     retry: (failureCount, error: ApiError) => {
-      // Don't retry on 404 or Service Bus connectivity errors
       if (error?.response?.status === 404) return false;
       if (error?.response?.status === 429) return false;
       if ((error?.response?.status ?? 0) >= 500) return false;

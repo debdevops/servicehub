@@ -20,8 +20,7 @@ import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues, useAllNamespacesQueues, NamespaceQueueStats } from '@/hooks/useQueues';
 import { Namespace, EnvironmentType } from '@/lib/api/types';
-import { namespacesApi } from '@/lib/api/namespaces';
-import { dlqHistoryApi, DlqSparklinePoint } from '@/lib/api/dlqHistory';
+import { apiClient } from '@/lib/api/client';
 
 const DLQ_SPIKE_THRESHOLD = 10;
 
@@ -234,7 +233,7 @@ function DlqHotSpotsPanel({
               {/* Action */}
               <button
                 onClick={() =>
-                  navigate(`/app/dlq-history?namespace=${spot.namespace.id}`)
+                  navigate(`/dlq-history?namespace=${spot.namespace.id}`)
                 }
                 className="shrink-0 px-3 py-1 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 border border-red-200 rounded-lg transition-colors"
               >
@@ -252,7 +251,6 @@ function DlqHotSpotsPanel({
 // Health Score Grade
 // ============================================================================
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function getHealthGrade(totalActive: number, totalDlq: number): { grade: string; color: string; bgClass: string; textClass: string; borderClass: string } {
   const dlqRatio = totalDlq / Math.max(totalActive + totalDlq, 1);
   if (dlqRatio === 0) return { grade: 'A', color: 'emerald', bgClass: 'bg-emerald-50', textClass: 'text-emerald-700', borderClass: 'border-emerald-200' };
@@ -331,11 +329,26 @@ function SkeletonCard() {
 // DLQ Trend Sparkline
 // ============================================================================
 
+interface TrendPoint {
+  date: string;
+  newCount: number;
+  resolvedCount: number;
+}
+
 function DlqTrendSparkline({ namespaceId }: { namespaceId: string }) {
-  const { data: trendData } = useQuery<DlqSparklinePoint[]>({
+  const { data: trendData } = useQuery<TrendPoint[]>({
     queryKey: ['dlq-trend', namespaceId],
-    queryFn: () => dlqHistoryApi.getTrend(namespaceId, 7),
-    refetchInterval: (query) => query.state.status === 'error' ? false : 30000, // Stop on error to prevent 429 storms
+    queryFn: async () => {
+      const res = await apiClient.get(`/dlq/trend`, {
+        params: { namespaceId, days: 7 },
+      });
+      return (res.data as Array<{ date: string; newMessages: number; resolvedMessages: number }>).map(d => ({
+        date: d.date,
+        newCount: d.newMessages,
+        resolvedCount: d.resolvedMessages,
+      }));
+    },
+    refetchInterval: 120_000,
   });
 
   if (!trendData || trendData.length < 2) {
@@ -374,10 +387,20 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }:
   // Use the stats endpoint for accurate totals (includes subscription DLQs)
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['namespace-stats', namespace.id],
-    queryFn: () => namespacesApi.getStats(namespace.id),
+    queryFn: async () => {
+      const response = await apiClient.get<{
+        totalQueues: number;
+        totalTopics: number;
+        totalSubscriptions: number;
+        totalActive: number;
+        totalDlq: number;
+        totalScheduled: number;
+      }>(`/namespaces/${namespace.id}/stats`, { _silent: true } as Record<string, unknown>);
+      return response.data;
+    },
     enabled: !!namespace.id,
-    staleTime: 2000,
-    refetchInterval: (query) => query.state.status === 'error' ? false : 7000, // Stop on error to prevent 429 storms
+    staleTime: 30_000,
+    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
 
@@ -479,13 +502,13 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }:
       {/* Action Buttons */}
       <div className="flex gap-2 px-5 pb-5">
         <button
-          onClick={() => navigate(`/app/messages?namespace=${namespace.id}`)}
+          onClick={() => navigate(`/messages?namespace=${namespace.id}`)}
           className="flex-1 px-3 py-2 text-sm font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors"
         >
           Browse Queues
         </button>
         <button
-          onClick={() => navigate(`/app/dlq-history?namespace=${namespace.id}`)}
+          onClick={() => navigate(`/dlq-history?namespace=${namespace.id}`)}
           className="flex-1 px-3 py-2 text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
         >
           View DLQ History
@@ -628,7 +651,7 @@ export function DashboardPage() {
               Connect a Service Bus namespace to see it here.
             </p>
             <button
-              onClick={() => navigate('/app/connect')}
+              onClick={() => navigate('/connect')}
               className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
             >
               <Plus className="w-4 h-4" />
@@ -646,28 +669,28 @@ export function DashboardPage() {
                 Quick Actions
               </span>
               <button
-                onClick={() => navigate('/app/dlq-history')}
+                onClick={() => navigate('/dlq-history')}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
               >
                 <Flame className="w-3.5 h-3.5" />
                 Browse All DLQs
               </button>
               <button
-                onClick={() => navigate('/app/scheduled')}
+                onClick={() => navigate('/scheduled')}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors"
               >
                 <Clock className="w-3.5 h-3.5" />
                 All Scheduled
               </button>
               <button
-                onClick={() => navigate('/app/correlation')}
+                onClick={() => navigate('/correlation')}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition-colors"
               >
                 <GitMerge className="w-3.5 h-3.5" />
                 Correlation Explorer
               </button>
               <button
-                onClick={() => navigate('/app/rules')}
+                onClick={() => navigate('/rules')}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors"
               >
                 <Zap className="w-3.5 h-3.5" />

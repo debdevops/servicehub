@@ -11,8 +11,8 @@ const queuesQueryOptions = (namespaceId: string, autoRefresh: boolean) => ({
     return response.data;
   },
   enabled: !!namespaceId,
-  staleTime: 2000,
-  refetchInterval: (query: { state: { status: string } }) => query.state.status === 'error' ? false : (autoRefresh ? 7000 : false), // Stop on error to prevent 429 storms
+  staleTime: 15_000,
+  refetchInterval: autoRefresh ? 30_000 : (false as const),
   refetchIntervalInBackground: false,
   retry: (failureCount: number, error: ApiError) => {
     if (error?.response?.status === 404) return false;
@@ -66,8 +66,8 @@ export function useAllNamespacesQueues(
         return response.data;
       },
       enabled: !!id,
-      staleTime: 15_000,
-      refetchInterval: (query: { state: { status: string } }) => query.state.status === 'error' ? false : (autoRefresh ? 30_000 : false), // Stop on error to prevent 429 storms
+      staleTime: 30_000,
+      refetchInterval: autoRefresh ? 60_000 : (false as const),
       refetchIntervalInBackground: false,
       retry: (failureCount: number, error: ApiError) => {
         if (error?.response?.status === 404) return false;
