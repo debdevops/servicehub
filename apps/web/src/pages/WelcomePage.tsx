@@ -186,7 +186,7 @@ export function WelcomePage() {
             </a>
           </nav>
           <Link
-            to="/app/connect"
+            to="/connect"
             className="inline-flex items-center gap-2 px-5 py-2 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
             aria-label="Open ServiceHub application"
           >
@@ -223,7 +223,7 @@ export function WelcomePage() {
           {/* CTAs */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-14">
             <Link
-              to="/app/connect"
+              to="/connect"
               className="inline-flex items-center gap-2.5 px-8 py-4 bg-primary-600 text-white text-base font-bold rounded-xl hover:bg-primary-700 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
               aria-label="Open the ServiceHub application"
             >
@@ -240,7 +240,7 @@ export function WelcomePage() {
               View on GitHub
             </a>
             <Link
-              to="/app/connect"
+              to="/connect"
               className="inline-flex items-center gap-2.5 px-8 py-4 bg-white text-primary-600 text-base font-bold rounded-xl border-2 border-primary-300 hover:border-primary-400 hover:bg-primary-50 transition-all shadow-sm"
             >
               💻 Self-Host Locally
@@ -646,7 +646,7 @@ export function WelcomePage() {
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link
-                to="/app/connect"
+                to="/connect"
                 className="inline-flex items-center gap-2.5 px-8 py-4 bg-white text-primary-700 font-bold text-base rounded-xl hover:bg-gray-100 transition-all shadow-lg hover:-translate-y-0.5"
                 aria-label="Open the ServiceHub application"
               >
@@ -654,7 +654,7 @@ export function WelcomePage() {
                 <ArrowRight className="w-5 h-5" />
               </Link>
               <Link
-                to="/app/connect"
+                to="/connect"
                 className="inline-flex items-center gap-2.5 px-8 py-4 bg-white/15 text-white font-bold text-base rounded-xl border-2 border-white/40 hover:bg-white/25 transition-all"
               >
                 💻 Self-Host on localhost
@@ -696,7 +696,7 @@ export function WelcomePage() {
                   </a>
                 </li>
                 <li>
-                  <Link to="/app/security" className="hover:text-primary-600">Security & Privacy</Link>
+                  <Link to="/security" className="hover:text-primary-600">Security & Privacy</Link>
                 </li>
                 <li>
                   <a href={`${GITHUB_URL}/blob/main/CHANGELOG.md`} target="_blank" rel="noopener noreferrer" className="hover:text-primary-600 flex items-center gap-1.5">
@@ -738,7 +738,7 @@ export function WelcomePage() {
                   <a href={`${GITHUB_URL}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer" className="hover:text-primary-600">MIT License</a>
                 </li>
                 <li>
-                  <Link to="/app/security" className="hover:text-primary-600">Privacy Notice</Link>
+                  <Link to="/security" className="hover:text-primary-600">Privacy Notice</Link>
                 </li>
               </ul>
             </div>

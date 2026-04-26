@@ -29,27 +29,22 @@ function PageLoading() {
 }
 
 export const router = createBrowserRouter([
+  // Default route: Welcome page (landing page, no redirect)
   {
     path: '/',
     element: <WelcomePage />,
   },
+  // Welcome page alias for backwards compatibility
   {
     path: '/welcome',
     element: <WelcomePage />,
   },
+  // Main application layout with all feature routes
   {
-    // Top-level 404: redirect unknown root paths back to the welcome page
-    path: '*',
-    element: <Navigate to="/" replace />,
-  },
-  {
-    path: '/app',
+    path: '/',
     element: <MainLayout />,
+    errorElement: <Navigate to="/welcome" replace />,
     children: [
-      {
-        index: true,
-        element: <Navigate to="/app/connect" replace />,
-      },
       {
         path: 'dashboard',
         element: (
@@ -110,10 +105,11 @@ export const router = createBrowserRouter([
           </Suspense>
         ),
       },
-      {
-        path: '*',
-        element: <Navigate to="/app/connect" replace />,
-      },
     ],
+  },
+  // Fallback 404: redirect unknown paths to welcome
+  {
+    path: '*',
+    element: <Navigate to="/welcome" replace />,
   },
 ]);

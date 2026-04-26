@@ -237,7 +237,7 @@ export function ConnectPage() {
                   Verify encryption code →
                 </a>
                 <Link
-                  to="/app/security"
+                  to="/security"
                   className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
                 >
                   Security overview →
@@ -381,7 +381,7 @@ export function ConnectPage() {
 
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => navigate(`/app/messages?namespace=${ns.id}`)}
+                          onClick={() => navigate(`/messages?namespace=${ns.id}`)}
                           className="px-3 py-1.5 text-white text-sm font-medium rounded-lg transition-colors bg-primary-500 hover:bg-primary-600"
                           aria-label={`Open ${ns.displayName || ns.name} namespace`}
                         >
@@ -420,7 +420,7 @@ export function ConnectPage() {
                 <p className="text-[11px] text-slate-400 mt-0.5">50 production-realistic messages, DLQ scenarios, AI root-cause analysis — no credentials needed.</p>
               </div>
               <button
-                onClick={() => navigate('/app/messages?demo=true')}
+                onClick={() => navigate('/messages?demo=true')}
                 className="shrink-0 px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-900 font-semibold text-xs rounded-lg transition-colors flex items-center gap-1.5"
               >
                 Launch
