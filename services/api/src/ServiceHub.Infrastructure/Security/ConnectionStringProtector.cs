@@ -289,10 +289,15 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
         }
         catch (CryptographicException ex)
         {
-            _logger.LogWarning(ex, "Failed to decrypt connection string - possible tampering or wrong key");
+            // Do NOT pass the exception object to the logger — Application Insights captures exceptions
+            // from ILogger calls, which would flood telemetry when a key rotation leaves old encrypted
+            // connection strings in the database. Log the message only, not the full exception.
+            _logger.LogWarning(
+                "Failed to decrypt connection string (possible key rotation or data corruption): {ExceptionType}",
+                ex.GetType().Name);
             return Result.Failure<string>(Error.Validation(
                 ErrorCodes.Namespace.ConnectionStringInvalid,
-                "Failed to decrypt connection string. The data may be corrupted or the encryption key may have changed."));
+                "Failed to decrypt connection string. The encryption key may have changed — please re-add this namespace."));
         }
     }
 
