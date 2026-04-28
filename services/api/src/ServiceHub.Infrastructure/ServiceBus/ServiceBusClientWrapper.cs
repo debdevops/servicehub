@@ -207,7 +207,9 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         }
         catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
         {
-            _logger.LogWarning(ex,
+            // Entity-not-found is an expected operational state — log without exception object
+            // so Application Insights does not track it as exception telemetry.
+            _logger.LogWarning(
                 "Entity {EntityName} not found in namespace {NamespaceId}",
                 LogRedactor.SanitiseForLog(request.EntityName),
                 NamespaceId);
@@ -216,11 +218,33 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
                 ErrorCodes.Queue.NotFound,
                 $"The queue, topic, or subscription '{request.EntityName}' was not found."));
         }
+        catch (OperationCanceledException)
+        {
+            // Client navigated away — expected when the browser tab closes or route changes.
+            _logger.LogInformation(
+                "PeekMessagesAsync cancelled for {EntityName} in namespace {NamespaceId}",
+                LogRedactor.SanitiseForLog(request.EntityName),
+                NamespaceId);
+
+            return Result.Failure<IReadOnlyList<Message>>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The operation was cancelled."));
+        }
         catch (ServiceBusException ex)
         {
-            _logger.LogError(ex,
-                "Service Bus error peeking messages from {EntityName}",
-                LogRedactor.SanitiseForLog(request.EntityName));
+            if (IsNetworkConnectivityFailure(ex))
+            {
+                _logger.LogWarning(
+                    "Network connectivity failure peeking messages from {EntityName} in namespace {NamespaceId}: {Reason}",
+                    LogRedactor.SanitiseForLog(request.EntityName),
+                    NamespaceId, ex.Reason);
+            }
+            else
+            {
+                _logger.LogError(ex,
+                    "Service Bus error peeking messages from {EntityName}",
+                    LogRedactor.SanitiseForLog(request.EntityName));
+            }
 
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
                 ErrorCodes.Message.ReceiveFailed,
@@ -228,9 +252,19 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
-                "Unexpected error peeking messages from {EntityName}",
-                LogRedactor.SanitiseForLog(request.EntityName));
+            if (IsNetworkConnectivityFailure(ex))
+            {
+                _logger.LogWarning(
+                    "Network connectivity failure peeking messages from {EntityName} in namespace {NamespaceId}: {Message}",
+                    LogRedactor.SanitiseForLog(request.EntityName),
+                    NamespaceId, ex.Message);
+            }
+            else
+            {
+                _logger.LogError(ex,
+                    "Unexpected error peeking messages from {EntityName}",
+                    LogRedactor.SanitiseForLog(request.EntityName));
+            }
 
             return Result.Failure<IReadOnlyList<Message>>(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
@@ -471,16 +505,43 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
             return Result.Success<IReadOnlyList<QueueRuntimePropertiesDto>>(queues);
         }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("GetQueuesAsync cancelled for namespace {NamespaceId}", NamespaceId);
+            return Result.Failure<IReadOnlyList<QueueRuntimePropertiesDto>>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The operation was cancelled."));
+        }
         catch (ServiceBusException ex)
         {
-            _logger.LogError(ex, "Service Bus error getting queues for namespace {NamespaceId}", NamespaceId);
+            if (IsNetworkConnectivityFailure(ex))
+            {
+                // DNS / TCP failure — the namespace is unreachable.  Log at Warning without the
+                // exception object so Application Insights does not create exception telemetry.
+                _logger.LogWarning(
+                    "Network connectivity failure getting queues for namespace {NamespaceId}: {Reason}",
+                    NamespaceId, ex.Reason);
+            }
+            else
+            {
+                _logger.LogError(ex, "Service Bus error getting queues for namespace {NamespaceId}", NamespaceId);
+            }
             return Result.Failure<IReadOnlyList<QueueRuntimePropertiesDto>>(Error.ExternalService(
                 ErrorCodes.Queue.ListFailed,
                 $"Failed to list queues: {ex.Reason}"));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error getting queues for namespace {NamespaceId}", NamespaceId);
+            if (IsNetworkConnectivityFailure(ex))
+            {
+                _logger.LogWarning(
+                    "Network connectivity failure getting queues for namespace {NamespaceId}: {Message}",
+                    NamespaceId, ex.Message);
+            }
+            else
+            {
+                _logger.LogError(ex, "Unexpected error getting queues for namespace {NamespaceId}", NamespaceId);
+            }
             return Result.Failure<IReadOnlyList<QueueRuntimePropertiesDto>>(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
                 "An unexpected error occurred while listing queues."));
@@ -562,16 +623,41 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
 
             return Result.Success<IReadOnlyList<TopicRuntimePropertiesDto>>(topics);
         }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("GetTopicsAsync cancelled for namespace {NamespaceId}", NamespaceId);
+            return Result.Failure<IReadOnlyList<TopicRuntimePropertiesDto>>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The operation was cancelled."));
+        }
         catch (ServiceBusException ex)
         {
-            _logger.LogError(ex, "Service Bus error getting topics for namespace {NamespaceId}", NamespaceId);
+            if (IsNetworkConnectivityFailure(ex))
+            {
+                _logger.LogWarning(
+                    "Network connectivity failure getting topics for namespace {NamespaceId}: {Reason}",
+                    NamespaceId, ex.Reason);
+            }
+            else
+            {
+                _logger.LogError(ex, "Service Bus error getting topics for namespace {NamespaceId}", NamespaceId);
+            }
             return Result.Failure<IReadOnlyList<TopicRuntimePropertiesDto>>(Error.ExternalService(
                 ErrorCodes.Topic.ListFailed,
                 $"Failed to list topics: {ex.Reason}"));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error getting topics for namespace {NamespaceId}", NamespaceId);
+            if (IsNetworkConnectivityFailure(ex))
+            {
+                _logger.LogWarning(
+                    "Network connectivity failure getting topics for namespace {NamespaceId}: {Message}",
+                    NamespaceId, ex.Message);
+            }
+            else
+            {
+                _logger.LogError(ex, "Unexpected error getting topics for namespace {NamespaceId}", NamespaceId);
+            }
             return Result.Failure<IReadOnlyList<TopicRuntimePropertiesDto>>(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
                 "An unexpected error occurred while listing topics."));
@@ -656,21 +742,50 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         }
         catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
         {
-            _logger.LogWarning(ex, "Topic {TopicName} not found in namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
+            // Entity-not-found is an expected operational state — log without exception object
+            // so Application Insights does not track it as exception telemetry.
+            _logger.LogWarning(
+                "Topic {TopicName} not found in namespace {NamespaceId}",
+                LogRedactor.SanitiseForLog(topicName), NamespaceId);
             return Result.Failure<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(Error.NotFound(
                 ErrorCodes.Topic.NotFound,
                 $"Topic '{topicName}' was not found."));
         }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("GetSubscriptionsAsync cancelled for topic {TopicName} namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
+            return Result.Failure<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The operation was cancelled."));
+        }
         catch (ServiceBusException ex)
         {
-            _logger.LogError(ex, "Service Bus error getting subscriptions for topic {TopicName} in namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
+            if (IsNetworkConnectivityFailure(ex))
+            {
+                _logger.LogWarning(
+                    "Network connectivity failure getting subscriptions for topic {TopicName} in namespace {NamespaceId}: {Reason}",
+                    LogRedactor.SanitiseForLog(topicName), NamespaceId, ex.Reason);
+            }
+            else
+            {
+                _logger.LogError(ex, "Service Bus error getting subscriptions for topic {TopicName} in namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
+            }
             return Result.Failure<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(Error.ExternalService(
                 ErrorCodes.Subscription.ListFailed,
                 $"Failed to list subscriptions: {ex.Reason}"));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error getting subscriptions for topic {TopicName} in namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
+            if (IsNetworkConnectivityFailure(ex))
+            {
+                _logger.LogWarning(
+                    "Network connectivity failure getting subscriptions for topic {TopicName} in namespace {NamespaceId}: {Message}",
+                    LogRedactor.SanitiseForLog(topicName), NamespaceId, ex.Message);
+            }
+            else
+            {
+                _logger.LogError(ex, "Unexpected error getting subscriptions for topic {TopicName} in namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
+            }
             return Result.Failure<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
                 "An unexpected error occurred while listing subscriptions."));
@@ -744,6 +859,24 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         }
 
         return _client.CreateReceiver(entityName, options);
+    }
+
+    /// <summary>
+    /// Returns true when the exception chain contains a network-connectivity failure such as a DNS
+    /// resolution error, TCP connect timeout, or socket-level I/O error.  These represent
+    /// transient infrastructure problems (unreachable namespace) and should be logged at Warning
+    /// rather than Error to avoid flooding Application Insights with noisy exception telemetry.
+    /// </summary>
+    private static bool IsNetworkConnectivityFailure(Exception ex)
+    {
+        var current = ex;
+        while (current != null)
+        {
+            if (current is System.Net.Sockets.SocketException)
+                return true;
+            current = current.InnerException;
+        }
+        return false;
     }
 
     private static string BuildEntityPath(string entityName, string? subscriptionName, bool fromDeadLetter)
