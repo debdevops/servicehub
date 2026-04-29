@@ -6,9 +6,12 @@ using Microsoft.Extensions.Hosting;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.AI;
+using ServiceHub.Infrastructure.Azure;
 using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Persistence.InMemory;
+using ServiceHub.Infrastructure.Mock;
+using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Infrastructure.ServiceBus;
 
@@ -27,8 +30,11 @@ public static class DependencyInjection
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration? configuration = null)
     {
-        // Service Bus
-        services.AddServiceBus();
+        // Service Bus + Azure provider (wraps AddServiceBus and registers ICloudMessagingProvider)
+        services.AddAzureProvider();
+
+        // Mock/in-memory provider — active when SERVICEHUB_MOCK_PROVIDER=true or connection string starts with mock://
+        services.AddMockProviders();
 
         // Persistence
         services.AddPersistence();
@@ -49,6 +55,29 @@ public static class DependencyInjection
         // direct AddInfrastructure callers that do not call AddBackgroundWorkers separately.
         // NOTE: do NOT add DlqMonitorWorker here; AddBackgroundWorkers registers it.
         // Historically this line caused a duplicate-worker bug.
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds Azure Service Bus infrastructure services and registers
+    /// <see cref="AzureMessagingProvider"/> as an <see cref="ICloudMessagingProvider"/>.
+    /// Also registers <see cref="CloudProviderRouter"/> as a singleton dispatcher.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddAzureProvider(this IServiceCollection services)
+    {
+        // Register the core Azure Service Bus infrastructure
+        services.AddServiceBus();
+
+        // Register AzureMessagingProvider as ICloudMessagingProvider (scoped to match its dependencies)
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<ICloudMessagingProvider, AzureMessagingProvider>());
+
+        // Register the router that dispatches to the correct provider by CloudProviderType.
+        // Scoped (not singleton) because its ICloudMessagingProvider dependencies are scoped —
+        // AzureMessagingProvider holds IMessageReceiver/IMessageSender which are both scoped.
+        services.TryAddScoped<CloudProviderRouter>();
 
         return services;
     }

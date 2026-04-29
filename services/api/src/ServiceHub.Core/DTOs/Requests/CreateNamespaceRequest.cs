@@ -29,4 +29,23 @@ public sealed record CreateNamespaceRequest(
     [StringLength(500, ErrorMessage = "Description cannot exceed 500 characters")]
     string? Description = null,
     
-    EnvironmentType Environment = EnvironmentType.Dev);
+    EnvironmentType Environment = EnvironmentType.Dev)
+{
+    /// <summary>
+    /// Gets the cloud provider hosting this namespace. Defaults to Azure for backward compatibility.
+    /// </summary>
+    public CloudProviderType Provider { get; init; } = CloudProviderType.Azure;
+
+    /// <summary>
+    /// Gets the AWS region identifier (e.g., <c>us-east-1</c>).
+    /// Only relevant when <see cref="Provider"/> is <see cref="CloudProviderType.Aws"/>.
+    /// </summary>
+    public string? AwsRegion { get; init; }
+
+    /// <summary>
+    /// Gets the GCP project identifier.
+    /// Only relevant when <see cref="Provider"/> is <see cref="CloudProviderType.Gcp"/>.
+    /// </summary>
+    public string? GcpProjectId { get; init; }
+}
+

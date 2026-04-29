@@ -13,6 +13,8 @@ import { useQueues } from '@/hooks/useQueues';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { generateMockMessages, AI_ISSUES } from '@/lib/mockData';
+import { generateAwsMockMessages } from '@/lib/awsMockData';
+import { generateGcpMockMessages } from '@/lib/gcpMockData';
 import type { Message, ContentType, MessageStatus, QueueType } from '@/lib/mockData';
 import type { Message as APIMessage } from '@/lib/api/types';
 import toast from 'react-hot-toast';
@@ -95,7 +97,9 @@ export function MessagesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const isDemo = searchParams.get('demo') === 'true';
+  const demoParam = searchParams.get('demo');
+  const isDemo = demoParam === 'true' || demoParam === 'azure' || demoParam === 'aws' || demoParam === 'gcp';
+  const demoProvider: 'azure' | 'aws' | 'gcp' = demoParam === 'aws' ? 'aws' : demoParam === 'gcp' ? 'gcp' : 'azure';
   const namespaceId = searchParams.get('namespace');
   const queueName = searchParams.get('queue');
   const topicName = searchParams.get('topic');
@@ -282,7 +286,11 @@ export function MessagesPage() {
   const demoMessages = useMemo(() => {
     if (!isDemo) return [];
     
-    const messages = generateMockMessages(50);
+    const messages = demoProvider === 'aws'
+      ? generateAwsMockMessages(50)
+      : demoProvider === 'gcp'
+        ? generateGcpMockMessages(50)
+        : generateMockMessages(50);
     
     // Enhance demo messages to showcase features better
     return messages.map((msg, idx) => {
@@ -610,7 +618,7 @@ export function MessagesPage() {
             <span className="inline-flex items-center justify-center w-5 h-5 bg-blue-600 rounded-full text-white text-xs font-bold">▶</span>
             <div>
               <p className="text-sm font-semibold text-blue-900">
-                🎬 Interactive Demo — 50 Production-Realistic Messages
+                {demoProvider === 'aws' ? '🟠 AWS SQS Demo — AcmeRetail E-Commerce (50 messages)' : demoProvider === 'gcp' ? '🟢 GCP Pub/Sub Demo — MedStream Healthcare (50 messages)' : '🔵 Azure Service Bus Demo — Contoso Commerce (50 messages)'}
               </p>
               <p className="text-xs text-blue-700 mt-0.5">
                 Try the DLQ tab to see error patterns • Click AI Insights for root-cause analysis • Use filters to pinpoint issues
@@ -619,7 +627,7 @@ export function MessagesPage() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => navigate('/messages?demo=true&queueType=deadletter')}
+              onClick={() => navigate(`/messages?demo=${demoParam ?? 'azure'}&queueType=deadletter`)}
               className="text-xs font-medium text-blue-700 hover:bg-blue-100 px-2.5 py-1 rounded transition-colors"
               title="View Dead-Letter Queue"
             >

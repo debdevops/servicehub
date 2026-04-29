@@ -104,6 +104,24 @@ public sealed class Namespace
     public EnvironmentType Environment { get; private set; }
 
     /// <summary>
+    /// Gets the cloud provider that hosts this messaging namespace.
+    /// Defaults to <see cref="CloudProviderType.Azure"/> for backward compatibility.
+    /// </summary>
+    public CloudProviderType Provider { get; private set; } = CloudProviderType.Azure;
+
+    /// <summary>
+    /// Gets the AWS region identifier (e.g., <c>us-east-1</c>) for AWS-backed namespaces.
+    /// Null for non-AWS providers.
+    /// </summary>
+    public string? AwsRegion { get; private set; }
+
+    /// <summary>
+    /// Gets the GCP project identifier for GCP-backed namespaces.
+    /// Null for non-GCP providers.
+    /// </summary>
+    public string? GcpProjectId { get; private set; }
+
+    /// <summary>
     /// Gets the owner identifier for this namespace.
     /// Used to enforce tenant isolation — each caller identity maps to a stable owner ID.
     /// SPA token sessions and admin keys share "__spa__"; scoped API keys get a key-derived ID.
@@ -157,8 +175,11 @@ public sealed class Namespace
     /// <param name="displayName">Optional display name.</param>
     /// <param name="description">Optional description.</param>
     /// <param name="environment">The deployment environment (defaults to Dev).</param>
+    /// <param name="provider">The cloud provider hosting this namespace (defaults to Azure).</param>
     /// <param name="ownerId">The caller-identity owner ID for tenant isolation. Defaults to the SPA owner.</param>
     /// <param name="connectionStringHash">Pre-computed SHA-256 hash of the plaintext connection string for deduplication.</param>
+    /// <param name="awsRegion">AWS region identifier — only required when <paramref name="provider"/> is <see cref="CloudProviderType.Aws"/>.</param>
+    /// <param name="gcpProjectId">GCP project identifier — only required when <paramref name="provider"/> is <see cref="CloudProviderType.Gcp"/>.</param>
     /// <returns>A result containing the namespace or validation errors.</returns>
     public static Result<Namespace> Create(
         string name,
@@ -166,8 +187,11 @@ public sealed class Namespace
         string? displayName = null,
         string? description = null,
         EnvironmentType environment = EnvironmentType.Dev,
+        CloudProviderType provider = CloudProviderType.Azure,
         string? ownerId = null,
-        string? connectionStringHash = null)
+        string? connectionStringHash = null,
+        string? awsRegion = null,
+        string? gcpProjectId = null)
     {
         var validationResult = ValidateConnectionStringAuth(name, connectionString, displayName, description);
         if (validationResult.IsFailure)
@@ -192,6 +216,9 @@ public sealed class Namespace
             HasSendPermission = permissions.HasSend,
             HasManagePermission = permissions.HasManage,
             Environment = environment,
+            Provider = provider,
+            AwsRegion = awsRegion?.Trim(),
+            GcpProjectId = gcpProjectId?.Trim(),
             OwnerId = ownerId ?? SpaOwnerId,
             ConnectionStringHash = connectionStringHash,
         };
@@ -207,7 +234,10 @@ public sealed class Namespace
     /// <param name="displayName">Optional display name.</param>
     /// <param name="description">Optional description.</param>
     /// <param name="environment">The deployment environment (defaults to Dev).</param>
+    /// <param name="provider">The cloud provider hosting this namespace (defaults to Azure).</param>
     /// <param name="ownerId">The caller-identity owner ID for tenant isolation. Defaults to the SPA owner.</param>
+    /// <param name="awsRegion">AWS region identifier — only required when <paramref name="provider"/> is <see cref="CloudProviderType.Aws"/>.</param>
+    /// <param name="gcpProjectId">GCP project identifier — only required when <paramref name="provider"/> is <see cref="CloudProviderType.Gcp"/>.</param>
     /// <returns>A result containing the namespace or validation errors.</returns>
     public static Result<Namespace> CreateWithManagedIdentity(
         string name,
@@ -215,7 +245,10 @@ public sealed class Namespace
         string? displayName = null,
         string? description = null,
         EnvironmentType environment = EnvironmentType.Dev,
-        string? ownerId = null)
+        CloudProviderType provider = CloudProviderType.Azure,
+        string? ownerId = null,
+        string? awsRegion = null,
+        string? gcpProjectId = null)
     {
         // Allowlist: only accept known managed-identity types; reject ConnectionString
         // and any future/unknown enum values to prevent user-controlled bypass.
@@ -249,6 +282,9 @@ public sealed class Namespace
             HasSendPermission = true,
             HasManagePermission = true,
             Environment = environment,
+            Provider = provider,
+            AwsRegion = awsRegion?.Trim(),
+            GcpProjectId = gcpProjectId?.Trim(),
             OwnerId = ownerId ?? SpaOwnerId,
         };
 
@@ -478,6 +514,8 @@ public sealed class Namespace
 
     /// <summary>
     /// Validates the namespace name format.
+    /// Accepts Azure Service Bus FQDNs, AWS SQS region endpoints (*.amazonaws.com),
+    /// and simple names compatible with both Azure short names and GCP project IDs.
     /// </summary>
     private static bool IsValidNamespaceName(string name)
     {
@@ -488,17 +526,28 @@ public sealed class Namespace
 
         var trimmed = name.Trim();
 
-        // Must end with .servicebus.windows.net for FQDN format
-        // Or be a simple name (alphanumeric and hyphens)
         if (trimmed.Contains('.'))
         {
-            return trimmed.EndsWith(".servicebus.windows.net", StringComparison.OrdinalIgnoreCase) ||
-                   trimmed.EndsWith(".servicebus.chinacloudapi.cn", StringComparison.OrdinalIgnoreCase) ||
-                   trimmed.EndsWith(".servicebus.usgovcloudapi.net", StringComparison.OrdinalIgnoreCase) ||
-                   trimmed.EndsWith(".servicebus.cloudapi.de", StringComparison.OrdinalIgnoreCase);
+            // Azure Service Bus
+            if (trimmed.EndsWith(".servicebus.windows.net", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.EndsWith(".servicebus.chinacloudapi.cn", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.EndsWith(".servicebus.usgovcloudapi.net", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.EndsWith(".servicebus.cloudapi.de", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // AWS SQS / SNS region endpoints (e.g., sqs.us-east-1.amazonaws.com)
+            if (trimmed.EndsWith(".amazonaws.com", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
         }
 
-        // Simple name validation: alphanumeric and hyphens, 6-50 chars
+        // Simple name validation: alphanumeric and hyphens, 6-50 chars.
+        // Covers Azure short names, GCP project IDs (6-30 chars, letters/digits/hyphens, starts with letter).
         return trimmed.Length >= 6 &&
                trimmed.Length <= 50 &&
                trimmed.All(c => char.IsLetterOrDigit(c) || c == '-') &&
@@ -508,6 +557,7 @@ public sealed class Namespace
 
     /// <summary>
     /// Validates the connection string format.
+    /// Accepts Azure SAS connection strings, AWS access key formats, and GCP service account JSON.
     /// </summary>
     private static bool IsValidConnectionString(string connectionString)
     {
@@ -516,12 +566,41 @@ public sealed class Namespace
             return false;
         }
 
-        // Basic validation: must contain Endpoint and SharedAccessKey or SharedAccessSignature
+        // Azure Service Bus: must contain Endpoint and SharedAccessKey/SharedAccessSignature
         var hasEndpoint = connectionString.Contains("Endpoint=", StringComparison.OrdinalIgnoreCase);
         var hasAuth = connectionString.Contains("SharedAccessKey=", StringComparison.OrdinalIgnoreCase) ||
                       connectionString.Contains("SharedAccessSignature=", StringComparison.OrdinalIgnoreCase);
+        if (hasEndpoint && hasAuth)
+        {
+            return true;
+        }
 
-        return hasEndpoint && hasAuth;
+        // AWS: explicit aws:// scheme OR static access key format (starts with AKIA/ASIA/AROA)
+        if (connectionString.StartsWith("aws://", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (connectionString.StartsWith("AKIA", StringComparison.Ordinal) ||
+            connectionString.StartsWith("ASIA", StringComparison.Ordinal) ||
+            connectionString.StartsWith("AROA", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        // GCP: explicit gcp:// scheme OR service account JSON key (JSON object containing "type")
+        if (connectionString.StartsWith("gcp://", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var trimmedCs = connectionString.TrimStart();
+        if (trimmedCs.StartsWith('{') && trimmedCs.Contains("\"type\"", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>

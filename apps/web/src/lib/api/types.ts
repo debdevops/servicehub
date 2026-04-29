@@ -1,6 +1,9 @@
 // Environment type matching backend EnvironmentType enum (camelCase, as serialized by API)
 export type EnvironmentType = 'dev' | 'uat' | 'prod';
 
+/** Cloud provider type — mirrors backend CloudProviderType enum (camelCase serialization). */
+export type CloudProviderType = 'azure' | 'aws' | 'gcp';
+
 /** Shape of errors returned by the axios API client. Used for typed error handling in hooks. */
 export type ApiError = {
   response?: {
@@ -24,6 +27,9 @@ export interface Namespace {
   hasSendPermission?: boolean;
   hasManagePermission?: boolean;
   environment?: EnvironmentType;
+  cloudProvider?: CloudProviderType;
+  awsRegion?: string;
+  gcpProjectId?: string;
 }
 
 export interface CreateNamespaceRequest {
@@ -32,6 +38,9 @@ export interface CreateNamespaceRequest {
   displayName?: string;
   description?: string;
   environment?: EnvironmentType;
+  cloudProvider?: CloudProviderType;
+  awsRegion?: string;
+  gcpProjectId?: string;
 }
 
 // Message DTOs (match your backend MessageResponse)
