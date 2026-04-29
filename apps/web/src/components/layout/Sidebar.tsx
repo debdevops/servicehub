@@ -16,6 +16,7 @@ import {
   Activity,
   HelpCircle,
   Shield,
+  Cloud,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useState } from 'react';
@@ -26,6 +27,7 @@ import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useInsightsSummary } from '@/hooks/useInsights';
 import { useQueries } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import type { CloudProviderType } from '@/lib/api/types';
 
 interface NamespaceItemProps {
   namespace: {
@@ -33,6 +35,7 @@ interface NamespaceItemProps {
     name: string;
     displayName?: string;
     isActive: boolean;
+    cloudProvider?: CloudProviderType;
   };
 }
 
@@ -238,6 +241,41 @@ function SubscriptionItem({ subscription, namespaceId, topicName }: Subscription
   );
 }
 
+/** Returns a small colored badge for the cloud provider of a namespace. */
+function ProviderBadge({ provider }: { provider?: CloudProviderType }) {
+  // Default to azure for namespaces created before multi-cloud support
+  const p = provider ?? 'azure';
+  if (p === 'aws') {
+    return (
+      <span
+        className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200"
+        title="Amazon Web Services"
+      >
+        AWS
+      </span>
+    );
+  }
+  if (p === 'gcp') {
+    return (
+      <span
+        className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700 border border-green-200"
+        title="Google Cloud Platform"
+      >
+        GCP
+      </span>
+    );
+  }
+  // Azure (default)
+  return (
+    <span
+      className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200"
+      title="Microsoft Azure"
+    >
+      AZ
+    </span>
+  );
+}
+
 function NamespaceSection({ namespace }: NamespaceItemProps) {
   const { data: queues, isLoading: queuesLoading, isError: queuesError } = useQueues(namespace.id);
   const { data: topics, isLoading: topicsLoading, isError: topicsError } = useTopics(namespace.id);
@@ -273,6 +311,7 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
           </div>
           <div className="text-xs text-gray-500 truncate">{namespace.name}</div>
         </div>
+        <ProviderBadge provider={namespace.cloudProvider} />
       </button>
 
       {/* Expanded Content */}
@@ -636,6 +675,19 @@ export function Sidebar() {
           >
             <Shield className="w-4 h-4 text-green-500" />
             <span className="flex-1 text-left">Security &amp; Privacy</span>
+          </NavLink>
+          <NavLink
+            to="/cloud-bridge"
+            className={({ isActive }) =>
+              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                isActive
+                  ? 'bg-blue-50 text-blue-700 border-blue-300'
+                  : 'bg-white hover:bg-blue-50 text-gray-700 hover:text-blue-700 border-gray-200 hover:border-blue-300'
+              }`
+            }
+          >
+            <Cloud className="w-4 h-4 text-blue-500" />
+            <span className="flex-1 text-left">Cloud Bridge</span>
           </NavLink>
         </nav>
         )}

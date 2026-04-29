@@ -1,0 +1,143 @@
+using Google.Api.Gax.ResourceNames;
+using Google.Cloud.PubSub.V1;
+using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
+using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
+using ServiceHub.Shared.Results;
+
+namespace ServiceHub.Infrastructure.Gcp;
+
+/// <summary>
+/// Implements <see cref="ICloudMessagingProvider"/> for GCP Pub/Sub.
+/// </summary>
+public sealed class GcpMessagingProvider : ICloudMessagingProvider
+{
+    private readonly IGcpClientFactory _clientFactory;
+    private readonly GcpMessageReceiver _receiver;
+    private readonly GcpMessageSender _sender;
+    private readonly INamespaceRepository _namespaceRepository;
+    private readonly ILogger<GcpMessagingProvider> _logger;
+
+    /// <summary>
+    /// Initialises a new instance of <see cref="GcpMessagingProvider"/>.
+    /// </summary>
+    /// <param name="clientFactory">Factory for creating Pub/Sub clients.</param>
+    /// <param name="receiver">The GCP message receiver.</param>
+    /// <param name="sender">The GCP message sender.</param>
+    /// <param name="namespaceRepository">Repository for namespace lookups.</param>
+    /// <param name="logger">Logger for diagnostic output.</param>
+    public GcpMessagingProvider(
+        IGcpClientFactory clientFactory,
+        GcpMessageReceiver receiver,
+        GcpMessageSender sender,
+        INamespaceRepository namespaceRepository,
+        ILogger<GcpMessagingProvider> logger)
+    {
+        _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
+        _receiver = receiver ?? throw new ArgumentNullException(nameof(receiver));
+        _sender = sender ?? throw new ArgumentNullException(nameof(sender));
+        _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <inheritdoc/>
+    public CloudProviderType ProviderType => CloudProviderType.Gcp;
+
+    /// <inheritdoc/>
+    public IMessageReceiver GetMessageReceiver() => _receiver;
+
+    /// <inheritdoc/>
+    public IMessageSender GetMessageSender() => _sender;
+
+    /// <inheritdoc/>
+    public async Task<Result> ValidateConnectionAsync(Namespace ns, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ns);
+        _logger.LogDebug("Validating GCP Pub/Sub connection for namespace {NamespaceId}", ns.Id);
+
+        if (string.IsNullOrWhiteSpace(ns.GcpProjectId))
+        {
+            return Result.Failure(Error.Validation("GCP.PubSub.NoProjectId",
+                "GCP Project ID is required. Set GcpProjectId on the namespace."));
+        }
+
+        try
+        {
+            // Attempt to list topics — validates credentials without requiring a specific topic.
+            var topicServiceClient = await PublisherServiceApiClient.CreateAsync(ct).ConfigureAwait(false);
+            var topics = topicServiceClient.ListTopicsAsync(new ProjectName(ns.GcpProjectId));
+
+            // Just check we can get the first page
+            await topics.AsRawResponses().FirstOrDefaultAsync(ct).ConfigureAwait(false);
+
+            _logger.LogInformation("GCP Pub/Sub connection validated for namespace {NamespaceId}", ns.Id);
+            return Result.Success();
+        }
+        catch (Grpc.Core.RpcException ex) when (ex.Status.StatusCode is Grpc.Core.StatusCode.Unauthenticated or Grpc.Core.StatusCode.PermissionDenied)
+        {
+            _logger.LogWarning("GCP auth validation failed for namespace {NamespaceId}: {Status}", ns.Id, ex.Status);
+            return Result.Failure(Error.Validation("GCP.PubSub.AuthFailed",
+                $"GCP credential validation failed: {ex.Status.Detail}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error validating GCP connection for namespace {NamespaceId}", ns.Id);
+            return Result.Failure(Error.ExternalService("GCP.PubSub.ValidationFailed", ex.Message));
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<IReadOnlyList<CloudEntity>>> ListEntitiesAsync(Guid namespaceId, CancellationToken ct)
+    {
+        var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, ct).ConfigureAwait(false);
+        if (nsResult.IsFailure)
+            return Result.Failure<IReadOnlyList<CloudEntity>>(nsResult.Error);
+
+        var ns = nsResult.Value;
+
+        if (string.IsNullOrWhiteSpace(ns.GcpProjectId))
+            return Result.Failure<IReadOnlyList<CloudEntity>>(Error.Validation(
+                "GCP.PubSub.NoProjectId", "GCP Project ID is required."));
+
+        var entities = new List<CloudEntity>();
+
+        try
+        {
+            var topicClient = await PublisherServiceApiClient.CreateAsync(ct).ConfigureAwait(false);
+            var subClient = await SubscriberServiceApiClient.CreateAsync(ct).ConfigureAwait(false);
+            var project = new ProjectName(ns.GcpProjectId);
+
+            // List topics
+            await foreach (var topic in topicClient.ListTopicsAsync(project).WithCancellation(ct))
+            {
+                entities.Add(new CloudEntity
+                {
+                    Name = topic.TopicName.TopicId,
+                    EntityType = "Topic",
+                    Provider = CloudProviderType.Gcp
+                });
+            }
+
+            // List subscriptions
+            await foreach (var sub in subClient.ListSubscriptionsAsync(project).WithCancellation(ct))
+            {
+                entities.Add(new CloudEntity
+                {
+                    Name = sub.SubscriptionName.SubscriptionId,
+                    EntityType = "Subscription",
+                    Provider = CloudProviderType.Gcp
+                });
+            }
+
+            return Result.Success<IReadOnlyList<CloudEntity>>(entities);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Error listing GCP Pub/Sub entities for namespace {NamespaceId}", namespaceId);
+            return Result.Failure<IReadOnlyList<CloudEntity>>(
+                Error.ExternalService("GCP.PubSub.ListFailed", ex.Message));
+        }
+    }
+}

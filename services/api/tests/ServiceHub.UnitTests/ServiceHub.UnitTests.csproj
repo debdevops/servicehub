@@ -32,6 +32,8 @@
     <ProjectReference Include="..\..\src\ServiceHub.Api\ServiceHub.Api.csproj" />
     <ProjectReference Include="..\..\src\ServiceHub.Core\ServiceHub.Core.csproj" />
     <ProjectReference Include="..\..\src\ServiceHub.Infrastructure\ServiceHub.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\ServiceHub.Infrastructure.Aws\ServiceHub.Infrastructure.Aws.csproj" />
+    <ProjectReference Include="..\..\src\ServiceHub.Infrastructure.Gcp\ServiceHub.Infrastructure.Gcp.csproj" />
     <ProjectReference Include="..\..\src\ServiceHub.Shared\ServiceHub.Shared.csproj" />
   </ItemGroup>
 

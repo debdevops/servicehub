@@ -1,0 +1,119 @@
+using FluentAssertions;
+using Google.Cloud.PubSub.V1;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using ServiceHub.Core.DTOs.Requests;
+using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
+using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Gcp;
+using ServiceHub.Shared.Results;
+
+namespace ServiceHub.UnitTests.Infrastructure.Gcp;
+
+public sealed class GcpMessageReceiverTests
+{
+    private static readonly Guid TestNamespaceId = Guid.NewGuid();
+
+    private static Namespace BuildNamespace()
+    {
+        return Namespace.Create(
+            "test-gcp-ns",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=P;SharedAccessKey=abc=",
+            provider: CloudProviderType.Gcp,
+            gcpProjectId: "my-project").Value;
+    }
+
+    // -------------------------------------------------------------------------
+    // Constructor
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Constructor_WithValidDependencies_DoesNotThrow()
+    {
+        var factory = new Mock<IGcpClientFactory>();
+        var repo = new Mock<INamespaceRepository>();
+        var act = () => new GcpMessageReceiver(factory.Object, repo.Object, NullLogger<GcpMessageReceiver>.Instance);
+        act.Should().NotThrow();
+    }
+
+    // -------------------------------------------------------------------------
+    // GetMessageCountAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetMessageCountAsync_AlwaysReturnsSuccess_WithUnsupportedIndicator()
+    {
+        // GCP Pub/Sub does not support exact message counts — the receiver returns -1 to indicate N/A.
+        var factory = new Mock<IGcpClientFactory>();
+        var repo = new Mock<INamespaceRepository>();
+
+        var sut = new GcpMessageReceiver(factory.Object, repo.Object, NullLogger<GcpMessageReceiver>.Instance);
+
+        var result = await sut.GetMessageCountAsync(
+            TestNamespaceId, "my-subscription", null, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(-1L);
+    }
+
+    [Fact]
+    public async Task PeekMessagesAsync_WhenNamespaceNotFound_ReturnsFailure()
+    {
+        var factory = new Mock<IGcpClientFactory>();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<Namespace>(Error.NotFound("NS.NotFound", "Namespace not found")));
+
+        var sut = new GcpMessageReceiver(factory.Object, repo.Object, NullLogger<GcpMessageReceiver>.Instance);
+
+        var result = await sut.PeekMessagesAsync(
+            new GetMessagesRequest(TestNamespaceId, "my-subscription", null, false, 10),
+            CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+    }
+
+    // -------------------------------------------------------------------------
+    // GetAckDeadlineStatusAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetAckDeadlineStatusAsync_WhenNamespaceNotFound_ReturnsFailure()
+    {
+        var factory = new Mock<IGcpClientFactory>();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<Namespace>(Error.NotFound("NS.NotFound", "Namespace not found")));
+
+        var sut = new GcpMessageReceiver(factory.Object, repo.Object, NullLogger<GcpMessageReceiver>.Instance);
+
+        var result = await sut.GetAckDeadlineStatusAsync(
+            TestNamespaceId, "my-subscription", CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().Be("NS.NotFound");
+    }
+
+    [Fact]
+    public async Task GetAckDeadlineStatusAsync_WhenSubscriberThrows_ReturnsExternalServiceFailure()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        // Subscriber client throws when getting subscription
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetSubscriberClientAsync(It.IsAny<Namespace>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Grpc.Core.RpcException(new Grpc.Core.Status(Grpc.Core.StatusCode.Unavailable, "Service unavailable")));
+
+        var sut = new GcpMessageReceiver(factory.Object, repo.Object, NullLogger<GcpMessageReceiver>.Instance);
+
+        var result = await sut.GetAckDeadlineStatusAsync(
+            TestNamespaceId, "my-subscription", CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().StartWith("GCP.PubSub");
+    }
+}

@@ -20,7 +20,13 @@ export const namespacesApi = {
 
   // POST /api/v1/namespaces
   create: async (data: CreateNamespaceRequest): Promise<Namespace> => {
-    const response = await apiClient.post<Namespace>('/namespaces', data);
+    const response = await apiClient.post<Namespace>('/namespaces', {
+      ...data,
+      // Explicitly forward cloud provider fields so tree-shaking doesn't accidentally drop them
+      provider: data.cloudProvider,
+      awsRegion: data.awsRegion,
+      gcpProjectId: data.gcpProjectId,
+    });
     return response.data;
   },
 
