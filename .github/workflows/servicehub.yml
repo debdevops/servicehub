@@ -236,7 +236,7 @@ jobs:
         run: |
           echo "Waiting for API to be ready..."
           for i in $(seq 1 60); do
-            if curl -sf http://localhost:5200/health > /dev/null 2>&1; then
+            if curl -sf http://localhost:5200/health/live > /dev/null 2>&1; then
               echo "API is ready after ${i}s"
               exit 0
             fi
