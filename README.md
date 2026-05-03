@@ -82,17 +82,12 @@ Connect to a cloud provider via **Settings → Cloud Bridge**. The same forensic
 The Simulator starts 3 synthetic namespaces (Azure + AWS + GCP) and seeds them with realistic messages. Use it for demos, training, or testing replay rules without any cloud credentials.
 
 ```bash
-# Terminal 1 — Start API in Simulator mode
-ASPNETCORE_ENVIRONMENT=Simulator dotnet run \
-  --project services/api/src/ServiceHub.Api/ServiceHub.Api.csproj \
-  --no-launch-profile \
-  --urls http://localhost:5200
-
-# Terminal 2 — Start UI
-cd apps/web && npm run dev
+./run.sh --simulator
 ```
 
-Then open `http://localhost:3000` and navigate to **Simulator** in the sidebar. See [SIMULATOR.md](SIMULATOR.md) for the full guide.
+Open `http://localhost:3000` and navigate to **Simulator** in the sidebar.
+
+No cloud account needed. Three namespaces are seeded automatically: **Azure (contoso)**, **AWS (acme)**, **GCP (globex)** — each with 50 realistic messages across Active queues and Dead-Letter. See [SIMULATOR.md](SIMULATOR.md) for the full guide.
 
 ---
 
@@ -310,7 +305,7 @@ az servicebus namespace authorization-rule create \
 Browser (React 19 SPA)
   └── TanStack Query hooks (useMessages, useQueues, useRules, …)
         └── Axios API client → Vite dev proxy
-              └── ASP.NET Core 10 API (port 5153)
+              └── ASP.NET Core 10 API
                     ├── NamespacesController   → AES-GCM encrypted connections
                     ├── MessagesController     → PeekMessagesAsync (read-only)
                     ├── QueuesController       → queue metadata + counts
@@ -319,9 +314,19 @@ Browser (React 19 SPA)
                     ├── RulesController        → auto-replay rule engine
                     ├── ScheduledMessagesController
                     ├── CorrelationController  → cross-queue message tracing
-                    └── HealthController       → runtime health metrics
-                          └── Azure.Messaging.ServiceBus SDK
+                    ├── HealthController       → runtime health metrics
+                    └── SimulatorController    → seeded demo data (no credentials)
+                          ├── Azure.Messaging.ServiceBus SDK  (port 5153)
+                          ├── AWSSDK.SQS / AWSSDK.SNS         (Cloud Bridge)
+                          └── Google.Cloud.PubSub.V1           (Cloud Bridge)
 ```
+
+**Startup modes:**
+
+| Mode | Command | API Port | Credentials needed |
+|------|---------|----------|--------------------|
+| Development | `./run.sh` | 5153 | Azure Service Bus connection string |
+| Simulator | `./run.sh --simulator` | 5200 | None — synthetic data seeded automatically |
 
 **Project layout:**
 ```
@@ -350,9 +355,11 @@ servicehub/
 |---|---|
 | Frontend | React 19, TypeScript 5, Tailwind CSS v4, TanStack Query v5 |
 | Backend | ASP.NET Core 10, Azure.Messaging.ServiceBus SDK |
+| Multi-cloud | AWSSDK.SQS/SNS (AWS), Google.Cloud.PubSub.V1 (GCP) |
 | AI Analysis | Client-side heuristic engine (no external API calls) |
 | Database | SQLite (DLQ Intelligence history), in-memory message cache |
 | API Docs | Scalar (OpenAPI) + Swagger UI |
+| Testing | Vitest 4 + @testing-library/react (unit) · Playwright (E2E) |
 | Security | AES-GCM encrypted connections, HMAC SPA token, read-only by default |
 
 For deep-dive architecture details, see [services/api/ARCHITECTURE.md](services/api/ARCHITECTURE.md).
@@ -503,9 +510,25 @@ Bug fixes, features, and documentation improvements are all welcome.
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes with tests (`cd apps/web && npm run test:coverage`)
+3. Make your changes with tests:
+   ```bash
+   # Unit tests (Vitest — 1024 tests, ~60% coverage required)
+   cd apps/web && npm run test:coverage
+
+   # Backend tests (xUnit)
+   cd services/api && dotnet test
+
+   # E2E tests (Playwright — requires `./run.sh` or `./run.sh --simulator` running)
+   cd apps/web && npm run test:e2e
+   ```
 4. Commit and push
 5. Open a Pull Request
+
+**CI gates** (all must pass before merge):
+- Backend build + 1,096 xUnit tests
+- Frontend build + 1,024 Vitest tests (≥60% line/function coverage)
+- TypeScript strict-mode check (`tsc --noEmit`)
+- Playwright E2E suite (16 journeys — simulator-dependent tests skip gracefully)
 
 ---
 
