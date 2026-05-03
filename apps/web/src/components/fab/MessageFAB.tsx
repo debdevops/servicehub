@@ -321,6 +321,8 @@ export function MessageFAB({
             <div className="p-2 bg-sky-100 rounded-lg group-hover:bg-sky-200 transition-colors">
               <Send className="w-5 h-5 text-sky-600" />
             </div>
+            <div className="text-left">
+              <div className="text-sm font-semibold text-gray-800">Send Message</div>
               <div className="text-xs text-gray-500">Send a single message</div>
             </div>
           </button>

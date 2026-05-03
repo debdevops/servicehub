@@ -18,6 +18,7 @@ const DlqHistoryPageLazy = lazy(() => import('./pages/DlqHistoryPage'));
 const CorrelationExplorerPageLazy = lazy(() => import('./pages/CorrelationExplorerPage'));
 const InsightsPageLazy = lazy(() => import('./pages/InsightsPage').then(m => ({ default: m.InsightsPage })));
 const CloudBridgePageLazy = lazy(() => import('./pages/CloudBridgePage').then(m => ({ default: m.CloudBridgePage })));
+const SimulatorPageLazy = lazy(() => import('./pages/SimulatorPage').then(m => ({ default: m.SimulatorPage })));
 
 // Loading fallback component (co-located here intentionally — used only by router)
 // eslint-disable-next-line react-refresh/only-export-components
@@ -103,6 +104,14 @@ export const router = createBrowserRouter([
         element: (
           <Suspense fallback={<PageLoading />}>
             <CloudBridgePageLazy />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'simulator',
+        element: (
+          <Suspense fallback={<PageLoading />}>
+            <SimulatorPageLazy />
           </Suspense>
         ),
       },

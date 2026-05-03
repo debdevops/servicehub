@@ -18,7 +18,6 @@ import {
   Play,
 } from 'lucide-react';
 
-const LIVE_APP_URL = 'https://app-servicehub-prod.azurewebsites.net/';
 const GITHUB_URL = 'https://github.com/debdevops/servicehub';
 
 const CLOUD_PROVIDERS = [
@@ -44,7 +43,7 @@ const CLOUD_PROVIDERS = [
       '30-day DLQ history',
     ],
     demoUrl: '/messages?demo=azure',
-    demoLabel: 'Try Azure Demo',
+    demoLabel: '▶ Open Azure Demo (50 messages)',
     demoColor: 'bg-blue-600 hover:bg-blue-700',
     status: 'production',
   },
@@ -70,7 +69,7 @@ const CLOUD_PROVIDERS = [
       'IAM & STS auth support',
     ],
     demoUrl: '/messages?demo=aws',
-    demoLabel: 'Try AWS Demo',
+    demoLabel: '▶ Open AWS Demo (50 messages)',
     demoColor: 'bg-orange-500 hover:bg-orange-600',
     status: 'preview',
   },
@@ -96,7 +95,7 @@ const CLOUD_PROVIDERS = [
       'Workload Identity support',
     ],
     demoUrl: '/messages?demo=gcp',
-    demoLabel: 'Try GCP Demo',
+    demoLabel: '▶ Open GCP Demo (50 messages)',
     demoColor: 'bg-green-600 hover:bg-green-700',
     status: 'preview',
   },
@@ -188,7 +187,6 @@ const COMPARISON_ROWS = [
 
 export function WelcomePage() {
   const navigate = useNavigate();
-  void LIVE_APP_URL;
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 font-sans">
@@ -552,7 +550,7 @@ export function WelcomePage() {
       {/* Demo Trio */}
       <section className="py-20 px-6 bg-gray-50/60">
         <div className="max-w-5xl mx-auto text-center">
-          <h2 className="text-3xl font-bold text-gray-900 mb-4">Try a Live Demo \u2014 No Credentials Needed</h2>
+          <h2 className="text-3xl font-bold text-gray-900 mb-4">Try a Live Demo — No Credentials Needed</h2>
           <p className="text-gray-500 mb-10 max-w-xl mx-auto">
             Each demo has 50 production-realistic messages, DLQ scenarios, and AI root-cause analysis. Pick your cloud.
           </p>
@@ -681,7 +679,7 @@ export function WelcomePage() {
               ServiceHub is open source, free to use, and MIT licensed. Made with \u2764\uFE0F by{' '}
               <a href="https://github.com/debdevops" className="text-blue-400 hover:underline font-medium">Debasis</a>
             </p>
-            <p>\u00a9 2026 ServiceHub \u00b7 All rights reserved</p>
+            <p>© 2026 ServiceHub · All rights reserved</p>
           </div>
         </div>
       </footer>

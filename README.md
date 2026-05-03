@@ -2,9 +2,9 @@
 
 # ServiceHub
 
-### The Forensic Debugger for Azure Service Bus
+### The Forensic Debugger for Cloud Messaging — Azure Service Bus, AWS SQS/SNS, GCP Pub/Sub
 
-**See what's REALLY inside your queues. Browse, search, replay, and analyze messages in real time — everything the Azure Portal can't show you.**
+**See what's REALLY inside your queues. Browse, search, replay, and analyze messages in real time — across Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub — everything your cloud portal can't show you.**
 
 </div>
 
@@ -46,7 +46,9 @@
 
 Production breaks at 2 AM. Azure Portal shows **5,000 messages in Dead-Letter Queue** — but you can't read them, only counts. You manually sample messages one by one, spending hours on what should take minutes.
 
-**ServiceHub is a self-hosted web application that gives engineers full forensic visibility into Azure Service Bus** — like a debugger, but for your message queues.
+**ServiceHub is a self-hosted web application that gives engineers full forensic visibility into their cloud message queues** — like a debugger, but for Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub.
+
+> 🧪 **No credentials?** Try the built-in [Simulator Mode](#-try-without-credentials--simulator-mode) — runs 3 synthetic namespaces (Azure + AWS + GCP) with 50 seeded messages each. No cloud account needed.
 
 | Capability | Azure Portal | ServiceHub |
 |---|---|---|
@@ -58,6 +60,39 @@ Production breaks at 2 AM. Azure Portal shows **5,000 messages in Dead-Letter Qu
 | Multi-namespace support | ❌ Portal only | ✅ Manage multiple connections |
 | Correlation ID tracing | ❌ Not available | ✅ Trace journeys across all queues |
 | Scheduled message management | ❌ Not available | ✅ View, reschedule, and cancel |
+
+---
+
+## 🌐 Multi-Cloud Support (Preview)
+
+ServiceHub v3.1.0 extends beyond Azure Service Bus to support **AWS SQS/SNS** and **GCP Pub/Sub** via the Cloud Bridge.
+
+| Provider | Status | Queues | Dead-Letter | Replay |
+|----------|--------|--------|-------------|--------|
+| Azure Service Bus | ✅ GA | ✅ | ✅ | ✅ |
+| AWS SQS / SNS | 🔶 Preview | ✅ | ✅ (MaxReceive) | ✅ |
+| GCP Pub/Sub | 🔶 Preview | ✅ | ✅ (nack/ack deadline) | ✅ |
+
+Connect to a cloud provider via **Settings → Cloud Bridge**. The same forensic tools (DLQ Intelligence, Correlation Explorer, AI Insights) work across all three clouds. Provider badges in the DLQ History table show which cloud each message originated from.
+
+---
+
+## 🧪 Try Without Credentials — Simulator Mode
+
+The Simulator starts 3 synthetic namespaces (Azure + AWS + GCP) and seeds them with realistic messages. Use it for demos, training, or testing replay rules without any cloud credentials.
+
+```bash
+# Terminal 1 — Start API in Simulator mode
+ASPNETCORE_ENVIRONMENT=Simulator dotnet run \
+  --project services/api/src/ServiceHub.Api/ServiceHub.Api.csproj \
+  --no-launch-profile \
+  --urls http://localhost:5200
+
+# Terminal 2 — Start UI
+cd apps/web && npm run dev
+```
+
+Then open `http://localhost:3000` and navigate to **Simulator** in the sidebar. See [SIMULATOR.md](SIMULATOR.md) for the full guide.
 
 ---
 

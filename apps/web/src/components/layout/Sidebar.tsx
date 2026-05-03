@@ -17,6 +17,7 @@ import {
   HelpCircle,
   Shield,
   Cloud,
+  FlaskConical,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useState } from 'react';
@@ -25,8 +26,10 @@ import { useQueues } from '@/hooks/useQueues';
 import { useTopics } from '@/hooks/useTopics';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useInsightsSummary } from '@/hooks/useInsights';
+import { useIsSimulatorMode } from '@/hooks/useSimulator';
 import { useQueries } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { ProviderBadge } from '@/components/ProviderBadge';
 import type { CloudProviderType } from '@/lib/api/types';
 
 interface NamespaceItemProps {
@@ -241,41 +244,6 @@ function SubscriptionItem({ subscription, namespaceId, topicName }: Subscription
   );
 }
 
-/** Returns a small colored badge for the cloud provider of a namespace. */
-function ProviderBadge({ provider }: { provider?: CloudProviderType }) {
-  // Default to azure for namespaces created before multi-cloud support
-  const p = provider ?? 'azure';
-  if (p === 'aws') {
-    return (
-      <span
-        className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200"
-        title="Amazon Web Services"
-      >
-        AWS
-      </span>
-    );
-  }
-  if (p === 'gcp') {
-    return (
-      <span
-        className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700 border border-green-200"
-        title="Google Cloud Platform"
-      >
-        GCP
-      </span>
-    );
-  }
-  // Azure (default)
-  return (
-    <span
-      className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200"
-      title="Microsoft Azure"
-    >
-      AZ
-    </span>
-  );
-}
-
 function NamespaceSection({ namespace }: NamespaceItemProps) {
   const { data: queues, isLoading: queuesLoading, isError: queuesError } = useQueues(namespace.id);
   const { data: topics, isLoading: topicsLoading, isError: topicsError } = useTopics(namespace.id);
@@ -400,6 +368,7 @@ export function Sidebar() {
   const navigate = useNavigate();
   const { data: namespaces, isLoading, refetch } = useNamespaces();
   const [quickAccessOpen, setQuickAccessOpen] = useState(false);
+  const { isSimulator } = useIsSimulatorMode();
   
   // Detect demo mode from URL
   const isDemo = new URLSearchParams(window.location.search).get('demo') === 'true';
@@ -689,6 +658,22 @@ export function Sidebar() {
             <Cloud className="w-4 h-4 text-blue-500" />
             <span className="flex-1 text-left">Cloud Bridge</span>
           </NavLink>
+          {isSimulator && (
+            <NavLink
+              to="/simulator"
+              className={({ isActive }) =>
+                `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                  isActive
+                    ? 'bg-amber-50 text-amber-700 border-amber-300'
+                    : 'bg-white hover:bg-amber-50 text-gray-700 hover:text-amber-700 border-gray-200 hover:border-amber-300'
+                }`
+              }
+            >
+              <FlaskConical className="w-4 h-4 text-amber-500" />
+              <span className="flex-1 text-left">Simulator</span>
+              <span className="text-xs text-amber-600 font-medium">⚗️</span>
+            </NavLink>
+          )}
         </nav>
         )}
       </div>

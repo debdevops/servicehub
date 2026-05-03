@@ -130,6 +130,7 @@ export function DlqHistoryPage() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>();
   const [entityFilter, setEntityFilter] = useState('');
+  const [providerFilter, setProviderFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTimelineId, setSelectedTimelineId] = useState<number | null>(null);
@@ -190,6 +191,7 @@ export function DlqHistoryPage() {
     setStatusFilter(undefined);
     setCategoryFilter(undefined);
     setEntityFilter('');
+    setProviderFilter('all');
     setPage(1);
   };
 
@@ -390,6 +392,24 @@ export function DlqHistoryPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
             </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">Cloud Provider</label>
+              <div className="flex gap-1.5 flex-wrap">
+                {(['all', 'azure', 'aws', 'gcp'] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setProviderFilter(p)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                      providerFilter === p
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                    }`}
+                  >
+                    {p === 'all' ? 'All' : p.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -397,7 +417,7 @@ export function DlqHistoryPage() {
       {/* Table */}
       <div className="flex-1 overflow-y-auto p-6">
         <DlqHistoryTable
-          items={data?.items ?? []}
+          items={(data?.items ?? []).filter(item => providerFilter === 'all' || (item.cloudProvider ?? 'azure').toLowerCase() === providerFilter)}
           totalCount={data?.totalCount ?? 0}
           page={page}
           pageSize={pageSize}

@@ -61,7 +61,8 @@ describe('ConnectPage', () => {
 
   it('shows "Connect to Service Bus" heading', () => {
     renderConnectPage();
-    expect(screen.getByText('Connect to Service Bus')).toBeInTheDocument();
+    // Multi-cloud rewrite: heading is now "Connect to Cloud Messaging"
+    expect(screen.getByText(/connect to cloud messaging/i)).toBeInTheDocument();
   });
 
   it('updates display name input value on change', () => {
