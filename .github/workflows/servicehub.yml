@@ -23,6 +23,7 @@ on:
 env:
   DOTNET_VERSION: '10.0.x'
   NODE_VERSION: '22.x'
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build-and-test-backend:
@@ -220,21 +221,22 @@ jobs:
         run: dotnet build services/api/ServiceHub.sln --no-restore --configuration Release
 
       - name: Start API in Simulator mode
+        env:
+          ASPNETCORE_ENVIRONMENT: Simulator
+          ASPNETCORE_URLS: http://localhost:5200
         run: |
           dotnet run \
             --project services/api/src/ServiceHub.Api/ServiceHub.Api.csproj \
-            --configuration Release \
-            --no-launch-profile \
-            --environment Simulator \
-            --urls http://localhost:5200 &
+            --no-build \
+            --no-launch-profile &
           echo "API_PID=$!" >> $GITHUB_ENV
 
       - name: Wait for API health check
         run: |
           echo "Waiting for API to be ready..."
-          timeout 60 bash -c '
+          timeout 120 bash -c '
             until curl -sf http://localhost:5200/health; do
-              sleep 1
+              sleep 2
             done
           '
           echo "API is ready"
@@ -270,6 +272,7 @@ jobs:
           name: playwright-report-${{ github.run_number }}
           path: apps/web/playwright-report/
           retention-days: 14
+          if-no-files-found: ignore
 
       - name: Upload Playwright test results
         if: always()
@@ -278,6 +281,7 @@ jobs:
           name: playwright-results-${{ github.run_number }}
           path: apps/web/test-results/
           retention-days: 7
+          if-no-files-found: ignore
 
       - name: Stop API
         if: always()
