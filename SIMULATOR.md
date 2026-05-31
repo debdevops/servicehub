@@ -78,6 +78,8 @@ Navigate to `/simulator` in the UI to access the control panel:
 | **DLQ Flood** | Inject 1–50 realistic DLQ messages into any entity for dashboard testing |
 | **Reset & Reseed** | Wipe all state and reseed to the default dataset |
 
+> **Tip:** With all three simulator namespaces connected, the **Multi-Cloud Trace** page (`/cross-cloud-trace`) becomes available in the sidebar. Enter any of the seeded Correlation IDs to see the cross-cloud routing diagram.
+
 ---
 
 ## Running Tests Against Simulator
@@ -85,10 +87,10 @@ Navigate to `/simulator` in the UI to access the control panel:
 Frontend tests mock all API calls and do not require the API to be running.
 
 ```bash
-# Unit + component tests
-cd apps/web && npm run test -- --run
+# Unit + component tests (Vitest)
+cd apps/web && npm run test:coverage
 
-# Backend unit tests
+# Backend unit tests (xUnit)
 cd services/api && dotnet test tests/ServiceHub.UnitTests
 
 # Backend integration tests (use default test environment, not Simulator)
