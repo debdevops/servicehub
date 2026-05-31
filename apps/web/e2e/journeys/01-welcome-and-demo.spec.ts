@@ -20,9 +20,11 @@ test('azure demo loads 50 messages without credentials', async ({ page }) => {
   await expect(
     page.getByText(/Azure Service Bus Demo/i).or(page.getByText(/Contoso/i))
   ).toBeVisible({ timeout: 10_000 });
-  // DLQ tab should be visible
+  // DLQ tab/button should be visible — use role selectors only to avoid matching
+  // subtitle text that also contains "Dead-Letter"
   await expect(
-    page.getByRole('tab', { name: /dead.?letter/i }).or(page.getByText(/Dead.?Letter/i))
+    page.getByRole('tab', { name: /dead.?letter/i })
+      .or(page.getByRole('button', { name: /dead.?letter/i }))
   ).toBeVisible();
 });
 
