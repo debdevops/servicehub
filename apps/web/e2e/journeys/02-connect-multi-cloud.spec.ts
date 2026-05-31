@@ -25,8 +25,9 @@ test('selecting Azure shows connection string field (default)', async ({ page })
 
 test('selecting AWS shows AWS-specific credential fields', async ({ page }) => {
   await page.goto('/connect');
-  // Click the AWS cloud selector button
-  await page.getByRole('button', { name: /AWS/i }).first().click();
+  // Click the AWS cloud selector button — use the title attribute for an unambiguous
+  // selector that cannot match saved-connection cards or demo callout buttons.
+  await page.getByTitle('Amazon Web Services SQS').click();
   // Access Key ID field
   await expect(
     page.getByPlaceholder('AKIAIOSFODNN7EXAMPLE')
@@ -45,14 +46,14 @@ test('selecting AWS shows AWS-specific credential fields', async ({ page }) => {
 
 test('selecting GCP shows GCP-specific fields', async ({ page }) => {
   await page.goto('/connect');
-  await page.getByRole('button', { name: /GCP/i }).first().click();
+  await page.getByTitle('Google Cloud Pub/Sub').click();
   // GCP Project ID field — exact placeholder to avoid ambiguity
   await expect(page.getByPlaceholder('my-project-123')).toBeVisible();
 });
 
 test('AWS region field has a default value', async ({ page }) => {
   await page.goto('/connect');
-  await page.getByRole('button', { name: /AWS/i }).first().click();
+  await page.getByTitle('Amazon Web Services SQS').click();
   // The AWS region select must be present and show us-east-1 as default
   const regionSelect = page.locator('select').first();
   await expect(regionSelect).toBeVisible();
