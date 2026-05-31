@@ -130,6 +130,12 @@ export default defineConfig({
         'src/lib/api/types.ts',
         // single-line QueryClient instantiation
         'src/lib/queryClient.ts',
+        // thin API wrapper — no testable logic beyond axios delegation
+        'src/lib/api/crossCloudTrace.ts',
+        // demo / showcase pages — pure UI display with hardcoded data, no business logic
+        'src/pages/AwsDemoPage.tsx',
+        'src/pages/GcpDemoPage.tsx',
+        'src/pages/SimulatorPage.tsx',
       ],
       // ── Code Coverage Thresholds ────────────────────────────────────────
       // BUILD WILL FAIL if coverage falls below these minimums
