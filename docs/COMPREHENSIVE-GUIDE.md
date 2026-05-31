@@ -1,10 +1,10 @@
 # ServiceHub — Comprehensive Guide
 
 **A Complete Guide for Novices and Experts**  
-*Understanding Azure Service Bus Inspection Made Simple*
+*Understanding Multi-Cloud Messaging Inspection Made Simple*
 
-**Version:** 3.1.0 (April 2026) — DLQ Intelligence, Auto-Replay & Multi-Namespace Support  
-**New Features:** Persistent DLQ tracking, Auto-replay rules, Batch replay operations
+**Version:** 3.2.0 (May 2026) — Multi-Cloud Support, Cross-Cloud Message Trace & Enhanced Testing  
+**New Features:** Cross-cloud trace, AWS/GCP demo environments, expanded test suite (1,045 frontend + 1,362 backend tests)
 
 ---
 
@@ -22,6 +22,7 @@
 10. [Security & Authentication](#security--authentication)
 11. [DLQ Intelligence System](#dlq-intelligence-system) ⭐ NEW
 12. [Auto-Replay Rules Engine](#auto-replay-rules-engine) ⭐ NEW
+13. [Cross-Cloud Message Trace](#cross-cloud-message-trace) ⭐ NEW
 
 ---
 
@@ -1464,4 +1465,4 @@ ServiceHub solves a critical problem for teams using Azure Service Bus: **visibi
 ---
 
 *Last Updated: April 2026*  
-*Version: 3.1.0*
+*Version: 3.2.0*
