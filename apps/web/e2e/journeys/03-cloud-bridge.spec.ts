@@ -29,12 +29,12 @@ test('cloud bridge shows AWS and GCP providers when simulator is running', async
 
   await page.goto('/cloud-bridge');
   if (simulatorRunning) {
-    await expect(
-      page.getByText('AWS').first().or(page.getByText(/SQS/i))
-    ).toBeVisible({ timeout: 10_000 });
-    await expect(
-      page.getByText('GCP').first().or(page.getByText(/Pub\/Sub/i))
-    ).toBeVisible({ timeout: 10_000 });
+    const mainContent = page.locator('main');
+    const providerCards = mainContent.locator('div.rounded-lg.px-4.py-2.text-sm.font-medium.border');
+
+    await expect(mainContent.getByRole('heading', { name: 'Provider Status' })).toBeVisible({ timeout: 10_000 });
+    await expect(providerCards.filter({ hasText: /AWS SQS \/ SNS/ }).first()).toBeVisible({ timeout: 10_000 });
+    await expect(providerCards.filter({ hasText: /GCP Pub\/Sub/ }).first()).toBeVisible({ timeout: 10_000 });
   } else {
     // Without simulator, page should still render gracefully
     await expect(page.getByText(/Cloud Bridge/i)).toBeVisible();
