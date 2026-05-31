@@ -136,7 +136,7 @@ describe('WelcomePage', () => {
     // Multi-cloud rewrite: step 1 renamed to "Choose Your Cloud"
     expect(screen.getAllByText(/choose your cloud/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/browse & analyse/i)).toBeInTheDocument();
-    expect(screen.getByText(/replay & recover/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/replay & recover/i).length).toBeGreaterThan(0);
   });
 
   it('shows the one-liner git clone command', () => {

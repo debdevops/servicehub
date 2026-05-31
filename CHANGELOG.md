@@ -1,5 +1,19 @@
 # ServiceHub Changelog
 
+## [3.2.0] — 2026-04-13
+
+### Added
+- **Dedicated AWS SQS/SNS Demo page** (`/demo/aws`) — fully standalone orange-branded UI with SQS queue sidebar, SNS topics section, Standard/FIFO queue type labels, Message Attributes panel, SQS Metadata panel, and AI root-cause analysis. Scenario: AcmeRetail E-Commerce Black Friday payment cascade failure.
+- **Dedicated GCP Pub/Sub Demo page** (`/demo/gcp`) — fully standalone green-branded UI with expandable Topics tree, subscriptions nested under each topic, Dead-Letter Topic (DLT) tab, Pub/Sub Attributes panel, Subscription Metadata panel (AckDeadline, MaxDeliveryAttempts, RetainAckedMessages), and AI root-cause analysis. Scenario: MedStream Healthcare HIPAA lab results pipeline.
+- **Multi-platform message flow diagram** on WelcomePage — visual architecture diagram showing Azure SDK, AWS SDK, and GCP SDK all converging into the ServiceHub Unified Debug Hub.
+- **Cloud provider badge** in the main Header — colored pill showing `Az` (blue), `AWS` (orange), or `GCP` (green) alongside the namespace name when connected.
+
+### Changed
+- **WelcomePage re-themed** from dark slate to light sky-blue and white — matches the inside application pages. Header, hero, sections, footer, and all text/link colors updated.
+- **Demo routing fixed** — AWS and GCP demo buttons on WelcomePage now navigate to dedicated `/demo/aws` and `/demo/gcp` pages instead of the shared MessagesPage.
+- **MessagesPage demo banner** is now provider-specific: orange for AWS (SQS terminology), green for GCP (Pub/Sub terminology), sky-blue for Azure.
+- Version badge updated to `v3.2.0` throughout WelcomePage.
+
 ## [3.1.0] — 2026-04-07
 
 ### Fixed

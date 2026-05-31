@@ -80,7 +80,7 @@ export function MainLayout() {
   // Resolve current namespace to check environment and permissions
   const { data: namespaces } = useNamespaces();
   const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
-  // FAB only visible in DEV with Manage permission (required for send, generate, and dead-letter)
+  // FAB: only in DEV environment with Manage (write) permission — never in UAT/Prod or read-only connections
   const canUseFab = currentNamespace?.environment === 'dev' && currentNamespace?.hasManagePermission === true;
   const demoParam = searchParams.get('demo');
   const isDemoMode = demoParam === 'true' || demoParam === 'azure' || demoParam === 'aws' || demoParam === 'gcp';

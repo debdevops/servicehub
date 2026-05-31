@@ -202,6 +202,47 @@ export interface CorrelationTimelineResponse {
   searchDurationMs: number;
 }
 
+// Cross-Cloud Message Trace DTOs
+export interface CrossCloudTraceHop {
+  cloudProvider: CloudProviderType;
+  namespaceId: string;
+  namespaceDisplayName: string;
+  entityName: string;
+  entityPath?: string | null;
+  messageId: string;
+  sequenceNumber: number;
+  state: string;
+  timestamp: string;
+  deadLetterReason?: string | null;
+  bodyPreview?: string | null;
+  sizeInBytes: number;
+  source: 'Live' | 'History';
+  hopIndex: number;
+}
+
+export interface CrossCloudNamespaceSummary {
+  namespaceId: string;
+  namespaceDisplayName: string;
+  cloudProvider: CloudProviderType;
+  wasSearched: boolean;
+  skipReason?: string | null;
+  hopsFound: number;
+}
+
+export interface CrossCloudTraceResponse {
+  traceId: string;
+  hops: CrossCloudTraceHop[];
+  namespaceSummaries: CrossCloudNamespaceSummary[];
+  totalHops: number;
+  cloudsInvolved: number;
+  cloudProviders: CloudProviderType[];
+  isMultiCloud: boolean;
+  namespacesSearched: number;
+  entitiesSearched: number;
+  isPartialResult: boolean;
+  searchDurationMs: number;
+}
+
 export interface ScheduleMessageRequest {
   body: string;
   contentType?: string;

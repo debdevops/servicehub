@@ -196,8 +196,8 @@ export function MessageFAB({
 
   return (
     <>
-      {/* FAB Menu Container */}
-      <div className="fixed bottom-8 right-8 z-50" ref={menuRef}>
+      {/* FAB Menu Container — z-[9000] keeps it above all page content (modals use z-50, tour uses z-[9999]) */}
+      <div className="fixed bottom-8 right-8 z-[9000]" ref={menuRef}>
         {/* Expanded Menu */}
         <div
           className={`
