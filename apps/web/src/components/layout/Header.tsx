@@ -1,6 +1,5 @@
 import { Link, useSearchParams } from 'react-router-dom';
 import { User, Cloud, HelpCircle, Search } from 'lucide-react';
-import { Link as RouterLink } from 'react-router-dom';
 import { useNamespaces } from '@/hooks/useNamespaces';
 
 export function Header() {
@@ -35,7 +34,16 @@ export function Header() {
         {isConnected ? (
           <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full">
             <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" aria-hidden="true" />
-            <span className="text-white/90">Connected:</span>
+            {/* Cloud provider badge */}
+            {currentNamespace.cloudProvider === 'aws' && (
+              <span className="text-[10px] font-black bg-orange-500 text-white px-1.5 py-0.5 rounded leading-none">AWS</span>
+            )}
+            {currentNamespace.cloudProvider === 'gcp' && (
+              <span className="text-[10px] font-black bg-green-600 text-white px-1.5 py-0.5 rounded leading-none">GCP</span>
+            )}
+            {(currentNamespace.cloudProvider === 'azure' || !currentNamespace.cloudProvider) && (
+              <span className="text-[10px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded leading-none">Az</span>
+            )}
             <span className="font-medium">{currentNamespace.displayName || currentNamespace.name}</span>
             {/* Environment badge */}
             <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded uppercase leading-none ${
@@ -50,6 +58,7 @@ export function Header() {
           <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full">
             <div className="w-2 h-2 bg-gray-400 rounded-full" aria-hidden="true" />
             <span className="text-white/70">No namespace selected</span>
+            <Link to="/connect" className="text-[11px] font-semibold text-blue-300 hover:text-white transition-colors underline underline-offset-2">Connect a cloud</Link>
           </div>
         )}
       </div>
@@ -77,7 +86,7 @@ export function Header() {
         </button>
 
         {/* Help */}
-        <RouterLink
+        <Link
           to="/help"
           className="p-2 hover:bg-white/10 rounded-lg transition-colors"
           title="Help & Quick Reference"
@@ -85,7 +94,7 @@ export function Header() {
           data-tour="header-help"
         >
           <HelpCircle className="w-5 h-5" />
-        </RouterLink>
+        </Link>
 
         {/* User Menu */}
         <button 

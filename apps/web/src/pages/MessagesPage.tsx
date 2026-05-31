@@ -333,7 +333,8 @@ export function MessagesPage() {
       
       return enhancedMsg;
     });
-  }, [isDemo]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDemo, demoProvider]);
   const messageCounts = getMessageCounts();
 
   // Build insights from demo messages (they already have AI analysis embedded)
@@ -613,29 +614,53 @@ export function MessagesPage() {
     <div className="flex-1 flex flex-col overflow-hidden relative" data-tour="messages-area">
       {/* Demo Mode Banner */}
       {isDemo && (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-4 py-3 flex items-center justify-between shrink-0">
+        <div className={`border-b px-4 py-3 flex items-center justify-between shrink-0 ${
+          demoProvider === 'aws'
+            ? 'bg-gradient-to-r from-orange-50 to-amber-50 border-orange-200'
+            : demoProvider === 'gcp'
+              ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200'
+              : 'bg-gradient-to-r from-sky-50 to-blue-50 border-sky-200'
+        }`}>
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center justify-center w-5 h-5 bg-blue-600 rounded-full text-white text-xs font-bold">▶</span>
+            <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-white text-xs font-bold ${
+              demoProvider === 'aws' ? 'bg-orange-500' : demoProvider === 'gcp' ? 'bg-green-600' : 'bg-sky-600'
+            }`}>▶</span>
             <div>
-              <p className="text-sm font-semibold text-blue-900">
-                {demoProvider === 'aws' ? '🟠 AWS SQS Demo — AcmeRetail E-Commerce (50 messages)' : demoProvider === 'gcp' ? '🟢 GCP Pub/Sub Demo — MedStream Healthcare (50 messages)' : '🔵 Azure Service Bus Demo — Contoso Commerce (50 messages)'}
+              <p className={`text-sm font-semibold ${
+                demoProvider === 'aws' ? 'text-orange-900' : demoProvider === 'gcp' ? 'text-green-900' : 'text-sky-900'
+              }`}>
+                {demoProvider === 'aws'
+                  ? '🟠 AWS SQS Demo — AcmeRetail E-Commerce Platform (50 messages)'
+                  : demoProvider === 'gcp'
+                    ? '🟢 GCP Pub/Sub Demo — MedStream Healthcare Analytics (50 messages)'
+                    : '🔵 Azure Service Bus Demo — Contoso Commerce Platform (50 messages)'}
               </p>
-              <p className="text-xs text-blue-700 mt-0.5">
-                Try the DLQ tab to see error patterns • Click AI Insights for root-cause analysis • Use filters to pinpoint issues
+              <p className={`text-xs mt-0.5 ${
+                demoProvider === 'aws' ? 'text-orange-700' : demoProvider === 'gcp' ? 'text-green-700' : 'text-sky-700'
+              }`}>
+                {demoProvider === 'aws'
+                  ? 'SQS queues · Standard & FIFO · Dead-Letter · SNS topic tracing · IAM auth'
+                  : demoProvider === 'gcp'
+                    ? 'Pub/Sub topics · Subscriptions · Dead-Letter Topics · Ack deadline monitor'
+                    : 'Queues · Topics/Subscriptions · Dead-Letter · Correlation ID · Auto-replay rules'}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => navigate(`/messages?demo=${demoParam ?? 'azure'}&queueType=deadletter`)}
-              className="text-xs font-medium text-blue-700 hover:bg-blue-100 px-2.5 py-1 rounded transition-colors"
+              className={`text-xs font-medium px-2.5 py-1 rounded transition-colors ${
+                demoProvider === 'aws' ? 'text-orange-700 hover:bg-orange-100' : demoProvider === 'gcp' ? 'text-green-700 hover:bg-green-100' : 'text-sky-700 hover:bg-sky-100'
+              }`}
               title="View Dead-Letter Queue"
             >
               📬 View DLQ
             </button>
             <button
               onClick={() => navigate('/connect')}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 rounded transition-colors"
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                demoProvider === 'aws' ? 'text-orange-700 hover:bg-orange-100' : demoProvider === 'gcp' ? 'text-green-700 hover:bg-green-100' : 'text-sky-700 hover:bg-sky-100'
+              }`}
               title="Return to Connect page"
             >
               <X className="w-3.5 h-3.5" />

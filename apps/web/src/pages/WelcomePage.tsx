@@ -189,32 +189,32 @@ export function WelcomePage() {
   const navigate = useNavigate();
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 font-sans">
+    <div className="flex flex-col min-h-screen bg-white font-sans">
 
       {/* Header */}
-      <header className="fixed top-0 w-full bg-slate-900/90 backdrop-blur-md border-b border-white/10 z-50">
+      <header className="fixed top-0 w-full bg-white/95 backdrop-blur-md border-b border-sky-100 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+            <div className="w-9 h-9 bg-gradient-to-br from-sky-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
               <Search className="w-5 h-5 text-white" />
             </div>
             <div>
-              <span className="font-bold text-white text-lg">ServiceHub</span>
-              <span className="ml-2 text-xs text-blue-400 font-medium bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded-full">v3.1.0</span>
+              <span className="font-bold text-gray-900 text-lg">ServiceHub</span>
+              <span className="ml-2 text-xs text-sky-600 font-medium bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full">v3.2.0</span>
             </div>
           </div>
           <nav className="hidden md:flex items-center gap-6 text-sm">
-            <a href="#providers" className="text-white/60 hover:text-white transition-colors font-medium">Clouds</a>
-            <a href="#features" className="text-white/60 hover:text-white transition-colors font-medium">Features</a>
-            <a href="#compare" className="text-white/60 hover:text-white transition-colors font-medium">Compare</a>
-            <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-white/60 hover:text-white transition-colors font-medium">
+            <a href="#providers" className="text-gray-500 hover:text-sky-600 transition-colors font-medium">Clouds</a>
+            <a href="#features" className="text-gray-500 hover:text-sky-600 transition-colors font-medium">Features</a>
+            <a href="#compare" className="text-gray-500 hover:text-sky-600 transition-colors font-medium">Compare</a>
+            <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-gray-500 hover:text-sky-600 transition-colors font-medium">
               <Github className="w-4 h-4" />
               GitHub
             </a>
           </nav>
           <Link
             to="/connect"
-            className="inline-flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white text-sm font-semibold rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all shadow-lg"
+            className="inline-flex items-center gap-2 px-5 py-2 bg-sky-600 text-white text-sm font-semibold rounded-lg hover:bg-sky-700 transition-all shadow"
             aria-label="Open ServiceHub application"
           >
             Open App
@@ -224,54 +224,77 @@ export function WelcomePage() {
       </header>
 
       {/* Hero */}
-      <section className="pt-36 pb-20 px-6 relative overflow-hidden">
-        <div className="absolute top-20 left-1/4 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute top-40 right-1/4 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl pointer-events-none" />
+      <section className="pt-36 pb-20 px-6 relative overflow-hidden bg-gradient-to-b from-sky-50 via-white to-white">
+        <div className="absolute top-20 left-1/4 w-96 h-96 bg-sky-300/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute top-40 right-1/4 w-96 h-96 bg-blue-300/20 rounded-full blur-3xl pointer-events-none" />
         <div className="max-w-5xl mx-auto text-center relative">
-          <div className="inline-flex items-center gap-2 mb-6 px-4 py-2 bg-white/5 border border-white/20 text-white/80 rounded-full text-sm font-semibold">
-            <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-            Multi-Cloud · v3.1.0 Live · Azure + AWS + GCP
+          <div className="inline-flex items-center gap-2 mb-6 px-4 py-2 bg-sky-50 border border-sky-200 text-sky-700 rounded-full text-sm font-semibold">
+            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+            Multi-Cloud · v3.2.0 · Azure + AWS + GCP
           </div>
-          <h1 className="text-5xl md:text-6xl lg:text-7xl font-extrabold text-white mb-6 leading-[1.08] tracking-tight">
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-emerald-400">One Platform.</span>
+          <h1 className="text-5xl md:text-6xl lg:text-7xl font-extrabold text-gray-900 mb-6 leading-[1.08] tracking-tight">
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-500 via-blue-600 to-emerald-500">One Platform.</span>
             <br />
             <span>Three Clouds.</span>
             <br />
-            <span className="text-white/70 text-4xl md:text-5xl">Zero Compromise.</span>
+            <span className="text-gray-500 text-4xl md:text-5xl">Zero Compromise.</span>
           </h1>
-          <p className="text-xl md:text-2xl text-white/70 mb-4 max-w-3xl mx-auto leading-relaxed font-light">
+          <p className="text-xl md:text-2xl text-gray-600 mb-4 max-w-3xl mx-auto leading-relaxed font-light">
             The forensic debugger for message queues — Azure Service Bus, AWS SQS, and GCP Pub/Sub.
             Full message bodies, DLQ patterns, AI insights, and automated replay in one tab.
           </p>
-          <p className="text-base text-white/50 mb-12 max-w-2xl mx-auto">
+          <p className="text-base text-gray-400 mb-12 max-w-2xl mx-auto">
             Built for DevOps, Platform, and SRE engineers who need real answers during production incidents.
           </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-14">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
             <Link
               to="/connect"
-              className="inline-flex items-center gap-2.5 px-8 py-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white text-base font-bold rounded-xl hover:from-blue-600 hover:to-purple-700 transition-all shadow-xl hover:-translate-y-0.5"
+              className="inline-flex items-center gap-2.5 px-8 py-4 bg-sky-600 text-white text-base font-bold rounded-xl hover:bg-sky-700 transition-all shadow-xl hover:-translate-y-0.5"
             >
               Open ServiceHub
               <ArrowRight className="w-5 h-5" />
             </Link>
-            <button
-              onClick={() => navigate('/messages?demo=azure')}
-              className="inline-flex items-center gap-2.5 px-8 py-4 bg-white/10 text-white text-base font-bold rounded-xl border border-white/20 hover:bg-white/20 transition-all"
-            >
-              <Play className="w-5 h-5 text-amber-300 fill-current" />
-              Live Demo
-            </button>
             <a
               href={GITHUB_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2.5 px-8 py-4 bg-white/5 text-white/80 text-base font-bold rounded-xl border border-white/15 hover:bg-white/10 transition-all"
+              className="inline-flex items-center gap-2.5 px-8 py-4 bg-white text-gray-700 text-base font-bold rounded-xl border border-gray-200 hover:border-sky-300 hover:bg-sky-50 transition-all shadow"
             >
               <Github className="w-5 h-5" />
               GitHub
             </a>
           </div>
-          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-sm text-white/50">
+          {/* Multi-cloud demo chooser */}
+          <div className="flex flex-col items-center gap-3 mb-14">
+            <p className="text-xs text-gray-400 font-medium uppercase tracking-widest">Try a live demo — no credentials needed</p>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                onClick={() => navigate('/messages?demo=azure')}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-white hover:bg-sky-50 border border-sky-200 hover:border-sky-400 text-gray-800 text-sm font-semibold rounded-xl transition-all shadow-sm"
+              >
+                <span className="w-6 h-6 bg-blue-600 rounded-md flex items-center justify-center text-[10px] font-black text-white">Az</span>
+                Azure Demo
+                <Play className="w-3.5 h-3.5 text-sky-500 fill-current" />
+              </button>
+              <button
+                onClick={() => navigate('/demo/aws')}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-white hover:bg-orange-50 border border-orange-200 hover:border-orange-400 text-gray-800 text-sm font-semibold rounded-xl transition-all shadow-sm"
+              >
+                <span className="w-6 h-6 bg-orange-500 rounded-md flex items-center justify-center text-[10px] font-black text-white">AWS</span>
+                AWS Demo
+                <Play className="w-3.5 h-3.5 text-orange-500 fill-current" />
+              </button>
+              <button
+                onClick={() => navigate('/demo/gcp')}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-white hover:bg-green-50 border border-green-200 hover:border-green-400 text-gray-800 text-sm font-semibold rounded-xl transition-all shadow-sm"
+              >
+                <span className="w-6 h-6 bg-green-600 rounded-md flex items-center justify-center text-[10px] font-black text-white">GCP</span>
+                GCP Demo
+                <Play className="w-3.5 h-3.5 text-green-600 fill-current" />
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-sm text-gray-400">
             {[
               { icon: '\u2705', label: '100% Open Source (MIT)' },
               { icon: '\uD83D\uDD10', label: 'AES-GCM Encrypted Credentials' },
@@ -283,6 +306,168 @@ export function WelcomePage() {
                 <span>{icon}</span> {label}
               </span>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Multi-Platform Message Flow ─── */}
+      <section className="py-20 px-6 bg-sky-700 border-t border-sky-600">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-14">
+            <p className="text-xs font-bold uppercase tracking-widest text-sky-200 mb-3">Architecture</p>
+            <h2 className="text-3xl md:text-4xl font-extrabold text-white mb-4">Message Flow — Any Cloud, One View</h2>
+            <p className="text-sky-100/80 max-w-2xl mx-auto text-base">
+              ServiceHub connects directly to each cloud's native SDK. Messages are peeked — never consumed — then surfaced
+              in a single unified workspace for browsing, forensics, and automated recovery.
+            </p>
+          </div>
+
+          {/* Flow diagram */}
+          <div className="flex flex-col lg:flex-row items-stretch justify-center gap-6 lg:gap-0">
+
+            {/* LEFT — Cloud sources */}
+            <div className="flex flex-col gap-4 w-full lg:w-64 shrink-0">
+              <p className="text-xs font-bold uppercase tracking-widest text-white/30 text-center lg:text-left mb-1">Cloud Sources</p>
+              {/* Azure */}
+              <div className="flex items-center gap-3 bg-blue-500/10 border border-blue-500/30 rounded-2xl px-4 py-4 hover:bg-blue-500/15 transition-colors">
+                <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shrink-0 shadow-lg">
+                  <span className="text-white text-[11px] font-black">Az</span>
+                </div>
+                <div className="flex-1">
+                  <div className="text-white text-sm font-semibold">Azure Service Bus</div>
+                  <div className="text-blue-400 text-xs mt-0.5">Queues · Topics · Subscriptions</div>
+                </div>
+                <span className="text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40 px-2 py-0.5 rounded-full">GA</span>
+              </div>
+              {/* AWS */}
+              <div className="flex items-center gap-3 bg-orange-500/10 border border-orange-500/30 rounded-2xl px-4 py-4 hover:bg-orange-500/15 transition-colors">
+                <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg">
+                  <span className="text-white text-[11px] font-black">AWS</span>
+                </div>
+                <div className="flex-1">
+                  <div className="text-white text-sm font-semibold">AWS SQS / SNS</div>
+                  <div className="text-orange-400 text-xs mt-0.5">Standard · FIFO · Dead-Letter</div>
+                </div>
+                <span className="text-[10px] font-bold bg-orange-500/20 text-orange-300 border border-orange-500/40 px-2 py-0.5 rounded-full">P2</span>
+              </div>
+              {/* GCP */}
+              <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/30 rounded-2xl px-4 py-4 hover:bg-green-500/15 transition-colors">
+                <div className="w-10 h-10 bg-green-600 rounded-xl flex items-center justify-center shrink-0 shadow-lg">
+                  <span className="text-white text-[11px] font-black">GCP</span>
+                </div>
+                <div className="flex-1">
+                  <div className="text-white text-sm font-semibold">GCP Pub/Sub</div>
+                  <div className="text-green-400 text-xs mt-0.5">Topics · Subscriptions · DLT</div>
+                </div>
+                <span className="text-[10px] font-bold bg-green-500/20 text-green-300 border border-green-500/40 px-2 py-0.5 rounded-full">P2</span>
+              </div>
+            </div>
+
+            {/* CENTER arrows */}
+            <div className="hidden lg:flex flex-col items-center justify-center px-8 gap-3">
+              <div className="flex flex-col items-center gap-1.5">
+                <div className="w-px h-12 bg-gradient-to-b from-blue-500/80 to-blue-500/20" />
+                <div className="w-full flex items-center gap-2">
+                  <div className="flex-1 h-px bg-gradient-to-r from-blue-500 via-purple-500 to-purple-600" />
+                  <div className="w-0 h-0 border-l-[8px] border-t-[5px] border-b-[5px] border-l-purple-500 border-t-transparent border-b-transparent" />
+                </div>
+                <div className="w-px h-12 bg-gradient-to-b from-orange-500/20 to-orange-500/80" />
+              </div>
+              <span className="text-[10px] font-mono text-white/30 bg-white/5 border border-white/10 px-3 py-1 rounded-full">PeekAsync · ReadMessage</span>
+              <div className="flex flex-col items-center gap-1.5">
+                <div className="w-px h-12 bg-gradient-to-b from-orange-500/80 to-green-500/20" />
+                <div className="w-full flex items-center gap-2">
+                  <div className="flex-1 h-px bg-gradient-to-r from-orange-500 via-purple-500 to-purple-600" />
+                  <div className="w-0 h-0 border-l-[8px] border-t-[5px] border-b-[5px] border-l-purple-500 border-t-transparent border-b-transparent" />
+                </div>
+                <div className="w-px h-12 bg-gradient-to-b from-green-500/20 to-green-500/80" />
+              </div>
+            </div>
+            <div className="flex lg:hidden items-center justify-center py-2">
+              <div className="flex items-center gap-3 text-white/30">
+                <div className="flex-1 h-px bg-gradient-to-r from-blue-500 to-purple-500" />
+                <span className="text-xs font-mono">SDK</span>
+                <div className="flex-1 h-px bg-gradient-to-r from-purple-500 to-purple-500" />
+              </div>
+            </div>
+
+            {/* CENTER — ServiceHub Hub */}
+            <div className="flex items-center justify-center lg:px-2">
+              <div className="bg-white/15 border-2 border-white/40 rounded-2xl p-7 text-center shadow-2xl min-w-[200px] backdrop-blur-sm">
+                <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl">
+                  <Search className="w-8 h-8 text-sky-600" />
+                </div>
+                <div className="text-white font-extrabold text-lg leading-tight">ServiceHub</div>
+                <div className="text-sky-200 text-xs font-medium mt-1 mb-4">Unified Debug Hub</div>
+                <div className="flex flex-wrap gap-1.5 justify-center">
+                  {['Peek', 'Search', 'AI', 'Replay', 'History', 'Trace'].map(tag => (
+                    <span key={tag} className="text-[10px] font-bold bg-white/10 border border-white/15 text-white/70 px-2.5 py-1 rounded-full">{tag}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* RIGHT arrows */}
+            <div className="hidden lg:flex flex-col items-center justify-center px-8">
+              <div className="w-full flex items-center gap-2">
+                <div className="flex-1 h-px bg-gradient-to-r from-purple-600 via-emerald-500 to-emerald-400" />
+                <div className="w-0 h-0 border-l-[8px] border-t-[5px] border-b-[5px] border-l-emerald-400 border-t-transparent border-b-transparent" />
+              </div>
+            </div>
+            <div className="flex lg:hidden items-center justify-center py-2">
+              <div className="flex items-center gap-3 text-white/30">
+                <div className="flex-1 h-px bg-gradient-to-r from-purple-500 to-emerald-500" />
+                <span className="text-xs">↓</span>
+              </div>
+            </div>
+
+            {/* RIGHT — ServiceHub capabilities */}
+            <div className="flex flex-col gap-3 w-full lg:w-64 shrink-0">
+              <p className="text-xs font-bold uppercase tracking-widest text-white/30 text-center lg:text-left mb-1">What You Get</p>
+              {[
+                { icon: '🔍', label: 'Full Message Browser', sub: 'Body · Headers · Properties', color: 'emerald' },
+                { icon: '☠️', label: 'DLQ Forensics + AI', sub: 'Pattern clusters · Root cause', color: 'red' },
+                { icon: '⚡', label: 'Replay & Recover', sub: '1-click or auto-rules engine', color: 'amber' },
+                { icon: '📊', label: 'DLQ History & Trends', sub: '30-day SQLite analytics', color: 'purple' },
+                { icon: '🔗', label: 'Correlation Tracing', sub: 'Cross-queue journey map', color: 'blue' },
+              ].map(({ icon, label, sub }) => (
+                <div key={label} className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 hover:bg-white/8 transition-colors">
+                  <span className="text-xl shrink-0">{icon}</span>
+                  <div>
+                    <div className="text-white text-sm font-semibold">{label}</div>
+                    <div className="text-white/40 text-xs mt-0.5">{sub}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* SDK labels */}
+          <div className="mt-12 pt-8 border-t border-white/20 grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                <span className="text-white text-[10px] font-black">Az</span>
+              </div>
+              <div className="text-sky-100 text-sm font-medium">Azure SDK</div>
+              <code className="text-blue-400 text-xs bg-blue-500/10 border border-blue-500/20 px-3 py-1 rounded-lg font-mono">Azure.Messaging.ServiceBus</code>
+              <p className="text-sky-200/60 text-xs max-w-xs">PeekMessagesAsync · GetQueues · GetTopics · AdminClient</p>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
+                <span className="text-white text-[10px] font-black">AWS</span>
+              </div>
+              <div className="text-sky-100 text-sm font-medium">AWS SDK</div>
+              <code className="text-orange-400 text-xs bg-orange-500/10 border border-orange-500/20 px-3 py-1 rounded-lg font-mono">AWSSDK.SQS · AWSSDK.SNS</code>
+              <p className="text-sky-200/60 text-xs max-w-xs">ReceiveMessage · ListQueues · GetQueueAttributes</p>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center">
+                <span className="text-white text-[10px] font-black">GCP</span>
+              </div>
+              <div className="text-sky-100 text-sm font-medium">GCP SDK</div>
+              <code className="text-green-400 text-xs bg-green-500/10 border border-green-500/20 px-3 py-1 rounded-lg font-mono">Google.Cloud.PubSub.V1</code>
+              <p className="text-sky-200/60 text-xs max-w-xs">Pull · ListTopics · ListSubscriptions · Seek</p>
+            </div>
           </div>
         </div>
       </section>
@@ -345,7 +530,7 @@ export function WelcomePage() {
       </section>
 
       {/* Stats Bar */}
-      <section className="py-12 px-6 bg-gradient-to-r from-blue-600 via-purple-600 to-emerald-600">
+      <section className="py-12 px-6 bg-gradient-to-r from-sky-600 via-blue-600 to-sky-700">
         <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-6 text-center text-white">
           {[
             { value: '3', label: 'Cloud Providers' },
@@ -414,7 +599,7 @@ export function WelcomePage() {
             ))}
           </div>
           <div className="mt-14 pt-10 border-t border-gray-200">
-            <p className="text-center text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wider">All Included in v3.1.0</p>
+            <p className="text-center text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wider">All Included in v3.2.0</p>
             <div className="flex flex-wrap justify-center gap-3">
               {[
                 '\u2601\uFE0F Azure Service Bus', '\uD83D\uDFE0 AWS SQS / SNS', '\uD83D\uDFE2 GCP Pub/Sub',
@@ -558,7 +743,7 @@ export function WelcomePage() {
             {CLOUD_PROVIDERS.map((p) => (
               <button
                 key={p.id}
-                onClick={() => navigate(p.demoUrl)}
+                onClick={() => navigate(p.id === 'aws' ? '/demo/aws' : p.id === 'gcp' ? '/demo/gcp' : p.demoUrl)}
                 className={`group p-6 rounded-2xl border-2 bg-gradient-to-b ${p.bgGradient} ${p.borderColor} text-left hover:shadow-lg transition-all duration-200`}
               >
                 <div className={`w-12 h-12 ${p.iconBg} rounded-xl flex items-center justify-center mb-4 shadow-md group-hover:scale-110 transition-transform`}>
@@ -599,9 +784,9 @@ export function WelcomePage() {
       </section>
 
       {/* Final CTA */}
-      <section className="py-24 px-6 bg-gradient-to-b from-slate-900 to-slate-950">
+      <section className="py-24 px-6 bg-gradient-to-b from-sky-50 to-white">
         <div className="max-w-3xl mx-auto text-center">
-          <div className="bg-gradient-to-br from-blue-600 via-purple-600 to-emerald-600 rounded-2xl p-12 text-white shadow-2xl relative overflow-hidden">
+          <div className="bg-gradient-to-br from-sky-600 via-blue-700 to-sky-800 rounded-2xl p-12 text-white shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-48 h-48 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
             <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2" />
             <div className="relative">
@@ -613,7 +798,7 @@ export function WelcomePage() {
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <Link
                   to="/connect"
-                  className="inline-flex items-center gap-2.5 px-8 py-4 bg-white text-purple-700 font-bold text-base rounded-xl hover:bg-gray-100 transition-all shadow-lg hover:-translate-y-0.5"
+                  className="inline-flex items-center gap-2.5 px-8 py-4 bg-white text-sky-700 font-bold text-base rounded-xl hover:bg-sky-50 transition-all shadow-lg hover:-translate-y-0.5"
                 >
                   Open ServiceHub
                   <ArrowRight className="w-5 h-5" />
@@ -634,17 +819,17 @@ export function WelcomePage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-white/10 py-12 px-6 bg-slate-950">
+      <footer className="border-t border-sky-100 py-12 px-6 bg-sky-50">
         <div className="max-w-7xl mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-10">
             <div>
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                <div className="w-8 h-8 bg-sky-600 rounded-lg flex items-center justify-center">
                   <Search className="w-4 h-4 text-white" />
                 </div>
-                <span className="font-bold text-white">ServiceHub</span>
+                <span className="font-bold text-gray-800">ServiceHub</span>
               </div>
-              <p className="text-xs text-white/40 leading-relaxed">
+              <p className="text-xs text-gray-500 leading-relaxed">
                 The multi-cloud message queue debugger. Azure Service Bus \u00b7 AWS SQS \u00b7 GCP Pub/Sub.
               </p>
             </div>
@@ -679,7 +864,7 @@ export function WelcomePage() {
               ServiceHub is open source, free to use, and MIT licensed. Made with \u2764\uFE0F by{' '}
               <a href="https://github.com/debdevops" className="text-blue-400 hover:underline font-medium">Debasis</a>
             </p>
-            <p>© 2026 ServiceHub · All rights reserved</p>
+            <p className="text-gray-400">© 2026 ServiceHub v3.2.0 · All rights reserved</p>
           </div>
         </div>
       </footer>
