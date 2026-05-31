@@ -274,6 +274,7 @@ jobs:
         run: cd apps/web && npm run test:e2e
         env:
           CI: true
+          VITE_API_BASE_URL: http://localhost:5200/api/v1
 
       - name: Upload Playwright report
         if: always()
