@@ -35,11 +35,36 @@ test('simulator page shows message counts from seeder', async ({ page, request }
   const simulatorUp = await isSimulatorUp(request);
   test.skip(!simulatorUp, 'Simulator API not running');
 
+  const statusResponse = await request.get(`${SIMULATOR_API}/api/v1/simulator/status`);
+  expect(statusResponse.ok()).toBeTruthy();
+  const status = await statusResponse.json() as {
+    namespaces: Array<{
+      id: string;
+      name: string;
+      activeMessageCount: number;
+    }>;
+  };
+  const seededNamespace = status.namespaces.find((ns) => ns.activeMessageCount > 0);
+  expect(seededNamespace).toBeTruthy();
+
   await page.goto('/simulator');
-  // Seeder puts messages into all namespaces — at least one count > 0 is visible
-  await expect(
-    page.locator('text=/[1-9][0-9]* Messages/').or(page.locator('text=/[1-9][0-9]*\\s+Messages/'))
-  ).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/Simulator Mode/i)).toBeVisible({ timeout: 10_000 });
+
+  // The message count is rendered in a metric card where the numeric value and
+  // the "Messages" label are separate elements, so assert within the specific
+  // provider card seeded by the simulator.
+  const namespaceCard = page.locator('div').filter({
+    has: page.getByText(seededNamespace!.name, { exact: true }),
+  }).filter({
+    has: page.getByText(String(seededNamespace!.activeMessageCount), { exact: true }),
+  }).first();
+  const messagesMetric = namespaceCard.locator('div').filter({
+    has: page.getByText('Messages', { exact: true }),
+  }).filter({
+    has: page.getByText(String(seededNamespace!.activeMessageCount), { exact: true }),
+  }).first();
+
+  await expect(messagesMetric).toBeVisible({ timeout: 10_000 });
 });
 
 test('fault injection form renders all fault types', async ({ page, request }) => {
