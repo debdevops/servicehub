@@ -92,11 +92,7 @@ public sealed class AwsClientFactory : IAwsClientFactory
             case ConnectionAuthType.AwsAccessKey:
             {
                 var connStr = DecryptConnectionString(ns);
-                var parts = connStr.Split(':', 2);
-                if (parts.Length != 2)
-                    throw new InvalidOperationException(
-                        $"AwsAccessKey connection string for namespace {ns.Id} must be in format 'AKID:SecretKey'.");
-                return new BasicAWSCredentials(parts[0].Trim(), parts[1].Trim());
+                return ParseAccessKeyCredentials(ns.Id, connStr);
             }
 
             case ConnectionAuthType.AwsIamRole:
@@ -134,5 +130,45 @@ public sealed class AwsClientFactory : IAwsClientFactory
                 $"Failed to decrypt connection string for namespace {ns.Id}: {result.Error.Message}");
 
         return result.Value;
+    }
+
+    /// <summary>
+    /// Parses an AWS access key credential string into SDK credentials.
+    /// Accepts two formats:
+    /// <list type="bullet">
+    ///   <item><term>Current format:</term><description><c>AKID:SecretKey</c></description></item>
+    ///   <item><term>Legacy format:</term><description><c>aws://AKID:SecretKey@region</c> (stored by older frontend versions)</description></item>
+    /// </list>
+    /// </summary>
+    private static BasicAWSCredentials ParseAccessKeyCredentials(Guid namespaceId, string connStr)
+    {
+        string akid, secret;
+
+        if (connStr.StartsWith("aws://", StringComparison.OrdinalIgnoreCase))
+        {
+            // Legacy URL format: aws://AKID:SecretKey@region
+            // Strip scheme and extract credentials before the @region suffix.
+            var withoutScheme = connStr["aws://".Length..];
+            var atIndex = withoutScheme.IndexOf('@');
+            var credPart = atIndex >= 0 ? withoutScheme[..atIndex] : withoutScheme;
+            var parts = credPart.Split(':', 2);
+            if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
+                throw new InvalidOperationException(
+                    $"Cannot parse legacy aws:// credential string for namespace {namespaceId}. Expected aws://AKID:SecretKey@region.");
+            akid = parts[0].Trim();
+            secret = parts[1].Trim();
+        }
+        else
+        {
+            // Current format: AKID:SecretKey
+            var parts = connStr.Split(':', 2);
+            if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
+                throw new InvalidOperationException(
+                    $"AwsAccessKey connection string for namespace {namespaceId} must be in format 'AKID:SecretKey'.");
+            akid = parts[0].Trim();
+            secret = parts[1].Trim();
+        }
+
+        return new BasicAWSCredentials(akid, secret);
     }
 }

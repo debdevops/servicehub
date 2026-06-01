@@ -225,16 +225,18 @@ export function CrossCloudTracePage() {
 
       {/* Search bar */}
       <div className="flex gap-3">
-        <input
-          type="text"
-          className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed font-mono"
-          placeholder="Enter Correlation ID or Trace ID…"
-          value={traceId}
-          onChange={e => setTraceId(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && hasMultiCloud && handleTrace()}
-          disabled={!hasMultiCloud || isPending}
-          aria-label="Trace ID"
-        />
+        <div className="flex-1 relative">
+          <input
+            type="text"
+            className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed font-mono"
+            placeholder="Enter Correlation ID or Trace ID…"
+            value={traceId}
+            onChange={e => setTraceId(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && hasMultiCloud && handleTrace()}
+            disabled={!hasMultiCloud || isPending}
+            aria-label="Trace ID"
+          />
+        </div>
         <button
           onClick={handleTrace}
           disabled={!hasMultiCloud || !traceId.trim() || isPending}
@@ -253,6 +255,36 @@ export function CrossCloudTracePage() {
           )}
         </button>
       </div>
+
+      {/* Trace ID help */}
+      <details className="rounded-lg border border-violet-200 bg-violet-50 text-xs">
+        <summary className="cursor-pointer px-3 py-2 font-medium text-violet-800 select-none">
+          What is a Trace ID? How to find one per cloud
+        </summary>
+        <div className="px-3 pb-3 pt-1 text-violet-900 space-y-2">
+          <p>
+            The Trace ID is a correlation identifier that a publishing service sets on a message so it can
+            be tracked as it flows across queue boundaries and cloud providers.
+          </p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 mt-1">
+            <div className="rounded border border-blue-200 bg-blue-50 p-2">
+              <p className="font-semibold text-blue-800 mb-1">Azure Service Bus</p>
+              <p>Set via the <code className="bg-blue-100 px-0.5 rounded">CorrelationId</code> message property.</p>
+              <p className="mt-1 text-blue-700">Found in the message detail panel → Properties tab.</p>
+            </div>
+            <div className="rounded border border-orange-200 bg-orange-50 p-2">
+              <p className="font-semibold text-orange-800 mb-1">AWS SQS</p>
+              <p>Set as a message attribute named <code className="bg-orange-100 px-0.5 rounded">CorrelationId</code> (String type).</p>
+              <p className="mt-1 text-orange-700">Also checked: <code className="bg-orange-100 px-0.5 rounded">correlationId</code>, <code className="bg-orange-100 px-0.5 rounded">TraceId</code>.</p>
+            </div>
+            <div className="rounded border border-green-200 bg-green-50 p-2">
+              <p className="font-semibold text-green-800 mb-1">GCP Pub/Sub</p>
+              <p>Set as a message attribute named <code className="bg-green-100 px-0.5 rounded">correlation_id</code>.</p>
+              <p className="mt-1 text-green-700">Also checked: <code className="bg-green-100 px-0.5 rounded">CorrelationId</code>, <code className="bg-green-100 px-0.5 rounded">trace_id</code>.</p>
+            </div>
+          </div>
+        </div>
+      </details>
 
       {/* Results */}
       {isSuccess && result && (

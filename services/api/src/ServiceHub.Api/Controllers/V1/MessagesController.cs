@@ -25,6 +25,7 @@ public sealed class MessagesController : ApiControllerBase
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<MessagesController> _logger;
+    private readonly IEnumerable<ICloudMessagingProvider> _cloudProviders;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MessagesController"/> class.
@@ -34,18 +35,61 @@ public sealed class MessagesController : ApiControllerBase
     /// <param name="namespaceRepository">The namespace repository.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="auditLogger">The security audit logger.</param>
+    /// <param name="cloudProviders">Registered cloud messaging providers for multi-cloud routing.</param>
     public MessagesController(
         IMessageSender messageSender,
         IMessageReceiver messageReceiver,
         INamespaceRepository namespaceRepository,
         ILogger<MessagesController> logger,
-        IAuditLogger? auditLogger = null)
+        IAuditLogger? auditLogger = null,
+        IEnumerable<ICloudMessagingProvider>? cloudProviders = null)
     {
         _messageSender = messageSender ?? throw new ArgumentNullException(nameof(messageSender));
         _messageReceiver = messageReceiver ?? throw new ArgumentNullException(nameof(messageReceiver));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _cloudProviders = cloudProviders ?? [];
+    }
+
+    // ── Provider routing helpers ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the <see cref="IMessageReceiver"/> appropriate for the given namespace.
+    /// Azure namespaces use the natively injected Azure receiver; AWS/GCP namespaces are
+    /// routed through the matching <see cref="ICloudMessagingProvider"/>.
+    /// </summary>
+    private IMessageReceiver ReceiverFor(Namespace ns)
+    {
+        if (ns.Provider == CloudProviderType.Azure)
+            return _messageReceiver;
+
+        var provider = _cloudProviders.FirstOrDefault(p => p.ProviderType == ns.Provider);
+        if (provider is not null)
+            return provider.GetMessageReceiver();
+
+        _logger.LogWarning(
+            "No registered ICloudMessagingProvider for {Provider} (namespace {NamespaceId}). Falling back to Azure receiver.",
+            ns.Provider, ns.Id);
+        return _messageReceiver;
+    }
+
+    /// <summary>
+    /// Returns the <see cref="IMessageSender"/> appropriate for the given namespace.
+    /// </summary>
+    private IMessageSender SenderFor(Namespace ns)
+    {
+        if (ns.Provider == CloudProviderType.Azure)
+            return _messageSender;
+
+        var provider = _cloudProviders.FirstOrDefault(p => p.ProviderType == ns.Provider);
+        if (provider is not null)
+            return provider.GetMessageSender();
+
+        _logger.LogWarning(
+            "No registered ICloudMessagingProvider for {Provider} (namespace {NamespaceId}). Falling back to Azure sender.",
+            ns.Provider, ns.Id);
+        return _messageSender;
     }
 
     /// <summary>
@@ -102,7 +146,7 @@ public sealed class MessagesController : ApiControllerBase
             MaxMessages: Math.Clamp(maxMessages, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages),
             FromSequenceNumber: fromSequenceNumber);
 
-        var result = await _messageReceiver.PeekMessagesAsync(request, cancellationToken);
+        var result = await ReceiverFor(namespaceResult.Value).PeekMessagesAsync(request, cancellationToken);
         if (result.IsFailure)
         {
             return ToActionResult<IReadOnlyList<MessageResponse>>(result.Error);
@@ -169,7 +213,7 @@ public sealed class MessagesController : ApiControllerBase
             MaxMessages: Math.Clamp(maxMessages, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages),
             FromSequenceNumber: fromSequenceNumber);
 
-        var result = await _messageReceiver.PeekMessagesAsync(request, cancellationToken);
+        var result = await ReceiverFor(namespaceResult.Value).PeekMessagesAsync(request, cancellationToken);
         if (result.IsFailure)
         {
             return ToActionResult<IReadOnlyList<MessageResponse>>(result.Error);
@@ -233,7 +277,7 @@ public sealed class MessagesController : ApiControllerBase
             MaxMessages: Math.Clamp(maxMessages, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages),
             FromSequenceNumber: fromSequenceNumber);
 
-        var result = await _messageReceiver.PeekDeadLetterMessagesAsync(request, cancellationToken);
+        var result = await ReceiverFor(namespaceResult.Value).PeekDeadLetterMessagesAsync(request, cancellationToken);
         if (result.IsFailure)
         {
             return ToActionResult<IReadOnlyList<MessageResponse>>(result.Error);
@@ -300,7 +344,7 @@ public sealed class MessagesController : ApiControllerBase
             MaxMessages: Math.Clamp(maxMessages, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages),
             FromSequenceNumber: fromSequenceNumber);
 
-        var result = await _messageReceiver.PeekDeadLetterMessagesAsync(request, cancellationToken);
+        var result = await ReceiverFor(namespaceResult.Value).PeekDeadLetterMessagesAsync(request, cancellationToken);
         if (result.IsFailure)
         {
             return ToActionResult<IReadOnlyList<MessageResponse>>(result.Error);
@@ -445,7 +489,7 @@ public sealed class MessagesController : ApiControllerBase
                 detail: "Replay is blocked for production namespaces. Validate in DEV and UAT first.");
         }
 
-        var result = await _messageReceiver.ReplayMessageAsync(
+        var result = await ReceiverFor(ns).ReplayMessageAsync(
             namespaceId,
             entityName,
             subscriptionName,

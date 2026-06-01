@@ -42,9 +42,10 @@ public sealed class GcpMessageReceiverTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task GetMessageCountAsync_AlwaysReturnsSuccess_WithUnsupportedIndicator()
+    public async Task GetMessageCountAsync_ReturnsFailure_WithCountUnavailableCode()
     {
-        // GCP Pub/Sub does not support exact message counts — the receiver returns -1 to indicate N/A.
+        // GCP Pub/Sub does not support direct message count queries — returns a typed failure
+        // so callers can display "N/A" in the UI.
         var factory = new Mock<IGcpClientFactory>();
         var repo = new Mock<INamespaceRepository>();
 
@@ -53,8 +54,8 @@ public sealed class GcpMessageReceiverTests
         var result = await sut.GetMessageCountAsync(
             TestNamespaceId, "my-subscription", null, CancellationToken.None);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().Be(-1L);
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("GCP.PubSub.CountUnavailable");
     }
 
     [Fact]

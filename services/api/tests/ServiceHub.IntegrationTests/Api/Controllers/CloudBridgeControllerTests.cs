@@ -122,12 +122,12 @@ public sealed class CloudBridgeControllerTests : IClassFixture<CloudBridgeTestFa
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task ListEntities_WithUnregisteredProvider_Returns404()
+    public async Task ListEntities_WithUnregisteredProvider_Returns503()
     {
         var namespaceId = Guid.NewGuid();
         var response = await _client.GetAsync($"/api/v1/cloud-bridge/namespaces/{namespaceId}/entities?provider=Aws");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
     }
 
     [Fact]
@@ -153,13 +153,13 @@ public sealed class CloudBridgeControllerTests : IClassFixture<CloudBridgeTestFa
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task GetVisibilityStatus_WithUnregisteredProvider_Returns404()
+    public async Task GetVisibilityStatus_WithUnregisteredProvider_Returns503()
     {
         var namespaceId = Guid.NewGuid();
         var response = await _client.GetAsync(
             $"/api/v1/cloud-bridge/namespaces/{namespaceId}/visibility/my-queue?provider=Aws");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
     }
 
     [Fact]

@@ -81,10 +81,11 @@ export function ConnectPage() {
         toast.error('AWS Access Key ID, Secret Access Key, and Region are required.');
         return;
       }
-      const namespaceName = awsQueuePrefix.trim()
-        ? `sqs.${awsRegion}.amazonaws.com`
-        : `sqs.${awsRegion}.amazonaws.com`;
-      const awsConnectionString = `aws://${awsAccessKeyId.trim()}:${awsSecretKey.trim()}@${awsRegion}`;
+      const namespaceName = `sqs.${awsRegion}.amazonaws.com`;
+      // Store credentials as AKID:SecretKey (colon-separated, no URL prefix).
+      // Region is stored separately in awsRegion — never embed it in the
+      // connection string to avoid URL-parser log-scraper leaks.
+      const awsConnectionString = `${awsAccessKeyId.trim()}:${awsSecretKey.trim()}`;
 
       try {
         await createNamespace.mutateAsync({
@@ -535,6 +536,33 @@ export function ConnectPage() {
                       className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-300"
                     />
                   </div>
+
+                  {/* IAM permissions guidance */}
+                  <details className="mb-3 rounded-lg border border-orange-200 bg-orange-50 text-xs">
+                    <summary className="cursor-pointer px-3 py-2 font-medium text-orange-800 select-none">
+                      Required IAM permissions for this IAM user
+                    </summary>
+                    <div className="px-3 pb-3 pt-1 text-orange-900 space-y-1">
+                      <p className="font-semibold mt-1">SQS permissions:</p>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        <li><code>sqs:ReceiveMessage</code></li>
+                        <li><code>sqs:GetQueueAttributes</code></li>
+                        <li><code>sqs:GetQueueUrl</code></li>
+                        <li><code>sqs:ListQueues</code></li>
+                        <li><code>sqs:SendMessage</code> <span className="text-orange-700">(for replay / send operations)</span></li>
+                        <li><code>sqs:DeleteMessage</code> <span className="text-orange-700">(for replay: moves message from DLQ)</span></li>
+                      </ul>
+                      <p className="font-semibold mt-2">SNS permissions (if using SNS fan-out):</p>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        <li><code>sns:ListTopics</code></li>
+                        <li><code>sns:ListSubscriptions</code></li>
+                        <li><code>sns:Publish</code> <span className="text-orange-700">(for send operations)</span></li>
+                      </ul>
+                      <p className="mt-2 text-orange-700">
+                        Tip: Use a dedicated IAM user with least-privilege policies scoped to your queue ARNs.
+                      </p>
+                    </div>
+                  </details>
                 </>
               )}
 
@@ -581,6 +609,28 @@ export function ConnectPage() {
                       Credentials are AES-GCM encrypted before storage and never returned to the browser.
                     </p>
                   </div>
+
+                  {/* GCP IAM guidance */}
+                  <details className="mb-3 rounded-lg border border-green-200 bg-green-50 text-xs">
+                    <summary className="cursor-pointer px-3 py-2 font-medium text-green-800 select-none">
+                      Required GCP roles for this service account
+                    </summary>
+                    <div className="px-3 pb-3 pt-1 text-green-900 space-y-1">
+                      <p className="font-semibold mt-1">Minimum roles (read-only browsing):</p>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        <li><code>roles/pubsub.subscriber</code> — pull &amp; acknowledge messages</li>
+                        <li><code>roles/pubsub.viewer</code> — list topics and subscriptions</li>
+                      </ul>
+                      <p className="font-semibold mt-2">Additional roles (send / replay):</p>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        <li><code>roles/pubsub.publisher</code> — publish messages to topics</li>
+                      </ul>
+                      <p className="mt-2 text-green-700">
+                        Tip: Grant these roles on the project or at the topic/subscription resource level for least privilege.
+                        Generate a key at <strong>IAM &amp; Admin → Service Accounts → Keys → Add Key → JSON</strong>.
+                      </p>
+                    </div>
+                  </details>
                 </>
               )}
 

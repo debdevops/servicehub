@@ -15,10 +15,18 @@ function EntityRow({ entity }: { entity: CloudEntity }) {
       <td className="px-4 py-2 font-mono">{entity.name}</td>
       <td className="px-4 py-2 text-gray-500">{entity.entityType}</td>
       <td className="px-4 py-2 text-right tabular-nums">
-        {entity.messageCount != null ? entity.messageCount.toLocaleString() : '—'}
+        {entity.messageCount == null
+          ? '—'
+          : entity.messageCount < 0
+            ? <span title="GCP Pub/Sub does not expose a message count API">N/A</span>
+            : entity.messageCount.toLocaleString()}
       </td>
       <td className="px-4 py-2 text-right tabular-nums text-red-600">
-        {entity.dlqMessageCount != null ? entity.dlqMessageCount.toLocaleString() : '—'}
+        {entity.dlqMessageCount == null
+          ? '—'
+          : entity.dlqMessageCount < 0
+            ? <span title="GCP Pub/Sub does not expose a DLQ count API">N/A</span>
+            : entity.dlqMessageCount.toLocaleString()}
       </td>
     </tr>
   );

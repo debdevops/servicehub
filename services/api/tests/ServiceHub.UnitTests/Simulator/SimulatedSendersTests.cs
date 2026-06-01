@@ -39,7 +39,7 @@ public sealed class SimulatedSendersTests
     }
 
     private static SendMessageRequest ValidRequest(string? body = "hello") =>
-        new(TestNsId, TestEntityName, body);
+        new(TestNsId, TestEntityName, body ?? "");
 
     // ═════════════════════════════════════════════════════════════════════════
     // SimulatedAwsSender

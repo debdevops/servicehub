@@ -202,6 +202,16 @@ public sealed class Namespace
         // Detect permissions from connection string
         var permissions = DetectConnectionStringPermissions(connectionString);
 
+        // Auto-detect the correct AuthType based on cloud provider so that provider-specific
+        // client factories receive the expected enum value and do not fall through to the default
+        // anonymous-credentials branch.
+        var authType = provider switch
+        {
+            CloudProviderType.Aws => ConnectionAuthType.AwsAccessKey,
+            CloudProviderType.Gcp => ConnectionAuthType.GcpServiceAccount,
+            _ => ConnectionAuthType.ConnectionString,
+        };
+
         var ns = new Namespace
         {
             Id = Guid.NewGuid(),
@@ -209,7 +219,7 @@ public sealed class Namespace
             ConnectionString = connectionString.Trim(),
             DisplayName = displayName?.Trim(),
             Description = description?.Trim(),
-            AuthType = ConnectionAuthType.ConnectionString,
+            AuthType = authType,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
             HasListenPermission = permissions.HasListen,
