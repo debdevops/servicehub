@@ -23,6 +23,7 @@ public interface IDlqHistoryService
         FailureCategory? category = null,
         int page = 1,
         int pageSize = 50,
+        CloudProviderType? provider = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

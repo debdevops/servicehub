@@ -38,6 +38,10 @@ public static class AwsDependencyInjection
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<ICloudMessagingProvider, AwsMessagingProvider>());
 
+        // Register the AWS health check so the /health/ready endpoint validates SQS connectivity.
+        services.AddHealthChecks()
+            .AddCheck<AwsHealthCheck>("aws-connectivity", tags: ["aws", "ready"]);
+
         return services;
     }
 }

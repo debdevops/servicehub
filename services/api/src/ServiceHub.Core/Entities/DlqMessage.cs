@@ -110,4 +110,14 @@ public sealed class DlqMessage
 
     /// <summary>Navigation property: replay history entries.</summary>
     public ICollection<ReplayHistory> ReplayHistories { get; init; } = new List<ReplayHistory>();
+
+    /// <summary>The cloud provider that hosts the message broker for this DLQ entry.</summary>
+    public CloudProviderType CloudProvider { get; private set; } = CloudProviderType.Azure;
+
+    /// <summary>
+    /// Sets the cloud provider for this DLQ message entry.
+    /// Used during detection to record which provider surfaced the dead-letter.
+    /// </summary>
+    /// <param name="provider">The cloud provider to associate with this record.</param>
+    public void SetCloudProvider(CloudProviderType provider) => CloudProvider = provider;
 }

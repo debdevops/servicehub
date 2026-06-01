@@ -34,6 +34,10 @@ public static class GcpDependencyInjection
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<ICloudMessagingProvider, GcpMessagingProvider>());
 
+        // Register the GCP health check so the /health/ready endpoint validates Pub/Sub connectivity.
+        services.AddHealthChecks()
+            .AddCheck<GcpHealthCheck>("gcp-connectivity", tags: ["gcp", "ready"]);
+
         return services;
     }
 }

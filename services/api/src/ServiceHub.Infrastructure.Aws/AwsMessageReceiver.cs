@@ -34,6 +34,15 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
     // Caches DLQ URL per (namespaceId, sourceQueueUrl) to avoid repeated GetQueueAttributes calls.
     private readonly ConcurrentDictionary<string, string> _dlqUrlCache = new();
 
+    /// <summary>Maximum receipt-handle cache entries before LRU-style eviction is triggered.</summary>
+    private const int ReceiptHandleCacheMaxSize = 50_000;
+
+    /// <summary>Number of oldest entries to evict when the receipt-handle cache is at capacity.</summary>
+    private const int ReceiptHandleCacheEvictCount = 5_000;
+
+    /// <summary>Maximum DLQ URL cache entries (one per distinct source queue).</summary>
+    private const int DlqUrlCacheMaxSize = 1_000;
+
     /// <summary>SQS hard limit for ReceiveMessage batch size.</summary>
     private const int SqsMaxBatchSize = 10;
 
@@ -527,6 +536,13 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         var urlResponse = await sqs.GetQueueUrlAsync(new GetQueueUrlRequest { QueueName = queueName }, ct)
             .ConfigureAwait(false);
         var dlqUrl = urlResponse.QueueUrl;
+        if (_dlqUrlCache.Count >= DlqUrlCacheMaxSize)
+        {
+            // Evict an arbitrary entry when the URL cache is at capacity
+            var firstKey = _dlqUrlCache.Keys.FirstOrDefault();
+            if (firstKey is not null)
+                _dlqUrlCache.TryRemove(firstKey, out _);
+        }
         _dlqUrlCache.TryAdd(sourceQueueUrl, dlqUrl);
         return dlqUrl;
     }
@@ -576,6 +592,17 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         {
             // Derive a stable long ID from the receipt handle hash for the UI sequence number.
             var seqNum = ComputeSequenceNumber(msg.ReceiptHandle);
+
+            // Evict oldest entries if cache is at capacity to prevent unbounded memory growth.
+            if (_receiptHandleCache.Count >= ReceiptHandleCacheMaxSize)
+            {
+                var toEvict = _receiptHandleCache.Keys
+                    .Take(ReceiptHandleCacheEvictCount)
+                    .ToList();
+                foreach (var evictKey in toEvict)
+                    _receiptHandleCache.TryRemove(evictKey, out _);
+                _logger.LogDebug("Evicted {Count} receipt handle cache entries to maintain capacity", toEvict.Count);
+            }
             _receiptHandleCache.TryAdd(seqNum, msg.ReceiptHandle);
 
             // Parse system attributes

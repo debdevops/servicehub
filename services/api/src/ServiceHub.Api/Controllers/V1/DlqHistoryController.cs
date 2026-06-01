@@ -42,6 +42,7 @@ public sealed class DlqHistoryController : ApiControllerBase
     /// <param name="category">Optional failure category filter.</param>
     /// <param name="page">Page number (default: 1).</param>
     /// <param name="pageSize">Items per page (default: 50, max: 200).</param>
+    /// <param name="provider">Optional cloud provider filter (Azure, Aws, Gcp).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Paginated list of DLQ messages.</returns>
     [HttpGet("history")]
@@ -56,6 +57,7 @@ public sealed class DlqHistoryController : ApiControllerBase
         [FromQuery] FailureCategory? category = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
+        [FromQuery] CloudProviderType? provider = null,
         CancellationToken cancellationToken = default)
     {
         pageSize = Math.Clamp(pageSize, 1, 200);
@@ -63,7 +65,7 @@ public sealed class DlqHistoryController : ApiControllerBase
 
         var result = await _historyService.GetHistoryAsync(
             OwnerId, namespaceId, entityName, from, to, status, category,
-            page, pageSize, cancellationToken);
+            page, pageSize, provider, cancellationToken);
 
         if (result.IsFailure)
             return ToActionResult<PaginatedResponse<DlqHistoryResponse>>(result.Error);
@@ -97,7 +99,8 @@ public sealed class DlqHistoryController : ApiControllerBase
             TopicName: m.TopicName,
             ForensicRootCause: m.ForensicRootCause,
             ForensicConfidence: m.ForensicConfidence,
-            ReplaySafety: m.ReplaySafety
+            ReplaySafety: m.ReplaySafety,
+            CloudProvider: m.CloudProvider.ToString()
         )).ToList();
 
         var response = new PaginatedResponse<DlqHistoryResponse>(
@@ -254,7 +257,8 @@ public sealed class DlqHistoryController : ApiControllerBase
             TopicName: m.TopicName,
             ForensicRootCause: m.ForensicRootCause,
             ForensicConfidence: m.ForensicConfidence,
-            ReplaySafety: m.ReplaySafety);
+            ReplaySafety: m.ReplaySafety,
+            CloudProvider: m.CloudProvider.ToString());
 
         return Ok(response);
     }
@@ -324,7 +328,8 @@ public sealed class DlqHistoryController : ApiControllerBase
             TopicName: m.TopicName,
             ForensicRootCause: m.ForensicRootCause,
             ForensicConfidence: m.ForensicConfidence,
-            ReplaySafety: m.ReplaySafety
+            ReplaySafety: m.ReplaySafety,
+            CloudProvider: m.CloudProvider.ToString()
         )).ToList();
 
         var json = JsonSerializer.Serialize(jsonItems, new JsonSerializerOptions
