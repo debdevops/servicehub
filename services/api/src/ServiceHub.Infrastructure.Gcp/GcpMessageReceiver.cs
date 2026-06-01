@@ -62,17 +62,26 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
 
         var ns = nsResult.Value;
 
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(OperationTimeoutSeconds));
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
         try
         {
             var subscriber = await _clientFactory.GetSubscriberClientAsync(
-                ns, request.EntityName, cancellationToken).ConfigureAwait(false);
+                ns, request.EntityName, linkedCts.Token).ConfigureAwait(false);
 
             var subResourceName = GetSubscriptionResourceName(ns, request.EntityName);
-            var messages = await PullAndNackAsync(subscriber, subResourceName, request.MaxMessages, cancellationToken).ConfigureAwait(false);
+            var messages = await PullAndNackAsync(subscriber, subResourceName, request.MaxMessages, linkedCts.Token).ConfigureAwait(false);
             var mapped = MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: false);
 
             _logger.LogDebug("Peeked {Count} messages from Pub/Sub subscription {Subscription}", mapped.Count, request.EntityName);
             return Result.Success<IReadOnlyList<Message>>(mapped);
+        }
+        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning("GCP Pub/Sub peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, request.EntityName);
+            return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
+                "GCP.PubSub.Timeout", $"Pub/Sub operation timed out after {OperationTimeoutSeconds}s."));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -98,17 +107,26 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
 
         var ns = nsResult.Value;
 
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(OperationTimeoutSeconds));
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
         try
         {
             var subscriber = await _clientFactory.GetSubscriberClientAsync(
-                ns, dlqSubscription, cancellationToken).ConfigureAwait(false);
+                ns, dlqSubscription, linkedCts.Token).ConfigureAwait(false);
 
             var subResourceName = GetSubscriptionResourceName(ns, dlqSubscription);
-            var messages = await PullAndNackAsync(subscriber, subResourceName, request.MaxMessages, cancellationToken).ConfigureAwait(false);
+            var messages = await PullAndNackAsync(subscriber, subResourceName, request.MaxMessages, linkedCts.Token).ConfigureAwait(false);
             var mapped = MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: true);
 
             _logger.LogDebug("Peeked {Count} DLQ messages from Pub/Sub subscription {Subscription}", mapped.Count, dlqSubscription);
             return Result.Success<IReadOnlyList<Message>>(mapped);
+        }
+        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning("GCP Pub/Sub DLQ peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, dlqSubscription);
+            return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
+                "GCP.PubSub.Timeout", $"Pub/Sub DLQ operation timed out after {OperationTimeoutSeconds}s."));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -117,20 +135,25 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         }
     }
 
+    // Hard limit per individual Pub/Sub API call.
+    private const int OperationTimeoutSeconds = 15;
+
     /// <inheritdoc/>
-    public async Task<Result<long>> GetMessageCountAsync(
+    public Task<Result<long>> GetMessageCountAsync(
         Guid namespaceId,
         string entityName,
         string? subscriptionName = null,
         CancellationToken cancellationToken = default)
     {
-        // Pub/Sub does not expose a direct message count API. We return -1 to indicate
-        // that the count is unavailable, rather than attempting a pull-and-count.
-        _logger.LogWarning(
-            "GCP Pub/Sub does not support exact message count queries. " +
-            "Use the Cloud Console or Monitoring API for subscription metrics. Subscription: {Subscription}",
+        // Pub/Sub does not expose a direct message count API.
+        // Return a dedicated error code so the UI can render "N/A" instead of -1 or a spinner.
+        _logger.LogDebug(
+            "GCP Pub/Sub message count is unavailable via API. Subscription: {Subscription}",
             entityName);
-        return await Task.FromResult(Result.Success(-1L)).ConfigureAwait(false);
+        return Task.FromResult(Result.Failure<long>(Error.Validation(
+            "GCP.PubSub.CountUnavailable",
+            "GCP Pub/Sub does not support direct message count queries. " +
+            "Use the Cloud Monitoring API or console for subscription metrics.")));
     }
 
     /// <inheritdoc/>

@@ -63,6 +63,16 @@ public sealed class GcpMessagingProvider : ICloudMessagingProvider
                 "GCP Project ID is required. Set GcpProjectId on the namespace."));
         }
 
+        // Validate service-account JSON shape before making any network call.
+        // A valid Google service-account key file must be a JSON object that contains
+        // at minimum the fields: type, project_id, private_key_id, private_key, client_email.
+        if (!string.IsNullOrWhiteSpace(ns.ConnectionString))
+        {
+            var shapeError = ValidateServiceAccountJsonShape(ns.ConnectionString);
+            if (shapeError is not null)
+                return shapeError;
+        }
+
         try
         {
             // Attempt to list topics — validates credentials without requiring a specific topic.
@@ -85,6 +95,48 @@ public sealed class GcpMessagingProvider : ICloudMessagingProvider
         {
             _logger.LogError(ex, "Unexpected error validating GCP connection for namespace {NamespaceId}", ns.Id);
             return Result.Failure(Error.ExternalService("GCP.PubSub.ValidationFailed", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Validates that the provided JSON string has the shape of a Google service-account key file.
+    /// Returns a <see cref="Result"/> failure when the JSON is malformed or missing required fields;
+    /// returns <c>null</c> when the shape is acceptable.
+    /// </summary>
+    private static Result? ValidateServiceAccountJsonShape(string json)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object)
+                return Result.Failure(Error.Validation("GCP.ServiceAccount.NotJsonObject",
+                    "The GCP service-account credential must be a JSON object."));
+
+            // Check the 'type' field so we give a clear error if someone pastes an OAuth token
+            // or an ADC credentials file instead of a service-account key.
+            if (root.TryGetProperty("type", out var typeEl) &&
+                !string.Equals(typeEl.GetString(), "service_account", StringComparison.OrdinalIgnoreCase))
+            {
+                return Result.Failure(Error.Validation("GCP.ServiceAccount.WrongType",
+                    $"Expected credential type 'service_account', but got '{typeEl.GetString()}'. " +
+                    "Download a Service Account key JSON from the GCP IAM console."));
+            }
+
+            string[] required = ["type", "project_id", "private_key_id", "private_key", "client_email"];
+            var missing = required.Where(f => !root.TryGetProperty(f, out _)).ToArray();
+            if (missing.Length > 0)
+                return Result.Failure(Error.Validation("GCP.ServiceAccount.MissingFields",
+                    $"Service-account JSON is missing required fields: {string.Join(", ", missing)}. " +
+                    "Download a complete Service Account key JSON from the GCP IAM console."));
+
+            return null; // shape is valid
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            return Result.Failure(Error.Validation("GCP.ServiceAccount.InvalidJson",
+                $"The GCP service-account credential is not valid JSON: {ex.Message}"));
         }
     }
 

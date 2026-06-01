@@ -91,24 +91,24 @@ public sealed class CloudProviderRouterTests
     }
 
     [Fact]
-    public async Task ListEntities_WithAzureProvider_Returns404_NotRegisteredInBridge()
+    public async Task ListEntities_WithAzureProvider_Returns503_NotRegisteredInBridge()
     {
         var ctrl = BuildController(); // no providers registered
 
         var result = await ctrl.ListEntities(TestNamespaceId, "Azure", CancellationToken.None);
 
-        // Azure is a valid enum but no provider is registered in the cloud bridge
-        result.Should().BeOfType<NotFoundObjectResult>();
+        // Azure is a valid enum but no provider is registered in the cloud bridge — returns 503
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
     }
 
     [Fact]
-    public async Task ListEntities_WithUnregisteredProvider_Returns404()
+    public async Task ListEntities_WithUnregisteredProvider_Returns503()
     {
         var ctrl = BuildController(); // no AWS provider registered
 
         var result = await ctrl.ListEntities(TestNamespaceId, "Aws", CancellationToken.None);
 
-        result.Should().BeOfType<NotFoundObjectResult>();
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
     }
 
     [Fact]

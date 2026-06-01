@@ -55,6 +55,9 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
 
     // ── IMessageReceiver ──────────────────────────────────────────────────────
 
+    // Hard limit per individual SQS API call so a slow queue cannot stall the UI.
+    private const int OperationTimeoutSeconds = 15;
+
     /// <inheritdoc/>
     public async Task<Result<IReadOnlyList<CoreMessage>>> PeekMessagesAsync(
         GetMessagesRequest request,
@@ -69,15 +72,24 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         var ns = nsResult.Value;
         var sqs = _clientFactory.GetSqsClient(ns);
 
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(OperationTimeoutSeconds));
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
         try
         {
-            var queueUrl = await ResolveQueueUrlAsync(sqs, request.EntityName, cancellationToken).ConfigureAwait(false);
-            var messages = await PeekFromUrlAsync(sqs, queueUrl, request.MaxMessages, cancellationToken).ConfigureAwait(false);
+            var queueUrl = await ResolveQueueUrlAsync(sqs, request.EntityName, linkedCts.Token).ConfigureAwait(false);
+            var messages = await PeekFromUrlAsync(sqs, queueUrl, request.MaxMessages, linkedCts.Token).ConfigureAwait(false);
             var mapped = MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: false);
 
             _logger.LogDebug("Peeked {Count} messages from SQS queue {QueueName} (namespace {NamespaceId})",
                 mapped.Count, request.EntityName, request.NamespaceId);
             return Result.Success<IReadOnlyList<CoreMessage>>(mapped);
+        }
+        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning("SQS peek timed out after {Seconds}s for queue {QueueName}", OperationTimeoutSeconds, request.EntityName);
+            return Result.Failure<IReadOnlyList<CoreMessage>>(Error.ExternalService(
+                "AWS.SQS.Timeout", $"SQS operation timed out after {OperationTimeoutSeconds}s."));
         }
         catch (AmazonSQSException ex)
         {
@@ -85,7 +97,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             return Result.Failure<IReadOnlyList<CoreMessage>>(Error.ExternalService(
                 "AWS.SQS.PeekFailed", $"SQS error: {ex.Message}"));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Unexpected error peeking SQS messages from {QueueName}", request.EntityName);
             return Result.Failure<IReadOnlyList<CoreMessage>>(Error.Internal("AWS.SQS.UnexpectedError", ex.Message));
@@ -106,10 +118,13 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         var ns = nsResult.Value;
         var sqs = _clientFactory.GetSqsClient(ns);
 
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(OperationTimeoutSeconds));
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
         try
         {
-            var sourceUrl = await ResolveQueueUrlAsync(sqs, request.EntityName, cancellationToken).ConfigureAwait(false);
-            var dlqUrl = await ResolveDlqUrlAsync(sqs, sourceUrl, cancellationToken).ConfigureAwait(false);
+            var sourceUrl = await ResolveQueueUrlAsync(sqs, request.EntityName, linkedCts.Token).ConfigureAwait(false);
+            var dlqUrl = await ResolveDlqUrlAsync(sqs, sourceUrl, linkedCts.Token).ConfigureAwait(false);
 
             if (dlqUrl is null)
             {
@@ -117,12 +132,18 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                 return Result.Success<IReadOnlyList<CoreMessage>>(Array.Empty<CoreMessage>());
             }
 
-            var messages = await PeekFromUrlAsync(sqs, dlqUrl, request.MaxMessages, cancellationToken).ConfigureAwait(false);
+            var messages = await PeekFromUrlAsync(sqs, dlqUrl, request.MaxMessages, linkedCts.Token).ConfigureAwait(false);
             var mapped = MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: true);
 
             _logger.LogDebug("Peeked {Count} DLQ messages from {QueueName} (namespace {NamespaceId})",
                 mapped.Count, request.EntityName, request.NamespaceId);
             return Result.Success<IReadOnlyList<CoreMessage>>(mapped);
+        }
+        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning("SQS DLQ peek timed out after {Seconds}s for queue {QueueName}", OperationTimeoutSeconds, request.EntityName);
+            return Result.Failure<IReadOnlyList<CoreMessage>>(Error.ExternalService(
+                "AWS.SQS.Timeout", $"SQS DLQ operation timed out after {OperationTimeoutSeconds}s."));
         }
         catch (AmazonSQSException ex)
         {
@@ -130,7 +151,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             return Result.Failure<IReadOnlyList<CoreMessage>>(Error.ExternalService(
                 "AWS.SQS.DlqPeekFailed", $"SQS error: {ex.Message}"));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Unexpected error peeking SQS DLQ messages from {QueueName}", request.EntityName);
             return Result.Failure<IReadOnlyList<CoreMessage>>(Error.Internal("AWS.SQS.UnexpectedError", ex.Message));
@@ -150,14 +171,17 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
 
         var sqs = _clientFactory.GetSqsClient(nsResult.Value);
 
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(OperationTimeoutSeconds));
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
         try
         {
-            var queueUrl = await ResolveQueueUrlAsync(sqs, entityName, cancellationToken).ConfigureAwait(false);
+            var queueUrl = await ResolveQueueUrlAsync(sqs, entityName, linkedCts.Token).ConfigureAwait(false);
             var attrs = await sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
             {
                 QueueUrl = queueUrl,
                 AttributeNames = new List<string> { "ApproximateNumberOfMessages", "ApproximateNumberOfMessagesNotVisible" }
-            }, cancellationToken).ConfigureAwait(false);
+            }, linkedCts.Token).ConfigureAwait(false);
 
             var visible = (long)attrs.ApproximateNumberOfMessages;
             var inFlight = (long)attrs.ApproximateNumberOfMessagesNotVisible;

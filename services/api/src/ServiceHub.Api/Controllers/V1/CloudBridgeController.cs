@@ -195,7 +195,14 @@ public sealed class CloudBridgeController : ApiControllerBase
         var resolved = _providers.FirstOrDefault(p => p.ProviderType == providerType);
         if (resolved is null)
         {
-            error = NotFound($"Provider '{provider}' is not registered. Enable it via the CloudProviders feature flag.");
+            error = StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Title = "Provider not enabled",
+                Detail = $"The '{provider}' cloud provider is not enabled on this server. " +
+                         $"Set 'CloudProviders:{provider}:Enabled' to 'true' in appsettings and restart.",
+                Instance = HttpContext.Request.Path
+            });
             return null;
         }
 

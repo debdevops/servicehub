@@ -15,11 +15,6 @@ namespace ServiceHub.Api.Controllers.V1;
 /// Cross-Cloud Message Trace — searches every connected namespace (Azure, AWS, GCP)
 /// for a message carrying the specified correlation/trace ID, then returns a
 /// chronological route showing how the message traveled across clouds.
-///
-/// Phase 1: Azure namespaces are searched in real time using PeekMessagesAsync.
-/// Phase 2 (planned): AWS SQS and GCP Pub/Sub namespace searches via provider SDKs.
-/// Non-Azure namespaces are included in NamespaceSummaries with WasSearched=false
-/// and a human-readable SkipReason so the UI can render the cloud topology accurately.
 /// </summary>
 [Route(ApiRoutes.CrossCloudTrace.Base)]
 [Tags("Cross-Cloud Trace")]
@@ -28,6 +23,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IServiceBusClientCache _clientCache;
     private readonly IConnectionStringProtector _connectionStringProtector;
+    private readonly IEnumerable<ICloudMessagingProvider> _cloudProviders;
     private readonly ILogger<CrossCloudTraceController> _logger;
 
     private const int MaxConcurrentNamespaces = 5;
@@ -40,12 +36,14 @@ public sealed class CrossCloudTraceController : ApiControllerBase
         INamespaceRepository namespaceRepository,
         IServiceBusClientCache clientCache,
         IConnectionStringProtector connectionStringProtector,
-        ILogger<CrossCloudTraceController> logger)
+        ILogger<CrossCloudTraceController> logger,
+        IEnumerable<ICloudMessagingProvider>? cloudProviders = null)
     {
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
         _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _cloudProviders = cloudProviders ?? [];
     }
 
     /// <summary>
@@ -295,8 +293,10 @@ public sealed class CrossCloudTraceController : ApiControllerBase
 
         await Task.WhenAll(azureTasks).ConfigureAwait(false);
 
-        // ── Non-Azure namespaces: Phase 2 stubs ───────────────────────────
-        var nonAzureSummaries = nonAzureNamespaces.Select(ns =>
+        // ── Non-Azure namespaces: search via ICloudMessagingProvider ─────
+        var nonAzureSummaries = new ConcurrentBag<CrossCloudNamespaceSummary>();
+
+        var nonAzureTasks = nonAzureNamespaces.Select(async ns =>
         {
             var providerLabel = ns.Provider switch
             {
@@ -305,17 +305,112 @@ public sealed class CrossCloudTraceController : ApiControllerBase
                 _ => ns.Provider.ToString().ToLowerInvariant()
             };
 
-            var skipReason = ns.Provider switch
+            var matchingProvider = _cloudProviders.FirstOrDefault(p => p.ProviderType == ns.Provider);
+            if (matchingProvider is null)
             {
-                CloudProviderType.Aws => "AWS SQS/SNS trace support coming in Phase 2 — correlation ID matched in message attributes",
-                CloudProviderType.Gcp => "GCP Pub/Sub trace support coming in Phase 2 — trace_id matched in message attributes",
-                _ => "Provider not yet supported"
-            };
+                nonAzureSummaries.Add(new CrossCloudNamespaceSummary(
+                    ns.Id, ns.DisplayName ?? ns.Name, providerLabel,
+                    WasSearched: false,
+                    SkipReason: $"{providerLabel.ToUpperInvariant()} provider is not enabled on this server.",
+                    HopsFound: 0));
+                return;
+            }
 
-            return new CrossCloudNamespaceSummary(
-                ns.Id, ns.DisplayName ?? ns.Name, providerLabel,
-                WasSearched: false, SkipReason: skipReason, HopsFound: 0);
-        }).ToList();
+            await semaphore.WaitAsync(searchToken).ConfigureAwait(false);
+            var nsHopCount = 0;
+            try
+            {
+                var entitiesResult = await matchingProvider.ListEntitiesAsync(ns.Id, searchToken).ConfigureAwait(false);
+                if (entitiesResult.IsFailure)
+                {
+                    nonAzureSummaries.Add(new CrossCloudNamespaceSummary(
+                        ns.Id, ns.DisplayName ?? ns.Name, providerLabel,
+                        WasSearched: false, SkipReason: $"Entity list failed: {entitiesResult.Error.Message}", HopsFound: 0));
+                    return;
+                }
+
+                var receiver = matchingProvider.GetMessageReceiver();
+                var nsDisplayName = ns.DisplayName ?? ns.Name;
+                Interlocked.Add(ref entitiesSearched, entitiesResult.Value.Count);
+
+                var entityTasks = entitiesResult.Value.Select(async entity =>
+                {
+                    try
+                    {
+                        var peekReq = new GetMessagesRequest(
+                            NamespaceId: ns.Id,
+                            EntityName: entity.Name,
+                            SubscriptionName: null,
+                            FromDeadLetter: false,
+                            MaxMessages: GetMessagesRequest.MaxAllowedMessages);
+
+                        var peekResult = await receiver.PeekMessagesAsync(peekReq, searchToken).ConfigureAwait(false);
+                        if (!peekResult.IsSuccess) return;
+
+                        foreach (var msg in peekResult.Value)
+                        {
+                            // Check CorrelationId property first (AWS maps it from MessageAttributes,
+                            // GCP maps it from message attributes if the sender sets it).
+                            // Fall back to ApplicationProperties for providers that use attribute bags.
+                            var msgCorrelationId = msg.CorrelationId
+                                ?? GetCorrelationFromProperties(msg.ApplicationProperties);
+
+                            if (string.Equals(msgCorrelationId, traceId, StringComparison.OrdinalIgnoreCase))
+                            {
+                                Interlocked.Increment(ref nsHopCount);
+                                hops.Add(new CrossCloudTraceHop(
+                                    CloudProvider: providerLabel,
+                                    NamespaceId: ns.Id,
+                                    NamespaceDisplayName: nsDisplayName,
+                                    EntityName: entity.Name,
+                                    EntityPath: entity.Name,
+                                    MessageId: msg.MessageId,
+                                    SequenceNumber: msg.SequenceNumber,
+                                    State: msg.State.ToString(),
+                                    Timestamp: msg.EnqueuedTime,
+                                    DeadLetterReason: msg.DeadLetterReason,
+                                    BodyPreview: msg.Body != null && msg.Body.Length > 200 ? msg.Body[..200] : msg.Body,
+                                    SizeInBytes: msg.SizeInBytes,
+                                    Source: "Live",
+                                    HopIndex: 0));
+                            }
+                        }
+                    }
+                    catch (OperationCanceledException) { isPartialResult = true; }
+                    catch (Exception ex) when (!searchToken.IsCancellationRequested)
+                    {
+                        _logger.LogWarning(ex, "Error searching {Provider} entity {Entity} in namespace {NamespaceId}",
+                            providerLabel, entity.Name, ns.Id);
+                    }
+                });
+
+                await Task.WhenAll(entityTasks).ConfigureAwait(false);
+
+                nonAzureSummaries.Add(new CrossCloudNamespaceSummary(
+                    ns.Id, nsDisplayName, providerLabel,
+                    WasSearched: true, SkipReason: null, HopsFound: nsHopCount));
+            }
+            catch (OperationCanceledException)
+            {
+                isPartialResult = true;
+                nonAzureSummaries.Add(new CrossCloudNamespaceSummary(
+                    ns.Id, ns.DisplayName ?? ns.Name, providerLabel,
+                    WasSearched: false, SkipReason: "Search timed out", HopsFound: nsHopCount));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error searching {Provider} namespace {NamespaceId}", providerLabel, ns.Id);
+                nonAzureSummaries.Add(new CrossCloudNamespaceSummary(
+                    ns.Id, ns.DisplayName ?? ns.Name, providerLabel,
+                    WasSearched: false, SkipReason: $"Search error: {ex.Message[..Math.Min(ex.Message.Length, 80)]}", HopsFound: nsHopCount));
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        await Task.WhenAll(nonAzureTasks).ConfigureAwait(false);
 
         // ── Build final response ──────────────────────────────────────────
         var allSummaries = azureSummaries
@@ -371,6 +466,24 @@ public sealed class CrossCloudTraceController : ApiControllerBase
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Extracts a correlation ID from an application-properties dictionary.
+    /// Checks several common key names used by AWS SQS message attributes and GCP Pub/Sub attributes.
+    /// </summary>
+    private static string? GetCorrelationFromProperties(IReadOnlyDictionary<string, object>? props)
+    {
+        if (props is null) return null;
+
+        // Try common correlation-ID key names in priority order
+        foreach (var key in new[] { "CorrelationId", "correlationId", "correlation_id", "TraceId", "traceId", "trace_id" })
+        {
+            if (props.TryGetValue(key, out var val) && val is string s && !string.IsNullOrWhiteSpace(s))
+                return s;
+        }
+
+        return null;
+    }
 
     private static CrossCloudTraceHop BuildAzureHop(
         Guid namespaceId,
