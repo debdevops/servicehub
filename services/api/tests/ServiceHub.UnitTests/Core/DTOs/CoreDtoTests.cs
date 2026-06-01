@@ -224,7 +224,8 @@ public class CoreDtoTests
             TopicName: null,
             ForensicRootCause: "Consumer timeout",
             ForensicConfidence: 0.85,
-            ReplaySafety: "Safe");
+            ReplaySafety: "Safe",
+            CloudProvider: "Azure");
 
         response.Id.Should().Be(1);
         response.MessageId.Should().Be("msg-1");

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using Google.Api.Gax.ResourceNames;
 using Google.Cloud.PubSub.V1;
@@ -29,7 +30,14 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
     private readonly ILogger<GcpMessageReceiver> _logger;
 
     // Maps synthetic sequence number → ack ID for replay/purge operations.
-    private readonly Dictionary<long, string> _ackIdCache = [];
+    // ConcurrentDictionary ensures thread-safe access from parallel async continuations.
+    private readonly ConcurrentDictionary<long, string> _ackIdCache = new();
+
+    /// <summary>Maximum number of ack-ID cache entries before eviction is triggered.</summary>
+    private const int AckIdCacheMaxSize = 50_000;
+
+    /// <summary>Number of oldest entries to evict when the cache reaches <see cref="AckIdCacheMaxSize"/>.</summary>
+    private const int AckIdCacheEvictCount = 1_000;
 
     /// <summary>
     /// Initialises a new instance of <see cref="GcpMessageReceiver"/>.
@@ -208,7 +216,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 AckDeadlineSeconds = 0
             }, cancellationToken).ConfigureAwait(false);
 
-            _ackIdCache.Remove(sequenceNumber);
+            _ackIdCache.TryRemove(sequenceNumber, out _);
             _logger.LogInformation("Replayed Pub/Sub message {Seq} on subscription {Subscription}", sequenceNumber, entityName);
             return Result.Success();
         }
@@ -253,7 +261,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 AckIds = { ackId }
             }, cancellationToken).ConfigureAwait(false);
 
-            _ackIdCache.Remove(sequenceNumber);
+            _ackIdCache.TryRemove(sequenceNumber, out _);
             _logger.LogInformation("Purged Pub/Sub message {Seq} from {Subscription}", sequenceNumber, subscriptionId);
             return Result.Success();
         }
@@ -361,6 +369,12 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         {
             var msg = received.Message;
             var seqNum = ComputeSequenceNumber(received.AckId);
+            if (_ackIdCache.Count >= AckIdCacheMaxSize)
+            {
+                var toEvict = _ackIdCache.Keys.Take(AckIdCacheEvictCount).ToList();
+                foreach (var evictKey in toEvict)
+                    _ackIdCache.TryRemove(evictKey, out _);
+            }
             _ackIdCache.TryAdd(seqNum, received.AckId);
 
             var body = msg.Data?.IsEmpty == false

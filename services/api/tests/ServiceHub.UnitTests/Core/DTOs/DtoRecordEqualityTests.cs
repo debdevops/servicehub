@@ -439,7 +439,7 @@ public class DtoRecordEqualityTests
             ReplayedAt: null, ReplaySuccess: null, ArchivedAt: null,
             UserNotes: null, CorrelationId: null, TopicName: null,
             ForensicRootCause: null, ForensicConfidence: 0.0,
-            ReplaySafety: null);
+            ReplaySafety: null, CloudProvider: "Azure");
 
         var modified = r with { Status = "Replayed", ReplayedAt = now };
         modified.Status.Should().Be("Replayed");
