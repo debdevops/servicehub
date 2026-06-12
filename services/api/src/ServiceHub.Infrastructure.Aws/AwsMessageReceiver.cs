@@ -298,7 +298,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             if (!_receiptHandleCache.TryGetValue(sequenceNumber, out var cachedHandle))
             {
                 // Receipt handle not in cache — scan for the message
-                _logger.LogWarning("Receipt handle for sequence {Seq} not cached, scanning DLQ for {QueueName}", sequenceNumber, entityName);
+                _logger.LogWarning("Receipt handle for sequence {Seq} not cached, scanning DLQ for {QueueName}", sequenceNumber, SanitizeForLog(entityName));
                 return Result.Failure(Error.NotFound("AWS.SQS.MessageNotFound",
                     $"Message with sequence number {sequenceNumber} not found in receipt handle cache. " +
                     "Peek the DLQ first to populate the cache before replaying."));
@@ -339,12 +339,12 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             }, cancellationToken).ConfigureAwait(false);
 
             _receiptHandleCache.TryRemove(sequenceNumber, out _);
-            _logger.LogInformation("Replayed message {Seq} from DLQ to {QueueName}", sequenceNumber, entityName);
+            _logger.LogInformation("Replayed message {Seq} from DLQ to {QueueName}", sequenceNumber, SanitizeForLog(entityName));
             return Result.Success();
         }
         catch (AmazonSQSException ex)
         {
-            _logger.LogError(ex, "SQS error replaying message {Seq} for {QueueName}", sequenceNumber, entityName);
+            _logger.LogError(ex, "SQS error replaying message {Seq} for {QueueName}", sequenceNumber, SanitizeForLog(entityName));
             return Result.Failure(Error.ExternalService("AWS.SQS.ReplayFailed", ex.Message));
         }
     }
@@ -394,12 +394,12 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             }, cancellationToken).ConfigureAwait(false);
 
             _receiptHandleCache.TryRemove(sequenceNumber, out _);
-            _logger.LogInformation("Purged message {Seq} from {Queue}", sequenceNumber, entityName);
+            _logger.LogInformation("Purged message {Seq} from {Queue}", sequenceNumber, SanitizeForLog(entityName));
             return Result.Success();
         }
         catch (AmazonSQSException ex)
         {
-            _logger.LogError(ex, "SQS error purging message {Seq} for {QueueName}", sequenceNumber, entityName);
+            _logger.LogError(ex, "SQS error purging message {Seq} for {QueueName}", sequenceNumber, SanitizeForLog(entityName));
             return Result.Failure(Error.ExternalService("AWS.SQS.PurgeFailed", ex.Message));
         }
     }
@@ -415,7 +415,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         _logger.LogWarning(
             "AWS SQS does not support scheduled message inspection. " +
             "Use EventBridge Scheduler for scheduled delivery. Queue: {QueueName}",
-            entityName);
+            SanitizeForLog(entityName));
 
         return Task.FromResult(
             Result.Success<IReadOnlyList<CoreMessage>>(Array.Empty<CoreMessage>()));
@@ -492,7 +492,10 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
-
+    private static string SanitizeForLog(string? value)
+        => (value ?? string.Empty)
+            .Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Replace("\n", string.Empty, StringComparison.Ordinal);
     private static async Task<string> ResolveQueueUrlAsync(
         IAmazonSQS sqs, string queueName, CancellationToken ct)
     {

@@ -63,12 +63,12 @@ public sealed class GcpMessageSender : IMessageSender
             var message = BuildPubSubMessage(request);
             var messageId = await publisher.PublishAsync(message).ConfigureAwait(false);
 
-            _logger.LogInformation("Published Pub/Sub message {MessageId} to topic {TopicId}", messageId, request.EntityName);
+            _logger.LogInformation("Published Pub/Sub message {MessageId} to topic {TopicId}", messageId, SanitizeForLog(request.EntityName));
             return Result.Success();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error publishing Pub/Sub message to topic {TopicId}", request.EntityName);
+            _logger.LogError(ex, "Error publishing Pub/Sub message to topic {TopicId}", SanitizeForLog(request.EntityName));
             return Result.Failure(Error.ExternalService("GCP.PubSub.SendFailed", ex.Message));
         }
     }
@@ -105,18 +105,21 @@ public sealed class GcpMessageSender : IMessageSender
             await Task.WhenAll(tasks).ConfigureAwait(false);
 
             _logger.LogInformation("Batch published {Count} Pub/Sub messages to topic {TopicId}",
-                requestList.Count, first.EntityName);
+                requestList.Count, SanitizeForLog(first.EntityName));
             return Result.Success();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error batch publishing Pub/Sub messages to topic {TopicId}", first.EntityName);
+            _logger.LogError(ex, "Error batch publishing Pub/Sub messages to topic {TopicId}", SanitizeForLog(first.EntityName));
             return Result.Failure(Error.ExternalService("GCP.PubSub.BatchSendFailed", ex.Message));
         }
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
-
+    private static string SanitizeForLog(string? value)
+        => (value ?? string.Empty)
+            .Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Replace("\n", string.Empty, StringComparison.Ordinal);
     private static PubsubMessage BuildPubSubMessage(SendMessageRequest request)
     {
         var message = new PubsubMessage

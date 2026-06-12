@@ -13,11 +13,13 @@ import { resolve } from 'path'
 function spaTokenDevPlugin(): Plugin {
   return {
     name: 'spa-token-dev',
+    apply: 'serve',
     transformIndexHtml: {
       order: 'post',
       async handler(html) {
         try {
-          const res = await fetch('http://localhost:5153/internal/spa-token');
+          const target = process.env.VITE_PROXY_TARGET ?? 'http://localhost:5153';
+          const res = await fetch(`${target}/internal/spa-token`);
           if (res.ok) {
             const token = await res.text();
             return html.replace('</head>', `  <meta name="spa-token" content="${token}">\n  </head>`);

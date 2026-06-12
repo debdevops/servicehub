@@ -217,12 +217,12 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             }, cancellationToken).ConfigureAwait(false);
 
             _ackIdCache.TryRemove(sequenceNumber, out _);
-            _logger.LogInformation("Replayed Pub/Sub message {Seq} on subscription {Subscription}", sequenceNumber, entityName);
+            _logger.LogInformation("Replayed Pub/Sub message {Seq} on subscription {Subscription}", sequenceNumber, SanitizeForLog(entityName));
             return Result.Success();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error replaying Pub/Sub message {Seq} for {Subscription}", sequenceNumber, entityName);
+            _logger.LogError(ex, "Error replaying Pub/Sub message {Seq} for {Subscription}", sequenceNumber, SanitizeForLog(entityName));
             return Result.Failure(Error.ExternalService("GCP.PubSub.ReplayFailed", ex.Message));
         }
     }
@@ -262,12 +262,12 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             }, cancellationToken).ConfigureAwait(false);
 
             _ackIdCache.TryRemove(sequenceNumber, out _);
-            _logger.LogInformation("Purged Pub/Sub message {Seq} from {Subscription}", sequenceNumber, subscriptionId);
+            _logger.LogInformation("Purged Pub/Sub message {Seq} from {Subscription}", sequenceNumber, SanitizeForLog(subscriptionId));
             return Result.Success();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error purging Pub/Sub message {Seq} from {Subscription}", sequenceNumber, subscriptionId);
+            _logger.LogError(ex, "Error purging Pub/Sub message {Seq} from {Subscription}", sequenceNumber, SanitizeForLog(subscriptionId));
             return Result.Failure(Error.ExternalService("GCP.PubSub.PurgeFailed", ex.Message));
         }
     }
@@ -283,7 +283,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         _logger.LogWarning(
             "GCP Pub/Sub does not support scheduled message inspection. " +
             "Use Cloud Tasks or Cloud Scheduler for scheduled delivery. Subscription: {Subscription}",
-            entityName);
+            SanitizeForLog(entityName));
         return Task.FromResult(Result.Success<IReadOnlyList<Message>>(Array.Empty<Message>()));
     }
 
@@ -324,13 +324,16 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error getting ack deadline status for {Subscription}", subscriptionId);
+            _logger.LogError(ex, "Error getting ack deadline status for {Subscription}", SanitizeForLog(subscriptionId));
             return Result.Failure<GcpAckDeadlineStatus>(Error.ExternalService("GCP.PubSub.AckStatusFailed", ex.Message));
         }
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
-
+    private static string SanitizeForLog(string? value)
+        => (value ?? string.Empty)
+            .Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Replace("\n", string.Empty, StringComparison.Ordinal);
     private async Task<List<ReceivedMessage>> PullAndNackAsync(
         SubscriberServiceApiClient subscriber, string subscriptionResourceName, int maxMessages, CancellationToken ct)
     {

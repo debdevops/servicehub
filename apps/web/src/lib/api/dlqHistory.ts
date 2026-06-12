@@ -98,6 +98,7 @@ export interface DlqHistoryParams {
   to?: string;
   status?: string;
   category?: string;
+  provider?: string;
   page?: number;
   pageSize?: number;
 }

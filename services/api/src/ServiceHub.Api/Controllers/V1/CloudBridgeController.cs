@@ -94,7 +94,7 @@ public sealed class CloudBridgeController : ApiControllerBase
 
             if (_logger.IsEnabled(LogLevel.Error))
                 _logger.LogError("ListEntities failed for {Provider}/{Namespace}: {Error}",
-                    provider, namespaceId, result.Error.Message);
+                    SanitizeForLog(provider), namespaceId, result.Error.Message);
 
             return StatusCode(StatusCodes.Status502BadGateway, result.Error.Message);
         }
@@ -145,7 +145,7 @@ public sealed class CloudBridgeController : ApiControllerBase
             {
                 if (_logger.IsEnabled(LogLevel.Error))
                     _logger.LogError("AWS GetVisibilityWindowStatus failed for {Queue}: {Error}",
-                        queueName, result.Error.Message);
+                        SanitizeForLog(queueName), result.Error.Message);
                 return StatusCode(StatusCodes.Status502BadGateway, result.Error.Message);
             }
 
@@ -164,7 +164,7 @@ public sealed class CloudBridgeController : ApiControllerBase
             {
                 if (_logger.IsEnabled(LogLevel.Error))
                     _logger.LogError("GCP GetAckDeadlineStatus failed for {Subscription}: {Error}",
-                        queueName, result.Error.Message);
+                        SanitizeForLog(queueName), result.Error.Message);
                 return StatusCode(StatusCodes.Status502BadGateway, result.Error.Message);
             }
 
@@ -177,6 +177,11 @@ public sealed class CloudBridgeController : ApiControllerBase
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    private static string SanitizeForLog(string? value)
+        => (value ?? string.Empty)
+            .Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Replace("\n", string.Empty, StringComparison.Ordinal);
 
     private ICloudMessagingProvider? ResolveProvider(string? provider, out IActionResult? error)
     {
