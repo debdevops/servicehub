@@ -333,7 +333,6 @@ export function MessagesPage() {
       
       return enhancedMsg;
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDemo, demoProvider]);
   const messageCounts = getMessageCounts();
 

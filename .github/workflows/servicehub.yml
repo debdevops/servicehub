@@ -47,8 +47,7 @@ jobs:
 
       - name: Run unit tests with coverage
         run: |
-          dotnet test services/api/tests/ServiceHub.UnitTests \
-            --no-build \
+          dotnet test services/api/tests/ServiceHub.UnitTests/ServiceHub.UnitTests.csproj \
             --configuration Release \
             --settings services/api/coverlet.runsettings \
             --results-directory services/api/TestResults \

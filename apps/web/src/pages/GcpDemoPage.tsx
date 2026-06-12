@@ -248,7 +248,11 @@ export function GcpDemoPage() {
   const toggleTopic = (topic: string) => {
     setExpandedTopics((prev) => {
       const next = new Set(prev);
-      next.has(topic) ? next.delete(topic) : next.add(topic);
+      if (next.has(topic)) {
+        next.delete(topic);
+      } else {
+        next.add(topic);
+      }
       return next;
     });
   };
