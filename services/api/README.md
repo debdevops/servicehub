@@ -1,8 +1,6 @@
 # ServiceHub API
 
-**AI-Powered Cloud Messaging Inspector API** built with .NET 10 and Clean Architecture.
-
-Supports **Azure Service Bus**, **AWS SQS/SNS**, and **GCP Pub/Sub** — with forensic debugging, DLQ intelligence, auto-replay rules, correlation tracing, and cross-cloud message tracing.
+**AI-Powered Azure Service Bus Inspector API** built with .NET 10 and Clean Architecture.
 
 > This README provides quick start instructions and API reference. For complete documentation with architecture diagrams, design patterns, and detailed flows, see:
 > - **[Comprehensive Guide](../../docs/COMPREHENSIVE-GUIDE.md)** — Complete guide with Mermaid diagrams
@@ -230,12 +228,8 @@ ServiceHub.Api/              # HTTP Layer
 │       ├── NamespacesController.cs
 │       ├── QueuesController.cs
 │       ├── TopicsController.cs
+│       ├── SubscriptionsController.cs
 │       ├── MessagesController.cs
-│       ├── DlqHistoryController.cs
-│       ├── RulesController.cs
-│       ├── ScheduledMessagesController.cs
-│       ├── CorrelationController.cs
-│       ├── CrossCloudTraceController.cs
 │       ├── AnomaliesController.cs
 │       └── HealthController.cs
 ├── Middleware/             # Request pipeline
@@ -342,17 +336,8 @@ dotnet test tests/ServiceHub.IntegrationTests/ServiceHub.IntegrationTests.csproj
 
 ### All Tests
 ```bash
-# All tests (unit + integration)
 dotnet test
-
-# Run only unit tests
-dotnet test tests/ServiceHub.UnitTests
-
-# Run only integration tests
-dotnet test tests/ServiceHub.IntegrationTests
 ```
-
-Current test counts: **1,310 unit tests**, **52 integration tests** (1,362 total).
 
 ---
 
@@ -389,46 +374,40 @@ docker run -p 5000:5000 servicehub-api
 ## 📈 API Endpoints
 
 ### Namespaces
-- `POST   /api/v1/namespaces` — Connect a namespace
-- `GET    /api/v1/namespaces` — List all namespaces
-- `GET    /api/v1/namespaces/{id}` — Get namespace by ID
-- `POST   /api/v1/namespaces/{id}/test-connection` — Test connectivity
-- `DELETE /api/v1/namespaces/{id}` — Remove namespace
+- `POST /api/v1/namespaces` - Create namespace connection
+- `GET /api/v1/namespaces` - List all namespaces
+- `GET /api/v1/namespaces/{id}` - Get namespace by ID
+- `GET /api/v1/namespaces/{id}/test` - Test connection
+- `DELETE /api/v1/namespaces/{id}` - Delete namespace
 
 ### Queues
-- `GET    /api/v1/namespaces/{id}/queues` — List queues with counts
-- `GET    /api/v1/namespaces/{id}/queues/{name}/messages` — Peek messages
-- `POST   /api/v1/namespaces/{id}/queues/{name}/messages` — Send a message
+- `GET /api/v1/queues?namespaceId={id}` - List queues
+- `GET /api/v1/queues/{queueName}?namespaceId={id}` - Get queue details
 
 ### Topics
-- `GET    /api/v1/namespaces/{id}/topics` — List topics
-- `GET    /api/v1/namespaces/{id}/topics/{name}/subscriptions/{sub}/messages` — Peek subscription messages
+- `GET /api/v1/topics?namespaceId={id}` - List topics
+- `GET /api/v1/topics/{topicName}?namespaceId={id}` - Get topic details
 
-### DLQ Intelligence
-- `GET    /api/v1/dlq-history` — Persistent DLQ records (SQLite)
+### Subscriptions
+- `GET /api/v1/subscriptions?namespaceId={id}&topicName={topic}` - List subscriptions
+- `GET /api/v1/subscriptions/{subscriptionName}?namespaceId={id}&topicName={topic}` - Get subscription details
 
-### Auto-Replay Rules
-- `GET    /api/v1/replay-rules` — List rules
-- `POST   /api/v1/replay-rules` — Create a rule
-- `PUT    /api/v1/replay-rules/{id}` — Update a rule
-- `DELETE /api/v1/replay-rules/{id}` — Delete a rule
+### Messages
+- `POST /api/v1/messages/queue/{queueName}` - Send to queue
+- `POST /api/v1/messages/topic/{topicName}` - Send to topic
+- `GET /api/v1/messages/queue/{queueName}?namespaceId={id}` - Peek queue messages
+- `GET /api/v1/messages/queue/{queueName}/deadletter?namespaceId={id}` - Peek DLQ
+- `GET /api/v1/messages/topic/{topicName}/subscription/{subscriptionName}?namespaceId={id}` - Peek subscription
+- `GET /api/v1/messages/topic/{topicName}/subscription/{subscriptionName}/deadletter?namespaceId={id}` - Peek subscription DLQ
 
-### Scheduled Messages
-- `GET    /api/v1/namespaces/{id}/queues/{name}/scheduled-messages` — List scheduled messages
-
-### Correlation
-- `GET    /api/v1/correlation/search?namespaceId={id}&correlationId={cid}` — Trace by correlation ID
-
-### Cross-Cloud Trace
-- `GET    /api/v1/cross-cloud-trace/trace?traceId={id}` — Trace a message across all connected cloud providers
-
-### Anomalies (AI)
-- `GET    /api/v1/anomalies?namespaceId={id}` — AI anomaly detection results
+### Anomalies (AI-Powered)
+- `POST /api/v1/anomalies/detect?namespaceId={id}` - Detect anomalies
+- `GET /api/v1/anomalies/{id}` - Get anomaly by ID
 
 ### Health
-- `GET    /health` — General health
-- `GET    /health/ready` — Readiness check
-- `GET    /health/live` — Liveness check
+- `GET /health` - General health
+- `GET /health/ready` - Readiness check
+- `GET /health/live` - Liveness check
 
 ---
 

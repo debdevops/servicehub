@@ -89,7 +89,7 @@ public class DlqHistoryControllerTests
             It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTimeOffset?>(),
             It.IsAny<DateTimeOffset?>(), It.IsAny<DlqMessageStatus?>(),
             It.IsAny<FailureCategory?>(), It.IsAny<int>(), It.IsAny<int>(),
-            It.IsAny<CloudProviderType?>(), It.IsAny<CancellationToken>()))
+            It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DlqHistoryPageResult>.Success(pageResult));
 
         var result = await _controller.GetHistory();
@@ -106,7 +106,7 @@ public class DlqHistoryControllerTests
             It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTimeOffset?>(),
             It.IsAny<DateTimeOffset?>(), It.IsAny<DlqMessageStatus?>(),
             It.IsAny<FailureCategory?>(), It.IsAny<int>(), It.IsAny<int>(),
-            It.IsAny<CloudProviderType?>(), It.IsAny<CancellationToken>()))
+            It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DlqHistoryPageResult>.Failure(Error.Internal("DB_ERROR", "Database error")));
 
         var result = await _controller.GetHistory();
@@ -124,7 +124,7 @@ public class DlqHistoryControllerTests
             It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTimeOffset?>(),
             It.IsAny<DateTimeOffset?>(), It.IsAny<DlqMessageStatus?>(),
             It.IsAny<FailureCategory?>(), It.IsAny<int>(), 200,
-            It.IsAny<CloudProviderType?>(), It.IsAny<CancellationToken>()))
+            It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DlqHistoryPageResult>.Success(pageResult));
 
         var result = await _controller.GetHistory(pageSize: 999);

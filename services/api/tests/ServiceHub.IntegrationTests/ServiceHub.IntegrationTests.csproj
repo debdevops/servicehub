@@ -24,9 +24,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ServiceHub.Api\ServiceHub.Api.csproj" />
-    <ProjectReference Include="..\..\src\ServiceHub.Simulator\ServiceHub.Simulator.csproj" />
-    <ProjectReference Include="..\..\src\ServiceHub.Infrastructure.Aws\ServiceHub.Infrastructure.Aws.csproj" />
-    <ProjectReference Include="..\..\src\ServiceHub.Infrastructure.Gcp\ServiceHub.Infrastructure.Gcp.csproj" />
   </ItemGroup>
 
 </Project>

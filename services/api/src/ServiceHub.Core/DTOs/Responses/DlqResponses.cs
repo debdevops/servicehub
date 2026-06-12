@@ -33,8 +33,7 @@ public sealed record DlqHistoryResponse(
     string? TopicName,
     string? ForensicRootCause,
     double ForensicConfidence,
-    string? ReplaySafety,
-    string CloudProvider);
+    string? ReplaySafety);
 
 /// <summary>
 /// Response DTO for a DLQ message with full details including replay history.

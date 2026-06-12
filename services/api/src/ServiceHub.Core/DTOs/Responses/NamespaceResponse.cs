@@ -33,23 +33,4 @@ public sealed record NamespaceResponse(
     bool HasListenPermission,
     bool HasSendPermission,
     bool HasManagePermission,
-    EnvironmentType Environment)
-{
-    /// <summary>
-    /// Gets the cloud provider that hosts this namespace. Defaults to Azure for backward compatibility.
-    /// </summary>
-    public CloudProviderType Provider { get; init; } = CloudProviderType.Azure;
-
-    /// <summary>
-    /// Gets the AWS region identifier for AWS-backed namespaces (e.g., <c>us-east-1</c>).
-    /// Null for non-AWS providers.
-    /// </summary>
-    public string? AwsRegion { get; init; }
-
-    /// <summary>
-    /// Gets the GCP project identifier for GCP-backed namespaces.
-    /// Null for non-GCP providers.
-    /// </summary>
-    public string? GcpProjectId { get; init; }
-}
-
+    EnvironmentType Environment);

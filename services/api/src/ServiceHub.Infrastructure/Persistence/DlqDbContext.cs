@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ServiceHub.Core.Entities;
-using ServiceHub.Core.Enums;
 
 namespace ServiceHub.Infrastructure.Persistence;
 
@@ -161,20 +160,6 @@ public sealed class DlqDbContext : DbContext
         // Index for failure category reporting
         entity.HasIndex(e => e.FailureCategory)
             .HasDatabaseName("IX_DlqMessages_FailureCategory");
-
-        entity.Property(e => e.CloudProvider)
-            .HasConversion<string>()
-            .HasMaxLength(20)
-            .HasDefaultValue(CloudProviderType.Azure)
-            .IsRequired();
-
-        // Index to filter history by cloud provider
-        entity.HasIndex(e => e.CloudProvider)
-            .HasDatabaseName("IX_DlqMessages_CloudProvider");
-
-        // Composite index for provider + status queries (e.g. all active AWS DLQ messages)
-        entity.HasIndex(e => new { e.CloudProvider, e.Status })
-            .HasDatabaseName("IX_DlqMessages_CloudProvider_Status");
     }
 
     private static void ConfigureReplayHistory(ModelBuilder modelBuilder)

@@ -41,7 +41,7 @@ builder.WebHost.ConfigureKestrel(options =>
 builder.Services.AddApplicationInsightsTelemetryConfiguration(builder.Configuration, builder.Environment);
 
 // Add ServiceHub API services
-builder.Services.AddServiceHubApi(builder.Configuration, builder.Environment);
+builder.Services.AddServiceHubApi(builder.Configuration);
 
 var app = builder.Build();
 

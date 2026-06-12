@@ -36,7 +36,6 @@ public sealed class DlqHistoryService : IDlqHistoryService
         FailureCategory? category = null,
         int page = 1,
         int pageSize = 50,
-        CloudProviderType? provider = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -63,9 +62,6 @@ public sealed class DlqHistoryService : IDlqHistoryService
 
             if (category.HasValue)
                 query = query.Where(m => m.FailureCategory == category.Value);
-
-            if (provider.HasValue)
-                query = query.Where(m => m.CloudProvider == provider.Value);
 
             var totalCount = await query.CountAsync(cancellationToken);
 
