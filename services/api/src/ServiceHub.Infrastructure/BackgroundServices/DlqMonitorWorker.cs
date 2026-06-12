@@ -43,24 +43,6 @@ public sealed class DlqMonitorWorker : BackgroundService
             using var initScope = _serviceProvider.CreateScope();
             var dbContext = initScope.ServiceProvider.GetRequiredService<DlqDbContext>();
             await dbContext.Database.EnsureCreatedAsync(stoppingToken);
-
-            // Additive migration: add CloudProvider column to existing databases.
-            // SQLite does not support IF NOT EXISTS on ALTER TABLE; catch on duplicate column.
-            try
-            {
-                await dbContext.Database.ExecuteSqlRawAsync(
-                    "ALTER TABLE DlqMessages ADD COLUMN CloudProvider TEXT NOT NULL DEFAULT 'Azure'",
-                    stoppingToken);
-                await dbContext.Database.ExecuteSqlRawAsync(
-                    "CREATE INDEX IF NOT EXISTS IX_DlqMessages_CloudProvider ON DlqMessages (CloudProvider)",
-                    stoppingToken);
-            }
-            catch (Exception migEx) when (migEx.Message.Contains("duplicate column name",
-                StringComparison.OrdinalIgnoreCase))
-            {
-                // Column already exists — safe to ignore on subsequent startups.
-            }
-
             _logger.LogInformation("DLQ Intelligence database initialized");
         }
         catch (Exception ex)
