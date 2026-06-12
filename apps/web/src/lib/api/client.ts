@@ -241,17 +241,6 @@ apiClient.interceptors.response.use(
         }
         break;
       }
-      case 429: {
-        // Rate limit hit — show a single debounced toast, never for silent calls (already exited above)
-        const retryAfter = (error.response.headers as Record<string, string>)?.['retry-after'] ?? '60';
-        const errorKey = '429-rate-limit';
-        if (shouldShowError(errorKey)) {
-          toast.error(`Too many requests. Retry in ${retryAfter}s — try refreshing less frequently.`, {
-            duration: 5000,
-          });
-        }
-        break;
-      }
       case 404: {
         if (!isSilent404(url)) {
           // Show feedback for message operation 404s (replay, dead-letter, cancel)

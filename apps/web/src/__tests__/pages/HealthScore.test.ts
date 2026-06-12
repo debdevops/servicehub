@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getHealthGrade } from '@/pages/DashboardPage';
+import { getHealthGrade } from '@/lib/healthGrade';
 
 describe('getHealthGrade', () => {
   it('returns grade A when dlqRatio is 0', () => {
