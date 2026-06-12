@@ -24,7 +24,17 @@ public sealed class CloudProviderRouter
     public CloudProviderRouter(IEnumerable<ICloudMessagingProvider> providers)
     {
         ArgumentNullException.ThrowIfNull(providers);
-        _providers = providers.ToDictionary(p => p.ProviderType);
+        var providerList = providers.ToList();
+        var duplicates = providerList
+            .GroupBy(p => p.ProviderType)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+        if (duplicates.Count > 0)
+            throw new InvalidOperationException(
+                $"Multiple ICloudMessagingProvider implementations are registered for the same ProviderType: " +
+                $"[{string.Join(", ", duplicates)}]. Each ProviderType must have exactly one provider registered.");
+        _providers = providerList.ToDictionary(p => p.ProviderType);
     }
 
     /// <summary>

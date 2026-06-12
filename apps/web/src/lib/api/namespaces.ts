@@ -14,8 +14,13 @@ export interface NamespaceStats {
 export const namespacesApi = {
   // GET /api/v1/namespaces
   list: async (): Promise<Namespace[]> => {
-    const response = await apiClient.get<Namespace[]>('/namespaces');
-    return response.data;
+    const response = await apiClient.get<Array<Namespace & { provider?: string }>>('/namespaces');
+    // Backend serializes NamespaceResponse.Provider as "provider" (camelCase);
+    // the frontend Namespace type uses "cloudProvider". Normalise here.
+    return response.data.map((ns) => ({
+      ...ns,
+      cloudProvider: ns.cloudProvider ?? (ns.provider as Namespace['cloudProvider']),
+    }));
   },
 
   // POST /api/v1/namespaces
@@ -32,8 +37,9 @@ export const namespacesApi = {
 
   // GET /api/v1/namespaces/{id}
   get: async (id: string): Promise<Namespace> => {
-    const response = await apiClient.get<Namespace>(`/namespaces/${id}`);
-    return response.data;
+    const response = await apiClient.get<Namespace & { provider?: string }>(`/namespaces/${id}`);
+    const ns = response.data;
+    return { ...ns, cloudProvider: ns.cloudProvider ?? (ns.provider as Namespace['cloudProvider']) };
   },
 
   // DELETE /api/v1/namespaces/{id}

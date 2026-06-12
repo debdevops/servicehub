@@ -26,11 +26,11 @@ export interface SqsVisibilityInfo {
 
 /** GCP Pub/Sub ack-deadline status from the same endpoint with ?provider=Gcp */
 export interface GcpAckDeadlineStatus {
-  subscriptionName: string;
   ackDeadlineSeconds: number;
-  messageRetentionDuration: string;
-  dlqTopicName?: string;
-  maxDeliveryAttempts?: number;
+  hasDeadLetterPolicy: boolean;
+  deadLetterTopic?: string | null;
+  maxDeliveryAttempts?: number | null;
+  messageOrderingEnabled: boolean;
 }
 
 export type VisibilityStatus = SqsVisibilityInfo | GcpAckDeadlineStatus;
@@ -44,11 +44,16 @@ export const cloudBridgeApi = {
 
   /** GET /api/v1/cloud-bridge/namespaces/{namespaceId}/entities?provider={provider} */
   listEntities: async (namespaceId: string, provider: string): Promise<CloudEntity[]> => {
-    const response = await apiClient.get<CloudEntity[]>(
+    const response = await apiClient.get<Array<Record<string, unknown>>>(
       `/cloud-bridge/namespaces/${namespaceId}/entities`,
       { params: { provider } },
     );
-    return response.data;
+    // Normalise backend field names (activeMessageCount → messageCount alias)
+    return response.data.map((e) => ({
+      ...(e as unknown as CloudEntity),
+      messageCount: (e.messageCount ?? e.activeMessageCount) as number | undefined,
+      dlqMessageCount: (e.dlqMessageCount ?? e.deadLetterCount) as number | undefined,
+    }));
   },
 
   /** GET /api/v1/cloud-bridge/namespaces/{namespaceId}/visibility/{queueName}?provider={provider} */

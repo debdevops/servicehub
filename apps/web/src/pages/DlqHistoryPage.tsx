@@ -143,9 +143,10 @@ export function DlqHistoryPage() {
     entityName: entityFilter || undefined,
     status: statusFilter,
     category: categoryFilter,
+    provider: providerFilter !== 'all' ? providerFilter : undefined,
     page,
     pageSize,
-  }), [namespaceId, entityFilter, statusFilter, categoryFilter, page]);
+  }), [namespaceId, entityFilter, statusFilter, categoryFilter, providerFilter, page]);
 
   const { data, isLoading, refetch, isFetching } = useDlqHistory(params, !!namespaceId);
   const { data: summary, refetch: refetchSummary } = useDlqSummary(namespaceId);
@@ -417,7 +418,7 @@ export function DlqHistoryPage() {
       {/* Table */}
       <div className="flex-1 overflow-y-auto p-6">
         <DlqHistoryTable
-          items={(data?.items ?? []).filter(item => providerFilter === 'all' || (item.cloudProvider ?? 'azure').toLowerCase() === providerFilter)}
+          items={data?.items ?? []}
           totalCount={data?.totalCount ?? 0}
           page={page}
           pageSize={pageSize}
