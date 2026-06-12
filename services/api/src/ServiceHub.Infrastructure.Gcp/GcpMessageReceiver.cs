@@ -87,13 +87,13 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning("GCP Pub/Sub peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, request.EntityName);
+            _logger.LogWarning("GCP Pub/Sub peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, SanitizeForLog(request.EntityName));
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
                 "GCP.PubSub.Timeout", $"Pub/Sub operation timed out after {OperationTimeoutSeconds}s."));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error peeking Pub/Sub messages from {Subscription}", request.EntityName);
+            _logger.LogError(ex, "Error peeking Pub/Sub messages from {Subscription}", SanitizeForLog(request.EntityName));
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService("GCP.PubSub.PeekFailed", ex.Message));
         }
     }
@@ -132,13 +132,13 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning("GCP Pub/Sub DLQ peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, dlqSubscription);
+            _logger.LogWarning("GCP Pub/Sub DLQ peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, SanitizeForLog(dlqSubscription));
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
                 "GCP.PubSub.Timeout", $"Pub/Sub DLQ operation timed out after {OperationTimeoutSeconds}s."));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error peeking Pub/Sub DLQ messages from {Subscription}", dlqSubscription);
+            _logger.LogError(ex, "Error peeking Pub/Sub DLQ messages from {Subscription}", SanitizeForLog(dlqSubscription));
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService("GCP.PubSub.DlqPeekFailed", ex.Message));
         }
     }
@@ -157,7 +157,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         // Return a dedicated error code so the UI can render "N/A" instead of -1 or a spinner.
         _logger.LogDebug(
             "GCP Pub/Sub message count is unavailable via API. Subscription: {Subscription}",
-            entityName);
+            SanitizeForLog(entityName));
         return Task.FromResult(Result.Failure<long>(Error.Validation(
             "GCP.PubSub.CountUnavailable",
             "GCP Pub/Sub does not support direct message count queries. " +
@@ -177,7 +177,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         _logger.LogWarning(
             "GCP Pub/Sub does not support direct dead-lettering. " +
             "Configure a dead-letter policy on subscription {Subscription} with MaxDeliveryAttempts.",
-            request.EntityName);
+            SanitizeForLog(request.EntityName));
         return await Task.FromResult(Result.Failure<int>(Error.Validation(
             "GCP.PubSub.NoManualDlq",
             "GCP Pub/Sub requires a dead-letter policy to be configured on the subscription. " +
