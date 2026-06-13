@@ -13,149 +13,275 @@
 [![Version](https://img.shields.io/badge/version-3.2.2-brightgreen.svg)](.version)
 [![Live App](https://img.shields.io/badge/Live%20App-Azure-0078D4.svg)](https://app-servicehub-prod.azurewebsites.net/)
 
-[🚀 Open ServiceHub](https://app-servicehub-prod.azurewebsites.net/) · [⚡ Quick Start](#quick-start) · [✨ Core Features](#core-features) · [🛡️ Security](#security-and-privacy) · [🏗️ Architecture](#architecture) · [🤝 Contributing](#contributing)
+[🚀 Open ServiceHub Live](https://app-servicehub-prod.azurewebsites.net/) · [⚡ Quick Start](#quick-start) · [✨ Core Features](#core-capabilities-azure-service-bus---ga) · [🌐 Multi-Cloud](#multi-cloud-bridge-preview) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security-and-privacy)
 
 </div>
 
 ---
 
-## What is ServiceHub?
+## Why ServiceHub?
 
-Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-Letter Queue** — but you can't read their bodies or search them without writing throwaway scripts. 
+Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-Letter Queue** — but you can't read their bodies or search them without writing throwaway scripts. You manually sample messages one by one, spending hours on what should take minutes.
 
-**ServiceHub is an ultra-fast, self-hosted web application that gives you complete forensic visibility into your messaging queues.** Think of it as a debugger, but for your cloud messages. 
+**ServiceHub is an ultra-fast, self-hosted web application that gives engineers full forensic visibility into their cloud message queues** — like a debugger, but for Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub.
 
-> 🧪 **No credentials?** Try the built-in [Simulator Mode](#simulator-mode) — spin up 3 synthetic namespaces (Azure + AWS + GCP) with 50 pre-seeded messages each in one click.
+> [!TIP]
+> **No credentials?** Try the built-in [Simulator Mode](#simulator-mode) — runs 3 synthetic namespaces (Azure + AWS + GCP) with 50 seeded messages each. No cloud account needed.
+
+| Capability | Standard Cloud Portals | ServiceHub |
+|---|---|---|
+| View message body & content | ❌ Count only | ✅ Full body + syntax highlighting |
+| Search across message content | ❌ Not available | ✅ Real-time full-text search |
+| Dead-letter queue investigation | ❌ One at a time | ✅ Batch analysis + AI patterns |
+| AI pattern detection | ❌ Not available | ✅ Client-side clustering, zero data sent |
+| Replay from DLQ | ❌ Not available | ✅ One-click or auto-replay rules |
+| Multi-namespace support | ❌ Portal only | ✅ Manage multiple connections |
+| Correlation ID tracing | ❌ Not available | ✅ Trace journeys across all queues |
+| Scheduled message management | ❌ Not available | ✅ View, reschedule, and cancel |
+| Cross-cloud message trace | ❌ Not available | ✅ Trace a message across Azure + AWS + GCP |
 
 ---
 
-## ⚡ Quick Start
+## Core Capabilities (Azure Service Bus - GA)
 
-### 1. Run Locally (30 Seconds)
+ServiceHub's deepest and most mature features are built natively for Azure Service Bus.
 
-Clone the repository and run the startup script:
+### 🔌 Connect in 30 Seconds — Zero Configuration
+Enter your connection string once and you're browsing messages instantly. Supports Listen-only (read-only), Send, and Manage policies. Connection strings are **AES-GCM encrypted at rest** — no plain-text secrets stored anywhere.
+
+### 📨 Message Browser — 1,000s of Messages at Your Fingertips
+Browse **Active** and **Dead-Letter** queue messages side by side. See full message previews, status badges, enqueue times, and metadata in a virtualized grid that handles thousands of records without breaking a sweat. Auto-refresh every 7 seconds keeps your view live during incidents.
+
+### 🔍 Forensic Message Inspection — Every Byte Visible
+Click any message for complete forensic analysis:
+- **Body** — Full JSON/XML with syntax highlighting and one-click copy.
+- **Properties** — Message ID, sequence number, TTL, delivery count, enqueue time.
+- **Headers** — All custom application properties and correlation IDs.
+- **AI Insights** — Pattern context and remediation hints, computed entirely in-browser.
+
+### 🤖 AI Findings — Detect Patterns Across Thousands of Messages
+Click **AI Findings** to see error pattern clusters detected across your current queue view. The engine groups messages by error type, calculates confidence scores, and surfaces the most impactful clusters — so you know exactly where to look first.
+> [!NOTE]
+> **Zero-trust privacy:** All analysis runs entirely in your browser. No message content ever leaves your environment.
+
+### 💀 Dead-Letter Queue Investigation
+Select the **Dead-Letter** tab to inspect failed messages in full. Each DLQ message shows exactly why Azure moved the message, the full error text from the broker, the AI Assessment, and a one-click Replay button to resend it after fixing the root cause.
+
+### 📊 DLQ Intelligence — Persistent History & 30-Day Trends
+DLQ Intelligence automatically scans your dead-letter queues and stores every finding in a local SQLite database — so you can track failures over time, not just during the current session. Features include a 30-day trend chart, auto-categorization (Transient, MaxDelivery, Expired, DataQuality, Authorization), and CSV/JSON exports.
+
+### ⚡ Auto-Replay Rules — Automate Your Recovery
+Define rules that watch DLQ messages and automatically replay them when conditions match. Recover from common failures without manual intervention.
+- **AI-generated rules** or pre-built templates for timeouts and throttles.
+- **Flexible matching** by DLQ reason, error description, entity, delivery count, or regex.
+- **Safety controls** with rate limiting to prevent overwhelming downstream services.
+
+### 🔎 Real-Time Search & Correlation Explorer
+Search across message body, properties, and headers instantly. Filter 1,000+ messages down to exactly what you need in under a second. Paste any Correlation ID to trace a message's full journey across all queues, topics, and namespaces.
+
+### 🕐 Scheduled Messages
+See every message queued for future delivery. Reschedule or cancel individual messages directly from the UI.
+
+---
+
+## Multi-Cloud Bridge (Preview)
+
+ServiceHub extends beyond Azure Service Bus to support **AWS SQS/SNS** and **GCP Pub/Sub** via the Cloud Bridge.
+
+| Provider | Status | Queues | Dead-Letter | Replay | Cross-Cloud Trace |
+|----------|--------|--------|-------------|--------|-------------------|
+| **Azure Service Bus** | ✅ GA | ✅ | ✅ | ✅ | ✅ |
+| **AWS SQS / SNS** | 🔶 Preview | ✅ | ✅ (MaxReceive) | ✅ | 🔜 Phase 2 |
+| **GCP Pub/Sub** | 🔶 Preview | ✅ | ✅ (nack/ack deadline) | ✅ | 🔜 Phase 2 |
+
+### 🌐 Cross-Cloud Trace
+Connect namespaces from two or more cloud providers and use **Multi-Cloud Trace** to trace a single Correlation ID or message GUID as it routes from Azure $\rightarrow$ AWS $\rightarrow$ GCP (or any combination). The result is a visual routing path diagram, a chronological hop timeline, and a namespace search-coverage panel.
+*(Phase 1 searches Azure namespaces in parallel; AWS and GCP node searches arrive in Phase 2)*.
+
+---
+
+## Visual Showcase
+
+| Feature | Preview |
+|---|---|
+| Connect Page | [![Connect](docs/screenshots/01-ServiceHub-Connect-Page-1.png)](docs/screenshots/01-ServiceHub-Connect-Page-1.png) |
+| Message Browser | [![Browser](docs/screenshots/07-ServiceHub-Home-Page-2.png)](docs/screenshots/07-ServiceHub-Home-Page-2.png) |
+| Message Detail (JSON) | [![Detail](docs/screenshots/12-ServiceHub-Message-Detail-Expanded.png)](docs/screenshots/12-ServiceHub-Message-Detail-Expanded.png) |
+| DLQ Investigation | [![DLQ](docs/screenshots/14-ServiceHub-Home-DLQ-1.png)](docs/screenshots/14-ServiceHub-Home-DLQ-1.png) |
+| AI Pattern Findings | [![AI](docs/screenshots/25-ServiceHub-AI-Findings.png)](docs/screenshots/25-ServiceHub-AI-Findings.png) |
+| DLQ Intelligence | [![Intelligence](docs/screenshots/20-ServiceHub-DLQ-Intelligence.png)](docs/screenshots/20-ServiceHub-DLQ-Intelligence.png) |
+| Auto-Replay Rules | [![Rules](docs/screenshots/22-ServiceHub-Auto-Replay-1.png)](docs/screenshots/22-ServiceHub-Auto-Replay-1.png) |
+| Correlation Explorer | [![Correlation](docs/screenshots/27-ServiceHub-CorelationId-Explorer.png)](docs/screenshots/27-ServiceHub-CorelationId-Explorer.png) |
+| Scheduled Messages | [![Scheduled](docs/screenshots/28-ServiceHub-Schedule-Message.png)](docs/screenshots/28-ServiceHub-Schedule-Message.png) |
+| System Health | [![Health](docs/screenshots/29-ServiceHub-System-Health-Status.png)](docs/screenshots/29-ServiceHub-System-Health-Status.png) |
+
+---
+
+## Real-World Scenarios
+
+### Scenario 1: DLQ Incident at 2 AM
+**Problem:** 5,000 orders stuck in Dead-Letter Queue. Azure Portal shows counts only.
+**With ServiceHub:**
+1. Browse all 5,000 DLQ messages in seconds.
+2. AI detects 3 error clusters: Payment Timeout (40%), Invalid Address (35%), Duplicate (25%).
+3. Create an auto-replay rule for Payment Timeout $\rightarrow$ replay 2,000 messages automatically.
+**Time saved:** 6 hours $\rightarrow$ 45 minutes.
+
+### Scenario 2: Missing Order Investigation
+**Problem:** Customer reports order never processed. Which queue did it land in?
+**With ServiceHub:**
+1. Open Correlation Explorer.
+2. Paste the order's Correlation ID.
+3. Trace the message journey across all queues and namespaces in one search.
+**Time saved:** 30 minutes $\rightarrow$ 30 seconds.
+
+### Scenario 3: Integration Testing
+**Problem:** Need 100 realistic failure scenarios to test error handling.
+**With ServiceHub:**
+1. Open Message Generator $\rightarrow$ select Payment Gateway scenario.
+2. Generate 100 messages with 30% anomaly rate.
+3. Verify DLQ behavior and error handling.
+**Time saved:** Hours of manual test data $\rightarrow$ 2 minutes.
+
+---
+
+## Recommended Usage Flow
+
+Follow this path before connecting to a production namespace. This protects your live environment and gives you confidence in every operation before it matters.
+
+1. **DEV**: Connect your development namespace. Explore message browsing, DLQ inspection, and auto-replay rules in a safe environment.
+2. **UAT**: Validate replay targets, confirm rule logic, and review AI findings with realistic data.
+3. **PROD**: Connect only after DEV and UAT validation. Production namespaces enforce read-only browsing by default — Quick Actions (replay, send, generate) are disabled to prevent accidental data modification.
+
+> [!WARNING]
+> While ServiceHub is read-only by default, replay and send operations are destructive. Validate your replay rules and message targets in lower environments first.
+
+---
+
+## Quick Start
+
+### One-Command Setup (Recommended)
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git
 cd servicehub
 ./run.sh
 ```
-*The script automatically detects and sets up .NET 10 SDK and Node.js if they are missing.*
 
-Open **[http://localhost:3000](http://localhost:3000)** and you're ready to connect!
+Open **[http://localhost:3000](http://localhost:3000)** — then connect with your connection string. The script automatically installs .NET 10 SDK and Node.js 20+ if not already present.
 
-### 2. Live Demo
-
-Don't want to install anything? Open the **[ServiceHub Live Hosted App](https://app-servicehub-prod.azurewebsites.net/)**.
-*Note: The hosted app uses Microsoft Entra ID (Azure AD) as a security gate. No personal credentials or connection strings are stored.*
-
----
-
-## ⚖️ ServiceHub vs. Standard Cloud Portals
-
-| Capability | Standard Cloud Portals | ServiceHub |
-|---|---|---|
-| **View Message Payload** | ❌ Count only / One by one peeking | ✅ Pretty-printed JSON/XML with syntax highlighting |
-| **Full-Text Search** | ❌ Not available | ✅ Real-time regex & text search across body & headers |
-| **DLQ Analytics** | ❌ None | ✅ Persistent sqlite DLQ history & 30-day failure trends |
-| **AI Insights** | ❌ None | ✅ Client-side error clustering (Zero data-sharing) |
-| **Dead-Letter Replay** | ❌ Manual one-by-one | ✅ Bulk replay, automated replay rules, rate limiting |
-| **Cross-Cloud Trace** | ❌ Not possible | ✅ Trace a single correlation ID routing across clouds |
-
----
-
-## ✨ Core Features
-
-To avoid confusion, ServiceHub distinguishes between its core production-ready features and its multi-cloud bridge previews.
-
-### 🔷 Azure Service Bus Features (GA)
-
-Our most mature, production-hardened capabilities built directly on top of Azure Service Bus:
-
-*   **📨 Message Browser & Search:** Browse active and dead-letter queues side by side. Virtualized grids load thousands of messages instantly. Search across body, headers, and properties. 
-    * *[View Browser Screenshot](docs/screenshots/07-ServiceHub-Home-Page-2.png) | [View Detail Screenshot](docs/screenshots/12-ServiceHub-Message-Detail-Expanded.png)*
-*   **💀 DLQ Forensic Investigation:** Click any DLQ message to see the exact reason, error description, and AI assessment. 
-    * *[View DLQ Screenshot](docs/screenshots/14-ServiceHub-Home-DLQ-1.png)*
-*   **📊 DLQ Intelligence:** Automatically records historical DLQ occurrences to a local SQLite database to show 30-day failure trends and categorize errors (Transient, MaxDelivery, Expired, DataQuality, Authorization). 
-    * *[View DLQ Intelligence Screenshot](docs/screenshots/20-ServiceHub-DLQ-Intelligence.png)*
-*   **🤖 AI Findings:** Groups similar errors into clusters to identify systemic outages. Runs completely in the browser; no data ever leaves your machine. 
-    * *[View AI Findings Screenshot](docs/screenshots/25-ServiceHub-AI-Findings.png)*
-*   **⚡ Auto-Replay Rules:** Set up rules to automatically replay matching DLQ messages to active queues. Features safety circuit-breakers to prevent overloading downstream consumers. 
-    * *[View Replay Rules Screenshot](docs/screenshots/22-ServiceHub-Auto-Replay-1.png)*
-*   **🕐 Scheduled Message Manager:** View, reschedule, or cancel messages queued for future delivery. 
-    * *[View Scheduled Screenshot](docs/screenshots/28-ServiceHub-Schedule-Message.png)*
-*   **🏢 Multi-Namespace Hub:** Connect and switch between UAT, Staging, and Production namespaces with live visual badges. 
-    * *[View Namespace Dashboard](docs/screenshots/13-5-ServiceHub-Multi-Namespace-DashBoard.png)*
-
-### 🌐 Multi-Cloud Bridge Features (Preview)
-
-ServiceHub provides a unified pane of glass for multi-cloud deployments via the **Cloud Bridge**:
-
-| Cloud Provider | Connection Status | Queue / Topic Browse | DLQ Support | Replay Support | Cross-Cloud Trace |
-|:---|:---:|:---:|:---:|:---:|:---:|
-| **Azure Service Bus** | ✅ GA | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes (GA) |
-| **AWS SQS / SNS** | 🔶 Preview | ✅ Yes | ✅ Yes | ✅ Yes | 🔜 Phase 2 |
-| **GCP Pub/Sub** | 🔶 Preview | ✅ Yes | ✅ Yes | ✅ Yes | 🔜 Phase 2 |
-
-*   **🔗 Cross-Cloud Trace:** Paste a Correlation ID or Message GUID to trace its path as it routes from Azure $\rightarrow$ AWS $\rightarrow$ GCP. Displays a visual hop timeline and a namespace search-coverage panel. *(Phase 1 parallelizes searches across up to 5 Azure namespaces concurrently; AWS and GCP node searches arrive in Phase 2)*.
-    * *[View Trace Screenshot](docs/screenshots/27-ServiceHub-CorelationId-Explorer.png)*
-*   **⚙️ Unified Configuration:** Configure and manage cloud provider connections via **Settings $\rightarrow$ Cloud Bridge**.
-
----
-
-## 🧪 Simulator Mode
-
-Want to explore all features safely? Run ServiceHub in Simulator Mode. This boots three synthetic namespaces: **Azure (contoso)**, **AWS (acme)**, and **GCP (globex)**, pre-populated with realistic message logs, DLQ exceptions, and trace data.
+### Simulator Mode
 
 ```bash
 ./run.sh --simulator
 ```
-Open **[http://localhost:3000](http://localhost:3000)** and go to **Simulator** in the sidebar. For details, see the [Simulator Guide](SIMULATOR.md).
+Open **[http://localhost:3000](http://localhost:3000)** and navigate to **Simulator** in the sidebar. See [SIMULATOR.md](SIMULATOR.md) for the full guide.
 
----
+### Create a Dedicated Policy (Azure)
 
-## 🛡️ Security and Privacy
-
-ServiceHub is designed for enterprise compliance and zero-trust environments:
-
-*   **Read-Only by Default:** The app uses `PeekMessagesAsync`. It never consumes or deletes active queue messages during browsing.
-*   **AES-GCM Encryption:** Stored connection strings are encrypted at rest using AES-GCM. The key is managed locally and is never sent to the UI.
-*   **Zero Data Exfiltration:** All AI anomaly detection and message parsing run entirely in-browser. No external APIs are called.
-*   **Log Redaction:** A custom logging pipeline automatically scrubs connection strings, SAS keys, and client secrets from server logs.
-*   **Enterprise Deployments:** For complete data sovereignty, deploy ServiceHub inside your virtual network (VNet/VPC). Check out the [Self-Hosting Guide](self-hosting/README.md).
-
----
-
-## 🏗️ Architecture
-
-ServiceHub is built on Clean Architecture and modern technologies:
-
-*   **Frontend:** React 19, TypeScript 5, Tailwind CSS v4, TanStack Query v5.
-*   **Backend:** ASP.NET Core 10, Entity Framework Core (SQLite).
-*   **SDKs:** Azure.Messaging.ServiceBus, AWSSDK.SQS, AWSSDK.SNS, Google.Cloud.PubSub.V1.
-
-For a deep-dive, see the [Architecture Document](services/api/ARCHITECTURE.md) and the [Comprehensive Design Guide](docs/COMPREHENSIVE-GUIDE.md).
-
----
-
-## 🤝 Contributing
-
-We welcome community contributions! Please read our testing guidelines before opening a pull request:
-
+For read-only browsing (recommended for production):
 ```bash
-# Run Frontend Tests (Vitest)
-cd apps/web
-npm run test:coverage
-
-# Run Backend Tests (xUnit)
-cd services/api
-dotnet test
+az servicebus namespace authorization-rule create \
+  --namespace-name <your-namespace> \
+  --resource-group <your-rg> \
+  --name servicehub-readonly \
+  --rights Listen
 ```
 
-For detailed setup, see the [Developer Onboarding Guide](services/api/README.md).
+---
+
+## Security and Privacy
+
+ServiceHub is built for strict enterprise environments.
+
+### What ServiceHub guarantees
+- **Read-only by default** — Uses `PeekMessagesAsync`; messages are **never removed or consumed**.
+- **AES-GCM encryption** — Connection strings encrypted at rest; key stored in local config, never returned to the browser.
+- **Zero external calls** — AI analysis runs entirely in-browser; no message data leaves your environment.
+- **No message persistence** — Messages are displayed in-memory only during your session; never written to a database.
+- **Log redaction** — Backend logging pipeline strips connection strings, API keys, and access tokens.
+
+### Application Insights Telemetry
+ServiceHub optionally emits telemetry to Azure Application Insights. When enabled, telemetry is strictly limited to request durations, error codes, and system metrics. Connection strings, message payloads, business IDs, and user inputs are **explicitly excluded**. Application Insights is **disabled by default**.
 
 ---
 
-## License
+## Architecture
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+ServiceHub is a modern Single Page Application communicating with a .NET Core backend.
+
+```
+Browser (React 19 SPA)
+  └── TanStack Query hooks (useMessages, useQueues, useRules, …)
+        └── Axios API client → Vite dev proxy
+              └── ASP.NET Core 10 API
+                    ├── NamespacesController      → AES-GCM encrypted connections
+                    ├── MessagesController        → PeekMessagesAsync (read-only)
+                    ├── QueuesController          → queue metadata + counts
+                    ├── DlqHistoryController      → SQLite DLQ intelligence
+                    ├── RulesController           → auto-replay rule engine
+                    ├── CrossCloudTraceController → trace messages across clouds
+                    └── SimulatorController       → seeded demo data (no credentials)
+                          ├── Azure.Messaging.ServiceBus SDK
+                          ├── AWSSDK.SQS / AWSSDK.SNS
+                          └── Google.Cloud.PubSub.V1
+```
+
+For deep-dive architecture details, see [ARCHITECTURE.md](services/api/ARCHITECTURE.md) and the [Comprehensive Guide](docs/COMPREHENSIVE-GUIDE.md).
+
+---
+
+## API Documentation
+
+ServiceHub exposes a full REST API with interactive documentation interfaces accessible when running locally:
+
+- **Scalar (Modern)**: `http://localhost:5153/scalar/v1`
+- **Swagger UI**: `http://localhost:5153/swagger/index.html`
+
+---
+
+## FAQ
+
+**Does ServiceHub remove messages from queues?**
+No. ServiceHub only uses `PeekMessagesAsync`. Your consumers continue processing normally, unaffected.
+
+**Is it safe to point at production?**
+Yes. Listen-only mode is fully read-only. Deploy ServiceHub inside your private network for extra safety. Check out the [Self-Hosting Guide](self-hosting/README.md).
+
+**How does AI analysis work without an API key?**
+ServiceHub uses client-side heuristic pattern detection — pure JavaScript in your browser. No GPT, no external service, no data exfiltration.
+
+---
+
+## Contributing
+
+Bug fixes, features, and documentation improvements are welcome!
+
+```bash
+# Unit tests (Vitest — 1,045 tests, ≥60% coverage required)
+cd apps/web && npm run test:coverage
+
+# Backend tests (xUnit — 1,362 tests)
+cd services/api && dotnet test
+
+# E2E tests (Playwright — requires ./run.sh --simulator)
+cd apps/web && npm run test:e2e
+```
+For deep backend developer guidelines, refer to the [API README](services/api/README.md).
+
+---
+
+## Welcome Page
+ServiceHub ships with a public **landing / welcome page** at the root path (`/`) that serves as the entry point for new users. The CTA in the welcome page reads **"Open ServiceHub"** rather than "Demo" to reflect that the hosted application is a fully functional production deployment — not a restricted preview.
+
+---
+
+<div align="center">
+
+**ServiceHub** — Because your Service Bus messages should not be invisible during incidents.
+
+Built for DevOps, Platform, and SRE Engineers.
+
+[🚀 Open ServiceHub](https://app-servicehub-prod.azurewebsites.net/) · [Report Issue](https://github.com/debdevops/servicehub/issues)
+
+</div>
