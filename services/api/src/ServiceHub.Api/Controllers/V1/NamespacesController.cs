@@ -138,8 +138,11 @@ public sealed class NamespacesController : ApiControllerBase
                 request.DisplayName,
                 request.Description,
                 request.Environment,
+                request.Provider,
                 ownerId: OwnerId,
-                connectionStringHash: connectionStringHash);
+                connectionStringHash: connectionStringHash,
+                awsRegion: request.AwsRegion,
+                gcpProjectId: request.GcpProjectId);
         }
         else
         {
@@ -149,7 +152,10 @@ public sealed class NamespacesController : ApiControllerBase
                 request.DisplayName,
                 request.Description,
                 request.Environment,
-                ownerId: OwnerId);
+                request.Provider,
+                ownerId: OwnerId,
+                awsRegion: request.AwsRegion,
+                gcpProjectId: request.GcpProjectId);
         }
 
         if (createResult.IsFailure)
@@ -575,7 +581,12 @@ public sealed class NamespacesController : ApiControllerBase
             HasListenPermission: ns.HasListenPermission,
             HasSendPermission: ns.HasSendPermission,
             HasManagePermission: ns.HasManagePermission,
-            Environment: ns.Environment);
+            Environment: ns.Environment)
+        {
+            Provider = ns.Provider,
+            AwsRegion = ns.AwsRegion,
+            GcpProjectId = ns.GcpProjectId,
+        };
     }
 }
 
