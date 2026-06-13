@@ -2,9 +2,9 @@
 
 # ServiceHub
 
-### The Forensic Debugger for Azure Service Bus
+### The Forensic Debugger for Cloud Messaging — Azure Service Bus, AWS SQS/SNS, GCP Pub/Sub
 
-**See what's REALLY inside your queues. Browse, search, replay, and analyze messages in real time — everything the Azure Portal can't show you.**
+**See what's REALLY inside your queues. Browse, search, replay, and analyze messages in real time — across Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub — everything your cloud portal can't show you.**
 
 </div>
 
@@ -33,7 +33,7 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10-purple.svg)](https://dotnet.microsoft.com/)
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6.svg)](https://www.typescriptlang.org/)
-[![Version](https://img.shields.io/badge/version-3.1.0-brightgreen.svg)](.version)
+[![Version](https://img.shields.io/badge/version-3.2.2-brightgreen.svg)](.version)
 [![Live App](https://img.shields.io/badge/Live%20App-Azure-0078D4.svg)](https://app-servicehub-prod.azurewebsites.net/)
 
 [🚀 Open ServiceHub](https://app-servicehub-prod.azurewebsites.net/) · [⚡ Quick Start](#️-quick-start) · [✨ Features](#️-features) · [📸 Screenshots](#️-screenshots) · [🏗️ Architecture](#️-architecture) · [🤝 Contributing](#️-contributing)
@@ -46,7 +46,9 @@
 
 Production breaks at 2 AM. Azure Portal shows **5,000 messages in Dead-Letter Queue** — but you can't read them, only counts. You manually sample messages one by one, spending hours on what should take minutes.
 
-**ServiceHub is a self-hosted web application that gives engineers full forensic visibility into Azure Service Bus** — like a debugger, but for your message queues.
+**ServiceHub is a self-hosted web application that gives engineers full forensic visibility into their cloud message queues** — like a debugger, but for Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub.
+
+> 🧪 **No credentials?** Try the built-in [Simulator Mode](#-try-without-credentials--simulator-mode) — runs 3 synthetic namespaces (Azure + AWS + GCP) with 50 seeded messages each. No cloud account needed.
 
 | Capability | Azure Portal | ServiceHub |
 |---|---|---|
@@ -58,6 +60,35 @@ Production breaks at 2 AM. Azure Portal shows **5,000 messages in Dead-Letter Qu
 | Multi-namespace support | ❌ Portal only | ✅ Manage multiple connections |
 | Correlation ID tracing | ❌ Not available | ✅ Trace journeys across all queues |
 | Scheduled message management | ❌ Not available | ✅ View, reschedule, and cancel |
+| Cross-cloud message trace | ❌ Not available | ✅ Trace a message across Azure + AWS + GCP |
+
+---
+
+## 🌐 Multi-Cloud Support (Preview)
+
+ServiceHub v3.2.2 extends beyond Azure Service Bus to support **AWS SQS/SNS** and **GCP Pub/Sub** via the Cloud Bridge.
+
+| Provider | Status | Queues | Dead-Letter | Replay | Cross-Cloud Trace |
+|----------|--------|--------|-------------|--------|-------------------|
+| Azure Service Bus | ✅ GA | ✅ | ✅ | ✅ | ✅ |
+| AWS SQS / SNS | 🔶 Preview | ✅ | ✅ (MaxReceive) | ✅ | 🔜 Phase 2 |
+| GCP Pub/Sub | 🔶 Preview | ✅ | ✅ (nack/ack deadline) | ✅ | 🔜 Phase 2 |
+
+Connect to a cloud provider via **Settings → Cloud Bridge**. The same forensic tools (DLQ Intelligence, Correlation Explorer, AI Insights, Cross-Cloud Trace) work across all three clouds. Provider badges in the DLQ History table show which cloud each message originated from.
+
+---
+
+## 🧪 Try Without Credentials — Simulator Mode
+
+The Simulator starts 3 synthetic namespaces (Azure + AWS + GCP) and seeds them with realistic messages. Use it for demos, training, or testing replay rules without any cloud credentials.
+
+```bash
+./run.sh --simulator
+```
+
+Open `http://localhost:3000` and navigate to **Simulator** in the sidebar.
+
+No cloud account needed. Three namespaces are seeded automatically: **Azure (contoso)**, **AWS (acme)**, **GCP (globex)** — each with 50 realistic messages across Active queues and Dead-Letter. See [SIMULATOR.md](SIMULATOR.md) for the full guide.
 
 ---
 
@@ -156,6 +187,16 @@ Paste any Correlation ID and instantly trace a message's full journey across all
 
 ---
 
+### 🌐 Multi-Cloud Trace — Follow Messages Across Clouds
+
+Connect namespaces from two or more cloud providers and use **Multi-Cloud Trace** to trace a single Correlation ID or message GUID as it routes from Azure → AWS → GCP (or any combination). The result is a visual routing path diagram, a chronological hop timeline, and a namespace search-coverage panel — all in one view.
+
+> **Phase 1:** Azure namespaces are searched in parallel (up to 5 concurrent, 30-second timeout). AWS and GCP namespace search arrives in Phase 2.
+
+Route: `/cross-cloud-trace` — visible in the sidebar when two or more cloud providers are connected.
+
+---
+
 ### 🏢 Multi-Namespace Support — Manage All Your Environments
 
 Connect to multiple Azure Service Bus namespaces simultaneously. Switch between DEV, UAT, and PROD without disconnecting. All namespaces visible in the sidebar with live, color-coded message counts.
@@ -194,6 +235,22 @@ Real-time runtime metrics for the ServiceHub API itself: uptime, memory usage, t
 | Correlation Explorer | ![Correlation](docs/screenshots/27-ServiceHub-CorelationId-Explorer.png) |
 | Scheduled Messages | ![Scheduled](docs/screenshots/28-ServiceHub-Schedule-Message.png) |
 | System Health | ![Health](docs/screenshots/29-ServiceHub-System-Health-Status.png) |
+
+---
+
+## 🚦 Recommended Usage Flow
+
+Follow this path before connecting to a production namespace. This protects your live environment and gives you confidence in every operation before it matters.
+
+| Step | Environment | Goal |
+|------|-------------|------|
+| **Step 1** | **DEV** | Connect your development Service Bus namespace. Explore message browsing, DLQ inspection, AI pattern analysis, and auto-replay rules in a safe environment where mistakes are harmless. |
+| **Step 2** | **UAT** | Repeat in your UAT namespace with realistic production-like data. Validate replay targets, confirm rule logic, review AI findings, and check that scheduled messages behave as expected. |
+| **Step 3** | **PROD** | Connect only after DEV and UAT validation. Production namespaces enforce read-only browsing by default — Quick Actions (replay, send, generate) are disabled to prevent accidental data modification. |
+
+> ⚠️ **Do NOT connect a production Service Bus namespace without prior validation in DEV and UAT.**
+> While ServiceHub is read-only by default, replay and send operations are destructive.
+> Validate your replay rules and message targets in lower environments first.
 
 ---
 
@@ -259,18 +316,30 @@ az servicebus namespace authorization-rule create \
 Browser (React 19 SPA)
   └── TanStack Query hooks (useMessages, useQueues, useRules, …)
         └── Axios API client → Vite dev proxy
-              └── ASP.NET Core 10 API (port 5153)
-                    ├── NamespacesController   → AES-GCM encrypted connections
-                    ├── MessagesController     → PeekMessagesAsync (read-only)
-                    ├── QueuesController       → queue metadata + counts
-                    ├── TopicsController       → topic + subscription metadata
-                    ├── DlqHistoryController   → SQLite DLQ intelligence
-                    ├── RulesController        → auto-replay rule engine
+              └── ASP.NET Core 10 API
+                    ├── NamespacesController      → AES-GCM encrypted connections
+                    ├── MessagesController        → PeekMessagesAsync (read-only)
+                    ├── QueuesController          → queue metadata + counts
+                    ├── TopicsController          → topic + subscription metadata
+                    ├── DlqHistoryController      → SQLite DLQ intelligence
+                    ├── RulesController           → auto-replay rule engine
                     ├── ScheduledMessagesController
-                    ├── CorrelationController  → cross-queue message tracing
-                    └── HealthController       → runtime health metrics
-                          └── Azure.Messaging.ServiceBus SDK
+                    ├── CorrelationController     → cross-queue message tracing
+                    ├── CrossCloudTraceController → trace messages across clouds
+                    ├── AnomaliesController       → AI anomaly detection
+                    ├── HealthController          → runtime health metrics
+                    └── SimulatorController       → seeded demo data (no credentials)
+                          ├── Azure.Messaging.ServiceBus SDK  (port 5153)
+                          ├── AWSSDK.SQS / AWSSDK.SNS         (Cloud Bridge)
+                          └── Google.Cloud.PubSub.V1           (Cloud Bridge)
 ```
+
+**Startup modes:**
+
+| Mode | Command | API Port | Credentials needed |
+|------|---------|----------|--------------------|
+| Development | `./run.sh` | 5153 | Azure Service Bus connection string |
+| Simulator | `./run.sh --simulator` | 5200 | None — synthetic data seeded automatically |
 
 **Project layout:**
 ```
@@ -280,7 +349,7 @@ servicehub/
 │       ├── components/          # UI components (messages, DLQ, rules, FAB)
 │       ├── hooks/               # TanStack Query hooks for all API calls
 │       ├── lib/                 # Axios client, AI engine, utilities
-│       └── pages/               # 10 page routes
+│       └── pages/               # 17 page routes (incl. demo + cross-cloud trace)
 │
 ├── services/api/                # ASP.NET Core 10 backend (port 5153)
 │   └── src/
@@ -299,9 +368,11 @@ servicehub/
 |---|---|
 | Frontend | React 19, TypeScript 5, Tailwind CSS v4, TanStack Query v5 |
 | Backend | ASP.NET Core 10, Azure.Messaging.ServiceBus SDK |
+| Multi-cloud | AWSSDK.SQS/SNS (AWS), Google.Cloud.PubSub.V1 (GCP) |
 | AI Analysis | Client-side heuristic engine (no external API calls) |
 | Database | SQLite (DLQ Intelligence history), in-memory message cache |
 | API Docs | Scalar (OpenAPI) + Swagger UI |
+| Testing | Vitest 4 + @testing-library/react (unit) · Playwright (E2E) |
 | Security | AES-GCM encrypted connections, HMAC SPA token, read-only by default |
 
 For deep-dive architecture details, see [services/api/ARCHITECTURE.md](services/api/ARCHITECTURE.md).
@@ -356,14 +427,45 @@ For deep-dive architecture details, see [services/api/ARCHITECTURE.md](services/
 
 ---
 
-## 🛡️ Security & Safety
+## 🛡️ Security & Privacy
+
+### What ServiceHub guarantees
 
 - **Read-only by default** — Uses `PeekMessagesAsync`; messages are **never removed or consumed**
 - **Minimal permissions** — Full functionality with Listen-only access
-- **AES-GCM encryption** — Connection strings encrypted at rest; key stored in local config
+- **AES-GCM encryption** — Connection strings encrypted at rest; key stored in local config, never returned to the browser
 - **Zero external calls** — AI analysis runs entirely in-browser; no message data leaves your environment
-- **No message persistence** — Messages displayed in-memory only during your session
+- **No message persistence** — Messages are displayed in-memory only during your session; never written to a database
 - **Production-safe** — Won't interfere with your active message consumers
+- **Log redaction** — Backend logging pipeline strips connection strings, API keys, and access tokens before any log output
+
+### What ServiceHub does NOT collect or store
+
+| Data | Stored? | Notes |
+|------|---------|-------|
+| Connection strings | ❌ Never in plaintext | AES-GCM encrypted at rest; decrypted in memory only during use |
+| Message bodies | ❌ Never | Displayed in-browser session memory only; not logged or persisted |
+| User data / PII | ❌ Never | No user database exists |
+| Message correlation IDs (business) | ❌ Never logged | Infrastructure correlation IDs for request tracing only |
+| Customer / tenant data | ❌ Never | Messages never leave your own infrastructure |
+
+### Application Insights telemetry (privacy-safe)
+
+ServiceHub optionally emits telemetry to Azure Application Insights. When enabled, telemetry is strictly limited to:
+
+- **Request durations** and HTTP status codes (not request/response bodies)
+- **Error codes** and exception types (not exception messages containing secrets)
+- **System-level metrics** — memory, GC, thread counts
+
+The following is **explicitly excluded** from telemetry:
+
+- Connection strings (redacted by `SensitiveDataTelemetryProcessor` and `LogRedactor`)
+- Message bodies and payloads (message-body API endpoints excluded from auto-tracking)
+- Business-level correlation IDs from message content
+- User input fields
+- API keys and tokens (redacted from query strings and headers)
+
+Application Insights is **disabled by default** — it only activates when `ApplicationInsights:ConnectionString` is configured in `appsettings.Local.json`.
 
 ---
 
@@ -379,16 +481,17 @@ ServiceHub exposes a full REST API with two interactive documentation interfaces
 
 **Key endpoints:**
 ```
-GET    /api/v1/namespaces                              List connected namespaces
-POST   /api/v1/namespaces                              Add a namespace connection
-GET    /api/v1/namespaces/{id}/queues                  List queues with counts
-GET    /api/v1/namespaces/{id}/queues/{name}/messages  Browse messages (peek only)
-POST   /api/v1/namespaces/{id}/queues/{name}/messages  Send a message
-GET    /api/v1/namespaces/{id}/topics                  List topics + subscriptions
-GET    /api/v1/dlq-history                             DLQ Intelligence records
-GET    /api/v1/replay-rules                            Auto-replay rules
-POST   /api/v1/replay-rules                            Create a replay rule
-GET    /api/v1/health                                  Runtime health metrics
+GET    /api/v1/namespaces                                List connected namespaces
+POST   /api/v1/namespaces                                Add a namespace connection
+GET    /api/v1/namespaces/{id}/queues                    List queues with counts
+GET    /api/v1/namespaces/{id}/queues/{name}/messages    Browse messages (peek only)
+POST   /api/v1/namespaces/{id}/queues/{name}/messages    Send a message
+GET    /api/v1/namespaces/{id}/topics                    List topics + subscriptions
+GET    /api/v1/dlq-history                               DLQ Intelligence records
+GET    /api/v1/replay-rules                              Auto-replay rules
+POST   /api/v1/replay-rules                              Create a replay rule
+GET    /api/v1/cross-cloud-trace/trace?traceId={id}      Trace a message across clouds
+GET    /api/v1/health                                    Runtime health metrics
 ```
 
 ---
@@ -421,9 +524,25 @@ Bug fixes, features, and documentation improvements are all welcome.
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes with tests (`cd apps/web && npm run test:coverage`)
+3. Make your changes with tests:
+   ```bash
+   # Unit tests (Vitest — 1,045 tests, ≥60% coverage required)
+   cd apps/web && npm run test:coverage
+
+   # Backend tests (xUnit — 1,362 tests: 1,310 unit + 52 integration)
+   cd services/api && dotnet test
+
+   # E2E tests (Playwright — 16 journeys; requires ./run.sh --simulator)
+   cd apps/web && npm run test:e2e
+   ```
 4. Commit and push
 5. Open a Pull Request
+
+**CI gates** (all must pass before merge):
+- Backend: 1,362 xUnit tests (1,310 unit + 52 integration)
+- Frontend: 1,045 Vitest tests (≥60% line/function/statement coverage)
+- TypeScript composite build check (`tsc -b`)
+- Playwright E2E suite (16 journeys — simulator-dependent tests skip gracefully)
 
 ---
 

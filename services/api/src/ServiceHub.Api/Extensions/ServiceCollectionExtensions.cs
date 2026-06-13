@@ -87,6 +87,9 @@ public static class ServiceCollectionExtensions
         // SPA token provider for co-hosted browser authentication
         services.AddSingleton<SpaTokenProvider>();
 
+        // Security audit trail for critical operations
+        services.AddSingleton<IAuditLogger, SecurityAuditLogger>();
+
         // Rate limit options (read from RateLimit config section)
         services.Configure<RateLimitOptions>(configuration.GetSection("RateLimit"));
 

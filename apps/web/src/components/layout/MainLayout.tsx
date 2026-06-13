@@ -80,8 +80,11 @@ export function MainLayout() {
   // Resolve current namespace to check environment and permissions
   const { data: namespaces } = useNamespaces();
   const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
-  // FAB only visible in DEV with Manage permission (required for send, generate, and dead-letter)
+  // FAB: only in DEV environment with Manage (write) permission — never in UAT/Prod or read-only connections
   const canUseFab = currentNamespace?.environment === 'dev' && currentNamespace?.hasManagePermission === true;
+  const demoParam = searchParams.get('demo');
+  const isDemoMode = demoParam === 'true' || demoParam === 'azure' || demoParam === 'aws' || demoParam === 'gcp';
+  const demoCloudProvider: 'azure' | 'aws' | 'gcp' = demoParam === 'aws' ? 'aws' : demoParam === 'gcp' ? 'gcp' : 'azure';
 
   // Determine entity type and names for FAB
   const entityType: 'queue' | 'topic' = topicName ? 'topic' : 'queue';
@@ -122,15 +125,16 @@ export function MainLayout() {
         </main>
       </div>
 
-      {/* FAB - Only show on messages page, in DEV environment, and only with Manage permission */}
-      {isMessagesPage && canUseFab && (
+      {/* FAB - Show on messages page in DEV with Manage permission OR in demo mode */}
+      {isMessagesPage && (canUseFab || isDemoMode) && (
         <MessageFAB 
           namespaceId={namespaceId}
           queueName={entityName}
           entityType={entityType}
           topicName={topicName}
           subscriptionName={subscriptionName}
-          environment={currentNamespace?.environment}
+          environment={currentNamespace?.environment ?? (isDemoMode ? 'dev' : undefined)}
+          cloudProvider={currentNamespace?.cloudProvider ?? (isDemoMode ? demoCloudProvider : undefined)}
           onMessageSent={handleMessageSent}
           onMessagesGenerated={handleMessagesGenerated}
         />

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
 using ServiceHub.Api.Controllers.V1;
+using ServiceHub.Api.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
@@ -74,6 +75,12 @@ public class TopicsControllerTests
             DefaultMessageTimeToLive: TimeSpan.FromDays(14),
             AutoDeleteOnIdle: TimeSpan.MaxValue,
             DuplicateDetectionHistoryTimeWindow: TimeSpan.FromMinutes(10));
+    }
+
+    private void SetIntentHeaders(string intent)
+    {
+        _controller.ControllerContext.HttpContext.Request.Headers[IntentHeaders.IntentHeaderName] = intent;
+        _controller.ControllerContext.HttpContext.Request.Headers[IntentHeaders.ConfirmHeaderName] = "true";
     }
 
     #region Constructor Tests
@@ -304,6 +311,7 @@ public class TopicsControllerTests
     [Fact]
     public async Task DeadLetterSubscriptionMessages_Success_ReturnsOk()
     {
+        SetIntentHeaders(IntentHeaders.IntentDeadLetter);
         var ns = CreateTestNamespace();
         var nsId = ns.Id;
 
@@ -321,6 +329,7 @@ public class TopicsControllerTests
     [Fact]
     public async Task DeadLetterSubscriptionMessages_NamespaceNotFound_ReturnsError()
     {
+        SetIntentHeaders(IntentHeaders.IntentDeadLetter);
         var nsId = Guid.NewGuid();
 
         _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
@@ -334,6 +343,7 @@ public class TopicsControllerTests
     [Fact]
     public async Task DeadLetterSubscriptionMessages_NoSendPermission_Returns403()
     {
+        SetIntentHeaders(IntentHeaders.IntentDeadLetter);
         // Create namespace with listen-only key (no send permission)
         var ns = Namespace.Create(
             "test-namespace",
@@ -374,6 +384,7 @@ public class TopicsControllerTests
     [Fact]
     public async Task SendMessage_ProductionNamespace_Returns403()
     {
+        SetIntentHeaders(IntentHeaders.IntentSendMessage);
         var ns = Namespace.Create(
             "prod-namespace",
             "Endpoint=sb://prod.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
@@ -394,6 +405,7 @@ public class TopicsControllerTests
     [Fact]
     public async Task SendMessage_DevNamespace_Allowed()
     {
+        SetIntentHeaders(IntentHeaders.IntentSendMessage);
         var ns = Namespace.Create(
             "dev-namespace",
             "Endpoint=sb://dev.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",

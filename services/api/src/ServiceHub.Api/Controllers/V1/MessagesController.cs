@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Security;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
@@ -22,6 +23,7 @@ public sealed class MessagesController : ApiControllerBase
     private readonly IMessageSender _messageSender;
     private readonly IMessageReceiver _messageReceiver;
     private readonly INamespaceRepository _namespaceRepository;
+    private readonly IAuditLogger _auditLogger;
     private readonly ILogger<MessagesController> _logger;
 
     /// <summary>
@@ -31,15 +33,18 @@ public sealed class MessagesController : ApiControllerBase
     /// <param name="messageReceiver">The message receiver service.</param>
     /// <param name="namespaceRepository">The namespace repository.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="auditLogger">The security audit logger.</param>
     public MessagesController(
         IMessageSender messageSender,
         IMessageReceiver messageReceiver,
         INamespaceRepository namespaceRepository,
-        ILogger<MessagesController> logger)
+        ILogger<MessagesController> logger,
+        IAuditLogger? auditLogger = null)
     {
         _messageSender = messageSender ?? throw new ArgumentNullException(nameof(messageSender));
         _messageReceiver = messageReceiver ?? throw new ArgumentNullException(nameof(messageReceiver));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
+        _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -361,6 +366,24 @@ public sealed class MessagesController : ApiControllerBase
         [FromQuery] string? subscriptionName = null,
         CancellationToken cancellationToken = default)
     {
+        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentReplayMessage))
+        {
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: IntentHeaders.IntentReplayMessage,
+                outcome: "Denied",
+                namespaceId: namespaceId,
+                resourceName: entityName,
+                sequenceNumber: sequenceNumber,
+                detail: "Missing explicit intent headers");
+
+            return Problem(
+                statusCode: StatusCodes.Status428PreconditionRequired,
+                title: "Explicit Intent Required",
+                detail: IntentHeaders.BuildIntentRequiredDetail("message replay"));
+        }
+
         _logger.LogInformation(
             "Replaying message {SequenceNumber} from {EntityName} in namespace {NamespaceId}",
             sequenceNumber,
@@ -382,6 +405,17 @@ public sealed class MessagesController : ApiControllerBase
         // Check if namespace has Send permission
         if (!ns.HasSendPermission)
         {
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: IntentHeaders.IntentReplayMessage,
+                outcome: "Denied",
+                namespaceId: namespaceId,
+                environment: ns.Environment,
+                resourceName: entityName,
+                sequenceNumber: sequenceNumber,
+                detail: "Namespace lacks Send permission");
+
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Insufficient Permissions",
@@ -389,6 +423,26 @@ public sealed class MessagesController : ApiControllerBase
                        "Replay operations require 'Send' permission to move messages from DLQ back to the main queue. " +
                        "Please create or use a Shared Access Policy with 'Manage', 'Send', and 'Listen' permissions for full functionality.",
                 type: "https://docs.microsoft.com/azure/service-bus-messaging/service-bus-sas");
+        }
+
+        // Safety-by-default guard: destructive replay is blocked in production.
+        if (ns.Environment == EnvironmentType.Prod)
+        {
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: IntentHeaders.IntentReplayMessage,
+                outcome: "Denied",
+                namespaceId: namespaceId,
+                environment: ns.Environment,
+                resourceName: entityName,
+                sequenceNumber: sequenceNumber,
+                detail: "Replay blocked in production environment");
+
+            return Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Production Restriction",
+                detail: "Replay is blocked for production namespaces. Validate in DEV and UAT first.");
         }
 
         var result = await _messageReceiver.ReplayMessageAsync(
@@ -400,8 +454,29 @@ public sealed class MessagesController : ApiControllerBase
 
         if (result.IsFailure)
         {
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: IntentHeaders.IntentReplayMessage,
+                outcome: "Failed",
+                namespaceId: namespaceId,
+                environment: ns.Environment,
+                resourceName: entityName,
+                sequenceNumber: sequenceNumber,
+                detail: result.Error.Message);
             return ToActionResult(result);
         }
+
+        _auditLogger.LogCriticalAction(
+            HttpContext,
+            OwnerId,
+            action: IntentHeaders.IntentReplayMessage,
+            outcome: "Succeeded",
+            namespaceId: namespaceId,
+            environment: ns.Environment,
+            resourceName: entityName,
+            sequenceNumber: sequenceNumber,
+            detail: "Replay completed");
 
         _logger.LogInformation("Message {SequenceNumber} replayed successfully", sequenceNumber);
         return Accepted();

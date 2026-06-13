@@ -259,3 +259,9 @@ project.nuget.cache
 .github/copilot-cache/
 .github/README.md
 How-To-Use.md
+
+docs/linkedin
+docs/multi-platform/
+# Playwright test artifacts
+apps/web/test-results/
+apps/web/playwright-report/

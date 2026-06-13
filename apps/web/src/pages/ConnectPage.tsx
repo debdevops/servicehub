@@ -5,7 +5,7 @@ import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@/hooks/u
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { HelpTooltip } from '@/components/help';
 import { tooltips } from '@/lib/helpContent';
-import type { EnvironmentType } from '@/lib/api/types';
+import type { EnvironmentType, CloudProviderType } from '@/lib/api/types';
 import toast from 'react-hot-toast';
 
 /**
@@ -19,6 +19,19 @@ export function ConnectPage() {
   const [displayName, setDisplayName] = useState('');
   const [connectionString, setConnectionString] = useState('');
   const [environment, setEnvironment] = useState<EnvironmentType>('dev');
+
+  // Cloud provider selection
+  const [cloudProvider, setCloudProvider] = useState<CloudProviderType>('azure');
+
+  // AWS-specific fields
+  const [awsAccessKeyId, setAwsAccessKeyId] = useState('');
+  const [awsSecretKey, setAwsSecretKey] = useState('');
+  const [awsRegion, setAwsRegion] = useState('us-east-1');
+  const [awsQueuePrefix, setAwsQueuePrefix] = useState('');
+
+  // GCP-specific fields
+  const [gcpProjectId, setGcpProjectId] = useState('');
+  const [gcpServiceAccountJson, setGcpServiceAccountJson] = useState('');
   
   // v3.1.0 HKDF upgrade notice
   const [showHkdfNotice, setShowHkdfNotice] = useState(
@@ -57,14 +70,74 @@ export function ConnectPage() {
 
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!displayName.trim() || !connectionString.trim()) {
+
+    if (!displayName.trim()) {
+      return;
+    }
+
+    if (cloudProvider === 'aws') {
+      // AWS connection: build name from region endpoint and connection string from access key
+      if (!awsAccessKeyId.trim() || !awsSecretKey.trim() || !awsRegion.trim()) {
+        toast.error('AWS Access Key ID, Secret Access Key, and Region are required.');
+        return;
+      }
+      const namespaceName = `sqs.${awsRegion}.amazonaws.com`;
+      // Store credentials as AKID:SecretKey (colon-separated, no URL prefix).
+      // Region is stored separately in awsRegion — never embed it in the
+      // connection string to avoid URL-parser log-scraper leaks.
+      const awsConnectionString = `${awsAccessKeyId.trim()}:${awsSecretKey.trim()}`;
+
+      try {
+        await createNamespace.mutateAsync({
+          name: namespaceName,
+          connectionString: awsConnectionString,
+          displayName: displayName.trim(),
+          environment,
+          cloudProvider: 'aws',
+          awsRegion: awsRegion.trim(),
+        });
+        setDisplayName('');
+        setAwsAccessKeyId('');
+        setAwsSecretKey('');
+        setAwsQueuePrefix('');
+      } catch {
+        // Error handled by mutation hook
+      }
+      return;
+    }
+
+    if (cloudProvider === 'gcp') {
+      // GCP connection: project ID as name, service account JSON as connection string
+      if (!gcpProjectId.trim() || !gcpServiceAccountJson.trim()) {
+        toast.error('GCP Project ID and Service Account JSON are required.');
+        return;
+      }
+      try {
+        await createNamespace.mutateAsync({
+          name: gcpProjectId.trim(),
+          connectionString: gcpServiceAccountJson.trim(),
+          displayName: displayName.trim(),
+          environment,
+          cloudProvider: 'gcp',
+          gcpProjectId: gcpProjectId.trim(),
+        });
+        setDisplayName('');
+        setGcpProjectId('');
+        setGcpServiceAccountJson('');
+      } catch {
+        // Error handled by mutation hook
+      }
+      return;
+    }
+
+    // Azure path (default)
+    if (!connectionString.trim()) {
       return;
     }
 
     // Extract namespace from connection string
     const namespaceName = extractNamespaceFromConnectionString(connectionString.trim());
-    
+
     if (!namespaceName) {
       toast.error('Could not extract namespace from connection string. Please verify the format.', {
         duration: 5000,
@@ -78,8 +151,9 @@ export function ConnectPage() {
         connectionString: connectionString.trim(),
         displayName: displayName.trim(),
         environment,
+        cloudProvider: 'azure',
       });
-      
+
       // Check actual permissions returned by the backend
       // The backend attempts to detect permissions from the SAS policy name, but this is not always accurate
       // since Azure doesn't enforce naming conventions. We show a warning if permissions appear limited.
@@ -102,7 +176,7 @@ export function ConnectPage() {
         );
       }
       // If all permissions detected or permissions unclear, show no additional message — the success toast from the mutation is enough
-      
+
       // Reset form
       setDisplayName('');
       setConnectionString('');
@@ -202,48 +276,122 @@ export function ConnectPage() {
                 <span className="text-base">☁️</span>
               </div>
               <div>
-                <h2 className="text-base font-semibold text-gray-900">Connect to Service Bus</h2>
+                <h2 className="text-base font-semibold text-gray-900">Connect to Cloud Messaging</h2>
                 <p className="text-xs text-gray-500">
-                  A Listen-only SAS policy is all you need.
+                  Azure Service Bus · AWS SQS · GCP Pub/Sub
                 </p>
               </div>
             </div>
 
-            {/* Trust & Security panel */}
-            <div className="mb-4 rounded-lg bg-green-50 border border-green-100 p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <Shield className="w-4 h-4 text-green-600 flex-shrink-0" />
-                <span className="text-xs font-semibold text-green-800">Your data stays yours</span>
-              </div>
-              <div className="space-y-1">
-                {[
-                  { label: 'Connection string', value: 'AES-256-GCM encrypted before saving — never returned to browser' },
-                  { label: 'Message content', value: 'Never logged or stored by ServiceHub' },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex items-start gap-2 text-xs">
-                    <span className="text-green-500 mt-0.5 flex-shrink-0">✓</span>
-                    <span><span className="font-medium text-green-800">{label}:</span>{' '}
-                      <span className="text-green-700">{value}</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center gap-3 mt-2 pt-2 border-t border-green-100">
-                <a
-                  href="https://github.com/debdevops/servicehub/blob/main/services/api/src/ServiceHub.Infrastructure/Security/ConnectionStringProtector.cs"
-                  target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
+            {/* ── Cloud provider selector ───────────────────────────────────────── */}
+            <div className="mb-4">
+              <p className="text-xs font-medium text-gray-700 mb-2">Cloud provider</p>
+              <div className="grid grid-cols-3 gap-2">
+                {/* Azure */}
+                <button
+                  type="button"
+                  onClick={() => setCloudProvider('azure')}
+                  className={`flex flex-col items-center gap-1 p-2.5 rounded-lg border text-xs font-medium transition-all ${
+                    cloudProvider === 'azure'
+                      ? 'bg-blue-50 border-blue-400 text-blue-700 ring-2 ring-blue-300'
+                      : 'bg-white border-gray-200 text-gray-600 hover:bg-blue-50 hover:border-blue-200'
+                  }`}
+                  title="Azure Service Bus"
                 >
-                  Verify encryption code →
-                </a>
-                <Link
-                  to="/security"
-                  className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
+                  <span className="text-lg leading-none">𝓐</span>
+                  <span>Azure</span>
+                  {cloudProvider === 'azure' && (
+                    <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">Selected</span>
+                  )}
+                </button>
+
+                {/* AWS */}
+                <button
+                  type="button"
+                  onClick={() => setCloudProvider('aws')}
+                  className={`flex flex-col items-center gap-1 p-2.5 rounded-lg border text-xs font-medium transition-all ${
+                    cloudProvider === 'aws'
+                      ? 'bg-orange-50 border-orange-400 text-orange-700 ring-2 ring-orange-300'
+                      : 'bg-white border-gray-200 text-gray-600 hover:bg-orange-50 hover:border-orange-200'
+                  }`}
+                  title="Amazon Web Services SQS"
                 >
-                  Security overview →
-                </Link>
+                  <span className="text-lg leading-none">⬡</span>
+                  <span>AWS</span>
+                  {cloudProvider === 'aws' && (
+                    <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">Selected</span>
+                  )}
+                </button>
+
+                {/* GCP */}
+                <button
+                  type="button"
+                  onClick={() => setCloudProvider('gcp')}
+                  className={`flex flex-col items-center gap-1 p-2.5 rounded-lg border text-xs font-medium transition-all ${
+                    cloudProvider === 'gcp'
+                      ? 'bg-green-50 border-green-400 text-green-700 ring-2 ring-green-300'
+                      : 'bg-white border-gray-200 text-gray-600 hover:bg-green-50 hover:border-green-200'
+                  }`}
+                  title="Google Cloud Pub/Sub"
+                >
+                  <span className="text-lg leading-none">◈</span>
+                  <span>GCP</span>
+                  {cloudProvider === 'gcp' && (
+                    <span className="text-[10px] bg-green-100 text-green-600 px-1.5 py-0.5 rounded-full">Selected</span>
+                  )}
+                </button>
               </div>
+
+              {/* Provider coming-soon notices for non-Azure */}
+              {cloudProvider === 'aws' && (
+                <div className="mt-2 p-2 rounded bg-orange-50 border border-orange-200 text-xs text-orange-700">
+                  <strong>AWS SQS — Phase 2 (coming soon).</strong> You can save the connection details now; full message browsing will be enabled when the AWS provider ships.
+                </div>
+              )}
+              {cloudProvider === 'gcp' && (
+                <div className="mt-2 p-2 rounded bg-green-50 border border-green-200 text-xs text-green-700">
+                  <strong>GCP Pub/Sub — Phase 2 (coming soon).</strong> You can save the connection details now; full message browsing will be enabled when the GCP provider ships.
+                </div>
+              )}
             </div>
+
+            {/* Trust & Security panel (Azure only — GCP/AWS have different security models) */}
+            {cloudProvider === 'azure' && (
+              <div className="mb-4 rounded-lg bg-green-50 border border-green-100 p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Shield className="w-4 h-4 text-green-600 flex-shrink-0" />
+                  <span className="text-xs font-semibold text-green-800">Your data stays yours</span>
+                </div>
+                <div className="space-y-1">
+                  {[
+                    { label: 'Connection string', value: 'AES-256-GCM encrypted before saving — never returned to browser' },
+                    { label: 'Message content', value: 'Never logged or stored by ServiceHub' },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="flex items-start gap-2 text-xs">
+                      <span className="text-green-500 mt-0.5 flex-shrink-0">✓</span>
+                      <span><span className="font-medium text-green-800">{label}:</span>{' '}
+                        <span className="text-green-700">{value}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center gap-3 mt-2 pt-2 border-t border-green-100">
+                  <a
+                    href="https://github.com/debdevops/servicehub/blob/main/services/api/src/ServiceHub.Infrastructure/Security/ConnectionStringProtector.cs"
+                    target="_blank" rel="noopener noreferrer"
+                    className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
+                  >
+                    Verify encryption code →
+                  </a>
+                  <Link
+                    to="/security"
+                    className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
+                  >
+                    Security overview →
+                  </Link>
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleConnect}>
               <div className="mb-3">
@@ -255,39 +403,236 @@ export function ConnectPage() {
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="e.g., Production Service Bus"
+                  placeholder={
+                    cloudProvider === 'aws' ? 'e.g., Production SQS (us-east-1)' :
+                    cloudProvider === 'gcp' ? 'e.g., Production Pub/Sub' :
+                    'e.g., Production Service Bus'
+                  }
                   required
                   className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
                 />
               </div>
 
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Connection String <span className="text-red-500">*</span>
-                  <HelpTooltip {...tooltips.connect.connectionString} position="right" className="ml-1" />
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={connectionString}
-                    onChange={(e) => setConnectionString(e.target.value)}
-                    placeholder="Endpoint=sb://...;SharedAccessKey=..."
-                    required
-                    className="w-full px-3 py-2 pr-10 rounded-lg text-sm font-mono bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                <div className="flex items-center gap-1 mt-1.5 text-xs text-green-700">
-                  <Shield className="w-3 h-3 text-green-600 shrink-0" />
-                  AES-GCM encrypted at rest — never stored in plaintext.
-                </div>
-              </div>
+              {/* ── Azure form ───────────────────────────────────────────────────── */}
+              {cloudProvider === 'azure' && (
+                <>
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Connection String <span className="text-red-500">*</span>
+                      <HelpTooltip {...tooltips.connect.connectionString} position="right" className="ml-1" />
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={connectionString}
+                        onChange={(e) => setConnectionString(e.target.value)}
+                        placeholder="Endpoint=sb://...;SharedAccessKey=..."
+                        required={cloudProvider === 'azure'}
+                        className="w-full px-3 py-2 pr-10 rounded-lg text-sm font-mono bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-1 mt-1.5 text-xs text-green-700">
+                      <Shield className="w-3 h-3 text-green-600 shrink-0" />
+                      AES-GCM encrypted at rest — never stored in plaintext.
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* ── AWS form ─────────────────────────────────────────────────────── */}
+              {cloudProvider === 'aws' && (
+                <>
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      AWS Access Key ID <span className="text-red-500">*</span>
+                      <HelpTooltip
+                        text="Your AWS IAM Access Key ID. Create a dedicated IAM user with sqs:ReceiveMessage and sqs:GetQueueAttributes permissions."
+                        position="right"
+                        className="ml-1"
+                      />
+                    </label>
+                    <input
+                      type="text"
+                      value={awsAccessKeyId}
+                      onChange={(e) => setAwsAccessKeyId(e.target.value)}
+                      placeholder="AKIAIOSFODNN7EXAMPLE"
+                      required={cloudProvider === 'aws'}
+                      className="w-full px-3 py-2 rounded-lg text-sm font-mono bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-300"
+                    />
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      AWS Secret Access Key <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={awsSecretKey}
+                        onChange={(e) => setAwsSecretKey(e.target.value)}
+                        placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                        required={cloudProvider === 'aws'}
+                        className="w-full px-3 py-2 pr-10 rounded-lg text-sm font-mono bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-300"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      AWS Region <span className="text-red-500">*</span>
+                      <HelpTooltip
+                        text="The AWS region where your SQS queues are located."
+                        position="right"
+                        className="ml-1"
+                      />
+                    </label>
+                    <select
+                      value={awsRegion}
+                      onChange={(e) => setAwsRegion(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-300"
+                    >
+                      <option value="us-east-1">us-east-1 — US East (N. Virginia)</option>
+                      <option value="us-east-2">us-east-2 — US East (Ohio)</option>
+                      <option value="us-west-1">us-west-1 — US West (N. California)</option>
+                      <option value="us-west-2">us-west-2 — US West (Oregon)</option>
+                      <option value="eu-west-1">eu-west-1 — Europe (Ireland)</option>
+                      <option value="eu-west-2">eu-west-2 — Europe (London)</option>
+                      <option value="eu-central-1">eu-central-1 — Europe (Frankfurt)</option>
+                      <option value="ap-southeast-1">ap-southeast-1 — Asia Pacific (Singapore)</option>
+                      <option value="ap-southeast-2">ap-southeast-2 — Asia Pacific (Sydney)</option>
+                      <option value="ap-northeast-1">ap-northeast-1 — Asia Pacific (Tokyo)</option>
+                      <option value="sa-east-1">sa-east-1 — South America (São Paulo)</option>
+                    </select>
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Queue/Topic URL prefix
+                      <HelpTooltip
+                        text="Optional. Filter to queues matching this prefix, e.g. 'orders-' or leave blank to see all queues."
+                        position="right"
+                        className="ml-1"
+                      />
+                    </label>
+                    <input
+                      type="text"
+                      value={awsQueuePrefix}
+                      onChange={(e) => setAwsQueuePrefix(e.target.value)}
+                      placeholder="e.g., orders- (optional)"
+                      className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-300"
+                    />
+                  </div>
+
+                  {/* IAM permissions guidance */}
+                  <details className="mb-3 rounded-lg border border-orange-200 bg-orange-50 text-xs">
+                    <summary className="cursor-pointer px-3 py-2 font-medium text-orange-800 select-none">
+                      Required IAM permissions for this IAM user
+                    </summary>
+                    <div className="px-3 pb-3 pt-1 text-orange-900 space-y-1">
+                      <p className="font-semibold mt-1">SQS permissions:</p>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        <li><code>sqs:ReceiveMessage</code></li>
+                        <li><code>sqs:GetQueueAttributes</code></li>
+                        <li><code>sqs:GetQueueUrl</code></li>
+                        <li><code>sqs:ListQueues</code></li>
+                        <li><code>sqs:SendMessage</code> <span className="text-orange-700">(for replay / send operations)</span></li>
+                        <li><code>sqs:DeleteMessage</code> <span className="text-orange-700">(for replay: moves message from DLQ)</span></li>
+                      </ul>
+                      <p className="font-semibold mt-2">SNS permissions (if using SNS fan-out):</p>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        <li><code>sns:ListTopics</code></li>
+                        <li><code>sns:ListSubscriptions</code></li>
+                        <li><code>sns:Publish</code> <span className="text-orange-700">(for send operations)</span></li>
+                      </ul>
+                      <p className="mt-2 text-orange-700">
+                        Tip: Use a dedicated IAM user with least-privilege policies scoped to your queue ARNs.
+                      </p>
+                    </div>
+                  </details>
+                </>
+              )}
+
+              {/* ── GCP form ─────────────────────────────────────────────────────── */}
+              {cloudProvider === 'gcp' && (
+                <>
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      GCP Project ID <span className="text-red-500">*</span>
+                      <HelpTooltip
+                        text="Your Google Cloud project identifier (e.g., my-project-123). Found in the GCP Console header."
+                        position="right"
+                        className="ml-1"
+                      />
+                    </label>
+                    <input
+                      type="text"
+                      value={gcpProjectId}
+                      onChange={(e) => setGcpProjectId(e.target.value)}
+                      placeholder="my-project-123"
+                      required={cloudProvider === 'gcp'}
+                      className="w-full px-3 py-2 rounded-lg text-sm font-mono bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-green-300"
+                    />
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Service Account JSON <span className="text-red-500">*</span>
+                      <HelpTooltip
+                        text="Paste the full service account JSON key file. The account needs roles/pubsub.subscriber on the project."
+                        position="right"
+                        className="ml-1"
+                      />
+                    </label>
+                    <textarea
+                      value={gcpServiceAccountJson}
+                      onChange={(e) => setGcpServiceAccountJson(e.target.value)}
+                      placeholder={'{\n  "type": "service_account",\n  "project_id": "...",\n  ...\n}'}
+                      rows={5}
+                      required={cloudProvider === 'gcp'}
+                      className="w-full px-3 py-2 rounded-lg text-xs font-mono bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-green-300 resize-y"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Credentials are AES-GCM encrypted before storage and never returned to the browser.
+                    </p>
+                  </div>
+
+                  {/* GCP IAM guidance */}
+                  <details className="mb-3 rounded-lg border border-green-200 bg-green-50 text-xs">
+                    <summary className="cursor-pointer px-3 py-2 font-medium text-green-800 select-none">
+                      Required GCP roles for this service account
+                    </summary>
+                    <div className="px-3 pb-3 pt-1 text-green-900 space-y-1">
+                      <p className="font-semibold mt-1">Minimum roles (read-only browsing):</p>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        <li><code>roles/pubsub.subscriber</code> — pull &amp; acknowledge messages</li>
+                        <li><code>roles/pubsub.viewer</code> — list topics and subscriptions</li>
+                      </ul>
+                      <p className="font-semibold mt-2">Additional roles (send / replay):</p>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        <li><code>roles/pubsub.publisher</code> — publish messages to topics</li>
+                      </ul>
+                      <p className="mt-2 text-green-700">
+                        Tip: Grant these roles on the project or at the topic/subscription resource level for least privilege.
+                        Generate a key at <strong>IAM &amp; Admin → Service Accounts → Keys → Add Key → JSON</strong>.
+                      </p>
+                    </div>
+                  </details>
+                </>
+              )}
 
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -303,13 +648,36 @@ export function ConnectPage() {
                   <option value="uat">UAT — User Acceptance Testing</option>
                   <option value="prod">PROD — Production</option>
                 </select>
-                <p className="text-xs text-gray-500 mt-1">Production disables Quick Actions for safety.</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {environment === 'prod' ? (
+                    <>
+                      <span className="text-amber-600 font-semibold">⚠️ Production namespace:</span>
+                      {' '}Quick Actions (replay, send, generate) are disabled for safety. Validate your workflow in DEV and UAT first.
+                    </>
+                  ) : environment === 'uat' ? (
+                    <>
+                      <span className="text-amber-700 font-medium">UAT namespace:</span>
+                      {' '}Validate replay rules and DLQ behaviour here before connecting to PROD.
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-green-700 font-medium">Recommended: start with a DEV namespace.</span>
+                      {' '}Test DLQ inspection, replay rules, and message operations safely before moving to UAT or PROD.
+                    </>
+                  )}
+                </p>
               </div>
 
               <button
                 type="submit"
                 disabled={createNamespace.isPending}
-                className="w-full px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 text-white bg-primary-500 hover:bg-primary-600 disabled:bg-primary-300"
+                className={`w-full px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 text-white disabled:opacity-50 ${
+                  cloudProvider === 'aws'
+                    ? 'bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300'
+                    : cloudProvider === 'gcp'
+                    ? 'bg-green-600 hover:bg-green-700 disabled:bg-green-300'
+                    : 'bg-primary-500 hover:bg-primary-600 disabled:bg-primary-300'
+                }`}
               >
                 {createNamespace.isPending ? (
                   <>
@@ -322,22 +690,24 @@ export function ConnectPage() {
               </button>
             </form>
 
-            {/* SAS instructions — always visible */}
-            <div className="mt-3 rounded-r-lg border-l-2 border-blue-300 bg-blue-50 pl-3 pr-2 py-2">
-              <p className="text-xs font-semibold text-blue-800 mb-1">
-                💡 A Listen-only key is all you need — and it's the safest option
-              </p>
-              <p className="text-xs text-blue-700 mb-1">
-                A Listen-only policy can <strong>only read</strong> messages. It cannot delete, send, or
-                modify anything. Even if this key were ever exposed, your data remains safe.
-              </p>
-              <ol className="text-xs text-blue-700 space-y-0.5 list-decimal list-inside">
-                <li>Azure Portal → your Service Bus namespace</li>
-                <li>Shared access policies → + Add policy</li>
-                <li>Name it <code className="bg-blue-100 px-1 rounded">servicehub</code>, tick <strong>Listen only</strong></li>
-                <li>Save → copy Primary Connection String → paste above</li>
-              </ol>
-            </div>
+            {/* SAS instructions — Azure only */}
+            {cloudProvider === 'azure' && (
+              <div className="mt-3 rounded-r-lg border-l-2 border-blue-300 bg-blue-50 pl-3 pr-2 py-2">
+                <p className="text-xs font-semibold text-blue-800 mb-1">
+                  💡 A Listen-only key is all you need — and it's the safest option
+                </p>
+                <p className="text-xs text-blue-700 mb-1">
+                  A Listen-only policy can <strong>only read</strong> messages. It cannot delete, send, or
+                  modify anything. Even if this key were ever exposed, your data remains safe.
+                </p>
+                <ol className="text-xs text-blue-700 space-y-0.5 list-decimal list-inside">
+                  <li>Azure Portal → your Service Bus namespace</li>
+                  <li>Shared access policies → + Add policy</li>
+                  <li>Name it <code className="bg-blue-100 px-1 rounded">servicehub</code>, tick <strong>Listen only</strong></li>
+                  <li>Save → copy Primary Connection String → paste above</li>
+                </ol>
+              </div>
+            )}
           </div>
 
           {/* Right: Saved Connections + Demo callout */}
@@ -370,6 +740,13 @@ export function ConnectPage() {
                               'bg-green-100 text-green-700'
                             }`}>
                               {ns.environment || 'dev'}
+                            </span>
+                            <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase ${
+                              ns.cloudProvider === 'aws' ? 'bg-orange-100 text-orange-700' :
+                              ns.cloudProvider === 'gcp' ? 'bg-emerald-100 text-emerald-700' :
+                              'bg-blue-100 text-blue-700'
+                            }`}>
+                              {ns.cloudProvider === 'aws' ? 'AWS' : ns.cloudProvider === 'gcp' ? 'GCP' : 'Azure'}
                             </span>
                           </div>
                           <p className="text-xs text-gray-500">
@@ -410,22 +787,28 @@ export function ConnectPage() {
               </div>
             </div>
 
-            {/* Demo callout — compact secondary card */}
-            <div className="bg-gradient-to-r from-slate-800 to-primary-900 rounded-xl border border-slate-700 p-4 flex items-center gap-4">
-              <div className="w-9 h-9 bg-amber-400/20 border border-amber-400/30 rounded-lg flex items-center justify-center shrink-0">
-                <Play className="w-4 h-4 text-amber-300 fill-current" />
+            {/* Demo callout — three cloud demos */}
+            <div className="rounded-xl border border-slate-700 bg-gradient-to-r from-slate-800 to-primary-900 p-4">
+              <p className="text-xs font-semibold text-white mb-3 flex items-center gap-2">
+                <Play className="w-3.5 h-3.5 text-amber-300 fill-current" />
+                No credentials? Try a live demo first
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: 'Azure', sub: 'Service Bus · Contoso', url: '/messages?demo=azure', color: 'bg-blue-600 hover:bg-blue-700' },
+                  { label: 'AWS', sub: 'SQS · AcmeRetail', url: '/messages?demo=aws', color: 'bg-orange-500 hover:bg-orange-600' },
+                  { label: 'GCP', sub: 'Pub/Sub · MedStream', url: '/messages?demo=gcp', color: 'bg-green-600 hover:bg-green-700' },
+                ].map(({ label, sub, url, color }) => (
+                  <button
+                    key={label}
+                    onClick={() => navigate(url)}
+                    className={`${color} text-white text-xs font-semibold rounded-lg px-3 py-2 text-left transition-colors`}
+                  >
+                    <div>{label} Demo</div>
+                    <div className="text-white/70 font-normal text-[10px] mt-0.5">{sub}</div>
+                  </button>
+                ))}
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-white">No Service Bus? Try the live demo</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">50 production-realistic messages, DLQ scenarios, AI root-cause analysis — no credentials needed.</p>
-              </div>
-              <button
-                onClick={() => navigate('/messages?demo=true')}
-                className="shrink-0 px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-900 font-semibold text-xs rounded-lg transition-colors flex items-center gap-1.5"
-              >
-                Launch
-                <ArrowRight className="w-3 h-3" />
-              </button>
             </div>
 
             {/* Self-host callout */}

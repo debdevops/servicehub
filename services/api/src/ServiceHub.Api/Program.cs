@@ -1,6 +1,7 @@
 using ServiceHub.Api.Extensions;
 using ServiceHub.Api.Logging;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Simulator;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 
@@ -42,6 +43,15 @@ builder.Services.AddApplicationInsightsTelemetryConfiguration(builder.Configurat
 
 // Add ServiceHub API services
 builder.Services.AddServiceHubApi(builder.Configuration);
+
+// When running in Simulator mode, register in-memory providers so the
+// SimulatorController and related endpoints can resolve their dependencies.
+// This must come AFTER AddServiceHubApi so simulator providers can replace
+// real cloud provider registrations via services.Replace(...).
+if (builder.Environment.IsEnvironment("Simulator"))
+{
+    builder.Services.AddSimulatorProviders();
+}
 
 var app = builder.Build();
 

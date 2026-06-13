@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import { riskIntent, withRiskIntent } from './intentHeaders';
 import { Namespace, CreateNamespaceRequest } from './types';
 
 export interface NamespaceStats {
@@ -13,25 +14,39 @@ export interface NamespaceStats {
 export const namespacesApi = {
   // GET /api/v1/namespaces
   list: async (): Promise<Namespace[]> => {
-    const response = await apiClient.get<Namespace[]>('/namespaces');
-    return response.data;
+    const response = await apiClient.get<Array<Namespace & { provider?: string }>>('/namespaces');
+    // Backend serializes NamespaceResponse.Provider as "provider" (camelCase);
+    // the frontend Namespace type uses "cloudProvider". Normalise here.
+    return response.data.map((ns) => ({
+      ...ns,
+      cloudProvider: ns.cloudProvider ?? (ns.provider as Namespace['cloudProvider']),
+    }));
   },
 
   // POST /api/v1/namespaces
   create: async (data: CreateNamespaceRequest): Promise<Namespace> => {
-    const response = await apiClient.post<Namespace>('/namespaces', data);
+    const response = await apiClient.post<Namespace>('/namespaces', {
+      ...data,
+      // Explicitly forward cloud provider fields so tree-shaking doesn't accidentally drop them
+      provider: data.cloudProvider,
+      awsRegion: data.awsRegion,
+      gcpProjectId: data.gcpProjectId,
+    });
     return response.data;
   },
 
   // GET /api/v1/namespaces/{id}
   get: async (id: string): Promise<Namespace> => {
-    const response = await apiClient.get<Namespace>(`/namespaces/${id}`);
-    return response.data;
+    const response = await apiClient.get<Namespace & { provider?: string }>(`/namespaces/${id}`);
+    const ns = response.data;
+    return { ...ns, cloudProvider: ns.cloudProvider ?? (ns.provider as Namespace['cloudProvider']) };
   },
 
   // DELETE /api/v1/namespaces/{id}
   delete: async (id: string): Promise<void> => {
-    await apiClient.delete(`/namespaces/${id}`);
+    await apiClient.delete(`/namespaces/${id}`, {
+      headers: withRiskIntent(riskIntent.deleteNamespace),
+    });
   },
 
   // POST /api/v1/namespaces/{id}/test-connection
