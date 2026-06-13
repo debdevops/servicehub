@@ -43,7 +43,7 @@ export function MessageSendFAB({ namespaceId, queueName, onMessageSent }: Messag
         onMouseEnter={() => setIsExpanded(true)}
         onMouseLeave={() => setIsExpanded(false)}
         className={`
-          fixed bottom-8 right-8 z-40
+          fixed bottom-8 right-8 z-[9000]
           flex items-center justify-center gap-2
           bg-primary-500 hover:bg-primary-600
           text-white font-medium

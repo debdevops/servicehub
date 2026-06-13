@@ -1,6 +1,6 @@
 # ServiceHub Frontend
 
-**Enterprise React Application for Azure Service Bus Inspection**
+**Enterprise React Application for Multi-Cloud Messaging Inspection**
 
 > Modern, type-safe React application built with Vite, TypeScript, and Tailwind CSS. Designed for **Class-A product quality** with trust-focused UX principles.
 
@@ -24,32 +24,58 @@
 ```
 apps/web/
 ├── src/
-│   ├── main.tsx              # Application entry point
-│   ├── router.tsx            # React Router setup
-│   ├── pages/                # Top-level route components
-│   │   ├── ConnectPage.tsx   # Connection string input
-│   │   ├── MessagesPage.tsx  # Main message browser
-│   │   └── InsightsPage.tsx  # AI pattern insights
+│   ├── main.tsx              # Application entry point (StrictMode + QueryClientProvider)
+│   ├── router.tsx            # React Router DOM v7 setup
+│   ├── pages/                # Top-level route components (17 pages)
+│   │   ├── ConnectPage.tsx         # /connect  — namespace management
+│   │   ├── MessagesPage.tsx        # /messages — main message browser
+│   │   ├── DashboardPage.tsx       # /dashboard
+│   │   ├── DlqHistoryPage.tsx      # /dlq-history — DLQ intelligence
+│   │   ├── RulesPage.tsx           # /rules — auto-replay rules
+│   │   ├── HealthPage.tsx          # /health
+│   │   ├── HelpPage.tsx            # /help
+│   │   ├── ScheduledMessagesPage.tsx  # /scheduled
+│   │   ├── CorrelationExplorerPage.tsx # /correlation
+│   │   ├── InsightsPage.tsx        # /insights — AI pattern insights
+│   │   ├── SecurityPage.tsx        # /security
+│   │   ├── CrossCloudTracePage.tsx # /cross-cloud-trace
+│   │   ├── SimulatorPage.tsx       # /simulator
+│   │   ├── AwsDemoPage.tsx         # /demo/aws
+│   │   └── GcpDemoPage.tsx         # /demo/gcp
 │   ├── components/           # Reusable UI components
-│   │   ├── layout/           # Shell, sidebar, header
-│   │   ├── messages/         # Message list, detail panel
+│   │   ├── layout/           # MainLayout, Header, Sidebar, Footer
+│   │   ├── messages/         # MessageList, MessageDetailPanel
 │   │   ├── ai/               # AI insights components
-│   │   ├── fab/              # Floating action button
-│   │   └── grid/             # Virtualized grid
+│   │   ├── fab/              # Floating action button + send modal
+│   │   ├── grid/             # Virtualized data grid
+│   │   ├── dlq/              # DLQ detail components
+│   │   ├── rules/            # Rule builder / template gallery
+│   │   ├── help/             # Guided tour + help content
+│   │   └── insights/         # AI pattern analysis components
 │   ├── hooks/                # Custom React hooks
-│   │   ├── useNamespaces.ts  # Namespace management
-│   │   ├── useQueues.ts      # Queue data fetching
-│   │   ├── useMessages.ts    # Message operations
-│   │   └── useInsights.ts    # AI pattern hooks
+│   │   ├── useNamespaces.ts       # Namespace connect/disconnect
+│   │   ├── useQueues.ts           # Queue data
+│   │   ├── useTopics.ts           # Topic data
+│   │   ├── useMessages.ts         # Message peek + auto-refresh
+│   │   ├── useDlqHistory.ts       # DLQ intelligence
+│   │   ├── useRules.ts            # Auto-replay rules CRUD
+│   │   ├── useHealth.ts           # Health polling
+│   │   ├── useScheduledMessages.ts
+│   │   ├── useCorrelation.ts      # Correlation explorer
+│   │   ├── useInsights.ts         # AI pattern hooks
+│   │   ├── useCrossCloudTrace.ts  # Cross-cloud message trace
+│   │   └── useTabPersistence.ts   # localStorage tab state
 │   ├── lib/                  # Utilities & configuration
-│   │   ├── api/              # API client (Axios)
-│   │   ├── queryClient.ts    # React Query config
+│   │   ├── api/              # Axios API client + all feature API modules
+│   │   ├── ai/               # Client-side AI heuristic engine
+│   │   ├── queryClient.ts    # TanStack QueryClient singleton
+│   │   ├── telemetry.ts      # Application Insights setup
 │   │   └── utils.ts          # Helper functions
 │   └── styles/
-│       └── index.css         # Global styles & Tailwind
+│       └── index.css         # Tailwind base + custom CSS vars
 ├── public/                   # Static assets
 ├── index.html                # HTML template
-├── vite.config.ts            # Vite configuration
+├── vite.config.ts            # Vite + Vitest configuration
 ├── tsconfig.json             # TypeScript config
 └── package.json              # Dependencies & scripts
 ```
@@ -58,17 +84,20 @@ apps/web/
 
 | Technology | Version | Purpose |
 |-----------|---------|---------|
-| **React** | 19.2 | UI library with concurrent features |
-| **TypeScript** | 5.9 | Type safety & IntelliSense |
-| **Vite** | 6.0 | Build tool & dev server |
-| **React Query** | 5.95 | Server state management |
+| **React** | 19.2.4 | UI library with concurrent features |
+| **TypeScript** | ~5.9.3 | Type safety & IntelliSense |
+| **Vite** | 6 | Build tool & dev server |
+| **TanStack Query** | 5.95 | Server state management |
+| **TanStack Table** | 8.21 | Virtualized data grids |
+| **TanStack Virtual** | 3.13 | Virtualized lists |
 | **React Router** | 7.12 | Client-side routing |
 | **Tailwind CSS** | 4.1 | Utility-first styling |
 | **Axios** | 1.15 | HTTP client |
 | **Lucide React** | 0.562 | Icon library |
 | **React Hot Toast** | 2.6 | Notifications |
-| **@tanstack/react-virtual** | 3.13 | Virtualized lists |
-| **Prism React Renderer** | 2.4 | Syntax highlighting |
+| **Recharts** | 3.8 | Charts and trend visualisation |
+| **Vitest** | 4.1 | Unit & component testing |
+| **Playwright** | 1.59 | E2E testing |
 
 ---
 
@@ -111,6 +140,9 @@ npm run lint
 
 # Type-check without building
 npm run type-check
+
+# Run unit tests with coverage
+npm run test:coverage
 ```
 
 ---

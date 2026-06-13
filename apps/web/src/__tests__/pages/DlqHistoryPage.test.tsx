@@ -166,6 +166,20 @@ describe('DlqHistoryPage', () => {
     }
   });
 
+  it('shows provider filter buttons when filter panel is open', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><DlqHistoryPage /></Wrapper>);
+    const allButtons = screen.getAllByRole('button');
+    const filterButton = allButtons.find(btn => btn.textContent?.includes('Filters'));
+    if (filterButton) {
+      fireEvent.click(filterButton);
+      expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'AZURE' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'AWS' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'GCP' })).toBeInTheDocument();
+    }
+  });
+
   it('calls refetch when Refresh is clicked', () => {
     const mockRefetch = vi.fn();
     mockUseDlqHistory.mockReturnValue({

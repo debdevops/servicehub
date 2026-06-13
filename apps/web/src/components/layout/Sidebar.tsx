@@ -16,6 +16,9 @@ import {
   Activity,
   HelpCircle,
   Shield,
+  Cloud,
+  FlaskConical,
+  Route,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useState } from 'react';
@@ -24,8 +27,11 @@ import { useQueues } from '@/hooks/useQueues';
 import { useTopics } from '@/hooks/useTopics';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useInsightsSummary } from '@/hooks/useInsights';
+import { useIsSimulatorMode } from '@/hooks/useSimulator';
 import { useQueries } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { ProviderBadge } from '@/components/ProviderBadge';
+import type { CloudProviderType } from '@/lib/api/types';
 
 interface NamespaceItemProps {
   namespace: {
@@ -33,6 +39,7 @@ interface NamespaceItemProps {
     name: string;
     displayName?: string;
     isActive: boolean;
+    cloudProvider?: CloudProviderType;
   };
 }
 
@@ -273,6 +280,7 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
           </div>
           <div className="text-xs text-gray-500 truncate">{namespace.name}</div>
         </div>
+        <ProviderBadge provider={namespace.cloudProvider} />
       </button>
 
       {/* Expanded Content */}
@@ -361,10 +369,14 @@ export function Sidebar() {
   const navigate = useNavigate();
   const { data: namespaces, isLoading, refetch } = useNamespaces();
   const [quickAccessOpen, setQuickAccessOpen] = useState(false);
+  const { isSimulator } = useIsSimulatorMode();
   
   // Detect demo mode from URL
   const isDemo = new URLSearchParams(window.location.search).get('demo') === 'true';
-  
+
+  // Multi-cloud: enabled when 2+ distinct cloud providers are connected
+  const hasMultiCloud = new Set((namespaces ?? []).map(n => n.cloudProvider ?? 'azure')).size >= 2;
+
   // Get active namespace for Quick Access
   const activeNamespace = namespaces?.find(ns => ns.isActive);
   
@@ -616,6 +628,31 @@ export function Sidebar() {
             <GitMerge className="w-4 h-4 text-violet-500" />
             <span className="flex-1 text-left">Correlation</span>
           </NavLink>
+          {hasMultiCloud ? (
+            <NavLink
+              to="/cross-cloud-trace"
+              className={({ isActive }) =>
+                `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                  isActive
+                    ? 'bg-violet-50 text-violet-700 border-violet-300 font-medium'
+                    : 'bg-white hover:bg-violet-50 text-gray-700 hover:text-violet-700 border-gray-200 hover:border-violet-300'
+                }`
+              }
+            >
+              <Route className="w-4 h-4 text-violet-500" />
+              <span className="flex-1 text-left">Multi-Cloud Trace</span>
+              <span className="text-xs text-violet-600 font-semibold bg-violet-50 px-1.5 py-0.5 rounded-full border border-violet-200">NEW</span>
+            </NavLink>
+          ) : (
+            <div
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm border border-gray-200 bg-gray-50 cursor-not-allowed opacity-60 shadow-sm"
+              title="Connect namespaces from 2+ cloud providers (Azure, AWS, GCP) to enable cross-cloud tracing"
+            >
+              <Route className="w-4 h-4 text-gray-400" />
+              <span className="flex-1 text-left text-gray-400">Multi-Cloud Trace</span>
+              <span className="text-xs text-gray-400">Multi-cloud only</span>
+            </div>
+          )}
           <NavLink
             to="/help"
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border border-gray-200 hover:border-primary-300 shadow-sm"
@@ -637,6 +674,35 @@ export function Sidebar() {
             <Shield className="w-4 h-4 text-green-500" />
             <span className="flex-1 text-left">Security &amp; Privacy</span>
           </NavLink>
+          <NavLink
+            to="/cloud-bridge"
+            className={({ isActive }) =>
+              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                isActive
+                  ? 'bg-blue-50 text-blue-700 border-blue-300'
+                  : 'bg-white hover:bg-blue-50 text-gray-700 hover:text-blue-700 border-gray-200 hover:border-blue-300'
+              }`
+            }
+          >
+            <Cloud className="w-4 h-4 text-blue-500" />
+            <span className="flex-1 text-left">Cloud Bridge</span>
+          </NavLink>
+          {isSimulator && (
+            <NavLink
+              to="/simulator"
+              className={({ isActive }) =>
+                `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                  isActive
+                    ? 'bg-amber-50 text-amber-700 border-amber-300'
+                    : 'bg-white hover:bg-amber-50 text-gray-700 hover:text-amber-700 border-gray-200 hover:border-amber-300'
+                }`
+              }
+            >
+              <FlaskConical className="w-4 h-4 text-amber-500" />
+              <span className="flex-1 text-left">Simulator</span>
+              <span className="text-xs text-amber-600 font-medium">⚗️</span>
+            </NavLink>
+          )}
         </nav>
         )}
       </div>

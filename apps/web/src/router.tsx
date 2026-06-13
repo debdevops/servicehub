@@ -17,6 +17,11 @@ const DashboardPageLazy = lazy(() => import('./pages/DashboardPage'));
 const DlqHistoryPageLazy = lazy(() => import('./pages/DlqHistoryPage'));
 const CorrelationExplorerPageLazy = lazy(() => import('./pages/CorrelationExplorerPage'));
 const InsightsPageLazy = lazy(() => import('./pages/InsightsPage').then(m => ({ default: m.InsightsPage })));
+const CloudBridgePageLazy = lazy(() => import('./pages/CloudBridgePage').then(m => ({ default: m.CloudBridgePage })));
+const SimulatorPageLazy = lazy(() => import('./pages/SimulatorPage').then(m => ({ default: m.SimulatorPage })));
+const AwsDemoPageLazy = lazy(() => import('./pages/AwsDemoPage').then(m => ({ default: m.AwsDemoPage })));
+const GcpDemoPageLazy = lazy(() => import('./pages/GcpDemoPage').then(m => ({ default: m.GcpDemoPage })));
+const CrossCloudTracePageLazy = lazy(() => import('./pages/CrossCloudTracePage').then(m => ({ default: m.CrossCloudTracePage })));
 
 // Loading fallback component (co-located here intentionally — used only by router)
 // eslint-disable-next-line react-refresh/only-export-components
@@ -38,6 +43,23 @@ export const router = createBrowserRouter([
   {
     path: '/welcome',
     element: <WelcomePage />,
+  },
+  // Standalone cloud-specific demo pages (no MainLayout)
+  {
+    path: '/demo/aws',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <AwsDemoPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: '/demo/gcp',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <GcpDemoPageLazy />
+      </Suspense>
+    ),
   },
   // Main application layout with all feature routes
   {
@@ -98,10 +120,34 @@ export const router = createBrowserRouter([
         element: <SecurityPage />,
       },
       {
+        path: 'cloud-bridge',
+        element: (
+          <Suspense fallback={<PageLoading />}>
+            <CloudBridgePageLazy />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'simulator',
+        element: (
+          <Suspense fallback={<PageLoading />}>
+            <SimulatorPageLazy />
+          </Suspense>
+        ),
+      },
+      {
         path: 'insights',
         element: (
           <Suspense fallback={<PageLoading />}>
             <InsightsPageLazy />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'cross-cloud-trace',
+        element: (
+          <Suspense fallback={<PageLoading />}>
+            <CrossCloudTracePageLazy />
           </Suspense>
         ),
       },
