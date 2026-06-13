@@ -33,7 +33,7 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10-purple.svg)](https://dotnet.microsoft.com/)
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6.svg)](https://www.typescriptlang.org/)
-[![Version](https://img.shields.io/badge/version-3.2.0-brightgreen.svg)](.version)
+[![Version](https://img.shields.io/badge/version-3.2.2-brightgreen.svg)](.version)
 [![Live App](https://img.shields.io/badge/Live%20App-Azure-0078D4.svg)](https://app-servicehub-prod.azurewebsites.net/)
 
 [🚀 Open ServiceHub](https://app-servicehub-prod.azurewebsites.net/) · [⚡ Quick Start](#️-quick-start) · [✨ Features](#️-features) · [📸 Screenshots](#️-screenshots) · [🏗️ Architecture](#️-architecture) · [🤝 Contributing](#️-contributing)
@@ -66,7 +66,7 @@ Production breaks at 2 AM. Azure Portal shows **5,000 messages in Dead-Letter Qu
 
 ## 🌐 Multi-Cloud Support (Preview)
 
-ServiceHub v3.2.0 extends beyond Azure Service Bus to support **AWS SQS/SNS** and **GCP Pub/Sub** via the Cloud Bridge.
+ServiceHub v3.2.2 extends beyond Azure Service Bus to support **AWS SQS/SNS** and **GCP Pub/Sub** via the Cloud Bridge.
 
 | Provider | Status | Queues | Dead-Letter | Replay | Cross-Cloud Trace |
 |----------|--------|--------|-------------|--------|-------------------|
