@@ -13,11 +13,13 @@ import { resolve } from 'path'
 function spaTokenDevPlugin(): Plugin {
   return {
     name: 'spa-token-dev',
+    apply: 'serve',
     transformIndexHtml: {
       order: 'post',
       async handler(html) {
         try {
-          const res = await fetch('http://localhost:5153/internal/spa-token');
+          const target = process.env.VITE_PROXY_TARGET ?? 'http://localhost:5153';
+          const res = await fetch(`${target}/internal/spa-token`);
           if (res.ok) {
             const token = await res.text();
             return html.replace('</head>', `  <meta name="spa-token" content="${token}">\n  </head>`);
@@ -32,6 +34,12 @@ function spaTokenDevPlugin(): Plugin {
 }
 
 // https://vite.dev/config/
+// Allow the proxy target to be overridden at dev-server startup time via a
+// shell environment variable.  This is used in CI (e2e-simulator job) where
+// the .NET API listens on a different port (5200) instead of the default 5153.
+// The browser always talks to Vite on port 3000 so there are no CORS issues.
+const apiProxyTarget = process.env.VITE_PROXY_TARGET ?? 'http://localhost:5153';
+
 export default defineConfig({
   plugins: [react(), tailwindcss(), spaTokenDevPlugin()],
   resolve: {
@@ -52,13 +60,13 @@ export default defineConfig({
       // This means the browser only needs one port (3000) and CORS is not required
       // for the browser-to-API communication — requests appear same-origin.
       '/api': {
-        target: 'http://localhost:5153',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false,
       },
       // Also proxy health checks so they work through the same port.
       '/health': {
-        target: 'http://localhost:5153',
+        target: apiProxyTarget,
         changeOrigin: true,
         secure: false,
       },
@@ -98,6 +106,8 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     alias: { '@': resolve(__dirname, './src') },
+    // Exclude Playwright E2E specs — they are run by `npm run test:e2e`, not Vitest
+    exclude: ['e2e/**', 'node_modules/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'json-summary', 'html'],
@@ -122,6 +132,12 @@ export default defineConfig({
         'src/lib/api/types.ts',
         // single-line QueryClient instantiation
         'src/lib/queryClient.ts',
+        // thin API wrapper — no testable logic beyond axios delegation
+        'src/lib/api/crossCloudTrace.ts',
+        // demo / showcase pages — pure UI display with hardcoded data, no business logic
+        'src/pages/AwsDemoPage.tsx',
+        'src/pages/GcpDemoPage.tsx',
+        'src/pages/SimulatorPage.tsx',
       ],
       // ── Code Coverage Thresholds ────────────────────────────────────────
       // BUILD WILL FAIL if coverage falls below these minimums

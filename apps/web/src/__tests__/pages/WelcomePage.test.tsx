@@ -23,7 +23,7 @@ describe('WelcomePage', () => {
       </BrowserRouter>
     );
 
-  const LIVE_APP_URL = 'https://app-servicehub-prod.azurewebsites.net/';
+  // LIVE_APP_URL removed in multi-cloud rewrite — auth note no longer links to hosted app
   const GITHUB_URL = 'https://github.com/debdevops/servicehub';
 
   // ── Smoke ──────────────────────────────────────────────────────────────────
@@ -52,15 +52,16 @@ describe('WelcomePage', () => {
 
   it('renders the main hero heading', () => {
     renderPage();
-    // The h1 is the only level-1 heading on the page
+    // The h1 is the only level-1 heading on the page (multi-cloud rewrite)
     const h1 = document.querySelector('h1');
     expect(h1).not.toBeNull();
-    expect(h1!.textContent).toMatch(/azure service bus/i);
+    expect(h1!.textContent).toMatch(/one platform|three clouds/i);
   });
 
   it('renders a second part of the hero heading', () => {
     renderPage();
-    expect(screen.getByRole('heading', { name: /forensic debugger/i })).toBeInTheDocument();
+    // Multi-cloud rewrite: "forensic debugger" is in the subtitle paragraph, not a heading
+    expect(screen.getByText(/forensic debugger/i)).toBeInTheDocument();
   });
 
   it('renders the "Open ServiceHub" primary CTA links pointing to the connect page', () => {
@@ -81,12 +82,14 @@ describe('WelcomePage', () => {
 
   it('renders a "Self-Host Locally" CTA link', () => {
     renderPage();
-    expect(screen.getByRole('link', { name: /self-host locally/i })).toBeInTheDocument();
+    // Multi-cloud rewrite: footer Product section has "Self-Hosting Guide" link
+    expect(screen.getByRole('link', { name: /self-hosting guide/i })).toBeInTheDocument();
   });
 
   it('renders the "View on GitHub" CTA link', () => {
     renderPage();
-    const ghLink = screen.getAllByRole('link', { name: /view on github/i });
+    // Multi-cloud rewrite: footer Community section has "GitHub Repository" link
+    const ghLink = screen.getAllByRole('link', { name: /github repository/i });
     expect(ghLink.length).toBeGreaterThan(0);
   });
 
@@ -113,24 +116,27 @@ describe('WelcomePage', () => {
 
   it('renders the stats bar with key metrics', () => {
     renderPage();
-    expect(screen.getByText('10+')).toBeInTheDocument();
+    // Multi-cloud rewrite: stats updated to 3 cloud providers, setup < 60s
+    expect(screen.getAllByText('3').length).toBeGreaterThan(0);
     expect(screen.getByText('30-day')).toBeInTheDocument();
     expect(screen.getByText('100%')).toBeInTheDocument();
-    expect(screen.getByText('30s')).toBeInTheDocument();
+    expect(screen.getByText('< 60s')).toBeInTheDocument();
   });
 
   // ── How It Works ───────────────────────────────────────────────────────────
 
   it('renders the "How it works" section heading', () => {
     renderPage();
-    expect(screen.getByRole('heading', { name: /up and running in 30 seconds/i })).toBeInTheDocument();
+    // Multi-cloud rewrite: setup time updated to under 60 seconds
+    expect(screen.getByRole('heading', { name: /up and running in under 60 seconds/i })).toBeInTheDocument();
   });
 
   it('renders all 3 how-it-works steps', () => {
     renderPage();
-    expect(screen.getByText(/connect your namespace/i)).toBeInTheDocument();
+    // Multi-cloud rewrite: step 1 renamed to "Choose Your Cloud"
+    expect(screen.getAllByText(/choose your cloud/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/browse & analyse/i)).toBeInTheDocument();
-    expect(screen.getByText(/replay & recover/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/replay & recover/i).length).toBeGreaterThan(0);
   });
 
   it('shows the one-liner git clone command', () => {
@@ -184,7 +190,8 @@ describe('WelcomePage', () => {
 
   it('renders the comparison section heading', () => {
     renderPage();
-    expect(screen.getByRole('heading', { name: /ServiceHub vs Azure Portal/i })).toBeInTheDocument();
+    // Multi-cloud rewrite: comparison now covers all three cloud portals
+    expect(screen.getByRole('heading', { name: /ServiceHub vs. Native Cloud Portals/i })).toBeInTheDocument();
   });
 
   it('renders the comparison table with Azure Portal and ServiceHub columns', () => {
@@ -203,18 +210,20 @@ describe('WelcomePage', () => {
 
   it('renders the use cases section heading', () => {
     renderPage();
-    expect(screen.getByRole('heading', { name: /real-world scenarios/i })).toBeInTheDocument();
+    // Multi-cloud rewrite: use cases section replaced by Demo Trio section
+    expect(screen.getByRole('heading', { name: /try a live demo/i })).toBeInTheDocument();
   });
 
   it('renders the production incident use case', () => {
     renderPage();
-    // Use the heading-specific text to avoid matching paragraph mentions
-    expect(screen.getByRole('heading', { name: /production incident/i })).toBeInTheDocument();
+    // Multi-cloud rewrite: Azure cloud provider card replaces production incident use case
+    expect(screen.getAllByText(/open azure demo/i).length).toBeGreaterThan(0);
   });
 
   it('renders the post-mortem use case', () => {
     renderPage();
-    expect(screen.getByRole('heading', { name: /post-mortem root-cause/i })).toBeInTheDocument();
+    // Multi-cloud rewrite: AWS cloud provider card replaces post-mortem use case
+    expect(screen.getAllByText(/open aws demo/i).length).toBeGreaterThan(0);
   });
 
   // ── Security Section ───────────────────────────────────────────────────────
@@ -242,12 +251,8 @@ describe('WelcomePage', () => {
 
   it('renders the hosted auth explanation with Entra link to the live app', () => {
     renderPage();
-    // The security section's Entra note links to the live app URL
-    const allLinks = screen.getAllByRole('link');
-    const entraAppLink = allLinks.find(
-      (l) => l.getAttribute('href') === LIVE_APP_URL && l.textContent?.includes('app-servicehub')
-    );
-    expect(entraAppLink).toBeDefined();
+    // Multi-cloud rewrite: auth note section explains Microsoft Entra for hosted access
+    expect(screen.getAllByText(/Microsoft Entra ID/i).length).toBeGreaterThanOrEqual(1);
   });
 
   // ── Why Choose / Bullet Lists ──────────────────────────────────────────────
@@ -259,7 +264,8 @@ describe('WelcomePage', () => {
 
   it('renders the "Beats the Azure Portal" list header', () => {
     renderPage();
-    expect(screen.getByText(/beats the azure portal/i)).toBeInTheDocument();
+    // Multi-cloud rewrite: "Beats the Azure Portal" replaced by multi-cloud benefit list
+    expect(screen.getByText(/multi-cloud without the complexity/i)).toBeInTheDocument();
   });
 
   it('renders the "Built for DevOps & SREs" list header', () => {
@@ -277,7 +283,8 @@ describe('WelcomePage', () => {
 
   it('renders the "Self-Host on localhost" link in the final CTA', () => {
     renderPage();
-    expect(screen.getByRole('link', { name: /self-host on localhost/i })).toBeInTheDocument();
+    // Multi-cloud rewrite: final CTA has "Star on GitHub" link instead
+    expect(screen.getAllByRole('link', { name: /star on github/i }).length).toBeGreaterThan(0);
   });
 
   // ── Footer ─────────────────────────────────────────────────────────────────

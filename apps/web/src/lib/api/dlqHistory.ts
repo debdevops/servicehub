@@ -31,6 +31,7 @@ export interface DlqHistoryItem {
   forensicRootCause: string | null;
   forensicConfidence: number;
   replaySafety: string | null;
+  cloudProvider?: string;
 }
 
 export interface DlqMessageDetail extends DlqHistoryItem {
@@ -97,6 +98,7 @@ export interface DlqHistoryParams {
   to?: string;
   status?: string;
   category?: string;
+  provider?: string;
   page?: number;
   pageSize?: number;
 }

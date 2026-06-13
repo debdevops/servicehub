@@ -21,6 +21,7 @@ import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues, useAllNamespacesQueues, NamespaceQueueStats } from '@/hooks/useQueues';
 import { Namespace, EnvironmentType } from '@/lib/api/types';
 import { apiClient } from '@/lib/api/client';
+import { getHealthGrade } from '@/lib/healthGrade';
 
 const DLQ_SPIKE_THRESHOLD = 10;
 
@@ -245,19 +246,6 @@ function DlqHotSpotsPanel({
       </div>
     </div>
   );
-}
-
-// ============================================================================
-// Health Score Grade
-// ============================================================================
-
-export function getHealthGrade(totalActive: number, totalDlq: number): { grade: string; color: string; bgClass: string; textClass: string; borderClass: string } {
-  const dlqRatio = totalDlq / Math.max(totalActive + totalDlq, 1);
-  if (dlqRatio === 0) return { grade: 'A', color: 'emerald', bgClass: 'bg-emerald-50', textClass: 'text-emerald-700', borderClass: 'border-emerald-200' };
-  if (dlqRatio < 0.05) return { grade: 'B', color: 'green', bgClass: 'bg-green-50', textClass: 'text-green-700', borderClass: 'border-green-200' };
-  if (dlqRatio < 0.15) return { grade: 'C', color: 'amber', bgClass: 'bg-amber-50', textClass: 'text-amber-700', borderClass: 'border-amber-200' };
-  if (dlqRatio < 0.40) return { grade: 'D', color: 'orange', bgClass: 'bg-orange-50', textClass: 'text-orange-700', borderClass: 'border-orange-200' };
-  return { grade: 'F', color: 'red', bgClass: 'bg-red-50', textClass: 'text-red-700', borderClass: 'border-red-200' };
 }
 
 function HealthScoreBadge({ totalActive, totalDlq }: { totalActive: number; totalDlq: number }) {

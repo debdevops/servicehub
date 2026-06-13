@@ -13,6 +13,29 @@ API_HTTP_URL="http://localhost:5153"
 API_HTTPS_URL="https://localhost:7252"
 WEB_PORT=3000
 
+# Parse command-line arguments
+SIMULATOR_MODE=false
+for arg in "$@"; do
+  case $arg in
+    --simulator)
+      SIMULATOR_MODE=true
+      ;;
+    --help|-h)
+      echo "Usage: ./run.sh [--simulator]"
+      echo ""
+      echo "  --simulator   Start the API in Simulator mode with seeded demo data."
+      echo "                No real Azure/AWS/GCP credentials required."
+      echo "                API runs on http://localhost:5200"
+      echo "                UI runs on http://localhost:3000"
+      echo ""
+      echo "  (no flags)    Start in Development mode (requires credentials)."
+      echo "                API runs on http://localhost:5153"
+      echo "                UI runs on http://localhost:3000"
+      exit 0
+      ;;
+  esac
+done
+
 # Version requirements
 REQUIRED_DOTNET_VERSION="10.0"
 REQUIRED_NODE_MAJOR_VERSION="20"
@@ -691,7 +714,12 @@ echo -e "${YELLOW}║      Verifying Ports Available         ║${NC}"
 echo -e "${YELLOW}╚════════════════════════════════════════╝${NC}"
 echo ""
 
-for PORT in 5153 $WEB_PORT; do
+if [ "$SIMULATOR_MODE" = true ]; then
+  PORTS_TO_CLEAN="5200 $WEB_PORT"
+else
+  PORTS_TO_CLEAN="5153 $WEB_PORT"
+fi
+for PORT in $PORTS_TO_CLEAN; do
     if command -v lsof >/dev/null 2>&1; then
         PID=$(lsof -nP -iTCP:$PORT -sTCP:LISTEN -t 2>/dev/null || true)
         if [ -n "$PID" ]; then
@@ -714,14 +742,30 @@ echo -e "${YELLOW}║        Starting Services              ║${NC}"
 echo -e "${YELLOW}╚════════════════════════════════════════╝${NC}"
 echo ""
 
-# Start API in background with Development environment
+# Start API in background
 echo -e "${BLUE}Starting API...${NC}"
 cd "$API_DIR"
-# Ensure environment variables are set for .NET
-export ASPNETCORE_ENVIRONMENT=Development
-export ASPNETCORE_URLS="http://localhost:5153"
-ASPNETCORE_ENVIRONMENT=Development bash run-api.sh > /tmp/servicehub_api_startup.log 2>&1 &
-API_PID=$!
+if [ "$SIMULATOR_MODE" = true ]; then
+  echo -e "${YELLOW}⚗️  Starting in SIMULATOR MODE — no real cloud credentials needed${NC}"
+  echo -e "${CYAN}   Seeding 3 namespaces: Azure (contoso) + AWS (acme) + GCP (globex)${NC}"
+  echo ""
+  export ASPNETCORE_ENVIRONMENT=Simulator
+  dotnet run \
+    --project "$API_DIR/src/ServiceHub.Api/ServiceHub.Api.csproj" \
+    --no-launch-profile \
+    --urls http://localhost:5200 \
+    > /tmp/servicehub_api_startup.log 2>&1 &
+  API_PID=$!
+  API_HTTP_URL="http://localhost:5200"
+  HEALTH_URL="http://localhost:5200/health"
+else
+  # Ensure environment variables are set for .NET
+  export ASPNETCORE_ENVIRONMENT=Development
+  export ASPNETCORE_URLS="http://localhost:5153"
+  ASPNETCORE_ENVIRONMENT=Development bash run-api.sh > /tmp/servicehub_api_startup.log 2>&1 &
+  API_PID=$!
+  HEALTH_URL="http://localhost:5153/health"
+fi
 echo -e "${GREEN}✓ API process started (PID: $API_PID)${NC}"
 
 # Wait for API to be ready (max 30 seconds on first run)
@@ -731,7 +775,7 @@ MAX_WAIT=30
 API_READY=false
 API_ERROR=""
 while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
-    if curl -s http://localhost:5153/health >/dev/null 2>&1; then
+    if curl -s $HEALTH_URL >/dev/null 2>&1; then
         API_READY=true
         break
     fi
@@ -763,7 +807,7 @@ else
         echo -e "${YELLOW}Last 5 API log entries:${NC}"
         tail -5 /tmp/servicehub_api_startup.log | sed 's/^/  /'
     fi
-    echo -e "${YELLOW}Continuing anyway... (check http://localhost:5153/health manually)${NC}"
+    echo -e "${YELLOW}Continuing anyway... (check $HEALTH_URL manually)${NC}"
 fi
 
 echo ""
@@ -836,12 +880,21 @@ if [ -z "$SERVER_IP" ] && command -v ifconfig >/dev/null 2>&1; then
 fi
 
 echo -e "${YELLOW}╔════════════════════════════════════════╗${NC}"
+if [ "$SIMULATOR_MODE" = true ]; then
+echo -e "${YELLOW}║  ⚗️  Simulator Mode — All Services Up!  ║${NC}"
+else
 echo -e "${GREEN}║   ✓ All Services Running Successfully!  ║${NC}"
+fi
 echo -e "${YELLOW}╚════════════════════════════════════════╝${NC}"
 echo ""
+if [ "$SIMULATOR_MODE" = true ]; then
+echo -e "${CYAN}⚗️  No real credentials needed. Using seeded demo data.${NC}"
+echo -e "${CYAN}   Azure (contoso) · AWS (acme) · GCP (globex)${NC}"
+echo ""
+fi
 echo -e "${BLUE}📍 API Endpoints:${NC}"
 echo -e "  • ${GREEN}HTTP:  ${API_HTTP_URL}${NC}"
-if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ]; then
+if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ] && [ "$SIMULATOR_MODE" != true ]; then
     echo -e "  • ${GREEN}Remote: http://${SERVER_IP}:5153${NC}"
 fi
 echo -e "  • ${GREEN}Docs:   ${API_HTTP_URL}/scalar/v1${NC}"
