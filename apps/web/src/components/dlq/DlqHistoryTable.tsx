@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import type { DlqHistoryItem } from '@/lib/api/dlqHistory';
 import { StatusBadge, CategoryBadge } from './StatusBadge';
+import { ProviderBadge } from '@/components/ProviderBadge';
 
 interface DlqHistoryTableProps {
   items: DlqHistoryItem[];
@@ -121,6 +122,7 @@ export function DlqHistoryTable({
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="text-left px-4 py-3 font-semibold text-gray-600 w-16">#</th>
+              <th className="text-left px-4 py-3 font-semibold text-gray-600 w-16">Provider</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-600">Entity</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-600 w-28">Status</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-600 w-36">Category</th>
@@ -149,6 +151,9 @@ export function DlqHistoryTable({
               >
                 <td className="px-4 py-3 text-gray-500 font-mono text-xs">
                   {item.id}
+                </td>
+                <td className="px-4 py-3">
+                  <ProviderBadge provider={item.cloudProvider} />
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex flex-col">

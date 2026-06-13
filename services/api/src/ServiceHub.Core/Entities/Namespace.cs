@@ -104,6 +104,24 @@ public sealed class Namespace
     public EnvironmentType Environment { get; private set; }
 
     /// <summary>
+    /// Gets the cloud provider that hosts this messaging namespace.
+    /// Defaults to Azure for backward compatibility.
+    /// </summary>
+    public CloudProviderType Provider { get; private set; } = CloudProviderType.Azure;
+
+    /// <summary>
+    /// Gets the AWS region identifier for AWS-backed namespaces.
+    /// Null for non-AWS providers.
+    /// </summary>
+    public string? AwsRegion { get; private set; }
+
+    /// <summary>
+    /// Gets the GCP project identifier for GCP-backed namespaces.
+    /// Null for non-GCP providers.
+    /// </summary>
+    public string? GcpProjectId { get; private set; }
+
+    /// <summary>
     /// Gets the owner identifier for this namespace.
     /// Used to enforce tenant isolation — each caller identity maps to a stable owner ID.
     /// SPA token sessions and admin keys share "__spa__"; scoped API keys get a key-derived ID.
@@ -157,8 +175,11 @@ public sealed class Namespace
     /// <param name="displayName">Optional display name.</param>
     /// <param name="description">Optional description.</param>
     /// <param name="environment">The deployment environment (defaults to Dev).</param>
+    /// <param name="provider">The cloud provider hosting this namespace (defaults to Azure).</param>
     /// <param name="ownerId">The caller-identity owner ID for tenant isolation. Defaults to the SPA owner.</param>
     /// <param name="connectionStringHash">Pre-computed SHA-256 hash of the plaintext connection string for deduplication.</param>
+    /// <param name="awsRegion">AWS region identifier for AWS namespaces.</param>
+    /// <param name="gcpProjectId">GCP project identifier for GCP namespaces.</param>
     /// <returns>A result containing the namespace or validation errors.</returns>
     public static Result<Namespace> Create(
         string name,
@@ -166,8 +187,11 @@ public sealed class Namespace
         string? displayName = null,
         string? description = null,
         EnvironmentType environment = EnvironmentType.Dev,
+        CloudProviderType provider = CloudProviderType.Azure,
         string? ownerId = null,
-        string? connectionStringHash = null)
+        string? connectionStringHash = null,
+        string? awsRegion = null,
+        string? gcpProjectId = null)
     {
         var validationResult = ValidateConnectionStringAuth(name, connectionString, displayName, description);
         if (validationResult.IsFailure)
@@ -178,6 +202,13 @@ public sealed class Namespace
         // Detect permissions from connection string
         var permissions = DetectConnectionStringPermissions(connectionString);
 
+        var authType = provider switch
+        {
+            CloudProviderType.Aws => ConnectionAuthType.AwsAccessKey,
+            CloudProviderType.Gcp => ConnectionAuthType.GcpServiceAccount,
+            _ => ConnectionAuthType.ConnectionString,
+        };
+
         var ns = new Namespace
         {
             Id = Guid.NewGuid(),
@@ -185,13 +216,16 @@ public sealed class Namespace
             ConnectionString = connectionString.Trim(),
             DisplayName = displayName?.Trim(),
             Description = description?.Trim(),
-            AuthType = ConnectionAuthType.ConnectionString,
+            AuthType = authType,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
             HasListenPermission = permissions.HasListen,
             HasSendPermission = permissions.HasSend,
             HasManagePermission = permissions.HasManage,
             Environment = environment,
+            Provider = provider,
+            AwsRegion = awsRegion?.Trim(),
+            GcpProjectId = gcpProjectId?.Trim(),
             OwnerId = ownerId ?? SpaOwnerId,
             ConnectionStringHash = connectionStringHash,
         };
@@ -207,7 +241,10 @@ public sealed class Namespace
     /// <param name="displayName">Optional display name.</param>
     /// <param name="description">Optional description.</param>
     /// <param name="environment">The deployment environment (defaults to Dev).</param>
+    /// <param name="provider">The cloud provider hosting this namespace (defaults to Azure).</param>
     /// <param name="ownerId">The caller-identity owner ID for tenant isolation. Defaults to the SPA owner.</param>
+    /// <param name="awsRegion">AWS region identifier for AWS namespaces.</param>
+    /// <param name="gcpProjectId">GCP project identifier for GCP namespaces.</param>
     /// <returns>A result containing the namespace or validation errors.</returns>
     public static Result<Namespace> CreateWithManagedIdentity(
         string name,
@@ -215,7 +252,10 @@ public sealed class Namespace
         string? displayName = null,
         string? description = null,
         EnvironmentType environment = EnvironmentType.Dev,
-        string? ownerId = null)
+        CloudProviderType provider = CloudProviderType.Azure,
+        string? ownerId = null,
+        string? awsRegion = null,
+        string? gcpProjectId = null)
     {
         // Allowlist: only accept known managed-identity types; reject ConnectionString
         // and any future/unknown enum values to prevent user-controlled bypass.
@@ -249,6 +289,9 @@ public sealed class Namespace
             HasSendPermission = true,
             HasManagePermission = true,
             Environment = environment,
+            Provider = provider,
+            AwsRegion = awsRegion?.Trim(),
+            GcpProjectId = gcpProjectId?.Trim(),
             OwnerId = ownerId ?? SpaOwnerId,
         };
 
