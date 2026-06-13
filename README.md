@@ -13,7 +13,7 @@
 [![Version](https://img.shields.io/badge/version-3.2.2-brightgreen.svg)](.version)
 [![Live App](https://img.shields.io/badge/Live%20App-Azure-0078D4.svg)](https://app-servicehub-prod.azurewebsites.net/)
 
-[🚀 Open ServiceHub Live](https://app-servicehub-prod.azurewebsites.net/) · [⚡ Quick Start](#quick-start) · [✨ Core Features](#core-capabilities-azure-service-bus---ga) · [🌐 Multi-Cloud](#multi-cloud-bridge-preview) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security-and-privacy)
+[🚀 Open ServiceHub Live](https://app-servicehub-prod.azurewebsites.net/) · [⚡ Quick Start](#quick-start) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security)
 
 </div>
 
@@ -42,7 +42,7 @@ Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-
 
 ---
 
-## Core Capabilities (Azure Service Bus - GA)
+## Core Capabilities
 
 ServiceHub's deepest and most mature features are built natively for Azure Service Bus.
 
@@ -84,7 +84,7 @@ See every message queued for future delivery. Reschedule or cancel individual me
 
 ---
 
-## Multi-Cloud Bridge (Preview)
+## Multi-Cloud Bridge
 
 ServiceHub extends beyond Azure Service Bus to support **AWS SQS/SNS** and **GCP Pub/Sub** via the Cloud Bridge.
 
@@ -190,7 +190,7 @@ az servicebus namespace authorization-rule create \
 
 ---
 
-## Security and Privacy
+## Security
 
 ServiceHub is built for strict enterprise environments.
 
