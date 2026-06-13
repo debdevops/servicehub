@@ -195,7 +195,10 @@ jobs:
     name: E2E — Simulator Mode (Playwright)
     runs-on: ubuntu-latest
     needs: [build-and-test-backend, build-and-test-frontend]
-    if: github.ref == 'refs/heads/feature/multi-cloud'
+    # Run on direct pushes to feature/multi-cloud AND on PRs targeting it
+    if: |
+      github.ref == 'refs/heads/feature/multi-cloud' ||
+      github.head_ref == 'feature/multi-cloud'
 
     steps:
       - name: Checkout code
@@ -217,6 +220,7 @@ jobs:
         run: dotnet restore services/api/ServiceHub.sln
 
       - name: Build API (Release)
+        # Build the full solution so all output artifacts (including Simulator) are in place
         run: dotnet build services/api/ServiceHub.sln --no-restore --configuration Release
 
       - name: Start API in Simulator mode
@@ -224,43 +228,67 @@ jobs:
           ASPNETCORE_ENVIRONMENT: Simulator
           ASPNETCORE_URLS: http://localhost:5200
         run: |
+          # Use --no-build since we already built the full solution above.
+          # The Simulator project output is available as a transitive dep of ServiceHub.Api.
           dotnet run \
             --project services/api/src/ServiceHub.Api/ServiceHub.Api.csproj \
             --configuration Release \
             --no-build \
             --no-launch-profile > /tmp/servicehub_sim_api.log 2>&1 &
           echo "API_PID=$!" >> $GITHUB_ENV
+          echo "API started with PID $!"
 
       - name: Wait for API health check
         run: |
-          echo "Waiting for API to be ready..."
+          echo "Waiting for API to be ready (up to 120s)..."
           for i in $(seq 1 60); do
-            if curl -sf http://localhost:5200/health/live > /dev/null 2>&1; then
-              echo "API is ready after ${i}s"
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5200/health/live 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ API is ready after $((i * 2))s (HTTP $HTTP_CODE)"
               exit 0
             fi
-            echo "  ...${i}s"
+            echo "  ...${i}s — HTTP $HTTP_CODE"
             sleep 2
           done
-          echo "--- API startup log (last 40 lines) ---"
-          tail -40 /tmp/servicehub_sim_api.log 2>/dev/null || echo "(no log file)"
-          echo "--- Active processes ---"
+          echo "❌ API did not become ready within 120s"
+          echo "--- API startup log (last 60 lines) ---"
+          tail -60 /tmp/servicehub_sim_api.log 2>/dev/null || echo "(no log file)"
+          echo "--- Active dotnet processes ---"
           ps aux | grep dotnet || true
-          echo "--- Port 5200 ---"
-          ss -tlnp 2>/dev/null | grep 5200 || netstat -tlnp 2>/dev/null | grep 5200 || true
+          echo "--- Port 5200 listener check ---"
+          ss -tlnp 2>/dev/null | grep 5200 || netstat -tlnp 2>/dev/null | grep 5200 || echo "(port not bound)"
           exit 1
 
       - name: Verify simulator seeded
         run: |
-          STATUS=$(curl -sf http://localhost:5200/api/v1/simulator/status)
-          echo "Simulator status: $STATUS"
+          # Capture both stdout and stderr so we can diagnose 4xx/5xx responses
+          STATUS=$(curl -sf http://localhost:5200/api/v1/simulator/status 2>/tmp/curl_err.txt) || {
+            CURL_EXIT=$?
+            echo "❌ curl failed with exit code $CURL_EXIT"
+            echo "  (22 = HTTP 4xx/5xx; 7 = connection refused; 28 = timeout)"
+            echo ""
+            echo "--- curl stderr ---"
+            cat /tmp/curl_err.txt 2>/dev/null || echo "(empty)"
+            echo ""
+            echo "--- Raw HTTP response ---"
+            curl -sv http://localhost:5200/api/v1/simulator/status 2>&1 | head -40 || true
+            echo ""
+            echo "--- API log (last 60 lines) ---"
+            tail -60 /tmp/servicehub_sim_api.log 2>/dev/null || echo "(no log file)"
+            exit 1
+          }
+          echo "Simulator status response received"
+          echo "--- Response keys ---"
           echo "$STATUS" | python3 -c "
           import json, sys
           s = json.load(sys.stdin)
+          print(f'Keys: {list(s.keys())}')
           ns_count = len(s.get('namespaces', []))
           print(f'Namespaces seeded: {ns_count}')
           assert ns_count == 3, f'Expected 3 namespaces, got {ns_count}'
-          print('Simulator seeded correctly')
+          for ns in s['namespaces']:
+              print(f'  - {ns.get(\"name\",\"?\")} ({ns.get(\"provider\",\"?\")}): {ns.get(\"entityCount\",0)} entities')
+          print('✅ Simulator seeded correctly')
           "
 
       - name: Install frontend dependencies
@@ -295,4 +323,4 @@ jobs:
 
       - name: Stop API
         if: always()
-        run: kill ${{ env.API_PID }} || true
+        run: kill ${{ env.API_PID }} 2>/dev/null || true

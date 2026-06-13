@@ -11,7 +11,8 @@
             [ServiceHub.Api]*,
             [ServiceHub.Core]*,
             [ServiceHub.Infrastructure]*,
-            [ServiceHub.Shared]*
+            [ServiceHub.Shared]*,
+            [ServiceHub.Simulator]*
           </Include>
 
           <!-- Exclude generated code and boilerplate -->
