@@ -1,6 +1,6 @@
 # ServiceHub API
 
-**AI-Powered Azure Service Bus Inspector API** built with .NET 10 and Clean Architecture.
+**Multi-Cloud Forensic Debugger API** — Azure Service Bus, AWS SQS/SNS, GCP Pub/Sub — built with .NET 10 and Clean Architecture.
 
 > This README provides quick start instructions and API reference. For complete documentation with architecture diagrams, design patterns, and detailed flows, see:
 > - **[Comprehensive Guide](../../docs/COMPREHENSIVE-GUIDE.md)** — Complete guide with Mermaid diagrams
@@ -255,16 +255,9 @@ ServiceHub.Core/             # Domain Logic
 ├── Interfaces/             # Abstractions
 └── Enums/                  # Domain enums
 
-ServiceHub.Infrastructure/   # External Integrations
-├── ServiceBus/             # Azure Service Bus
-│   ├── ServiceBusClientFactory.cs
-│   ├── ServiceBusClientCache.cs
-│   ├── ServiceBusClientWrapper.cs
-│   ├── MessageSender.cs
-│   └── MessageReceiver.cs
-├── Persistence/            # Data storage
-├── Security/               # Encryption, auth
-└── AI/                     # AI service client
+ServiceHub.Infrastructure/   # Azure Service Bus, SQLite, AES-GCM encryption
+ServiceHub.Infrastructure.Aws/  # AWS SQS/SNS support (Cloud Bridge)
+ServiceHub.Infrastructure.Gcp/  # GCP Pub/Sub support (Cloud Bridge)
 
 ServiceHub.Shared/          # Cross-cutting Concerns
 ├── Results/                # Result pattern
@@ -305,18 +298,23 @@ Main configuration file with:
 ## 🔒 Security Features
 
 1. **Connection String Encryption**
-   - AES-256 encryption for stored connection strings
-   - Configurable via `Security:EnableConnectionStringEncryption`
+   - AES-GCM encryption for stored connection strings
+   - Key derivation: HKDF (64-char hex keys) / PBKDF2-100k (other keys)
 
-2. **CORS Policy**
+2. **Log Injection Prevention**
+   - All user-derived values sanitised with `LogRedactor.SanitiseForLog()` before logging
+   - Applies to Azure, AWS, and GCP infrastructure layers
+   - Strips newline/control characters (CodeQL `cs/log-forging` compliant)
+
+3. **CORS Policy**
    - Configurable allowed origins
    - Prevents unauthorized cross-origin requests
 
-3. **Rate Limiting**
+4. **Rate Limiting**
    - Protects API from abuse
    - Configurable limits per endpoint
 
-4. **Request Correlation**
+5. **Request Correlation**
    - Tracks requests across distributed systems
    - Automatic correlation ID generation
 

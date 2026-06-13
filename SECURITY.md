@@ -45,6 +45,16 @@ Application Settings, never in source code.
 This project uses:
 - **Azure.Messaging.ServiceBus** — official Microsoft SDK
 - **Azure.Identity** — official Microsoft authentication SDK
+- **AWSSDK.SQS / AWSSDK.SimpleNotificationService / AWSSDK.SecurityToken** — official AWS SDKs
+- **Google.Cloud.PubSub.V1 / Google.Apis.Auth** — official Google Cloud SDKs
 - **Microsoft.EntityFrameworkCore.Sqlite** — SQLite for local persistence
 
 Dependency vulnerabilities are monitored daily via Dependabot.
+
+## Security Fixes History
+
+| Version | Date | Description |
+|---------|------|-------------|
+| v2.1.2 | 2026-03-23 | Fixed CodeQL `cs/log-forging` in `ServiceBusClientWrapper.cs` — 65 taint paths sanitised with `LogRedactor.SanitiseForLog()` |
+| v2.1.3 | 2026-03-23 | Removed duplicate `LogSanitizer` classes; all callers consolidated to single `LogRedactor.SanitiseForLog()` |
+| v3.2.2 | 2026-06-13 | Fixed 6 CodeQL `cs/log-forging` alerts (Medium) in `AwsMessageSender.cs` (#143–#146) and `GcpClientFactory.cs` (#147–#148) — user-derived entity names, topic/subscription IDs, and project IDs now sanitised before logging |
