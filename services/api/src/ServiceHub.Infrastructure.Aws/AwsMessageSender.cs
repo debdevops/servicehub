@@ -1,6 +1,7 @@
 using Amazon.SQS;
 using Amazon.SimpleNotificationService;
 using Microsoft.Extensions.Logging;
+using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Shared.Results;
@@ -78,7 +79,7 @@ public sealed class AwsMessageSender : IMessageSender
                     MessageAttributes = BuildSnsMessageAttributes(request)
                 }, cancellationToken).ConfigureAwait(false);
 
-                _logger.LogInformation("Published message to SNS topic {TopicArn}", request.EntityName);
+                _logger.LogInformation("Published message to SNS topic {TopicArn}", LogRedactor.SanitiseForLog(request.EntityName));
                 return Result.Success();
             }
 
@@ -88,17 +89,17 @@ public sealed class AwsMessageSender : IMessageSender
             var sqsRequest = BuildSqsRequest(queueUrl, request);
             await sqs.SendMessageAsync(sqsRequest, cancellationToken).ConfigureAwait(false);
 
-            _logger.LogInformation("Sent message to SQS queue {QueueName}", request.EntityName);
+            _logger.LogInformation("Sent message to SQS queue {QueueName}", LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Success();
         }
         catch (AmazonSQSException ex)
         {
-            _logger.LogError(ex, "SQS error sending message to {QueueName}", request.EntityName);
+            _logger.LogError(ex, "SQS error sending message to {QueueName}", LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Failure(Error.ExternalService("AWS.SQS.SendFailed", ex.Message));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error sending message to {QueueName}", request.EntityName);
+            _logger.LogError(ex, "Unexpected error sending message to {QueueName}", LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Failure(Error.Internal("AWS.SQS.UnexpectedError", ex.Message));
         }
     }
@@ -155,7 +156,7 @@ public sealed class AwsMessageSender : IMessageSender
             }
             catch (AmazonSQSException ex)
             {
-                _logger.LogError(ex, "SQS error in batch send chunk for {QueueName}", first.EntityName);
+                _logger.LogError(ex, "SQS error in batch send chunk for {QueueName}", LogRedactor.SanitiseForLog(first.EntityName));
                 return Result.Failure(Error.ExternalService("AWS.SQS.BatchSendFailed", ex.Message));
             }
         }
@@ -163,12 +164,12 @@ public sealed class AwsMessageSender : IMessageSender
         if (failed.Count > 0)
         {
             _logger.LogWarning("Batch send partial failure for {QueueName}: {Errors}",
-                first.EntityName, string.Join("; ", failed));
+                LogRedactor.SanitiseForLog(first.EntityName), string.Join("; ", failed));
             return Result.Failure(Error.ExternalService("AWS.SQS.BatchPartialFailure",
                 $"Batch send had {failed.Count} failures: {string.Join("; ", failed)}"));
         }
 
-        _logger.LogInformation("Batch sent {Count} messages to {QueueName}", requestList.Count, first.EntityName);
+        _logger.LogInformation("Batch sent {Count} messages to {QueueName}", requestList.Count, LogRedactor.SanitiseForLog(first.EntityName));
         return Result.Success();
     }
 
