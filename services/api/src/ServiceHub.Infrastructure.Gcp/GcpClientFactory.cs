@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Security;
 
 namespace ServiceHub.Infrastructure.Gcp;
 
@@ -70,7 +71,8 @@ public sealed class GcpClientFactory : IGcpClientFactory
         var client = await clientBuilder.BuildAsync(ct).ConfigureAwait(false);
 
         _publisherCache.TryAdd(cacheKey, client);
-        _logger.LogDebug("Created PublisherClient for topic {TopicId} in project {ProjectId}", topicId, projectId);
+        _logger.LogDebug("Created PublisherClient for topic {TopicId} in project {ProjectId}",
+            LogRedactor.SanitiseForLog(topicId), LogRedactor.SanitiseForLog(projectId));
         return client;
     }
 
@@ -96,7 +98,7 @@ public sealed class GcpClientFactory : IGcpClientFactory
         _subscriberCache.TryAdd(cacheKey, client);
         var projectId = GetProjectId(ns);
         _logger.LogDebug("Created SubscriberServiceApiClient for subscription {SubscriptionId} in project {ProjectId}",
-            subscriptionId, projectId);
+            LogRedactor.SanitiseForLog(subscriptionId), LogRedactor.SanitiseForLog(projectId));
         return client;
     }
 

@@ -1,5 +1,32 @@
 # ServiceHub Changelog
 
+## [3.2.2] — 2026-06-13
+
+### Security
+
+- **Fixed 6 CodeQL `cs/log-forging` alerts (Medium) — AWS and GCP infrastructure**
+  - **`AwsMessageSender.cs`** (alerts #143–#146): All log calls that wrote `request.EntityName`
+    or `first.EntityName` directly into structured log messages now wrap the value with
+    `LogRedactor.SanitiseForLog()`. This strips newline/control characters that could be used
+    to forge new log lines or break log-aggregation parsers.
+    Affected calls: SNS topic publish success, SQS queue send success, SQS catch blocks
+    (AmazonSQSException + Exception), batch-chunk error, batch partial-failure warning,
+    batch complete info.
+  - **`GcpClientFactory.cs`** (alerts #147–#148): `topicId`, `subscriptionId`, and `projectId`
+    — all of which originate from user-supplied namespace configuration — are now sanitised with
+    `LogRedactor.SanitiseForLog()` before being emitted in `LogDebug` calls.
+  - Both files add `using ServiceHub.Infrastructure.Security` to resolve `LogRedactor`.
+
+- **Pattern consistency**: These fixes align AWS/GCP infrastructure with the existing
+  sanitisation pattern already applied across Azure controllers, middleware, and
+  `ServiceBusClientWrapper` (introduced in v2.1.2 / v2.1.3).
+
+### Changed
+
+- `.version` updated to `3.2.2`
+
+---
+
 ## [3.2.1] — 2026-05-31
 
 ### Added
