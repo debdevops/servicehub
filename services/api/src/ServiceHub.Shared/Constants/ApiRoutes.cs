@@ -302,4 +302,14 @@ public static class ApiRoutes
         /// <summary>Route for timeline search by correlation ID.</summary>
         public const string Timeline = $"{Base}/timeline";
     }
+
+    /// <summary>Routes for cross-cloud correlation tracing.</summary>
+    public static class CrossCloudTrace
+    {
+        /// <summary>Base route for cross-cloud trace operations.</summary>
+        public const string Base = $"{VersionedBase}/trace";
+
+        /// <summary>Route for executing a trace lookup.</summary>
+        public const string Trace = $"{Base}/{{traceId}}";
+    }
 }
