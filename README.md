@@ -11,9 +11,9 @@
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6.svg)](https://www.typescriptlang.org/)
 [![Version](https://img.shields.io/badge/version-3.2.2-brightgreen.svg)](.version)
-[![Live App](https://img.shields.io/badge/Live%20App-Azure-0078D4.svg)](https://app-servicehub-prod.azurewebsites.net/)
+[![Self-Hosted](https://img.shields.io/badge/Deployment-Self--Hosted-0078D4.svg)](#quick-start)
 
-[🚀 Open ServiceHub Live](https://app-servicehub-prod.azurewebsites.net/) · [⚡ Quick Start](#quick-start) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security)
+[⚡ Quick Start](#quick-start) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security)
 
 </div>
 
@@ -282,6 +282,6 @@ ServiceHub ships with a public **landing / welcome page** at the root path (`/`)
 
 Built for DevOps, Platform, and SRE Engineers.
 
-[🚀 Open ServiceHub](https://app-servicehub-prod.azurewebsites.net/) · [Report Issue](https://github.com/debdevops/servicehub/issues)
+[⚡ Self-Host ServiceHub](#quick-start) · [Report Issue](https://github.com/debdevops/servicehub/issues)
 
 </div>
