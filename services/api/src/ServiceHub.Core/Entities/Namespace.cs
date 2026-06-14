@@ -193,7 +193,7 @@ public sealed class Namespace
         string? awsRegion = null,
         string? gcpProjectId = null)
     {
-        var validationResult = ValidateConnectionStringAuth(name, connectionString, displayName, description);
+        var validationResult = ValidateConnectionStringAuth(name, connectionString, displayName, description, provider);
         if (validationResult.IsFailure)
         {
             return Result<Namespace>.Failure(validationResult.Errors);
@@ -413,7 +413,8 @@ public sealed class Namespace
         string name,
         string connectionString,
         string? displayName,
-        string? description)
+        string? description,
+        CloudProviderType provider)
     {
         var errors = new List<Error>();
 
@@ -444,7 +445,7 @@ public sealed class Namespace
                 ErrorCodes.Namespace.ConnectionStringRequired,
                 "Connection string is required."));
         }
-        else if (!IsValidConnectionString(connectionString) && !IsEncryptedConnectionString(connectionString))
+        else if (provider == CloudProviderType.Azure && !IsValidConnectionString(connectionString) && !IsEncryptedConnectionString(connectionString))
         {
             errors.Add(Error.Validation(
                 ErrorCodes.Namespace.ConnectionStringInvalid,
