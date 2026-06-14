@@ -1,4 +1,4 @@
-name: Build and Deploy to Azure App Service
+name: Build and Deploy
 
 # Azure deployment is disabled — credentials (AZURE_APP_SERVICE_NAME,
 # AZURE_PUBLISH_PROFILE) are not configured for local development.
@@ -87,6 +87,8 @@ jobs:
 
       - name: Health check — verify deployment succeeded
         run: |
+          # APP_URL is constructed from AZURE_APP_SERVICE_NAME secret — operators must configure this
+          # for their own deployment target (Azure App Service, or any custom hostname).
           APP_URL="https://${{ secrets.AZURE_APP_SERVICE_NAME }}.azurewebsites.net"
           echo "Checking: ${APP_URL}/health"
 

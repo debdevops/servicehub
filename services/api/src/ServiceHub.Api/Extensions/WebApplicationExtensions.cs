@@ -174,8 +174,7 @@ public static class WebApplicationExtensions
         // Sitemap for search engine indexing
         app.MapGet("/sitemap.xml", (IConfiguration config) =>
         {
-            var baseUrl = (config.GetValue<string>("SiteUrl")
-                ?? "https://app-servicehub-prod.azurewebsites.net").TrimEnd('/');
+            var baseUrl = (config.GetValue<string>("SiteUrl") ?? string.Empty).TrimEnd('/');
 
             var sitemap = $"""
                 <?xml version="1.0" encoding="UTF-8"?>
