@@ -10,7 +10,11 @@
 
 <div align="center">
 
-## 🚀 [Open ServiceHub →](https://app-servicehub-prod.azurewebsites.net/)
+## ⚠️ Archived — Azure App Service Demo Decommissioned
+
+> This archive preserves the README as it existed when ServiceHub was hosted on Azure App Service (`app-servicehub-prod.azurewebsites.net`). That deployment has been permanently decommissioned. Use the [self-hosted quick start](#️-quick-start) instead.
+
+## 🚀 [Open ServiceHub →](#️-quick-start)
 
 ### No install, no credit card. Connect your Azure Service Bus in 30 seconds.
 
@@ -34,9 +38,9 @@
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6.svg)](https://www.typescriptlang.org/)
 [![Version](https://img.shields.io/badge/version-3.2.2-brightgreen.svg)](.version)
-[![Live App](https://img.shields.io/badge/Live%20App-Azure-0078D4.svg)](https://app-servicehub-prod.azurewebsites.net/)
+[![Self-Hosted](https://img.shields.io/badge/Deployment-Self--Hosted-0078D4.svg)](#️-quick-start)
 
-[🚀 Open ServiceHub](https://app-servicehub-prod.azurewebsites.net/) · [⚡ Quick Start](#️-quick-start) · [✨ Features](#️-features) · [📸 Screenshots](#️-screenshots) · [🏗️ Architecture](#️-architecture) · [🤝 Contributing](#️-contributing)
+[⚡ Quick Start](#️-quick-start) · [✨ Features](#️-features) · [📸 Screenshots](#️-screenshots) · [🏗️ Architecture](#️-architecture) · [🤝 Contributing](#️-contributing)
 
 </div>
 
@@ -301,7 +305,7 @@ az servicebus namespace authorization-rule create \
 
 | Service | URL |
 |---|---|
-| **ServiceHub (Hosted)** | **https://app-servicehub-prod.azurewebsites.net/** |
+| **ServiceHub (Self-Hosted)** | **http://localhost:3000** (after `./run.sh`) |
 | UI (local) | http://localhost:3000 |
 | API (local) | http://localhost:5153 |
 | API Docs — Scalar | http://localhost:5153/scalar/v1 |
@@ -576,6 +580,6 @@ The CTA in the welcome page reads **"Open ServiceHub"** rather than "Demo" to re
 
 Built for DevOps, Platform, and SRE Engineers.
 
-[🚀 Open ServiceHub](https://app-servicehub-prod.azurewebsites.net/) · [Quick Start](#️-quick-start) · [Report Issue](https://github.com/debdevops/servicehub/issues)
+[⚡ Self-Host ServiceHub](#️-quick-start) · [Quick Start](#️-quick-start) · [Report Issue](https://github.com/debdevops/servicehub/issues)
 
 </div>
