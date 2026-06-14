@@ -35,7 +35,7 @@ function generateReport(message: {
     lines.push(`| Correlation ID | ${correlationId} |`);
   }
   lines.push('', '**Body Preview:**', '', message.body ? message.body.substring(0, 500) : '-');
-  lines.push('', '**Tool:** https://app-servicehub-prod.azurewebsites.net');
+  lines.push('', '**Tool:** https://github.com/debdevops/servicehub (ServiceHub — Self-Hosted)');
   return lines.join('\n');
 }
 
@@ -70,9 +70,10 @@ describe('Incident Report Format', () => {
     expect(report).not.toContain('DLQ Reason');
   });
 
-  it('contains the ServiceHub URL', () => {
+  it('contains the ServiceHub GitHub URL', () => {
     const report = generateReport(baseMessage, 'orders-queue');
-    expect(report).toContain('https://app-servicehub-prod.azurewebsites.net');
+    expect(report).toContain('https://github.com/debdevops/servicehub');
+    expect(report).toContain('ServiceHub — Self-Hosted');
   });
 
   it('contains correlation ID when present', () => {

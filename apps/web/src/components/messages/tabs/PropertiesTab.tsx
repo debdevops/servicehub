@@ -386,7 +386,7 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
               lines.push(`| Correlation ID | ${correlationId} |`);
             }
             lines.push('', '**Body Preview:**', '', message.body ? message.body.substring(0, 500) : '-');
-            lines.push('', '**Tool:** https://app-servicehub-prod.azurewebsites.net');
+            lines.push('', '**Tool:** https://github.com/debdevops/servicehub (ServiceHub — Self-Hosted)');
             const report = lines.join('\n');
             const ok = await copyToClipboard(report);
             if (ok) {
