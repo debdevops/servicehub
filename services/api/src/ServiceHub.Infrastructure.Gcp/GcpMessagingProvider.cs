@@ -75,12 +75,29 @@ public sealed class GcpMessagingProvider : ICloudMessagingProvider
 
         try
         {
-            // Attempt to list topics — validates credentials without requiring a specific topic.
-            var topicServiceClient = await PublisherServiceApiClient.CreateAsync(ct).ConfigureAwait(false);
-            var topics = topicServiceClient.ListTopicsAsync(new ProjectName(ns.GcpProjectId));
+            // CRITICAL FIX: Use namespace credentials (service-account JSON or ADC) via the
+            // client factory — NOT PublisherServiceApiClient.CreateAsync() which uses the
+            // host's ADC and ignores the user-provided connection string entirely.
+            //
+            // We reuse GetSubscriberClientAsync here because it resolves the credential
+            // correctly and a ListSubscriptions call is cheaper than ListTopics for a probe.
+            var client = await _clientFactory.GetSubscriberClientAsync(
+                ns, "_servicehub_validate_probe_", ct).ConfigureAwait(false);
 
-            // Just check we can get the first page
-            await topics.AsRawResponses().FirstOrDefaultAsync(ct).ConfigureAwait(false);
+            var listRequest = new Google.Cloud.PubSub.V1.ListSubscriptionsRequest
+            {
+                Project = $"projects/{ns.GcpProjectId}"
+            };
+            var enumerator = client.ListSubscriptionsAsync(listRequest).GetAsyncEnumerator(ct);
+            try
+            {
+                // Any response (even empty) means credentials are valid and the project is reachable.
+                await enumerator.MoveNextAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                await enumerator.DisposeAsync().ConfigureAwait(false);
+            }
 
             _logger.LogInformation("GCP Pub/Sub connection validated for namespace {NamespaceId}", ns.Id);
             return Result.Success();
@@ -157,23 +174,20 @@ public sealed class GcpMessagingProvider : ICloudMessagingProvider
 
         try
         {
-            var topicClient = await PublisherServiceApiClient.CreateAsync(ct).ConfigureAwait(false);
-            var subClient = await SubscriberServiceApiClient.CreateAsync(ct).ConfigureAwait(false);
+            // CRITICAL FIX: Resolve credentials via the client factory (namespace service-account
+            // JSON or ADC), not PublisherServiceApiClient.CreateAsync() which uses host ADC only.
+            var subscriberClient = await _clientFactory.GetSubscriberClientAsync(
+                ns, "_servicehub_list_probe_", ct).ConfigureAwait(false);
+            var publisherClient = await _clientFactory.GetPublisherClientAsync(
+                ns, "_servicehub_list_probe_", ct).ConfigureAwait(false);
             var project = new ProjectName(ns.GcpProjectId);
 
-            // List topics
-            await foreach (var topic in topicClient.ListTopicsAsync(project).WithCancellation(ct))
+            // List subscriptions using the subscriber client
+            var subRequest = new Google.Cloud.PubSub.V1.ListSubscriptionsRequest
             {
-                entities.Add(new CloudEntity
-                {
-                    Name = topic.TopicName.TopicId,
-                    EntityType = "Topic",
-                    Provider = CloudProviderType.Gcp
-                });
-            }
-
-            // List subscriptions
-            await foreach (var sub in subClient.ListSubscriptionsAsync(project).WithCancellation(ct))
+                Project = $"projects/{ns.GcpProjectId}"
+            };
+            await foreach (var sub in subscriberClient.ListSubscriptionsAsync(subRequest).WithCancellation(ct))
             {
                 entities.Add(new CloudEntity
                 {

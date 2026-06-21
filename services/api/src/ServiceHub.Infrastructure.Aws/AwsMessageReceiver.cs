@@ -650,8 +650,11 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
 
     private static long ComputeSequenceNumber(string receiptHandle)
     {
-        // Use a stable hash of the receipt handle as the synthetic sequence number.
-        // The receipt handle is unique per receive call, so this is a reasonable proxy.
-        return Math.Abs((long)receiptHandle.GetHashCode());
+        // Use a stable 64-bit hash derived from SHA-256 so sequence numbers:
+        //  1. Are consistent across process restarts (unlike GetHashCode which is randomized)
+        //  2. Have negligible collision probability (2^63 space vs 2^31 for GetHashCode)
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(receiptHandle));
+        return BitConverter.ToInt64(hash, 0) & long.MaxValue; // keep positive
     }
 }
