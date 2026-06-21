@@ -363,7 +363,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
         {
             _logger.LogWarning(ex,
                 "Error scanning DLQ for {EntityType} {EntityName} in namespace {NamespaceId}",
-                entityType, entityName, namespaceId);
+                entityType, LogRedactor.SanitiseForLog(entityName), namespaceId);
         }
 
         return (newCount, liveSequenceNumbers);
