@@ -3,7 +3,7 @@
 **A Complete Guide for Novices and Experts**  
 *Understanding Multi-Cloud Messaging Inspection Made Simple*
 
-**Version:** 3.2.0 (May 2026) — Multi-Cloud Support, Cross-Cloud Message Trace & Enhanced Testing  
+**Version:** 3.3.0 (June 2026) — Multi-Cloud Support, Cross-Cloud Message Trace & Enhanced Testing  
 **New Features:** Cross-cloud trace, AWS/GCP demo environments, expanded test suite (1,045 frontend + 1,362 backend tests)
 
 ---
@@ -1464,5 +1464,5 @@ ServiceHub solves a critical problem for teams using Azure Service Bus: **visibi
 
 ---
 
-*Last Updated: April 2026*  
-*Version: 3.2.0*
+*Last Updated: June 2026*  
+*Version: 3.3.0*

@@ -2,6 +2,10 @@ import { defineConfig, Plugin } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
+import fs from 'fs'
+import path from 'path'
+
+const appVersion = fs.readFileSync(path.resolve(__dirname, '../../.version'), 'utf-8').trim();
 
 /**
  * Vite plugin that injects a SPA token <meta> tag into index.html during
@@ -42,6 +46,9 @@ const apiProxyTarget = process.env.VITE_PROXY_TARGET ?? 'http://localhost:5153';
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), spaTokenDevPlugin()],
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
