@@ -47,9 +47,15 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
         var resolvedDataDir = Path.GetFullPath(rawDataDir);
         var appBaseDir = Path.GetFullPath(AppContext.BaseDirectory);
 
-        // Allow paths under the app base OR common hosting directories (e.g. /home/data on Azure App Service)
+        // Allow paths under the app base OR common hosting directories.
+        // /home  — Azure App Service persistent storage
+        // /var   — generic Linux (e.g. /var/servicehub/data, /var/lib/...)
+        // /opt   — common for installed app data on Debian/Ubuntu
+        // /tmp   — test / non-persistent environments
         if (!resolvedDataDir.StartsWith(appBaseDir, StringComparison.OrdinalIgnoreCase)
             && !resolvedDataDir.StartsWith("/home", StringComparison.OrdinalIgnoreCase)
+            && !resolvedDataDir.StartsWith("/var", StringComparison.OrdinalIgnoreCase)
+            && !resolvedDataDir.StartsWith("/opt", StringComparison.OrdinalIgnoreCase)
             && !resolvedDataDir.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning(
@@ -377,6 +383,9 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
             Environment = ns.Environment,
             OwnerId = ns.OwnerId,
             ConnectionStringHash = ns.ConnectionStringHash,
+            Provider = ns.Provider,
+            AwsRegion = ns.AwsRegion,
+            GcpProjectId = ns.GcpProjectId,
         };
 
     private Namespace? Rehydrate(NamespaceSnapshot snapshot)
@@ -390,15 +399,21 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
                     snapshot.DisplayName,
                     snapshot.Description,
                     snapshot.Environment,
+                    provider: snapshot.Provider,
                     ownerId: snapshot.OwnerId,
-                    connectionStringHash: snapshot.ConnectionStringHash)
+                    connectionStringHash: snapshot.ConnectionStringHash,
+                    awsRegion: snapshot.AwsRegion,
+                    gcpProjectId: snapshot.GcpProjectId)
                 : Namespace.CreateWithManagedIdentity(
                     snapshot.Name,
                     snapshot.AuthType,
                     snapshot.DisplayName,
                     snapshot.Description,
                     snapshot.Environment,
-                    ownerId: snapshot.OwnerId);
+                    provider: snapshot.Provider,
+                    ownerId: snapshot.OwnerId,
+                    awsRegion: snapshot.AwsRegion,
+                    gcpProjectId: snapshot.GcpProjectId);
 
             if (createResult.IsFailure)
             {
@@ -467,5 +482,11 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
         public string OwnerId { get; init; } = Namespace.SpaOwnerId;
         /// <summary>SHA-256 hash of the plaintext connection string for fast deduplication.</summary>
         public string? ConnectionStringHash { get; init; }
+        /// <summary>Cloud provider (Azure, AWS, GCP). Defaults to Azure for backward compatibility.</summary>
+        public CloudProviderType Provider { get; init; } = CloudProviderType.Azure;
+        /// <summary>AWS region identifier. Null for non-AWS namespaces.</summary>
+        public string? AwsRegion { get; init; }
+        /// <summary>GCP project identifier. Null for non-GCP namespaces.</summary>
+        public string? GcpProjectId { get; init; }
     }
 }
