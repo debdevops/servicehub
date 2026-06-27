@@ -822,7 +822,7 @@ export function ConnectPage() {
                     Prefer zero-trust? Run it yourself.
                   </p>
                   <p className="text-xs text-gray-500 mb-2">
-                    Deploy ServiceHub inside your own Azure subscription in under 10 minutes.
+                    Deploy ServiceHub on your own server, VM, or cloud in minutes.
                     Your data never leaves your infrastructure.
                   </p>
                   <a
@@ -977,7 +977,7 @@ export function ConnectPage() {
       <ConfirmDialog
         isOpen={deleteConfirm.isOpen}
         title="Delete Connection"
-        message={`Are you sure you want to delete the connection "${deleteConfirm.name}"?\n\nThis will remove the saved connection but will not affect your Azure Service Bus namespace.`}
+        message={`Are you sure you want to delete the connection "${deleteConfirm.name}"?\n\nThis will remove the saved connection. Your cloud messaging namespace is not affected.`}
         variant="danger"
         confirmLabel="Delete"
         onConfirm={handleDeleteConfirm}

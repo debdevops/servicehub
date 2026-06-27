@@ -2,7 +2,7 @@
 
 > 🛡️ **You are in full control.**
 > When you self-host ServiceHub, your connection strings, Service Bus data, and messages
-> never leave your own Azure subscription or machine. There are no callbacks to ServiceHub's
+> never leave your own infrastructure. There are no callbacks to ServiceHub's
 > servers. The encryption key is yours — we never see it.
 
 ---
@@ -13,8 +13,6 @@ Before you start, confirm the following are installed on your machine.
 
 | Prerequisite | Minimum version | How to check |
 |---|---|---|
-| Azure subscription | Any paid or free tier | `az account show` |
-| Azure CLI | Latest | `az --version` |
 | .NET SDK | 10.0 | `dotnet --version` |
 | Node.js | 20.x | `node --version` |
 | Git | Any | `git --version` |
@@ -23,31 +21,31 @@ Before you start, confirm the following are installed on your machine.
 
 ## Choose your deployment path
 
-### 🌐 Deploy to Azure App Service
-
-**Recommended for production.** Your data stays in your Azure subscription.
-
-→ [Deploy to Azure App Service](./azure-app-service/README.md)
-
-What this gives you:
-- HTTPS out of the box via `*.azurewebsites.net`
-- Persistent storage at `/home/data` — data survives restarts
-- ~$13/month on the B1 plan (Basic, 1 core, 1.75 GB RAM)
-- Zero configuration for SSL certificates
-
----
-
 ### 💻 Run locally on your machine
 
-**For testing and development.** Zero cloud dependencies.
+**Fastest option — zero cloud dependencies.**
 
 → [Run locally](./local-development/README.md)
 
 What this gives you:
 - Instant feedback loop — changes hot-reload immediately
-- No Azure costs
+- No cloud costs
 - Full debug tooling
 - Works on macOS, Linux, and Windows (via WSL)
+
+---
+
+### 🌐 Deploy to a server or cloud VM
+
+**Recommended for shared team use.** Deploy on any Linux VM, Azure App Service, AWS EC2, GCP Compute Engine, or any server with .NET 10 support.
+
+What this gives you:
+- Always-on access for your team
+- HTTPS via your own reverse proxy (nginx/Caddy)
+- Persistent storage — data survives restarts
+- Full control of your infrastructure
+
+→ [Azure App Service](./azure-app-service/README.md)
 
 ---
 
@@ -57,7 +55,7 @@ Once your instance is running, continue with:
 
 | Guide | When to use |
 |---|---|
-| [Application Insights](./application-insights/README.md) | Optional. Monitor performance in your own Azure subscription. Zero data goes to ServiceHub's servers. |
+| [Application Insights](./application-insights/README.md) | Optional. Monitor performance in your own Azure subscription. |
 | [Security Hardening](./security-hardening/README.md) | **Required before production.** Generate proper secrets, complete the pre-launch checklist. |
 | [Troubleshooting](./troubleshooting/README.md) | When something isn't working. Covers the 8 most common errors with exact fixes. |
 
@@ -65,18 +63,19 @@ Once your instance is running, continue with:
 
 ## Architecture in one sentence
 
-ServiceHub is a **single deployable unit**: the React UI is compiled into the .NET API's `wwwroot/` folder, and both are served from one Azure App Service. You do not run a separate frontend server in production.
+ServiceHub is a **single deployable unit**: the React UI is compiled into the .NET API's `wwwroot/` folder, and both are served by one process. You do not run a separate frontend server in production.
 
 ```
 Your browser
-    │  HTTPS
+    │  HTTP(S)
     ▼
-Azure App Service (one app, one URL)
-    ├── .NET 10 API  →  Azure Service Bus (yours)
+ServiceHub (.NET 10 API — one process, one port)
+    ├── .NET 10 API  →  Azure Service Bus / AWS SQS / GCP Pub/Sub
     └── React UI     →  served as static files from wwwroot/
 ```
 
-Your Azure Service Bus connection strings are **AES-256-GCM encrypted** using a key you generate. The plaintext key never leaves your App Service configuration.
+Your cloud connection strings are **AES-256-GCM encrypted** using a key you generate. The plaintext key never leaves your server configuration.
+
 
 ---
 

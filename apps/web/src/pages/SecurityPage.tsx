@@ -40,7 +40,7 @@ const WHAT_WE_PROTECT = [
     color: 'bg-green-100 text-green-700',
     points: [
       'Encrypted with AES-256-GCM immediately on receipt',
-      'Encryption key lives only in Azure App Service configuration — never on disk',
+      'Encryption key lives only in your server configuration — never on disk or in source code',
       'Plaintext connection string is never written to disk, never logged, never returned to your browser after the initial POST',
     ],
   },
@@ -97,10 +97,10 @@ export function SecurityPage() {
             </div>
           </div>
           <p className="text-sm text-gray-600 leading-relaxed mt-4">
-            We understand that pasting an Azure Service Bus connection string into a web app
-            is a significant trust decision. This page explains exactly what ServiceHub stores,
-            what it never touches, and where you can verify every claim directly in the
-            open-source code.
+            We understand that pasting a cloud messaging connection string into a web app
+          is a significant trust decision. This page explains exactly what ServiceHub stores,
+          what it never touches, and where you can verify every claim directly in the
+          open-source code.
           </p>
         </div>
 
@@ -247,8 +247,8 @@ export function SecurityPage() {
           </h2>
           <p className="text-sm text-gray-500 mb-4">
             If your security policy does not allow connecting production or sensitive
-            Service Bus namespaces to a hosted third-party app — that is the right call.
-            ServiceHub is designed to be self-hosted.
+          namespaces to a third-party app — that is the right call.
+          ServiceHub is designed to be self-hosted.
           </p>
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
             <div className="flex items-start gap-3">
@@ -256,11 +256,11 @@ export function SecurityPage() {
                 <Server className="w-4 h-4 text-blue-600" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-blue-900">
-                  Run ServiceHub in your own Azure subscription
+                <p className="text-sm font-bold text-blue-900">
+                  Run ServiceHub in your own infrastructure
                 </p>
                 <p className="text-xs text-blue-700 mt-1 leading-relaxed">
-                  Deploy the .NET 10 API + React frontend to your own Azure App Service.
+                  Deploy the .NET 10 API + React frontend on any server or cloud (Azure, AWS, GCP, on-prem VM).
                   Your connection strings are encrypted with a key only you control.
                   No data ever leaves your infrastructure.
                   The self-hosting guide walks through a complete deployment in under 10 minutes.

@@ -323,7 +323,7 @@ export function HelpPage() {
           </p>
           <div className="flex items-center justify-center gap-4 flex-wrap">
             <a
-              href="https://github.com/debasisghosh/servicehub/discussions"
+              href="https://github.com/debdevops/servicehub/discussions"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-6 py-2.5 bg-white text-primary-700 font-semibold rounded-lg hover:bg-gray-100 transition-colors"
@@ -345,17 +345,17 @@ export function HelpPage() {
         <div className="mt-10 pb-8 flex flex-wrap items-center justify-between gap-6 border-t border-gray-200 pt-6">
           <div>
             <p className="text-xs text-gray-500 font-medium">
-              ServiceHub • Azure Service Bus Management Dashboard
+              ServiceHub • Multi-Cloud Message Queue Debugger
             </p>
             <p className="text-xs text-gray-400 mt-1">
               Made with ❤️ for developers • Open Source
             </p>
           </div>
           <div className="flex items-center gap-4 text-xs">
-            <span className="text-gray-500">v3.1.0</span>
+            <span className="text-gray-500">v3.2.2</span>
             <span className="text-gray-300">•</span>
             <a
-              href="https://github.com/debasisghosh/servicehub"
+              href="https://github.com/debdevops/servicehub"
               target="_blank"
               rel="noopener noreferrer"
               className="text-primary-600 hover:text-primary-700 font-medium"
@@ -364,7 +364,7 @@ export function HelpPage() {
             </a>
             <span className="text-gray-300">•</span>
             <a
-              href="https://github.com/debasisghosh/servicehub/issues"
+              href="https://github.com/debdevops/servicehub/issues"
               target="_blank"
               rel="noopener noreferrer"
               className="text-primary-600 hover:text-primary-700 font-medium"

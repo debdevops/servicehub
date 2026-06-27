@@ -200,7 +200,7 @@ export function WelcomePage() {
             </div>
             <div>
               <span className="font-bold text-gray-900 text-lg">ServiceHub</span>
-              <span className="ml-2 text-xs text-sky-600 font-medium bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full">v3.2.0</span>
+              <span className="ml-2 text-xs text-sky-600 font-medium bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full">v3.2.2</span>
             </div>
           </div>
           <nav className="hidden md:flex items-center gap-6 text-sm">
@@ -230,7 +230,7 @@ export function WelcomePage() {
         <div className="max-w-5xl mx-auto text-center relative">
           <div className="inline-flex items-center gap-2 mb-6 px-4 py-2 bg-sky-50 border border-sky-200 text-sky-700 rounded-full text-sm font-semibold">
             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            Multi-Cloud · v3.2.0 · Azure + AWS + GCP
+            Multi-Cloud · v3.2.2 · Azure + AWS + GCP
           </div>
           <h1 className="text-5xl md:text-6xl lg:text-7xl font-extrabold text-gray-900 mb-6 leading-[1.08] tracking-tight">
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-500 via-blue-600 to-emerald-500">One Platform.</span>
@@ -599,7 +599,7 @@ export function WelcomePage() {
             ))}
           </div>
           <div className="mt-14 pt-10 border-t border-gray-200">
-            <p className="text-center text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wider">All Included in v3.2.0</p>
+            <p className="text-center text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wider">All Included in v3.2.2</p>
             <div className="flex flex-wrap justify-center gap-3">
               {[
                 '\u2601\uFE0F Azure Service Bus', '\uD83D\uDFE0 AWS SQS / SNS', '\uD83D\uDFE2 GCP Pub/Sub',
@@ -762,21 +762,21 @@ export function WelcomePage() {
         </div>
       </section>
 
-      {/* Auth Note */}
+      {/* Privacy Note */}
       <section className="px-6 py-12 bg-white">
         <div className="max-w-4xl mx-auto">
-          <div className="flex items-start gap-4 p-5 bg-blue-50 border border-blue-200 rounded-xl shadow-sm">
-            <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mt-0.5">
-              <Shield className="w-5 h-5 text-blue-600" />
+          <div className="flex items-start gap-4 p-5 bg-emerald-50 border border-emerald-200 rounded-xl shadow-sm">
+            <div className="flex-shrink-0 w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center mt-0.5">
+              <Shield className="w-5 h-5 text-emerald-600" />
             </div>
             <div>
-              <p className="text-sm font-bold text-blue-900 mb-1">
-                \uD83D\uDD12 Hosted App Authentication via Microsoft Entra ID (Azure AD)
+              <p className="text-sm font-bold text-emerald-900 mb-1">
+                🔒 100% Self-Hosted — Your Data Never Leaves Your Infrastructure
               </p>
-              <p className="text-sm text-blue-800 leading-relaxed">
-                The hosted application uses <strong>Microsoft's own login page</strong> for access control only.
-                ServiceHub does <strong>not store your personal information, credentials, or any user data</strong>.
-                We comply with GDPR. For full data sovereignty, self-host on your own infrastructure.
+              <p className="text-sm text-emerald-800 leading-relaxed">
+                ServiceHub runs entirely on <strong>your own machine or server</strong>. Connection strings, message payloads,
+                and credentials are stored locally — AES-GCM encrypted — and never transmitted anywhere.
+                No telemetry, no callbacks, no cloud dependency. Full data sovereignty.
               </p>
             </div>
           </div>
@@ -794,7 +794,7 @@ export function WelcomePage() {
               <p className="text-lg mb-2 text-white/90 leading-relaxed">
                 Your dead-letter messages are telling a story. ServiceHub helps you read it \u2014 on any cloud.
               </p>
-              <p className="text-sm text-white/70 mb-10">No credit card. No install required. Connect in under 60 seconds.</p>
+              <p className="text-sm text-white/70 mb-10">Open source. Self-hosted. Connect in under 60 seconds.</p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <Link
                   to="/connect"
@@ -864,7 +864,7 @@ export function WelcomePage() {
               ServiceHub is open source, free to use, and MIT licensed. Made with \u2764\uFE0F by{' '}
               <a href="https://github.com/debdevops" className="text-blue-400 hover:underline font-medium">Debasis</a>
             </p>
-            <p className="text-gray-400">© 2026 ServiceHub v3.2.0 · All rights reserved</p>
+            <p className="text-gray-400">© 2026 ServiceHub v3.2.2 · All rights reserved</p>
           </div>
         </div>
       </footer>
