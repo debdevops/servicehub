@@ -59,6 +59,7 @@ public static class DependencyInjection
         // delegate to the correct simulated provider based on namespace ID.
         services.Replace(ServiceDescriptor.Singleton<IMessageReceiver, SimulatorMessageReceiver>());
         services.Replace(ServiceDescriptor.Singleton<IMessageSender, SimulatorMessageSender>());
+        services.Replace(ServiceDescriptor.Singleton<IServiceBusClientCache, SimulatorClientCache>());
 
         // Hosted service to seed data at startup
         services.AddHostedService<SimulatorSeedHostedService>();
