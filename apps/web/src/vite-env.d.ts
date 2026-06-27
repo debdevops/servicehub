@@ -7,6 +7,7 @@ interface ImportMetaEnv {
   readonly VITE_ENABLE_AI_INSIGHTS?: string;
   readonly VITE_ENABLE_PERFORMANCE_MONITORING?: string;
   readonly VITE_ENABLE_QUERY_DEVTOOLS?: string;
+  readonly VITE_APP_VERSION: string;
 }
 
 interface ImportMeta {

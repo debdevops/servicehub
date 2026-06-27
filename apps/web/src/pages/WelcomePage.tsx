@@ -200,7 +200,7 @@ export function WelcomePage() {
             </div>
             <div>
               <span className="font-bold text-gray-900 text-lg">ServiceHub</span>
-              <span className="ml-2 text-xs text-sky-600 font-medium bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full">v3.2.2</span>
+              <span className="ml-2 text-xs text-sky-600 font-medium bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full">v{import.meta.env.VITE_APP_VERSION}</span>
             </div>
           </div>
           <nav className="hidden md:flex items-center gap-6 text-sm">
@@ -230,7 +230,7 @@ export function WelcomePage() {
         <div className="max-w-5xl mx-auto text-center relative">
           <div className="inline-flex items-center gap-2 mb-6 px-4 py-2 bg-sky-50 border border-sky-200 text-sky-700 rounded-full text-sm font-semibold">
             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            Multi-Cloud · v3.2.2 · Azure + AWS + GCP
+            Multi-Cloud · v{import.meta.env.VITE_APP_VERSION} · Azure + AWS + GCP
           </div>
           <h1 className="text-5xl md:text-6xl lg:text-7xl font-extrabold text-gray-900 mb-6 leading-[1.08] tracking-tight">
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-500 via-blue-600 to-emerald-500">One Platform.</span>
@@ -599,7 +599,7 @@ export function WelcomePage() {
             ))}
           </div>
           <div className="mt-14 pt-10 border-t border-gray-200">
-            <p className="text-center text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wider">All Included in v3.2.2</p>
+            <p className="text-center text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wider">All Included in v{import.meta.env.VITE_APP_VERSION}</p>
             <div className="flex flex-wrap justify-center gap-3">
               {[
                 '\u2601\uFE0F Azure Service Bus', '\uD83D\uDFE0 AWS SQS / SNS', '\uD83D\uDFE2 GCP Pub/Sub',
@@ -864,7 +864,7 @@ export function WelcomePage() {
               ServiceHub is open source, free to use, and MIT licensed. Made with \u2764\uFE0F by{' '}
               <a href="https://github.com/debdevops" className="text-blue-400 hover:underline font-medium">Debasis</a>
             </p>
-            <p className="text-gray-400">© 2026 ServiceHub v3.2.2 · All rights reserved</p>
+            <p className="text-gray-400">© 2026 ServiceHub v{import.meta.env.VITE_APP_VERSION} · All rights reserved</p>
           </div>
         </div>
       </footer>
