@@ -265,3 +265,6 @@ docs/multi-platform/
 # Playwright test artifacts
 apps/web/test-results/
 apps/web/playwright-report/
+
+
+MODEL-ROUTING-GUIDE.md
