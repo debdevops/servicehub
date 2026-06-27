@@ -562,8 +562,8 @@ public sealed class Namespace
         }
 
         // Generic short name: alphanumeric, hyphens, underscores, dots (covers GCP project IDs,
-        // AWS simple names, and Azure short namespace names). Length 1–256.
-        if (trimmed.Length >= 1 && trimmed.Length <= MaxNameLength)
+        // AWS simple names, and Azure short namespace names). Length 3–256.
+        if (trimmed.Length >= 3 && trimmed.Length <= MaxNameLength)
         {
             return trimmed.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.')
                 && !trimmed.StartsWith('-')
