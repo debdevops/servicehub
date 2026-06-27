@@ -37,8 +37,9 @@ The following values in the codebase are intentional placeholders, not real secr
 - `appsettings.json`: `"CHANGE_THIS_IN_PRODUCTION_USE_AZURE_KEY_VAULT_OR_ENV_VAR"`
   — this is an explicit placeholder, not a real key
 
-Real production secrets are stored in Azure Key Vault and Azure App Service
-Application Settings, never in source code.
+Real production secrets should be stored in your environment's secret manager
+(e.g., environment variables, Azure Key Vault, AWS Secrets Manager, GCP Secret Manager,
+or a `.env` file with restricted permissions), never in source code.
 
 ## Dependencies
 

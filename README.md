@@ -10,7 +10,7 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10-purple.svg)](https://dotnet.microsoft.com/)
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6.svg)](https://www.typescriptlang.org/)
-[![Version](https://img.shields.io/badge/version-3.2.2-brightgreen.svg)](.version)
+[![Version](https://img.shields.io/badge/version-3.3.0-brightgreen.svg)](.version)
 [![Self-Hosted](https://img.shields.io/badge/Deployment-Self--Hosted-0078D4.svg)](#quick-start)
 
 [⚡ Quick Start](#quick-start) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security)
@@ -261,7 +261,7 @@ Bug fixes, features, and documentation improvements are welcome!
 # Unit tests (Vitest — 1,045 tests, ≥60% coverage required)
 cd apps/web && npm run test:coverage
 
-# Backend tests (xUnit — 1,362 tests)
+# Backend tests (xUnit — 1,327 tests)
 cd services/api && dotnet test
 
 # E2E tests (Playwright — requires ./run.sh --simulator)

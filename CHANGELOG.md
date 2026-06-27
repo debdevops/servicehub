@@ -1,5 +1,40 @@
 # ServiceHub Changelog
 
+## [3.3.0] — 2026-06-27
+
+### Removed / Cleaned Up
+
+- **Decommissioned Azure App Service demo references** — all mentions of `app-servicehub-prod.azurewebsites.net` removed from:
+  - `apps/web/public/sitemap.xml` — URLs now point to GitHub repository pages instead of the defunct hosted app
+  - `apps/web/src/pages/WelcomePage.tsx` — replaced "Hosted App Authentication via Microsoft Entra ID" banner with a "100% Self-Hosted" privacy notice
+  - `apps/web/src/pages/ConnectPage.tsx` — updated self-host callout and delete-confirmation copy to be cloud-agnostic
+  - `apps/web/src/pages/SecurityPage.tsx` — updated encryption key location description and self-host callout
+  - `apps/web/src/pages/HelpPage.tsx` — fixed stale GitHub URLs (`debasisghosh` → `debdevops`), updated version badge from v3.1.0 to v3.2.2
+  - `self-hosting/README.md` — restructured to lead with local development, not Azure App Service; cloud-agnostic architecture diagram
+  - `SECURITY.md` — updated secret-management guidance to cover all clouds (Azure Key Vault, AWS Secrets Manager, GCP Secret Manager, env vars)
+  - `services/api/src/ServiceHub.Api/appsettings.Production.json` — removed Azure App Service-specific descriptions from ScopedApiKeys and EasyAuth entries
+  - `.github/workflows/deploy.yml` — improved comments to explain AZURE_APP_SERVICE_NAME secret purpose; added DEPLOY_URL override support for custom domains
+
+### Fixed
+
+- **CI E2E job** — `e2e-simulator` job was gated to `feature/multi-cloud` (a stale branch). Now runs on pushes to `main` and on all pull requests.
+- **WelcomePage tests** — updated 4 failing tests that referenced removed "Microsoft Entra ID" and "GDPR" content; added 3 new tests for the self-hosted privacy notice.
+- **HelpPage version badge** — was showing v3.1.0; corrected to v3.2.2.
+- **WelcomePage version badges** — updated all occurrences from v3.2.0 to v3.2.2.
+- **sitemap.xml** — was hardcoded to decommissioned Azure App Service URLs; now references GitHub repository pages (self-hosted instances should generate their own sitemaps at their deployed URL).
+
+### Security
+
+- **AuditLog entity** — `AuditLog` entity and `DatabaseAuditLogger` service added in previous session for persistent audit trails on replay/delete operations.
+- **GCP client caching** — `GcpClientFactory` now caches `SubscriberServiceApiClient` at namespace level to prevent gRPC channel exhaustion.
+- **AWS pagination** — `AwsMessagingProvider.ListQueues` and `ListTopics` now paginate via `NextToken` to index all queues and topics in large environments.
+
+### Changed
+
+- `.version` updated to `3.3.0`
+
+---
+
 ## [3.2.2] — 2026-06-13
 
 ### Security
