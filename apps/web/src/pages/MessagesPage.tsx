@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useDeferredValue } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause } from 'lucide-react';
+import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause, ArrowLeft } from 'lucide-react';
 import { MessageList, MessageDetailPanel, type QueueTab } from '@/components/messages';
 import { AIFindingsDropdown } from '@/components/ai';
 import { MessageListSkeleton } from '@/components/messages/MessageListSkeleton';
@@ -646,6 +646,19 @@ export function MessagesPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate('/')}
+              className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                demoProvider === 'aws' ? 'text-orange-700 hover:bg-orange-100' : demoProvider === 'gcp' ? 'text-green-700 hover:bg-green-100' : 'text-sky-700 hover:bg-sky-100'
+              }`}
+              title="Return to Welcome page"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Home</span>
+            </button>
+            <div className={`w-px h-4 ${
+              demoProvider === 'aws' ? 'bg-orange-200' : demoProvider === 'gcp' ? 'bg-green-200' : 'bg-sky-200'
+            }`} />
             <button
               onClick={() => navigate(`/messages?demo=${demoParam ?? 'azure'}&queueType=deadletter`)}
               className={`text-xs font-medium px-2.5 py-1 rounded transition-colors ${
