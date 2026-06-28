@@ -61,7 +61,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
     /// <response code="200">Trace completed. May be partial if the search timed out.</response>
     /// <response code="400">The traceId parameter is missing or empty.</response>
     [RequireScope(ApiKeyScopes.MessagesPeek)]
-    [HttpGet("trace")]
+    [HttpGet]
     [ProducesResponseType(typeof(CrossCloudTraceResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<CrossCloudTraceResponse>> TraceMessage(
@@ -79,7 +79,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
         }
 
         var stopwatch = Stopwatch.StartNew();
-        var isPartialResult = false;
+        var isPartialResultFlag = 0; // 0 = false, 1 = true (Interlocked for thread safety)
 
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(SearchTimeoutSeconds));
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
@@ -183,7 +183,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
                                 }
                             }
                         }
-                        catch (OperationCanceledException) { isPartialResult = true; }
+                        catch (OperationCanceledException) { Interlocked.Exchange(ref isPartialResultFlag, 1); }
                         catch (Exception ex) when (!searchToken.IsCancellationRequested)
                         {
                             _logger.LogWarning(ex, "Error searching queue {Queue} in namespace {NamespaceId}", q.Name, ns.Id);
@@ -248,7 +248,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
                                         }
                                     }
                                 }
-                                catch (OperationCanceledException) { isPartialResult = true; }
+                        catch (OperationCanceledException) { Interlocked.Exchange(ref isPartialResultFlag, 1); }
                                 catch (Exception ex) when (!searchToken.IsCancellationRequested)
                                 {
                                     _logger.LogWarning(ex, "Error searching subscription {Sub} in topic {Topic}", sub.Name, topic.Name);
@@ -257,7 +257,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
 
                             await Task.WhenAll(subTasks).ConfigureAwait(false);
                         }
-                        catch (OperationCanceledException) { isPartialResult = true; }
+                        catch (OperationCanceledException) { Interlocked.Exchange(ref isPartialResultFlag, 1); }
                         catch (Exception ex) when (!searchToken.IsCancellationRequested)
                         {
                             _logger.LogWarning(ex, "Error listing subscriptions for topic {Topic}", topic.Name);
@@ -273,7 +273,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
             }
             catch (OperationCanceledException)
             {
-                isPartialResult = true;
+                Interlocked.Exchange(ref isPartialResultFlag, 1);
                 azureSummaries.Add(new CrossCloudNamespaceSummary(
                     ns.Id, ns.DisplayName ?? ns.Name, "azure",
                     WasSearched: false, SkipReason: "Search timed out", HopsFound: nsHopCount));
@@ -376,7 +376,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
                             }
                         }
                     }
-                    catch (OperationCanceledException) { isPartialResult = true; }
+                    catch (OperationCanceledException) { Interlocked.Exchange(ref isPartialResultFlag, 1); }
                     catch (Exception ex) when (!searchToken.IsCancellationRequested)
                     {
                         _logger.LogWarning(ex, "Error searching {Provider} entity {Entity} in namespace {NamespaceId}",
@@ -392,7 +392,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
             }
             catch (OperationCanceledException)
             {
-                isPartialResult = true;
+                Interlocked.Exchange(ref isPartialResultFlag, 1);
                 nonAzureSummaries.Add(new CrossCloudNamespaceSummary(
                     ns.Id, ns.DisplayName ?? ns.Name, providerLabel,
                     WasSearched: false, SkipReason: "Search timed out", HopsFound: nsHopCount));
@@ -460,7 +460,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
             IsMultiCloud: allCloudProviders.Count >= 2,
             NamespacesSearched: azureSummaries.Count(s => s.WasSearched),
             EntitiesSearched: entitiesSearched,
-            IsPartialResult: isPartialResult,
+            IsPartialResult: isPartialResultFlag == 1,
             SearchDurationMs: stopwatch.ElapsedMilliseconds
         ));
     }

@@ -795,9 +795,9 @@ export function ConnectPage() {
               </p>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { label: 'Azure', sub: 'Service Bus · Contoso', url: '/messages?demo=azure', color: 'bg-blue-600 hover:bg-blue-700' },
-                  { label: 'AWS', sub: 'SQS · AcmeRetail', url: '/messages?demo=aws', color: 'bg-orange-500 hover:bg-orange-600' },
-                  { label: 'GCP', sub: 'Pub/Sub · MedStream', url: '/messages?demo=gcp', color: 'bg-green-600 hover:bg-green-700' },
+                  { label: 'Azure', sub: 'Service Bus · Contoso', url: '/demo/azure', color: 'bg-blue-600 hover:bg-blue-700' },
+                  { label: 'AWS', sub: 'SQS · AcmeRetail', url: '/demo/aws', color: 'bg-orange-500 hover:bg-orange-600' },
+                  { label: 'GCP', sub: 'Pub/Sub · MedStream', url: '/demo/gcp', color: 'bg-green-600 hover:bg-green-700' },
                 ].map(({ label, sub, url, color }) => (
                   <button
                     key={label}
@@ -822,7 +822,7 @@ export function ConnectPage() {
                     Prefer zero-trust? Run it yourself.
                   </p>
                   <p className="text-xs text-gray-500 mb-2">
-                    Deploy ServiceHub inside your own Azure subscription in under 10 minutes.
+                    Deploy ServiceHub on your own server, VM, or cloud in minutes.
                     Your data never leaves your infrastructure.
                   </p>
                   <a
@@ -977,7 +977,7 @@ export function ConnectPage() {
       <ConfirmDialog
         isOpen={deleteConfirm.isOpen}
         title="Delete Connection"
-        message={`Are you sure you want to delete the connection "${deleteConfirm.name}"?\n\nThis will remove the saved connection but will not affect your Azure Service Bus namespace.`}
+        message={`Are you sure you want to delete the connection "${deleteConfirm.name}"?\n\nThis will remove the saved connection. Your cloud messaging namespace is not affected.`}
         variant="danger"
         confirmLabel="Delete"
         onConfirm={handleDeleteConfirm}

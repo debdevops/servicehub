@@ -97,7 +97,14 @@ describe('useMessages', () => {
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual({ items: [], totalCount: 0, hasMore: false });
+    expect(result.current.data).toEqual({
+      items: [],
+      totalCount: 0,
+      page: 1,
+      pageSize: 50,
+      hasNextPage: false,
+      hasPreviousPage: false,
+    });
   });
 
   it('throws non-404 errors', async () => {

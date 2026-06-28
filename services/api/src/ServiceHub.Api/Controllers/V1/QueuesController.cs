@@ -97,19 +97,32 @@ public sealed class QueuesController : ApiControllerBase
             return ToActionResult<IReadOnlyList<QueueRuntimePropertiesDto>>(unprotectResult.Error);
         }
 
-        var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
-        var queuesResult = await wrapper.GetQueuesAsync(cancellationToken);
-        if (queuesResult.IsFailure)
+        try
         {
-            return ToActionResult<IReadOnlyList<QueueRuntimePropertiesDto>>(queuesResult.Error);
+            var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+            var queuesResult = await wrapper.GetQueuesAsync(cancellationToken);
+            if (queuesResult.IsFailure)
+            {
+                return ToActionResult<IReadOnlyList<QueueRuntimePropertiesDto>>(queuesResult.Error);
+            }
+
+            _logger.LogInformation(
+                "Retrieved {QueueCount} queues for namespace {NamespaceId}",
+                queuesResult.Value.Count,
+                namespaceId);
+
+            return Ok(queuesResult.Value);
         }
-
-        _logger.LogInformation(
-            "Retrieved {QueueCount} queues for namespace {NamespaceId}",
-            queuesResult.Value.Count,
-            namespaceId);
-
-        return Ok(queuesResult.Value);
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error connecting to Service Bus namespace {NamespaceId}", namespaceId);
+            return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
+            {
+                Status = StatusCodes.Status502BadGateway,
+                Title = "Service Bus Communication Error",
+                Detail = $"Unable to connect to the Service Bus namespace. Verify the connection string is valid and the namespace is reachable. ({ex.GetType().Name})"
+            });
+        }
     }
 
     /// <summary>
@@ -160,14 +173,27 @@ public sealed class QueuesController : ApiControllerBase
             return ToActionResult<QueueRuntimePropertiesDto>(unprotectResult.Error);
         }
 
-        var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
-        var queueResult = await wrapper.GetQueueAsync(queueName, cancellationToken);
-        if (queueResult.IsFailure)
+        try
         {
-            return ToActionResult<QueueRuntimePropertiesDto>(queueResult.Error);
-        }
+            var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+            var queueResult = await wrapper.GetQueueAsync(queueName, cancellationToken);
+            if (queueResult.IsFailure)
+            {
+                return ToActionResult<QueueRuntimePropertiesDto>(queueResult.Error);
+            }
 
-        return Ok(queueResult.Value);
+            return Ok(queueResult.Value);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error connecting to Service Bus namespace {NamespaceId}", namespaceId);
+            return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
+            {
+                Status = StatusCodes.Status502BadGateway,
+                Title = "Service Bus Communication Error",
+                Detail = $"Unable to connect to the Service Bus namespace. Verify the connection string is valid and the namespace is reachable. ({ex.GetType().Name})"
+            });
+        }
     }
 
     /// <summary>

@@ -7,4 +7,5 @@ export { HelpPage } from './HelpPage';
 export { ScheduledMessagesPage } from './ScheduledMessagesPage';
 export { SecurityPage } from './SecurityPage';
 export { WelcomePage } from './WelcomePage';
-// Dashboard, DlqHistory, and CorrelationExplorer are lazy-loaded in router.tsx
+// Dashboard, DlqHistory, InsightsPage, CloudBridgePage, SimulatorPage, CrossCloudTracePage
+// are lazy-loaded in router.tsx

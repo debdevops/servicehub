@@ -408,8 +408,15 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         return mapped;
     }
 
-    private static long ComputeSequenceNumber(string ackId) =>
-        Math.Abs((long)ackId.GetHashCode());
+    private static long ComputeSequenceNumber(string ackId)
+    {
+        // Use a stable 64-bit hash derived from SHA-256 so sequence numbers:
+        //  1. Are consistent across process restarts (unlike GetHashCode which is randomized)
+        //  2. Have negligible collision probability (2^63 space vs 2^31 for GetHashCode)
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(ackId));
+        return BitConverter.ToInt64(hash, 0) & long.MaxValue; // keep positive
+    }
 
     private static string GetSubscriptionResourceName(Core.Entities.Namespace ns, string subscriptionId)
     {

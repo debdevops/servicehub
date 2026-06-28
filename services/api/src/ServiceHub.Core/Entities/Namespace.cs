@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using ServiceHub.Core.Enums;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
@@ -141,6 +142,14 @@ public sealed class Namespace
     /// All traffic authenticated via the instance-level SPA secret shares this owner scope.
     /// </summary>
     public const string SpaOwnerId = "__spa__";
+
+    /// <summary>
+    /// Compiled Regex for extracting SharedAccessKeyName from an Azure connection string.
+    /// Static to avoid recompiling on every validation call.
+    /// </summary>
+    private static readonly Regex SharedAccessKeyNameRegex = new(
+        @"SharedAccessKeyName=([^;]+)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>
     /// Private constructor to enforce factory method usage.
@@ -522,32 +531,46 @@ public sealed class Namespace
 
     /// <summary>
     /// Validates the namespace name format.
+    /// Accepts:
+    /// - Azure Service Bus FQDN: *.servicebus.windows.net (and national cloud variants)
+    /// - Simple short name: 6–50 alphanumeric-plus-hyphen chars (Azure namespace short name)
+    /// - AWS SQS URL: https://sqs.{region}.amazonaws.com/{account}/{queue}
+    /// - AWS simple name: alphanumeric, hyphens, underscores (SQS queue name conventions)
+    /// - GCP project-based format: letters, digits, hyphens, underscores (Pub/Sub project ID)
     /// </summary>
     private static bool IsValidNamespaceName(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
-        {
             return false;
-        }
 
         var trimmed = name.Trim();
 
-        // Must end with .servicebus.windows.net for FQDN format
-        // Or be a simple name (alphanumeric and hyphens)
-        if (trimmed.Contains('.'))
+        // Azure FQDN — must end with a known servicebus suffix
+        if (trimmed.Contains('.') && !trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
-            return trimmed.EndsWith(".servicebus.windows.net", StringComparison.OrdinalIgnoreCase) ||
-                   trimmed.EndsWith(".servicebus.chinacloudapi.cn", StringComparison.OrdinalIgnoreCase) ||
-                   trimmed.EndsWith(".servicebus.usgovcloudapi.net", StringComparison.OrdinalIgnoreCase) ||
-                   trimmed.EndsWith(".servicebus.cloudapi.de", StringComparison.OrdinalIgnoreCase);
+            return trimmed.EndsWith(".servicebus.windows.net", StringComparison.OrdinalIgnoreCase)
+                || trimmed.EndsWith(".servicebus.chinacloudapi.cn", StringComparison.OrdinalIgnoreCase)
+                || trimmed.EndsWith(".servicebus.usgovcloudapi.net", StringComparison.OrdinalIgnoreCase)
+                || trimmed.EndsWith(".servicebus.cloudapi.de", StringComparison.OrdinalIgnoreCase);
         }
 
-        // Simple name validation: alphanumeric and hyphens, 6-50 chars
-        return trimmed.Length >= 6 &&
-               trimmed.Length <= 50 &&
-               trimmed.All(c => char.IsLetterOrDigit(c) || c == '-') &&
-               !trimmed.StartsWith('-') &&
-               !trimmed.EndsWith('-');
+        // AWS SQS endpoint URL: https://sqs.{region}.amazonaws.com/{account}/{queue-or-topic}
+        if (trimmed.StartsWith("https://sqs.", StringComparison.OrdinalIgnoreCase)
+            && trimmed.Contains(".amazonaws.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // Generic short name: alphanumeric, hyphens, underscores, dots (covers GCP project IDs,
+        // AWS simple names, and Azure short namespace names). Length 3–256.
+        if (trimmed.Length >= 3 && trimmed.Length <= MaxNameLength)
+        {
+            return trimmed.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.')
+                && !trimmed.StartsWith('-')
+                && !trimmed.EndsWith('-');
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -576,12 +599,9 @@ public sealed class Namespace
     /// </summary>
     private static (bool HasListen, bool HasSend, bool HasManage) DetectConnectionStringPermissions(string connectionString)
     {
-        // Extract SharedAccessKeyName to infer permissions
-        var match = System.Text.RegularExpressions.Regex.Match(
-            connectionString, 
-            @"SharedAccessKeyName=([^;]+)", 
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        
+        // Extract SharedAccessKeyName to infer permissions (uses pre-compiled Regex)
+        var match = SharedAccessKeyNameRegex.Match(connectionString);
+
         if (!match.Success)
         {
             // No key name found, assume all permissions (for backward compatibility)
@@ -591,11 +611,9 @@ public sealed class Namespace
         var keyName = match.Groups[1].Value.ToLowerInvariant();
 
         // Detect LIMITED permissions based on common naming patterns
-        // Only flag as limited if the name explicitly indicates restricted access
         var explicitlyListenOnly = keyName.Contains("listen") && !keyName.Contains("send") && !keyName.Contains("manage");
         var explicitlySendOnly = keyName.Contains("send") && !keyName.Contains("manage") && !keyName.Contains("listen");
-        
-        // If the name clearly indicates "manage" or "root" or doesn't match any pattern, assume full permissions
+
         var hasManage = keyName.Contains("manage") || keyName.Contains("root") || (!explicitlyListenOnly && !explicitlySendOnly);
         var hasSend = hasManage || keyName.Contains("send");
         var hasListen = true; // All policies have at least listen permission

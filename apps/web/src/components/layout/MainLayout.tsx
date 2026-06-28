@@ -4,13 +4,16 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { Footer } from './Footer';
+import { DemoModeBanner } from './DemoModeBanner';
 import { MessageFAB } from '@/components/fab';
 import { GuidedTour, isTourCompleted } from '@/components/help/GuidedTour';
 import { CommandPalette } from '@/components/CommandPalette';
 import { KeyboardShortcutsOverlay } from '@/components/KeyboardShortcutsOverlay';
 import { useNamespaces } from '@/hooks/useNamespaces';
+import { useDemoContext } from '@/lib/demo/DemoContext';
 
 export function MainLayout() {
+  const { isDemoMode } = useDemoContext();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
 
@@ -23,14 +26,14 @@ export function MainLayout() {
   // Keyboard shortcuts overlay state
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
-  // Auto-launch tour on first visit
+  // Auto-launch tour on first visit — skip in demo mode
   useEffect(() => {
-    if (!isTourCompleted()) {
+    if (!isDemoMode && !isTourCompleted()) {
       // Small delay so DOM is ready for spotlight targeting
       const timer = setTimeout(() => setTourActive(true), 800);
       return () => clearTimeout(timer);
     }
-  }, []);
+  }, [isDemoMode]);
 
   // Listen for "Take a Tour" event from HelpPage
   const handleStartTour = useCallback(() => setTourActive(true), []);
@@ -82,9 +85,6 @@ export function MainLayout() {
   const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
   // FAB: only in DEV environment with Manage (write) permission — never in UAT/Prod or read-only connections
   const canUseFab = currentNamespace?.environment === 'dev' && currentNamespace?.hasManagePermission === true;
-  const demoParam = searchParams.get('demo');
-  const isDemoMode = demoParam === 'true' || demoParam === 'azure' || demoParam === 'aws' || demoParam === 'gcp';
-  const demoCloudProvider: 'azure' | 'aws' | 'gcp' = demoParam === 'aws' ? 'aws' : demoParam === 'gcp' ? 'gcp' : 'azure';
 
   // Determine entity type and names for FAB
   const entityType: 'queue' | 'topic' = topicName ? 'topic' : 'queue';
@@ -114,6 +114,9 @@ export function MainLayout() {
       {/* Header */}
       <Header />
 
+      {/* Demo Mode Banner — renders only when DemoModeProvider is active */}
+      <DemoModeBanner />
+
       {/* Main Content Area */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
@@ -125,16 +128,16 @@ export function MainLayout() {
         </main>
       </div>
 
-      {/* FAB - Show on messages page in DEV with Manage permission OR in demo mode */}
-      {isMessagesPage && (canUseFab || isDemoMode) && (
+      {/* FAB - Show on messages page in DEV with Manage permission, never in Demo mode */}
+      {isMessagesPage && canUseFab && !isDemoMode && (
         <MessageFAB 
           namespaceId={namespaceId}
           queueName={entityName}
           entityType={entityType}
           topicName={topicName}
           subscriptionName={subscriptionName}
-          environment={currentNamespace?.environment ?? (isDemoMode ? 'dev' : undefined)}
-          cloudProvider={currentNamespace?.cloudProvider ?? (isDemoMode ? demoCloudProvider : undefined)}
+          environment={currentNamespace?.environment}
+          cloudProvider={currentNamespace?.cloudProvider}
           onMessageSent={handleMessageSent}
           onMessagesGenerated={handleMessagesGenerated}
         />

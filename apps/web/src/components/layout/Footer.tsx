@@ -9,7 +9,7 @@ export function Footer() {
         {/* Left: Build Info */}
         <div className="flex items-center gap-3">
           <span className="text-white/70">
-            ServiceHub v3.1.0
+            ServiceHub v{import.meta.env.VITE_APP_VERSION}
           </span>
           <span className="text-white/50">•</span>
           <span className="text-white/70">

@@ -1,8 +1,11 @@
 name: Build and Deploy
 
-# Azure deployment is disabled — credentials (AZURE_APP_SERVICE_NAME,
-# AZURE_PUBLISH_PROFILE) are not configured for local development.
-# Re-enable by restoring the original 'on' triggers when deploying to Azure.
+# Azure App Service deployment workflow.
+# Requires the following GitHub repository secrets:
+#   AZURE_APP_SERVICE_NAME — the App Service name (e.g. my-servicehub)
+#   AZURE_PUBLISH_PROFILE — publish profile XML from Azure Portal
+#
+# Trigger this workflow manually via GitHub Actions → Run workflow.
 on:
   workflow_dispatch:
     inputs:
@@ -87,9 +90,10 @@ jobs:
 
       - name: Health check — verify deployment succeeded
         run: |
-          # APP_URL is constructed from AZURE_APP_SERVICE_NAME secret — operators must configure this
-          # for their own deployment target (Azure App Service, or any custom hostname).
-          APP_URL="https://${{ secrets.AZURE_APP_SERVICE_NAME }}.azurewebsites.net"
+          # APP_URL is constructed from AZURE_APP_SERVICE_NAME secret.
+          # Operators can override this by setting a DEPLOY_URL secret if they
+          # use a custom domain instead of *.azurewebsites.net.
+          APP_URL="${DEPLOY_URL:-https://${{ secrets.AZURE_APP_SERVICE_NAME }}.azurewebsites.net}"
           echo "Checking: ${APP_URL}/health"
 
           for i in 1 2 3 4 5; do

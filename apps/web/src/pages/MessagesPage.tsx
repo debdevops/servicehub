@@ -12,10 +12,7 @@ import { useClientSideInsights, useInsightsSummary } from '@/hooks/useInsights';
 import { useQueues } from '@/hooks/useQueues';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useNamespaces } from '@/hooks/useNamespaces';
-import { generateMockMessages, AI_ISSUES } from '@/lib/mockData';
-import { generateAwsMockMessages } from '@/lib/awsMockData';
-import { generateGcpMockMessages } from '@/lib/gcpMockData';
-import type { Message, ContentType, MessageStatus, QueueType } from '@/lib/mockData';
+import type { Message, ContentType } from '@/lib/mockData';
 import type { Message as APIMessage } from '@/lib/api/types';
 import toast from 'react-hot-toast';
 
@@ -96,15 +93,21 @@ function transformMessage(
 export function MessagesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const demoParam = searchParams.get('demo');
-  const isDemo = demoParam === 'true' || demoParam === 'azure' || demoParam === 'aws' || demoParam === 'gcp';
-  const demoProvider: 'azure' | 'aws' | 'gcp' = demoParam === 'aws' ? 'aws' : demoParam === 'gcp' ? 'gcp' : 'azure';
   const namespaceId = searchParams.get('namespace');
   const queueName = searchParams.get('queue');
   const topicName = searchParams.get('topic');
   const subscriptionName = searchParams.get('subscription');
   const queueTypeParam = searchParams.get('queueType'); // Get queueType from URL
+
+  const demoParam = searchParams.get('demo');
+  const navigate = useNavigate();
+
+  // Redirect legacy demo query parameter URLs to the new structured routes
+  useEffect(() => {
+    if (demoParam === 'azure' || demoParam === 'aws' || demoParam === 'gcp') {
+      navigate(`/demo/${demoParam}`, { replace: true });
+    }
+  }, [demoParam, navigate]);
 
   // Determine entity type and name
   const entityType: 'queue' | 'topic' = topicName ? 'topic' : 'queue';
@@ -115,11 +118,10 @@ export function MessagesPage() {
 
   // Auto-fix invalid namespace ID by redirecting to the first available namespace
   useEffect(() => {
-    if (namespaces && namespaces.length > 0 && namespaceId && !isDemo) {
+    if (namespaces && namespaces.length > 0 && namespaceId) {
       const namespaceExists = namespaces.some(ns => ns.id === namespaceId);
       if (!namespaceExists) {
         // Namespace ID in URL is invalid (likely from previous API session with in-memory storage)
-        // Don't redirect in demo mode — allow mock data to load
         const firstNamespace = namespaces[0];
         if (import.meta.env.DEV) console.warn(`[MessagesPage] Invalid namespace ID "${namespaceId}" - redirecting to "${firstNamespace.id}"`);
         
@@ -133,7 +135,7 @@ export function MessagesPage() {
         });
       }
     }
-  }, [namespaces, namespaceId, searchParams, setSearchParams, isDemo]);
+  }, [namespaces, namespaceId, searchParams, setSearchParams]);
 
   // Selected message for detail panel
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
@@ -167,50 +169,6 @@ export function MessagesPage() {
   useEffect(() => {
     setPaginationState({ skip: 0, allMessages: [] });
   }, [namespaceId, queueName, topicName, subscriptionName, queueTab]);
-
-  // After-demo conversion nudge — fires 90 seconds into demo mode
-  useEffect(() => {
-    if (!isDemo) return;
-    const NUDGE_KEY = 'servicehub_demo_nudge_shown';
-    if (sessionStorage.getItem(NUDGE_KEY)) return; // Only once per session
-
-    const timer = setTimeout(() => {
-      sessionStorage.setItem(NUDGE_KEY, 'true');
-      toast(
-        (t) => (
-          <div className="max-w-xs">
-            <p className="font-semibold text-gray-900 mb-0.5">Ready to connect your real Service Bus?</p>
-            <p className="text-xs text-gray-500 mb-3">
-              See your actual messages, DLQ data, and AI insights on live traffic.
-            </p>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => { navigate('/connect'); toast.dismiss(t.id); }}
-                className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-lg transition-colors"
-              >
-                Connect now →
-              </button>
-              <button
-                onClick={() => toast.dismiss(t.id)}
-                className="px-3 py-1.5 text-gray-500 hover:text-gray-700 text-xs transition-colors"
-              >
-                Keep exploring
-              </button>
-            </div>
-          </div>
-        ),
-        {
-          duration: 15000,
-          id: 'demo-nudge',
-          style: { maxWidth: '320px', padding: '16px' },
-          position: 'bottom-right',
-        }
-      );
-    }, 90000); // 90 seconds
-
-    return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDemo]);
 
   // Fetch messages from API for current tab
   const { data: messagesData, isLoading, error, refetch, isFetching, dataUpdatedAt } = useMessages({
@@ -256,16 +214,6 @@ export function MessagesPage() {
 
   // Extract counts from authoritative metadata
   const getMessageCounts = () => {
-    // In demo mode, calculate counts from demo messages
-    if (isDemo && demoMessages.length > 0) {
-      const activeCount = demoMessages.filter(m => m.queueType === 'active').length;
-      const deadletterCount = demoMessages.filter(m => m.queueType === 'deadletter').length;
-      return {
-        active: activeCount,
-        deadletter: deadletterCount,
-      };
-    }
-    
     if (entityType === 'queue' && queueName) {
       const queue = queuesData?.find(q => q.name === queueName);
       return {
@@ -282,58 +230,6 @@ export function MessagesPage() {
     return { active: 0, deadletter: 0 };
   };
 
-  // Generate demo messages with realistic scenarios - showcase key features
-  const demoMessages = useMemo(() => {
-    if (!isDemo) return [];
-    
-    const messages = demoProvider === 'aws'
-      ? generateAwsMockMessages(50)
-      : demoProvider === 'gcp'
-        ? generateGcpMockMessages(50)
-        : generateMockMessages(50);
-    
-    // Enhance demo messages to showcase features better
-    return messages.map((msg, idx) => {
-      const enhancedMsg = { ...msg };
-      
-      // First 10 messages: make them DLQ errors with consistent AI analysis
-      // Use queueType (not status) to identify non-DLQ messages since status is now
-      // always consistent with queueType after the mockData fix.
-      if (idx < 10 && msg.queueType !== 'deadletter') {
-        enhancedMsg.status = 'error' as MessageStatus;
-        enhancedMsg.queueType = 'deadletter' as QueueType;
-        enhancedMsg.deadLetterReason = msg.deadLetterReason || 'MaxDeliveryCountExceeded';
-        enhancedMsg.deadLetterSource = msg.deadLetterSource || 'PaymentService';
-        enhancedMsg.preview = `[ERROR] ${msg.preview.substring(0, 60)}`;
-        // Ensure AI insight badge is always backed by actual aiAnalysis data
-        if (Math.random() < 0.8) {
-          const template = AI_ISSUES[idx % AI_ISSUES.length];
-          enhancedMsg.hasAIInsight = true;
-          enhancedMsg.aiAnalysis = {
-            issue: template.issue,
-            recommendations: [...template.recommendations],
-            detectedAt: new Date(msg.enqueuedTime.getTime() + 60000),
-          };
-        } else {
-          enhancedMsg.hasAIInsight = false;
-          enhancedMsg.aiAnalysis = undefined;
-        }
-      }
-
-      // Add AI insights to active messages that don't already have them (~50% of remaining)
-      if (enhancedMsg.queueType === 'active' && !enhancedMsg.aiAnalysis && Math.random() < 0.5) {
-        const template = AI_ISSUES[Math.floor(Math.random() * AI_ISSUES.length)];
-        enhancedMsg.hasAIInsight = true;
-        enhancedMsg.aiAnalysis = {
-          issue: template.issue,
-          recommendations: [...template.recommendations],
-          detectedAt: new Date(msg.enqueuedTime.getTime() + Math.floor(Math.random() * 300000 + 30000)),
-        };
-      }
-      
-      return enhancedMsg;
-    });
-  }, [isDemo, demoProvider]);
   const messageCounts = getMessageCounts();
 
   // Build insights from demo messages (they already have AI analysis embedded)
@@ -346,60 +242,13 @@ export function MessagesPage() {
       subscriptionName: subscriptionName || undefined,
       entityType,
     },
-    !!namespaceId && !!entityName && !isLoading && !isDemo
+    !!namespaceId && !!entityName && !isLoading
   );
-  
-  // For demo mode, extract insights directly from messages that have AI analysis
-  const demoInsights = useMemo(() => {
-    if (!isDemo || demoMessages.length === 0) return [];
-    const demoMsgsWithInsights = demoMessages.filter(msg => msg.aiAnalysis);
-    return demoMsgsWithInsights
-      .map((msg, idx) => ({
-        id: `demo-insight-${idx}`,
-        type: 'error-cluster' as const,
-        title: msg.aiAnalysis!.issue.substring(0, 100),
-        description: msg.aiAnalysis!.issue,
-        confidence: {
-          level: 'high' as const,
-          score: 0.95,
-          reasoning: 'Detected from message patterns in demo dataset',
-        },
-        evidence: {
-          sampleSize: demoMsgsWithInsights.length,
-          affectedMessageIds: [msg.id],
-          exampleMessageIds: [msg.id],
-          metrics: [
-            {
-              label: 'Confidence',
-              value: '95%',
-              comparison: 'High confidence pattern match',
-              isAnomaly: false,
-            },
-          ],
-          patternSignature: msg.aiAnalysis!.issue.substring(0, 50),
-        },
-        recommendations: msg.aiAnalysis!.recommendations.map(rec => ({
-          title: rec.substring(0, 50),
-          description: rec,
-          priority: 'immediate' as const,
-        })),
-        timeWindow: {
-          start: msg.enqueuedTime.toISOString(),
-          end: new Date().toISOString(),
-          analysisTimestamp: msg.aiAnalysis!.detectedAt.toISOString(),
-        },
-        scope: {
-          namespaceId: 'demo',
-          queueOrTopicName: 'demo-queue',
-        },
-        status: 'active' as const,
-      }));
-  }, [isDemo, demoMessages]);
   
   // Memoize displayInsights to provide stable reference for dependents
   const displayInsights = useMemo(
-    () => isDemo ? demoInsights : (insights || []),
-    [isDemo, demoInsights, insights]
+    () => insights || [],
+    [insights]
   );
 
   // Fetch AI insights summary for badge (from backend if available)
@@ -430,14 +279,10 @@ export function MessagesPage() {
     return Array.from(ids);
   }, [displayInsights]);
 
-  // Get messages from API or demo data - sort by enqueued time descending (newest first)
-  const messages: Message[] = isDemo
-    ? demoMessages
-        .filter(m => m.queueType === queueTab)
-        .sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime())
-    : paginationState.allMessages
-      .map(msg => transformMessage(msg, insightMessageIds, queueTab))
-      .sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime());
+  // Get messages from API - sort by enqueued time descending (newest first)
+  const messages: Message[] = paginationState.allMessages
+    .map(msg => transformMessage(msg, insightMessageIds, queueTab))
+    .sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime());
 
   // Find selected message
   const selectedMessage = useMemo(
@@ -595,7 +440,7 @@ export function MessagesPage() {
   }
 
   // Empty state (no namespace/queue selected)
-  if (!isDemo && (!namespaceId || !entityName)) {
+  if (!namespaceId || !entityName) {
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md p-8">
@@ -611,63 +456,6 @@ export function MessagesPage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden relative" data-tour="messages-area">
-      {/* Demo Mode Banner */}
-      {isDemo && (
-        <div className={`border-b px-4 py-3 flex items-center justify-between shrink-0 ${
-          demoProvider === 'aws'
-            ? 'bg-gradient-to-r from-orange-50 to-amber-50 border-orange-200'
-            : demoProvider === 'gcp'
-              ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200'
-              : 'bg-gradient-to-r from-sky-50 to-blue-50 border-sky-200'
-        }`}>
-          <div className="flex items-center gap-2">
-            <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-white text-xs font-bold ${
-              demoProvider === 'aws' ? 'bg-orange-500' : demoProvider === 'gcp' ? 'bg-green-600' : 'bg-sky-600'
-            }`}>▶</span>
-            <div>
-              <p className={`text-sm font-semibold ${
-                demoProvider === 'aws' ? 'text-orange-900' : demoProvider === 'gcp' ? 'text-green-900' : 'text-sky-900'
-              }`}>
-                {demoProvider === 'aws'
-                  ? '🟠 AWS SQS Demo — AcmeRetail E-Commerce Platform (50 messages)'
-                  : demoProvider === 'gcp'
-                    ? '🟢 GCP Pub/Sub Demo — MedStream Healthcare Analytics (50 messages)'
-                    : '🔵 Azure Service Bus Demo — Contoso Commerce Platform (50 messages)'}
-              </p>
-              <p className={`text-xs mt-0.5 ${
-                demoProvider === 'aws' ? 'text-orange-700' : demoProvider === 'gcp' ? 'text-green-700' : 'text-sky-700'
-              }`}>
-                {demoProvider === 'aws'
-                  ? 'SQS queues · Standard & FIFO · Dead-Letter · SNS topic tracing · IAM auth'
-                  : demoProvider === 'gcp'
-                    ? 'Pub/Sub topics · Subscriptions · Dead-Letter Topics · Ack deadline monitor'
-                    : 'Queues · Topics/Subscriptions · Dead-Letter · Correlation ID · Auto-replay rules'}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => navigate(`/messages?demo=${demoParam ?? 'azure'}&queueType=deadletter`)}
-              className={`text-xs font-medium px-2.5 py-1 rounded transition-colors ${
-                demoProvider === 'aws' ? 'text-orange-700 hover:bg-orange-100' : demoProvider === 'gcp' ? 'text-green-700 hover:bg-green-100' : 'text-sky-700 hover:bg-sky-100'
-              }`}
-              title="View Dead-Letter Queue"
-            >
-              📬 View DLQ
-            </button>
-            <button
-              onClick={() => navigate('/connect')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors ${
-                demoProvider === 'aws' ? 'text-orange-700 hover:bg-orange-100' : demoProvider === 'gcp' ? 'text-green-700 hover:bg-green-100' : 'text-sky-700 hover:bg-sky-100'
-              }`}
-              title="Return to Connect page"
-            >
-              <X className="w-3.5 h-3.5" />
-              <span>Exit Demo</span>
-            </button>
-          </div>
-        </div>
-      )}
       {/* Toolbar */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shrink-0">
         {/* Search */}

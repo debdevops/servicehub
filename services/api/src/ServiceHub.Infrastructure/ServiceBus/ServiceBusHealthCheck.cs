@@ -61,10 +61,21 @@ public sealed class ServiceBusHealthCheck : IHealthCheck
             }
 
             var healthyCount = 0;
+            var skippedCount = 0;
             var unhealthyNamespaces = new List<string>();
 
             foreach (var ns in namespaces)
             {
+                // Only Azure Service Bus namespaces are checked here.
+                // AWS/GCP namespaces use provider-specific connectivity and
+                // must not be tested with the Azure SDK client cache —
+                // doing so throws FormatException on non-Azure connection strings.
+                if (ns.Provider != ServiceHub.Core.Enums.CloudProviderType.Azure)
+                {
+                    skippedCount++;
+                    continue;
+                }
+
                 var result = await CheckNamespaceHealthAsync(ns.Id, ns.ConnectionString, cancellationToken)
                     .ConfigureAwait(false);
 
@@ -78,30 +89,44 @@ public sealed class ServiceBusHealthCheck : IHealthCheck
                 }
             }
 
+            var azureNamespaceCount = namespaces.Count - skippedCount;
+
             data["HealthyNamespaces"] = healthyCount;
             data["UnhealthyNamespaces"] = unhealthyNamespaces.Count;
+
+            if (skippedCount > 0)
+            {
+                data["SkippedNamespaces"] = skippedCount;
+            }
 
             if (unhealthyNamespaces.Count > 0)
             {
                 data["UnhealthyNamespaceNames"] = string.Join(", ", unhealthyNamespaces);
             }
 
-            if (unhealthyNamespaces.Count == namespaces.Count)
+            if (azureNamespaceCount == 0)
+            {
+                return HealthCheckResult.Healthy(
+                    "No Azure Service Bus namespaces configured — health check skipped.",
+                    data: data);
+            }
+
+            if (unhealthyNamespaces.Count == azureNamespaceCount)
             {
                 return HealthCheckResult.Unhealthy(
-                    "All Service Bus namespaces are unhealthy.",
+                    "All Azure Service Bus namespaces are unhealthy.",
                     data: data);
             }
 
             if (unhealthyNamespaces.Count > 0)
             {
                 return HealthCheckResult.Degraded(
-                    $"{unhealthyNamespaces.Count} of {namespaces.Count} namespaces are unhealthy.",
+                    $"{unhealthyNamespaces.Count} of {azureNamespaceCount} Azure Service Bus namespaces are unhealthy.",
                     data: data);
             }
 
             return HealthCheckResult.Healthy(
-                $"All {namespaces.Count} Service Bus namespaces are healthy.",
+                $"All {azureNamespaceCount} Azure Service Bus namespace(s) are healthy.",
                 data: data);
         }
         catch (Exception ex)
