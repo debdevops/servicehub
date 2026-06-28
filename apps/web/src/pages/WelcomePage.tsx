@@ -42,7 +42,7 @@ const CLOUD_PROVIDERS = [
       'Correlation ID tracing',
       '30-day DLQ history',
     ],
-    demoUrl: '/messages?demo=azure',
+    demoUrl: '/demo/azure',
     demoLabel: '▶ Open Azure Demo (50 messages)',
     demoColor: 'bg-blue-600 hover:bg-blue-700',
     status: 'production',
@@ -68,7 +68,7 @@ const CLOUD_PROVIDERS = [
       'Message attribute filtering',
       'IAM & STS auth support',
     ],
-    demoUrl: '/messages?demo=aws',
+    demoUrl: '/demo/aws',
     demoLabel: '▶ Open AWS Demo (50 messages)',
     demoColor: 'bg-orange-500 hover:bg-orange-600',
     status: 'preview',
@@ -94,7 +94,7 @@ const CLOUD_PROVIDERS = [
       'FHIR & HL7 schema analysis',
       'Workload Identity support',
     ],
-    demoUrl: '/messages?demo=gcp',
+    demoUrl: '/demo/gcp',
     demoLabel: '▶ Open GCP Demo (50 messages)',
     demoColor: 'bg-green-600 hover:bg-green-700',
     status: 'preview',
@@ -269,7 +269,7 @@ export function WelcomePage() {
             <p className="text-xs text-gray-400 font-medium uppercase tracking-widest">Try a live demo — no credentials needed</p>
             <div className="flex flex-wrap items-center justify-center gap-3">
               <button
-                onClick={() => navigate('/messages?demo=azure')}
+                onClick={() => navigate('/demo/azure')}
                 className="inline-flex items-center gap-2 px-5 py-2.5 bg-white hover:bg-sky-50 border border-sky-200 hover:border-sky-400 text-gray-800 text-sm font-semibold rounded-xl transition-all shadow-sm"
               >
                 <span className="w-6 h-6 bg-blue-600 rounded-md flex items-center justify-center text-[10px] font-black text-white">Az</span>
@@ -743,7 +743,7 @@ export function WelcomePage() {
             {CLOUD_PROVIDERS.map((p) => (
               <button
                 key={p.id}
-                onClick={() => navigate(p.id === 'aws' ? '/demo/aws' : p.id === 'gcp' ? '/demo/gcp' : p.demoUrl)}
+                onClick={() => navigate(p.demoUrl)}
                 className={`group p-6 rounded-2xl border-2 bg-gradient-to-b ${p.bgGradient} ${p.borderColor} text-left hover:shadow-lg transition-all duration-200`}
               >
                 <div className={`w-12 h-12 ${p.iconBg} rounded-xl flex items-center justify-center mb-4 shadow-md group-hover:scale-110 transition-transform`}>
