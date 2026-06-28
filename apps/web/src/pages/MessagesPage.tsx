@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useDeferredValue } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause } from 'lucide-react';
 import { MessageList, MessageDetailPanel, type QueueTab } from '@/components/messages';
@@ -98,6 +98,16 @@ export function MessagesPage() {
   const topicName = searchParams.get('topic');
   const subscriptionName = searchParams.get('subscription');
   const queueTypeParam = searchParams.get('queueType'); // Get queueType from URL
+
+  const demoParam = searchParams.get('demo');
+  const navigate = useNavigate();
+
+  // Redirect legacy demo query parameter URLs to the new structured routes
+  useEffect(() => {
+    if (demoParam === 'azure' || demoParam === 'aws' || demoParam === 'gcp') {
+      navigate(`/demo/${demoParam}`, { replace: true });
+    }
+  }, [demoParam, navigate]);
 
   // Determine entity type and name
   const entityType: 'queue' | 'topic' = topicName ? 'topic' : 'queue';
