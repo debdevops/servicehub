@@ -795,9 +795,9 @@ export function ConnectPage() {
               </p>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { label: 'Azure', sub: 'Service Bus · Contoso', url: '/messages?demo=azure', color: 'bg-blue-600 hover:bg-blue-700' },
-                  { label: 'AWS', sub: 'SQS · AcmeRetail', url: '/messages?demo=aws', color: 'bg-orange-500 hover:bg-orange-600' },
-                  { label: 'GCP', sub: 'Pub/Sub · MedStream', url: '/messages?demo=gcp', color: 'bg-green-600 hover:bg-green-700' },
+                  { label: 'Azure', sub: 'Service Bus · Contoso', url: '/demo/azure', color: 'bg-blue-600 hover:bg-blue-700' },
+                  { label: 'AWS', sub: 'SQS · AcmeRetail', url: '/demo/aws', color: 'bg-orange-500 hover:bg-orange-600' },
+                  { label: 'GCP', sub: 'Pub/Sub · MedStream', url: '/demo/gcp', color: 'bg-green-600 hover:bg-green-700' },
                 ].map(({ label, sub, url, color }) => (
                   <button
                     key={label}

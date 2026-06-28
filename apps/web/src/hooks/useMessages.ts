@@ -1,57 +1,79 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { messagesApi } from '@/lib/api/messages';
-import { GetMessagesParams, ApiError } from '@/lib/api/types';
+import { GetMessagesParams, PaginatedResponse, Message, ApiError } from '@/lib/api/types';
+import { useDemoContext } from '@/lib/demo/DemoContext';
+import { getMockMessages } from '@/lib/demo/mockProviders';
 import toast from 'react-hot-toast';
 
 /**
- * Sanitize queue name to ensure $deadletterqueue suffix is not passed
+ * Sanitize queue/topic name to ensure $deadletterqueue suffix is not passed
  */
 function sanitizeQueueName(name: string): string {
   return name.replace(/\/?\$deadletterqueue$/i, '');
 }
 
 export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean }) {
-  // Sanitize the queue/topic name
-  const sanitizedParams = {
-    ...params,
-    queueOrTopicName: sanitizeQueueName(params.queueOrTopicName),
-  };
-  
-  return useQuery({
-    queryKey: ['messages', sanitizedParams],
-    queryFn: async () => {
-      try {
-        return await messagesApi.list(sanitizedParams);
-      } catch (error: unknown) {
-        // For 404s or Service Bus connectivity errors, return empty result
-        // instead of throwing. This prevents toast spam from background polling
-        // when the Service Bus namespace is unavailable.
-        const status = (error as ApiError)?.response?.status;
-        if (status === 404 || status === 502 || status === 503) {
-          return { items: [], totalCount: 0, hasMore: false };
-        }
-        throw error;
+  const { isDemoMode, cloudProvider } = useDemoContext();
+
+  const sanitizedName = sanitizeQueueName(params.queueOrTopicName);
+
+  const options = isDemoMode && cloudProvider
+    ? {
+        queryKey: ['messages', 'demo', cloudProvider, sanitizedName, params.queueType, params.skip] as const,
+        queryFn: (): Promise<PaginatedResponse<Message>> => Promise.resolve(
+          getMockMessages(
+            cloudProvider,
+            sanitizedName,
+            params.queueType ?? 'active',
+            params.skip ?? 0,
+            params.take ?? 50,
+          )
+        ),
+        enabled: !!sanitizedName,
+        staleTime: Infinity as number,
+        refetchInterval: false as const,
+        refetchIntervalInBackground: false,
+        retry: false as const,
       }
-    },
-    enabled: !!sanitizedParams.namespaceId && !!sanitizedParams.queueOrTopicName,
-    staleTime: 10_000,
-    refetchInterval: params.autoRefresh !== false ? 30_000 : false,
-    refetchIntervalInBackground: false,
-    retry: (failureCount, error: ApiError) => {
-      // Don't retry on 404 errors (entity not found)
-      if (error?.response?.status === 404) return false;
-      // Don't retry on 401/403 (auth errors)
-      if (error?.response?.status === 401 || error?.response?.status === 403) return false;
-      // Don't retry on rate-limit errors — retrying makes the storm worse
-      if (error?.response?.status === 429) return false;
-      // Don't retry on Service Bus connectivity errors
-      if ((error?.response?.status ?? 0) >= 500) return false;
-      return failureCount < 2;
-    },
-    meta: {
-      errorMessage: false, // Suppress automatic error toasts for 404s
-    },
-  });
+    : {
+        queryKey: ['messages', { ...params, queueOrTopicName: sanitizedName }] as const,
+        queryFn: async (): Promise<PaginatedResponse<Message>> => {
+          try {
+            return await messagesApi.list({ ...params, queueOrTopicName: sanitizedName });
+          } catch (error: unknown) {
+            const status = (error as ApiError)?.response?.status;
+            if (status === 404 || status === 502 || status === 503) {
+              return {
+                items: [],
+                totalCount: 0,
+                page: 1,
+                pageSize: params.take ?? 50,
+                hasNextPage: false,
+                hasPreviousPage: false,
+              };
+            }
+            throw error;
+          }
+        },
+        enabled: !!params.namespaceId && !!sanitizedName,
+        staleTime: 10_000,
+        refetchInterval: params.autoRefresh !== false ? 30_000 : (false as const),
+        refetchIntervalInBackground: false,
+        retry: (failureCount: number, error: ApiError) => {
+          if (error?.response?.status === 404) return false;
+          if (error?.response?.status === 401 || error?.response?.status === 403) return false;
+          if (error?.response?.status === 429) return false;
+          if ((error?.response?.status ?? 0) >= 500) return false;
+          return failureCount < 2;
+        },
+        meta: {
+          errorMessage: false,
+        },
+      };
+
+  return useQuery<PaginatedResponse<Message>, ApiError>(
+    options as Parameters<typeof useQuery<PaginatedResponse<Message>, ApiError>>[0]
+  );
 }
 
 export function useMessage(namespaceId: string, messageId: string) {
@@ -87,7 +109,6 @@ export function useSendMessage() {
       entityType?: 'queue' | 'topic';
     }) => messagesApi.send(namespaceId, queueOrTopicName, message, entityType),
     onSuccess: async (_, variables) => {
-      // Invalidate specific queue/topic messages and counts (not all messages)
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ['messages', { namespaceId: variables.namespaceId, queueOrTopicName: variables.queueOrTopicName }],
@@ -101,9 +122,7 @@ export function useSendMessage() {
     },
     onError: (error: ApiError) => {
       const errorMsg = error?.response?.data?.message || error?.message || 'Failed to send message';
-      toast.error(errorMsg, {
-        duration: Infinity, // Force user to acknowledge critical failure
-      });
+      toast.error(errorMsg, { duration: Infinity });
     },
   });
 }
@@ -125,7 +144,6 @@ export function useReplayMessage() {
     }) => 
       messagesApi.replay(namespaceId, sequenceNumber, entityName, subscriptionName),
     onSuccess: async (_, variables) => {
-      // Invalidate specific entity messages and counts (not all messages)
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ['messages', { namespaceId: variables.namespaceId, queueOrTopicName: variables.entityName }],
@@ -138,7 +156,6 @@ export function useReplayMessage() {
       toast.success('Message replayed successfully');
     },
     onError: (error: ApiError) => {
-      // Check if it's a 404 - feature not implemented yet
       if (error?.response?.status === 404) {
         toast.error('Replay feature is not yet available in the API', {
           duration: 4000,
@@ -146,12 +163,8 @@ export function useReplayMessage() {
         });
       } else {
         const errorMsg = error?.response?.data?.message || error?.message || 'Failed to replay message';
-        toast.error(errorMsg, {
-          duration: Infinity, // Force user to acknowledge critical failure
-        });
+        toast.error(errorMsg, { duration: Infinity });
       }
     },
   });
 }
-
-

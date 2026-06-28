@@ -133,6 +133,9 @@ export default defineConfig({
         'src/lib/mockData.ts',
         'src/lib/aiMockData.ts',
         'src/lib/insightsMockData.ts',
+        'src/lib/awsMockData.ts',
+        'src/lib/gcpMockData.ts',
+        'src/lib/azureMockData.ts',
         // test/demo message generator — not application logic
         'src/lib/messageGenerator.ts',
         // TypeScript type definitions only — no runtime code
@@ -144,6 +147,7 @@ export default defineConfig({
         // demo / showcase pages — pure UI display with hardcoded data, no business logic
         'src/pages/AwsDemoPage.tsx',
         'src/pages/GcpDemoPage.tsx',
+        'src/pages/AzureDemoPage.tsx',
         'src/pages/SimulatorPage.tsx',
       ],
       // ── Code Coverage Thresholds ────────────────────────────────────────
