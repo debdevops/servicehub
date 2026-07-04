@@ -22,6 +22,7 @@ const InsightsPageLazy = lazy(() => import('./pages/InsightsPage').then(m => ({ 
 const CloudBridgePageLazy = lazy(() => import('./pages/CloudBridgePage').then(m => ({ default: m.CloudBridgePage })));
 const SimulatorPageLazy = lazy(() => import('./pages/SimulatorPage').then(m => ({ default: m.SimulatorPage })));
 const CrossCloudTracePageLazy = lazy(() => import('./pages/CrossCloudTracePage').then(m => ({ default: m.CrossCloudTracePage })));
+const AuditPageLazy = lazy(() => import('./pages/AuditPage').then(m => ({ default: m.AuditPage })));
 
 // Loading fallback component (co-located here intentionally — used only by router)
 // eslint-disable-next-line react-refresh/only-export-components
@@ -136,6 +137,14 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <CrossCloudTracePageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'audit',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <AuditPageLazy />
       </Suspense>
     ),
   },
@@ -300,6 +309,14 @@ export const router = createBrowserRouter([
         element: (
           <Suspense fallback={<PageLoading />}>
             <CrossCloudTracePageLazy />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'audit',
+        element: (
+          <Suspense fallback={<PageLoading />}>
+            <AuditPageLazy />
           </Suspense>
         ),
       },

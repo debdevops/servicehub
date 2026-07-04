@@ -120,6 +120,46 @@ static async Task ApplySchemaUpgradesAsync(DlqDbContext dbContext, ILogger logge
                 "ALTER TABLE \"AutoReplayRules\" ADD COLUMN \"OwnerId\" TEXT NOT NULL DEFAULT '__spa__'");
             logger.LogInformation("Schema upgrade applied: AutoReplayRules.OwnerId added");
         }
+
+        // Migration: Create AuditLogs table (added in v4.0.0 Persistent Audit Trail)
+        // EnsureCreatedAsync creates this table in new databases; existing databases need the DDL.
+        if (!await TableExistsAsync(connection, "AuditLogs"))
+        {
+            logger.LogWarning("AuditLogs table is missing — applying schema upgrade");
+            await ExecuteNonQueryAsync(connection, """
+                CREATE TABLE IF NOT EXISTS "AuditLogs" (
+                    "Id"            TEXT NOT NULL CONSTRAINT "PK_AuditLogs" PRIMARY KEY,
+                    "Timestamp"     TEXT NOT NULL,
+                    "OwnerId"       TEXT NOT NULL,
+                    "UserIdentity"  TEXT NOT NULL,
+                    "Action"        TEXT NOT NULL,
+                    "Outcome"       TEXT NOT NULL,
+                    "NamespaceId"   TEXT,
+                    "NamespaceName" TEXT,
+                    "EntityName"    TEXT,
+                    "CloudProvider" TEXT,
+                    "Environment"   TEXT,
+                    "ResourceName"  TEXT,
+                    "SequenceNumber" INTEGER,
+                    "DetailsJson"   TEXT,
+                    "ErrorDetails"  TEXT,
+                    "ClientIp"      TEXT,
+                    "UserAgent"     TEXT,
+                    "CorrelationId" TEXT,
+                    "HttpMethod"    TEXT,
+                    "HttpPath"      TEXT
+                );
+                CREATE INDEX IF NOT EXISTS "IX_AuditLogs_Timestamp"
+                    ON "AuditLogs" ("Timestamp");
+                CREATE INDEX IF NOT EXISTS "IX_AuditLogs_Owner_Timestamp"
+                    ON "AuditLogs" ("OwnerId", "Timestamp");
+                CREATE INDEX IF NOT EXISTS "IX_AuditLogs_Owner_Namespace_Timestamp"
+                    ON "AuditLogs" ("OwnerId", "NamespaceId", "Timestamp");
+                CREATE INDEX IF NOT EXISTS "IX_AuditLogs_Action"
+                    ON "AuditLogs" ("Action");
+                """);
+            logger.LogInformation("Schema upgrade applied: AuditLogs table and indexes created");
+        }
     }
     finally
     {
@@ -142,6 +182,20 @@ static async Task<bool> ColumnExistsAsync(
     }
     return false;
 }
+
+static async Task<bool> TableExistsAsync(
+    System.Data.Common.DbConnection connection, string tableName)
+{
+    using var cmd = connection.CreateCommand();
+    cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=@name";
+    var param = cmd.CreateParameter();
+    param.ParameterName = "@name";
+    param.Value = tableName;
+    cmd.Parameters.Add(param);
+    var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+    return count > 0;
+}
+
 
 static async Task ExecuteNonQueryAsync(System.Data.Common.DbConnection connection, string sql)
 {

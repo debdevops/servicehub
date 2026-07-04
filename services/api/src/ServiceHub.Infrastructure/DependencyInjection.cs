@@ -167,8 +167,15 @@ public static class DependencyInjection
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();
         services.TryAddScoped<IForensicEngine, ForensicEngine>();
 
+        // Audit Trail — registered as singleton so the channel is shared across all
+        // request scopes. The BackgroundService lifetime matches the application lifetime.
+        services.AddSingleton<AuditService>();
+        services.AddSingleton<IAuditService>(sp => sp.GetRequiredService<AuditService>());
+        services.AddHostedService(sp => sp.GetRequiredService<AuditService>());
+
         return services;
     }
+
 
     /// <summary>
     /// Adds webhook notification services.

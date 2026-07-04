@@ -663,7 +663,7 @@ public sealed class QueuesController : ApiControllerBase
         // Cancelling a scheduled message requires Send permission
         if (!ns.HasSendPermission)
         {
-            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Denied", namespaceId, ns.Environment, queueName, sequenceNumber, "Namespace lacks Send permission");
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Denied", namespaceId, ns.Environment, entityName: queueName, sequenceNumber: sequenceNumber, detail: "Namespace lacks Send permission");
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Insufficient Permissions",
@@ -673,7 +673,7 @@ public sealed class QueuesController : ApiControllerBase
         // Production safety guard
         if (ns.Environment == EnvironmentType.Prod)
         {
-            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Denied", namespaceId, ns.Environment, queueName, sequenceNumber, "Cancel scheduled blocked in production environment");
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Denied", namespaceId, ns.Environment, entityName: queueName, sequenceNumber: sequenceNumber, detail: "Cancel scheduled blocked in production environment");
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Production Restriction",
@@ -696,11 +696,11 @@ public sealed class QueuesController : ApiControllerBase
 
         if (result.IsFailure)
         {
-            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Failed", namespaceId, ns.Environment, queueName, sequenceNumber, result.Error.Message);
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Failed", namespaceId, ns.Environment, entityName: queueName, sequenceNumber: sequenceNumber, detail: result.Error.Message);
             return ToActionResult(result);
         }
 
-        _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Succeeded", namespaceId, ns.Environment, queueName, sequenceNumber, "Scheduled message cancelled");
+        _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Succeeded", namespaceId, ns.Environment, entityName: queueName, sequenceNumber: sequenceNumber, detail: "Scheduled message cancelled");
 
         _logger.LogInformation(
             "Cancelled scheduled message {SequenceNumber} in queue {QueueName}",
