@@ -251,7 +251,7 @@ function Row({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function AuditPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const urlNamespaceId = searchParams.get('namespace') || undefined;
 
   const { data: namespaces } = useNamespaces();
