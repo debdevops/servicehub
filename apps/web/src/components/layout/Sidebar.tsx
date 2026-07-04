@@ -671,6 +671,20 @@ export function Sidebar() {
             <span className="flex-1 text-left">Security &amp; Privacy</span>
           </NavLink>
           <NavLink
+            to={`${navPrefix}/audit`}
+            className={({ isActive }) =>
+              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                isActive
+                  ? 'bg-violet-50 text-violet-700 border-violet-300 font-medium'
+                  : 'bg-white hover:bg-violet-50 text-gray-700 hover:text-violet-700 border-gray-200 hover:border-violet-300'
+              }`
+            }
+          >
+            <Shield className="w-4 h-4 text-violet-500" />
+            <span className="flex-1 text-left">Audit Trail</span>
+            <span className="text-xs text-violet-600 font-medium">Logs</span>
+          </NavLink>
+          <NavLink
             to={`${navPrefix}/cloud-bridge`}
             className={({ isActive }) =>
               `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${

@@ -312,4 +312,17 @@ public static class ApiRoutes
         /// <summary>Route for executing a trace lookup.</summary>
         public const string Trace = $"{Base}/{{traceId}}";
     }
+
+    /// <summary>Routes for the persistent audit trail.</summary>
+    public static class Audit
+    {
+        /// <summary>Base route for audit log operations.</summary>
+        public const string Base = $"{VersionedBase}/audit";
+
+        /// <summary>Route for exporting audit logs as CSV or JSON.</summary>
+        public const string Export = $"{Base}/export";
+
+        /// <summary>Route for audit trail summary statistics.</summary>
+        public const string Summary = $"{Base}/summary";
+    }
 }
