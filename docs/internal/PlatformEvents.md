@@ -1,6 +1,6 @@
 # ServiceHub — Internal Platform Events
 
-> **Status:** Phase 1 Foundation — bus wired, no publishers, no subscribers.  
+> **Status:** Phase 2 — Namespace publishers live. No subscribers yet.  
 > **Location:** `docs/internal/PlatformEvents.md`
 
 ---
@@ -244,3 +244,50 @@ supports schema-on-read querying without per-event-type projections.
 - No external broker.
 - No changes to `DlqMonitorWorker`, `AutoReplayExecutor`, `RulesController`,
   `NamespacesController`, `AuditService`, or `WebhookNotifier`.
+
+---
+
+## Phase 2 — Namespace Publishers
+
+### Current Publishers
+
+| Publisher | File | Event Published | Publish Gate |
+|---|---|---|---|
+| `NamespacesController.Create` | `Api/Controllers/V1/NamespacesController.cs` | `servicehub.namespace.created.v1` | `AddAsync` returns `IsSuccess` |
+| `NamespacesController.Delete` | `Api/Controllers/V1/NamespacesController.cs` | `servicehub.namespace.deleted.v1` | `DeleteAsync` returns `IsSuccess` |
+
+Both publishers respect the **publish-after-commit** rule. No event is ever published
+if the underlying repository operation fails.
+
+`IPlatformEventBus` is injected as an **optional constructor parameter** (`IPlatformEventBus? eventBus = null`),
+consistent with the `IAuditLogger` injection pattern already in the codebase.
+When `null` (e.g. in unit tests that do not inject the bus), the publish block is skipped entirely.
+
+Debug-level log lines are emitted on every successful publish:
+```
+Published Platform Event {EventType} for NamespaceId {NamespaceId} CorrelationId {CorrelationId}
+```
+Payload contents and secrets are never logged.
+
+### Current Subscribers
+
+**None.** Events flow through the bus and are discarded by the drain loop.
+This is intentional — Phase 2 proves the publisher wiring without any side effects.
+
+### Future Publishers
+
+The following publish sites are identified but **not yet wired**. They will be added
+in Phase 3 and beyond:
+
+| Future Publisher | Event | Phase |
+|---|---|---|
+| `DlqMonitorWorker` (scan loop) | `servicehub.dlq.message.detected.v1` | Phase 3 |
+| `DlqMonitorWorker` (scan loop) | `servicehub.dlq.spike.detected.v1` | Phase 3 |
+| `AutoReplayExecutor.ExecuteAsync` | `servicehub.replay.completed.v1` | Phase 3 |
+| `DlqMonitorWorker` (rule-match loop) | `servicehub.rule.matched.v1` | Phase 3 |
+| `NamespacesController.TestConnection` | `servicehub.namespace.connection.validated.v1` | Phase 4 |
+
+> **Note on `TestConnection`:** The endpoint exists at `GET {id}/test` and
+> `POST {id}/test-connection`. A `servicehub.namespace.connection.validated.v1`
+> event type should be added to `EventTypes.cs` in Phase 4 before this publisher is wired.
+> No payload class is needed in Phase 2.

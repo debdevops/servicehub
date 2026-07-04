@@ -6,6 +6,8 @@ using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Events;
+using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
@@ -25,6 +27,7 @@ public sealed class NamespacesController : ApiControllerBase
     private readonly IServiceBusClientCache _clientCache;
     private readonly IConnectionStringProtector _connectionStringProtector;
     private readonly IAuditLogger _auditLogger;
+    private readonly IPlatformEventBus? _eventBus;
     private readonly ILogger<NamespacesController> _logger;
 
     /// <summary>
@@ -36,21 +39,32 @@ public sealed class NamespacesController : ApiControllerBase
     /// <param name="connectionStringProtector">The connection string protector.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="auditLogger">The security audit logger.</param>
+    /// <param name="eventBus">The platform event bus. Optional — omitted in test contexts.</param>
     public NamespacesController(
         INamespaceRepository namespaceRepository,
         IServiceBusClientFactory clientFactory,
         IServiceBusClientCache clientCache,
         IConnectionStringProtector connectionStringProtector,
         ILogger<NamespacesController> logger,
-        IAuditLogger? auditLogger = null)
+        IAuditLogger? auditLogger = null,
+        IPlatformEventBus? eventBus = null)
     {
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
         _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
         _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
+        _eventBus = eventBus;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
+
+    /// <summary>
+    /// Gets the correlation ID for the current request from the HTTP context.
+    /// Set by <c>CorrelationIdMiddleware</c> into <c>HttpContext.Items["CorrelationId"]</c>.
+    /// Returns null when running outside a full HTTP pipeline (e.g. unit tests).
+    /// </summary>
+    private string? CorrelationId =>
+        HttpContext.Items.TryGetValue("CorrelationId", out var v) && v is string s ? s : null;
 
     /// <summary>
     /// Creates a new namespace configuration.
@@ -175,6 +189,41 @@ public sealed class NamespacesController : ApiControllerBase
         var response = MapToResponse(ns);
 
         _logger.LogInformation("Namespace {NamespaceId} created successfully", ns.Id);
+
+        // Publish after commit — only fires when AddAsync has durably succeeded.
+        if (_eventBus is not null)
+        {
+            var payload = new NamespaceCreatedPayload
+            {
+                NamespaceId = ns.Id,
+                NamespaceName = ns.Name,
+                DisplayName = ns.DisplayName,
+                CloudProvider = ns.Provider.ToString().ToLowerInvariant(),
+                AuthType = ns.AuthType.ToString(),
+                OwnerId = ns.OwnerId,
+            };
+
+            var evt = new PlatformEvent
+            {
+                Source = "ServiceHub.Api.Controllers.V1.NamespacesController",
+                Category = EventCategories.Namespace,
+                EventType = EventTypes.NamespaceCreated,
+                Severity = EventSeverity.Info,
+                CloudProvider = ns.Provider.ToString().ToLowerInvariant(),
+                NamespaceId = ns.Id,
+                NamespaceName = ns.Name,
+                CorrelationId = CorrelationId,
+                Actor = OwnerId,
+                TargetScope = ns.Name,
+                Payload = payload,
+            };
+
+            await _eventBus.PublishAsync(evt, cancellationToken);
+
+            _logger.LogDebug(
+                "Published Platform Event {EventType} for NamespaceId {NamespaceId} CorrelationId {CorrelationId}",
+                evt.EventType, ns.Id, evt.CorrelationId);
+        }
 
         return CreatedAtAction(
             nameof(GetById),
@@ -473,6 +522,40 @@ public sealed class NamespacesController : ApiControllerBase
             detail: "Namespace deleted");
 
         _logger.LogInformation("Namespace {NamespaceId} deleted successfully", ns.Id);
+
+        // Publish after commit — only fires when DeleteAsync has durably succeeded.
+        if (_eventBus is not null)
+        {
+            var payload = new NamespaceDeletedPayload
+            {
+                NamespaceId = ns.Id,
+                NamespaceName = ns.Name,
+                CloudProvider = ns.Provider.ToString().ToLowerInvariant(),
+                OwnerId = ns.OwnerId,
+            };
+
+            var evt = new PlatformEvent
+            {
+                Source = "ServiceHub.Api.Controllers.V1.NamespacesController",
+                Category = EventCategories.Namespace,
+                EventType = EventTypes.NamespaceDeleted,
+                Severity = EventSeverity.Info,
+                CloudProvider = ns.Provider.ToString().ToLowerInvariant(),
+                NamespaceId = ns.Id,
+                NamespaceName = ns.Name,
+                CorrelationId = CorrelationId,
+                Actor = OwnerId,
+                TargetScope = ns.Name,
+                Payload = payload,
+            };
+
+            await _eventBus.PublishAsync(evt, cancellationToken);
+
+            _logger.LogDebug(
+                "Published Platform Event {EventType} for NamespaceId {NamespaceId} CorrelationId {CorrelationId}",
+                evt.EventType, ns.Id, evt.CorrelationId);
+        }
+
         return NoContent();
     }
 
