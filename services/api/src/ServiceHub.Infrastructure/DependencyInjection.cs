@@ -10,6 +10,7 @@ using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Persistence.InMemory;
 using ServiceHub.Infrastructure.Security;
+using ServiceHub.Infrastructure.Events;
 using ServiceHub.Infrastructure.ServiceBus;
 
 namespace ServiceHub.Infrastructure;
@@ -44,6 +45,9 @@ public static class DependencyInjection
 
         // Webhooks
         services.AddWebhooks(configuration);
+
+        // Platform Events
+        services.AddPlatformEvents();
 
         // Background Services — DlqMonitorWorker is also registered here for
         // direct AddInfrastructure callers that do not call AddBackgroundWorkers separately.
@@ -192,6 +196,39 @@ public static class DependencyInjection
         {
             client.Timeout = TimeSpan.FromSeconds(30);
         });
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds the internal in-process Platform Event bus.
+    /// <para>
+    /// The <see cref="InProcessPlatformEventBus"/> is registered as a singleton so that
+    /// the underlying <see cref="System.Threading.Channels.Channel{T}"/> is shared across
+    /// all request scopes. It is also registered as an
+    /// <see cref="Microsoft.Extensions.Hosting.IHostedService"/> so that its drain loop
+    /// starts with the application — identical to the AuditService registration pattern.
+    /// </para>
+    /// <para>
+    /// No subscribers are wired here. Subscribers are registered in later phases
+    /// by calling <see cref="Core.Interfaces.IPlatformEventBus.Subscribe"/> against the
+    /// resolved singleton during startup.
+    /// </para>
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddPlatformEvents(this IServiceCollection services)
+    {
+        // Register the concrete bus as a singleton.
+        services.AddSingleton<InProcessPlatformEventBus>();
+
+        // Expose IPlatformEventBus to the same singleton instance.
+        services.AddSingleton<Core.Interfaces.IPlatformEventBus>(
+            sp => sp.GetRequiredService<InProcessPlatformEventBus>());
+
+        // Register the drain-loop BackgroundService against the same singleton instance.
+        services.AddHostedService(
+            sp => sp.GetRequiredService<InProcessPlatformEventBus>());
 
         return services;
     }

@@ -1,0 +1,58 @@
+namespace ServiceHub.Core.Events;
+
+/// <summary>
+/// Canonical dotted-name constants for every <see cref="PlatformEvent"/> type
+/// published by ServiceHub.
+/// <para>
+/// Convention: <c>servicehub.{category}.{verb}.{version}</c>
+/// </para>
+/// <para>
+/// Rules:
+/// <list type="bullet">
+///   <item>All lowercase.</item>
+///   <item>Dots as segment separators.</item>
+///   <item>Past-tense verb — events record facts, not commands.</item>
+///   <item>Explicit version suffix — consumers can filter on prefix and ignore newer versions.</item>
+/// </list>
+/// </para>
+/// </summary>
+public static class EventTypes
+{
+    // ── Namespace ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Raised after a new namespace configuration is successfully persisted.
+    /// </summary>
+    public const string NamespaceCreated = "servicehub.namespace.created.v1";
+
+    /// <summary>
+    /// Raised after a namespace configuration is successfully removed.
+    /// </summary>
+    public const string NamespaceDeleted = "servicehub.namespace.deleted.v1";
+
+    // ── DLQ ───────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Raised when the DLQ monitor detects one or more new messages in a dead-letter queue.
+    /// </summary>
+    public const string DlqMessageDetected = "servicehub.dlq.message.detected.v1";
+
+    /// <summary>
+    /// Raised when the DLQ monitor detects a volume spike above the configured threshold.
+    /// </summary>
+    public const string DlqSpikeDetected = "servicehub.dlq.spike.detected.v1";
+
+    // ── Replay ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Raised after a DLQ message replay attempt completes (success or failure).
+    /// </summary>
+    public const string ReplayCompleted = "servicehub.replay.completed.v1";
+
+    // ── Rule ──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Raised when an auto-replay rule matches a DLQ message and an action is taken.
+    /// </summary>
+    public const string RuleMatched = "servicehub.rule.matched.v1";
+}
