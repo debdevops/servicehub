@@ -1,5 +1,6 @@
 using ServiceHub.Api.Extensions;
 using ServiceHub.Api.Logging;
+using ServiceHub.Infrastructure;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Simulator;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -54,6 +55,11 @@ if (builder.Environment.IsEnvironment("Simulator"))
 }
 
 var app = builder.Build();
+
+// Wire Platform Event subscribers before any hosted service starts.
+// This registers WebhookDlqSpikeHandler (and future handlers) with the
+// InProcessPlatformEventBus singleton drain loop.
+app.Services.SubscribePlatformEventHandlers();
 
 // Forwarded headers must be first in pipeline (before any middleware that reads client IP)
 app.UseForwardedHeaders();

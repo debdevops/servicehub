@@ -11,6 +11,7 @@ using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Persistence.InMemory;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Infrastructure.Events;
+using ServiceHub.Infrastructure.Events.Handlers;
 using ServiceHub.Infrastructure.ServiceBus;
 
 namespace ServiceHub.Infrastructure;
@@ -210,9 +211,8 @@ public static class DependencyInjection
     /// starts with the application — identical to the AuditService registration pattern.
     /// </para>
     /// <para>
-    /// No subscribers are wired here. Subscribers are registered in later phases
-    /// by calling <see cref="Core.Interfaces.IPlatformEventBus.Subscribe"/> against the
-    /// resolved singleton during startup.
+    /// Subscriber handlers are registered as singletons and wired to the bus here
+    /// via <see cref="Core.Interfaces.IPlatformEventBus.Subscribe"/>.
     /// </para>
     /// </summary>
     /// <param name="services">The service collection.</param>
@@ -230,6 +230,27 @@ public static class DependencyInjection
         services.AddHostedService(
             sp => sp.GetRequiredService<InProcessPlatformEventBus>());
 
+        // ── Subscribers ───────────────────────────────────────────────────────
+
+        // WebhookDlqSpikeHandler bridges DlqSpikeDetected events to IWebhookNotifier.
+        // Registered as a singleton; creates its own DI scope per invocation to
+        // safely resolve the scoped IWebhookNotifier dependency.
+        services.AddSingleton<WebhookDlqSpikeHandler>();
+
         return services;
+    }
+
+    /// <summary>
+    /// Wires all registered Platform Event subscribers to the bus.
+    /// Must be called once after the <see cref="IServiceProvider"/> is built,
+    /// typically from the application startup (e.g. <c>Program.cs</c> or
+    /// a hosted service startup hook).
+    /// </summary>
+    /// <param name="serviceProvider">The built service provider.</param>
+    public static void SubscribePlatformEventHandlers(this IServiceProvider serviceProvider)
+    {
+        var bus = serviceProvider.GetRequiredService<Core.Interfaces.IPlatformEventBus>();
+        var webhookHandler = serviceProvider.GetRequiredService<WebhookDlqSpikeHandler>();
+        bus.Subscribe(webhookHandler.HandleAsync);
     }
 }
