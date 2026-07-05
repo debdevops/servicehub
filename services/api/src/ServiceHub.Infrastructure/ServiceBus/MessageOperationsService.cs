@@ -12,12 +12,22 @@ using ServiceHub.Infrastructure.Routing;
 
 namespace ServiceHub.Infrastructure.ServiceBus;
 
+/// <summary>
+/// Coordinates message operations by resolving the namespace's cloud provider
+/// and delegating to the provider-specific sender/receiver implementations.
+/// </summary>
 public sealed class MessageOperationsService : IMessageOperationsService
 {
     private readonly CloudProviderRouter _router;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly ILogger<MessageOperationsService> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="MessageOperationsService"/>.
+    /// </summary>
+    /// <param name="router">Router used to resolve cloud providers.</param>
+    /// <param name="namespaceRepository">Repository for looking up namespace metadata.</param>
+    /// <param name="logger">Logger instance.</param>
     public MessageOperationsService(
         CloudProviderRouter router,
         INamespaceRepository namespaceRepository,
@@ -28,16 +38,35 @@ public sealed class MessageOperationsService : IMessageOperationsService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <summary>
+    /// Sends a single message to the namespace/entity described in <paramref name="request"/>.
+    /// </summary>
+    /// <param name="request">The send request containing namespace, entity and payload.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A <see cref="Result"/> indicating success or failure.</returns>
     public Task<Result> SendAsync(SendMessageRequest request, CancellationToken cancellationToken = default)
     {
         return SendInternalAsync(request, cancellationToken);
     }
 
+    /// <summary>
+    /// Sends a batch of messages to a single namespace/entity. All requests in the batch
+    /// must target the same namespace.
+    /// </summary>
+    /// <param name="requests">The collection of send requests.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A <see cref="Result"/> indicating success or failure.</returns>
     public Task<Result> SendBatchAsync(IEnumerable<SendMessageRequest> requests, CancellationToken cancellationToken = default)
     {
         return SendBatchInternalAsync(requests, cancellationToken);
     }
 
+    /// <summary>
+    /// Peeks messages from the active queue/subscription without removing them.
+    /// </summary>
+    /// <param name="request">Request describing namespace and entity to peek from.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A list of messages or a failure result.</returns>
     public Task<Result<IReadOnlyList<Message>>> PeekMessagesAsync(GetMessagesRequest request, CancellationToken cancellationToken = default)
     {
         return PeekMessagesInternalAsync(request, cancellationToken);
@@ -61,37 +90,93 @@ public sealed class MessageOperationsService : IMessageOperationsService
         }
     }
 
+    /// <summary>
+    /// Peeks messages from the dead-letter queue for the specified entity.
+    /// </summary>
+    /// <param name="request">Request describing namespace and entity to peek from.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A list of dead-letter messages or a failure result.</returns>
     public Task<Result<IReadOnlyList<Message>>> PeekDeadLetterMessagesAsync(GetMessagesRequest request, CancellationToken cancellationToken = default)
     {
         return PeekDeadLetterMessagesInternalAsync(request, cancellationToken);
     }
 
+    /// <summary>
+    /// Gets the approximate message count for the specified entity.
+    /// </summary>
+    /// <param name="namespaceId">Namespace identifier.</param>
+    /// <param name="entityName">Entity (queue/topic) name.</param>
+    /// <param name="subscriptionName">Optional subscription name for topics.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The message count or a failure result.</returns>
     public Task<Result<long>> GetMessageCountAsync(Guid namespaceId, string entityName, string? subscriptionName = null, CancellationToken cancellationToken = default)
     {
         return GetMessageCountInternalAsync(namespaceId, entityName, subscriptionName, cancellationToken);
     }
 
+    /// <summary>
+    /// Moves messages matching the request to the dead-letter queue.
+    /// </summary>
+    /// <param name="request">Dead letter request describing namespace/entity and filter.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of messages moved or a failure result.</returns>
     public Task<Result<int>> DeadLetterMessagesAsync(DeadLetterRequest request, CancellationToken cancellationToken = default)
     {
         return DeadLetterMessagesInternalAsync(request, cancellationToken);
     }
 
+    /// <summary>
+    /// Replays a single message from the dead-letter queue back to the active queue.
+    /// </summary>
+    /// <param name="namespaceId">Namespace identifier.</param>
+    /// <param name="entityName">Entity (queue/topic) name.</param>
+    /// <param name="subscriptionName">Optional subscription name for topics.</param>
+    /// <param name="sequenceNumber">Sequence number of the message to replay.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A <see cref="Result"/> indicating success or failure.</returns>
     public Task<Result> ReplayMessageAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, CancellationToken cancellationToken = default)
     {
         return ReplayMessageInternalAsync(namespaceId, entityName, subscriptionName, sequenceNumber, cancellationToken);
     }
 
+    /// <summary>
+    /// Purges a message from either the active or dead-letter queue.
+    /// </summary>
+    /// <param name="namespaceId">Namespace identifier.</param>
+    /// <param name="entityName">Entity (queue/topic) name.</param>
+    /// <param name="subscriptionName">Optional subscription name for topics.</param>
+    /// <param name="sequenceNumber">Sequence number of the message to purge.</param>
+    /// <param name="fromDeadLetter">If true, purge from dead-letter; otherwise purge from active queue.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A <see cref="Result"/> indicating success or failure.</returns>
     public Task<Result> PurgeMessageAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, bool fromDeadLetter, CancellationToken cancellationToken = default)
     {
         return PurgeMessageInternalAsync(namespaceId, entityName, subscriptionName, sequenceNumber, fromDeadLetter, cancellationToken);
     }
 
+    /// <summary>
+    /// Retrieves scheduled messages for the specified entity.
+    /// </summary>
+    /// <param name="namespaceId">Namespace identifier.</param>
+    /// <param name="entityName">Entity (queue/topic) name.</param>
+    /// <param name="subscriptionName">Optional subscription name for topics.</param>
+    /// <param name="maxMessages">Maximum number of scheduled messages to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>List of scheduled messages or a failure result.</returns>
     public Task<Result<IReadOnlyList<Message>>> GetScheduledMessagesAsync(Guid namespaceId, string entityName, string? subscriptionName, int maxMessages, CancellationToken cancellationToken = default)
     {
         return GetScheduledMessagesInternalAsync(namespaceId, entityName, subscriptionName, maxMessages, cancellationToken);
     }
 
     // Private helpers (skeletons)
+    /// <summary>
+    /// Resolves the <see cref="Namespace"/> and its registered <see cref="ICloudMessagingProvider"/>.
+    /// Throws <see cref="InvalidOperationException"/> when the namespace cannot be found or no provider
+    /// is registered for the namespace's provider type.
+    /// </summary>
+    /// <param name="namespaceId">Namespace identifier to resolve.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tuple of resolved <see cref="Namespace"/> and <see cref="ICloudMessagingProvider"/>.</returns>
     private async Task<(Namespace Namespace, ICloudMessagingProvider Provider)> ResolveProviderAsync(
         Guid namespaceId,
         CancellationToken cancellationToken = default)
@@ -146,12 +231,22 @@ public sealed class MessageOperationsService : IMessageOperationsService
         return Result.Failure(Error.Internal(ErrorCodes.General.UnexpectedError, ex.Message));
     }
 
+    /// <summary>
+    /// Returns an <see cref="IMessageReceiver"/> from the resolved provider.
+    /// </summary>
+    /// <param name="provider">Resolved cloud provider.</param>
+    /// <returns>The provider's message receiver implementation.</returns>
     private IMessageReceiver GetReceiver(ICloudMessagingProvider provider)
     {
         if (provider is null) throw new ArgumentNullException(nameof(provider));
         return provider.GetMessageReceiver();
     }
 
+    /// <summary>
+    /// Returns an <see cref="IMessageSender"/> from the resolved provider.
+    /// </summary>
+    /// <param name="provider">Resolved cloud provider.</param>
+    /// <returns>The provider's message sender implementation.</returns>
     private IMessageSender GetSender(ICloudMessagingProvider provider)
     {
         if (provider is null) throw new ArgumentNullException(nameof(provider));
