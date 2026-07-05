@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Events;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.Persistence;
@@ -50,6 +51,7 @@ public sealed class DlqMonitorWorkerTests
         services.AddSingleton(dbContext);
         services.AddSingleton(repoMock.Object);
         services.AddSingleton(Mock.Of<IDlqMonitorService>());
+        services.AddSingleton(Mock.Of<IPlatformEventBus>());
         var sp = services.BuildServiceProvider();
 
         var worker = new DlqMonitorWorker(sp, NullLogger<DlqMonitorWorker>.Instance);
@@ -83,6 +85,11 @@ public sealed class DlqMonitorWorkerTests
         serviceProviderMock.Setup(sp => sp.GetService(typeof(IServiceScopeFactory)))
             .Returns(serviceScopeFactoryMock.Object);
 
+        // IPlatformEventBus is resolved from root provider in constructor — must be present.
+        var eventBusMock = new Mock<IPlatformEventBus>();
+        serviceProviderMock.Setup(sp => sp.GetService(typeof(IPlatformEventBus)))
+            .Returns(eventBusMock.Object);
+
         var worker = new DlqMonitorWorker(serviceProviderMock.Object, NullLogger<DlqMonitorWorker>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
@@ -91,5 +98,113 @@ public sealed class DlqMonitorWorkerTests
         await worker.StartAsync(cts.Token);
         await Task.Delay(500);
         await worker.StopAsync(CancellationToken.None);
+    }
+
+    // ── Platform Event publisher tests ───────────────────────────────────────
+
+    [Fact]
+    public async Task ExecuteAsync_SpikeDetected_PublishesExactlyOnePlatformEvent()
+    {
+        // The worker has a 5s initial delay before its first scan.
+        // This test waits past that delay to observe at least one scan cycle.
+        var options = new DbContextOptionsBuilder<DlqDbContext>()
+            .UseSqlite("DataSource=:memory:")
+            .Options;
+        var dbContext = new DlqDbContext(options);
+        await dbContext.Database.OpenConnectionAsync();
+        await dbContext.Database.EnsureCreatedAsync();
+
+        var ns = Namespace.Create("spike-ns",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey12=").Value;
+
+        var repoMock = new Mock<INamespaceRepository>();
+        repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
+
+        var monitorMock = new Mock<IDlqMonitorService>();
+        monitorMock
+            .Setup(m => m.ScanNamespaceAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<int>.Success(5));   // 5 new messages — spike!
+
+        var eventBusMock = new Mock<IPlatformEventBus>();
+        eventBusMock
+            .Setup(b => b.PublishAsync(It.IsAny<PlatformEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(ValueTask.CompletedTask);
+
+        var services = new ServiceCollection();
+        services.AddSingleton(dbContext);
+        services.AddSingleton(repoMock.Object);
+        services.AddSingleton(monitorMock.Object);
+        services.AddSingleton(eventBusMock.Object);
+        var sp = services.BuildServiceProvider();
+
+        var worker = new DlqMonitorWorker(sp, NullLogger<DlqMonitorWorker>.Instance);
+
+        // Give the worker 7s: 5s initial delay + 2s for at least one scan cycle.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(7));
+        await worker.StartAsync(CancellationToken.None);
+        await Task.Delay(TimeSpan.FromSeconds(7));
+        await worker.StopAsync(CancellationToken.None);
+
+        // Assert — at least one DlqSpikeDetected event published after the initial delay.
+        eventBusMock.Verify(
+            b => b.PublishAsync(
+                It.Is<PlatformEvent>(e => e.EventType == EventTypes.DlqSpikeDetected),
+                It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce);
+
+        dbContext.Database.CloseConnection();
+        dbContext.Dispose();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_NoSpike_PublishesZeroPlatformEvents()
+    {
+        // Arrange — scan returns 0 new messages (no spike).
+        var options = new DbContextOptionsBuilder<DlqDbContext>()
+            .UseSqlite("DataSource=:memory:")
+            .Options;
+        var dbContext = new DlqDbContext(options);
+        await dbContext.Database.OpenConnectionAsync();
+        await dbContext.Database.EnsureCreatedAsync();
+
+        var ns = Namespace.Create("quiet-ns",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey12=").Value;
+
+        var repoMock = new Mock<INamespaceRepository>();
+        repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
+
+        var monitorMock = new Mock<IDlqMonitorService>();
+        monitorMock
+            .Setup(m => m.ScanNamespaceAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<int>.Success(0));   // 0 new messages — no spike.
+
+        var eventBusMock = new Mock<IPlatformEventBus>();
+        eventBusMock
+            .Setup(b => b.PublishAsync(It.IsAny<PlatformEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(ValueTask.CompletedTask);
+
+        var services = new ServiceCollection();
+        services.AddSingleton(dbContext);
+        services.AddSingleton(repoMock.Object);
+        services.AddSingleton(monitorMock.Object);
+        services.AddSingleton(eventBusMock.Object);
+        var sp = services.BuildServiceProvider();
+
+        var worker = new DlqMonitorWorker(sp, NullLogger<DlqMonitorWorker>.Instance);
+
+        // Allow 7s to complete at least one scan cycle past the initial delay.
+        await worker.StartAsync(CancellationToken.None);
+        await Task.Delay(TimeSpan.FromSeconds(7));
+        await worker.StopAsync(CancellationToken.None);
+
+        // Assert — zero events published when no spike is detected.
+        eventBusMock.Verify(
+            b => b.PublishAsync(It.IsAny<PlatformEvent>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        dbContext.Database.CloseConnection();
+        dbContext.Dispose();
     }
 }
