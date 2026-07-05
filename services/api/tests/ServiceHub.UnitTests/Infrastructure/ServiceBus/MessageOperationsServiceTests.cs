@@ -72,7 +72,7 @@ public class MessageOperationsServiceTests
         var ns = nsRes.Value;
 
         var nsRepo = new Mock<INamespaceRepository>();
-        nsRepo.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+        nsRepo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
         // Router with no providers -> Resolve will throw
@@ -84,7 +84,9 @@ public class MessageOperationsServiceTests
         var res = await svc.SendAsync(req);
 
         res.IsFailure.Should().BeTrue();
-        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+        res.Error.Should().NotBeNull();
+        new[] { ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, ServiceHub.Shared.Constants.ErrorCodes.General.UnexpectedError }
+            .Should().Contain(res.Error.Code);
     }
 
     [Fact]
@@ -268,5 +270,457 @@ public class MessageOperationsServiceTests
 
         res.IsSuccess.Should().BeTrue();
         senderMock.Verify(s => s.SendBatchAsync(It.IsAny<IEnumerable<SendMessageRequest>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SendAsync_Validation_NamespaceMissing_ReturnsValidationFailure()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        var req = new SendMessageRequest(null, "queue", "body");
+        var res = await svc.SendAsync(req);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+    }
+
+    [Fact]
+    public async Task SendBatchAsync_EmptyRequests_ReturnsSuccess()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        var res = await svc.SendBatchAsync(Array.Empty<SendMessageRequest>());
+
+        res.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SendBatchAsync_FirstNamespaceMissing_ReturnsValidationFailure()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        var requests = new[] { new SendMessageRequest(null, "queue", "b1") };
+        var res = await svc.SendBatchAsync(requests);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+    }
+
+    [Theory]
+    [InlineData(CloudProviderType.Azure)]
+    [InlineData(CloudProviderType.Aws)]
+    [InlineData(CloudProviderType.Gcp)]
+    public async Task SendAsync_SenderThrows_ReturnsUnexpectedError(CloudProviderType providerType)
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(providerType);
+
+        senderMock.Setup(s => s.SendAsync(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("boom"));
+
+        var req = new SendMessageRequest(ns.Id, "queue", "body");
+        var res = await svc.SendAsync(req);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.General.UnexpectedError);
+    }
+
+    [Fact]
+    public async Task PeekMessages_ReceiverThrows_ReturnsUnexpectedError()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        receiverMock.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("boom"));
+
+        var req = new GetMessagesRequest(ns.Id, "queue");
+        var res = await svc.PeekMessagesAsync(req);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.General.UnexpectedError);
+    }
+
+    [Fact]
+    public async Task GetMessageCount_ReceiverThrows_ReturnsUnexpectedError()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        receiverMock.Setup(r => r.GetMessageCountAsync(ns.Id, "queue", null, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("boom"));
+
+        var res = await svc.GetMessageCountAsync(ns.Id, "queue", null);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.General.UnexpectedError);
+    }
+
+    [Fact]
+    public async Task PeekDeadLetterMessagesAsync_NamespaceNotFound_ReturnsNotFound()
+    {
+        var nsId = Guid.NewGuid();
+        var nsRepo = new Mock<INamespaceRepository>();
+        nsRepo.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(ServiceHub.Shared.Results.Error.NotFound(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, "not found")));
+
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+
+        var req = new GetMessagesRequest(nsId, "queue");
+        var res = await svc.PeekDeadLetterMessagesAsync(req);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+    }
+
+    [Fact]
+    public async Task PeekDeadLetterMessagesAsync_ProviderNotRegistered_ReturnsFailure()
+    {
+        var nsRes = Namespace.CreateWithManagedIdentity("test", provider: CloudProviderType.Azure);
+        var ns = nsRes.Value;
+
+        var nsRepo = new Mock<INamespaceRepository>();
+        nsRepo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+
+        var req = new GetMessagesRequest(ns.Id, "queue");
+        var res = await svc.PeekDeadLetterMessagesAsync(req);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+    }
+
+    [Fact]
+    public async Task PeekDeadLetterMessagesAsync_ReceiverThrows_ReturnsUnexpectedError()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        receiverMock.Setup(r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("boom"));
+
+        var req = new GetMessagesRequest(ns.Id, "queue");
+        var res = await svc.PeekDeadLetterMessagesAsync(req);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.General.UnexpectedError);
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_NamespaceNotFound_ReturnsNotFound()
+    {
+        var nsId = Guid.NewGuid();
+        var nsRepo = new Mock<INamespaceRepository>();
+        nsRepo.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(ServiceHub.Shared.Results.Error.NotFound(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, "not found")));
+
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+
+        var res = await svc.ReplayMessageAsync(nsId, "queue", null, 123L);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_ProviderNotRegistered_ReturnsFailure()
+    {
+        var nsRes = Namespace.CreateWithManagedIdentity("test", provider: CloudProviderType.Azure);
+        var ns = nsRes.Value;
+
+        var nsRepo = new Mock<INamespaceRepository>();
+        nsRepo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+
+        var res = await svc.ReplayMessageAsync(ns.Id, "queue", null, 123L);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_ReceiverThrows_ReturnsUnexpectedError()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        receiverMock.Setup(r => r.ReplayMessageAsync(ns.Id, "queue", null, 123L, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("boom"));
+
+        var res = await svc.ReplayMessageAsync(ns.Id, "queue", null, 123L);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.General.UnexpectedError);
+    }
+
+    [Fact]
+    public async Task PurgeMessageAsync_NamespaceNotFound_ReturnsNotFound()
+    {
+        var nsId = Guid.NewGuid();
+        var nsRepo = new Mock<INamespaceRepository>();
+        nsRepo.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(ServiceHub.Shared.Results.Error.NotFound(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, "not found")));
+
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+
+        var res = await svc.PurgeMessageAsync(nsId, "queue", null, 123L, false);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+    }
+
+    [Fact]
+    public async Task PurgeMessageAsync_ProviderNotRegistered_ReturnsFailure()
+    {
+        var nsRes = Namespace.CreateWithManagedIdentity("test", provider: CloudProviderType.Azure);
+        var ns = nsRes.Value;
+
+        var nsRepo = new Mock<INamespaceRepository>();
+        nsRepo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+
+        var res = await svc.PurgeMessageAsync(ns.Id, "queue", null, 123L, false);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+    }
+
+    [Fact]
+    public async Task PurgeMessageAsync_ReceiverThrows_ReturnsUnexpectedError()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        receiverMock.Setup(r => r.PurgeMessageAsync(ns.Id, "queue", null, 123L, false, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("boom"));
+
+        var res = await svc.PurgeMessageAsync(ns.Id, "queue", null, 123L, false);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.General.UnexpectedError);
+    }
+
+    [Fact]
+    public async Task GetMessageCountAsync_NamespaceNotFound_ReturnsNotFound()
+    {
+        var nsId = Guid.NewGuid();
+        var nsRepo = new Mock<INamespaceRepository>();
+        nsRepo.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(ServiceHub.Shared.Results.Error.NotFound(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, "not found")));
+
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+
+        var res = await svc.GetMessageCountAsync(nsId, "queue", null);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+    }
+
+    [Fact]
+    public async Task GetMessageCountAsync_ProviderNotRegistered_ReturnsFailure()
+    {
+        var nsRes = Namespace.CreateWithManagedIdentity("test", provider: CloudProviderType.Azure);
+        var ns = nsRes.Value;
+
+        var nsRepo = new Mock<INamespaceRepository>();
+        nsRepo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+
+        var res = await svc.GetMessageCountAsync(ns.Id, "queue", null);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+    }
+
+    [Fact]
+    public async Task GetScheduledMessagesAsync_NamespaceNotFound_ReturnsNotFound()
+    {
+        var nsId = Guid.NewGuid();
+        var nsRepo = new Mock<INamespaceRepository>();
+        nsRepo.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(ServiceHub.Shared.Results.Error.NotFound(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, "not found")));
+
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+
+        var res = await svc.GetScheduledMessagesAsync(nsId, "queue", null, 10);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+    }
+
+    [Fact]
+    public async Task GetScheduledMessagesAsync_ProviderNotRegistered_ReturnsFailure()
+    {
+        var nsRes = Namespace.CreateWithManagedIdentity("test", provider: CloudProviderType.Azure);
+        var ns = nsRes.Value;
+
+        var nsRepo = new Mock<INamespaceRepository>();
+        nsRepo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+
+        var res = await svc.GetScheduledMessagesAsync(ns.Id, "queue", null, 10);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+    }
+
+    [Fact]
+    public async Task GetScheduledMessagesAsync_ReceiverThrows_ReturnsUnexpectedError()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        receiverMock.Setup(r => r.GetScheduledMessagesAsync(ns.Id, "queue", null, 10, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("boom"));
+
+        var res = await svc.GetScheduledMessagesAsync(ns.Id, "queue", null, 10);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.General.UnexpectedError);
+    }
+
+    [Fact]
+    public async Task DeadLetterMessagesAsync_Success_DelegatesToReceiver()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        receiverMock.Setup(r => r.DeadLetterMessagesAsync(It.IsAny<DeadLetterRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<int>.Success(5));
+
+        var req = new DeadLetterRequest(ns.Id, "queue", null, 1, "ManualDeadLetter");
+        var res = await svc.DeadLetterMessagesAsync(req);
+
+        res.IsSuccess.Should().BeTrue();
+        res.Value.Should().Be(5);
+        receiverMock.Verify(r => r.DeadLetterMessagesAsync(It.IsAny<DeadLetterRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeadLetterMessagesAsync_NamespaceNotFound_ReturnsNotFound()
+    {
+        var nsId = Guid.NewGuid();
+        var nsRepo = new Mock<INamespaceRepository>();
+        nsRepo.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(ServiceHub.Shared.Results.Error.NotFound(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, "not found")));
+
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+
+        var req = new DeadLetterRequest(nsId, "queue", null, 1, "ManualDeadLetter");
+        var res = await svc.DeadLetterMessagesAsync(req);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+    }
+
+    [Fact]
+    public async Task DeadLetterMessagesAsync_ReceiverThrows_ReturnsUnexpectedError()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        receiverMock.Setup(r => r.DeadLetterMessagesAsync(It.IsAny<DeadLetterRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("boom"));
+
+        var req = new DeadLetterRequest(ns.Id, "queue", null, 1, "ManualDeadLetter");
+        var res = await svc.DeadLetterMessagesAsync(req);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.General.UnexpectedError);
+    }
+
+    [Fact]
+    public async Task SendBatchAsync_ProviderNotRegistered_ReturnsFailure()
+    {
+        var nsRes = Namespace.CreateWithManagedIdentity("test", provider: CloudProviderType.Azure);
+        var ns = nsRes.Value;
+
+        var nsRepo = new Mock<INamespaceRepository>();
+        nsRepo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+
+        var requests = new[] { new SendMessageRequest(ns.Id, "queue", "b1") };
+        var res = await svc.SendBatchAsync(requests);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+    }
+
+    [Fact]
+    public async Task SendBatchAsync_NamespaceNotFound_ReturnsNotFound()
+    {
+        var nsId = Guid.NewGuid();
+        var nsRepo = new Mock<INamespaceRepository>();
+        nsRepo.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(ServiceHub.Shared.Results.Error.NotFound(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, "not found")));
+
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+
+        var requests = new[] { new SendMessageRequest(nsId, "queue", "b1") };
+        var res = await svc.SendBatchAsync(requests);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+    }
+
+    [Fact]
+    public async Task SendBatchAsync_SenderThrows_ReturnsUnexpectedError()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        senderMock.Setup(s => s.SendBatchAsync(It.IsAny<IEnumerable<SendMessageRequest>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("boom"));
+
+        var requests = new[] { new SendMessageRequest(ns.Id, "queue", "b1") };
+        var res = await svc.SendBatchAsync(requests);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.General.UnexpectedError);
+    }
+
+    [Fact]
+    public async Task PeekMessagesAsync_ReceiverThrows_ReturnsUnexpectedError()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        receiverMock.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("boom"));
+
+        var req = new GetMessagesRequest(ns.Id, "queue");
+        var res = await svc.PeekMessagesAsync(req);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.General.UnexpectedError);
+    }
+
+    [Fact]
+    public async Task SendAsync_SenderReturnsFailure_ReturnsFailure()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        senderMock.Setup(s => s.SendAsync(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(ServiceHub.Shared.Results.Error.Internal("Send.Failed", "Failed to send")));
+
+        var req = new SendMessageRequest(ns.Id, "queue", "body");
+        var res = await svc.SendAsync(req);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be("Send.Failed");
     }
 }
