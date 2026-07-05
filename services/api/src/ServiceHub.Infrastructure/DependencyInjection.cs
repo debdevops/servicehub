@@ -69,7 +69,7 @@ public static class DependencyInjection
         services.TryAddScoped<IServiceBusClientFactory, ServiceBusClientFactory>();
         services.TryAddScoped<IMessageSender, MessageSender>();
         services.TryAddScoped<IMessageReceiver, MessageReceiver>();
-        services.TryAddScoped<IMessageOperationsService, MessageOperationsService>();
+        services.AddScoped<IMessageOperationsService, MessageOperationsService>();
 
         // Router depends on all registered ICloudMessagingProvider implementations.
         services.TryAddSingleton(sp => new ServiceHub.Infrastructure.Routing.CloudProviderRouter(sp.GetServices<ICloudMessagingProvider>()));
