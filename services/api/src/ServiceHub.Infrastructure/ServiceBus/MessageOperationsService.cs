@@ -30,12 +30,12 @@ public sealed class MessageOperationsService : IMessageOperationsService
 
     public Task<Result> SendAsync(SendMessageRequest request, CancellationToken cancellationToken = default)
     {
-        throw new NotImplementedException();
+        return SendInternalAsync(request, cancellationToken);
     }
 
     public Task<Result> SendBatchAsync(IEnumerable<SendMessageRequest> requests, CancellationToken cancellationToken = default)
     {
-        throw new NotImplementedException();
+        return SendBatchInternalAsync(requests, cancellationToken);
     }
 
     public Task<Result<IReadOnlyList<Message>>> PeekMessagesAsync(GetMessagesRequest request, CancellationToken cancellationToken = default)
@@ -55,22 +55,9 @@ public sealed class MessageOperationsService : IMessageOperationsService
             var result = await receiver.PeekMessagesAsync(request, cancellationToken).ConfigureAwait(false);
             return result;
         }
-        catch (InvalidOperationException ex)
-        {
-            // Map resolution failures to ServiceHub Result failure pattern
-            var message = ex.Message ?? "Provider resolution failed";
-            // If the exception is about namespace lookup, return NotFound; otherwise external service
-            if (message.Contains("Namespace", StringComparison.OrdinalIgnoreCase))
-            {
-                return Result.Failure<IReadOnlyList<Message>>(Error.NotFound(ErrorCodes.Namespace.NotFound, message));
-            }
-
-            return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(ErrorCodes.Message.ReceiveFailed, message));
-        }
         catch (Exception ex)
         {
-            // Unexpected errors map to internal error
-            return Result.Failure<IReadOnlyList<Message>>(Error.Internal(ErrorCodes.General.UnexpectedError, ex.Message));
+            return ConvertExceptionToResult<IReadOnlyList<Message>>(ex, ErrorCodes.Message.ReceiveFailed);
         }
     }
 
@@ -132,6 +119,33 @@ public sealed class MessageOperationsService : IMessageOperationsService
         }
     }
 
+    // Centralized exception -> Result mapping helpers to avoid duplicated logic
+    private static Result<T> ConvertExceptionToResult<T>(Exception ex, string externalErrorCode)
+    {
+        if (ex is InvalidOperationException)
+        {
+            var message = ex.Message ?? "Provider resolution failed";
+            if (message.Contains("Namespace", StringComparison.OrdinalIgnoreCase))
+                return Result.Failure<T>(Error.NotFound(ErrorCodes.Namespace.NotFound, message));
+            return Result.Failure<T>(Error.ExternalService(externalErrorCode, message));
+        }
+
+        return Result.Failure<T>(Error.Internal(ErrorCodes.General.UnexpectedError, ex.Message));
+    }
+
+    private static Result ConvertExceptionToResult(Exception ex, string externalErrorCode)
+    {
+        if (ex is InvalidOperationException)
+        {
+            var message = ex.Message ?? "Provider resolution failed";
+            if (message.Contains("Namespace", StringComparison.OrdinalIgnoreCase))
+                return Result.Failure(Error.NotFound(ErrorCodes.Namespace.NotFound, message));
+            return Result.Failure(Error.ExternalService(externalErrorCode, message));
+        }
+
+        return Result.Failure(Error.Internal(ErrorCodes.General.UnexpectedError, ex.Message));
+    }
+
     private IMessageReceiver GetReceiver(ICloudMessagingProvider provider)
     {
         if (provider is null) throw new ArgumentNullException(nameof(provider));
@@ -154,17 +168,10 @@ public sealed class MessageOperationsService : IMessageOperationsService
             var receiver = GetReceiver(provider);
             return await receiver.PeekDeadLetterMessagesAsync(request, cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
-        {
-            var message = ex.Message ?? "Provider resolution failed";
-            if (message.Contains("Namespace", StringComparison.OrdinalIgnoreCase))
-                return Result.Failure<IReadOnlyList<Message>>(Error.NotFound(ErrorCodes.Namespace.NotFound, message));
-            return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(ErrorCodes.Message.ReceiveFailed, message));
-        }
-        catch (Exception ex)
-        {
-            return Result.Failure<IReadOnlyList<Message>>(Error.Internal(ErrorCodes.General.UnexpectedError, ex.Message));
-        }
+            catch (Exception ex)
+            {
+                return ConvertExceptionToResult<IReadOnlyList<Message>>(ex, ErrorCodes.Message.ReceiveFailed);
+            }
     }
 
     private async Task<Result<long>> GetMessageCountInternalAsync(Guid namespaceId, string entityName, string? subscriptionName, CancellationToken cancellationToken)
@@ -176,17 +183,10 @@ public sealed class MessageOperationsService : IMessageOperationsService
             var receiver = GetReceiver(provider);
             return await receiver.GetMessageCountAsync(namespaceId, entityName, subscriptionName, cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
-        {
-            var message = ex.Message ?? "Provider resolution failed";
-            if (message.Contains("Namespace", StringComparison.OrdinalIgnoreCase))
-                return Result.Failure<long>(Error.NotFound(ErrorCodes.Namespace.NotFound, message));
-            return Result.Failure<long>(Error.ExternalService(ErrorCodes.Message.ReceiveFailed, message));
-        }
-        catch (Exception ex)
-        {
-            return Result.Failure<long>(Error.Internal(ErrorCodes.General.UnexpectedError, ex.Message));
-        }
+            catch (Exception ex)
+            {
+                return ConvertExceptionToResult<long>(ex, ErrorCodes.Message.ReceiveFailed);
+            }
     }
 
     private async Task<Result<int>> DeadLetterMessagesInternalAsync(DeadLetterRequest request, CancellationToken cancellationToken)
@@ -198,17 +198,10 @@ public sealed class MessageOperationsService : IMessageOperationsService
             var receiver = GetReceiver(provider);
             return await receiver.DeadLetterMessagesAsync(request, cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
-        {
-            var message = ex.Message ?? "Provider resolution failed";
-            if (message.Contains("Namespace", StringComparison.OrdinalIgnoreCase))
-                return Result.Failure<int>(Error.NotFound(ErrorCodes.Namespace.NotFound, message));
-            return Result.Failure<int>(Error.ExternalService(ErrorCodes.Message.ReceiveFailed, message));
-        }
-        catch (Exception ex)
-        {
-            return Result.Failure<int>(Error.Internal(ErrorCodes.General.UnexpectedError, ex.Message));
-        }
+            catch (Exception ex)
+            {
+                return ConvertExceptionToResult<int>(ex, ErrorCodes.Message.ReceiveFailed);
+            }
     }
 
     private async Task<Result> ReplayMessageInternalAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, CancellationToken cancellationToken)
@@ -220,17 +213,10 @@ public sealed class MessageOperationsService : IMessageOperationsService
             var receiver = GetReceiver(provider);
             return await receiver.ReplayMessageAsync(namespaceId, entityName, subscriptionName, sequenceNumber, cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
-        {
-            var message = ex.Message ?? "Provider resolution failed";
-            if (message.Contains("Namespace", StringComparison.OrdinalIgnoreCase))
-                return Result.Failure(Error.NotFound(ErrorCodes.Namespace.NotFound, message));
-            return Result.Failure(Error.ExternalService(ErrorCodes.Message.ReceiveFailed, message));
-        }
-        catch (Exception ex)
-        {
-            return Result.Failure(Error.Internal(ErrorCodes.General.UnexpectedError, ex.Message));
-        }
+            catch (Exception ex)
+            {
+                return ConvertExceptionToResult(ex, ErrorCodes.Message.ReceiveFailed);
+            }
     }
 
     private async Task<Result> PurgeMessageInternalAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, bool fromDeadLetter, CancellationToken cancellationToken)
@@ -242,16 +228,9 @@ public sealed class MessageOperationsService : IMessageOperationsService
             var receiver = GetReceiver(provider);
             return await receiver.PurgeMessageAsync(namespaceId, entityName, subscriptionName, sequenceNumber, fromDeadLetter, cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
-        {
-            var message = ex.Message ?? "Provider resolution failed";
-            if (message.Contains("Namespace", StringComparison.OrdinalIgnoreCase))
-                return Result.Failure(Error.NotFound(ErrorCodes.Namespace.NotFound, message));
-            return Result.Failure(Error.ExternalService(ErrorCodes.Message.ReceiveFailed, message));
-        }
         catch (Exception ex)
         {
-            return Result.Failure(Error.Internal(ErrorCodes.General.UnexpectedError, ex.Message));
+            return ConvertExceptionToResult(ex, ErrorCodes.Message.ReceiveFailed);
         }
     }
 
@@ -264,16 +243,9 @@ public sealed class MessageOperationsService : IMessageOperationsService
             var receiver = GetReceiver(provider);
             return await receiver.GetScheduledMessagesAsync(namespaceId, entityName, subscriptionName, maxMessages, cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
-        {
-            var message = ex.Message ?? "Provider resolution failed";
-            if (message.Contains("Namespace", StringComparison.OrdinalIgnoreCase))
-                return Result.Failure<IReadOnlyList<Message>>(Error.NotFound(ErrorCodes.Namespace.NotFound, message));
-            return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(ErrorCodes.Message.ScheduledListFailed, message));
-        }
         catch (Exception ex)
         {
-            return Result.Failure<IReadOnlyList<Message>>(Error.Internal(ErrorCodes.General.UnexpectedError, ex.Message));
+            return ConvertExceptionToResult<IReadOnlyList<Message>>(ex, ErrorCodes.Message.ScheduledListFailed);
         }
     }
 
@@ -291,17 +263,10 @@ public sealed class MessageOperationsService : IMessageOperationsService
             var sender = GetSender(provider);
             return await sender.SendAsync(request, cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
-        {
-            var message = ex.Message ?? "Provider resolution failed";
-            if (message.Contains("Namespace", StringComparison.OrdinalIgnoreCase))
-                return Result.Failure(Error.NotFound(ErrorCodes.Namespace.NotFound, message));
-            return Result.Failure(Error.ExternalService(ErrorCodes.Message.SendFailed, message));
-        }
-        catch (Exception ex)
-        {
-            return Result.Failure(Error.Internal(ErrorCodes.General.UnexpectedError, ex.Message));
-        }
+            catch (Exception ex)
+            {
+                return ConvertExceptionToResult(ex, ErrorCodes.Message.SendFailed);
+            }
     }
 
     private async Task<Result> SendBatchInternalAsync(IEnumerable<SendMessageRequest> requests, CancellationToken cancellationToken)
@@ -323,16 +288,9 @@ public sealed class MessageOperationsService : IMessageOperationsService
             var sender = GetSender(provider);
             return await sender.SendBatchAsync(requestList, cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
-        {
-            var message = ex.Message ?? "Provider resolution failed";
-            if (message.Contains("Namespace", StringComparison.OrdinalIgnoreCase))
-                return Result.Failure(Error.NotFound(ErrorCodes.Namespace.NotFound, message));
-            return Result.Failure(Error.ExternalService(ErrorCodes.Message.SendFailed, message));
-        }
-        catch (Exception ex)
-        {
-            return Result.Failure(Error.Internal(ErrorCodes.General.UnexpectedError, ex.Message));
-        }
+            catch (Exception ex)
+            {
+                return ConvertExceptionToResult(ex, ErrorCodes.Message.SendFailed);
+            }
     }
 }
