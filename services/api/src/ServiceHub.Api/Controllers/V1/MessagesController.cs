@@ -20,8 +20,6 @@ namespace ServiceHub.Api.Controllers.V1;
 [Tags("Messages")]
 public sealed class MessagesController : ApiControllerBase
 {
-    private readonly IMessageSender _messageSender;
-    private readonly IMessageReceiver _messageReceiver;
     private readonly IMessageOperationsService _messageOperationsService;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IAuditLogger _auditLogger;
@@ -30,22 +28,16 @@ public sealed class MessagesController : ApiControllerBase
     /// <summary>
     /// Initializes a new instance of the <see cref="MessagesController"/> class.
     /// </summary>
-    /// <param name="messageSender">The message sender service.</param>
-    /// <param name="messageReceiver">The message receiver service.</param>
     /// <param name="messageOperationsService">The provider-aware message operations service.</param>
     /// <param name="namespaceRepository">The namespace repository.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="auditLogger">The security audit logger.</param>
     public MessagesController(
-        IMessageSender messageSender,
-        IMessageReceiver messageReceiver,
         IMessageOperationsService messageOperationsService,
         INamespaceRepository namespaceRepository,
         ILogger<MessagesController> logger,
         IAuditLogger? auditLogger = null)
     {
-        _messageSender = messageSender ?? throw new ArgumentNullException(nameof(messageSender));
-        _messageReceiver = messageReceiver ?? throw new ArgumentNullException(nameof(messageReceiver));
         _messageOperationsService = messageOperationsService ?? throw new ArgumentNullException(nameof(messageOperationsService));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;

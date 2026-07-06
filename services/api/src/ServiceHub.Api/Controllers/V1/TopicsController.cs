@@ -21,8 +21,7 @@ public sealed class TopicsController : ApiControllerBase
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IServiceBusClientCache _clientCache;
     private readonly IConnectionStringProtector _connectionStringProtector;
-    private readonly IMessageSender _messageSender;
-    private readonly IMessageReceiver _messageReceiver;
+    private readonly IMessageOperationsService _messageOperationsService;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<TopicsController> _logger;
 
@@ -32,24 +31,21 @@ public sealed class TopicsController : ApiControllerBase
     /// <param name="namespaceRepository">The namespace repository.</param>
     /// <param name="clientCache">The Service Bus client cache.</param>
     /// <param name="connectionStringProtector">The connection string protector.</param>
-    /// <param name="messageSender">The message sender service.</param>
-    /// <param name="messageReceiver">The message receiver service.</param>
+    /// <param name="messageOperationsService">The provider-aware message operations service.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="auditLogger">The security audit logger.</param>
     public TopicsController(
         INamespaceRepository namespaceRepository,
         IServiceBusClientCache clientCache,
         IConnectionStringProtector connectionStringProtector,
-        IMessageSender messageSender,
-        IMessageReceiver messageReceiver,
+        IMessageOperationsService messageOperationsService,
         ILogger<TopicsController> logger,
         IAuditLogger? auditLogger = null)
     {
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
         _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
-        _messageSender = messageSender ?? throw new ArgumentNullException(nameof(messageSender));
-        _messageReceiver = messageReceiver ?? throw new ArgumentNullException(nameof(messageReceiver));
+        _messageOperationsService = messageOperationsService ?? throw new ArgumentNullException(nameof(messageOperationsService));
         _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -282,7 +278,7 @@ public sealed class TopicsController : ApiControllerBase
             NamespaceId = namespaceId
         };
 
-        var result = await _messageSender.SendAsync(sendRequest, cancellationToken);
+        var result = await _messageOperationsService.SendAsync(sendRequest, cancellationToken);
         if (result.IsFailure)
         {
             _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentSendMessage, "Failed", namespaceId, ns.Environment, topicName, detail: result.Error.Message);
@@ -342,8 +338,8 @@ public sealed class TopicsController : ApiControllerBase
             FromSequenceNumber: null);
 
         var result = fromDeadLetter
-            ? await _messageReceiver.PeekDeadLetterMessagesAsync(request, cancellationToken)
-            : await _messageReceiver.PeekMessagesAsync(request, cancellationToken);
+            ? await _messageOperationsService.PeekDeadLetterMessagesAsync(request, cancellationToken)
+            : await _messageOperationsService.PeekMessagesAsync(request, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -494,7 +490,7 @@ public sealed class TopicsController : ApiControllerBase
             Reason: reason,
             ErrorDescription: errorDescription);
 
-        var result = await _messageReceiver.DeadLetterMessagesAsync(request, cancellationToken);
+        var result = await _messageOperationsService.DeadLetterMessagesAsync(request, cancellationToken);
 
         if (result.IsFailure)
         {

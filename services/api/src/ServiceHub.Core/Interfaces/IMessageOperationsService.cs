@@ -5,7 +5,9 @@ using ServiceHub.Shared.Results;
 namespace ServiceHub.Core.Interfaces;
 
 /// <summary>
-/// Combined interface for sending, receiving and operating on messages in Azure Service Bus.
+/// Combined, provider-agnostic interface for sending, receiving, and operating on messages.
+/// Implementations resolve the namespace's cloud provider (Azure Service Bus, AWS SQS/SNS, GCP Pub/Sub)
+/// and delegate to the corresponding <see cref="ICloudMessagingProvider"/>.
 /// </summary>
 public interface IMessageOperationsService
 {

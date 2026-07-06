@@ -20,8 +20,7 @@ public class QueuesControllerTests
     private readonly Mock<INamespaceRepository> _namespaceRepository;
     private readonly Mock<IServiceBusClientCache> _clientCache;
     private readonly Mock<IConnectionStringProtector> _connectionStringProtector;
-    private readonly Mock<IMessageSender> _messageSender;
-    private readonly Mock<IMessageReceiver> _messageReceiver;
+    private readonly Mock<IMessageOperationsService> _messageOperationsService;
     private readonly Mock<ILogger<QueuesController>> _logger;
     private readonly QueuesController _controller;
 
@@ -30,16 +29,14 @@ public class QueuesControllerTests
         _namespaceRepository = new Mock<INamespaceRepository>();
         _clientCache = new Mock<IServiceBusClientCache>();
         _connectionStringProtector = new Mock<IConnectionStringProtector>();
-        _messageSender = new Mock<IMessageSender>();
-        _messageReceiver = new Mock<IMessageReceiver>();
+        _messageOperationsService = new Mock<IMessageOperationsService>();
         _logger = new Mock<ILogger<QueuesController>>();
 
         _controller = new QueuesController(
             _namespaceRepository.Object,
             _clientCache.Object,
             _connectionStringProtector.Object,
-            _messageSender.Object,
-            _messageReceiver.Object,
+            _messageOperationsService.Object,
             _logger.Object)
         {
             ControllerContext = new ControllerContext
@@ -96,7 +93,7 @@ public class QueuesControllerTests
     {
         var act = () => new QueuesController(
             null!, _clientCache.Object, _connectionStringProtector.Object,
-            _messageSender.Object, _messageReceiver.Object, _logger.Object);
+            _messageOperationsService.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -105,7 +102,7 @@ public class QueuesControllerTests
     {
         var act = () => new QueuesController(
             _namespaceRepository.Object, _clientCache.Object, _connectionStringProtector.Object,
-            _messageSender.Object, _messageReceiver.Object, null!);
+            _messageOperationsService.Object, null!);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -219,7 +216,7 @@ public class QueuesControllerTests
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        _messageSender.Setup(s => s.SendAsync(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(s => s.SendAsync(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
 
         var request = new SendMessageRequest(Body: "test message");
@@ -264,7 +261,7 @@ public class QueuesControllerTests
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
 
         _connectionStringProtector.Setup(p => p.Unprotect(It.IsAny<string>()))
@@ -294,7 +291,7 @@ public class QueuesControllerTests
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        _messageReceiver.Setup(r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
 
         _connectionStringProtector.Setup(p => p.Unprotect(It.IsAny<string>()))
@@ -325,7 +322,7 @@ public class QueuesControllerTests
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        _messageReceiver.Setup(r => r.DeadLetterMessagesAsync(It.IsAny<DeadLetterRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.DeadLetterMessagesAsync(It.IsAny<DeadLetterRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<int>.Success(3));
 
         var result = await _controller.DeadLetterMessages(ns.Id, "test-queue", messageCount: 3);
@@ -374,7 +371,7 @@ public class QueuesControllerTests
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        _messageReceiver.Setup(r => r.DeadLetterMessagesAsync(It.IsAny<DeadLetterRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.DeadLetterMessagesAsync(It.IsAny<DeadLetterRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<int>.Failure(Error.ExternalService("err", "timeout")));
 
         var result = await _controller.DeadLetterMessages(ns.Id, "test-queue");
@@ -419,7 +416,7 @@ public class QueuesControllerTests
 
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
-        _messageSender.Setup(s => s.SendAsync(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(s => s.SendAsync(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
 
         var request = new SendMessageRequest(Body: "test message");
@@ -460,7 +457,7 @@ public class QueuesControllerTests
 
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
-        _messageReceiver.Setup(r => r.DeadLetterMessagesAsync(It.IsAny<DeadLetterRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.DeadLetterMessagesAsync(It.IsAny<DeadLetterRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<int>.Success(3));
 
         var result = await _controller.DeadLetterMessages(ns.Id, "test-queue", messageCount: 3);
@@ -488,7 +485,7 @@ public class QueuesControllerTests
             }
         };
 
-        _messageReceiver.Setup(r => r.GetScheduledMessagesAsync(
+        _messageOperationsService.Setup(r => r.GetScheduledMessagesAsync(
                 ns.Id, "test-queue", null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(scheduledMessages));
 
@@ -516,7 +513,7 @@ public class QueuesControllerTests
             }
         };
 
-        _messageReceiver.Setup(r => r.GetScheduledMessagesAsync(
+        _messageOperationsService.Setup(r => r.GetScheduledMessagesAsync(
                 ns.Id, "test-queue", null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(scheduledMessages));
 
@@ -526,7 +523,7 @@ public class QueuesControllerTests
         var paginated = okResult.Value.Should().BeAssignableTo<PaginatedResponse<MessageResponse>>().Subject;
         paginated.Items.Should().HaveCount(1);
         paginated.Items[0].MessageId.Should().Be("sched-1");
-        _messageReceiver.Verify(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        _messageOperationsService.Verify(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -534,7 +531,7 @@ public class QueuesControllerTests
     {
         var ns = CreateTestNamespace();
 
-        _messageReceiver.Setup(r => r.GetScheduledMessagesAsync(
+        _messageOperationsService.Setup(r => r.GetScheduledMessagesAsync(
                 ns.Id, "test-queue", null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Failure(Error.ExternalService("err", "timeout")));
 
@@ -548,7 +545,7 @@ public class QueuesControllerTests
     {
         var ns = CreateTestNamespace();
 
-        _messageReceiver.Setup(r => r.GetScheduledMessagesAsync(
+        _messageOperationsService.Setup(r => r.GetScheduledMessagesAsync(
                 ns.Id, "empty-queue", null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(new List<Message>()));
 
@@ -565,15 +562,15 @@ public class QueuesControllerTests
     {
         var ns = CreateTestNamespace();
 
-        _messageReceiver.Setup(r => r.GetScheduledMessagesAsync(
+        _messageOperationsService.Setup(r => r.GetScheduledMessagesAsync(
                 ns.Id, "test-queue", null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(new List<Message>()));
 
         await _controller.GetScheduledMessages(ns.Id, "test-queue");
 
-        _messageReceiver.Verify(r => r.GetScheduledMessagesAsync(
+        _messageOperationsService.Verify(r => r.GetScheduledMessagesAsync(
             ns.Id, "test-queue", null, It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
-        _messageReceiver.Verify(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        _messageOperationsService.Verify(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion
