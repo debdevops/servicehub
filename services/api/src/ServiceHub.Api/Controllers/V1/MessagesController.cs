@@ -449,7 +449,7 @@ public sealed class MessagesController : ApiControllerBase
                 detail: "Replay is blocked for production namespaces. Validate in DEV and UAT first.");
         }
 
-        var result = await _messageReceiver.ReplayMessageAsync(
+        var result = await _messageOperationsService.ReplayMessageAsync(
             namespaceId,
             entityName,
             subscriptionName,
@@ -519,7 +519,7 @@ public sealed class MessagesController : ApiControllerBase
             return ToActionResult(Shared.Results.Result.Failure(namespaceResult.Error));
         }
 
-        var result = await _messageReceiver.PurgeMessageAsync(
+        var result = await _messageOperationsService.PurgeMessageAsync(
             namespaceId,
             entityName,
             subscriptionName,
