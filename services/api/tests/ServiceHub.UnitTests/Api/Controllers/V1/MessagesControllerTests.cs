@@ -15,8 +15,6 @@ namespace ServiceHub.UnitTests.Api.Controllers.V1;
 
 public class MessagesControllerTests
 {
-    private readonly Mock<IMessageSender> _messageSender;
-    private readonly Mock<IMessageReceiver> _messageReceiver;
     private readonly Mock<IMessageOperationsService> _messageOperationsService;
     private readonly Mock<INamespaceRepository> _namespaceRepository;
     private readonly Mock<ILogger<MessagesController>> _logger;
@@ -24,15 +22,11 @@ public class MessagesControllerTests
 
     public MessagesControllerTests()
     {
-        _messageSender = new Mock<IMessageSender>();
-        _messageReceiver = new Mock<IMessageReceiver>();
         _messageOperationsService = new Mock<IMessageOperationsService>();
         _namespaceRepository = new Mock<INamespaceRepository>();
         _logger = new Mock<ILogger<MessagesController>>();
 
         _controller = new MessagesController(
-            _messageSender.Object,
-            _messageReceiver.Object,
             _messageOperationsService.Object,
             _namespaceRepository.Object,
             _logger.Object)
@@ -65,30 +59,16 @@ public class MessagesControllerTests
     #region Constructor Tests
 
     [Fact]
-    public void Constructor_NullMessageSender_ShouldThrow()
-    {
-        var act = () => new MessagesController(null!, _messageReceiver.Object, _messageOperationsService.Object, _namespaceRepository.Object, _logger.Object);
-        act.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact]
-    public void Constructor_NullMessageReceiver_ShouldThrow()
-    {
-        var act = () => new MessagesController(_messageSender.Object, null!, _messageOperationsService.Object, _namespaceRepository.Object, _logger.Object);
-        act.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact]
     public void Constructor_NullMessageOperationsService_ShouldThrow()
     {
-        var act = () => new MessagesController(_messageSender.Object, _messageReceiver.Object, null!, _namespaceRepository.Object, _logger.Object);
+        var act = () => new MessagesController(null!, _namespaceRepository.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
     public void Constructor_NullLogger_ShouldThrow()
     {
-        var act = () => new MessagesController(_messageSender.Object, _messageReceiver.Object, _messageOperationsService.Object, _namespaceRepository.Object, null!);
+        var act = () => new MessagesController(_messageOperationsService.Object, _namespaceRepository.Object, null!);
         act.Should().Throw<ArgumentNullException>();
     }
 

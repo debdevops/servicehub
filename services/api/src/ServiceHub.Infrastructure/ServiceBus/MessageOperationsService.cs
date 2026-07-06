@@ -168,7 +168,6 @@ public sealed class MessageOperationsService : IMessageOperationsService
         return GetScheduledMessagesInternalAsync(namespaceId, entityName, subscriptionName, maxMessages, cancellationToken);
     }
 
-    // Private helpers (skeletons)
     /// <summary>
     /// Resolves the <see cref="Namespace"/> and its registered <see cref="ICloudMessagingProvider"/>.
     /// Throws <see cref="InvalidOperationException"/> when the namespace cannot be found or no provider
