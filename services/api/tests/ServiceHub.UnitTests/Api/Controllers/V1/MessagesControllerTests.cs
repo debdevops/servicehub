@@ -245,7 +245,7 @@ public class MessagesControllerTests
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        _messageReceiver.Setup(r => r.ReplayMessageAsync(ns.Id, "my-queue", null, 42, It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.ReplayMessageAsync(ns.Id, "my-queue", null, 42, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
 
         var result = await _controller.ReplayMessage(ns.Id, 42, "my-queue");
@@ -273,7 +273,7 @@ public class MessagesControllerTests
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        _messageReceiver.Setup(r => r.ReplayMessageAsync(ns.Id, "my-topic", "my-sub", 42, It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.ReplayMessageAsync(ns.Id, "my-topic", "my-sub", 42, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
 
         var result = await _controller.ReplayMessage(ns.Id, 42, "my-topic", "my-sub");
