@@ -22,6 +22,7 @@ public sealed class MessagesController : ApiControllerBase
 {
     private readonly IMessageSender _messageSender;
     private readonly IMessageReceiver _messageReceiver;
+    private readonly IMessageOperationsService _messageOperationsService;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<MessagesController> _logger;
@@ -31,18 +32,21 @@ public sealed class MessagesController : ApiControllerBase
     /// </summary>
     /// <param name="messageSender">The message sender service.</param>
     /// <param name="messageReceiver">The message receiver service.</param>
+    /// <param name="messageOperationsService">The provider-aware message operations service.</param>
     /// <param name="namespaceRepository">The namespace repository.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="auditLogger">The security audit logger.</param>
     public MessagesController(
         IMessageSender messageSender,
         IMessageReceiver messageReceiver,
+        IMessageOperationsService messageOperationsService,
         INamespaceRepository namespaceRepository,
         ILogger<MessagesController> logger,
         IAuditLogger? auditLogger = null)
     {
         _messageSender = messageSender ?? throw new ArgumentNullException(nameof(messageSender));
         _messageReceiver = messageReceiver ?? throw new ArgumentNullException(nameof(messageReceiver));
+        _messageOperationsService = messageOperationsService ?? throw new ArgumentNullException(nameof(messageOperationsService));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -102,7 +106,7 @@ public sealed class MessagesController : ApiControllerBase
             MaxMessages: Math.Clamp(maxMessages, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages),
             FromSequenceNumber: fromSequenceNumber);
 
-        var result = await _messageReceiver.PeekMessagesAsync(request, cancellationToken);
+        var result = await _messageOperationsService.PeekMessagesAsync(request, cancellationToken);
         if (result.IsFailure)
         {
             return ToActionResult<IReadOnlyList<MessageResponse>>(result.Error);
@@ -169,7 +173,7 @@ public sealed class MessagesController : ApiControllerBase
             MaxMessages: Math.Clamp(maxMessages, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages),
             FromSequenceNumber: fromSequenceNumber);
 
-        var result = await _messageReceiver.PeekMessagesAsync(request, cancellationToken);
+        var result = await _messageOperationsService.PeekMessagesAsync(request, cancellationToken);
         if (result.IsFailure)
         {
             return ToActionResult<IReadOnlyList<MessageResponse>>(result.Error);
@@ -233,7 +237,7 @@ public sealed class MessagesController : ApiControllerBase
             MaxMessages: Math.Clamp(maxMessages, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages),
             FromSequenceNumber: fromSequenceNumber);
 
-        var result = await _messageReceiver.PeekDeadLetterMessagesAsync(request, cancellationToken);
+        var result = await _messageOperationsService.PeekDeadLetterMessagesAsync(request, cancellationToken);
         if (result.IsFailure)
         {
             return ToActionResult<IReadOnlyList<MessageResponse>>(result.Error);
@@ -300,7 +304,7 @@ public sealed class MessagesController : ApiControllerBase
             MaxMessages: Math.Clamp(maxMessages, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages),
             FromSequenceNumber: fromSequenceNumber);
 
-        var result = await _messageReceiver.PeekDeadLetterMessagesAsync(request, cancellationToken);
+        var result = await _messageOperationsService.PeekDeadLetterMessagesAsync(request, cancellationToken);
         if (result.IsFailure)
         {
             return ToActionResult<IReadOnlyList<MessageResponse>>(result.Error);

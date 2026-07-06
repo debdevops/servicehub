@@ -17,6 +17,7 @@ public class MessagesControllerTests
 {
     private readonly Mock<IMessageSender> _messageSender;
     private readonly Mock<IMessageReceiver> _messageReceiver;
+    private readonly Mock<IMessageOperationsService> _messageOperationsService;
     private readonly Mock<INamespaceRepository> _namespaceRepository;
     private readonly Mock<ILogger<MessagesController>> _logger;
     private readonly MessagesController _controller;
@@ -25,12 +26,14 @@ public class MessagesControllerTests
     {
         _messageSender = new Mock<IMessageSender>();
         _messageReceiver = new Mock<IMessageReceiver>();
+        _messageOperationsService = new Mock<IMessageOperationsService>();
         _namespaceRepository = new Mock<INamespaceRepository>();
         _logger = new Mock<ILogger<MessagesController>>();
 
         _controller = new MessagesController(
             _messageSender.Object,
             _messageReceiver.Object,
+            _messageOperationsService.Object,
             _namespaceRepository.Object,
             _logger.Object)
         {
@@ -64,21 +67,28 @@ public class MessagesControllerTests
     [Fact]
     public void Constructor_NullMessageSender_ShouldThrow()
     {
-        var act = () => new MessagesController(null!, _messageReceiver.Object, _namespaceRepository.Object, _logger.Object);
+        var act = () => new MessagesController(null!, _messageReceiver.Object, _messageOperationsService.Object, _namespaceRepository.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
     public void Constructor_NullMessageReceiver_ShouldThrow()
     {
-        var act = () => new MessagesController(_messageSender.Object, null!, _namespaceRepository.Object, _logger.Object);
+        var act = () => new MessagesController(_messageSender.Object, null!, _messageOperationsService.Object, _namespaceRepository.Object, _logger.Object);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Constructor_NullMessageOperationsService_ShouldThrow()
+    {
+        var act = () => new MessagesController(_messageSender.Object, _messageReceiver.Object, null!, _namespaceRepository.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
     public void Constructor_NullLogger_ShouldThrow()
     {
-        var act = () => new MessagesController(_messageSender.Object, _messageReceiver.Object, _namespaceRepository.Object, null!);
+        var act = () => new MessagesController(_messageSender.Object, _messageReceiver.Object, _messageOperationsService.Object, _namespaceRepository.Object, null!);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -98,7 +108,7 @@ public class MessagesControllerTests
 
         _namespaceRepository.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(namespace_));
-        _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
 
         var result = await _controller.PeekQueueMessages(namespace_.Id, "my-queue");
@@ -114,7 +124,7 @@ public class MessagesControllerTests
         var namespace_ = CreateTestNamespace();
         _namespaceRepository.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(namespace_));
-        _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Failure(Error.ExternalService("SB_ERR", "Service Bus error")));
 
         var result = await _controller.PeekQueueMessages(namespace_.Id, "my-queue");
@@ -128,14 +138,14 @@ public class MessagesControllerTests
         var namespace_ = CreateTestNamespace();
         _namespaceRepository.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(namespace_));
-        _messageReceiver.Setup(r => r.PeekMessagesAsync(
+        _messageOperationsService.Setup(r => r.PeekMessagesAsync(
             It.Is<GetMessagesRequest>(req => req.MaxMessages <= 1000 && req.MaxMessages >= 1),
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(new List<Message>()));
 
         await _controller.PeekQueueMessages(namespace_.Id, "my-queue", maxMessages: 999);
 
-        _messageReceiver.Verify(
+        _messageOperationsService.Verify(
             r => r.PeekMessagesAsync(
                 It.Is<GetMessagesRequest>(req => req.MaxMessages == 999),
                 It.IsAny<CancellationToken>()),
@@ -157,7 +167,7 @@ public class MessagesControllerTests
 
         _namespaceRepository.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(namespace_));
-        _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
 
         var result = await _controller.PeekSubscriptionMessages(namespace_.Id, "my-topic", "my-sub");
@@ -180,7 +190,7 @@ public class MessagesControllerTests
 
         _namespaceRepository.Setup(r => r.GetByIdAsync(namespace_.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(namespace_));
-        _messageReceiver.Setup(r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
 
         var result = await _controller.PeekQueueDeadLetterMessages(namespace_.Id, "my-queue");
@@ -209,7 +219,7 @@ public class MessagesControllerTests
 
         _namespaceRepository.Setup(r => r.GetByIdAsync(namespace_.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(namespace_));
-        _messageReceiver.Setup(r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
 
         var result = await _controller.PeekSubscriptionDeadLetterMessages(namespace_.Id, "my-topic", "my-sub");
