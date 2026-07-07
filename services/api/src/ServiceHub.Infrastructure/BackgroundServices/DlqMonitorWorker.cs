@@ -77,10 +77,27 @@ public sealed class DlqMonitorWorker : BackgroundService
                     continue;
                 }
 
-                var namespaces = namespacesResult.Value;
+                var allActive = namespacesResult.Value;
+
+                // DLQ monitoring is currently implemented only for Azure Service Bus.
+                // Skip non-Azure namespaces here so we don't attempt (and fail) an Azure
+                // client build against them every poll cycle. ScanNamespaceAsync also guards
+                // this, but filtering up front avoids per-cycle failure noise.
+                var namespaces = allActive
+                    .Where(n => n.Provider == ServiceHub.Core.Enums.CloudProviderType.Azure)
+                    .ToList();
+
+                var skipped = allActive.Count - namespaces.Count;
+                if (skipped > 0)
+                {
+                    _logger.LogDebug(
+                        "Skipping {Skipped} non-Azure namespace(s) — DLQ monitoring currently supports Azure Service Bus only",
+                        skipped);
+                }
+
                 if (namespaces.Count == 0)
                 {
-                    _logger.LogInformation("No active namespaces found, sleeping for {Interval}s", PollInterval.TotalSeconds);
+                    _logger.LogInformation("No active Azure namespaces found, sleeping for {Interval}s", PollInterval.TotalSeconds);
                     await Task.Delay(PollInterval, stoppingToken);
                     continue;
                 }

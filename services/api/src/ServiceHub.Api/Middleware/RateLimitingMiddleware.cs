@@ -123,15 +123,22 @@ public sealed class RateLimitingMiddleware
 
     private static string GetClientIdentifier(HttpContext context)
     {
-        // Use the actual remote IP as the authoritative identifier.
-        // X-Forwarded-For is NOT trusted for rate-limit keying because it can be
-        // trivially spoofed by any client, allowing an attacker to bypass limits
-        // by cycling through arbitrary forged IP values.
-        // If the app is behind a trusted reverse proxy, rely on ASP.NET Core's
-        // ForwardedHeaders middleware (app.UseForwardedHeaders()) with explicit
-        // KnownProxies configured — that middleware rewrites Connection.RemoteIpAddress
-        // before this code runs.
-        return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        // Prefer the authenticated owner identity as the rate-limit key. Behind a reverse
+        // proxy (e.g. Azure App Service) Connection.RemoteIpAddress is the proxy's IP for
+        // every request, which would collapse all tenants into a single shared bucket.
+        // This middleware runs after the auth middleware, so OwnerId is populated for
+        // authenticated requests and gives correct per-tenant isolation regardless of proxy.
+        if (context.Items.TryGetValue("OwnerId", out var ownerId)
+            && ownerId is string owner
+            && !string.IsNullOrWhiteSpace(owner))
+        {
+            return "owner:" + owner;
+        }
+
+        // Fallback: the actual remote IP. X-Forwarded-For is NOT trusted for rate-limit
+        // keying because it can be trivially spoofed by any client, allowing an attacker to
+        // bypass limits by cycling through arbitrary forged IP values.
+        return "ip:" + (context.Connection.RemoteIpAddress?.ToString() ?? "unknown");
     }
 
     private void CleanupExpiredEntries(DateTime now)

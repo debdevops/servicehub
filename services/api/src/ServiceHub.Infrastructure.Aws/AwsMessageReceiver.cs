@@ -1,11 +1,15 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Amazon.Runtime;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Microsoft.Extensions.Logging;
+using Polly;
+using Polly.Retry;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Aws.Models;
+using ServiceHub.Infrastructure.Aws.Resilience;
 using ServiceHub.Shared.Results;
 using CoreMessage = ServiceHub.Core.Entities.Message;
 using SqsMessage = Amazon.SQS.Model.Message;
@@ -26,6 +30,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
     private readonly IAwsClientFactory _clientFactory;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly ILogger<AwsMessageReceiver> _logger;
+    private readonly ResiliencePipeline _resiliencePipeline;
 
     // Maps synthetic sequence number → SQS ReceiptHandle so replay/purge can find the message.
     // Receipt handles are large opaque strings; we expose a stable long ID to the UI layer.
@@ -60,6 +65,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _resiliencePipeline = AwsResiliencePipeline.Create(_logger);
     }
 
     // ── IMessageReceiver ──────────────────────────────────────────────────────
@@ -86,9 +92,12 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
 
         try
         {
-            var queueUrl = await ResolveQueueUrlAsync(sqs, request.EntityName, linkedCts.Token).ConfigureAwait(false);
-            var messages = await PeekFromUrlAsync(sqs, queueUrl, request.MaxMessages, linkedCts.Token).ConfigureAwait(false);
-            var mapped = MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: false);
+            var mapped = await _resiliencePipeline.ExecuteAsync(async ct =>
+            {
+                var queueUrl = await ResolveQueueUrlAsync(sqs, request.EntityName, ct).ConfigureAwait(false);
+                var messages = await PeekFromUrlAsync(sqs, queueUrl, request.MaxMessages, ct).ConfigureAwait(false);
+                return MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: false);
+            }, linkedCts.Token).ConfigureAwait(false);
 
             _logger.LogDebug("Peeked {Count} messages from SQS queue {QueueName} (namespace {NamespaceId})",
                 mapped.Count, request.EntityName, request.NamespaceId);
@@ -132,17 +141,23 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
 
         try
         {
-            var sourceUrl = await ResolveQueueUrlAsync(sqs, request.EntityName, linkedCts.Token).ConfigureAwait(false);
-            var dlqUrl = await ResolveDlqUrlAsync(sqs, sourceUrl, linkedCts.Token).ConfigureAwait(false);
+            var mapped = await _resiliencePipeline.ExecuteAsync(async ct =>
+            {
+                var sourceUrl = await ResolveQueueUrlAsync(sqs, request.EntityName, ct).ConfigureAwait(false);
+                var dlqUrl = await ResolveDlqUrlAsync(sqs, sourceUrl, ct).ConfigureAwait(false);
 
-            if (dlqUrl is null)
+                if (dlqUrl is null)
+                    return (IReadOnlyList<CoreMessage>?)null;
+
+                var messages = await PeekFromUrlAsync(sqs, dlqUrl, request.MaxMessages, ct).ConfigureAwait(false);
+                return MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: true);
+            }, linkedCts.Token).ConfigureAwait(false);
+
+            if (mapped is null)
             {
                 _logger.LogWarning("Queue {QueueName} has no DLQ configured (no RedrivePolicy)", SanitizeForLog(request.EntityName));
                 return Result.Success<IReadOnlyList<CoreMessage>>(Array.Empty<CoreMessage>());
             }
-
-            var messages = await PeekFromUrlAsync(sqs, dlqUrl, request.MaxMessages, linkedCts.Token).ConfigureAwait(false);
-            var mapped = MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: true);
 
             _logger.LogDebug("Peeked {Count} DLQ messages from {QueueName} (namespace {NamespaceId})",
                 mapped.Count, request.EntityName, request.NamespaceId);

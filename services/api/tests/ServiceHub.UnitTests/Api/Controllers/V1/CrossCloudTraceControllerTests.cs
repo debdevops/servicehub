@@ -4,8 +4,10 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Api.Controllers.V1;
+using ServiceHub.Api.Services;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
@@ -28,10 +30,16 @@ public sealed class CrossCloudTraceControllerTests
 
     public CrossCloudTraceControllerTests()
     {
-        _controller = new CrossCloudTraceController(
-            _namespaceRepositoryMock.Object,
+        // Use a real AzureTraceSearcher backed by the same cache/protector mocks so the
+        // extracted Azure search algorithm remains exercised end-to-end via these tests.
+        var azureTraceSearcher = new AzureTraceSearcher(
             _clientCacheMock.Object,
             _connectionStringProtectorMock.Object,
+            NullLogger<AzureTraceSearcher>.Instance);
+
+        _controller = new CrossCloudTraceController(
+            _namespaceRepositoryMock.Object,
+            azureTraceSearcher,
             _loggerMock.Object,
             _cloudProviders)
         {

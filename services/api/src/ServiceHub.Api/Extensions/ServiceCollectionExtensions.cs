@@ -84,6 +84,9 @@ public static class ServiceCollectionExtensions
             options.EnableForHttps = true;
         });
 
+        // Azure-specific cross-cloud trace searcher (extracted from CrossCloudTraceController)
+        services.AddScoped<Services.IAzureTraceSearcher, Services.AzureTraceSearcher>();
+
         // SPA token provider for co-hosted browser authentication
         services.AddSingleton<SpaTokenProvider>();
 

@@ -127,6 +127,18 @@ static async Task ApplySchemaUpgradesAsync(DlqDbContext dbContext, ILogger logge
             logger.LogInformation("Schema upgrade applied: AutoReplayRules.OwnerId added");
         }
 
+        // Migration: Add CloudProvider to DlqMessages (multicloud attribution).
+        // Existing rows predate multicloud DLQ monitoring, which was Azure-only, so
+        // the column defaults to 'Azure' — matching CloudProviderType.Azure.ToString().
+        if (!await ColumnExistsAsync(connection, "DlqMessages", "CloudProvider"))
+        {
+            logger.LogWarning(
+                "DlqMessages table is missing the CloudProvider column — applying schema upgrade");
+            await ExecuteNonQueryAsync(connection,
+                "ALTER TABLE \"DlqMessages\" ADD COLUMN \"CloudProvider\" TEXT NOT NULL DEFAULT 'Azure'");
+            logger.LogInformation("Schema upgrade applied: DlqMessages.CloudProvider added");
+        }
+
         // Migration: Create AuditLogs table (added in v4.0.0 Persistent Audit Trail)
         // EnsureCreatedAsync creates this table in new databases; existing databases need the DDL.
         if (!await TableExistsAsync(connection, "AuditLogs"))

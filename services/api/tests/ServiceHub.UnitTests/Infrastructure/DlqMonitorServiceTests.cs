@@ -114,6 +114,23 @@ public sealed class DlqMonitorServiceTests : IDisposable
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
+    // ── Provider guard ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task ScanNamespaceAsync_NonAzureNamespace_ReturnsProviderNotSupported_WithoutBuildingClient()
+    {
+        var ns = Namespace.Create("aws-ns", "akid:secret", provider: CloudProviderType.Aws).Value;
+        typeof(Namespace).GetProperty("Id")!.SetValue(ns, _namespaceId);
+        _repoMock.Setup(r => r.GetByIdAsync(_namespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var result = await _sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Dlq.ProviderNotSupported");
+        _cacheMock.Verify(c => c.GetOrCreate(It.IsAny<Guid>(), It.IsAny<string>()), Times.Never);
+    }
+
     // ── Helper ──────────────────────────────────────────────────────
 
     private Namespace SetupValidNamespace()

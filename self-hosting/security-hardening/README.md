@@ -74,6 +74,17 @@ Check every item before allowing users to access your instance.
 - [ ] `Security__SpaToken__Enabled` is `true`
   - **Why**: When false, any HTTP client (curl, Postman, automated scanner) can call the API without loading the UI. When true, the browser receives a short-lived HMAC-signed token that the API validates on every request.
 
+> ⚠️ **The SPA token is anti-replay, not per-user authentication.** When `Security__SpaToken__Enabled` is `true` and there is no platform identity layer (Azure Easy Auth or equivalent) in front of ServiceHub, **any user who can load the web UI receives a full-scope admin session.** The SPA token — a short-lived HMAC-signed token embedded in the served HTML — only proves a request came from a browser that loaded the page. It does **not** identify or authorize an individual user: all SPA sessions share the single built-in admin owner (`__spa__`) and bypass API-key scope checks entirely.
+>
+> **This is by design for single-operator self-hosting** — the SPA-token path assumes one trust boundary, where everyone who can reach the UI is trusted as the instance administrator.
+>
+> **If more than one trust level must be isolated, or you expose ServiceHub beyond a single operator:**
+> - Enable **Azure App Service Easy Auth** (or an equivalent reverse-proxy authenticator). ServiceHub's `EasyAuthMiddleware` reads the injected `X-MS-CLIENT-PRINCIPAL-ID` and assigns each user a distinct owner ID (`entra:{oid}`) for per-user tenant isolation; Easy Auth requests bypass the shared SPA-owner path.
+> - Restrict who can reach the URL at the network layer (App Service Access Restrictions, private endpoints, or VPN).
+> - For headless/API automation, issue a **scoped API key** rather than relying on the SPA token — scoped keys get their own isolated owner ID and least-privilege scopes.
+
+- [ ] If more than one person or role must be isolated from one another, **Azure Easy Auth (or an equivalent identity layer) is enabled** — the SPA token alone grants a shared, full-scope admin session to anyone who can load the UI.
+
 - [ ] `Security__Authentication__Enabled` is `true`
   - **Why**: When false, the API accepts requests from anyone who can reach the URL. When true, every non-health endpoint requires a valid API key.
 

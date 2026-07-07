@@ -138,7 +138,7 @@ public class DlqHistoryControllerTests
     public async Task GetById_Success_ReturnsDetail()
     {
         var msg = CreateTestMessage(42);
-        _historyService.Setup(s => s.GetByIdAsync(42, It.IsAny<CancellationToken>()))
+        _historyService.Setup(s => s.GetByIdAsync(It.IsAny<string>(), 42, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DlqMessage>.Success(msg));
 
         var result = await _controller.GetById(42);
@@ -150,7 +150,7 @@ public class DlqHistoryControllerTests
     [Fact]
     public async Task GetById_NotFound_ReturnsError()
     {
-        _historyService.Setup(s => s.GetByIdAsync(99, It.IsAny<CancellationToken>()))
+        _historyService.Setup(s => s.GetByIdAsync(It.IsAny<string>(), 99, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DlqMessage>.Failure(Error.NotFound("NOT_FOUND", "Not found")));
 
         var result = await _controller.GetById(99);
@@ -168,7 +168,7 @@ public class DlqHistoryControllerTests
             new("Analysed", "Forensic engine analysed", DateTimeOffset.UtcNow)
         };
 
-        _historyService.Setup(s => s.GetTimelineAsync(1, It.IsAny<CancellationToken>()))
+        _historyService.Setup(s => s.GetTimelineAsync(It.IsAny<string>(), 1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<DlqTimelineEvent>>.Success(events));
 
         var result = await _controller.GetTimeline(1);
@@ -180,7 +180,7 @@ public class DlqHistoryControllerTests
     [Fact]
     public async Task GetTimeline_Failure_ReturnsError()
     {
-        _historyService.Setup(s => s.GetTimelineAsync(99, It.IsAny<CancellationToken>()))
+        _historyService.Setup(s => s.GetTimelineAsync(It.IsAny<string>(), 99, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<DlqTimelineEvent>>.Failure(
                 Error.NotFound("NOT_FOUND", "Not found")));
 
@@ -196,7 +196,7 @@ public class DlqHistoryControllerTests
         var msg = CreateTestMessage(1);
         msg.UserNotes = "Updated note";
 
-        _historyService.Setup(s => s.UpdateNotesAsync(1, "Updated note", It.IsAny<CancellationToken>()))
+        _historyService.Setup(s => s.UpdateNotesAsync(It.IsAny<string>(), 1, "Updated note", It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DlqMessage>.Success(msg));
 
         var request = new UpdateDlqNotesRequest("Updated note");
@@ -209,7 +209,7 @@ public class DlqHistoryControllerTests
     [Fact]
     public async Task UpdateNotes_NotFound_ReturnsError()
     {
-        _historyService.Setup(s => s.UpdateNotesAsync(99, "note", It.IsAny<CancellationToken>()))
+        _historyService.Setup(s => s.UpdateNotesAsync(It.IsAny<string>(), 99, "note", It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DlqMessage>.Failure(Error.NotFound("NOT_FOUND", "Not found")));
 
         var result = await _controller.UpdateNotes(99, new UpdateDlqNotesRequest("note"));
@@ -224,7 +224,7 @@ public class DlqHistoryControllerTests
         var messages = new List<DlqMessage> { CreateTestMessage(1) };
 
         _historyService.Setup(s => s.ExportAsync(
-            It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTimeOffset?>(),
+            It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTimeOffset?>(),
             It.IsAny<DateTimeOffset?>(), It.IsAny<DlqMessageStatus?>(),
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<DlqMessage>>.Success(messages));
@@ -241,7 +241,7 @@ public class DlqHistoryControllerTests
         var messages = new List<DlqMessage> { CreateTestMessage(1) };
 
         _historyService.Setup(s => s.ExportAsync(
-            It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTimeOffset?>(),
+            It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTimeOffset?>(),
             It.IsAny<DateTimeOffset?>(), It.IsAny<DlqMessageStatus?>(),
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<DlqMessage>>.Success(messages));
@@ -256,7 +256,7 @@ public class DlqHistoryControllerTests
     public async Task Export_Failure_ReturnsError()
     {
         _historyService.Setup(s => s.ExportAsync(
-            It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTimeOffset?>(),
+            It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string?>(), It.IsAny<DateTimeOffset?>(),
             It.IsAny<DateTimeOffset?>(), It.IsAny<DlqMessageStatus?>(),
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<DlqMessage>>.Failure(
@@ -285,7 +285,7 @@ public class DlqHistoryControllerTests
                 new(DateTimeOffset.UtcNow.Date, 5, 3)
             });
 
-        _historyService.Setup(s => s.GetSummaryAsync(It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        _historyService.Setup(s => s.GetSummaryAsync(It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DlqSummary>.Success(summary));
 
         var result = await _controller.GetSummary();
@@ -299,7 +299,7 @@ public class DlqHistoryControllerTests
     [Fact]
     public async Task GetSummary_Failure_ReturnsError()
     {
-        _historyService.Setup(s => s.GetSummaryAsync(It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        _historyService.Setup(s => s.GetSummaryAsync(It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DlqSummary>.Failure(Error.Internal("ERR", "Failed")));
 
         var result = await _controller.GetSummary();
@@ -373,7 +373,7 @@ public class DlqHistoryControllerTests
             DailyTrend: new List<DlqTrendPoint>());
 
         _historyService.Setup(s => s.GetSummaryAsync(
-            It.IsAny<Guid?>(), 7, It.IsAny<CancellationToken>()))
+            It.IsAny<string>(), It.IsAny<Guid?>(), 7, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DlqSummary>.Success(summary));
 
         var result = await _controller.GetTrend(days: 7);
@@ -399,7 +399,7 @@ public class DlqHistoryControllerTests
             DailyTrend: trendPoints);
 
         _historyService.Setup(s => s.GetSummaryAsync(
-            It.IsAny<Guid?>(), 7, It.IsAny<CancellationToken>()))
+            It.IsAny<string>(), It.IsAny<Guid?>(), 7, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DlqSummary>.Success(summary));
 
         var result = await _controller.GetTrend(days: 7);
@@ -426,7 +426,7 @@ public class DlqHistoryControllerTests
             });
 
         _historyService.Setup(s => s.GetSummaryAsync(
-            nsId, 7, It.IsAny<CancellationToken>()))
+            It.IsAny<string>(), nsId, 7, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DlqSummary>.Success(summary));
 
         var result = await _controller.GetTrend(namespaceId: nsId, days: 7);
@@ -434,6 +434,6 @@ public class DlqHistoryControllerTests
         var trend = ok.Value.Should().BeAssignableTo<IReadOnlyList<DlqTrendPointResponse>>().Subject;
         trend.Should().HaveCount(2);
 
-        _historyService.Verify(s => s.GetSummaryAsync(nsId, 7, It.IsAny<CancellationToken>()), Times.Once);
+        _historyService.Verify(s => s.GetSummaryAsync(It.IsAny<string>(), nsId, 7, It.IsAny<CancellationToken>()), Times.Once);
     }
 }
