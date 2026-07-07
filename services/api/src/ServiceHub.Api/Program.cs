@@ -49,9 +49,16 @@ builder.Services.AddServiceHubApi(builder.Configuration);
 // SimulatorController and related endpoints can resolve their dependencies.
 // This must come AFTER AddServiceHubApi so simulator providers can replace
 // real cloud provider registrations via services.Replace(...).
+// Outside Simulator mode, register the live Azure provider instead — the
+// CloudProviderRouter rejects duplicate provider types, so exactly one Azure
+// ICloudMessagingProvider may be registered.
 if (builder.Environment.IsEnvironment("Simulator"))
 {
     builder.Services.AddSimulatorProviders();
+}
+else
+{
+    builder.Services.AddAzureProvider();
 }
 
 var app = builder.Build();

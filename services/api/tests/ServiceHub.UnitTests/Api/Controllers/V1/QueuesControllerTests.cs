@@ -10,6 +10,8 @@ using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
+using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 
@@ -21,6 +23,8 @@ public class QueuesControllerTests
     private readonly Mock<IServiceBusClientCache> _clientCache;
     private readonly Mock<IConnectionStringProtector> _connectionStringProtector;
     private readonly Mock<IMessageOperationsService> _messageOperationsService;
+    private readonly Mock<ICloudMessagingProvider> _cloudProvider;
+    private readonly CloudProviderRouter _providerRouter;
     private readonly Mock<ILogger<QueuesController>> _logger;
     private readonly QueuesController _controller;
 
@@ -30,6 +34,11 @@ public class QueuesControllerTests
         _clientCache = new Mock<IServiceBusClientCache>();
         _connectionStringProtector = new Mock<IConnectionStringProtector>();
         _messageOperationsService = new Mock<IMessageOperationsService>();
+        _cloudProvider = new Mock<ICloudMessagingProvider>();
+        _cloudProvider.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Azure);
+        _cloudProvider.Setup(p => p.ListEntitiesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Success([]));
+        _providerRouter = new CloudProviderRouter([_cloudProvider.Object]);
         _logger = new Mock<ILogger<QueuesController>>();
 
         _controller = new QueuesController(
@@ -37,6 +46,7 @@ public class QueuesControllerTests
             _clientCache.Object,
             _connectionStringProtector.Object,
             _messageOperationsService.Object,
+            _providerRouter,
             _logger.Object)
         {
             ControllerContext = new ControllerContext
@@ -80,6 +90,18 @@ public class QueuesControllerTests
             AutoDeleteOnIdle: TimeSpan.MaxValue);
     }
 
+    private static CloudEntity CreateTestEntity(string name, long active, long dlq)
+    {
+        return new CloudEntity
+        {
+            Name = name,
+            EntityType = "Queue",
+            ActiveMessageCount = active,
+            DeadLetterCount = dlq,
+            Provider = CloudProviderType.Azure,
+        };
+    }
+
     private void SetIntentHeaders(string intent)
     {
         _controller.ControllerContext.HttpContext.Request.Headers[IntentHeaders.IntentHeaderName] = intent;
@@ -93,7 +115,7 @@ public class QueuesControllerTests
     {
         var act = () => new QueuesController(
             null!, _clientCache.Object, _connectionStringProtector.Object,
-            _messageOperationsService.Object, _logger.Object);
+            _messageOperationsService.Object, _providerRouter, _logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -102,7 +124,7 @@ public class QueuesControllerTests
     {
         var act = () => new QueuesController(
             _namespaceRepository.Object, _clientCache.Object, _connectionStringProtector.Object,
-            _messageOperationsService.Object, null!);
+            _messageOperationsService.Object, _providerRouter, null!);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -264,19 +286,15 @@ public class QueuesControllerTests
         _messageOperationsService.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
 
-        _connectionStringProtector.Setup(p => p.Unprotect(It.IsAny<string>()))
-            .Returns(Result<string>.Success("conn"));
-
-        var wrapper = new Mock<IServiceBusClientWrapper>();
-        wrapper.Setup(w => w.GetQueuesAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<IReadOnlyList<QueueRuntimePropertiesDto>>.Success(new List<QueueRuntimePropertiesDto> { CreateTestQueue("test-queue") }));
-
-        _clientCache.Setup(c => c.GetOrCreate(ns.Id, It.IsAny<string>()))
-            .Returns(wrapper.Object);
+        _cloudProvider.Setup(p => p.ListEntitiesAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Success(
+                [CreateTestEntity("test-queue", active: 10, dlq: 2)]));
 
         var result = await _controller.GetMessages(ns.Id, "test-queue", "active");
 
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<PaginatedResponse<MessageResponse>>().Subject;
+        response.TotalCount.Should().Be(10);
     }
 
     [Fact]
@@ -294,19 +312,15 @@ public class QueuesControllerTests
         _messageOperationsService.Setup(r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
 
-        _connectionStringProtector.Setup(p => p.Unprotect(It.IsAny<string>()))
-            .Returns(Result<string>.Success("conn"));
-
-        var wrapper = new Mock<IServiceBusClientWrapper>();
-        wrapper.Setup(w => w.GetQueuesAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<IReadOnlyList<QueueRuntimePropertiesDto>>.Success(new List<QueueRuntimePropertiesDto> { CreateTestQueue("test-queue") }));
-
-        _clientCache.Setup(c => c.GetOrCreate(ns.Id, It.IsAny<string>()))
-            .Returns(wrapper.Object);
+        _cloudProvider.Setup(p => p.ListEntitiesAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Success(
+                [CreateTestEntity("test-queue", active: 10, dlq: 2)]));
 
         var result = await _controller.GetMessages(ns.Id, "test-queue", "deadletter");
 
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<PaginatedResponse<MessageResponse>>().Subject;
+        response.TotalCount.Should().Be(2);
     }
 
     #endregion
