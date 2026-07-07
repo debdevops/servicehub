@@ -100,6 +100,11 @@ public sealed class DlqDbContext : DbContext
             .HasConversion<string>()
             .HasMaxLength(32);
 
+        entity.Property(e => e.CloudProvider)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(Core.Enums.CloudProviderType.Azure);
+
         entity.Property(e => e.DeadLetterReason)
             .HasMaxLength(1024);
 

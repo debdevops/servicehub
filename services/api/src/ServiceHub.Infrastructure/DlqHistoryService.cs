@@ -90,14 +90,14 @@ public sealed class DlqHistoryService : IDlqHistoryService
     }
 
     /// <inheritdoc />
-    public async Task<Result<DlqMessage>> GetByIdAsync(long id, CancellationToken cancellationToken = default)
+    public async Task<Result<DlqMessage>> GetByIdAsync(string ownerId, long id, CancellationToken cancellationToken = default)
     {
         try
         {
             var message = await _dbContext.DlqMessages
                 .AsNoTracking()
                 .Include(m => m.ReplayHistories)
-                .FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
+                .FirstOrDefaultAsync(m => m.Id == id && m.OwnerId == ownerId, cancellationToken);
 
             if (message == null)
                 return Result<DlqMessage>.Failure(Error.NotFound("Dlq.NotFound", $"DLQ message with ID {id} was not found"));
@@ -114,14 +114,14 @@ public sealed class DlqHistoryService : IDlqHistoryService
 
     /// <inheritdoc />
     public async Task<Result<IReadOnlyList<DlqTimelineEvent>>> GetTimelineAsync(
-        long id, CancellationToken cancellationToken = default)
+        string ownerId, long id, CancellationToken cancellationToken = default)
     {
         try
         {
             var message = await _dbContext.DlqMessages
                 .AsNoTracking()
                 .Include(m => m.ReplayHistories)
-                .FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
+                .FirstOrDefaultAsync(m => m.Id == id && m.OwnerId == ownerId, cancellationToken);
 
             if (message == null)
                 return Result<IReadOnlyList<DlqTimelineEvent>>.Failure(
@@ -217,11 +217,12 @@ public sealed class DlqHistoryService : IDlqHistoryService
 
     /// <inheritdoc />
     public async Task<Result<DlqMessage>> UpdateNotesAsync(
-        long id, string notes, CancellationToken cancellationToken = default)
+        string ownerId, long id, string notes, CancellationToken cancellationToken = default)
     {
         try
         {
-            var message = await _dbContext.DlqMessages.FindAsync(new object[] { id }, cancellationToken);
+            var message = await _dbContext.DlqMessages
+                .FirstOrDefaultAsync(m => m.Id == id && m.OwnerId == ownerId, cancellationToken);
             if (message == null)
                 return Result<DlqMessage>.Failure(Error.NotFound("Dlq.NotFound", $"DLQ message with ID {id} was not found"));
 
@@ -240,13 +241,16 @@ public sealed class DlqHistoryService : IDlqHistoryService
 
     /// <inheritdoc />
     public async Task<Result<DlqSummary>> GetSummaryAsync(
-        Guid? namespaceId = null, int days = 30, CancellationToken cancellationToken = default)
+        string ownerId, Guid? namespaceId = null, int days = 30, CancellationToken cancellationToken = default)
     {
         try
         {
             // Clamp days to a sensible range
             days = Math.Clamp(days, 1, 365);
             var query = _dbContext.DlqMessages.AsNoTracking().AsQueryable();
+
+            // TENANT ISOLATION: Filter messages by owner
+            query = query.Where(m => m.OwnerId == ownerId);
 
             if (namespaceId.HasValue)
                 query = query.Where(m => m.NamespaceId == namespaceId.Value);
@@ -341,6 +345,7 @@ public sealed class DlqHistoryService : IDlqHistoryService
 
     /// <inheritdoc />
     public async Task<Result<IReadOnlyList<DlqMessage>>> ExportAsync(
+        string ownerId,
         Guid? namespaceId = null,
         string? entityName = null,
         DateTimeOffset? from = null,
@@ -351,6 +356,9 @@ public sealed class DlqHistoryService : IDlqHistoryService
         try
         {
             var query = _dbContext.DlqMessages.AsNoTracking().AsQueryable();
+
+            // TENANT ISOLATION: Filter messages by owner
+            query = query.Where(m => m.OwnerId == ownerId);
 
             if (namespaceId.HasValue)
                 query = query.Where(m => m.NamespaceId == namespaceId.Value);

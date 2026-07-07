@@ -18,6 +18,47 @@ public sealed class CreateNamespaceRequestValidationTests
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    // Cross-provider field mismatches
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_AzureProvider_WithAwsRegion_ReturnsValidationError()
+    {
+        var request = new CreateNamespaceRequest(
+            "azurequeue",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=P;SharedAccessKey=abc=",
+            ConnectionAuthType.ConnectionString)
+        {
+            Provider = CloudProviderType.Azure,
+            AwsRegion = "us-east-1"
+        };
+
+        var results = Validate(request);
+
+        results.Should().Contain(r => r.MemberNames.Contains(nameof(CreateNamespaceRequest.AwsRegion))
+            && r.ErrorMessage!.Contains("only be set when Provider is Aws"));
+    }
+
+    [Fact]
+    public void Validate_AwsProvider_WithGcpProjectId_ReturnsValidationError()
+    {
+        var request = new CreateNamespaceRequest(
+            "awsqueue",
+            "AKIAIOSFODNN7EXAMPLE:wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            ConnectionAuthType.AwsAccessKey)
+        {
+            Provider = CloudProviderType.Aws,
+            AwsRegion = "us-east-1",
+            GcpProjectId = "my-project-123"
+        };
+
+        var results = Validate(request);
+
+        results.Should().Contain(r => r.MemberNames.Contains(nameof(CreateNamespaceRequest.GcpProjectId))
+            && r.ErrorMessage!.Contains("only be set when Provider is Gcp"));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     // AWS provider
     // ──────────────────────────────────────────────────────────────────────────
 

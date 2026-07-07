@@ -62,6 +62,22 @@ public sealed class DlqMonitorService : IDlqMonitorService
         }
 
         var ns = nsResult.Value;
+
+        // DLQ monitoring is currently implemented only against Azure Service Bus
+        // (this service uses IServiceBusClientCache directly). For AWS/GCP namespaces
+        // return an explicit, actionable result instead of attempting to build an
+        // Azure client from a non-Azure connection string and surfacing a confusing
+        // "Failed to create Service Bus client" error.
+        if (ns.Provider != CloudProviderType.Azure)
+        {
+            _logger.LogInformation(
+                "Skipping DLQ scan for namespace {NamespaceId}: DLQ monitoring is currently supported only for Azure Service Bus (provider: {Provider})",
+                namespaceId, ns.Provider);
+            return Result<int>.Failure(Error.Validation(
+                "Dlq.ProviderNotSupported",
+                $"DLQ monitoring is currently supported only for Azure Service Bus namespaces. Namespace '{ns.Name}' uses provider '{ns.Provider}'."));
+        }
+
         IServiceBusClientWrapper client;
         try
         {
@@ -110,7 +126,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                             LogRedactor.SanitiseForLog(queue.Name), queue.DeadLetterMessageCount);
                         var (newCount, liveSequenceNumbers) = await ScanEntityDlqAsync(
                             client, namespaceId, queue.Name, null,
-                            ServiceBusEntityType.Queue, ns.OwnerId, cancellationToken);
+                            ServiceBusEntityType.Queue, ns.OwnerId, ns.Provider, cancellationToken);
                         totalNew += newCount;
                         scannedEntities[queue.Name] = liveSequenceNumbers;
                     }
@@ -147,7 +163,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                                     LogRedactor.SanitiseForLog(topic.Name), LogRedactor.SanitiseForLog(sub.Name), sub.DeadLetterMessageCount);
                                 var (newCount, liveSequenceNumbers) = await ScanEntityDlqAsync(
                                     client, namespaceId, sub.Name, topic.Name,
-                                    ServiceBusEntityType.Subscription, ns.OwnerId, cancellationToken);
+                                    ServiceBusEntityType.Subscription, ns.OwnerId, ns.Provider, cancellationToken);
                                 totalNew += newCount;
                                 scannedEntities[fullEntityName] = liveSequenceNumbers;
                             }
@@ -222,6 +238,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
         string? topicName,
         ServiceBusEntityType entityType,
         string ownerId,
+        CloudProviderType provider,
         CancellationToken cancellationToken)
     {
         var newCount = 0;
@@ -293,6 +310,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                     BodyHash = bodyHash,
                     NamespaceId = namespaceId,
                     OwnerId = ownerId,
+                    CloudProvider = provider,
                     EntityName = fullEntityName,
                     EntityType = entityType,
                     EnqueuedTimeUtc = msg.EnqueuedTime,

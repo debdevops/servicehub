@@ -55,6 +55,34 @@ public class DlqDbContextTests : IDisposable
         loaded.EntityType.Should().Be(ServiceBusEntityType.Queue);
         loaded.FailureCategory.Should().Be(FailureCategory.Transient);
         loaded.Status.Should().Be(DlqMessageStatus.Active);
+        // CloudProvider defaults to Azure when not explicitly set.
+        loaded.CloudProvider.Should().Be(CloudProviderType.Azure);
+    }
+
+    [Fact]
+    public async Task DlqMessages_PersistsCloudProvider()
+    {
+        var msg = new DlqMessage
+        {
+            MessageId = "msg-aws",
+            SequenceNumber = 1,
+            BodyHash = "hash-aws",
+            NamespaceId = Guid.NewGuid(),
+            OwnerId = TestConstants.TestOwnerId,
+            CloudProvider = CloudProviderType.Aws,
+            EntityName = "aws-queue",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            DeliveryCount = 1,
+            MessageSize = 50
+        };
+
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var loaded = await _dbContext.DlqMessages.FirstAsync();
+        loaded.CloudProvider.Should().Be(CloudProviderType.Aws);
     }
 
     [Fact]
