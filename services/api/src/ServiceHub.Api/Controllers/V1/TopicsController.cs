@@ -6,6 +6,7 @@ using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.Api.Controllers.V1;
@@ -22,6 +23,7 @@ public sealed class TopicsController : ApiControllerBase
     private readonly IServiceBusClientCache _clientCache;
     private readonly IConnectionStringProtector _connectionStringProtector;
     private readonly IMessageOperationsService _messageOperationsService;
+    private readonly CloudProviderRouter _providerRouter;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<TopicsController> _logger;
 
@@ -32,6 +34,7 @@ public sealed class TopicsController : ApiControllerBase
     /// <param name="clientCache">The Service Bus client cache.</param>
     /// <param name="connectionStringProtector">The connection string protector.</param>
     /// <param name="messageOperationsService">The provider-aware message operations service.</param>
+    /// <param name="providerRouter">Router used to resolve the namespace's cloud provider.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="auditLogger">The security audit logger.</param>
     public TopicsController(
@@ -39,6 +42,7 @@ public sealed class TopicsController : ApiControllerBase
         IServiceBusClientCache clientCache,
         IConnectionStringProtector connectionStringProtector,
         IMessageOperationsService messageOperationsService,
+        CloudProviderRouter providerRouter,
         ILogger<TopicsController> logger,
         IAuditLogger? auditLogger = null)
     {
@@ -46,6 +50,7 @@ public sealed class TopicsController : ApiControllerBase
         _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
         _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
         _messageOperationsService = messageOperationsService ?? throw new ArgumentNullException(nameof(messageOperationsService));
+        _providerRouter = providerRouter ?? throw new ArgumentNullException(nameof(providerRouter));
         _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -346,26 +351,26 @@ public sealed class TopicsController : ApiControllerBase
             return ToActionResult<PaginatedResponse<MessageResponse>>(result.Error);
         }
 
-        // Get the actual total count from subscription runtime properties
+        // Get the actual total count from the provider's entity listing
         var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
         int totalCount = result.Value.Count; // Default to peeked count
-        
-        if (namespaceResult.IsSuccess && namespaceResult.Value.ConnectionString is not null)
+
+        if (namespaceResult.IsSuccess && _providerRouter.IsRegistered(namespaceResult.Value.Provider))
         {
-            try 
+            try
             {
-                var unprotectResult = _connectionStringProtector.Unprotect(namespaceResult.Value.ConnectionString);
-                if (unprotectResult.IsSuccess)
+                var entitiesResult = await _providerRouter
+                    .Resolve(namespaceResult.Value.Provider)
+                    .ListEntitiesAsync(namespaceId, cancellationToken);
+                if (entitiesResult.IsSuccess)
                 {
-                    var wrapper = _clientCache.GetOrCreate(namespaceResult.Value.Id, unprotectResult.Value);
-                    var subscriptionsResult = await wrapper.GetSubscriptionsAsync(topicName, cancellationToken);
-                    if (subscriptionsResult.IsSuccess)
+                    var subscriptionPath = $"{topicName}/subscriptions/{subscriptionName}";
+                    var subInfo = entitiesResult.Value.FirstOrDefault(e =>
+                        string.Equals(e.EntityType, "Subscription", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(e.Name, subscriptionPath, StringComparison.OrdinalIgnoreCase));
+                    if (subInfo is not null)
                     {
-                        var subInfo = subscriptionsResult.Value.FirstOrDefault(s => string.Equals(s.Name, subscriptionName, StringComparison.OrdinalIgnoreCase));
-                        if (subInfo is not null)
-                        {
-                            totalCount = (int)(fromDeadLetter ? subInfo.DeadLetterMessageCount : subInfo.ActiveMessageCount);
-                        }
+                        totalCount = (int)(fromDeadLetter ? subInfo.DeadLetterCount : subInfo.ActiveMessageCount);
                     }
                 }
             }

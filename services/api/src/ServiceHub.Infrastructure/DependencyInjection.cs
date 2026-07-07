@@ -72,11 +72,29 @@ public static class DependencyInjection
         services.AddScoped<IMessageOperationsService, MessageOperationsService>();
 
         // Router depends on all registered ICloudMessagingProvider implementations.
-        services.TryAddSingleton(sp => new ServiceHub.Infrastructure.Routing.CloudProviderRouter(sp.GetServices<ICloudMessagingProvider>()));
+        // Scoped (not singleton) because live providers such as AzureMessagingProvider are
+        // scoped — a root-built singleton cannot resolve them under scope validation.
+        services.TryAddScoped(sp => new ServiceHub.Infrastructure.Routing.CloudProviderRouter(sp.GetServices<ICloudMessagingProvider>()));
 
         // Health check
         services.AddHealthChecks()
             .AddCheck<ServiceBusHealthCheck>("servicebus", tags: ["ready", "servicebus"]);
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the Azure Service Bus <see cref="ICloudMessagingProvider"/> so the
+    /// <c>CloudProviderRouter</c> can dispatch operations for Azure namespaces.
+    /// Do not call this in Simulator mode — <c>AddSimulatorProviders()</c> registers a
+    /// simulated Azure provider and the router rejects duplicate provider types.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddAzureProvider(this IServiceCollection services)
+    {
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<ICloudMessagingProvider, Azure.AzureMessagingProvider>());
 
         return services;
     }
