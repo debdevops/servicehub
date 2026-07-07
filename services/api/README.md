@@ -14,6 +14,7 @@
 |----------|---------|----------|
 | **[Comprehensive Guide](../../docs/COMPREHENSIVE-GUIDE.md)** | Complete guide with diagrams | Everyone (novices to experts) |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Deep architectural details | Architects, senior developers |
+| [FLOW.md](../../docs/FLOW.md) | As-built provider routing — which controllers share a path and which don't | Anyone touching multicloud routing |
 | [IMPLEMENTATION_PATTERNS.md](IMPLEMENTATION_PATTERNS.md) | Code patterns & conventions | Backend developers |
 | [DEPLOYMENT_OPERATIONS.md](DEPLOYMENT_OPERATIONS.md) | Production deployment guide | DevOps, SREs |
 
@@ -278,9 +279,8 @@ cp .env.example .env
 ```
 
 Key settings:
-- `ASPNETCORE_ENVIRONMENT`: Development, Staging, Production
+- `ASPNETCORE_ENVIRONMENT`: Development, Staging, Production, or Simulator (gates Simulator-only endpoints and DI registrations)
 - `ENCRYPTION_KEY`: For connection string encryption (32+ characters)
-- `AI_SERVICE_URL`: AI service endpoint (optional)
 - `CORS_ORIGINS`: Allowed frontend origins
 
 ### appsettings.json
@@ -311,7 +311,7 @@ Main configuration file with:
    - Prevents unauthorized cross-origin requests
 
 4. **Rate Limiting**
-   - Protects API from abuse
+   - Keys on the authenticated owner ID (falls back to remote IP for unauthenticated requests), so tenants sharing a reverse-proxy IP don't share a limit bucket
    - Configurable limits per endpoint
 
 5. **Request Correlation**
@@ -401,6 +401,8 @@ docker run -p 5000:5000 servicehub-api
 ### Anomalies (AI-Powered)
 - `POST /api/v1/anomalies/detect?namespaceId={id}` - Detect anomalies
 - `GET /api/v1/anomalies/{id}` - Get anomaly by ID
+
+> **Not yet implemented**: `IAIServiceClient` (the backend service these endpoints depend on) is currently a stub — it always returns "service unavailable" (503). It's unrelated to the client-side heuristic pattern detection used by AI Findings/DLQ Intelligence in the web UI, which runs entirely in-browser and calls no backend AI endpoint.
 
 ### Health
 - `GET /health` - General health

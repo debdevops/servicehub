@@ -1,5 +1,29 @@
 # ServiceHub Changelog
 
+## [Unreleased] — 2026-07-07
+
+### Security
+
+- **Fixed cross-owner IDOR in DLQ Intelligence** — `IDlqHistoryService.GetByIdAsync`, `GetTimelineAsync`, `UpdateNotesAsync`, and `GetSummaryAsync` previously took no owner parameter, so any authenticated caller who guessed/enumerated a DLQ message ID could read or annotate another tenant's message. All four methods (plus `GetHistoryAsync`/`ExportAsync`, already scoped) now require `ownerId` and filter on it consistently, matching the isolation already applied to the list endpoint.
+- **Rate limiting bypass behind reverse proxies** — `RateLimitingMiddleware` previously keyed solely on `Connection.RemoteIpAddress`, which is the proxy's IP for every request when ServiceHub runs behind one (e.g. Azure App Service), collapsing all tenants into a single shared limit bucket. It now keys on the authenticated `OwnerId` when available (`owner:{id}`), falling back to remote IP (`ip:{addr}`) only for unauthenticated requests. `X-Forwarded-For` remains untrusted for this purpose.
+- **`AllowedHosts` hardened in production config** — `appsettings.Production.json` shipped with `"AllowedHosts": "*"`, disabling ASP.NET Core's host-header filtering (host-header injection / cache-poisoning risk). Now defaults to `SET_VIA_ENV_VAR` with inline guidance to set real deployment hostnames.
+- **Simulator endpoints hardened with an explicit environment guard** — added `SimulatorOnlyAttribute`, an `IActionConstraint` that makes Simulator-only actions unroutable (404) unless `ASPNETCORE_ENVIRONMENT=Simulator`. This is defense-in-depth alongside the existing Simulator-only DI registration of the underlying store/clock/seeder services (`AddSimulatorProviders()`, only called when `IsEnvironment("Simulator")`).
+- **Namespace request validation rejects cross-provider fields** — `CreateNamespaceRequest` now rejects `AwsRegion` set on a non-AWS namespace and `GcpProjectId` set on a non-GCP namespace, preventing a namespace record from carrying contradictory provider configuration.
+- **Documented the SPA-token trust model** — `self-hosting/security-hardening/README.md` now explicitly warns that the SPA token is anti-replay only, not per-user authentication: with no identity layer in front of ServiceHub, every browser session shares the single built-in admin owner (`__spa__`). Added guidance to enable Easy Auth (or equivalent) or use scoped API keys when more than one trust level needs isolating.
+
+### Reliability
+
+- **AWS and GCP now have resilience pipelines matching Azure's retry pattern** — `AwsResiliencePipeline` and `GcpResiliencePipeline` (Polly-based, 3 retries, exponential backoff with jitter, 1s base / 30s cap) wrap the AWS SQS/SNS and GCP Pub/Sub message receivers/senders, retrying only transient errors (AWS: SDK-marked retryable or 5xx/429; GCP: `Unavailable`/`DeadlineExceeded`/`Internal`/`ResourceExhausted`/`Aborted` gRPC codes).
+- **GCP Pub/Sub message count normalized** — `GcpMessageReceiver.GetMessageCountAsync` previously could surface as a failure; Pub/Sub has no direct count API, so it now returns a neutral `Success(0)`, consistent with the existing "unsupported read" convention used elsewhere (e.g. `GetScheduledMessagesAsync`).
+- **DLQ background monitoring now skips non-Azure namespaces explicitly** — `DlqMonitorWorker` filters to Azure namespaces before scanning (DLQ monitoring is Azure-only today) and logs how many namespaces were skipped, instead of attempting and failing an Azure client build against AWS/GCP namespaces every poll cycle.
+
+### Changed
+
+- **Messages/Queues/Topics controllers migrated to a unified provider path** — `MessagesController`, `QueuesController`, and `TopicsController` now depend on `IMessageOperationsService`, which resolves the correct `ICloudMessagingProvider` via `CloudProviderRouter` instead of each controller holding its own per-provider dispatch logic. `CrossCloudTraceController` was refactored to extract Azure-specific search into `IAzureTraceSearcher`, shrinking the controller to orchestration/aggregation; it still dispatches Azure and non-Azure namespaces through separate code paths rather than the shared router (see `docs/FLOW.md` for the current, as-built diagram).
+- **`DlqMessage` gained a `CloudProvider` column** — defaults to `CloudProviderType.Azure` for rows written before the column existed, so historical records are attributed correctly without a data migration.
+
+---
+
 ## [3.3.0] — 2026-06-27
 
 ### Removed / Cleaned Up

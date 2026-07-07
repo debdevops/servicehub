@@ -543,18 +543,20 @@ SOLUTION:
 ```
 DIAGNOSIS:
 1. Check current rate limit config
-   RateLimit:PermitLimit = 100
-   RateLimit:Window = 00:01:00
+   RateLimit:MaxRequests = 300
+   RateLimit:WindowDuration = 00:01:00
 
 2. Monitor rate limit hits
    Logs contain "Rate limit exceeded"
 
-3. Identify throttled client IPs
-   Use X-Forwarded-For header inspection
+3. Identify the throttled client
+   Bucket key is "owner:{OwnerId}" for authenticated requests,
+   "ip:{RemoteIpAddress}" only as a fallback for unauthenticated ones.
+   X-Forwarded-For is never trusted for this — it can be spoofed.
 
 SOLUTION:
-- Increase PermitLimit in appsettings
-- Extend Window duration
+- Increase MaxRequests in appsettings
+- Extend WindowDuration
 - For known clients, consider separate rate limit tier
 - Implement adaptive rate limiting
 ```

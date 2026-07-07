@@ -91,12 +91,15 @@ ServiceHub extends beyond Azure Service Bus to support **AWS SQS/SNS** and **GCP
 | Provider | Status | Queues | Dead-Letter | Replay | Cross-Cloud Trace |
 |----------|--------|--------|-------------|--------|-------------------|
 | **Azure Service Bus** | ✅ GA | ✅ | ✅ | ✅ | ✅ |
-| **AWS SQS / SNS** | 🔶 Preview | ✅ | ✅ (MaxReceive) | ✅ | 🔜 Phase 2 |
-| **GCP Pub/Sub** | 🔶 Preview | ✅ | ✅ (nack/ack deadline) | ✅ | 🔜 Phase 2 |
+| **AWS SQS / SNS** | 🔶 Preview | ✅ | ✅ (MaxReceive) | ✅ | ✅¹ |
+| **GCP Pub/Sub** | 🔶 Preview | ✅ | ✅ peek (nack/ack deadline)² | ✅ | ✅¹ |
+
+¹ Cross-Cloud Trace searches any namespace whose provider is registered in the API's dependency-injection container. Azure is always registered; AWS/GCP registration is disabled by default in this build — use Simulator mode, or register the provider, to exercise AWS/GCP trace search.
+² GCP Pub/Sub supports peeking dead-lettered messages via the subscription's configured dead-letter topic, but not manually moving a message to the DLQ on demand — Pub/Sub dead-lettering is policy-driven via `MaxDeliveryAttempts` on the subscription. Message counts are also unavailable via the Pub/Sub API and are reported as `0`.
 
 ### 🌐 Cross-Cloud Trace
 Connect namespaces from two or more cloud providers and use **Multi-Cloud Trace** to trace a single Correlation ID or message GUID as it routes from Azure $\rightarrow$ AWS $\rightarrow$ GCP (or any combination). The result is a visual routing path diagram, a chronological hop timeline, and a namespace search-coverage panel.
-*(Phase 1 searches Azure namespaces in parallel; AWS and GCP node searches arrive in Phase 2)*.
+*(Azure namespaces are always searched in parallel. AWS and GCP namespaces are searched the same way whenever those providers are registered on the server; if a provider isn't registered, its namespaces are skipped with a reason shown in the search-coverage panel instead of being silently omitted.)*
 
 ---
 
@@ -216,18 +219,24 @@ Browser (React 19 SPA)
         └── Axios API client → Vite dev proxy
               └── ASP.NET Core 10 API
                     ├── NamespacesController      → AES-GCM encrypted connections
-                    ├── MessagesController        → PeekMessagesAsync (read-only)
-                    ├── QueuesController          → queue metadata + counts
-                    ├── DlqHistoryController      → SQLite DLQ intelligence
+                    ├── DlqHistoryController      → SQLite DLQ intelligence (no cloud SDK call)
                     ├── RulesController           → auto-replay rule engine
-                    ├── CrossCloudTraceController → trace messages across clouds
-                    └── SimulatorController       → seeded demo data (no credentials)
-                          ├── Azure.Messaging.ServiceBus SDK
-                          ├── AWSSDK.SQS / AWSSDK.SNS
-                          └── Google.Cloud.PubSub.V1
+                    ├── SimulatorController       → seeded demo data (no credentials)
+                    ├── MessagesController        ┐
+                    ├── QueuesController          ├── IMessageOperationsService → CloudProviderRouter
+                    ├── TopicsController          ┘
+                    └── CrossCloudTraceController → same ICloudMessagingProvider abstraction
+                                                     (Azure dispatched via IAzureTraceSearcher,
+                                                      AWS/GCP dispatched directly)
+                                                            │
+                                                            ▼
+                                                  ICloudMessagingProvider implementations
+                                                            ├── Azure.Messaging.ServiceBus SDK
+                                                            ├── AWSSDK.SQS / AWSSDK.SNS
+                                                            └── Google.Cloud.PubSub.V1
 ```
 
-For deep-dive architecture details, see [ARCHITECTURE.md](services/api/ARCHITECTURE.md) and the [Comprehensive Guide](docs/COMPREHENSIVE-GUIDE.md).
+For deep-dive architecture details, see [ARCHITECTURE.md](services/api/ARCHITECTURE.md) and the [Comprehensive Guide](docs/COMPREHENSIVE-GUIDE.md). For exactly which controllers share a routing path today (and which don't yet), see [docs/FLOW.md](docs/FLOW.md).
 
 ---
 

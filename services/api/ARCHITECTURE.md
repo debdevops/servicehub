@@ -36,10 +36,13 @@ graph TB
         RESULT["Result Types"]
     end
 
-    subgraph Infrastructure["⚙️ INFRASTRUCTURE LAYER ServiceHub.Infrastructure"]
-        IMPL["Service Implementations"]
-        SB["Azure Service Bus"]
-        AI["AI Service"]
+    subgraph Infrastructure["⚙️ INFRASTRUCTURE LAYER"]
+        IMPL["MessageOperationsService<br/>(ServiceHub.Infrastructure)"]
+        ROUTER["CloudProviderRouter<br/>resolves ICloudMessagingProvider"]
+        SB["Azure provider<br/>ServiceHub.Infrastructure"]
+        AWSP["AWS provider<br/>ServiceHub.Infrastructure.Aws"]
+        GCPP["GCP provider<br/>ServiceHub.Infrastructure.Gcp"]
+        AI["AIServiceClient<br/>stub — not implemented, no external calls"]
         REPO["Repositories"]
         CRYPTO["Encryption"]
     end
@@ -51,8 +54,9 @@ graph TB
     end
 
     subgraph External["🌐 EXTERNAL SYSTEMS"]
-        ASB["Azure Service Bus"]
-        AIAPI["AI API"]
+        ASB["Azure.Messaging.ServiceBus SDK"]
+        AWSSDK["AWSSDK.SQS / AWSSDK.SNS"]
+        GCPSDK["Google.Cloud.PubSub.V1"]
         KV["Azure Key Vault"]
     end
 
@@ -64,17 +68,20 @@ graph TB
     FILTER --> MIDDLEWARE
     MIDDLEWARE --> EXT
     INTERFACE --> IMPL
+    IMPL --> ROUTER
+    ROUTER --> SB
+    ROUTER --> AWSP
+    ROUTER --> GCPP
     IMPL --> REPO
     IMPL --> CRYPTO
-    IMPL --> SB
-    IMPL --> AI
     ENTITY --> INTERFACE
     RESULT --> CTRL
     HELPER --> IMPL
     CONST --> IMPL
     REPO --> ENTITY
     SB --> ASB
-    AI --> AIAPI
+    AWSP --> AWSSDK
+    GCPP --> GCPSDK
     CRYPTO --> KV
 
     style Presentation fill:#1565c0,stroke:#0d47a1,stroke-width:4px,color:#fff
@@ -94,7 +101,10 @@ graph TB
     style INTERFACE color:#fff
     style RESULT color:#fff
     style IMPL color:#fff
+    style ROUTER color:#fff
     style SB color:#fff
+    style AWSP color:#fff
+    style GCPP color:#fff
     style AI color:#fff
     style REPO color:#fff
     style CRYPTO color:#fff
@@ -102,7 +112,8 @@ graph TB
     style HELPER color:#fff
     style MODEL color:#fff
     style ASB color:#fff
-    style AIAPI color:#fff
+    style AWSSDK color:#fff
+    style GCPSDK color:#fff
     style KV color:#fff
 ```
 
@@ -166,21 +177,20 @@ graph LR
 
     subgraph Services["💼 CORE SERVICES"]
         direction TB
-        NSMGR["INamespaceService<br/>Manages connections"]
-        MSGMGR["IMessageService<br/>CRUD operations"]
-        QMGR["IQueueService<br/>Queue operations"]
-        TMGR["ITopicService<br/>Topic operations"]
+        NSMGR["INamespaceRepository<br/>Manages connections"]
+        MSGMGR["IMessageOperationsService<br/>Messages/Queues/Topics controllers depend on this"]
+        CPR["CloudProviderRouter<br/>Resolves ICloudMessagingProvider by CloudProviderType"]
+        CMP["ICloudMessagingProvider<br/>one impl per cloud (Azure/AWS/GCP)"]
     end
 
     subgraph Infrastructure_Impl["⚙️ INFRASTRUCTURE IMPLEMENTATIONS"]
         direction TB
-        NSMGR_IMPL["NamespaceService"]
-        MSGMGR_IMPL["MessageService"]
-        QMGR_IMPL["QueueService"]
-        TMGR_IMPL["TopicService"]
+        NSMGR_IMPL["InMemoryNamespaceRepository"]
+        MSGMGR_IMPL["MessageOperationsService"]
+        AZ_PROVIDER["AzureMessagingProvider<br/>+ Polly retry pipeline"]
+        AWS_PROVIDER["AwsMessagingProvider<br/>+ AwsResiliencePipeline (Polly)"]
+        GCP_PROVIDER["GcpMessagingProvider<br/>+ GcpResiliencePipeline (Polly)"]
         SB_FACT["ServiceBusClientFactory"]
-        REPO["INamespaceRepository"]
-        REPO_IMPL["InMemoryRepository"]
     end
 
     subgraph Security["🔒 SECURITY SERVICES"]
@@ -195,6 +205,8 @@ graph LR
         direction TB
         SB_SDK["Azure.Messaging.ServiceBus"]
         AZURE_ID["Azure.Identity"]
+        AWS_SDK["AWSSDK.SQS / AWSSDK.SNS"]
+        GCP_SDK["Google.Cloud.PubSub.V1"]
     end
 
     CONFIG --> AUTH
@@ -203,14 +215,15 @@ graph LR
     HTTP --> APIKEY
 
     Services -->|implemented by| Infrastructure_Impl
-    NSMGR_IMPL --> SB_FACT
-    NSMGR_IMPL --> REPO
-    REPO --> REPO_IMPL
-    MSGMGR_IMPL --> SB_FACT
-    QMGR_IMPL --> SB_FACT
-    TMGR_IMPL --> SB_FACT
+    MSGMGR_IMPL --> CPR
+    CPR --> AZ_PROVIDER
+    CPR --> AWS_PROVIDER
+    CPR --> GCP_PROVIDER
+    AZ_PROVIDER --> SB_FACT
     SB_FACT --> SB_SDK
     SB_FACT --> AZURE_ID
+    AWS_PROVIDER --> AWS_SDK
+    GCP_PROVIDER --> GCP_SDK
     NSMGR_IMPL --> AUTH
 
     DI -.->|provides| Services
@@ -376,7 +389,7 @@ graph TB
     end
 
     subgraph RateLimit["⏱️ RATE LIMITING"]
-        IP_LIMIT["IP-based Limiting<br/>100 req/min"]
+        IP_LIMIT["Owner-based Limiting<br/>keys on authenticated OwnerId,<br/>falls back to remote IP if unauthenticated<br/>300 req/min"]
         SLIDING["Sliding Window<br/>Rolling 60s window"]
         BACKOFF["Exponential Backoff<br/>429 with Retry-After"]
     end
@@ -418,7 +431,7 @@ graph TD
     
     E --> F["5. ApiKeyAuthMiddleware<br/>Validate X-API-KEY header<br/>Order: FIFTH | Scope: ALL (except /health, /swagger)"]
     
-    F --> G["6. RateLimitingMiddleware<br/>Check rate limit per IP<br/>Order: SIXTH | Scope: PRODUCTION only"]
+    F --> G["6. RateLimitingMiddleware<br/>Check rate limit per authenticated owner<br/>(falls back to remote IP)<br/>Order: SIXTH | Scope: PRODUCTION only"]
     
     G --> H["7. CompressionMiddleware<br/>Enable gzip/brotli<br/>Order: SEVENTH | Scope: ALL responses"]
     
@@ -641,7 +654,7 @@ graph TD
 
     I --> T["Header Names<br/>X-Correlation-Id<br/>X-RateLimit-*<br/>X-Total-Count<br/>X-Page-*"]
 
-    J --> U["Max Requests: 100"]
+    J --> U["Max Requests: 300"]
     J --> V["Window Duration: 1 minute"]
 
     K --> W["Connection Cache: 60 min"]
