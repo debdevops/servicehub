@@ -28,7 +28,7 @@ const appInsights = new ApplicationInsights({
     excludeRequestFromAutoTrackingPatterns: [
       /\/api\/v1\/namespaces\/[^/]+\/queues\/[^/]+\/messages/i,
       /\/api\/v1\/namespaces\/[^/]+\/topics\//i,
-      /\/api\/v1\/correlation/i,
+      /\/api\/v1\/trace/i,
       /\/health/i,
       /\/internal\//i,
     ],

@@ -293,16 +293,6 @@ public static class ApiRoutes
         }
     }
 
-    /// <summary>Routes for correlation search endpoints.</summary>
-    public static class Correlation
-    {
-        /// <summary>Base route for correlation search.</summary>
-        public const string Base = $"{VersionedBase}/correlation";
-
-        /// <summary>Route for timeline search by correlation ID.</summary>
-        public const string Timeline = $"{Base}/timeline";
-    }
-
     /// <summary>Routes for cross-cloud correlation tracing.</summary>
     public static class CrossCloudTrace
     {

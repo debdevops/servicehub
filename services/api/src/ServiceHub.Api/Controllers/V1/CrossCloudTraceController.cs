@@ -1,12 +1,14 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Services;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Constants;
 
@@ -23,11 +25,13 @@ public sealed class CrossCloudTraceController : ApiControllerBase
 {
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IAzureTraceSearcher _azureTraceSearcher;
+    private readonly DlqDbContext _dlqContext;
     private readonly IEnumerable<ICloudMessagingProvider> _cloudProviders;
     private readonly ILogger<CrossCloudTraceController> _logger;
 
     private const int MaxConcurrentNamespaces = 5;
     private const int SearchTimeoutSeconds = 30;
+    private const int MaxHistoryEntries = 200;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CrossCloudTraceController"/> class.
@@ -35,11 +39,13 @@ public sealed class CrossCloudTraceController : ApiControllerBase
     public CrossCloudTraceController(
         INamespaceRepository namespaceRepository,
         IAzureTraceSearcher azureTraceSearcher,
+        DlqDbContext dlqContext,
         ILogger<CrossCloudTraceController> logger,
         IEnumerable<ICloudMessagingProvider>? cloudProviders = null)
     {
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _azureTraceSearcher = azureTraceSearcher ?? throw new ArgumentNullException(nameof(azureTraceSearcher));
+        _dlqContext = dlqContext ?? throw new ArgumentNullException(nameof(dlqContext));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _cloudProviders = cloudProviders ?? [];
     }
@@ -254,6 +260,76 @@ public sealed class CrossCloudTraceController : ApiControllerBase
 
         await Task.WhenAll(nonAzureTasks).ConfigureAwait(false);
 
+        // ── Merge historical DLQ records from SQLite (DLQ intelligence) ───
+        // Messages that were already replayed, archived, or discarded no longer
+        // appear in live peeks; their DlqMessage rows keep them in the trace.
+        var historyHops = new List<CrossCloudTraceHop>();
+        try
+        {
+            // TENANT ISOLATION: Filter DLQ records by owner
+            var dlqMessages = await _dlqContext.DlqMessages
+                .Where(m => m.CorrelationId == traceId && m.OwnerId == OwnerId)
+                .OrderBy(m => m.DetectedAtUtc)
+                .Take(MaxHistoryEntries)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            // Prefer Live over History: a hop already found by the live search
+            // supersedes its historical DLQ record. Live hops are never collapsed —
+            // the same MessageId legitimately appears once per cloud/entity hop.
+            var liveMessageIds = hops
+                .Select(h => h.MessageId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var nsDisplayNames = allNamespaces.ToDictionary(ns => ns.Id, ns => ns.DisplayName ?? ns.Name);
+
+            foreach (var dlq in dlqMessages)
+            {
+                if (liveMessageIds.Contains(dlq.MessageId))
+                    continue;
+
+                var state = dlq.Status switch
+                {
+                    DlqMessageStatus.Active => "DeadLettered",
+                    DlqMessageStatus.Replayed => "Replayed",
+                    DlqMessageStatus.Archived => "DeadLettered",
+                    DlqMessageStatus.Discarded => "Resolved",
+                    DlqMessageStatus.ReplayFailed => "DeadLettered",
+                    DlqMessageStatus.Resolved => "Resolved",
+                    _ => "DeadLettered"
+                };
+
+                historyHops.Add(new CrossCloudTraceHop(
+                    CloudProvider: dlq.CloudProvider switch
+                    {
+                        CloudProviderType.Aws => "aws",
+                        CloudProviderType.Gcp => "gcp",
+                        _ => dlq.CloudProvider.ToString().ToLowerInvariant()
+                    },
+                    NamespaceId: dlq.NamespaceId,
+                    NamespaceDisplayName: nsDisplayNames.TryGetValue(dlq.NamespaceId, out var name)
+                        ? name
+                        : dlq.NamespaceId.ToString(),
+                    EntityName: dlq.EntityName,
+                    EntityPath: dlq.EntityName,
+                    MessageId: dlq.MessageId,
+                    SequenceNumber: dlq.SequenceNumber,
+                    State: state,
+                    Timestamp: dlq.DetectedAtUtc,
+                    DeadLetterReason: dlq.DeadLetterReason,
+                    BodyPreview: dlq.BodyPreview,
+                    SizeInBytes: dlq.MessageSize,
+                    Source: "History",
+                    HopIndex: 0));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to query historical DLQ records for trace {TraceId}",
+                LogRedactor.SanitiseForLog(traceId));
+        }
+
         // ── Build final response ──────────────────────────────────────────
         var allSummaries = azureSummaries
             .Concat(nonAzureSummaries)
@@ -263,6 +339,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
 
         // Sort hops chronologically and assign HopIndex
         var sortedHops = hops
+            .Concat(historyHops)
             .OrderBy(h => h.Timestamp)
             .Select((h, i) => h with { HopIndex = i })
             .ToList();

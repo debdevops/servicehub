@@ -17,7 +17,6 @@ import { DEMO_NAMESPACE_IDS } from '@/lib/demo/mockProviders';
 // Lazy-load heavy pages to improve initial bundle size and cold-start performance
 const DashboardPageLazy = lazy(() => import('./pages/DashboardPage'));
 const DlqHistoryPageLazy = lazy(() => import('./pages/DlqHistoryPage'));
-const CorrelationExplorerPageLazy = lazy(() => import('./pages/CorrelationExplorerPage'));
 const InsightsPageLazy = lazy(() => import('./pages/InsightsPage').then(m => ({ default: m.InsightsPage })));
 const CloudBridgePageLazy = lazy(() => import('./pages/CloudBridgePage').then(m => ({ default: m.CloudBridgePage })));
 const SimulatorPageLazy = lazy(() => import('./pages/SimulatorPage').then(m => ({ default: m.SimulatorPage })));
@@ -97,14 +96,6 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <DlqHistoryPageLazy />
-      </Suspense>
-    ),
-  },
-  {
-    path: 'correlation',
-    element: (
-      <Suspense fallback={<PageLoading />}>
-        <CorrelationExplorerPageLazy />
       </Suspense>
     ),
   },
@@ -267,14 +258,6 @@ export const router = createBrowserRouter([
       {
         path: 'scheduled',
         element: <ScheduledMessagesPage />,
-      },
-      {
-        path: 'correlation',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <CorrelationExplorerPageLazy />
-          </Suspense>
-        ),
       },
       {
         path: 'security',

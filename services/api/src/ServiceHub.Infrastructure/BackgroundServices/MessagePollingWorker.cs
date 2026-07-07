@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Interfaces;
@@ -10,24 +11,20 @@ namespace ServiceHub.Infrastructure.BackgroundServices;
 /// </summary>
 public sealed class MessagePollingWorker : BackgroundService
 {
-    private readonly INamespaceRepository _namespaceRepository;
-    private readonly IMessageReceiver _messageReceiver;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<MessagePollingWorker> _logger;
     private readonly TimeSpan _pollingInterval = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MessagePollingWorker"/> class.
     /// </summary>
-    /// <param name="namespaceRepository">The namespace repository.</param>
-    /// <param name="messageReceiver">The message receiver.</param>
+    /// <param name="serviceProvider">Root service provider for per-cycle scope creation.</param>
     /// <param name="logger">The logger instance.</param>
     public MessagePollingWorker(
-        INamespaceRepository namespaceRepository,
-        IMessageReceiver messageReceiver,
+        IServiceProvider serviceProvider,
         ILogger<MessagePollingWorker> logger)
     {
-        _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
-        _messageReceiver = messageReceiver ?? throw new ArgumentNullException(nameof(messageReceiver));
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -71,7 +68,9 @@ public sealed class MessagePollingWorker : BackgroundService
 
     private async Task PollMessagesAsync(CancellationToken cancellationToken)
     {
-        var namespacesResult = await _namespaceRepository.GetActiveAsync(cancellationToken).ConfigureAwait(false);
+        using var scope = _serviceProvider.CreateScope();
+        var namespaceRepository = scope.ServiceProvider.GetRequiredService<INamespaceRepository>();
+        var namespacesResult = await namespaceRepository.GetActiveAsync(cancellationToken).ConfigureAwait(false);
 
         if (namespacesResult.IsFailure)
         {

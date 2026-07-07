@@ -8,7 +8,7 @@ export const crossCloudTraceApi = {
    */
   trace: async (traceId: string): Promise<CrossCloudTraceResponse> => {
     const response = await apiClient.get<CrossCloudTraceResponse>(
-      '/cross-cloud-trace/trace',
+      '/trace',
       { params: { traceId } }
     );
     return response.data;

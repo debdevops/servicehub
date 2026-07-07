@@ -8,6 +8,7 @@ using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Results;
 
@@ -22,13 +23,13 @@ public sealed class DlqMonitorService : IDlqMonitorService
 {
     private readonly DlqDbContext _dbContext;
     private readonly INamespaceRepository _namespaceRepository;
-    private readonly IServiceBusClientCache _clientCache;
-    private readonly IConnectionStringProtector _protector;
+    private readonly CloudProviderRouter _router;
     private readonly IForensicEngine _forensicEngine;
     private readonly ILogger<DlqMonitorService> _logger;
 
     private const int MaxBodyPreviewLength = 500;
     private const int PeekBatchSize = 100;
+    private const string SubscriptionPathSegment = "/subscriptions/";
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DlqMonitorService"/> class.
@@ -36,15 +37,13 @@ public sealed class DlqMonitorService : IDlqMonitorService
     public DlqMonitorService(
         DlqDbContext dbContext,
         INamespaceRepository namespaceRepository,
-        IServiceBusClientCache clientCache,
-        IConnectionStringProtector protector,
+        CloudProviderRouter router,
         IForensicEngine forensicEngine,
         ILogger<DlqMonitorService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
-        _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
-        _protector = protector ?? throw new ArgumentNullException(nameof(protector));
+        _router = router ?? throw new ArgumentNullException(nameof(router));
         _forensicEngine = forensicEngine ?? throw new ArgumentNullException(nameof(forensicEngine));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -63,132 +62,74 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
         var ns = nsResult.Value;
 
-        // DLQ monitoring is currently implemented only against Azure Service Bus
-        // (this service uses IServiceBusClientCache directly). For AWS/GCP namespaces
-        // return an explicit, actionable result instead of attempting to build an
-        // Azure client from a non-Azure connection string and surfacing a confusing
-        // "Failed to create Service Bus client" error.
-        if (ns.Provider != CloudProviderType.Azure)
+        if (!_router.IsRegistered(ns.Provider))
         {
             _logger.LogInformation(
-                "Skipping DLQ scan for namespace {NamespaceId}: DLQ monitoring is currently supported only for Azure Service Bus (provider: {Provider})",
+                "Skipping DLQ scan for namespace {NamespaceId}: no ICloudMessagingProvider registered for provider {Provider}",
                 namespaceId, ns.Provider);
             return Result<int>.Failure(Error.Validation(
                 "Dlq.ProviderNotSupported",
-                $"DLQ monitoring is currently supported only for Azure Service Bus namespaces. Namespace '{ns.Name}' uses provider '{ns.Provider}'."));
+                $"DLQ monitoring is not available for namespace '{ns.Name}': no provider is registered for '{ns.Provider}'."));
         }
 
-        IServiceBusClientWrapper client;
-        try
+        var provider = _router.Resolve(ns.Provider);
+
+        var entitiesResult = await provider.ListEntitiesAsync(namespaceId, cancellationToken);
+        if (entitiesResult.IsFailure)
         {
-            if (string.IsNullOrEmpty(ns.ConnectionString))
-            {
-                _logger.LogWarning("Namespace {NamespaceId} has no connection string, skipping DLQ scan", namespaceId);
-                return Result<int>.Failure(Error.Validation(
-                    "Dlq.NoConnectionString",
-                    "Namespace has no connection string configured"));
-            }
-
-            var unprotectResult = _protector.Unprotect(ns.ConnectionString);
-            if (unprotectResult.IsFailure)
-            {
-                _logger.LogWarning("Failed to unprotect connection string for namespace {NamespaceId}", namespaceId);
-                return Result<int>.Failure(unprotectResult.Error);
-            }
-
-            client = _clientCache.GetOrCreate(namespaceId, unprotectResult.Value);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to create Service Bus client for namespace {NamespaceId}", namespaceId);
-            return Result<int>.Failure(Error.ExternalService(
-                "Dlq.ClientFailed",
-                $"Failed to create Service Bus client: {ex.Message}"));
+            _logger.LogWarning(
+                "Failed to list entities for namespace {NamespaceId}: {Error}",
+                namespaceId, entitiesResult.Error.Message);
+            return Result<int>.Failure(entitiesResult.Error);
         }
 
+        var receiver = provider.GetMessageReceiver();
         var totalNew = 0;
 
-        // Track all entities that we successfully scanned, with their live sequence numbers.
-        // Key = fullEntityName, Value = set of sequence numbers currently in the DLQ.
-        var scannedEntities = new Dictionary<string, HashSet<long>>();
+        // Track all entities that we successfully scanned, with their live DLQ message counts.
+        // Key = fullEntityName, Value = number of messages currently in the DLQ.
+        var scannedEntities = new Dictionary<string, int>();
 
-        // Scan queue DLQs
-        try
+        foreach (var entity in entitiesResult.Value)
         {
-            var queuesResult = await client.GetQueuesAsync(cancellationToken);
-            if (queuesResult.IsSuccess)
-            {
-                foreach (var queue in queuesResult.Value)
-                {
-                    if (queue.DeadLetterMessageCount > 0)
-                    {
-                        _logger.LogInformation("Queue {Queue} has {Count} DLQ messages", 
-                            LogRedactor.SanitiseForLog(queue.Name), queue.DeadLetterMessageCount);
-                        var (newCount, liveSequenceNumbers) = await ScanEntityDlqAsync(
-                            client, namespaceId, queue.Name, null,
-                            ServiceBusEntityType.Queue, ns.OwnerId, ns.Provider, cancellationToken);
-                        totalNew += newCount;
-                        scannedEntities[queue.Name] = liveSequenceNumbers;
-                    }
-                    else
-                    {
-                        // Entity has 0 DLQ messages — track as empty for reconciliation
-                        scannedEntities[queue.Name] = new HashSet<long>();
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error scanning queue DLQs for namespace {NamespaceId}", namespaceId);
-        }
+            if (entity.EntityType is not ("Queue" or "Subscription"))
+                continue;
 
-        // Scan subscription DLQs
-        try
-        {
-            var topicsResult = await client.GetTopicsAsync(cancellationToken);
-            if (topicsResult.IsSuccess)
+            // GCP dead-letter subscriptions follow the "{subscription}-dlq" naming convention;
+            // they are DLQs themselves and must not be scanned for their own dead letters.
+            if (ns.Provider == CloudProviderType.Gcp && entity.Name.EndsWith("-dlq", StringComparison.Ordinal))
+                continue;
+
+            // Azure reports DeadLetterCount, so entities with 0 can be skipped without peeking.
+            // AWS/GCP entity listings do not populate DeadLetterCount — peek unconditionally.
+            if (ns.Provider == CloudProviderType.Azure && entity.DeadLetterCount == 0)
             {
-                foreach (var topic in topicsResult.Value)
-                {
-                    var subsResult = await client.GetSubscriptionsAsync(topic.Name, cancellationToken);
-                    if (subsResult.IsSuccess)
-                    {
-                        foreach (var sub in subsResult.Value)
-                        {
-                            var fullEntityName = $"{topic.Name}/subscriptions/{sub.Name}";
-                            if (sub.DeadLetterMessageCount > 0)
-                            {
-                                _logger.LogInformation("Subscription {Topic}/{Subscription} has {Count} DLQ messages", 
-                                    LogRedactor.SanitiseForLog(topic.Name), LogRedactor.SanitiseForLog(sub.Name), sub.DeadLetterMessageCount);
-                                var (newCount, liveSequenceNumbers) = await ScanEntityDlqAsync(
-                                    client, namespaceId, sub.Name, topic.Name,
-                                    ServiceBusEntityType.Subscription, ns.OwnerId, ns.Provider, cancellationToken);
-                                totalNew += newCount;
-                                scannedEntities[fullEntityName] = liveSequenceNumbers;
-                            }
-                            else
-                            {
-                                // Entity has 0 DLQ messages — track as empty for reconciliation
-                                scannedEntities[fullEntityName] = new HashSet<long>();
-                            }
-                        }
-                    }
-                }
+                scannedEntities[entity.Name] = 0;
+                continue;
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error scanning subscription DLQs for namespace {NamespaceId}", namespaceId);
+
+            var (entityName, topicName, entityType) = ParseEntity(entity.Name, entity.EntityType);
+
+            if (entity.DeadLetterCount > 0)
+            {
+                _logger.LogInformation("{EntityType} {EntityName} has {Count} DLQ messages",
+                    entity.EntityType, LogRedactor.SanitiseForLog(entity.Name), entity.DeadLetterCount);
+            }
+
+            var (newCount, liveCount) = await ScanEntityDlqAsync(
+                receiver, namespaceId, entityName, topicName,
+                entityType, ns.OwnerId, ns.Provider, cancellationToken);
+            totalNew += newCount;
+            scannedEntities[entity.Name] = liveCount;
         }
 
         // Reconcile: for entities with 0 DLQ messages, mark any remaining Active DB records as Replayed
         var reconciledCount = 0;
         try
         {
-            foreach (var (entityName2, seqNums) in scannedEntities)
+            foreach (var (entityName2, liveCount) in scannedEntities)
             {
-                if (seqNums.Count == 0)
+                if (liveCount == 0)
                 {
                     var staleRecords = await _dbContext.DlqMessages
                         .Where(m => m.NamespaceId == namespaceId
@@ -231,8 +172,28 @@ public sealed class DlqMonitorService : IDlqMonitorService
         return totalNew;
     }
 
-    private async Task<(int NewCount, HashSet<long> LiveSequenceNumbers)> ScanEntityDlqAsync(
-        IServiceBusClientWrapper client,
+    private static (string EntityName, string? TopicName, ServiceBusEntityType EntityType) ParseEntity(
+        string fullName, string cloudEntityType)
+    {
+        if (cloudEntityType == "Subscription")
+        {
+            // Azure subscriptions are listed as "topic/subscriptions/subscription";
+            // GCP subscriptions are listed by their bare subscription ID.
+            var idx = fullName.IndexOf(SubscriptionPathSegment, StringComparison.Ordinal);
+            if (idx >= 0)
+            {
+                return (fullName[(idx + SubscriptionPathSegment.Length)..], fullName[..idx],
+                    ServiceBusEntityType.Subscription);
+            }
+
+            return (fullName, null, ServiceBusEntityType.Subscription);
+        }
+
+        return (fullName, null, ServiceBusEntityType.Queue);
+    }
+
+    private async Task<(int NewCount, int LiveCount)> ScanEntityDlqAsync(
+        IMessageReceiver receiver,
         Guid namespaceId,
         string entityName,
         string? topicName,
@@ -242,8 +203,13 @@ public sealed class DlqMonitorService : IDlqMonitorService
         CancellationToken cancellationToken)
     {
         var newCount = 0;
-        var liveSequenceNumbers = new HashSet<long>();
-        var fullEntityName = topicName != null ? $"{topicName}/subscriptions/{entityName}" : entityName;
+        var liveCount = 0;
+        var fullEntityName = topicName != null ? $"{topicName}{SubscriptionPathSegment}{entityName}" : entityName;
+
+        // Azure sequence numbers are stable identifiers; AWS/GCP sequence numbers are hashes
+        // of per-delivery receipt handles / ack IDs and change on every peek, so those
+        // providers must dedup and reconcile by MessageId instead.
+        var useSequenceKey = provider == CloudProviderType.Azure;
 
         try
         {
@@ -254,37 +220,39 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 FromDeadLetter: true,
                 MaxMessages: PeekBatchSize);
 
-            var messagesResult = await client.PeekMessagesAsync(request, cancellationToken);
+            var messagesResult = await receiver.PeekDeadLetterMessagesAsync(request, cancellationToken);
             if (messagesResult.IsFailure)
             {
                 _logger.LogWarning(
                     "Failed to peek DLQ messages from {EntityType} {EntityName}: {Error}",
                     entityType, LogRedactor.SanitiseForLog(entityName), messagesResult.Error.Message);
-                return (0, liveSequenceNumbers);
+                return (0, liveCount);
             }
 
             var detectedAt = DateTimeOffset.UtcNow;
-
-            // Track which messages are currently in DLQ
-            var currentDlqSequenceNumbers = messagesResult.Value
-                .Select(m => m.SequenceNumber)
-                .ToHashSet();
 
             foreach (var msg in messagesResult.Value)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                liveSequenceNumbers.Add(msg.SequenceNumber);
+                liveCount++;
 
                 var bodyHash = ComputeBodyHash(msg.Body);
 
                 // Check if message already exists in database
-                var existingMessage = await _dbContext.DlqMessages
-                    .FirstOrDefaultAsync(
-                        m => m.NamespaceId == namespaceId
-                             && m.EntityName == fullEntityName
-                             && m.SequenceNumber == msg.SequenceNumber,
-                        cancellationToken);
+                var existingMessage = useSequenceKey
+                    ? await _dbContext.DlqMessages
+                        .FirstOrDefaultAsync(
+                            m => m.NamespaceId == namespaceId
+                                 && m.EntityName == fullEntityName
+                                 && m.SequenceNumber == msg.SequenceNumber,
+                            cancellationToken)
+                    : await _dbContext.DlqMessages
+                        .FirstOrDefaultAsync(
+                            m => m.NamespaceId == namespaceId
+                                 && m.EntityName == fullEntityName
+                                 && m.MessageId == msg.MessageId,
+                            cancellationToken);
 
                 if (existingMessage != null)
                 {
@@ -341,12 +309,31 @@ public sealed class DlqMonitorService : IDlqMonitorService
             }
 
             // CRITICAL: Mark messages that are NO LONGER in DLQ as Replayed
-            var messagesNoLongerInDlq = await _dbContext.DlqMessages
-                .Where(m => m.NamespaceId == namespaceId
-                            && m.EntityName == fullEntityName
-                            && m.Status == DlqMessageStatus.Active
-                            && !currentDlqSequenceNumbers.Contains(m.SequenceNumber))
-                .ToListAsync(cancellationToken);
+            List<DlqMessage> messagesNoLongerInDlq;
+            if (useSequenceKey)
+            {
+                var currentDlqSequenceNumbers = messagesResult.Value
+                    .Select(m => m.SequenceNumber)
+                    .ToHashSet();
+                messagesNoLongerInDlq = await _dbContext.DlqMessages
+                    .Where(m => m.NamespaceId == namespaceId
+                                && m.EntityName == fullEntityName
+                                && m.Status == DlqMessageStatus.Active
+                                && !currentDlqSequenceNumbers.Contains(m.SequenceNumber))
+                    .ToListAsync(cancellationToken);
+            }
+            else
+            {
+                var currentDlqMessageIds = messagesResult.Value
+                    .Select(m => m.MessageId)
+                    .ToHashSet();
+                messagesNoLongerInDlq = await _dbContext.DlqMessages
+                    .Where(m => m.NamespaceId == namespaceId
+                                && m.EntityName == fullEntityName
+                                && m.Status == DlqMessageStatus.Active
+                                && !currentDlqMessageIds.Contains(m.MessageId))
+                    .ToListAsync(cancellationToken);
+            }
 
             foreach (var removedMessage in messagesNoLongerInDlq)
             {
@@ -384,7 +371,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 entityType, LogRedactor.SanitiseForLog(entityName), namespaceId);
         }
 
-        return (newCount, liveSequenceNumbers);
+        return (newCount, liveCount);
     }
 
     private static string ComputeBodyHash(string? body)

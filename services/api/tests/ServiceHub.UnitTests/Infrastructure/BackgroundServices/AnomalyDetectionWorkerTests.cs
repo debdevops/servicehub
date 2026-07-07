@@ -1,8 +1,8 @@
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Core.Entities;
-using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Shared.Results;
@@ -14,26 +14,27 @@ public sealed class AnomalyDetectionWorkerTests
     private readonly Mock<INamespaceRepository> _repoMock = new();
     private readonly Mock<IAIServiceClient> _aiMock = new();
 
+    private IServiceProvider BuildServiceProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(_repoMock.Object);
+        services.AddSingleton(_aiMock.Object);
+        return services.BuildServiceProvider();
+    }
+
     // ── Constructor ─────────────────────────────────────────────────
 
     [Fact]
-    public void Constructor_NullRepo_Throws()
+    public void Constructor_NullServiceProvider_Throws()
     {
-        var act = () => new AnomalyDetectionWorker(null!, _aiMock.Object, NullLogger<AnomalyDetectionWorker>.Instance);
-        act.Should().Throw<ArgumentNullException>().WithParameterName("namespaceRepository");
-    }
-
-    [Fact]
-    public void Constructor_NullAIClient_Throws()
-    {
-        var act = () => new AnomalyDetectionWorker(_repoMock.Object, null!, NullLogger<AnomalyDetectionWorker>.Instance);
-        act.Should().Throw<ArgumentNullException>().WithParameterName("aiServiceClient");
+        var act = () => new AnomalyDetectionWorker(null!, NullLogger<AnomalyDetectionWorker>.Instance);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("serviceProvider");
     }
 
     [Fact]
     public void Constructor_NullLogger_Throws()
     {
-        var act = () => new AnomalyDetectionWorker(_repoMock.Object, _aiMock.Object, null!);
+        var act = () => new AnomalyDetectionWorker(BuildServiceProvider(), null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -43,7 +44,7 @@ public sealed class AnomalyDetectionWorkerTests
         _aiMock.Setup(a => a.IsAvailableAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<bool>.Success(false));
 
-        var worker = new AnomalyDetectionWorker(_repoMock.Object, _aiMock.Object, NullLogger<AnomalyDetectionWorker>.Instance);
+        var worker = new AnomalyDetectionWorker(BuildServiceProvider(), NullLogger<AnomalyDetectionWorker>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
 
@@ -60,7 +61,7 @@ public sealed class AnomalyDetectionWorkerTests
         _aiMock.Setup(a => a.IsAvailableAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<bool>.Success(false));
 
-        var worker = new AnomalyDetectionWorker(_repoMock.Object, _aiMock.Object, NullLogger<AnomalyDetectionWorker>.Instance);
+        var worker = new AnomalyDetectionWorker(BuildServiceProvider(), NullLogger<AnomalyDetectionWorker>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
 
@@ -80,7 +81,7 @@ public sealed class AnomalyDetectionWorkerTests
         _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(Array.Empty<Namespace>()));
 
-        var worker = new AnomalyDetectionWorker(_repoMock.Object, _aiMock.Object, NullLogger<AnomalyDetectionWorker>.Instance);
+        var worker = new AnomalyDetectionWorker(BuildServiceProvider(), NullLogger<AnomalyDetectionWorker>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
 
@@ -95,7 +96,7 @@ public sealed class AnomalyDetectionWorkerTests
         _aiMock.Setup(a => a.IsAvailableAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<bool>.Failure(Error.Internal("err", "AI down")));
 
-        var worker = new AnomalyDetectionWorker(_repoMock.Object, _aiMock.Object, NullLogger<AnomalyDetectionWorker>.Instance);
+        var worker = new AnomalyDetectionWorker(BuildServiceProvider(), NullLogger<AnomalyDetectionWorker>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
 

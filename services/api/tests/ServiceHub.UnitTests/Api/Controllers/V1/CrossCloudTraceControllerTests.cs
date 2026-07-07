@@ -3,6 +3,7 @@ using System.Diagnostics;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -14,22 +15,31 @@ using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
+using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Api.Controllers.V1;
 
-public sealed class CrossCloudTraceControllerTests
+public sealed class CrossCloudTraceControllerTests : IDisposable
 {
     private readonly Mock<INamespaceRepository> _namespaceRepositoryMock = new();
     private readonly Mock<IServiceBusClientCache> _clientCacheMock = new();
     private readonly Mock<IConnectionStringProtector> _connectionStringProtectorMock = new();
     private readonly Mock<ILogger<CrossCloudTraceController>> _loggerMock = new();
     private readonly List<ICloudMessagingProvider> _cloudProviders = new();
+    private readonly DlqDbContext _dlqContext;
     private readonly CrossCloudTraceController _controller;
 
     public CrossCloudTraceControllerTests()
     {
+        var options = new DbContextOptionsBuilder<DlqDbContext>()
+            .UseSqlite("DataSource=:memory:")
+            .Options;
+        _dlqContext = new DlqDbContext(options);
+        _dlqContext.Database.OpenConnection();
+        _dlqContext.Database.EnsureCreated();
+
         // Use a real AzureTraceSearcher backed by the same cache/protector mocks so the
         // extracted Azure search algorithm remains exercised end-to-end via these tests.
         var azureTraceSearcher = new AzureTraceSearcher(
@@ -40,6 +50,7 @@ public sealed class CrossCloudTraceControllerTests
         _controller = new CrossCloudTraceController(
             _namespaceRepositoryMock.Object,
             azureTraceSearcher,
+            _dlqContext,
             _loggerMock.Object,
             _cloudProviders)
         {
@@ -52,6 +63,38 @@ public sealed class CrossCloudTraceControllerTests
             }
         };
     }
+
+    public void Dispose()
+    {
+        _dlqContext.Database.CloseConnection();
+        _dlqContext.Dispose();
+    }
+
+    private DlqMessage MakeDlqRecord(
+        string messageId,
+        string correlationId,
+        CloudProviderType provider = CloudProviderType.Azure,
+        DlqMessageStatus status = DlqMessageStatus.Replayed,
+        string ownerId = TestConstants.TestOwnerId,
+        DateTimeOffset? detectedAt = null) =>
+        new()
+        {
+            MessageId = messageId,
+            SequenceNumber = 1,
+            BodyHash = "abc",
+            NamespaceId = Guid.NewGuid(),
+            OwnerId = ownerId,
+            CloudProvider = provider,
+            CorrelationId = correlationId,
+            EntityName = "orders",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = detectedAt ?? DateTimeOffset.UtcNow,
+            DetectedAtUtc = detectedAt ?? DateTimeOffset.UtcNow,
+            DeadLetterReason = "MaxDeliveryCountExceeded",
+            BodyPreview = "preview",
+            MessageSize = 128,
+            Status = status,
+        };
 
     [Theory]
     [InlineData(null)]
@@ -408,5 +451,179 @@ public sealed class CrossCloudTraceControllerTests
         response.NamespaceSummaries.Should().HaveCount(1);
         response.NamespaceSummaries[0].WasSearched.Should().BeTrue();
         response.NamespaceSummaries[0].HopsFound.Should().Be(1);
+    }
+
+    // ── Historical DLQ merge ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task TraceMessage_HistoricalDlqRecord_AppearsAsHistoryHop_WithProviderTag()
+    {
+        // Arrange — no live namespaces; only a historical GCP DLQ record matches.
+        _namespaceRepositoryMock
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
+
+        _dlqContext.DlqMessages.Add(MakeDlqRecord(
+            "m-hist-gcp", "trace-123", CloudProviderType.Gcp, DlqMessageStatus.Replayed));
+        await _dlqContext.SaveChangesAsync();
+
+        // Act
+        var result = await _controller.TraceMessage("trace-123");
+
+        // Assert
+        result.Result.Should().BeOfType<OkObjectResult>();
+        var response = (CrossCloudTraceResponse)((OkObjectResult)result.Result!).Value!;
+        response.Hops.Should().HaveCount(1);
+        response.Hops[0].Source.Should().Be("History");
+        response.Hops[0].CloudProvider.Should().Be("gcp");
+        response.Hops[0].State.Should().Be("Replayed");
+        response.Hops[0].MessageId.Should().Be("m-hist-gcp");
+        response.CloudProviders.Should().Contain("gcp");
+    }
+
+    [Fact]
+    public async Task TraceMessage_LiveHopWithSameMessageId_SuppressesHistoryDuplicate()
+    {
+        // Arrange — AWS live search finds "m-aws"; a stale DLQ record for the same
+        // MessageId must be superseded by the live hop.
+        var ns = Namespace.Create("aws-queue", "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue", provider: CloudProviderType.Aws).Value;
+        _namespaceRepositoryMock
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
+
+        var providerMock = new Mock<ICloudMessagingProvider>();
+        providerMock.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Aws);
+        _cloudProviders.Add(providerMock.Object);
+
+        providerMock
+            .Setup(x => x.ListEntitiesAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Success(new List<CloudEntity>
+            {
+                new CloudEntity { Name = "aws-queue-1", EntityType = "Queue", Provider = CloudProviderType.Aws }
+            }));
+
+        var receiverMock = new Mock<IMessageReceiver>();
+        providerMock.Setup(x => x.GetMessageReceiver()).Returns(receiverMock.Object);
+        receiverMock
+            .Setup(x => x.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(new List<Message>
+            {
+                new Message
+                {
+                    MessageId = "m-aws",
+                    SequenceNumber = 100,
+                    CorrelationId = "trace-123",
+                    State = MessageState.Active,
+                    EnqueuedTime = DateTimeOffset.UtcNow,
+                    SizeInBytes = 200
+                }
+            }));
+
+        _dlqContext.DlqMessages.Add(MakeDlqRecord(
+            "m-aws", "trace-123", CloudProviderType.Aws, DlqMessageStatus.Replayed));
+        await _dlqContext.SaveChangesAsync();
+
+        // Act
+        var result = await _controller.TraceMessage("trace-123");
+
+        // Assert — one hop only, and it is the live one.
+        var response = (CrossCloudTraceResponse)((OkObjectResult)result.Result!).Value!;
+        response.Hops.Should().HaveCount(1);
+        response.Hops[0].Source.Should().Be("Live");
+    }
+
+    [Fact]
+    public async Task TraceMessage_HistoryAndLive_MergedChronologically_WithHopIndex()
+    {
+        // Arrange — a history record older than the live hop must sort first.
+        var ns = Namespace.Create("aws-queue", "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue", provider: CloudProviderType.Aws).Value;
+        _namespaceRepositoryMock
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
+
+        var providerMock = new Mock<ICloudMessagingProvider>();
+        providerMock.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Aws);
+        _cloudProviders.Add(providerMock.Object);
+
+        providerMock
+            .Setup(x => x.ListEntitiesAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Success(new List<CloudEntity>
+            {
+                new CloudEntity { Name = "aws-queue-1", EntityType = "Queue", Provider = CloudProviderType.Aws }
+            }));
+
+        var receiverMock = new Mock<IMessageReceiver>();
+        providerMock.Setup(x => x.GetMessageReceiver()).Returns(receiverMock.Object);
+        receiverMock
+            .Setup(x => x.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(new List<Message>
+            {
+                new Message
+                {
+                    MessageId = "m-aws-live",
+                    SequenceNumber = 100,
+                    CorrelationId = "trace-123",
+                    State = MessageState.Active,
+                    EnqueuedTime = DateTimeOffset.UtcNow,
+                    SizeInBytes = 200
+                }
+            }));
+
+        _dlqContext.DlqMessages.Add(MakeDlqRecord(
+            "m-azure-hist", "trace-123", CloudProviderType.Azure, DlqMessageStatus.Replayed,
+            detectedAt: DateTimeOffset.UtcNow.AddMinutes(-10)));
+        await _dlqContext.SaveChangesAsync();
+
+        // Act
+        var result = await _controller.TraceMessage("trace-123");
+
+        // Assert
+        var response = (CrossCloudTraceResponse)((OkObjectResult)result.Result!).Value!;
+        response.Hops.Should().HaveCount(2);
+        response.Hops[0].Source.Should().Be("History");
+        response.Hops[0].HopIndex.Should().Be(0);
+        response.Hops[1].Source.Should().Be("Live");
+        response.Hops[1].HopIndex.Should().Be(1);
+        response.IsMultiCloud.Should().BeTrue(); // azure (history) + aws (live)
+    }
+
+    [Fact]
+    public async Task TraceMessage_HistoricalRecordOfDifferentOwner_NotIncluded()
+    {
+        // Arrange — tenant isolation: another owner's DLQ record must never leak.
+        _namespaceRepositoryMock
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
+
+        _dlqContext.DlqMessages.Add(MakeDlqRecord(
+            "m-other-owner", "trace-123", ownerId: "entra:someone-else"));
+        await _dlqContext.SaveChangesAsync();
+
+        // Act
+        var result = await _controller.TraceMessage("trace-123");
+
+        // Assert
+        var response = (CrossCloudTraceResponse)((OkObjectResult)result.Result!).Value!;
+        response.Hops.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TraceMessage_HistoryQueryFails_StillReturnsLiveResults()
+    {
+        // Arrange — closing the SQLite connection makes the history query throw;
+        // the trace must degrade to live-only results, not fail.
+        _namespaceRepositoryMock
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
+
+        _dlqContext.Database.CloseConnection();
+
+        // Act
+        var result = await _controller.TraceMessage("trace-123");
+
+        // Assert
+        result.Result.Should().BeOfType<OkObjectResult>();
+        var response = (CrossCloudTraceResponse)((OkObjectResult)result.Result!).Value!;
+        response.Hops.Should().BeEmpty();
     }
 }
