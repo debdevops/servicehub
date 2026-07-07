@@ -671,11 +671,11 @@ export function DashboardPage() {
                 All Scheduled
               </button>
               <button
-                onClick={() => navigate('/correlation')}
+                onClick={() => navigate('/cross-cloud-trace')}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition-colors"
               >
                 <GitMerge className="w-3.5 h-3.5" />
-                Correlation Explorer
+                Cross-Cloud Trace
               </button>
               <button
                 onClick={() => navigate('/rules')}

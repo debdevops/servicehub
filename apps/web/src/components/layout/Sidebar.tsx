@@ -4,7 +4,6 @@ import {
   ChevronRight,
   Inbox,
   LayoutDashboard,
-  GitMerge,
   Plus,
   AlertCircle,
   Clock,
@@ -384,7 +383,6 @@ export function Sidebar() {
   const { isSimulator } = useIsSimulatorMode();
   const { isDemoMode, cloudProvider } = useDemoContext();
   // Multi-cloud: enabled when 2+ distinct cloud providers are connected
-  const hasMultiCloud = new Set((namespaces ?? []).map(n => n.cloudProvider ?? 'azure')).size >= 2;
 
   // Get active namespace for Quick Access
   const activeNamespace = namespaces?.find(ns => ns.isActive);
@@ -612,43 +610,18 @@ export function Sidebar() {
             <span className="text-xs text-sky-600 font-medium">View</span>
           </NavLink>
           <NavLink
-            to={`${navPrefix}/correlation`}
+            to={`${navPrefix}/cross-cloud-trace`}
             className={({ isActive }) =>
               `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
                 isActive
-                  ? 'bg-violet-50 text-violet-700 border-violet-300'
+                  ? 'bg-violet-50 text-violet-700 border-violet-300 font-medium'
                   : 'bg-white hover:bg-violet-50 text-gray-700 hover:text-violet-700 border-gray-200 hover:border-violet-300'
               }`
             }
           >
-            <GitMerge className="w-4 h-4 text-violet-500" />
-            <span className="flex-1 text-left">Correlation</span>
+            <Route className="w-4 h-4 text-violet-500" />
+            <span className="flex-1 text-left">Multi-Cloud Trace</span>
           </NavLink>
-          {hasMultiCloud ? (
-            <NavLink
-              to={`${navPrefix}/cross-cloud-trace`}
-              className={({ isActive }) =>
-                `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-                  isActive
-                    ? 'bg-violet-50 text-violet-700 border-violet-300 font-medium'
-                    : 'bg-white hover:bg-violet-50 text-gray-700 hover:text-violet-700 border-gray-200 hover:border-violet-300'
-                }`
-              }
-            >
-              <Route className="w-4 h-4 text-violet-500" />
-              <span className="flex-1 text-left">Multi-Cloud Trace</span>
-              <span className="text-xs text-violet-600 font-semibold bg-violet-50 px-1.5 py-0.5 rounded-full border border-violet-200">NEW</span>
-            </NavLink>
-          ) : (
-            <div
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm border border-gray-200 bg-gray-50 cursor-not-allowed opacity-60 shadow-sm"
-              title="Connect namespaces from 2+ cloud providers (Azure, AWS, GCP) to enable cross-cloud tracing"
-            >
-              <Route className="w-4 h-4 text-gray-400" />
-              <span className="flex-1 text-left text-gray-400">Multi-Cloud Trace</span>
-              <span className="text-xs text-gray-400">Multi-cloud only</span>
-            </div>
-          )}
           <NavLink
             to={`${navPrefix}/help`}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border border-gray-200 hover:border-primary-300 shadow-sm"

@@ -60,18 +60,18 @@ describe('CrossCloudTracePage', () => {
     expect(screen.getByText(/Trace a message as it routes across/)).toBeInTheDocument();
   });
 
-  it('shows multi-cloud gate warning when fewer than 2 cloud providers are connected', () => {
+  it('shows single-cloud hint when fewer than 2 cloud providers are connected', () => {
     mockUseNamespaces.mockReturnValue({ data: [azureNamespace] });
     const Wrapper = createWrapper();
     render(<Wrapper><CrossCloudTracePage /></Wrapper>);
-    expect(screen.getByText('Multi-cloud connection required')).toBeInTheDocument();
+    expect(screen.getByText('Tracing within one cloud')).toBeInTheDocument();
   });
 
-  it('does not show gate warning when 2+ cloud providers are connected', () => {
+  it('does not show single-cloud hint when 2+ cloud providers are connected', () => {
     mockUseNamespaces.mockReturnValue({ data: [azureNamespace, awsNamespace] });
     const Wrapper = createWrapper();
     render(<Wrapper><CrossCloudTracePage /></Wrapper>);
-    expect(screen.queryByText('Multi-cloud connection required')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tracing within one cloud')).not.toBeInTheDocument();
   });
 
   it('disables the Trace button when no traceId is entered', () => {
@@ -252,18 +252,17 @@ describe('CrossCloudTracePage', () => {
     expect(screen.getAllByText(/Azure/).length).toBeGreaterThan(0);
   });
 
-  it('gate warning shows "none" when no namespaces connected', () => {
+  it('single-cloud hint shows "none" when no namespaces connected', () => {
     mockUseNamespaces.mockReturnValue({ data: [] });
     const Wrapper = createWrapper();
     render(<Wrapper><CrossCloudTracePage /></Wrapper>);
     expect(screen.getByText(/none/)).toBeInTheDocument();
   });
 
-  it('input and button are disabled when gate is active', () => {
+  it('input stays enabled with a single cloud connected', () => {
     mockUseNamespaces.mockReturnValue({ data: [azureNamespace] });
     const Wrapper = createWrapper();
     render(<Wrapper><CrossCloudTracePage /></Wrapper>);
-    expect(screen.getByLabelText('Trace ID')).toBeDisabled();
-    expect(screen.getByRole('button', { name: /trace across clouds/i })).toBeDisabled();
+    expect(screen.getByLabelText('Trace ID')).toBeEnabled();
   });
 });

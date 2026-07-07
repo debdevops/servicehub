@@ -1,4 +1,3 @@
-export { CorrelationExplorerPage } from './CorrelationExplorerPage';
 export { MessagesPage } from './MessagesPage';
 export { ConnectPage } from './ConnectPage';
 export { RulesPage } from './RulesPage';

@@ -61,6 +61,11 @@ else
     builder.Services.AddAzureProvider();
 }
 
+// Background workers (DLQ monitoring, message polling, anomaly detection).
+// Registered after the provider block so DlqMonitorWorker scans through
+// whichever ICloudMessagingProvider set is active for this host.
+builder.Services.AddBackgroundWorkers();
+
 var app = builder.Build();
 
 // Wire Platform Event subscribers before any hosted service starts.
