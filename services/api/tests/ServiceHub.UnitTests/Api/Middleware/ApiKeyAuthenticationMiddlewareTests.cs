@@ -400,6 +400,77 @@ public class ApiKeyAuthenticationMiddlewareTests
         context.Response.StatusCode.Should().Be(401);
     }
 
+    // ── EasyAuth Short-Circuit ───────────────────────────────────────
+
+    [Fact]
+    public async Task InvokeAsync_EasyAuthAuthenticated_WithValidSpaToken_ShouldKeepEasyAuthOwnerId()
+    {
+        // EasyAuth + SpaToken both active (production config): the SPA-token branch
+        // must NOT overwrite the per-user EasyAuth OwnerId with the shared SPA owner.
+        var nextCalled = false;
+        RequestDelegate next = _ => { nextCalled = true; return Task.CompletedTask; };
+        var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
+        var spaTokenProvider = CreateSpaTokenProvider(enabled: true);
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config, spaTokenProvider);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/events/stream";
+        context.Request.Headers["X-SPA-Token"] = spaTokenProvider.GenerateToken();
+        context.Items["OwnerId"] = "entra:11111111-2222-3333-4444-555555555555";
+        context.Items["Authenticated"] = true;
+        context.Items["AuthMethod"] = "EasyAuth";
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
+        context.Items["OwnerId"].Should().Be("entra:11111111-2222-3333-4444-555555555555");
+        context.Items["AuthMethod"].Should().Be("EasyAuth");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_EasyAuthAuthenticated_WithoutSpaTokenOrApiKey_ShouldCallNext()
+    {
+        // EasyAuth-authenticated request with no other credential must pass through,
+        // not 401 at the API-key fall-through.
+        var nextCalled = false;
+        RequestDelegate next = _ => { nextCalled = true; return Task.CompletedTask; };
+        var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
+        var spaTokenProvider = CreateSpaTokenProvider(enabled: true);
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config, spaTokenProvider);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Items["OwnerId"] = "entra:11111111-2222-3333-4444-555555555555";
+        context.Items["Authenticated"] = true;
+        context.Items["AuthMethod"] = "EasyAuth";
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
+        context.Response.StatusCode.Should().Be(200);
+        context.Items["OwnerId"].Should().Be("entra:11111111-2222-3333-4444-555555555555");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_OwnerIdSetButNotEasyAuth_ShouldNotShortCircuit()
+    {
+        // Only AuthMethod == "EasyAuth" may skip credential checks; an OwnerId set by
+        // anything else must still be authenticated.
+        RequestDelegate next = _ => Task.CompletedTask;
+        var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Items["OwnerId"] = "spoofed-owner";
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        context.Response.StatusCode.Should().Be(401);
+    }
+
     [Fact]
     public async Task InvokeAsync_InternalSpaTokenPath_ShouldBypass()
     {
