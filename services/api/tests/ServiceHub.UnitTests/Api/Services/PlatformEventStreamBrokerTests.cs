@@ -260,6 +260,56 @@ public sealed class PlatformEventStreamBrokerTests
         subscription.Reader.TryRead(out _).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task HandleAsync_RepositoryFailure_NegativeCachedAndNotRetriedPerEvent()
+    {
+        var repositoryMock = new Mock<INamespaceRepository>();
+        repositoryMock
+            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Failure(
+                Error.ExternalService("REPO_ERR", "Repository unavailable")));
+        var services = new ServiceCollection();
+        services.AddSingleton(repositoryMock.Object);
+        var broker = new PlatformEventStreamBroker(
+            services.BuildServiceProvider(),
+            NullLogger<PlatformEventStreamBroker>.Instance);
+        using var subscription = broker.Register(OwnerA)!;
+
+        await broker.HandleAsync(BuildDlqSpikeEvent(namespaceId: Guid.NewGuid()), CancellationToken.None);
+        await broker.HandleAsync(BuildDlqSpikeEvent(namespaceId: Guid.NewGuid()), CancellationToken.None);
+
+        repositoryMock.Verify(
+            r => r.GetByOwnerAsync(OwnerA, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_RepositoryHangs_TimesOutInsteadOfBlockingDispatch()
+    {
+        // A repository that never completes must not stall the bus drain loop:
+        // the lookup timeout converts the hang into the failure/fallback path.
+        var repositoryMock = new Mock<INamespaceRepository>();
+        repositoryMock
+            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(async (string _, CancellationToken ct) =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return Result<IReadOnlyList<Namespace>>.Success([]);
+            });
+        var services = new ServiceCollection();
+        services.AddSingleton(repositoryMock.Object);
+        var broker = new PlatformEventStreamBroker(
+            services.BuildServiceProvider(),
+            NullLogger<PlatformEventStreamBroker>.Instance);
+        using var subscription = broker.Register(OwnerA)!;
+
+        var act = async () => await broker.HandleAsync(
+            BuildDlqSpikeEvent(namespaceId: Guid.NewGuid()), CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+        subscription.Reader.TryRead(out _).Should().BeFalse();
+    }
+
     // ── Owner namespace cache ────────────────────────────────────────────────
 
     [Fact]

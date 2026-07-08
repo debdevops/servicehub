@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using ServiceHub.Core.Entities;
 using ServiceHub.Core.Events;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Security;
+using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Api.Services;
 
@@ -32,6 +34,8 @@ public sealed class PlatformEventStreamBroker
     private const int PerConnectionCapacity = 64;
     private const int MaxConnections = 20;
     private static readonly TimeSpan OwnerNamespaceCacheTtl = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan OwnerNamespaceFailureTtl = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan OwnerNamespaceLookupTimeout = TimeSpan.FromSeconds(2);
 
     private static readonly HashSet<string> StreamedEventTypes = new(StringComparer.Ordinal)
     {
@@ -173,9 +177,24 @@ public sealed class PlatformEventStreamBroker
         if (_ownerNamespaceCache.TryGetValue(ownerId, out var cached) && cached.ExpiresUtc > DateTimeOffset.UtcNow)
             return cached.NamespaceIds;
 
-        using var scope = _serviceProvider.CreateScope();
-        var repository = scope.ServiceProvider.GetRequiredService<INamespaceRepository>();
-        var result = await repository.GetByOwnerAsync(ownerId, cancellationToken);
+        // This runs on the bus's sequential drain loop, so the lookup is bounded:
+        // a short timeout caps how long one event can stall dispatch, and failures
+        // are negative-cached below so a broken DB isn't re-queried per event.
+        Result<IReadOnlyList<Namespace>> result;
+        try
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var repository = scope.ServiceProvider.GetRequiredService<INamespaceRepository>();
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(OwnerNamespaceLookupTimeout);
+            result = await repository.GetByOwnerAsync(ownerId, timeoutCts.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            result = Result<IReadOnlyList<Namespace>>.Failure(Error.Timeout(
+                "SSE_NAMESPACE_LOOKUP_TIMEOUT",
+                $"Namespace lookup exceeded {OwnerNamespaceLookupTimeout.TotalSeconds:0}s."));
+        }
 
         if (result.IsFailure)
         {
@@ -184,7 +203,13 @@ public sealed class PlatformEventStreamBroker
                 "Falling back to last known set.",
                 LogRedactor.SanitiseForLog(ownerId),
                 result.Error.Message);
-            return cached?.NamespaceIds ?? new HashSet<Guid>();
+
+            // Re-stamp the last known set with a short TTL: the cache check above then
+            // serves subsequent events without retrying the failing lookup for a few
+            // seconds, while the stale-fallback data survives repeated failure cycles.
+            var fallback = cached?.NamespaceIds ?? new HashSet<Guid>();
+            _ownerNamespaceCache[ownerId] = new OwnerNamespaceCacheEntry(fallback, DateTimeOffset.UtcNow.Add(OwnerNamespaceFailureTtl));
+            return fallback;
         }
 
         var namespaceIds = result.Value.Select(ns => ns.Id).ToHashSet();
