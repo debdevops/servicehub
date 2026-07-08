@@ -1,11 +1,14 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Services;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Constants;
 
@@ -21,27 +24,28 @@ namespace ServiceHub.Api.Controllers.V1;
 public sealed class CrossCloudTraceController : ApiControllerBase
 {
     private readonly INamespaceRepository _namespaceRepository;
-    private readonly IServiceBusClientCache _clientCache;
-    private readonly IConnectionStringProtector _connectionStringProtector;
+    private readonly IAzureTraceSearcher _azureTraceSearcher;
+    private readonly DlqDbContext _dlqContext;
     private readonly IEnumerable<ICloudMessagingProvider> _cloudProviders;
     private readonly ILogger<CrossCloudTraceController> _logger;
 
     private const int MaxConcurrentNamespaces = 5;
     private const int SearchTimeoutSeconds = 30;
+    private const int MaxHistoryEntries = 200;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CrossCloudTraceController"/> class.
     /// </summary>
     public CrossCloudTraceController(
         INamespaceRepository namespaceRepository,
-        IServiceBusClientCache clientCache,
-        IConnectionStringProtector connectionStringProtector,
+        IAzureTraceSearcher azureTraceSearcher,
+        DlqDbContext dlqContext,
         ILogger<CrossCloudTraceController> logger,
         IEnumerable<ICloudMessagingProvider>? cloudProviders = null)
     {
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
-        _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
-        _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
+        _azureTraceSearcher = azureTraceSearcher ?? throw new ArgumentNullException(nameof(azureTraceSearcher));
+        _dlqContext = dlqContext ?? throw new ArgumentNullException(nameof(dlqContext));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _cloudProviders = cloudProviders ?? [];
     }
@@ -61,7 +65,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
     /// <response code="200">Trace completed. May be partial if the search timed out.</response>
     /// <response code="400">The traceId parameter is missing or empty.</response>
     [RequireScope(ApiKeyScopes.MessagesPeek)]
-    [HttpGet("trace")]
+    [HttpGet]
     [ProducesResponseType(typeof(CrossCloudTraceResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<CrossCloudTraceResponse>> TraceMessage(
@@ -79,7 +83,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
         }
 
         var stopwatch = Stopwatch.StartNew();
-        var isPartialResult = false;
+        var isPartialResultFlag = 0; // 0 = false, 1 = true (Interlocked for thread safety)
 
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(SearchTimeoutSeconds));
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
@@ -112,178 +116,22 @@ public sealed class CrossCloudTraceController : ApiControllerBase
         var azureTasks = azureNamespaces.Select(async ns =>
         {
             await semaphore.WaitAsync(searchToken).ConfigureAwait(false);
-            var nsHopCount = 0;
             try
             {
-                if (ns.ConnectionString is null)
-                {
-                    azureSummaries.Add(new CrossCloudNamespaceSummary(
-                        ns.Id, ns.DisplayName ?? ns.Name, "azure",
-                        WasSearched: false, SkipReason: "No connection string configured", HopsFound: 0));
-                    return;
-                }
+                // Azure-specific search (client cache, decryption, queue/subscription
+                // active + DLQ peeking) lives in IAzureTraceSearcher so this controller
+                // holds only orchestration and aggregation.
+                var searchResult = await _azureTraceSearcher
+                    .SearchAsync(ns, traceId, searchToken).ConfigureAwait(false);
 
-                var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
-                if (unprotectResult.IsFailure)
-                {
-                    _logger.LogWarning("Failed to decrypt connection string for namespace {NamespaceId}", ns.Id);
-                    azureSummaries.Add(new CrossCloudNamespaceSummary(
-                        ns.Id, ns.DisplayName ?? ns.Name, "azure",
-                        WasSearched: false, SkipReason: "Connection string decryption failed", HopsFound: 0));
-                    return;
-                }
+                foreach (var hop in searchResult.Hops)
+                    hops.Add(hop);
 
-                var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
-                var nsDisplayName = ns.DisplayName ?? ns.Name;
+                Interlocked.Add(ref entitiesSearched, searchResult.EntitiesSearched);
+                if (searchResult.IsPartial)
+                    Interlocked.Exchange(ref isPartialResultFlag, 1);
 
-                // ── Search queues ────────────────────────────────────────
-                var queuesResult = await wrapper.GetQueuesAsync(searchToken).ConfigureAwait(false);
-                if (queuesResult.IsSuccess)
-                {
-                    Interlocked.Add(ref entitiesSearched, queuesResult.Value.Count * 2); // active + DLQ
-
-                    var queueTasks = queuesResult.Value.Select(async q =>
-                    {
-                        try
-                        {
-                            // Active messages
-                            var peekResult = await wrapper.PeekMessagesAsync(
-                                new GetMessagesRequest(ns.Id, q.Name, null, false, GetMessagesRequest.MaxAllowedMessages),
-                                searchToken).ConfigureAwait(false);
-
-                            if (peekResult.IsSuccess)
-                            {
-                                foreach (var msg in peekResult.Value)
-                                {
-                                    if (string.Equals(msg.CorrelationId, traceId, StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        Interlocked.Increment(ref nsHopCount);
-                                        hops.Add(BuildAzureHop(ns.Id, nsDisplayName, q.Name, q.Name, msg, "Live"));
-                                    }
-                                }
-                            }
-
-                            // Dead-letter queue
-                            if (q.DeadLetterMessageCount > 0)
-                            {
-                                var dlqResult = await wrapper.PeekMessagesAsync(
-                                    new GetMessagesRequest(ns.Id, q.Name, null, true, GetMessagesRequest.MaxAllowedMessages),
-                                    searchToken).ConfigureAwait(false);
-
-                                if (dlqResult.IsSuccess)
-                                {
-                                    foreach (var msg in dlqResult.Value)
-                                    {
-                                        if (string.Equals(msg.CorrelationId, traceId, StringComparison.OrdinalIgnoreCase))
-                                        {
-                                            Interlocked.Increment(ref nsHopCount);
-                                            hops.Add(BuildAzureHop(ns.Id, nsDisplayName, $"{q.Name}/$DeadLetterQueue", q.Name, msg, "Live"));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        catch (OperationCanceledException) { isPartialResult = true; }
-                        catch (Exception ex) when (!searchToken.IsCancellationRequested)
-                        {
-                            _logger.LogWarning(ex, "Error searching queue {Queue} in namespace {NamespaceId}", q.Name, ns.Id);
-                        }
-                    });
-
-                    await Task.WhenAll(queueTasks).ConfigureAwait(false);
-                }
-
-                // ── Search topic subscriptions ───────────────────────────
-                var topicsResult = await wrapper.GetTopicsAsync(searchToken).ConfigureAwait(false);
-                if (topicsResult.IsSuccess)
-                {
-                    var topicTasks = topicsResult.Value.Select(async topic =>
-                    {
-                        try
-                        {
-                            var subsResult = await wrapper.GetSubscriptionsAsync(topic.Name, searchToken).ConfigureAwait(false);
-                            if (!subsResult.IsSuccess) return;
-
-                            Interlocked.Add(ref entitiesSearched, subsResult.Value.Count * 2);
-
-                            var subTasks = subsResult.Value.Select(async sub =>
-                            {
-                                try
-                                {
-                                    var entityPath = $"{topic.Name}/subscriptions/{sub.Name}";
-
-                                    var peekResult = await wrapper.PeekMessagesAsync(
-                                        new GetMessagesRequest(ns.Id, topic.Name, sub.Name, false, GetMessagesRequest.MaxAllowedMessages),
-                                        searchToken).ConfigureAwait(false);
-
-                                    if (peekResult.IsSuccess)
-                                    {
-                                        foreach (var msg in peekResult.Value)
-                                        {
-                                            if (string.Equals(msg.CorrelationId, traceId, StringComparison.OrdinalIgnoreCase))
-                                            {
-                                                Interlocked.Increment(ref nsHopCount);
-                                                hops.Add(BuildAzureHop(ns.Id, nsDisplayName, sub.Name, entityPath, msg, "Live"));
-                                            }
-                                        }
-                                    }
-
-                                    // DLQ for subscription
-                                    if (sub.DeadLetterMessageCount > 0)
-                                    {
-                                        var dlqResult = await wrapper.PeekMessagesAsync(
-                                            new GetMessagesRequest(ns.Id, topic.Name, sub.Name, true, GetMessagesRequest.MaxAllowedMessages),
-                                            searchToken).ConfigureAwait(false);
-
-                                        if (dlqResult.IsSuccess)
-                                        {
-                                            foreach (var msg in dlqResult.Value)
-                                            {
-                                                if (string.Equals(msg.CorrelationId, traceId, StringComparison.OrdinalIgnoreCase))
-                                                {
-                                                    Interlocked.Increment(ref nsHopCount);
-                                                    hops.Add(BuildAzureHop(ns.Id, nsDisplayName, sub.Name, $"{entityPath}/$DeadLetterQueue", msg, "Live"));
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                catch (OperationCanceledException) { isPartialResult = true; }
-                                catch (Exception ex) when (!searchToken.IsCancellationRequested)
-                                {
-                                    _logger.LogWarning(ex, "Error searching subscription {Sub} in topic {Topic}", sub.Name, topic.Name);
-                                }
-                            });
-
-                            await Task.WhenAll(subTasks).ConfigureAwait(false);
-                        }
-                        catch (OperationCanceledException) { isPartialResult = true; }
-                        catch (Exception ex) when (!searchToken.IsCancellationRequested)
-                        {
-                            _logger.LogWarning(ex, "Error listing subscriptions for topic {Topic}", topic.Name);
-                        }
-                    });
-
-                    await Task.WhenAll(topicTasks).ConfigureAwait(false);
-                }
-
-                azureSummaries.Add(new CrossCloudNamespaceSummary(
-                    ns.Id, nsDisplayName, "azure",
-                    WasSearched: true, SkipReason: null, HopsFound: nsHopCount));
-            }
-            catch (OperationCanceledException)
-            {
-                isPartialResult = true;
-                azureSummaries.Add(new CrossCloudNamespaceSummary(
-                    ns.Id, ns.DisplayName ?? ns.Name, "azure",
-                    WasSearched: false, SkipReason: "Search timed out", HopsFound: nsHopCount));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error searching namespace {NamespaceId}", ns.Id);
-                azureSummaries.Add(new CrossCloudNamespaceSummary(
-                    ns.Id, ns.DisplayName ?? ns.Name, "azure",
-                    WasSearched: false, SkipReason: $"Search error: {ex.Message[..Math.Min(ex.Message.Length, 80)]}", HopsFound: nsHopCount));
+                azureSummaries.Add(searchResult.Summary);
             }
             finally
             {
@@ -376,7 +224,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
                             }
                         }
                     }
-                    catch (OperationCanceledException) { isPartialResult = true; }
+                    catch (OperationCanceledException) { Interlocked.Exchange(ref isPartialResultFlag, 1); }
                     catch (Exception ex) when (!searchToken.IsCancellationRequested)
                     {
                         _logger.LogWarning(ex, "Error searching {Provider} entity {Entity} in namespace {NamespaceId}",
@@ -392,7 +240,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
             }
             catch (OperationCanceledException)
             {
-                isPartialResult = true;
+                Interlocked.Exchange(ref isPartialResultFlag, 1);
                 nonAzureSummaries.Add(new CrossCloudNamespaceSummary(
                     ns.Id, ns.DisplayName ?? ns.Name, providerLabel,
                     WasSearched: false, SkipReason: "Search timed out", HopsFound: nsHopCount));
@@ -412,6 +260,76 @@ public sealed class CrossCloudTraceController : ApiControllerBase
 
         await Task.WhenAll(nonAzureTasks).ConfigureAwait(false);
 
+        // ── Merge historical DLQ records from SQLite (DLQ intelligence) ───
+        // Messages that were already replayed, archived, or discarded no longer
+        // appear in live peeks; their DlqMessage rows keep them in the trace.
+        var historyHops = new List<CrossCloudTraceHop>();
+        try
+        {
+            // TENANT ISOLATION: Filter DLQ records by owner
+            var dlqMessages = await _dlqContext.DlqMessages
+                .Where(m => m.CorrelationId == traceId && m.OwnerId == OwnerId)
+                .OrderBy(m => m.DetectedAtUtc)
+                .Take(MaxHistoryEntries)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            // Prefer Live over History: a hop already found by the live search
+            // supersedes its historical DLQ record. Live hops are never collapsed —
+            // the same MessageId legitimately appears once per cloud/entity hop.
+            var liveMessageIds = hops
+                .Select(h => h.MessageId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var nsDisplayNames = allNamespaces.ToDictionary(ns => ns.Id, ns => ns.DisplayName ?? ns.Name);
+
+            foreach (var dlq in dlqMessages)
+            {
+                if (liveMessageIds.Contains(dlq.MessageId))
+                    continue;
+
+                var state = dlq.Status switch
+                {
+                    DlqMessageStatus.Active => "DeadLettered",
+                    DlqMessageStatus.Replayed => "Replayed",
+                    DlqMessageStatus.Archived => "DeadLettered",
+                    DlqMessageStatus.Discarded => "Resolved",
+                    DlqMessageStatus.ReplayFailed => "DeadLettered",
+                    DlqMessageStatus.Resolved => "Resolved",
+                    _ => "DeadLettered"
+                };
+
+                historyHops.Add(new CrossCloudTraceHop(
+                    CloudProvider: dlq.CloudProvider switch
+                    {
+                        CloudProviderType.Aws => "aws",
+                        CloudProviderType.Gcp => "gcp",
+                        _ => dlq.CloudProvider.ToString().ToLowerInvariant()
+                    },
+                    NamespaceId: dlq.NamespaceId,
+                    NamespaceDisplayName: nsDisplayNames.TryGetValue(dlq.NamespaceId, out var name)
+                        ? name
+                        : dlq.NamespaceId.ToString(),
+                    EntityName: dlq.EntityName,
+                    EntityPath: dlq.EntityName,
+                    MessageId: dlq.MessageId,
+                    SequenceNumber: dlq.SequenceNumber,
+                    State: state,
+                    Timestamp: dlq.DetectedAtUtc,
+                    DeadLetterReason: dlq.DeadLetterReason,
+                    BodyPreview: dlq.BodyPreview,
+                    SizeInBytes: dlq.MessageSize,
+                    Source: "History",
+                    HopIndex: 0));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to query historical DLQ records for trace {TraceId}",
+                LogRedactor.SanitiseForLog(traceId));
+        }
+
         // ── Build final response ──────────────────────────────────────────
         var allSummaries = azureSummaries
             .Concat(nonAzureSummaries)
@@ -421,6 +339,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
 
         // Sort hops chronologically and assign HopIndex
         var sortedHops = hops
+            .Concat(historyHops)
             .OrderBy(h => h.Timestamp)
             .Select((h, i) => h with { HopIndex = i })
             .ToList();
@@ -460,7 +379,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
             IsMultiCloud: allCloudProviders.Count >= 2,
             NamespacesSearched: azureSummaries.Count(s => s.WasSearched),
             EntitiesSearched: entitiesSearched,
-            IsPartialResult: isPartialResult,
+            IsPartialResult: isPartialResultFlag == 1,
             SearchDurationMs: stopwatch.ElapsedMilliseconds
         ));
     }
@@ -483,31 +402,5 @@ public sealed class CrossCloudTraceController : ApiControllerBase
         }
 
         return null;
-    }
-
-    private static CrossCloudTraceHop BuildAzureHop(
-        Guid namespaceId,
-        string nsDisplayName,
-        string entityName,
-        string entityPath,
-        Core.Entities.Message msg,
-        string source)
-    {
-        return new CrossCloudTraceHop(
-            CloudProvider: "azure",
-            NamespaceId: namespaceId,
-            NamespaceDisplayName: nsDisplayName,
-            EntityName: entityName,
-            EntityPath: entityPath,
-            MessageId: msg.MessageId,
-            SequenceNumber: msg.SequenceNumber,
-            State: msg.State.ToString(),
-            Timestamp: msg.EnqueuedTime,
-            DeadLetterReason: msg.DeadLetterReason,
-            BodyPreview: msg.Body != null && msg.Body.Length > 200 ? msg.Body[..200] : msg.Body,
-            SizeInBytes: msg.SizeInBytes,
-            Source: source,
-            HopIndex: 0 // reassigned after sort
-        );
     }
 }

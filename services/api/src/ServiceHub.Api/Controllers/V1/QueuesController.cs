@@ -6,6 +6,7 @@ using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.Api.Controllers.V1;
@@ -21,8 +22,8 @@ public sealed class QueuesController : ApiControllerBase
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IServiceBusClientCache _clientCache;
     private readonly IConnectionStringProtector _connectionStringProtector;
-    private readonly IMessageSender _messageSender;
-    private readonly IMessageReceiver _messageReceiver;
+    private readonly IMessageOperationsService _messageOperationsService;
+    private readonly CloudProviderRouter _providerRouter;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<QueuesController> _logger;
 
@@ -32,24 +33,24 @@ public sealed class QueuesController : ApiControllerBase
     /// <param name="namespaceRepository">The namespace repository.</param>
     /// <param name="clientCache">The Service Bus client cache.</param>
     /// <param name="connectionStringProtector">The connection string protector.</param>
-    /// <param name="messageSender">The message sender service.</param>
-    /// <param name="messageReceiver">The message receiver service.</param>
+    /// <param name="messageOperationsService">The provider-aware message operations service.</param>
+    /// <param name="providerRouter">Router used to resolve the namespace's cloud provider.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="auditLogger">The security audit logger.</param>
     public QueuesController(
         INamespaceRepository namespaceRepository,
         IServiceBusClientCache clientCache,
         IConnectionStringProtector connectionStringProtector,
-        IMessageSender messageSender,
-        IMessageReceiver messageReceiver,
+        IMessageOperationsService messageOperationsService,
+        CloudProviderRouter providerRouter,
         ILogger<QueuesController> logger,
         IAuditLogger? auditLogger = null)
     {
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
         _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
-        _messageSender = messageSender ?? throw new ArgumentNullException(nameof(messageSender));
-        _messageReceiver = messageReceiver ?? throw new ArgumentNullException(nameof(messageReceiver));
+        _messageOperationsService = messageOperationsService ?? throw new ArgumentNullException(nameof(messageOperationsService));
+        _providerRouter = providerRouter ?? throw new ArgumentNullException(nameof(providerRouter));
         _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -97,19 +98,32 @@ public sealed class QueuesController : ApiControllerBase
             return ToActionResult<IReadOnlyList<QueueRuntimePropertiesDto>>(unprotectResult.Error);
         }
 
-        var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
-        var queuesResult = await wrapper.GetQueuesAsync(cancellationToken);
-        if (queuesResult.IsFailure)
+        try
         {
-            return ToActionResult<IReadOnlyList<QueueRuntimePropertiesDto>>(queuesResult.Error);
+            var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+            var queuesResult = await wrapper.GetQueuesAsync(cancellationToken);
+            if (queuesResult.IsFailure)
+            {
+                return ToActionResult<IReadOnlyList<QueueRuntimePropertiesDto>>(queuesResult.Error);
+            }
+
+            _logger.LogInformation(
+                "Retrieved {QueueCount} queues for namespace {NamespaceId}",
+                queuesResult.Value.Count,
+                namespaceId);
+
+            return Ok(queuesResult.Value);
         }
-
-        _logger.LogInformation(
-            "Retrieved {QueueCount} queues for namespace {NamespaceId}",
-            queuesResult.Value.Count,
-            namespaceId);
-
-        return Ok(queuesResult.Value);
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error connecting to Service Bus namespace {NamespaceId}", namespaceId);
+            return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
+            {
+                Status = StatusCodes.Status502BadGateway,
+                Title = "Service Bus Communication Error",
+                Detail = $"Unable to connect to the Service Bus namespace. Verify the connection string is valid and the namespace is reachable. ({ex.GetType().Name})"
+            });
+        }
     }
 
     /// <summary>
@@ -160,14 +174,27 @@ public sealed class QueuesController : ApiControllerBase
             return ToActionResult<QueueRuntimePropertiesDto>(unprotectResult.Error);
         }
 
-        var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
-        var queueResult = await wrapper.GetQueueAsync(queueName, cancellationToken);
-        if (queueResult.IsFailure)
+        try
         {
-            return ToActionResult<QueueRuntimePropertiesDto>(queueResult.Error);
-        }
+            var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+            var queueResult = await wrapper.GetQueueAsync(queueName, cancellationToken);
+            if (queueResult.IsFailure)
+            {
+                return ToActionResult<QueueRuntimePropertiesDto>(queueResult.Error);
+            }
 
-        return Ok(queueResult.Value);
+            return Ok(queueResult.Value);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error connecting to Service Bus namespace {NamespaceId}", namespaceId);
+            return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
+            {
+                Status = StatusCodes.Status502BadGateway,
+                Title = "Service Bus Communication Error",
+                Detail = $"Unable to connect to the Service Bus namespace. Verify the connection string is valid and the namespace is reachable. ({ex.GetType().Name})"
+            });
+        }
     }
 
     /// <summary>
@@ -256,7 +283,7 @@ public sealed class QueuesController : ApiControllerBase
             NamespaceId = namespaceId
         };
 
-        var result = await _messageSender.SendAsync(sendRequest, cancellationToken);
+        var result = await _messageOperationsService.SendAsync(sendRequest, cancellationToken);
         if (result.IsFailure)
         {
             _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentSendMessage, "Failed", namespaceId, ns.Environment, queueName, detail: result.Error.Message);
@@ -313,34 +340,33 @@ public sealed class QueuesController : ApiControllerBase
             FromSequenceNumber: null);
 
         var result = fromDeadLetter
-            ? await _messageReceiver.PeekDeadLetterMessagesAsync(request, cancellationToken)
-            : await _messageReceiver.PeekMessagesAsync(request, cancellationToken);
+            ? await _messageOperationsService.PeekDeadLetterMessagesAsync(request, cancellationToken)
+            : await _messageOperationsService.PeekMessagesAsync(request, cancellationToken);
 
         if (result.IsFailure)
         {
             return ToActionResult<PaginatedResponse<MessageResponse>>(result.Error);
         }
 
-        // Get the actual total count from queue runtime properties
+        // Get the actual total count from the provider's entity listing
         var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
         int totalCount = result.Value.Count; // Default to peeked count
-        
-        if (namespaceResult.IsSuccess && namespaceResult.Value.ConnectionString is not null)
+
+        if (namespaceResult.IsSuccess && _providerRouter.IsRegistered(namespaceResult.Value.Provider))
         {
-            try 
+            try
             {
-                var unprotectResult = _connectionStringProtector.Unprotect(namespaceResult.Value.ConnectionString);
-                if (unprotectResult.IsSuccess)
+                var entitiesResult = await _providerRouter
+                    .Resolve(namespaceResult.Value.Provider)
+                    .ListEntitiesAsync(namespaceId, cancellationToken);
+                if (entitiesResult.IsSuccess)
                 {
-                    var wrapper = _clientCache.GetOrCreate(namespaceResult.Value.Id, unprotectResult.Value);
-                    var queuesResult = await wrapper.GetQueuesAsync(cancellationToken);
-                    if (queuesResult.IsSuccess)
+                    var queueInfo = entitiesResult.Value.FirstOrDefault(e =>
+                        string.Equals(e.EntityType, "Queue", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(e.Name, queueName, StringComparison.OrdinalIgnoreCase));
+                    if (queueInfo is not null)
                     {
-                        var queueInfo = queuesResult.Value.FirstOrDefault(q => string.Equals(q.Name, queueName, StringComparison.OrdinalIgnoreCase));
-                        if (queueInfo is not null)
-                        {
-                            totalCount = (int)(fromDeadLetter ? queueInfo.DeadLetterMessageCount : queueInfo.ActiveMessageCount);
-                        }
+                        totalCount = (int)(fromDeadLetter ? queueInfo.DeadLetterCount : queueInfo.ActiveMessageCount);
                     }
                 }
             }
@@ -461,7 +487,7 @@ public sealed class QueuesController : ApiControllerBase
             Reason: reason,
             ErrorDescription: errorDescription);
 
-        var result = await _messageReceiver.DeadLetterMessagesAsync(request, cancellationToken);
+        var result = await _messageOperationsService.DeadLetterMessagesAsync(request, cancellationToken);
 
         if (result.IsFailure)
         {
@@ -513,7 +539,7 @@ public sealed class QueuesController : ApiControllerBase
         // Use the dedicated scheduled-message retrieval so that we scan beyond the active-message
         // window.  A plain PeekMessagesAsync is capped at MaxAllowedMessages (100) and misses
         // scheduled messages that have higher sequence numbers than the active backlog.
-        var result = await _messageReceiver.GetScheduledMessagesAsync(
+        var result = await _messageOperationsService.GetScheduledMessagesAsync(
             namespaceId,
             queueName,
             subscriptionName: null,
@@ -637,7 +663,7 @@ public sealed class QueuesController : ApiControllerBase
         // Cancelling a scheduled message requires Send permission
         if (!ns.HasSendPermission)
         {
-            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Denied", namespaceId, ns.Environment, queueName, sequenceNumber, "Namespace lacks Send permission");
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Denied", namespaceId, ns.Environment, entityName: queueName, sequenceNumber: sequenceNumber, detail: "Namespace lacks Send permission");
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Insufficient Permissions",
@@ -647,7 +673,7 @@ public sealed class QueuesController : ApiControllerBase
         // Production safety guard
         if (ns.Environment == EnvironmentType.Prod)
         {
-            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Denied", namespaceId, ns.Environment, queueName, sequenceNumber, "Cancel scheduled blocked in production environment");
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Denied", namespaceId, ns.Environment, entityName: queueName, sequenceNumber: sequenceNumber, detail: "Cancel scheduled blocked in production environment");
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Production Restriction",
@@ -670,11 +696,11 @@ public sealed class QueuesController : ApiControllerBase
 
         if (result.IsFailure)
         {
-            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Failed", namespaceId, ns.Environment, queueName, sequenceNumber, result.Error.Message);
+            _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Failed", namespaceId, ns.Environment, entityName: queueName, sequenceNumber: sequenceNumber, detail: result.Error.Message);
             return ToActionResult(result);
         }
 
-        _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Succeeded", namespaceId, ns.Environment, queueName, sequenceNumber, "Scheduled message cancelled");
+        _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentCancelScheduled, "Succeeded", namespaceId, ns.Environment, entityName: queueName, sequenceNumber: sequenceNumber, detail: "Scheduled message cancelled");
 
         _logger.LogInformation(
             "Cancelled scheduled message {SequenceNumber} in queue {QueueName}",

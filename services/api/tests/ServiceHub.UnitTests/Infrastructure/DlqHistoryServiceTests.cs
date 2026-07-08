@@ -194,7 +194,7 @@ public class DlqHistoryServiceTests : IDisposable
         _dbContext.DlqMessages.Add(msg);
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.GetByIdAsync(msg.Id);
+        var result = await _service.GetByIdAsync(TestConstants.TestOwnerId, msg.Id);
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageId.Should().Be("msg-1");
     }
@@ -202,7 +202,18 @@ public class DlqHistoryServiceTests : IDisposable
     [Fact]
     public async Task GetById_NotFound_ReturnsFailure()
     {
-        var result = await _service.GetByIdAsync(999);
+        var result = await _service.GetByIdAsync(TestConstants.TestOwnerId, 999);
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetById_DifferentOwner_ReturnsFailure()
+    {
+        var msg = CreateMessage(1);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetByIdAsync(TestConstants.AltOwnerId, msg.Id);
         result.IsFailure.Should().BeTrue();
     }
 
@@ -215,7 +226,7 @@ public class DlqHistoryServiceTests : IDisposable
         _dbContext.DlqMessages.Add(msg);
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.GetTimelineAsync(msg.Id);
+        var result = await _service.GetTimelineAsync(TestConstants.TestOwnerId, msg.Id);
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Contain(e => e.EventType == "Enqueued");
         result.Value.Should().Contain(e => e.EventType == "DeadLettered");
@@ -242,7 +253,7 @@ public class DlqHistoryServiceTests : IDisposable
         });
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.GetTimelineAsync(msg.Id);
+        var result = await _service.GetTimelineAsync(TestConstants.TestOwnerId, msg.Id);
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Contain(e => e.EventType == "ReplayedSuccess");
         result.Value.Should().Contain(e => e.EventType == "StatusChanged");
@@ -257,7 +268,7 @@ public class DlqHistoryServiceTests : IDisposable
         _dbContext.DlqMessages.Add(msg);
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.GetTimelineAsync(msg.Id);
+        var result = await _service.GetTimelineAsync(TestConstants.TestOwnerId, msg.Id);
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Contain(e => e.EventType == "Archived");
     }
@@ -265,7 +276,7 @@ public class DlqHistoryServiceTests : IDisposable
     [Fact]
     public async Task GetTimeline_NotFound_ReturnsFailure()
     {
-        var result = await _service.GetTimelineAsync(999);
+        var result = await _service.GetTimelineAsync(TestConstants.TestOwnerId, 999);
         result.IsFailure.Should().BeTrue();
     }
 
@@ -278,7 +289,7 @@ public class DlqHistoryServiceTests : IDisposable
         _dbContext.DlqMessages.Add(msg);
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.UpdateNotesAsync(msg.Id, "Test note");
+        var result = await _service.UpdateNotesAsync(TestConstants.TestOwnerId, msg.Id, "Test note");
         result.IsSuccess.Should().BeTrue();
         result.Value.UserNotes.Should().Be("Test note");
     }
@@ -286,7 +297,7 @@ public class DlqHistoryServiceTests : IDisposable
     [Fact]
     public async Task UpdateNotes_NotFound_ReturnsFailure()
     {
-        var result = await _service.UpdateNotesAsync(999, "Note");
+        var result = await _service.UpdateNotesAsync(TestConstants.TestOwnerId, 999, "Note");
         result.IsFailure.Should().BeTrue();
     }
 
@@ -295,7 +306,7 @@ public class DlqHistoryServiceTests : IDisposable
     [Fact]
     public async Task GetSummary_Empty_ReturnsZeroCounts()
     {
-        var result = await _service.GetSummaryAsync();
+        var result = await _service.GetSummaryAsync(TestConstants.TestOwnerId);
         result.IsSuccess.Should().BeTrue();
         result.Value.TotalMessages.Should().Be(0);
         result.Value.ActiveMessages.Should().Be(0);
@@ -311,7 +322,7 @@ public class DlqHistoryServiceTests : IDisposable
         _dbContext.DlqMessages.Add(CreateMessage(4, status: DlqMessageStatus.Archived, namespaceId: nsId));
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.GetSummaryAsync();
+        var result = await _service.GetSummaryAsync(TestConstants.TestOwnerId);
         result.IsSuccess.Should().BeTrue();
         result.Value.TotalMessages.Should().Be(4);
         result.Value.ActiveMessages.Should().Be(2);
@@ -329,7 +340,7 @@ public class DlqHistoryServiceTests : IDisposable
         _dbContext.DlqMessages.Add(CreateMessage(2, namespaceId: Guid.NewGuid()));
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.GetSummaryAsync(namespaceId: nsId);
+        var result = await _service.GetSummaryAsync(TestConstants.TestOwnerId, namespaceId: nsId);
         result.IsSuccess.Should().BeTrue();
         result.Value.TotalMessages.Should().Be(1);
     }
@@ -371,14 +382,14 @@ public class DlqHistoryServiceTests : IDisposable
         await _dbContext.SaveChangesAsync();
 
         // TotalMessages always counts all messages regardless of days
-        var result7 = await _service.GetSummaryAsync(namespaceId: nsId, days: 7);
+        var result7 = await _service.GetSummaryAsync(TestConstants.TestOwnerId, namespaceId: nsId, days: 7);
         result7.IsSuccess.Should().BeTrue();
         result7.Value.TotalMessages.Should().Be(2);
         // Only today's message appears in the 7-day trend
         result7.Value.DailyTrend.Sum(t => t.NewMessages).Should().Be(1);
 
         // With 365-day window, both messages appear in trend
-        var result365 = await _service.GetSummaryAsync(namespaceId: nsId, days: 365);
+        var result365 = await _service.GetSummaryAsync(TestConstants.TestOwnerId, namespaceId: nsId, days: 365);
         result365.IsSuccess.Should().BeTrue();
         result365.Value.TotalMessages.Should().Be(2);
         result365.Value.DailyTrend.Sum(t => t.NewMessages).Should().Be(2);
@@ -391,7 +402,7 @@ public class DlqHistoryServiceTests : IDisposable
     public async Task GetSummary_DaysClampedToValidRange_DoesNotThrow(int inputDays)
     {
         // Just verify it doesn't throw — the clamping is internal
-        var result = await _service.GetSummaryAsync(days: inputDays);
+        var result = await _service.GetSummaryAsync(TestConstants.TestOwnerId, days: inputDays);
         result.IsSuccess.Should().BeTrue();
     }
 
@@ -404,7 +415,7 @@ public class DlqHistoryServiceTests : IDisposable
         _dbContext.DlqMessages.Add(CreateMessage(2));
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.ExportAsync();
+        var result = await _service.ExportAsync(TestConstants.TestOwnerId);
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().HaveCount(2);
     }
@@ -416,7 +427,7 @@ public class DlqHistoryServiceTests : IDisposable
         _dbContext.DlqMessages.Add(CreateMessage(2, status: DlqMessageStatus.Replayed));
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.ExportAsync(status: DlqMessageStatus.Active);
+        var result = await _service.ExportAsync(TestConstants.TestOwnerId, status: DlqMessageStatus.Active);
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().HaveCount(1);
     }
@@ -428,9 +439,33 @@ public class DlqHistoryServiceTests : IDisposable
         _dbContext.DlqMessages.Add(CreateMessage(2, entityName: "payments"));
         await _dbContext.SaveChangesAsync();
 
-        var result = await _service.ExportAsync(entityName: "orders");
+        var result = await _service.ExportAsync(TestConstants.TestOwnerId, entityName: "orders");
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task Export_DifferentOwner_ExcludesOtherTenantMessages()
+    {
+        _dbContext.DlqMessages.Add(CreateMessage(1));
+        _dbContext.DlqMessages.Add(CreateMessage(2));
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.ExportAsync(TestConstants.AltOwnerId);
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetSummary_DifferentOwner_ExcludesOtherTenantMessages()
+    {
+        _dbContext.DlqMessages.Add(CreateMessage(1));
+        _dbContext.DlqMessages.Add(CreateMessage(2));
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetSummaryAsync(TestConstants.AltOwnerId);
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TotalMessages.Should().Be(0);
     }
 
     // ── UpdateForensicResultAsync ───────────────────────────

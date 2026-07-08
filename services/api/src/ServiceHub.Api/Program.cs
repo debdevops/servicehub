@@ -1,5 +1,6 @@
 using ServiceHub.Api.Extensions;
 using ServiceHub.Api.Logging;
+using ServiceHub.Infrastructure;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Simulator;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -48,12 +49,35 @@ builder.Services.AddServiceHubApi(builder.Configuration);
 // SimulatorController and related endpoints can resolve their dependencies.
 // This must come AFTER AddServiceHubApi so simulator providers can replace
 // real cloud provider registrations via services.Replace(...).
+// Outside Simulator mode, register the live Azure provider instead — the
+// CloudProviderRouter rejects duplicate provider types, so exactly one Azure
+// ICloudMessagingProvider may be registered.
 if (builder.Environment.IsEnvironment("Simulator"))
 {
     builder.Services.AddSimulatorProviders();
 }
+else
+{
+    builder.Services.AddAzureProvider();
+}
+
+// Background workers (DLQ monitoring, message polling, anomaly detection).
+// Registered after the provider block so DlqMonitorWorker scans through
+// whichever ICloudMessagingProvider set is active for this host.
+builder.Services.AddBackgroundWorkers();
 
 var app = builder.Build();
+
+// Wire Platform Event subscribers before any hosted service starts.
+// This registers WebhookDlqSpikeHandler (and future handlers) with the
+// InProcessPlatformEventBus singleton drain loop.
+app.Services.SubscribePlatformEventHandlers();
+
+// Fan out platform events to connected SSE clients (GET /api/v1/events/stream).
+// In-process bus: clients only see events published by THIS instance — acceptable
+// while ServiceHub is single-instance (SQLite already pins deployment to one host).
+app.Services.GetRequiredService<ServiceHub.Core.Interfaces.IPlatformEventBus>()
+    .Subscribe(app.Services.GetRequiredService<ServiceHub.Api.Services.PlatformEventStreamBroker>().HandleAsync);
 
 // Forwarded headers must be first in pipeline (before any middleware that reads client IP)
 app.UseForwardedHeaders();
@@ -120,6 +144,58 @@ static async Task ApplySchemaUpgradesAsync(DlqDbContext dbContext, ILogger logge
                 "ALTER TABLE \"AutoReplayRules\" ADD COLUMN \"OwnerId\" TEXT NOT NULL DEFAULT '__spa__'");
             logger.LogInformation("Schema upgrade applied: AutoReplayRules.OwnerId added");
         }
+
+        // Migration: Add CloudProvider to DlqMessages (multicloud attribution).
+        // Existing rows predate multicloud DLQ monitoring, which was Azure-only, so
+        // the column defaults to 'Azure' — matching CloudProviderType.Azure.ToString().
+        if (!await ColumnExistsAsync(connection, "DlqMessages", "CloudProvider"))
+        {
+            logger.LogWarning(
+                "DlqMessages table is missing the CloudProvider column — applying schema upgrade");
+            await ExecuteNonQueryAsync(connection,
+                "ALTER TABLE \"DlqMessages\" ADD COLUMN \"CloudProvider\" TEXT NOT NULL DEFAULT 'Azure'");
+            logger.LogInformation("Schema upgrade applied: DlqMessages.CloudProvider added");
+        }
+
+        // Migration: Create AuditLogs table (added in v4.0.0 Persistent Audit Trail)
+        // EnsureCreatedAsync creates this table in new databases; existing databases need the DDL.
+        if (!await TableExistsAsync(connection, "AuditLogs"))
+        {
+            logger.LogWarning("AuditLogs table is missing — applying schema upgrade");
+            await ExecuteNonQueryAsync(connection, """
+                CREATE TABLE IF NOT EXISTS "AuditLogs" (
+                    "Id"            TEXT NOT NULL CONSTRAINT "PK_AuditLogs" PRIMARY KEY,
+                    "Timestamp"     TEXT NOT NULL,
+                    "OwnerId"       TEXT NOT NULL,
+                    "UserIdentity"  TEXT NOT NULL,
+                    "Action"        TEXT NOT NULL,
+                    "Outcome"       TEXT NOT NULL,
+                    "NamespaceId"   TEXT,
+                    "NamespaceName" TEXT,
+                    "EntityName"    TEXT,
+                    "CloudProvider" TEXT,
+                    "Environment"   TEXT,
+                    "ResourceName"  TEXT,
+                    "SequenceNumber" INTEGER,
+                    "DetailsJson"   TEXT,
+                    "ErrorDetails"  TEXT,
+                    "ClientIp"      TEXT,
+                    "UserAgent"     TEXT,
+                    "CorrelationId" TEXT,
+                    "HttpMethod"    TEXT,
+                    "HttpPath"      TEXT
+                );
+                CREATE INDEX IF NOT EXISTS "IX_AuditLogs_Timestamp"
+                    ON "AuditLogs" ("Timestamp");
+                CREATE INDEX IF NOT EXISTS "IX_AuditLogs_Owner_Timestamp"
+                    ON "AuditLogs" ("OwnerId", "Timestamp");
+                CREATE INDEX IF NOT EXISTS "IX_AuditLogs_Owner_Namespace_Timestamp"
+                    ON "AuditLogs" ("OwnerId", "NamespaceId", "Timestamp");
+                CREATE INDEX IF NOT EXISTS "IX_AuditLogs_Action"
+                    ON "AuditLogs" ("Action");
+                """);
+            logger.LogInformation("Schema upgrade applied: AuditLogs table and indexes created");
+        }
     }
     finally
     {
@@ -142,6 +218,20 @@ static async Task<bool> ColumnExistsAsync(
     }
     return false;
 }
+
+static async Task<bool> TableExistsAsync(
+    System.Data.Common.DbConnection connection, string tableName)
+{
+    using var cmd = connection.CreateCommand();
+    cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=@name";
+    var param = cmd.CreateParameter();
+    param.ParameterName = "@name";
+    param.Value = tableName;
+    cmd.Parameters.Add(param);
+    var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+    return count > 0;
+}
+
 
 static async Task ExecuteNonQueryAsync(System.Data.Common.DbConnection connection, string sql)
 {

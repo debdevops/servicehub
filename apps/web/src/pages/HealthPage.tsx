@@ -1,4 +1,4 @@
-import { useHealthVersion, useHealthStatus } from '@/hooks/useHealth';
+import { useHealthVersion, useHealthStatus, useHealthReport } from '@/hooks/useHealth';
 import {
   Activity,
   Server,
@@ -21,6 +21,17 @@ function formatUptime(isoDuration: string): string {
   parts.push(`${minutes}m`);
   parts.push(`${seconds}s`);
   return parts.join(' ');
+}
+
+function checkStatusStyle(status: string): { pill: string; dot: string } {
+  switch (status) {
+    case 'Healthy':
+      return { pill: 'bg-green-100 text-green-700', dot: 'bg-green-500' };
+    case 'Degraded':
+      return { pill: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' };
+    default:
+      return { pill: 'bg-red-100 text-red-700', dot: 'bg-red-500' };
+  }
 }
 
 function StatCard({
@@ -64,6 +75,7 @@ export function HealthPage() {
     error: statusError,
     refetch,
   } = useHealthStatus();
+  const { data: report, refetch: refetchReport } = useHealthReport();
 
   const isLoading = versionLoading || statusLoading;
   const hasError = versionError || statusError;
@@ -77,7 +89,10 @@ export function HealthPage() {
             System Health
           </h1>
           <button
-            onClick={() => refetch()}
+            onClick={() => {
+              refetch();
+              refetchReport();
+            }}
             className="flex items-center gap-2 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-white text-sm transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
@@ -169,6 +184,44 @@ export function HealthPage() {
                 color="bg-rose-500"
               />
             </div>
+
+            {/* Component Health */}
+            {report && (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-8">
+                <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
+                  <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-gray-500" />
+                    Component Health
+                  </h2>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {Object.entries(report.entries).map(([name, entry]) => {
+                    const style = checkStatusStyle(entry.status);
+                    return (
+                      <div
+                        key={name}
+                        className="flex items-center px-5 py-2.5 text-sm gap-3"
+                      >
+                        <span className="w-40 text-gray-900 font-medium shrink-0">
+                          {name}
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium shrink-0 ${style.pill}`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+                          {entry.status}
+                        </span>
+                        {entry.description && (
+                          <span className="text-gray-500 truncate">
+                            {entry.description}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Version Info */}
             {version && (

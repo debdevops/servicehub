@@ -94,8 +94,8 @@ public static class WebApplicationExtensions
         {
             // Expose the SPA token refresh endpoint in ALL environments.
             // The browser SPA calls this when its embedded token expires (30-min lifetime)
-            // or when Azure App Service load-balancer routes the request to a different
-            // instance that has a different ephemeral key. The endpoint is intentionally
+            // or when a reverse proxy / multi-instance deployment routes the request to a
+            // different instance that has a different ephemeral key. The endpoint is intentionally
             // NOT under /api/ so the ApiKeyAuthenticationMiddleware bypass rule lets it
             // through without any credential, which is necessary to bootstrap auth.
             // Security hardening: same-origin enforcement + tight rate limit.

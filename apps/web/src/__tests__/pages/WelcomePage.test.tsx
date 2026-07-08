@@ -11,7 +11,7 @@ import { WelcomePage } from '@/pages/WelcomePage';
  * - Render without errors (no auth, no hooks)
  * - Display all key sections (hero, features, comparison, use-cases, security, CTA, footer)
  * - Link to the live application with the correct label ("Open ServiceHub")
- * - Show the Microsoft Entra auth notice
+ * - Show the self-hosted privacy notice (no hosted-app Entra auth)
  * - Link to GitHub
  * - Provide internal navigation to /app/connect and /app/security
  */
@@ -93,23 +93,24 @@ describe('WelcomePage', () => {
     expect(ghLink.length).toBeGreaterThan(0);
   });
 
-  // ── Microsoft Entra Auth Notice ────────────────────────────────────────────
+  // ── Privacy / Self-Hosted Notice ──────────────────────────────────────────
 
-  it('renders the Microsoft Entra authentication notice', () => {
+  it('renders the self-hosted privacy notice', () => {
     renderPage();
-    // Appears in both the short notice and the security section — both are correct
-    expect(screen.getAllByText(/Microsoft Entra ID/i).length).toBeGreaterThanOrEqual(1);
+    // The new privacy notice emphasises 100% self-hosted data sovereignty
+    expect(screen.getAllByText(/self-hosted|data sovereignty|never leaves/i).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('states that no personal data is stored', () => {
+  it('states that no data leaves the infrastructure', () => {
     renderPage();
-    // Both the short Entra note and the security deep-dive state this — both are valid
-    expect(screen.getAllByText(/not store.*personal.*information|no personal data/i).length).toBeGreaterThanOrEqual(1);
+    // Self-hosted notice confirms no telemetry / no cloud callbacks
+    expect(screen.getAllByText(/never.*transmitted|never leaves|no telemetry/i).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('mentions GDPR or data compliance', () => {
+  it('does NOT render the decommissioned hosted-app Entra auth banner', () => {
     renderPage();
-    expect(screen.getByText(/GDPR|data-minimisation|data compliance/i)).toBeInTheDocument();
+    // The Azure App Service hosted demo is decommissioned; Entra auth notice should NOT appear
+    expect(screen.queryByText(/Hosted App Authentication via Microsoft Entra/i)).not.toBeInTheDocument();
   });
 
   // ── Stats Bar ──────────────────────────────────────────────────────────────
@@ -249,10 +250,10 @@ describe('WelcomePage', () => {
     expect(screen.getAllByText(/no.*external.*calls|zero.*data.*exfiltration|never leaves your environment/i).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('renders the hosted auth explanation with Entra link to the live app', () => {
+  it('renders the self-hosted data sovereignty note', () => {
     renderPage();
-    // Multi-cloud rewrite: auth note section explains Microsoft Entra for hosted access
-    expect(screen.getAllByText(/Microsoft Entra ID/i).length).toBeGreaterThanOrEqual(1);
+    // Multi-cloud rewrite: privacy section confirms data stays local
+    expect(screen.getAllByText(/self-hosted|never leaves/i).length).toBeGreaterThanOrEqual(1);
   });
 
   // ── Why Choose / Bullet Lists ──────────────────────────────────────────────

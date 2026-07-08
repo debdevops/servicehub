@@ -26,6 +26,9 @@ public sealed class DlqDbContext : DbContext
     /// <summary>Auto-replay rules.</summary>
     public DbSet<AutoReplayRule> AutoReplayRules => Set<AutoReplayRule>();
 
+    /// <summary>Persistent audit trail entries.</summary>
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -36,6 +39,7 @@ public sealed class DlqDbContext : DbContext
         ConfigureDlqMessage(modelBuilder);
         ConfigureReplayHistory(modelBuilder);
         ConfigureAutoReplayRule(modelBuilder);
+        ConfigureAuditLog(modelBuilder);
     }
 
     private static void ApplyUtcDateTimeConverters(ModelBuilder modelBuilder)
@@ -95,6 +99,11 @@ public sealed class DlqDbContext : DbContext
         entity.Property(e => e.EntityType)
             .HasConversion<string>()
             .HasMaxLength(32);
+
+        entity.Property(e => e.CloudProvider)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(Core.Enums.CloudProviderType.Azure);
 
         entity.Property(e => e.DeadLetterReason)
             .HasMaxLength(1024);
@@ -240,5 +249,81 @@ public sealed class DlqDbContext : DbContext
         entity.Property(e => e.ActionsJson)
             .HasMaxLength(8192)
             .IsRequired();
+    }
+
+    private static void ConfigureAuditLog(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<AuditLog>();
+
+        entity.ToTable("AuditLogs");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.Id)
+            .ValueGeneratedOnAdd();
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.UserIdentity)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.Action)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.Outcome)
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.NamespaceName)
+            .HasMaxLength(256);
+
+        entity.Property(e => e.EntityName)
+            .HasMaxLength(512);
+
+        entity.Property(e => e.CloudProvider)
+            .HasMaxLength(32);
+
+        entity.Property(e => e.Environment)
+            .HasMaxLength(32);
+
+        entity.Property(e => e.ResourceName)
+            .HasMaxLength(512);
+
+        entity.Property(e => e.DetailsJson)
+            .HasMaxLength(8192);
+
+        entity.Property(e => e.ErrorDetails)
+            .HasMaxLength(4096);
+
+        entity.Property(e => e.ClientIp)
+            .HasMaxLength(64);
+
+        entity.Property(e => e.UserAgent)
+            .HasMaxLength(512);
+
+        entity.Property(e => e.CorrelationId)
+            .HasMaxLength(256);
+
+        entity.Property(e => e.HttpMethod)
+            .HasMaxLength(16);
+
+        entity.Property(e => e.HttpPath)
+            .HasMaxLength(1024);
+
+        // Indexes optimised for the most common query patterns
+        entity.HasIndex(e => e.Timestamp)
+            .HasDatabaseName("IX_AuditLogs_Timestamp");
+
+        entity.HasIndex(e => new { e.OwnerId, e.Timestamp })
+            .HasDatabaseName("IX_AuditLogs_Owner_Timestamp");
+
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.Timestamp })
+            .HasDatabaseName("IX_AuditLogs_Owner_Namespace_Timestamp");
+
+        entity.HasIndex(e => e.Action)
+            .HasDatabaseName("IX_AuditLogs_Action");
     }
 }

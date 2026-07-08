@@ -263,51 +263,6 @@ public class DtoRecordEqualityTests
     }
 
     // ---------------------------------------------------------------
-    // CorrelationTimelineEntry — all properties
-    // ---------------------------------------------------------------
-
-    [Fact]
-    public void CorrelationTimelineEntry_AllProperties()
-    {
-        var now = DateTimeOffset.UtcNow;
-        var nsId = Guid.NewGuid();
-        var entry = new CorrelationTimelineEntry(
-            Source: "Live", NamespaceId: nsId,
-            NamespaceDisplayName: "My NS", EntityName: "q1",
-            EntityPath: "topic1/subscriptions/sub1",
-            MessageId: "m1", SequenceNumber: 100,
-            State: "Active", Timestamp: now,
-            DeadLetterReason: null, BodyPreview: "preview",
-            SizeInBytes: 256);
-
-        entry.Source.Should().Be("Live");
-        entry.NamespaceId.Should().Be(nsId);
-        entry.NamespaceDisplayName.Should().Be("My NS");
-        entry.EntityPath.Should().Be("topic1/subscriptions/sub1");
-        entry.BodyPreview.Should().Be("preview");
-        entry.SizeInBytes.Should().Be(256);
-
-        var histEntry = entry with { Source = "History", State = "DeadLettered" };
-        histEntry.Should().NotBe(entry);
-    }
-
-    [Fact]
-    public void CorrelationTimelineResponse_AllProperties()
-    {
-        var entries = new List<CorrelationTimelineEntry>();
-        var response = new CorrelationTimelineResponse(
-            CorrelationId: "c1", Entries: entries, TotalCount: 0,
-            NamespacesSearched: 3, EntitiesSearched: 12,
-            IsPartialResult: false, SearchDurationMs: 150);
-
-        response.CorrelationId.Should().Be("c1");
-        response.NamespacesSearched.Should().Be(3);
-        response.EntitiesSearched.Should().Be(12);
-        response.IsPartialResult.Should().BeFalse();
-        response.SearchDurationMs.Should().Be(150);
-    }
-
-    // ---------------------------------------------------------------
     // RuleMatchResultResponse — all properties
     // ---------------------------------------------------------------
 

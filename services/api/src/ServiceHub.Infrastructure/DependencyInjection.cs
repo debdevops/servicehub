@@ -10,6 +10,8 @@ using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Persistence.InMemory;
 using ServiceHub.Infrastructure.Security;
+using ServiceHub.Infrastructure.Events;
+using ServiceHub.Infrastructure.Events.Handlers;
 using ServiceHub.Infrastructure.ServiceBus;
 
 namespace ServiceHub.Infrastructure;
@@ -45,6 +47,9 @@ public static class DependencyInjection
         // Webhooks
         services.AddWebhooks(configuration);
 
+        // Platform Events
+        services.AddPlatformEvents();
+
         // Background Services — DlqMonitorWorker is also registered here for
         // direct AddInfrastructure callers that do not call AddBackgroundWorkers separately.
         // NOTE: do NOT add DlqMonitorWorker here; AddBackgroundWorkers registers it.
@@ -64,10 +69,32 @@ public static class DependencyInjection
         services.TryAddScoped<IServiceBusClientFactory, ServiceBusClientFactory>();
         services.TryAddScoped<IMessageSender, MessageSender>();
         services.TryAddScoped<IMessageReceiver, MessageReceiver>();
+        services.AddScoped<IMessageOperationsService, MessageOperationsService>();
+
+        // Router depends on all registered ICloudMessagingProvider implementations.
+        // Scoped (not singleton) because live providers such as AzureMessagingProvider are
+        // scoped — a root-built singleton cannot resolve them under scope validation.
+        services.TryAddScoped(sp => new ServiceHub.Infrastructure.Routing.CloudProviderRouter(sp.GetServices<ICloudMessagingProvider>()));
 
         // Health check
         services.AddHealthChecks()
             .AddCheck<ServiceBusHealthCheck>("servicebus", tags: ["ready", "servicebus"]);
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the Azure Service Bus <see cref="ICloudMessagingProvider"/> so the
+    /// <c>CloudProviderRouter</c> can dispatch operations for Azure namespaces.
+    /// Do not call this in Simulator mode — <c>AddSimulatorProviders()</c> registers a
+    /// simulated Azure provider and the router rejects duplicate provider types.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddAzureProvider(this IServiceCollection services)
+    {
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<ICloudMessagingProvider, Azure.AzureMessagingProvider>());
 
         return services;
     }
@@ -167,8 +194,15 @@ public static class DependencyInjection
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();
         services.TryAddScoped<IForensicEngine, ForensicEngine>();
 
+        // Audit Trail — registered as singleton so the channel is shared across all
+        // request scopes. The BackgroundService lifetime matches the application lifetime.
+        services.AddSingleton<AuditService>();
+        services.AddSingleton<IAuditService>(sp => sp.GetRequiredService<AuditService>());
+        services.AddHostedService(sp => sp.GetRequiredService<AuditService>());
+
         return services;
     }
+
 
     /// <summary>
     /// Adds webhook notification services.
@@ -187,5 +221,58 @@ public static class DependencyInjection
         });
 
         return services;
+    }
+
+    /// <summary>
+    /// Adds the internal in-process Platform Event bus.
+    /// <para>
+    /// The <see cref="InProcessPlatformEventBus"/> is registered as a singleton so that
+    /// the underlying <see cref="System.Threading.Channels.Channel{T}"/> is shared across
+    /// all request scopes. It is also registered as an
+    /// <see cref="Microsoft.Extensions.Hosting.IHostedService"/> so that its drain loop
+    /// starts with the application — identical to the AuditService registration pattern.
+    /// </para>
+    /// <para>
+    /// Subscriber handlers are registered as singletons and wired to the bus here
+    /// via <see cref="Core.Interfaces.IPlatformEventBus.Subscribe"/>.
+    /// </para>
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddPlatformEvents(this IServiceCollection services)
+    {
+        // Register the concrete bus as a singleton.
+        services.AddSingleton<InProcessPlatformEventBus>();
+
+        // Expose IPlatformEventBus to the same singleton instance.
+        services.AddSingleton<Core.Interfaces.IPlatformEventBus>(
+            sp => sp.GetRequiredService<InProcessPlatformEventBus>());
+
+        // Register the drain-loop BackgroundService against the same singleton instance.
+        services.AddHostedService(
+            sp => sp.GetRequiredService<InProcessPlatformEventBus>());
+
+        // ── Subscribers ───────────────────────────────────────────────────────
+
+        // WebhookDlqSpikeHandler bridges DlqSpikeDetected events to IWebhookNotifier.
+        // Registered as a singleton; creates its own DI scope per invocation to
+        // safely resolve the scoped IWebhookNotifier dependency.
+        services.AddSingleton<WebhookDlqSpikeHandler>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Wires all registered Platform Event subscribers to the bus.
+    /// Must be called once after the <see cref="IServiceProvider"/> is built,
+    /// typically from the application startup (e.g. <c>Program.cs</c> or
+    /// a hosted service startup hook).
+    /// </summary>
+    /// <param name="serviceProvider">The built service provider.</param>
+    public static void SubscribePlatformEventHandlers(this IServiceProvider serviceProvider)
+    {
+        var bus = serviceProvider.GetRequiredService<Core.Interfaces.IPlatformEventBus>();
+        var webhookHandler = serviceProvider.GetRequiredService<WebhookDlqSpikeHandler>();
+        bus.Subscribe(webhookHandler.HandleAsync);
     }
 }

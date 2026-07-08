@@ -95,6 +95,22 @@ public sealed record CreateNamespaceRequest(
                 "ConnectionString is required for Azure namespaces unless using Managed Identity.",
                 [nameof(ConnectionString)]);
         }
+
+        // Reject provider-specific fields set on the wrong provider so a namespace
+        // cannot carry contradictory configuration (e.g. an Azure namespace with a GcpProjectId).
+        if (Provider != CloudProviderType.Aws && !string.IsNullOrWhiteSpace(AwsRegion))
+        {
+            yield return new ValidationResult(
+                $"AwsRegion may only be set when Provider is Aws (Provider is {Provider}).",
+                [nameof(AwsRegion)]);
+        }
+
+        if (Provider != CloudProviderType.Gcp && !string.IsNullOrWhiteSpace(GcpProjectId))
+        {
+            yield return new ValidationResult(
+                $"GcpProjectId may only be set when Provider is Gcp (Provider is {Provider}).",
+                [nameof(GcpProjectId)]);
+        }
     }
 
     // AWS region pattern: us-east-1, eu-west-2, ap-southeast-1

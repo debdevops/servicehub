@@ -4,7 +4,6 @@ import {
   ChevronRight,
   Inbox,
   LayoutDashboard,
-  GitMerge,
   Plus,
   AlertCircle,
   Clock,
@@ -32,6 +31,8 @@ import { useQueries } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import { ProviderBadge } from '@/components/ProviderBadge';
 import type { CloudProviderType } from '@/lib/api/types';
+import { useDemoContext } from '@/lib/demo/DemoContext';
+import { getMockStats } from '@/lib/demo/mockProviders';
 
 interface NamespaceItemProps {
   namespace: {
@@ -50,6 +51,7 @@ interface QueueItemProps {
     deadLetterMessageCount: number;
   };
   namespaceId: string;
+  messagesBasePath: string;
 }
 
 interface TopicItemProps {
@@ -58,6 +60,7 @@ interface TopicItemProps {
     subscriptionCount: number;
   };
   namespaceId: string;
+  messagesBasePath: string;
 }
 
 interface SubscriptionItemProps {
@@ -68,9 +71,10 @@ interface SubscriptionItemProps {
   };
   namespaceId: string;
   topicName: string;
+  messagesBasePath: string;
 }
 
-function QueueItem({ queue, namespaceId }: QueueItemProps) {
+function QueueItem({ queue, namespaceId, messagesBasePath }: QueueItemProps) {
   // Fetch AI insights summary for this queue
   const { data: insightsSummary } = useInsightsSummary(namespaceId, queue.name);
   const hasAIInsight = (insightsSummary?.activeCount || 0) > 0;
@@ -78,7 +82,7 @@ function QueueItem({ queue, namespaceId }: QueueItemProps) {
   return (
     <NavLink
       key={queue.name}
-      to={`/messages?namespace=${namespaceId}&queue=${queue.name}`}
+      to={`${messagesBasePath}?namespace=${namespaceId}&queue=${queue.name}`}
       className={({ isActive }) => {
         // Only show selected state if this exact queue in this exact namespace is in the route
         const searchParams = new URLSearchParams(window.location.search);
@@ -140,7 +144,7 @@ function QueueItem({ queue, namespaceId }: QueueItemProps) {
   );
 }
 
-function TopicItem({ topic, namespaceId }: TopicItemProps) {
+function TopicItem({ topic, namespaceId, messagesBasePath }: TopicItemProps) {
   const [showSubscriptions, setShowSubscriptions] = useState(false);
   const { data: subscriptions, isLoading: subsLoading } = useSubscriptions(
     namespaceId,
@@ -177,6 +181,7 @@ function TopicItem({ topic, namespaceId }: TopicItemProps) {
                 subscription={sub}
                 namespaceId={namespaceId}
                 topicName={topic.name}
+                messagesBasePath={messagesBasePath}
               />
             ))
           ) : (
@@ -188,10 +193,10 @@ function TopicItem({ topic, namespaceId }: TopicItemProps) {
   );
 }
 
-function SubscriptionItem({ subscription, namespaceId, topicName }: SubscriptionItemProps) {
+function SubscriptionItem({ subscription, namespaceId, topicName, messagesBasePath }: SubscriptionItemProps) {
   return (
     <NavLink
-      to={`/messages?namespace=${namespaceId}&topic=${topicName}&subscription=${subscription.name}`}
+      to={`${messagesBasePath}?namespace=${namespaceId}&topic=${topicName}&subscription=${subscription.name}`}
       className={({ isActive }) => {
         // Only show selected state if this exact subscription in this exact namespace is in the route
         const searchParams = new URLSearchParams(window.location.search);
@@ -251,6 +256,10 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
   const [isExpanded, setIsExpanded] = useState(namespace.isActive);
   const [showQueues, setShowQueues] = useState(true);
   const [showTopics, setShowTopics] = useState(true);
+  const { isDemoMode, cloudProvider } = useDemoContext();
+
+  // In demo mode navigate to /demo/{cloud}/messages so the DemoModeProvider context stays active
+  const messagesBasePath = isDemoMode && cloudProvider ? `/demo/${cloudProvider}/messages` : '/messages';
 
   return (
     <div className="mb-2">
@@ -315,6 +324,7 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
                     key={queue.name} 
                     queue={queue} 
                     namespaceId={namespace.id} 
+                    messagesBasePath={messagesBasePath}
                   />
                 ))
               ) : (
@@ -352,6 +362,7 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
                     key={topic.name} 
                     topic={topic} 
                     namespaceId={namespace.id} 
+                    messagesBasePath={messagesBasePath}
                   />
                 ))
               ) : (
@@ -370,12 +381,8 @@ export function Sidebar() {
   const { data: namespaces, isLoading, refetch } = useNamespaces();
   const [quickAccessOpen, setQuickAccessOpen] = useState(false);
   const { isSimulator } = useIsSimulatorMode();
-  
-  // Detect demo mode from URL
-  const isDemo = new URLSearchParams(window.location.search).get('demo') === 'true';
-
+  const { isDemoMode, cloudProvider } = useDemoContext();
   // Multi-cloud: enabled when 2+ distinct cloud providers are connected
-  const hasMultiCloud = new Set((namespaces ?? []).map(n => n.cloudProvider ?? 'azure')).size >= 2;
 
   // Get active namespace for Quick Access
   const activeNamespace = namespaces?.find(ns => ns.isActive);
@@ -384,8 +391,13 @@ export function Sidebar() {
   const { data: queues } = useQueues(activeNamespace?.id || '');
   const { data: topics } = useTopics(activeNamespace?.id || '');
 
+  // In demo mode, use mock stats; otherwise use real API stats
+  const demoStats = isDemoMode && cloudProvider ? getMockStats(cloudProvider) : null;
+
   // Aggregate DLQ counts across all namespaces using the stats endpoint (includes subscription DLQs)
-  const allNamespaceIds = namespaces?.map(ns => ns.id) ?? [];
+  const allNamespaceIds = isDemoMode
+    ? [] // In demo mode we use demoStats directly
+    : (namespaces?.map(ns => ns.id) ?? []);
   const allStatsResults = useQueries({
     queries: allNamespaceIds.map(id => ({
       queryKey: ['namespace-stats', id] as const,
@@ -406,10 +418,16 @@ export function Sidebar() {
       refetchIntervalInBackground: false,
     })),
   });
-  const totalDlqCount = allStatsResults.reduce((total, result) => {
-    if (!result.data) return total;
-    return total + result.data.totalDlq;
-  }, 0);
+  const totalDlqCount = demoStats
+    ? demoStats.totalDlq
+    : allStatsResults.reduce((total, result) => {
+        if (!result.data) return total;
+        return total + result.data.totalDlq;
+      }, 0);
+
+  // In demo mode, all internal navigation stays within the /demo/{cloud}/* subtree
+  // so that the DemoModeProvider context remains active.
+  const navPrefix = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
 
   return (
     <aside className="w-[260px] bg-white border-r border-gray-200 flex flex-col overflow-hidden" data-tour="sidebar">
@@ -459,30 +477,6 @@ export function Sidebar() {
             </NavLink>
           </div>
         )}
-
-        {/* Demo Mode Namespace */}
-        {isDemo && (
-          <div className="mb-2">
-            <div className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200">
-              <div className="w-2 h-2 rounded-full bg-blue-500" />
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm text-blue-900">Demo Namespace</div>
-                <div className="text-xs text-blue-500">Sample data</div>
-              </div>
-            </div>
-            <div className="mt-1 ml-4 space-y-0.5">
-              {['orders-queue', 'payment-queue', 'notification-queue'].map((q) => (
-                <NavLink
-                  key={q}
-                  to={`/messages?demo=true&queue=${q}`}
-                  className="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm bg-white text-gray-700 hover:bg-sky-50 hover:text-sky-700 border border-gray-200 hover:border-sky-300 transition-all duration-200"
-                >
-                  <span className="truncate">{q}</span>
-                </NavLink>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Quick Filters — collapsible so Service Bus entities stay visible */}
@@ -499,7 +493,7 @@ export function Sidebar() {
         <nav className="space-y-1 px-3 pb-3">
           {/* Dashboard - moved to top */}
           <NavLink
-            to="/dashboard"
+            to={`${navPrefix}/dashboard`}
             className={({ isActive }) =>
               `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
                 isActive
@@ -528,7 +522,7 @@ export function Sidebar() {
               // Navigate to first queue if available
               const firstQueue = queues?.[0];
               if (firstQueue) {
-                navigate(`/messages?namespace=${activeNamespace.id}&queue=${firstQueue.name}&queueType=active`);
+                navigate(`${navPrefix}/messages?namespace=${activeNamespace.id}&queue=${firstQueue.name}&queueType=active`);
                 return;
               }
               
@@ -558,7 +552,7 @@ export function Sidebar() {
               // Navigate to first queue's DLQ if available
               const firstQueue = queues?.[0];
               if (firstQueue) {
-                navigate(`/messages?namespace=${activeNamespace.id}&queue=${firstQueue.name}&queueType=deadletter`);
+                navigate(`${navPrefix}/messages?namespace=${activeNamespace.id}&queue=${firstQueue.name}&queueType=deadletter`);
                 return;
               }
               
@@ -578,7 +572,7 @@ export function Sidebar() {
             <span className="text-xs text-red-600 font-medium">DLQ</span>
           </button>
           <NavLink
-            to={activeNamespace ? `/dlq-history?namespace=${activeNamespace.id}` : '/dlq-history'}
+            to={activeNamespace ? `${navPrefix}/dlq-history?namespace=${activeNamespace.id}` : `${navPrefix}/dlq-history`}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-purple-50 text-gray-700 hover:text-purple-700 border border-gray-200 hover:border-purple-300 shadow-sm"
           >
             <BarChart3 className="w-4 h-4 text-purple-500" />
@@ -586,7 +580,7 @@ export function Sidebar() {
             <span className="text-xs text-purple-600 font-medium">History</span>
           </NavLink>
           <NavLink
-            to="/rules"
+            to={`${navPrefix}/rules`}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-amber-50 text-gray-700 hover:text-amber-700 border border-gray-200 hover:border-amber-300 shadow-sm"
           >
             <Zap className="w-4 h-4 text-amber-500" />
@@ -594,7 +588,7 @@ export function Sidebar() {
             <span className="text-xs text-amber-600 font-medium">Rules</span>
           </NavLink>
           <NavLink
-            to="/health"
+            to={`${navPrefix}/health`}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border border-gray-200 hover:border-emerald-300 shadow-sm"
           >
             <Activity className="w-4 h-4 text-emerald-500" />
@@ -602,7 +596,7 @@ export function Sidebar() {
             <span className="text-xs text-emerald-600 font-medium">Status</span>
           </NavLink>
           <NavLink
-            to="/scheduled"
+            to={`${navPrefix}/scheduled`}
             className={({ isActive }) =>
               `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
                 isActive
@@ -616,45 +610,20 @@ export function Sidebar() {
             <span className="text-xs text-sky-600 font-medium">View</span>
           </NavLink>
           <NavLink
-            to="/correlation"
+            to={`${navPrefix}/cross-cloud-trace`}
             className={({ isActive }) =>
               `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
                 isActive
-                  ? 'bg-violet-50 text-violet-700 border-violet-300'
+                  ? 'bg-violet-50 text-violet-700 border-violet-300 font-medium'
                   : 'bg-white hover:bg-violet-50 text-gray-700 hover:text-violet-700 border-gray-200 hover:border-violet-300'
               }`
             }
           >
-            <GitMerge className="w-4 h-4 text-violet-500" />
-            <span className="flex-1 text-left">Correlation</span>
+            <Route className="w-4 h-4 text-violet-500" />
+            <span className="flex-1 text-left">Multi-Cloud Trace</span>
           </NavLink>
-          {hasMultiCloud ? (
-            <NavLink
-              to="/cross-cloud-trace"
-              className={({ isActive }) =>
-                `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-                  isActive
-                    ? 'bg-violet-50 text-violet-700 border-violet-300 font-medium'
-                    : 'bg-white hover:bg-violet-50 text-gray-700 hover:text-violet-700 border-gray-200 hover:border-violet-300'
-                }`
-              }
-            >
-              <Route className="w-4 h-4 text-violet-500" />
-              <span className="flex-1 text-left">Multi-Cloud Trace</span>
-              <span className="text-xs text-violet-600 font-semibold bg-violet-50 px-1.5 py-0.5 rounded-full border border-violet-200">NEW</span>
-            </NavLink>
-          ) : (
-            <div
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm border border-gray-200 bg-gray-50 cursor-not-allowed opacity-60 shadow-sm"
-              title="Connect namespaces from 2+ cloud providers (Azure, AWS, GCP) to enable cross-cloud tracing"
-            >
-              <Route className="w-4 h-4 text-gray-400" />
-              <span className="flex-1 text-left text-gray-400">Multi-Cloud Trace</span>
-              <span className="text-xs text-gray-400">Multi-cloud only</span>
-            </div>
-          )}
           <NavLink
-            to="/help"
+            to={`${navPrefix}/help`}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border border-gray-200 hover:border-primary-300 shadow-sm"
           >
             <HelpCircle className="w-4 h-4 text-primary-500" />
@@ -662,7 +631,7 @@ export function Sidebar() {
             <span className="text-xs text-primary-600 font-medium">?</span>
           </NavLink>
           <NavLink
-            to="/security"
+            to={`${navPrefix}/security`}
             className={({ isActive }) =>
               `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
                 isActive
@@ -675,7 +644,21 @@ export function Sidebar() {
             <span className="flex-1 text-left">Security &amp; Privacy</span>
           </NavLink>
           <NavLink
-            to="/cloud-bridge"
+            to={`${navPrefix}/audit`}
+            className={({ isActive }) =>
+              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                isActive
+                  ? 'bg-violet-50 text-violet-700 border-violet-300 font-medium'
+                  : 'bg-white hover:bg-violet-50 text-gray-700 hover:text-violet-700 border-gray-200 hover:border-violet-300'
+              }`
+            }
+          >
+            <Shield className="w-4 h-4 text-violet-500" />
+            <span className="flex-1 text-left">Audit Trail</span>
+            <span className="text-xs text-violet-600 font-medium">Logs</span>
+          </NavLink>
+          <NavLink
+            to={`${navPrefix}/cloud-bridge`}
             className={({ isActive }) =>
               `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
                 isActive
@@ -689,7 +672,7 @@ export function Sidebar() {
           </NavLink>
           {isSimulator && (
             <NavLink
-              to="/simulator"
+              to={`${navPrefix}/simulator`}
               className={({ isActive }) =>
                 `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
                   isActive

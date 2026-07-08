@@ -107,7 +107,7 @@ describe('Sidebar', () => {
     expect(screen.getByText('DLQ Intelligence')).toBeInTheDocument();
     expect(screen.getByText('Auto-Replay')).toBeInTheDocument();
     expect(screen.getByText('Scheduled')).toBeInTheDocument();
-    expect(screen.getByText('Correlation')).toBeInTheDocument();
+    expect(screen.getByText('Multi-Cloud Trace')).toBeInTheDocument();
   });
 
   it('renders Add Connection button', () => {

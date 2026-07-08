@@ -12,15 +12,13 @@ namespace ServiceHub.Infrastructure;
 
 /// <summary>
 /// Executes the replay action for auto-replay rules.
-/// Handles rate limiting, Service Bus interaction, replay-history persistence,
-/// and DLQ message status updates.
+/// Handles rate limiting, provider-routed replay via <see cref="IMessageOperationsService"/>,
+/// replay-history persistence, and DLQ message status updates.
 /// </summary>
 public sealed class AutoReplayExecutor : IAutoReplayExecutor
 {
     private readonly DlqDbContext _dbContext;
-    private readonly INamespaceRepository _namespaceRepository;
-    private readonly IServiceBusClientCache _clientCache;
-    private readonly IConnectionStringProtector _protector;
+    private readonly IMessageOperationsService _messageOperations;
     private readonly ILogger<AutoReplayExecutor> _logger;
 
     /// <summary>
@@ -28,15 +26,11 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
     /// </summary>
     public AutoReplayExecutor(
         DlqDbContext dbContext,
-        INamespaceRepository namespaceRepository,
-        IServiceBusClientCache clientCache,
-        IConnectionStringProtector protector,
+        IMessageOperationsService messageOperations,
         ILogger<AutoReplayExecutor> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
-        _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
-        _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
-        _protector = protector ?? throw new ArgumentNullException(nameof(protector));
+        _messageOperations = messageOperations ?? throw new ArgumentNullException(nameof(messageOperations));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -60,22 +54,6 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
             return Result<string>.Failure(
                 Error.Validation("Rule.RateLimited", $"Rule '{rule.Name}' has exceeded {rule.MaxReplaysPerHour} replays/hour"));
         }
-
-        // Resolve the namespace connection
-        var nsResult = await _namespaceRepository.GetByIdAsync(message.NamespaceId);
-        if (nsResult.IsFailure)
-            return Result<string>.Failure(nsResult.Error);
-
-        var ns = nsResult.Value;
-        if (string.IsNullOrWhiteSpace(ns.ConnectionString))
-            return Result<string>.Failure(
-                Error.Validation("Namespace.ConnectionString", "Namespace has no connection string"));
-
-        var unprotectResult = _protector.Unprotect(ns.ConnectionString);
-        if (unprotectResult.IsFailure)
-            return Result<string>.Failure(unprotectResult.Error);
-
-        var client = _clientCache.GetOrCreate(message.NamespaceId, unprotectResult.Value);
 
         // Determine target entity
         string entityName;
@@ -103,8 +81,8 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         // Execute the replay
         try
         {
-            var replayResult = await client.ReplayMessageAsync(
-                entityName, subscriptionName, message.SequenceNumber, cancellationToken);
+            var replayResult = await _messageOperations.ReplayMessageAsync(
+                message.NamespaceId, entityName, subscriptionName, message.SequenceNumber, cancellationToken);
 
             var outcome = replayResult.IsSuccess ? "Success" : "Failed";
 

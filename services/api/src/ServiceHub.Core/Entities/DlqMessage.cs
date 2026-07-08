@@ -25,6 +25,12 @@ public sealed class DlqMessage
     public required Guid NamespaceId { get; init; }
 
     /// <summary>
+    /// Cloud provider that owns the source namespace. Defaults to <see cref="CloudProviderType.Azure"/>
+    /// for backward compatibility with records created before this column existed.
+    /// </summary>
+    public CloudProviderType CloudProvider { get; init; } = CloudProviderType.Azure;
+
+    /// <summary>
     /// Owner ID for multi-user isolation. Supported formats include <c>entra:{oid}</c> (Azure AD users),
     /// <c>__spa__</c> (SPA/admin), and <c>key_{hash}</c> (scoped API keys).
     /// </summary>

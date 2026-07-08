@@ -7,12 +7,14 @@ import { HealthPage } from '@/pages/HealthPage';
 vi.mock('@/hooks/useHealth', () => ({
   useHealthVersion: vi.fn(),
   useHealthStatus: vi.fn(),
+  useHealthReport: vi.fn(),
 }));
 
-import { useHealthVersion, useHealthStatus } from '@/hooks/useHealth';
+import { useHealthVersion, useHealthStatus, useHealthReport } from '@/hooks/useHealth';
 
 const mockUseHealthVersion = useHealthVersion as ReturnType<typeof vi.fn>;
 const mockUseHealthStatus = useHealthStatus as ReturnType<typeof vi.fn>;
+const mockUseHealthReport = useHealthReport as ReturnType<typeof vi.fn>;
 
 const mockVersionData = {
   version: '2.1.3.0',
@@ -22,6 +24,19 @@ const mockVersionData = {
   osDescription: 'macOS 14.0',
   frameworkDescription: '.NET 10.0.0',
   startedAt: '2024-01-01T00:00:00Z',
+};
+
+const mockReportData = {
+  status: 'Healthy',
+  totalDuration: 12.3,
+  entries: {
+    self: { status: 'Healthy', description: 'API is running', duration: 0.1 },
+    servicebus: {
+      status: 'Healthy',
+      description: 'All 1 Azure Service Bus namespace(s) are healthy.',
+      duration: 10.5,
+    },
+  },
 };
 
 const mockStatusData = {
@@ -48,7 +63,15 @@ function renderHealthPage() {
 }
 
 describe('HealthPage', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseHealthReport.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+  });
 
   it('renders loading state', () => {
     mockUseHealthVersion.mockReturnValue({ data: undefined, isLoading: true, error: null });
@@ -148,5 +171,52 @@ describe('HealthPage', () => {
 
     renderHealthPage();
     expect(screen.getByText('3d 12h 05m 30s')).toBeInTheDocument();
+  });
+
+  it('renders component health entries from the health report', () => {
+    mockUseHealthVersion.mockReturnValue({ data: mockVersionData, isLoading: false, error: null });
+    mockUseHealthStatus.mockReturnValue({ data: mockStatusData, isLoading: false, error: null, refetch: vi.fn() });
+    mockUseHealthReport.mockReturnValue({ data: mockReportData, isLoading: false, error: null, refetch: vi.fn() });
+
+    renderHealthPage();
+    expect(screen.getByText('Component Health')).toBeInTheDocument();
+    expect(screen.getByText('self')).toBeInTheDocument();
+    expect(screen.getByText('servicebus')).toBeInTheDocument();
+    expect(screen.getByText('All 1 Azure Service Bus namespace(s) are healthy.')).toBeInTheDocument();
+  });
+
+  it('renders degraded and unhealthy component statuses', () => {
+    const degradedReport = {
+      status: 'Unhealthy',
+      totalDuration: 20,
+      entries: {
+        servicebus: {
+          status: 'Degraded',
+          description: '1 of 2 Azure Service Bus namespaces are unhealthy.',
+          duration: 10,
+        },
+        'aws-connectivity': {
+          status: 'Unhealthy',
+          description: 'All AWS SQS namespaces are unreachable.',
+          duration: 10,
+        },
+      },
+    };
+    mockUseHealthVersion.mockReturnValue({ data: mockVersionData, isLoading: false, error: null });
+    mockUseHealthStatus.mockReturnValue({ data: mockStatusData, isLoading: false, error: null, refetch: vi.fn() });
+    mockUseHealthReport.mockReturnValue({ data: degradedReport, isLoading: false, error: null, refetch: vi.fn() });
+
+    renderHealthPage();
+    expect(screen.getByText('Degraded')).toBeInTheDocument();
+    expect(screen.getByText('aws-connectivity')).toBeInTheDocument();
+    expect(screen.getByText('All AWS SQS namespaces are unreachable.')).toBeInTheDocument();
+  });
+
+  it('omits component health section when report is unavailable', () => {
+    mockUseHealthVersion.mockReturnValue({ data: mockVersionData, isLoading: false, error: null });
+    mockUseHealthStatus.mockReturnValue({ data: mockStatusData, isLoading: false, error: null, refetch: vi.fn() });
+
+    renderHealthPage();
+    expect(screen.queryByText('Component Health')).not.toBeInTheDocument();
   });
 });

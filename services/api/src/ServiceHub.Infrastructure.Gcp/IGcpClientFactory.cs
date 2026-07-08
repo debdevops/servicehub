@@ -28,4 +28,13 @@ public interface IGcpClientFactory
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A configured <see cref="SubscriberServiceApiClient"/> for the given subscription.</returns>
     Task<SubscriberServiceApiClient> GetSubscriberClientAsync(Namespace ns, string subscriptionId, CancellationToken ct);
+
+    /// <summary>
+    /// Returns a low-level <see cref="PublisherServiceApiClient"/> for topic administration
+    /// (listing topics) using the namespace-scoped credentials.
+    /// </summary>
+    /// <param name="ns">The namespace containing project ID and credentials.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A configured <see cref="PublisherServiceApiClient"/>.</returns>
+    Task<PublisherServiceApiClient> GetTopicAdminClientAsync(Namespace ns, CancellationToken ct);
 }

@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Events;
+using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Security;
@@ -15,6 +17,7 @@ namespace ServiceHub.Infrastructure.BackgroundServices;
 public sealed class DlqMonitorWorker : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
+    private readonly IPlatformEventBus _eventBus;
     private readonly ILogger<DlqMonitorWorker> _logger;
 
     private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(5);  // Fast startup
@@ -24,12 +27,18 @@ public sealed class DlqMonitorWorker : BackgroundService
     /// <summary>
     /// Initializes a new instance of the <see cref="DlqMonitorWorker"/> class.
     /// </summary>
+    /// <param name="serviceProvider">Root service provider for per-scan-cycle scope creation.</param>
+    /// <param name="logger">Logger instance.</param>
     public DlqMonitorWorker(
         IServiceProvider serviceProvider,
         ILogger<DlqMonitorWorker> logger)
     {
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        // IPlatformEventBus is a singleton — resolve once from the root provider.
+        // This avoids resolving it from a scoped context on every poll cycle.
+        _eventBus = serviceProvider.GetRequiredService<IPlatformEventBus>();
     }
 
     /// <inheritdoc />
@@ -69,6 +78,7 @@ public sealed class DlqMonitorWorker : BackgroundService
                 }
 
                 var namespaces = namespacesResult.Value;
+
                 if (namespaces.Count == 0)
                 {
                     _logger.LogInformation("No active namespaces found, sleeping for {Interval}s", PollInterval.TotalSeconds);
@@ -90,12 +100,36 @@ public sealed class DlqMonitorWorker : BackgroundService
                         var monitor = innerScope.ServiceProvider.GetRequiredService<IDlqMonitorService>();
                         var scanResult = await monitor.ScanNamespaceAsync(ns.Id, stoppingToken);
 
-                        // Fire webhook if new DLQ messages were detected
+                        // Publish a Platform Event when a DLQ spike is detected.
+                        // The WebhookDlqSpikeHandler subscriber delivers the webhook notification.
+                        // Publish-after-confirm: only fires when scanResult.Value > 0.
                         if (scanResult.IsSuccess && scanResult.Value > 0)
                         {
-                            var notifier = innerScope.ServiceProvider.GetRequiredService<IWebhookNotifier>();
-                            await notifier.NotifyDlqSpikeAsync(
-                                ns.Id, ns.Name, scanResult.Value, stoppingToken);
+                            var payload = new DlqSpikeDetectedPayload
+                            {
+                                NamespaceId = ns.Id,
+                                NamespaceName = ns.Name,
+                                NewMessageCount = scanResult.Value,
+                                DetectedAtUtc = DateTimeOffset.UtcNow,
+                            };
+
+                            var evt = new PlatformEvent
+                            {
+                                Source = "ServiceHub.Infrastructure.BackgroundServices.DlqMonitorWorker",
+                                Category = EventCategories.Dlq,
+                                EventType = EventTypes.DlqSpikeDetected,
+                                Severity = EventSeverity.Warning,
+                                CloudProvider = ns.Provider.ToString().ToLowerInvariant(),
+                                NamespaceId = ns.Id,
+                                NamespaceName = ns.Name,
+                                Payload = payload,
+                            };
+
+                            await _eventBus.PublishAsync(evt, stoppingToken);
+
+                            _logger.LogDebug(
+                                "Published Platform Event {EventType} for NamespaceId {NamespaceId}",
+                                evt.EventType, ns.Id);
                         }
 
                         // Evaluate auto-replay rules against active DLQ messages
