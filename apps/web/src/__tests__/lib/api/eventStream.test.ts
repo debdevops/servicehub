@@ -106,6 +106,77 @@ describe('connectEventStream', () => {
     await vi.waitFor(() => expect(refreshSpaToken).toHaveBeenCalled());
   });
 
+  it('aborts a silently dead connection after the stall timeout and reconnects', async () => {
+    vi.useFakeTimers();
+    try {
+      const signals: AbortSignal[] = [];
+      fetchMock.mockImplementation((_url: string, init: RequestInit) => {
+        const signal = init.signal!;
+        signals.push(signal);
+        // One heartbeat, then silence forever. Like real fetch, the body
+        // stream errors when the request is aborted.
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(': connected\n\n'));
+            signal.addEventListener('abort', () =>
+              controller.error(new DOMException('aborted', 'AbortError')),
+            );
+          },
+        });
+        return Promise.resolve({ ok: true, status: 200, body: stream } as unknown as Response);
+      });
+      const onConnectionChange = vi.fn();
+
+      disconnect = connectEventStream({ onEvent: vi.fn(), onConnectionChange });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onConnectionChange).toHaveBeenCalledWith(true);
+
+      // 45s without a chunk: watchdog aborts and reports the drop.
+      await vi.advanceTimersByTimeAsync(45_000);
+      expect(signals[0].aborted).toBe(true);
+      expect(onConnectionChange).toHaveBeenCalledWith(false);
+
+      // Reconnect fires after the initial 1s backoff.
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not abort a quiet connection while heartbeats keep arriving', async () => {
+    vi.useFakeTimers();
+    try {
+      let streamController!: ReadableStreamDefaultController<Uint8Array>;
+      let signal: AbortSignal | undefined;
+      fetchMock.mockImplementation((_url: string, init: RequestInit) => {
+        signal = init.signal!;
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            streamController = controller;
+            controller.enqueue(new TextEncoder().encode(': connected\n\n'));
+          },
+        });
+        return Promise.resolve({ ok: true, status: 200, body: stream } as unknown as Response);
+      });
+
+      disconnect = connectEventStream({ onEvent: vi.fn() });
+      await vi.advanceTimersByTimeAsync(0);
+
+      // 4 × 30s of near-silence, each gap shorter than the 45s stall timeout.
+      for (let i = 0; i < 4; i++) {
+        await vi.advanceTimersByTimeAsync(30_000);
+        streamController.enqueue(new TextEncoder().encode(': keepalive\n\n'));
+        await vi.advanceTimersByTimeAsync(0);
+      }
+
+      expect(signal!.aborted).toBe(false);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('disconnect aborts the in-flight request', async () => {
     let capturedSignal: AbortSignal | undefined;
     fetchMock.mockImplementation((_url: string, init: RequestInit) => {

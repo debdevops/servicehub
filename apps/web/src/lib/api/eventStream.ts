@@ -24,6 +24,10 @@ export interface EventStreamOptions {
 
 const INITIAL_RETRY_MS = 1_000;
 const MAX_RETRY_MS = 30_000;
+// The server writes a heartbeat every 15s, so 45s of silence means the
+// connection is dead even if the read never errors (half-open TCP after
+// laptop sleep or a network switch never delivers an RST to the browser).
+const STALL_TIMEOUT_MS = 45_000;
 
 /**
  * Connects to the platform event stream and invokes callbacks for each event.
@@ -54,7 +58,17 @@ export function connectEventStream(options: EventStreamOptions): () => void {
 
   const run = async () => {
     if (!active) return;
-    controller = new AbortController();
+    const runController = new AbortController();
+    controller = runController;
+
+    // Watchdog: aborting this run's controller drops the pending read into the
+    // catch below, which flips connected=false and reconnects — the same path
+    // as a network-level drop.
+    let stallTimer: ReturnType<typeof setTimeout> | null = null;
+    const armStallTimer = () => {
+      if (stallTimer) clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => runController.abort(), STALL_TIMEOUT_MS);
+    };
 
     try {
       const token = getSpaToken();
@@ -64,7 +78,7 @@ export function connectEventStream(options: EventStreamOptions): () => void {
           ...(token ? { 'X-SPA-Token': token } : {}),
         },
         cache: 'no-store',
-        signal: controller.signal,
+        signal: runController.signal,
       });
 
       if (response.status === 401) {
@@ -80,6 +94,7 @@ export function connectEventStream(options: EventStreamOptions): () => void {
 
       onConnectionChange?.(true);
       retryDelayMs = INITIAL_RETRY_MS;
+      armStallTimer();
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -88,6 +103,8 @@ export function connectEventStream(options: EventStreamOptions): () => void {
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
+        // Any chunk — heartbeat comments included — proves the connection is alive.
+        armStallTimer();
         buffer += decoder.decode(value, { stream: true });
 
         // SSE frames are separated by a blank line.
@@ -100,7 +117,10 @@ export function connectEventStream(options: EventStreamOptions): () => void {
         }
       }
     } catch {
-      // Aborted by disconnect(), or the connection dropped — fall through.
+      // Aborted by disconnect() or the stall watchdog, or the connection
+      // dropped — fall through.
+    } finally {
+      if (stallTimer) clearTimeout(stallTimer);
     }
 
     if (active) {
