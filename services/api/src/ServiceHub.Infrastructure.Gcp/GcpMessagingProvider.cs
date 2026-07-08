@@ -178,9 +178,19 @@ public sealed class GcpMessagingProvider : ICloudMessagingProvider
             // JSON or ADC), not PublisherServiceApiClient.CreateAsync() which uses host ADC only.
             var subscriberClient = await _clientFactory.GetSubscriberClientAsync(
                 ns, "_servicehub_list_probe_", ct).ConfigureAwait(false);
-            var publisherClient = await _clientFactory.GetPublisherClientAsync(
-                ns, "_servicehub_list_probe_", ct).ConfigureAwait(false);
+            var topicAdminClient = await _clientFactory.GetTopicAdminClientAsync(ns, ct).ConfigureAwait(false);
             var project = new ProjectName(ns.GcpProjectId);
+
+            // List topics using the credentialed topic-admin client
+            await foreach (var topic in topicAdminClient.ListTopicsAsync(project).WithCancellation(ct))
+            {
+                entities.Add(new CloudEntity
+                {
+                    Name = topic.TopicName.TopicId,
+                    EntityType = "Topic",
+                    Provider = CloudProviderType.Gcp
+                });
+            }
 
             // List subscriptions using the subscriber client
             var subRequest = new Google.Cloud.PubSub.V1.ListSubscriptionsRequest
