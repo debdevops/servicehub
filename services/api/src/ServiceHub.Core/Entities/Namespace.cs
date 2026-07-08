@@ -533,10 +533,10 @@ public sealed class Namespace
     /// Validates the namespace name format.
     /// Accepts:
     /// - Azure Service Bus FQDN: *.servicebus.windows.net (and national cloud variants)
-    /// - Simple short name: 6–50 alphanumeric-plus-hyphen chars (Azure namespace short name)
     /// - AWS SQS URL: https://sqs.{region}.amazonaws.com/{account}/{queue}
-    /// - AWS simple name: alphanumeric, hyphens, underscores (SQS queue name conventions)
-    /// - GCP project-based format: letters, digits, hyphens, underscores (Pub/Sub project ID)
+    /// - Generic short name: 3–256 chars of letters, digits, hyphens, underscores or dots,
+    ///   not starting or ending with a hyphen (covers Azure short namespace names,
+    ///   AWS queue/topic names, and GCP Pub/Sub project IDs)
     /// </summary>
     private static bool IsValidNamespaceName(string name)
     {
