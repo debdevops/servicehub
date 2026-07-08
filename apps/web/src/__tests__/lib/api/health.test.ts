@@ -56,4 +56,25 @@ describe('healthApi', () => {
     expect(result).toEqual(statusData);
     expect(mockAxiosInstance.get).toHaveBeenCalledWith('/status');
   });
+
+  it('getReport calls GET /health', async () => {
+    const reportData = {
+      status: 'Healthy',
+      totalDuration: 12.3,
+      entries: {
+        self: { status: 'Healthy', description: 'API is running', duration: 0.1 },
+        servicebus: {
+          status: 'Healthy',
+          description: 'All 1 Azure Service Bus namespace(s) are healthy.',
+          duration: 10.5,
+          data: { TotalNamespaces: 1, HealthyNamespaces: 1 },
+        },
+      },
+    };
+    mockAxiosInstance.get.mockResolvedValue({ data: reportData });
+
+    const result = await healthApi.getReport();
+    expect(result).toEqual(reportData);
+    expect(mockAxiosInstance.get).toHaveBeenCalledWith('/health');
+  });
 });
