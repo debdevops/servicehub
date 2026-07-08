@@ -13,8 +13,14 @@ import { useQueues } from '@/hooks/useQueues';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import type { Message, ContentType } from '@/lib/mockData';
-import type { Message as APIMessage } from '@/lib/api/types';
+import type { Message as APIMessage, CloudProviderType } from '@/lib/api/types';
 import toast from 'react-hot-toast';
+
+const PROVIDER_SERVICE_LABELS: Record<CloudProviderType, string> = {
+  azure: 'Azure Service Bus',
+  aws: 'AWS SQS / SNS',
+  gcp: 'GCP Pub/Sub',
+};
 
 // Transform API message to UI message format
 function transformMessage(
@@ -413,10 +419,12 @@ export function MessagesPage() {
   // Error state
   if (error) {
     const errorMessage = error instanceof Error ? error.message : 'An error occurred';
-    const isConnectionError = errorMessage.toLowerCase().includes('network') || 
+    const isConnectionError = errorMessage.toLowerCase().includes('network') ||
                               errorMessage.toLowerCase().includes('connection') ||
                               errorMessage.toLowerCase().includes('timeout');
-    
+    const providerLabel =
+      PROVIDER_SERVICE_LABELS[namespaces?.find(ns => ns.id === namespaceId)?.cloudProvider ?? 'azure'];
+
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md p-8">
@@ -425,7 +433,7 @@ export function MessagesPage() {
           <p className="text-gray-600 mb-2">{errorMessage}</p>
           {isConnectionError && (
             <p className="text-sm text-gray-500 mb-4">
-              Check if the API server is running and Azure Service Bus is accessible.
+              Check if the API server is running and {providerLabel} is accessible.
             </p>
           )}
           <button
