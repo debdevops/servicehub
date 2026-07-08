@@ -39,13 +39,14 @@ public sealed class SecurityAuditLogger : IAuditLogger
         var correlationId = httpContext.Items["CorrelationId"]?.ToString() ?? "unknown";
         var method = httpContext.Request.Method;
         var path = httpContext.Request.Path.Value ?? string.Empty;
+        var normalizedOutcome = NormalizeOutcome(outcome);
 
         // ── Structured text log (SECURITY_AUDIT prefix for SIEM filtering) ──
         // SECURITY_AUDIT prefix enables deterministic SIEM filtering.
         _logger.LogWarning(
             "SECURITY_AUDIT action={Action} outcome={Outcome} owner={OwnerId} namespace={NamespaceId} environment={Environment} entity={EntityName} cloud={CloudProvider} resource={ResourceName} sequence={SequenceNumber} method={Method} path={Path} correlationId={CorrelationId} detail={Detail}",
             LogRedactor.SanitiseForLog(action),
-            LogRedactor.SanitiseForLog(outcome),
+            LogRedactor.SanitiseForLog(normalizedOutcome),
             LogRedactor.SanitiseForLog(ownerId),
             namespaceId?.ToString() ?? "n/a",
             environment?.ToString() ?? "n/a",
@@ -69,7 +70,7 @@ public sealed class SecurityAuditLogger : IAuditLogger
             OwnerId = ownerId,
             UserIdentity = ResolveUserIdentity(httpContext),
             Action = LogRedactor.SanitiseForLog(action),
-            Outcome = outcome,
+            Outcome = normalizedOutcome,
             NamespaceId = namespaceId,
             NamespaceName = namespaceName,
             EntityName = entityName,
@@ -89,9 +90,21 @@ public sealed class SecurityAuditLogger : IAuditLogger
     }
 
     /// <summary>
+    /// Maps caller-supplied outcome variants onto the canonical values the audit
+    /// summary counts and the outcome filter expect ("Success", "Failure", "Partial").
+    /// Values outside the known variants (e.g. "Denied", "Attempt") pass through unchanged.
+    /// </summary>
+    private static string NormalizeOutcome(string outcome) => outcome switch
+    {
+        "Succeeded" => "Success",
+        "Failed" => "Failure",
+        _ => outcome,
+    };
+
+    /// <summary>
     /// Resolves a human-readable identity for the actor from the HTTP context.
-    /// Prefers claims identity, falls back to API key name stored in Items,
-    /// then the correlation ID as a last resort.
+    /// Prefers the API key name stored in Items, then the claims principal,
+    /// falling back to the request's OwnerId and finally "Unknown".
     /// </summary>
     private static string ResolveUserIdentity(HttpContext httpContext)
     {

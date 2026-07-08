@@ -213,6 +213,14 @@ public sealed class AuditController : ApiControllerBase
 
     private static string EscapeCsv(string value)
     {
+        if (string.IsNullOrEmpty(value))
+            return value;
+
+        // Neutralise spreadsheet formula injection: a leading =, +, -, @, tab or CR
+        // would otherwise be evaluated as a formula when the CSV is opened in Excel.
+        if (value[0] is '=' or '+' or '-' or '@' or '\t' or '\r')
+            value = "'" + value;
+
         if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
             return $"\"{value.Replace("\"", "\"\"")}\"";
         return value;
