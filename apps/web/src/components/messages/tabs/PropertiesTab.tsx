@@ -123,7 +123,6 @@ function extractDLQDetails(message: Message): {
 export function PropertiesTab({ message }: PropertiesTabProps) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const namespaceId = searchParams.get('namespace') ?? '';
   const correlationId = message.properties?.correlationId as string | undefined;
   const dlqDetails = extractDLQDetails(message);
   const severityInfo = dlqDetails ? SEVERITY_EXPLANATIONS[dlqDetails.severity] : null;
@@ -347,9 +346,7 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
         <div className="flex justify-end">
           <button
             onClick={() =>
-              navigate(
-                `/correlation?correlationId=${encodeURIComponent(correlationId)}${namespaceId ? `&namespaceId=${encodeURIComponent(namespaceId)}` : ''}`
-              )
+              navigate(`/cross-cloud-trace?traceId=${encodeURIComponent(correlationId)}`)
             }
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition-colors"
           >

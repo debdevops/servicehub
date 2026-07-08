@@ -30,6 +30,9 @@ public static class ApiKeyScopes
     public const string DlqRead = "dlq:read";
     public const string DlqWrite = "dlq:write";
 
+    // Audit trail scopes
+    public const string AuditRead = "audit:read";
+
     // Administrative access (all operations)
     public const string Admin = "admin";
 

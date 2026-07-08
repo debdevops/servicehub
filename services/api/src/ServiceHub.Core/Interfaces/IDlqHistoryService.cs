@@ -26,32 +26,37 @@ public interface IDlqHistoryService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets a single DLQ message by ID with full details.
+    /// Gets a single DLQ message by ID with full details, scoped to the owner.
+    /// Returns NotFound when the message belongs to a different owner.
     /// </summary>
-    Task<Result<DlqMessage>> GetByIdAsync(long id, CancellationToken cancellationToken = default);
+    Task<Result<DlqMessage>> GetByIdAsync(string ownerId, long id, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets the timeline (lifecycle events) for a specific DLQ message.
+    /// Gets the timeline (lifecycle events) for a specific DLQ message, scoped to the owner.
+    /// Returns NotFound when the message belongs to a different owner.
     /// </summary>
-    Task<Result<IReadOnlyList<DlqTimelineEvent>>> GetTimelineAsync(long id, CancellationToken cancellationToken = default);
+    Task<Result<IReadOnlyList<DlqTimelineEvent>>> GetTimelineAsync(string ownerId, long id, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Updates the user notes on a DLQ message.
+    /// Updates the user notes on a DLQ message, scoped to the owner.
+    /// Returns NotFound when the message belongs to a different owner.
     /// </summary>
-    Task<Result<DlqMessage>> UpdateNotesAsync(long id, string notes, CancellationToken cancellationToken = default);
+    Task<Result<DlqMessage>> UpdateNotesAsync(string ownerId, long id, string notes, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets a summary of DLQ activity across all or a specific namespace.
+    /// Gets a summary of DLQ activity across all or a specific namespace, scoped to the owner.
     /// </summary>
+    /// <param name="ownerId">Owner whose messages to summarise.</param>
     /// <param name="namespaceId">Optional namespace filter.</param>
     /// <param name="days">Number of days for the daily trend (default 30).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<Result<DlqSummary>> GetSummaryAsync(Guid? namespaceId = null, int days = 30, CancellationToken cancellationToken = default);
+    Task<Result<DlqSummary>> GetSummaryAsync(string ownerId, Guid? namespaceId = null, int days = 30, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Exports DLQ messages matching the given filters.
+    /// Exports DLQ messages matching the given filters, scoped to the owner.
     /// </summary>
     Task<Result<IReadOnlyList<DlqMessage>>> ExportAsync(
+        string ownerId,
         Guid? namespaceId = null,
         string? entityName = null,
         DateTimeOffset? from = null,

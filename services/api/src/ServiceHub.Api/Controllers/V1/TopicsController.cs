@@ -6,6 +6,7 @@ using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.Api.Controllers.V1;
@@ -21,8 +22,8 @@ public sealed class TopicsController : ApiControllerBase
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IServiceBusClientCache _clientCache;
     private readonly IConnectionStringProtector _connectionStringProtector;
-    private readonly IMessageSender _messageSender;
-    private readonly IMessageReceiver _messageReceiver;
+    private readonly IMessageOperationsService _messageOperationsService;
+    private readonly CloudProviderRouter _providerRouter;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<TopicsController> _logger;
 
@@ -32,24 +33,24 @@ public sealed class TopicsController : ApiControllerBase
     /// <param name="namespaceRepository">The namespace repository.</param>
     /// <param name="clientCache">The Service Bus client cache.</param>
     /// <param name="connectionStringProtector">The connection string protector.</param>
-    /// <param name="messageSender">The message sender service.</param>
-    /// <param name="messageReceiver">The message receiver service.</param>
+    /// <param name="messageOperationsService">The provider-aware message operations service.</param>
+    /// <param name="providerRouter">Router used to resolve the namespace's cloud provider.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="auditLogger">The security audit logger.</param>
     public TopicsController(
         INamespaceRepository namespaceRepository,
         IServiceBusClientCache clientCache,
         IConnectionStringProtector connectionStringProtector,
-        IMessageSender messageSender,
-        IMessageReceiver messageReceiver,
+        IMessageOperationsService messageOperationsService,
+        CloudProviderRouter providerRouter,
         ILogger<TopicsController> logger,
         IAuditLogger? auditLogger = null)
     {
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
         _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
-        _messageSender = messageSender ?? throw new ArgumentNullException(nameof(messageSender));
-        _messageReceiver = messageReceiver ?? throw new ArgumentNullException(nameof(messageReceiver));
+        _messageOperationsService = messageOperationsService ?? throw new ArgumentNullException(nameof(messageOperationsService));
+        _providerRouter = providerRouter ?? throw new ArgumentNullException(nameof(providerRouter));
         _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -97,19 +98,32 @@ public sealed class TopicsController : ApiControllerBase
             return ToActionResult<IReadOnlyList<TopicRuntimePropertiesDto>>(unprotectResult.Error);
         }
 
-        var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
-        var topicsResult = await wrapper.GetTopicsAsync(cancellationToken);
-        if (topicsResult.IsFailure)
+        try
         {
-            return ToActionResult<IReadOnlyList<TopicRuntimePropertiesDto>>(topicsResult.Error);
+            var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+            var topicsResult = await wrapper.GetTopicsAsync(cancellationToken);
+            if (topicsResult.IsFailure)
+            {
+                return ToActionResult<IReadOnlyList<TopicRuntimePropertiesDto>>(topicsResult.Error);
+            }
+
+            _logger.LogInformation(
+                "Retrieved {TopicCount} topics for namespace {NamespaceId}",
+                topicsResult.Value.Count,
+                namespaceId);
+
+            return Ok(topicsResult.Value);
         }
-
-        _logger.LogInformation(
-            "Retrieved {TopicCount} topics for namespace {NamespaceId}",
-            topicsResult.Value.Count,
-            namespaceId);
-
-        return Ok(topicsResult.Value);
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error connecting to Service Bus namespace {NamespaceId}", namespaceId);
+            return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
+            {
+                Status = StatusCodes.Status502BadGateway,
+                Title = "Service Bus Communication Error",
+                Detail = $"Unable to connect to the Service Bus namespace. Verify the connection string is valid and the namespace is reachable. ({ex.GetType().Name})"
+            });
+        }
     }
 
     /// <summary>
@@ -160,14 +174,27 @@ public sealed class TopicsController : ApiControllerBase
             return ToActionResult<TopicRuntimePropertiesDto>(unprotectResult.Error);
         }
 
-        var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
-        var topicResult = await wrapper.GetTopicAsync(topicName, cancellationToken);
-        if (topicResult.IsFailure)
+        try
         {
-            return ToActionResult<TopicRuntimePropertiesDto>(topicResult.Error);
-        }
+            var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+            var topicResult = await wrapper.GetTopicAsync(topicName, cancellationToken);
+            if (topicResult.IsFailure)
+            {
+                return ToActionResult<TopicRuntimePropertiesDto>(topicResult.Error);
+            }
 
-        return Ok(topicResult.Value);
+            return Ok(topicResult.Value);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error connecting to Service Bus namespace {NamespaceId}", namespaceId);
+            return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
+            {
+                Status = StatusCodes.Status502BadGateway,
+                Title = "Service Bus Communication Error",
+                Detail = $"Unable to connect to the Service Bus namespace. Verify the connection string is valid and the namespace is reachable. ({ex.GetType().Name})"
+            });
+        }
     }
 
     /// <summary>
@@ -256,7 +283,7 @@ public sealed class TopicsController : ApiControllerBase
             NamespaceId = namespaceId
         };
 
-        var result = await _messageSender.SendAsync(sendRequest, cancellationToken);
+        var result = await _messageOperationsService.SendAsync(sendRequest, cancellationToken);
         if (result.IsFailure)
         {
             _auditLogger.LogCriticalAction(HttpContext, OwnerId, IntentHeaders.IntentSendMessage, "Failed", namespaceId, ns.Environment, topicName, detail: result.Error.Message);
@@ -316,34 +343,34 @@ public sealed class TopicsController : ApiControllerBase
             FromSequenceNumber: null);
 
         var result = fromDeadLetter
-            ? await _messageReceiver.PeekDeadLetterMessagesAsync(request, cancellationToken)
-            : await _messageReceiver.PeekMessagesAsync(request, cancellationToken);
+            ? await _messageOperationsService.PeekDeadLetterMessagesAsync(request, cancellationToken)
+            : await _messageOperationsService.PeekMessagesAsync(request, cancellationToken);
 
         if (result.IsFailure)
         {
             return ToActionResult<PaginatedResponse<MessageResponse>>(result.Error);
         }
 
-        // Get the actual total count from subscription runtime properties
+        // Get the actual total count from the provider's entity listing
         var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
         int totalCount = result.Value.Count; // Default to peeked count
-        
-        if (namespaceResult.IsSuccess && namespaceResult.Value.ConnectionString is not null)
+
+        if (namespaceResult.IsSuccess && _providerRouter.IsRegistered(namespaceResult.Value.Provider))
         {
-            try 
+            try
             {
-                var unprotectResult = _connectionStringProtector.Unprotect(namespaceResult.Value.ConnectionString);
-                if (unprotectResult.IsSuccess)
+                var entitiesResult = await _providerRouter
+                    .Resolve(namespaceResult.Value.Provider)
+                    .ListEntitiesAsync(namespaceId, cancellationToken);
+                if (entitiesResult.IsSuccess)
                 {
-                    var wrapper = _clientCache.GetOrCreate(namespaceResult.Value.Id, unprotectResult.Value);
-                    var subscriptionsResult = await wrapper.GetSubscriptionsAsync(topicName, cancellationToken);
-                    if (subscriptionsResult.IsSuccess)
+                    var subscriptionPath = $"{topicName}/subscriptions/{subscriptionName}";
+                    var subInfo = entitiesResult.Value.FirstOrDefault(e =>
+                        string.Equals(e.EntityType, "Subscription", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(e.Name, subscriptionPath, StringComparison.OrdinalIgnoreCase));
+                    if (subInfo is not null)
                     {
-                        var subInfo = subscriptionsResult.Value.FirstOrDefault(s => string.Equals(s.Name, subscriptionName, StringComparison.OrdinalIgnoreCase));
-                        if (subInfo is not null)
-                        {
-                            totalCount = (int)(fromDeadLetter ? subInfo.DeadLetterMessageCount : subInfo.ActiveMessageCount);
-                        }
+                        totalCount = (int)(fromDeadLetter ? subInfo.DeadLetterCount : subInfo.ActiveMessageCount);
                     }
                 }
             }
@@ -468,7 +495,7 @@ public sealed class TopicsController : ApiControllerBase
             Reason: reason,
             ErrorDescription: errorDescription);
 
-        var result = await _messageReceiver.DeadLetterMessagesAsync(request, cancellationToken);
+        var result = await _messageOperationsService.DeadLetterMessagesAsync(request, cancellationToken);
 
         if (result.IsFailure)
         {

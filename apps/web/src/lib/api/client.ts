@@ -23,7 +23,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 // This token proves the request originates from the co-hosted SPA (loaded
 // from the same server) and cannot be obtained by Postman/curl since they
 // never load the HTML page.
-function getSpaToken(): string | null {
+export function getSpaToken(): string | null {
   const meta = document.querySelector('meta[name="spa-token"]');
   return meta?.getAttribute('content') ?? null;
 }
@@ -52,7 +52,7 @@ apiClient.interceptors.request.use((config) => {
  * Azure App Service routing mismatches.
  * Returns true if a new token was successfully obtained.
  */
-async function refreshSpaToken(maxRetries = 3): Promise<boolean> {
+export async function refreshSpaToken(maxRetries = 3): Promise<boolean> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const response = await fetch('/internal/spa-token', { cache: 'no-store' });

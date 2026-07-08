@@ -15,9 +15,7 @@ namespace ServiceHub.UnitTests.Infrastructure;
 public class AutoReplayExecutorTests : IDisposable
 {
     private readonly DlqDbContext _dbContext;
-    private readonly Mock<INamespaceRepository> _nsRepo = new();
-    private readonly Mock<IServiceBusClientCache> _clientCache = new();
-    private readonly Mock<IConnectionStringProtector> _protector = new();
+    private readonly Mock<IMessageOperationsService> _messageOperations = new();
     private readonly Mock<ILogger<AutoReplayExecutor>> _logger = new();
     private readonly AutoReplayExecutor _executor;
 
@@ -31,8 +29,7 @@ public class AutoReplayExecutorTests : IDisposable
         _dbContext.Database.EnsureCreated();
 
         _executor = new AutoReplayExecutor(
-            _dbContext, _nsRepo.Object, _clientCache.Object,
-            _protector.Object, _logger.Object);
+            _dbContext, _messageOperations.Object, _logger.Object);
     }
 
     public void Dispose()
@@ -41,13 +38,20 @@ public class AutoReplayExecutorTests : IDisposable
         _dbContext.Dispose();
     }
 
-    private DlqMessage CreateMessage(long seq = 1)
+    private DlqMessage CreateMessage(
+        long seq = 1,
+        CloudProviderType provider = CloudProviderType.Azure,
+        ServiceBusEntityType entityType = ServiceBusEntityType.Queue,
+        string entityName = "test-queue",
+        string? topicName = null)
     {
         var msg = new DlqMessage
         {
             MessageId = $"msg-{seq}", SequenceNumber = seq, BodyHash = $"hash-{seq}",
-            NamespaceId = Guid.NewGuid(), OwnerId = TestConstants.TestOwnerId, EntityName = "test-queue",
-            EntityType = ServiceBusEntityType.Queue,
+            NamespaceId = Guid.NewGuid(), OwnerId = TestConstants.TestOwnerId, EntityName = entityName,
+            EntityType = entityType,
+            TopicName = topicName,
+            CloudProvider = provider,
             EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddHours(-1),
             DetectedAtUtc = DateTimeOffset.UtcNow,
             DeliveryCount = 5, MessageSize = 100,
@@ -79,35 +83,21 @@ public class AutoReplayExecutorTests : IDisposable
     [Fact]
     public void Constructor_NullDbContext_Throws()
     {
-        var act = () => new AutoReplayExecutor(null!, _nsRepo.Object, _clientCache.Object, _protector.Object, _logger.Object);
+        var act = () => new AutoReplayExecutor(null!, _messageOperations.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("dbContext");
     }
 
     [Fact]
-    public void Constructor_NullNamespaceRepository_Throws()
+    public void Constructor_NullMessageOperations_Throws()
     {
-        var act = () => new AutoReplayExecutor(_dbContext, null!, _clientCache.Object, _protector.Object, _logger.Object);
-        act.Should().Throw<ArgumentNullException>().WithParameterName("namespaceRepository");
-    }
-
-    [Fact]
-    public void Constructor_NullClientCache_Throws()
-    {
-        var act = () => new AutoReplayExecutor(_dbContext, _nsRepo.Object, null!, _protector.Object, _logger.Object);
-        act.Should().Throw<ArgumentNullException>().WithParameterName("clientCache");
-    }
-
-    [Fact]
-    public void Constructor_NullProtector_Throws()
-    {
-        var act = () => new AutoReplayExecutor(_dbContext, _nsRepo.Object, _clientCache.Object, null!, _logger.Object);
-        act.Should().Throw<ArgumentNullException>().WithParameterName("protector");
+        var act = () => new AutoReplayExecutor(_dbContext, null!, _logger.Object);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("messageOperations");
     }
 
     [Fact]
     public void Constructor_NullLogger_Throws()
     {
-        var act = () => new AutoReplayExecutor(_dbContext, _nsRepo.Object, _clientCache.Object, _protector.Object, null!);
+        var act = () => new AutoReplayExecutor(_dbContext, _messageOperations.Object, null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -175,34 +165,137 @@ public class AutoReplayExecutorTests : IDisposable
     }
 
     [Fact]
-    public async Task Execute_NamespaceNotFound_ReturnsFailure()
+    public async Task Execute_ReplaySucceeds_UpdatesMessageAndRecordsHistory()
     {
         var rule = CreateRule();
         var msg = CreateMessage(1);
         var action = new RuleAction();
 
-        _nsRepo.Setup(r => r.GetByIdAsync(msg.NamespaceId))
-            .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("NS_NOT_FOUND", "Not found")));
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
 
         var result = await _executor.ExecuteAsync(msg, rule, action);
-        result.IsFailure.Should().BeTrue();
+
+        result.IsSuccess.Should().BeTrue();
+        msg.Status.Should().Be(DlqMessageStatus.Replayed);
+        msg.ReplaySuccess.Should().BeTrue();
+        rule.SuccessCount.Should().Be(1);
+        rule.MatchCount.Should().Be(1);
+
+        var history = _dbContext.ReplayHistories.Single();
+        history.DlqMessageId.Should().Be(msg.Id);
+        history.RuleId.Should().Be(rule.Id);
+        history.OutcomeStatus.Should().Be("Success");
+        history.ReplayedToEntity.Should().Be("test-queue");
     }
 
     [Fact]
-    public async Task Execute_EmptyConnectionString_ReturnsFailure()
+    public async Task Execute_ReplayFails_MarksMessageReplayFailedAndRecordsHistory()
     {
         var rule = CreateRule();
         var msg = CreateMessage(1);
         var action = new RuleAction();
 
-        var ns = Namespace.Create("test-ns", "PROTECTED:encrypted-data").Value;
-        // Mock namespace return with connection string that, after creation, we clear
-        var nsResult = Namespace.Create("test-ns", "");
-        // Since Namespace.Create may not accept empty string, let's mock differently
-        _nsRepo.Setup(r => r.GetByIdAsync(msg.NamespaceId))
-            .ReturnsAsync(Result<Namespace>.Failure(Error.Validation("NS", "No connection string")));
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.NotFound("NS_NOT_FOUND", "Namespace not found")));
 
         var result = await _executor.ExecuteAsync(msg, rule, action);
+
         result.IsFailure.Should().BeTrue();
+        msg.Status.Should().Be(DlqMessageStatus.ReplayFailed);
+        msg.ReplaySuccess.Should().BeFalse();
+        rule.SuccessCount.Should().Be(0);
+        rule.MatchCount.Should().Be(1);
+
+        var history = _dbContext.ReplayHistories.Single();
+        history.OutcomeStatus.Should().Be("Failed");
+        history.ErrorDetails.Should().Be("Namespace not found");
+    }
+
+    [Fact]
+    public async Task Execute_ReplayThrows_RecordsErrorHistoryAndReturnsFailure()
+    {
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+
+        var result = await _executor.ExecuteAsync(msg, rule, action);
+
+        result.IsFailure.Should().BeTrue();
+        msg.Status.Should().Be(DlqMessageStatus.ReplayFailed);
+
+        var history = _dbContext.ReplayHistories.Single();
+        history.OutcomeStatus.Should().Be("Error");
+        history.ErrorDetails.Should().Be("boom");
+    }
+
+    [Fact]
+    public async Task Execute_TargetEntityOverride_ReplaysToAlternateEntity()
+    {
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction { TargetEntity = "retry-queue" };
+
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "retry-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var result = await _executor.ExecuteAsync(msg, rule, action);
+
+        result.IsSuccess.Should().BeTrue();
+        var history = _dbContext.ReplayHistories.Single();
+        history.ReplayedToEntity.Should().Be("retry-queue");
+        history.ReplayStrategy.Should().Be("alternate-entity");
+    }
+
+    [Fact]
+    public async Task Execute_SubscriptionMessage_ExtractsSubscriptionNameFromEntityPath()
+    {
+        var rule = CreateRule();
+        var msg = CreateMessage(
+            1,
+            entityType: ServiceBusEntityType.Subscription,
+            entityName: "orders-topic/subscriptions/orders-sub",
+            topicName: "orders-topic");
+        var action = new RuleAction();
+
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "orders-topic", "orders-sub", msg.SequenceNumber, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var result = await _executor.ExecuteAsync(msg, rule, action);
+
+        result.IsSuccess.Should().BeTrue();
+        _messageOperations.Verify(
+            m => m.ReplayMessageAsync(msg.NamespaceId, "orders-topic", "orders-sub", msg.SequenceNumber, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Theory]
+    [InlineData(CloudProviderType.Aws)]
+    [InlineData(CloudProviderType.Gcp)]
+    public async Task Execute_NonAzureProviderMessage_ReplaysViaMessageOperations(CloudProviderType provider)
+    {
+        var rule = CreateRule();
+        var msg = CreateMessage(1, provider: provider);
+        var action = new RuleAction();
+
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var result = await _executor.ExecuteAsync(msg, rule, action);
+
+        result.IsSuccess.Should().BeTrue();
+        msg.Status.Should().Be(DlqMessageStatus.Replayed);
+        _messageOperations.Verify(
+            m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }

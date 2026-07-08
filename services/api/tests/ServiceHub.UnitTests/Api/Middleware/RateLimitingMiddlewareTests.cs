@@ -58,6 +58,62 @@ public class RateLimitingMiddlewareTests
     }
 
     [Fact]
+    public async Task InvokeAsync_SameIpDifferentOwners_ShouldTrackSeparately()
+    {
+        RequestDelegate next = _ => Task.CompletedTask;
+        var options = new RateLimitOptions { MaxRequests = 2, WindowDuration = TimeSpan.FromMinutes(1) };
+        var middleware = new RateLimitingMiddleware(next, _logger.Object, options);
+
+        // Owner A exhausts the limit from a shared proxy IP.
+        for (var i = 0; i < 3; i++)
+        {
+            var ctx = new DefaultHttpContext();
+            ctx.Request.Path = "/api/v1/test";
+            ctx.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("10.0.0.1");
+            ctx.Items["OwnerId"] = "entra:owner-a";
+            await middleware.InvokeAsync(ctx);
+            if (i == 2) ctx.Response.StatusCode.Should().Be(429);
+        }
+
+        // Owner B behind the same proxy IP must NOT be throttled by owner A's usage.
+        var ownerBContext = new DefaultHttpContext();
+        ownerBContext.Request.Path = "/api/v1/test";
+        ownerBContext.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("10.0.0.1");
+        ownerBContext.Items["OwnerId"] = "entra:owner-b";
+
+        await middleware.InvokeAsync(ownerBContext);
+
+        ownerBContext.Response.StatusCode.Should().NotBe(429);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_SameOwnerDifferentIps_ShouldShareBucket()
+    {
+        RequestDelegate next = _ => Task.CompletedTask;
+        var options = new RateLimitOptions { MaxRequests = 2, WindowDuration = TimeSpan.FromMinutes(1) };
+        var middleware = new RateLimitingMiddleware(next, _logger.Object, options);
+
+        for (var i = 0; i < 2; i++)
+        {
+            var ctx = new DefaultHttpContext();
+            ctx.Request.Path = "/api/v1/test";
+            ctx.Connection.RemoteIpAddress = System.Net.IPAddress.Parse($"10.0.0.{i + 1}");
+            ctx.Items["OwnerId"] = "entra:same-owner";
+            await middleware.InvokeAsync(ctx);
+        }
+
+        // Third request for the same owner (different IP) exceeds the owner's limit.
+        var third = new DefaultHttpContext();
+        third.Request.Path = "/api/v1/test";
+        third.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("10.0.0.99");
+        third.Items["OwnerId"] = "entra:same-owner";
+
+        await middleware.InvokeAsync(third);
+
+        third.Response.StatusCode.Should().Be(429);
+    }
+
+    [Fact]
     public async Task InvokeAsync_HealthPath_ShouldSkipRateLimiting()
     {
         var callCount = 0;

@@ -10,6 +10,7 @@ using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Events;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
@@ -23,6 +24,7 @@ public class NamespacesControllerTests
     private readonly Mock<IServiceBusClientCache> _clientCache;
     private readonly Mock<IConnectionStringProtector> _connectionStringProtector;
     private readonly Mock<ILogger<NamespacesController>> _logger;
+    private readonly Mock<IPlatformEventBus> _eventBus;
     private readonly NamespacesController _controller;
 
     public NamespacesControllerTests()
@@ -32,13 +34,21 @@ public class NamespacesControllerTests
         _clientCache = new Mock<IServiceBusClientCache>();
         _connectionStringProtector = new Mock<IConnectionStringProtector>();
         _logger = new Mock<ILogger<NamespacesController>>();
+        _eventBus = new Mock<IPlatformEventBus>();
+
+        // Default: PublishAsync is a no-op ValueTask — does not throw.
+        _eventBus
+            .Setup(b => b.PublishAsync(It.IsAny<PlatformEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(ValueTask.CompletedTask);
 
         _controller = new NamespacesController(
             _namespaceRepository.Object,
             _clientFactory.Object,
             _clientCache.Object,
             _connectionStringProtector.Object,
-            _logger.Object)
+            _logger.Object,
+            auditLogger: null,
+            eventBus: _eventBus.Object)
         {
             ControllerContext = new ControllerContext
             {
@@ -452,6 +462,138 @@ public class NamespacesControllerTests
         await _controller.Delete(id);
 
         _clientCache.Verify(c => c.RemoveAsync(id, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    #endregion
+
+    #region Platform Event — Publisher Tests
+
+    // ── Create ─────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Create_Success_PublishesExactlyOnePlatformEvent()
+    {
+        // Arrange — full happy-path setup.
+        var request = new CreateNamespaceRequest(
+            "ns-event-test",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
+            ConnectionAuthType.ConnectionString,
+            "Event Test NS");
+
+        _namespaceRepository
+            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
+
+        _clientFactory
+            .Setup(f => f.ValidateConnectionString(It.IsAny<string>()))
+            .Returns(Result.Success());
+
+        _connectionStringProtector
+            .Setup(p => p.Protect(It.IsAny<string>()))
+            .Returns(Result<string>.Success("PROTECTED:encrypted"));
+
+        _namespaceRepository
+            .Setup(r => r.AddAsync(It.IsAny<Namespace>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        // Act
+        await _controller.Create(request);
+
+        // Assert — exactly one event published with the correct EventType.
+        _eventBus.Verify(
+            b => b.PublishAsync(
+                It.Is<PlatformEvent>(e => e.EventType == EventTypes.NamespaceCreated),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Create_SaveFails_PublishesZeroPlatformEvents()
+    {
+        // Arrange — repository save returns failure.
+        var request = new CreateNamespaceRequest(
+            "ns-event-fail",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
+            ConnectionAuthType.ConnectionString,
+            "Event Fail NS");
+
+        _namespaceRepository
+            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
+
+        _clientFactory
+            .Setup(f => f.ValidateConnectionString(It.IsAny<string>()))
+            .Returns(Result.Success());
+
+        _connectionStringProtector
+            .Setup(p => p.Protect(It.IsAny<string>()))
+            .Returns(Result<string>.Success("PROTECTED:encrypted"));
+
+        _namespaceRepository
+            .Setup(r => r.AddAsync(It.IsAny<Namespace>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Internal("SAVE_ERR", "Database unavailable")));
+
+        // Act
+        await _controller.Create(request);
+
+        // Assert — no event published when the commit fails.
+        _eventBus.Verify(
+            b => b.PublishAsync(It.IsAny<PlatformEvent>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    // ── Delete ─────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Delete_Success_PublishesExactlyOnePlatformEvent()
+    {
+        // Arrange — full happy-path delete setup.
+        SetIntentHeaders(IntentHeaders.IntentDeleteNamespace);
+        var ns = CreateTestNamespace();
+        var id = ns.Id;
+
+        _namespaceRepository
+            .Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+        _clientCache.Setup(c => c.Contains(id)).Returns(false);
+        _namespaceRepository
+            .Setup(r => r.DeleteAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        // Act
+        await _controller.Delete(id);
+
+        // Assert — exactly one event published with the correct EventType.
+        _eventBus.Verify(
+            b => b.PublishAsync(
+                It.Is<PlatformEvent>(e => e.EventType == EventTypes.NamespaceDeleted),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Delete_RepositoryFails_PublishesZeroPlatformEvents()
+    {
+        // Arrange — DeleteAsync returns failure.
+        SetIntentHeaders(IntentHeaders.IntentDeleteNamespace);
+        var ns = CreateTestNamespace();
+        var id = ns.Id;
+
+        _namespaceRepository
+            .Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+        _clientCache.Setup(c => c.Contains(id)).Returns(false);
+        _namespaceRepository
+            .Setup(r => r.DeleteAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Internal("DEL_ERR", "Delete failed")));
+
+        // Act
+        await _controller.Delete(id);
+
+        // Assert — no event published when delete fails.
+        _eventBus.Verify(
+            b => b.PublishAsync(It.IsAny<PlatformEvent>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     #endregion

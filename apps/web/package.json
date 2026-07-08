@@ -1,10 +1,11 @@
 {
   "name": "servicehub-web",
   "private": true,
-  "version": "3.2.0",
+  "version": "3.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:sim": "VITE_PROXY_TARGET=http://localhost:5170 vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",

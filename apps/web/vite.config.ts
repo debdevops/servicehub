@@ -2,6 +2,10 @@ import { defineConfig, Plugin } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
+import fs from 'fs'
+import path from 'path'
+
+const appVersion = fs.readFileSync(path.resolve(__dirname, '../../.version'), 'utf-8').trim();
 
 /**
  * Vite plugin that injects a SPA token <meta> tag into index.html during
@@ -42,6 +46,9 @@ const apiProxyTarget = process.env.VITE_PROXY_TARGET ?? 'http://localhost:5153';
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), spaTokenDevPlugin()],
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
@@ -126,6 +133,9 @@ export default defineConfig({
         'src/lib/mockData.ts',
         'src/lib/aiMockData.ts',
         'src/lib/insightsMockData.ts',
+        'src/lib/awsMockData.ts',
+        'src/lib/gcpMockData.ts',
+        'src/lib/azureMockData.ts',
         // test/demo message generator — not application logic
         'src/lib/messageGenerator.ts',
         // TypeScript type definitions only — no runtime code
@@ -137,6 +147,7 @@ export default defineConfig({
         // demo / showcase pages — pure UI display with hardcoded data, no business logic
         'src/pages/AwsDemoPage.tsx',
         'src/pages/GcpDemoPage.tsx',
+        'src/pages/AzureDemoPage.tsx',
         'src/pages/SimulatorPage.tsx',
       ],
       // ── Code Coverage Thresholds ────────────────────────────────────────

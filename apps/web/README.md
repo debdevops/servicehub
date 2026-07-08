@@ -609,10 +609,11 @@ npm run build -- --mode production
 
 #### Issue: "AI Insights not showing"
 
+AI Insights are computed entirely client-side (`lib/ai/`, `useInsights`) — there's no backend AI service to configure; `insightsApi` has backend calls disabled (`BACKEND_AI_ENABLED = false`) and always returns client-side results.
+
 **Solution**:
-1. Verify AI service is configured in backend
-2. Check `/api/insights` endpoint
-3. Ensure enough messages for pattern detection
+1. Ensure enough messages are loaded in the current view for pattern detection to find a cluster
+2. Check the browser console for errors in the heuristic analysis (`lib/ai/`)
 
 ---
 

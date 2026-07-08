@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Route, Cloud, AlertCircle, CheckCircle2, Clock, ChevronDown, ChevronRight, Info } from 'lucide-react';
 import { useCrossCloudTrace } from '@/hooks/useCrossCloudTrace';
 import { useNamespaces } from '@/hooks/useNamespaces';
@@ -178,7 +179,9 @@ function NamespaceSummaryRow({ summary }: { summary: CrossCloudNamespaceSummary 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function CrossCloudTracePage() {
-  const [traceId, setTraceId] = useState('');
+  const [searchParams] = useSearchParams();
+  const initialTraceId = searchParams.get('traceId') ?? '';
+  const [traceId, setTraceId] = useState(initialTraceId);
   const [submitted, setSubmitted] = useState('');
 
   const { data: namespaces } = useNamespaces();
@@ -187,6 +190,16 @@ export function CrossCloudTracePage() {
   // Compute distinct clouds connected
   const connectedClouds = new Set((namespaces ?? []).map(n => n.cloudProvider ?? 'azure'));
   const hasMultiCloud = connectedClouds.size >= 2;
+
+  // Auto-run when deep-linked with ?traceId= (e.g. from the message Properties tab)
+  const autoRanRef = useRef(false);
+  useEffect(() => {
+    if (initialTraceId && !autoRanRef.current) {
+      autoRanRef.current = true;
+      setSubmitted(initialTraceId);
+      runTrace(initialTraceId);
+    }
+  }, [initialTraceId, runTrace]);
 
   const handleTrace = () => {
     const trimmed = traceId.trim();
@@ -208,15 +221,16 @@ export function CrossCloudTracePage() {
         </div>
       </div>
 
-      {/* Multi-cloud gate */}
+      {/* Multi-cloud hint — tracing works single-cloud; more clouds widen the search */}
       {!hasMultiCloud && (
-        <div className="flex items-start gap-3 p-4 rounded-xl border border-amber-200 bg-amber-50">
-          <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+        <div className="flex items-start gap-3 p-4 rounded-xl border border-sky-200 bg-sky-50">
+          <Info className="w-5 h-5 text-sky-600 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-amber-800">Multi-cloud connection required</p>
-            <p className="text-sm text-amber-700 mt-0.5">
-              Connect namespaces from at least two different cloud providers (Azure, AWS, GCP) on the
-              <strong> Connect</strong> page to enable cross-cloud tracing.
+            <p className="text-sm font-semibold text-sky-800">Tracing within one cloud</p>
+            <p className="text-sm text-sky-700 mt-0.5">
+              Traces search every connected namespace, including historical DLQ records.
+              Connect namespaces from more cloud providers (Azure, AWS, GCP) on the
+              <strong> Connect</strong> page to trace messages across clouds.
               Currently connected: {connectedClouds.size === 0 ? 'none' : [...connectedClouds].map(c => CLOUD_LABELS[c as CloudProviderType]).join(', ')}.
             </p>
           </div>
@@ -232,14 +246,14 @@ export function CrossCloudTracePage() {
             placeholder="Enter Correlation ID or Trace ID…"
             value={traceId}
             onChange={e => setTraceId(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && hasMultiCloud && handleTrace()}
-            disabled={!hasMultiCloud || isPending}
+            onKeyDown={e => e.key === 'Enter' && handleTrace()}
+            disabled={isPending}
             aria-label="Trace ID"
           />
         </div>
         <button
           onClick={handleTrace}
-          disabled={!hasMultiCloud || !traceId.trim() || isPending}
+          disabled={!traceId.trim() || isPending}
           className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
         >
           {isPending ? (

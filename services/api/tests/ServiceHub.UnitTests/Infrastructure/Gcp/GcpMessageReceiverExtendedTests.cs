@@ -60,13 +60,13 @@ public sealed class GcpMessageReceiverExtendedTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // GetMessageCountAsync — returns failure (Pub/Sub has no count API)
+    // GetMessageCountAsync — normalizes to neutral success (Pub/Sub has no count API)
     // ─────────────────────────────────────────────────────────────────────────
 
     [Theory]
     [InlineData("my-subscription")]
     [InlineData("another-sub")]
-    public async Task GetMessageCountAsync_ReturnsFailure_Regardless(string subName)
+    public async Task GetMessageCountAsync_ReturnsNeutralSuccess_Regardless(string subName)
     {
         var sut = new GcpMessageReceiver(
             new Mock<IGcpClientFactory>().Object,
@@ -75,10 +75,10 @@ public sealed class GcpMessageReceiverExtendedTests
 
         var result = await sut.GetMessageCountAsync(TestNamespaceId, subName);
 
-        // Pub/Sub has no direct count API — a dedicated failure is returned so callers
-        // can display "N/A" rather than a misleading number.
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("GCP.PubSub.CountUnavailable");
+        // Pub/Sub has no direct count API — normalized to a neutral success (0) so it
+        // behaves the same shape as the other providers rather than surfacing an error.
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(0);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

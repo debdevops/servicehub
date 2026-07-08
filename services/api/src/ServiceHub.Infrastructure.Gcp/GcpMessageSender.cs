@@ -2,8 +2,10 @@ using System.Text;
 using Google.Cloud.PubSub.V1;
 using Google.Protobuf;
 using Microsoft.Extensions.Logging;
+using Polly;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Gcp.Resilience;
 using ServiceHub.Shared.Results;
 using Utf8Encoding = System.Text.Encoding;
 
@@ -22,6 +24,7 @@ public sealed class GcpMessageSender : IMessageSender
     private readonly IGcpClientFactory _clientFactory;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly ILogger<GcpMessageSender> _logger;
+    private readonly ResiliencePipeline _resiliencePipeline;
 
     /// <summary>
     /// Initialises a new instance of <see cref="GcpMessageSender"/>.
@@ -37,6 +40,7 @@ public sealed class GcpMessageSender : IMessageSender
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _resiliencePipeline = GcpResiliencePipeline.Create(_logger);
     }
 
     /// <inheritdoc/>
@@ -61,7 +65,9 @@ public sealed class GcpMessageSender : IMessageSender
                 nsResult.Value, request.EntityName, cancellationToken).ConfigureAwait(false);
 
             var message = BuildPubSubMessage(request);
-            var messageId = await publisher.PublishAsync(message).ConfigureAwait(false);
+            var messageId = await _resiliencePipeline.ExecuteAsync(async _ =>
+                await publisher.PublishAsync(message).ConfigureAwait(false),
+                cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation("Published Pub/Sub message {MessageId} to topic {TopicId}", messageId, SanitizeForLog(request.EntityName));
             return Result.Success();
@@ -99,8 +105,11 @@ public sealed class GcpMessageSender : IMessageSender
             var publisher = await _clientFactory.GetPublisherClientAsync(
                 nsResult.Value, first.EntityName, cancellationToken).ConfigureAwait(false);
 
-            // Pub/Sub batches are managed internally by PublisherClient (auto-batching).
-            // Publish all concurrently — the client handles actual wire batching.
+            // Pub/Sub batches are managed internally by PublisherClient (auto-batching),
+            // which also retries transient RPCs per message. We deliberately do NOT wrap this
+            // in the outer resilience pipeline: a whole-batch retry over independent
+            // PublishAsync calls would re-publish messages that already succeeded when only
+            // one failed, duplicating them. (SendAsync — a single publish — is safe to wrap.)
             var tasks = requestList.Select(req => publisher.PublishAsync(BuildPubSubMessage(req)));
             await Task.WhenAll(tasks).ConfigureAwait(false);
 

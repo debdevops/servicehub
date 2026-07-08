@@ -3,7 +3,7 @@
 **A Complete Guide for Novices and Experts**  
 *Understanding Multi-Cloud Messaging Inspection Made Simple*
 
-**Version:** 3.2.0 (May 2026) — Multi-Cloud Support, Cross-Cloud Message Trace & Enhanced Testing  
+**Version:** 3.3.0 (June 2026) — Multi-Cloud Support, Cross-Cloud Message Trace & Enhanced Testing  
 **New Features:** Cross-cloud trace, AWS/GCP demo environments, expanded test suite (1,045 frontend + 1,362 backend tests)
 
 ---
@@ -85,21 +85,23 @@ graph TB
         API[".NET 10 API<br/>Port 5153<br/>━━━━━━━━━<br/>• REST endpoints<br/>• Authentication<br/>• Data transformation<br/>• Business logic"]
     end
 
-    subgraph "☁️ Azure Cloud"
-        ASB["Azure Service Bus<br/>━━━━━━━━━<br/>• Message queues<br/>• Topics & subscriptions<br/>• Dead-letter queues<br/>• Message metadata"]
-        
-        AI["AI Service (Optional)<br/>━━━━━━━━━<br/>• Pattern detection<br/>• Anomaly identification<br/>• Insights generation"]
+    subgraph "☁️ Cloud Providers"
+        ASB["Azure Service Bus / AWS SQS-SNS / GCP Pub-Sub<br/>━━━━━━━━━<br/>• Message queues<br/>• Topics & subscriptions<br/>• Dead-letter queues<br/>• Message metadata"]
+    end
+
+    subgraph "🧠 Client-Side AI"
+        AI["Browser-only heuristics<br/>(apps/web/src/lib/ai)<br/>━━━━━━━━━<br/>• Pattern detection<br/>• Anomaly identification<br/>• Insights generation<br/>No network call"]
     end
 
     subgraph "💾 Local Storage"
         CACHE["In-Memory Cache<br/>━━━━━━━━━<br/>• Connection strings<br/>• Client instances<br/>• Message cache"]
         
-        DB["SQLite Database<br/>━━━━━━━━━<br/>• Namespace configs<br/>• API keys<br/>• Settings"]
+        DB["SQLite Database<br/>━━━━━━━━━<br/>• Namespace configs<br/>• DLQ Intelligence history<br/>• API keys<br/>• Settings"]
     end
 
     UI -->|HTTP/REST| API
-    API -->|AMQP Protocol| ASB
-    API -->|HTTPS| AI
+    API -->|Provider SDK| ASB
+    UI -.->|runs entirely in-browser| AI
     API -->|Read/Write| DB
     API -->|Cache| CACHE
     
@@ -160,7 +162,7 @@ graph TB
         
         subgraph Infra_Layer["⚙️ Infrastructure Layer"]
             SB_SERVICE["ServiceBusClientWrapper<br/><i>Queue operations<br/>Message peek/receive</i>"]
-            AI_SERVICE["AIServiceClient<br/><i>Pattern detection</i>"]
+            AI_SERVICE["AIServiceClient<br/><i>stub — not implemented</i>"]
             REPO["Repositories<br/><i>SQLite persistence</i>"]
             CRYPTO["Encryption Service<br/><i>Connection string security</i>"]
             CACHE_SVC["Client Cache<br/><i>Connection pooling</i>"]
@@ -458,75 +460,88 @@ sequenceDiagram
 
 ---
 
-### Flow 4: AI Pattern Detection (Optional Feature)
+### Flow 4: AI Pattern Detection
 
-ServiceHub can optionally integrate with an AI service to detect patterns in failed messages:
+ServiceHub detects patterns in failed messages entirely client-side — no message content or metadata is ever sent to an external AI service:
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': { 'fontSize':'16px'}}}%%
 sequenceDiagram
     autonumber
-    
+
     participant User as 👤 User
-    participant UI as React UI
+    participant UI as React UI (apps/web/src/lib/ai)
     participant API as .NET API
-    participant AIService as AI Service
-    participant Azure as Azure Service Bus
-    
-    Note over API: Background worker runs every 5 minutes
-    
-    API->>Azure: Get all dead-letter messages
-    Azure-->>API: 50 failed messages
-    
-    API->>API: Extract patterns from messages
-    Note over API: Groups by:<br/>• Error type<br/>• Time window<br/>• Source system<br/>• Message properties
-    
-    Note right of API: **Privacy Guarantee:**<br/>Only anonymized metadata is sent.<br/>Message bodies are NEVER sent to the AI service.
-    API->>AIService: POST /api/analyze-patterns
-    Note over API,AIService: Payload includes:<br/>• DeadLetterReason<br/>• DeliveryCount<br/>• EnqueuedTime<br/>• Custom property *keys* (not values)<br/>• Error patterns
-    
-    AIService->>AIService: ML Pattern Detection
-    Note over AIService: Detects:<br/>• Recurring errors<br/>• Time-based patterns<br/>• Anomalies<br/>• Correlations
-    
-    AIService-->>API: Pattern insights
-    Note over AIService: Returns:<br/>• Pattern ID<br/>• Confidence score<br/>• Affected message IDs<br/>• Root cause hypothesis<br/>• Recommendations
-    
-    API->>API: Store insights
-    Note over API: Caches for 1 hour
-    
-    User->>UI: Opens InsightsPage
-    
-    UI->>API: GET /api/v1/insights?namespace=X&queue=testqueue
-    
-    API-->>UI: List of AI insights
-    Note over API: Example insight:<br/>"Payment Gateway Timeout Pattern"<br/>Confidence: 87%<br/>25 messages affected<br/>Recommendations:<br/>• Increase timeout<br/>• Check gateway health
-    
-    UI->>User: Display insights dashboard
-    Note over UI: Shows:<br/>• Active patterns<br/>• Affected messages<br/>• Priority (immediate/short-term)<br/>• Recommendations
-    
+
+    User->>UI: Opens AI Findings (current queue view)<br/>or DLQ Intelligence
+
+    API-->>UI: Dead-letter messages (already fetched for the page)
+
+    UI->>UI: Heuristic pattern detection runs in-browser
+    Note over UI: Groups by:<br/>• Error type / DeadLetterReason<br/>• Time window<br/>• Delivery count<br/>• Message properties<br/>No network call — pure client-side JS
+
+    UI->>User: Display pattern clusters<br/>(error type, confidence, affected message count)
+
     User->>UI: Clicks "View affected messages"
-    
-    UI->>UI: Filter message list
-    Note over UI: Highlights the 25 messages<br/>part of this pattern
-    
-    User->>UI: Clicks on message with AI insight
-    
-    UI->>UI: Show "AI Insights" tab
-    Note over UI: Displays:<br/>• Pattern membership<br/>• Why this message is included<br/>• Recommended actions<br/>• Related messages
+    UI->>UI: Filter message list to the cluster
+
+    User->>UI: Opens a message's "AI Insights" tab
+    UI->>User: Shows pattern membership and remediation hints,<br/>computed from data already in the browser
 ```
 
 **What happens in plain English:**
 
-1. **Background worker** — Runs every 5 minutes automatically
-2. **Fetch failed messages** — Gets all dead-letter messages
-3. **Pattern extraction** — Groups similar failures together
-4. **Send to AI** — External AI service analyzes patterns
-5. **ML processing** — Machine learning detects recurring issues
-6. **Store insights** — Cached for fast retrieval
-7. **User opens Insights page** — Sees dashboard of patterns
-8. **View pattern details** — See affected messages and recommendations
-9. **Click affected message** — AI Insights tab shows why this message is part of the pattern
-10. **Actionable recommendations** — Specific steps to fix the issue
+1. **User opens AI Findings / DLQ Intelligence** — no background worker, no scheduled job
+2. **Pattern extraction runs in-browser** — groups messages already loaded in the current view by error type, time window, and properties
+3. **Clusters displayed immediately** — confidence scores and affected-message counts, computed client-side
+4. **View affected messages** — filters the existing message list, no additional API call
+5. **Per-message AI Insights tab** — pattern membership and remediation hints, still computed from data already on the page
+
+**Note on the backend `AnomaliesController` / `IAIServiceClient`:** these exist in `ServiceHub.Api` and `ServiceHub.Infrastructure` but the only implementation, `AIServiceClient`, is an unimplemented stub — every call logs a warning and returns a 503 "not yet implemented" result. It is unrelated to the client-side detection described above and is not currently a working feature.
+
+---
+
+### Cross-Cloud Message Trace
+
+`CrossCloudTraceController` (`GET /api/v1/cross-cloud-trace/trace?traceId={id}`) searches every namespace the caller owns for a message carrying the given correlation/trace ID, across whichever cloud providers are connected:
+
+```mermaid
+%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'16px'}}}%%
+sequenceDiagram
+    autonumber
+
+    participant User as 👤 User
+    participant UI as CorrelationExplorer (React UI)
+    participant API as CrossCloudTraceController
+    participant AzSearch as IAzureTraceSearcher
+    participant Providers as ICloudMessagingProvider (AWS/GCP)
+
+    User->>UI: Paste Correlation ID / trace ID
+    UI->>API: GET /cross-cloud-trace/trace?traceId=...
+
+    API->>API: Load caller's namespaces, split by provider
+    par Azure namespaces (parallel, max 5 concurrent)
+        API->>AzSearch: SearchAsync(namespace, traceId)
+        AzSearch-->>API: Hops + per-namespace summary
+    and Non-Azure namespaces
+        API->>Providers: ListEntitiesAsync + PeekMessagesAsync per entity
+        Providers-->>API: Hops (if provider registered),<br/>or a skip reason if not
+    end
+
+    API->>API: Merge hops, sort chronologically,<br/>assign HopIndex
+    API-->>UI: CrossCloudTraceResponse<br/>(hops, namespace summaries, partial-result flag)
+    UI->>User: Routing diagram + hop timeline +<br/>namespace search-coverage panel
+```
+
+**What happens in plain English:**
+
+1. **User pastes a Correlation ID** in the Correlation Explorer
+2. **Azure namespaces are searched in parallel** (up to 5 concurrent, 30s overall timeout) via `IAzureTraceSearcher`
+3. **AWS/GCP namespaces are searched the same way** whenever those providers are registered on the server — if a provider isn't registered, its namespaces are skipped with a visible reason instead of silently omitted
+4. **Hops are merged and sorted chronologically** across all clouds that responded
+5. **Result** — a routing-path diagram, a chronological hop timeline, and a search-coverage panel showing exactly which namespaces were searched, skipped, or timed out
+
+Azure and non-Azure namespaces are dispatched through separate code paths in the controller today (Azure via `IAzureTraceSearcher`, AWS/GCP via a directly-injected `IEnumerable<ICloudMessagingProvider>`) rather than a single shared routing layer — see `docs/FLOW.md` for the as-built diagram of how this compares to the Messages/Queues/Topics path.
 
 ---
 
@@ -1007,7 +1022,7 @@ graph TB
     
     subgraph Data["Data Layer"]
         PV["Persistent Volume<br/><i>SQLite DB</i>"]
-        SECRETS["Azure Key Vault<br/><i>Connection strings</i>"]
+        SECRETS["Master encryption key<br/><i>env var, optionally sourced from Key Vault</i><br/>Connection strings stay AES-GCM-encrypted in SQLite"]
     end
     
     subgraph Azure["Azure Services"]
@@ -1048,9 +1063,8 @@ graph TB
    - Persistent volume for SQLite
 
 3. **Environment Variables**
-   - `AZURE_KEYVAULT_URI` — For secrets
+   - `ENCRYPTION_KEY` — Master key for connection-string encryption
    - `CORS_ORIGINS` — Allowed frontend origins
-   - `AI_API_ENDPOINT` — Optional AI service
 
 ---
 
@@ -1072,8 +1086,8 @@ graph TB
     end
     
     subgraph Data["Data Protection"]
-        ENCRYPT["AES-256 Encryption<br/><i>Connection strings</i>"]
-        SECRETS["Azure Key Vault<br/><i>Master encryption key</i>"]
+        ENCRYPT["AES-GCM-256 Encryption<br/><i>Connection strings (ENC:V2:)</i>"]
+        SECRETS["Master key via env var<br/><i>HKDF/PBKDF2-derived; Key Vault optional</i>"]
         DB["SQLite with<br/>File Permissions"]
     end
     
@@ -1100,8 +1114,8 @@ graph TB
 **Security Features:**
 
 1. **Connection String Encryption**
-   - AES-256-CBC encryption
-   - Key stored in Azure Key Vault
+   - AES-GCM-256 (authenticated encryption), `ENC:V2:` prefix at rest
+   - Key derived via HKDF (64-char hex keys) or PBKDF2-100k (other keys) from a master key; Azure Key Vault is an optional way to supply that master key, not a requirement
    - Never logged or exposed in responses
 
 2. **CORS Protection**
@@ -1109,7 +1123,7 @@ graph TB
    - Credentials allowed only for trusted domains
 
 3. **Rate Limiting**
-   - 100 requests per minute per IP
+   - 300 requests per minute, keyed on the authenticated owner ID (falls back to remote IP for unauthenticated requests)
    - Prevents abuse and DDoS
 
 4. **Read-Mostly by Design**
@@ -1449,9 +1463,9 @@ ServiceHub solves a critical problem for teams using Azure Service Bus: **visibi
 **Technology Stack:**
 
 - **Frontend**: React + TypeScript + Tailwind CSS + React Query (TanStack Query)
-- **Backend**: .NET 10 + Clean Architecture + Azure SDK + Entity Framework Core
-- **Storage**: SQLite (DLQ Intelligence, rules), Azure Service Bus (messages)
-- **Optional**: AI service for pattern detection
+- **Backend**: .NET 10 + Clean Architecture + Azure/AWS/GCP SDKs + Entity Framework Core
+- **Storage**: SQLite (DLQ Intelligence, rules, namespace configs)
+- **AI**: client-side heuristic pattern detection only — no external AI service calls
 
 ---
 
@@ -1464,5 +1478,5 @@ ServiceHub solves a critical problem for teams using Azure Service Bus: **visibi
 
 ---
 
-*Last Updated: April 2026*  
-*Version: 3.2.0*
+*Last Updated: June 2026*  
+*Version: 3.3.0*

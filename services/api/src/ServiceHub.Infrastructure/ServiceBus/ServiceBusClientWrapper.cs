@@ -542,9 +542,9 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             {
                 _logger.LogError(ex, "Unexpected error getting queues for namespace {NamespaceId}", NamespaceId);
             }
-            return Result.Failure<IReadOnlyList<QueueRuntimePropertiesDto>>(Error.Internal(
-                ErrorCodes.General.UnexpectedError,
-                "An unexpected error occurred while listing queues."));
+            return Result.Failure<IReadOnlyList<QueueRuntimePropertiesDto>>(Error.ExternalService(
+                ErrorCodes.Queue.ListFailed,
+                "An error occurred while connecting to the Service Bus namespace to list queues."));
         }
     }
 
@@ -658,9 +658,9 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             {
                 _logger.LogError(ex, "Unexpected error getting topics for namespace {NamespaceId}", NamespaceId);
             }
-            return Result.Failure<IReadOnlyList<TopicRuntimePropertiesDto>>(Error.Internal(
-                ErrorCodes.General.UnexpectedError,
-                "An unexpected error occurred while listing topics."));
+            return Result.Failure<IReadOnlyList<TopicRuntimePropertiesDto>>(Error.ExternalService(
+                ErrorCodes.Topic.ListFailed,
+                "An error occurred while connecting to the Service Bus namespace to list topics."));
         }
     }
 

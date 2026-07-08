@@ -293,16 +293,6 @@ public static class ApiRoutes
         }
     }
 
-    /// <summary>Routes for correlation search endpoints.</summary>
-    public static class Correlation
-    {
-        /// <summary>Base route for correlation search.</summary>
-        public const string Base = $"{VersionedBase}/correlation";
-
-        /// <summary>Route for timeline search by correlation ID.</summary>
-        public const string Timeline = $"{Base}/timeline";
-    }
-
     /// <summary>Routes for cross-cloud correlation tracing.</summary>
     public static class CrossCloudTrace
     {
@@ -311,5 +301,28 @@ public static class ApiRoutes
 
         /// <summary>Route for executing a trace lookup.</summary>
         public const string Trace = $"{Base}/{{traceId}}";
+    }
+
+    /// <summary>Routes for platform event streaming.</summary>
+    public static class Events
+    {
+        /// <summary>Base route for event operations.</summary>
+        public const string Base = $"{VersionedBase}/events";
+
+        /// <summary>Route for the Server-Sent Events stream.</summary>
+        public const string Stream = $"{Base}/stream";
+    }
+
+    /// <summary>Routes for the persistent audit trail.</summary>
+    public static class Audit
+    {
+        /// <summary>Base route for audit log operations.</summary>
+        public const string Base = $"{VersionedBase}/audit";
+
+        /// <summary>Route for exporting audit logs as CSV or JSON.</summary>
+        public const string Export = $"{Base}/export";
+
+        /// <summary>Route for audit trail summary statistics.</summary>
+        public const string Summary = $"{Base}/summary";
     }
 }

@@ -4,11 +4,13 @@ using Google.Api.Gax.ResourceNames;
 using Google.Cloud.PubSub.V1;
 using Google.Protobuf;
 using Microsoft.Extensions.Logging;
+using Polly;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Gcp.Models;
+using ServiceHub.Infrastructure.Gcp.Resilience;
 using ServiceHub.Shared.Results;
 using Utf8Enc = System.Text.Encoding;
 
@@ -28,6 +30,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
     private readonly IGcpClientFactory _clientFactory;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly ILogger<GcpMessageReceiver> _logger;
+    private readonly ResiliencePipeline _resiliencePipeline;
 
     // Maps synthetic sequence number → ack ID for replay/purge operations.
     // ConcurrentDictionary ensures thread-safe access from parallel async continuations.
@@ -53,6 +56,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _resiliencePipeline = GcpResiliencePipeline.Create(_logger);
     }
 
     // ── IMessageReceiver ──────────────────────────────────────────────────────
@@ -75,12 +79,15 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
 
         try
         {
-            var subscriber = await _clientFactory.GetSubscriberClientAsync(
-                ns, request.EntityName, linkedCts.Token).ConfigureAwait(false);
+            var mapped = await _resiliencePipeline.ExecuteAsync(async ct =>
+            {
+                var subscriber = await _clientFactory.GetSubscriberClientAsync(
+                    ns, request.EntityName, ct).ConfigureAwait(false);
 
-            var subResourceName = GetSubscriptionResourceName(ns, request.EntityName);
-            var messages = await PullAndNackAsync(subscriber, subResourceName, request.MaxMessages, linkedCts.Token).ConfigureAwait(false);
-            var mapped = MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: false);
+                var subResourceName = GetSubscriptionResourceName(ns, request.EntityName);
+                var messages = await PullAndNackAsync(subscriber, subResourceName, request.MaxMessages, ct).ConfigureAwait(false);
+                return MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: false);
+            }, linkedCts.Token).ConfigureAwait(false);
 
             _logger.LogDebug("Peeked {Count} messages from Pub/Sub subscription {Subscription}", mapped.Count, request.EntityName);
             return Result.Success<IReadOnlyList<Message>>(mapped);
@@ -120,12 +127,15 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
 
         try
         {
-            var subscriber = await _clientFactory.GetSubscriberClientAsync(
-                ns, dlqSubscription, linkedCts.Token).ConfigureAwait(false);
+            var mapped = await _resiliencePipeline.ExecuteAsync(async ct =>
+            {
+                var subscriber = await _clientFactory.GetSubscriberClientAsync(
+                    ns, dlqSubscription, ct).ConfigureAwait(false);
 
-            var subResourceName = GetSubscriptionResourceName(ns, dlqSubscription);
-            var messages = await PullAndNackAsync(subscriber, subResourceName, request.MaxMessages, linkedCts.Token).ConfigureAwait(false);
-            var mapped = MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: true);
+                var subResourceName = GetSubscriptionResourceName(ns, dlqSubscription);
+                var messages = await PullAndNackAsync(subscriber, subResourceName, request.MaxMessages, ct).ConfigureAwait(false);
+                return MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: true);
+            }, linkedCts.Token).ConfigureAwait(false);
 
             _logger.LogDebug("Peeked {Count} DLQ messages from Pub/Sub subscription {Subscription}", mapped.Count, dlqSubscription);
             return Result.Success<IReadOnlyList<Message>>(mapped);
@@ -153,15 +163,15 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         string? subscriptionName = null,
         CancellationToken cancellationToken = default)
     {
-        // Pub/Sub does not expose a direct message count API.
-        // Return a dedicated error code so the UI can render "N/A" instead of -1 or a spinner.
+        // Pub/Sub has no direct message-count API (counts require the Cloud Monitoring API).
+        // Return a neutral success (0) rather than a failure so this read behaves the same
+        // shape as the Azure/AWS providers and the simulator — callers get a uniform,
+        // non-error result instead of a provider-specific 400. This mirrors the existing
+        // "unsupported read" convention used by GetScheduledMessagesAsync (returns empty).
         _logger.LogDebug(
-            "GCP Pub/Sub message count is unavailable via API. Subscription: {Subscription}",
+            "GCP Pub/Sub message count is unavailable via API; returning 0. Subscription: {Subscription}",
             SanitizeForLog(entityName));
-        return Task.FromResult(Result.Failure<long>(Error.Validation(
-            "GCP.PubSub.CountUnavailable",
-            "GCP Pub/Sub does not support direct message count queries. " +
-            "Use the Cloud Monitoring API or console for subscription metrics.")));
+        return Task.FromResult(Result.Success(0L));
     }
 
     /// <inheritdoc/>
@@ -408,8 +418,15 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         return mapped;
     }
 
-    private static long ComputeSequenceNumber(string ackId) =>
-        Math.Abs((long)ackId.GetHashCode());
+    private static long ComputeSequenceNumber(string ackId)
+    {
+        // Use a stable 64-bit hash derived from SHA-256 so sequence numbers:
+        //  1. Are consistent across process restarts (unlike GetHashCode which is randomized)
+        //  2. Have negligible collision probability (2^63 space vs 2^31 for GetHashCode)
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(ackId));
+        return BitConverter.ToInt64(hash, 0) & long.MaxValue; // keep positive
+    }
 
     private static string GetSubscriptionResourceName(Core.Entities.Namespace ns, string subscriptionId)
     {

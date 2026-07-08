@@ -36,6 +36,7 @@ public sealed class GcpClientFactory : IGcpClientFactory
     // Cache key: "{namespaceId}:{entityId}"
     private readonly ConcurrentDictionary<string, PublisherClient> _publisherCache = new();
     private readonly ConcurrentDictionary<string, SubscriberServiceApiClient> _subscriberCache = new();
+    private readonly ConcurrentDictionary<Guid, PublisherServiceApiClient> _topicAdminCache = new();
 
     /// <summary>
     /// Initialises a new instance of <see cref="GcpClientFactory"/>.
@@ -99,6 +100,29 @@ public sealed class GcpClientFactory : IGcpClientFactory
         var projectId = GetProjectId(ns);
         _logger.LogDebug("Created SubscriberServiceApiClient for subscription {SubscriptionId} in project {ProjectId}",
             LogRedactor.SanitiseForLog(subscriptionId), LogRedactor.SanitiseForLog(projectId));
+        return client;
+    }
+
+    /// <inheritdoc/>
+    public async Task<PublisherServiceApiClient> GetTopicAdminClientAsync(Namespace ns, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ns);
+
+        if (_topicAdminCache.TryGetValue(ns.Id, out var cached))
+            return cached;
+
+        var credential = await ResolveCredentialAsync(ns).ConfigureAwait(false);
+
+        var clientBuilder = new PublisherServiceApiClientBuilder
+        {
+            ChannelCredentials = credential.ToChannelCredentials()
+        };
+
+        var client = await clientBuilder.BuildAsync(ct).ConfigureAwait(false);
+
+        _topicAdminCache.TryAdd(ns.Id, client);
+        _logger.LogDebug("Created PublisherServiceApiClient (topic admin) for project {ProjectId}",
+            LogRedactor.SanitiseForLog(GetProjectId(ns)));
         return client;
     }
 
