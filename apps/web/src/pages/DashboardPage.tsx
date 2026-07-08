@@ -19,11 +19,19 @@ import { useQuery } from '@tanstack/react-query';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues, useAllNamespacesQueues, NamespaceQueueStats } from '@/hooks/useQueues';
+import { useEventStream } from '@/hooks/useEventStream';
 import { Namespace, EnvironmentType } from '@/lib/api/types';
 import { apiClient } from '@/lib/api/client';
 import { getHealthGrade } from '@/lib/healthGrade';
 
 const DLQ_SPIKE_THRESHOLD = 10;
+
+// While the SSE event stream is connected, events invalidate queries the moment
+// something happens, so polling is only a staleness safety net — relax it.
+// On disconnect the full-speed intervals resume automatically.
+const QUEUES_POLL_MS = { normal: 30_000, relaxed: 180_000 };
+const STATS_POLL_MS = { normal: 60_000, relaxed: 300_000 };
+const TREND_POLL_MS = { normal: 120_000, relaxed: 600_000 };
 
 // ============================================================================
 // Live refresh hook — tracks seconds since last successful data fetch
@@ -323,7 +331,7 @@ interface TrendPoint {
   resolvedCount: number;
 }
 
-function DlqTrendSparkline({ namespaceId }: { namespaceId: string }) {
+function DlqTrendSparkline({ namespaceId, sseConnected = false }: { namespaceId: string; sseConnected?: boolean }) {
   const { data: trendData } = useQuery<TrendPoint[]>({
     queryKey: ['dlq-trend', namespaceId],
     queryFn: async () => {
@@ -336,7 +344,7 @@ function DlqTrendSparkline({ namespaceId }: { namespaceId: string }) {
         resolvedCount: d.resolvedMessages,
       }));
     },
-    refetchInterval: 120_000,
+    refetchInterval: sseConnected ? TREND_POLL_MS.relaxed : TREND_POLL_MS.normal,
   });
 
   if (!trendData || trendData.length < 2) {
@@ -366,11 +374,16 @@ function DlqTrendSparkline({ namespaceId }: { namespaceId: string }) {
 export interface NamespaceCardProps {
   namespace: Namespace;
   dlqThreshold?: number;
+  sseConnected?: boolean;
 }
 
-export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }: NamespaceCardProps) {
+export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, sseConnected = false }: NamespaceCardProps) {
   const navigate = useNavigate();
-  const { data: queues, isLoading: queuesLoading, isError } = useQueues(namespace.id, true);
+  const { data: queues, isLoading: queuesLoading, isError } = useQueues(
+    namespace.id,
+    true,
+    sseConnected ? QUEUES_POLL_MS.relaxed : QUEUES_POLL_MS.normal,
+  );
 
   // Use the stats endpoint for accurate totals (includes subscription DLQs)
   const { data: stats, isLoading: statsLoading } = useQuery({
@@ -388,7 +401,7 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }:
     },
     enabled: !!namespace.id,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: sseConnected ? STATS_POLL_MS.relaxed : STATS_POLL_MS.normal,
     refetchIntervalInBackground: false,
   });
 
@@ -465,7 +478,7 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD }:
       </div>
 
       {/* DLQ Trend Sparkline */}
-      <DlqTrendSparkline namespaceId={namespace.id} />
+      <DlqTrendSparkline namespaceId={namespace.id} sseConnected={sseConnected} />
 
       {/* Status Banner */}
       <div className="px-5 pb-4">
@@ -514,8 +527,17 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const { data: namespaces, isLoading, isFetching, refetch, dataUpdatedAt } = useNamespaces();
 
+  // Push updates via SSE; while connected, polling relaxes to a safety net.
+  const { connected: sseConnected } = useEventStream();
+
   // Track when queue stats last settled to drive the live badge
-  const allStats: NamespaceQueueStats[] = useAllNamespacesQueues(namespaces?.map(ns => ns.id) ?? [], true);
+  const allStats: NamespaceQueueStats[] = useAllNamespacesQueues(
+    namespaces?.map(ns => ns.id) ?? [],
+    true,
+    sseConnected
+      ? { queuesMs: QUEUES_POLL_MS.relaxed, statsMs: STATS_POLL_MS.relaxed }
+      : undefined,
+  );
   const statsLoading = allStats.some(s => s.isLoading);
   const lastUpdatedAt = useRef<number | null>(null);
   if (!statsLoading && allStats.length > 0) {
@@ -738,7 +760,7 @@ export function DashboardPage() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {sortedNamespaces.map((ns) => (
-                <NamespaceCard key={ns.id} namespace={ns} />
+                <NamespaceCard key={ns.id} namespace={ns} sseConnected={sseConnected} />
               ))}
             </div>
           </>

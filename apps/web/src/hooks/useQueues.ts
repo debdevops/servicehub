@@ -4,7 +4,7 @@ import { Queue, ApiError } from '@/lib/api/types';
 import { useDemoContext } from '@/lib/demo/DemoContext';
 import { getMockQueues } from '@/lib/demo/mockProviders';
 
-const queuesQueryOptions = (namespaceId: string, autoRefresh: boolean) => ({
+const queuesQueryOptions = (namespaceId: string, autoRefresh: boolean, refetchMs: number = 30_000) => ({
   queryKey: ['queues', namespaceId] as const,
   queryFn: async (): Promise<Queue[]> => {
     const response = await apiClient.get<Queue[]>(`/namespaces/${namespaceId}/queues`, {
@@ -14,7 +14,7 @@ const queuesQueryOptions = (namespaceId: string, autoRefresh: boolean) => ({
   },
   enabled: !!namespaceId,
   staleTime: 15_000,
-  refetchInterval: autoRefresh ? 30_000 : (false as const),
+  refetchInterval: autoRefresh ? refetchMs : (false as const),
   refetchIntervalInBackground: false,
   retry: (failureCount: number, error: ApiError) => {
     if (error?.response?.status === 404) return false;
@@ -24,7 +24,7 @@ const queuesQueryOptions = (namespaceId: string, autoRefresh: boolean) => ({
   },
 });
 
-export function useQueues(namespaceId: string, autoRefresh: boolean = true) {
+export function useQueues(namespaceId: string, autoRefresh: boolean = true, refetchMs: number = 30_000) {
   const { isDemoMode, cloudProvider } = useDemoContext();
 
   // Compute query options once — both branches return Queue[] so the
@@ -39,7 +39,7 @@ export function useQueues(namespaceId: string, autoRefresh: boolean = true) {
         refetchIntervalInBackground: false,
         retry: false as const,
       }
-    : queuesQueryOptions(namespaceId, autoRefresh);
+    : queuesQueryOptions(namespaceId, autoRefresh, refetchMs);
 
   return useQuery<Queue[], ApiError>(options as Parameters<typeof useQuery<Queue[], ApiError>>[0]);
 }
@@ -63,9 +63,10 @@ export interface NamespaceQueueStats {
 export function useAllNamespacesQueues(
   namespaceIds: string[],
   autoRefresh: boolean = true,
+  intervals?: { queuesMs?: number; statsMs?: number },
 ): NamespaceQueueStats[] {
   const results = useQueries({
-    queries: namespaceIds.map((id) => queuesQueryOptions(id, autoRefresh)),
+    queries: namespaceIds.map((id) => queuesQueryOptions(id, autoRefresh, intervals?.queuesMs)),
   });
 
   // Also fetch stats (with subscription DLQs) for each namespace
@@ -85,7 +86,7 @@ export function useAllNamespacesQueues(
       },
       enabled: !!id,
       staleTime: 30_000,
-      refetchInterval: autoRefresh ? 60_000 : (false as const),
+      refetchInterval: autoRefresh ? (intervals?.statsMs ?? 60_000) : (false as const),
       refetchIntervalInBackground: false,
       retry: (failureCount: number, error: ApiError) => {
         if (error?.response?.status === 404) return false;

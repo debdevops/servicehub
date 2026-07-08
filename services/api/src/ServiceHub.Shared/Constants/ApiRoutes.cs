@@ -303,6 +303,16 @@ public static class ApiRoutes
         public const string Trace = $"{Base}/{{traceId}}";
     }
 
+    /// <summary>Routes for platform event streaming.</summary>
+    public static class Events
+    {
+        /// <summary>Base route for event operations.</summary>
+        public const string Base = $"{VersionedBase}/events";
+
+        /// <summary>Route for the Server-Sent Events stream.</summary>
+        public const string Stream = $"{Base}/stream";
+    }
+
     /// <summary>Routes for the persistent audit trail.</summary>
     public static class Audit
     {

@@ -90,6 +90,9 @@ public static class ServiceCollectionExtensions
         // SPA token provider for co-hosted browser authentication
         services.AddSingleton<SpaTokenProvider>();
 
+        // Fan-out of platform events to connected SSE clients (GET /api/v1/events/stream)
+        services.AddSingleton<Services.PlatformEventStreamBroker>();
+
         // Security audit trail for critical operations
         services.AddSingleton<IAuditLogger, SecurityAuditLogger>();
 
