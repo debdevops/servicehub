@@ -73,6 +73,12 @@ var app = builder.Build();
 // InProcessPlatformEventBus singleton drain loop.
 app.Services.SubscribePlatformEventHandlers();
 
+// Fan out platform events to connected SSE clients (GET /api/v1/events/stream).
+// In-process bus: clients only see events published by THIS instance — acceptable
+// while ServiceHub is single-instance (SQLite already pins deployment to one host).
+app.Services.GetRequiredService<ServiceHub.Core.Interfaces.IPlatformEventBus>()
+    .Subscribe(app.Services.GetRequiredService<ServiceHub.Api.Services.PlatformEventStreamBroker>().HandleAsync);
+
 // Forwarded headers must be first in pipeline (before any middleware that reads client IP)
 app.UseForwardedHeaders();
 
