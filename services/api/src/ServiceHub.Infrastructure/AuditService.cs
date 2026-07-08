@@ -89,8 +89,17 @@ public sealed class AuditService : BackgroundService, IAuditService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error flushing audit log batch");
-                // Brief delay before retrying to avoid tight spin on persistent errors
-                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                // Brief delay before retrying to avoid tight spin on persistent errors.
+                // Cancellation must not escape this catch, or shutdown would skip the
+                // final drain below and drop queued entries.
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
             }
         }
 
