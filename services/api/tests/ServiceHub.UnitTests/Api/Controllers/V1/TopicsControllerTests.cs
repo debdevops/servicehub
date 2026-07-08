@@ -10,6 +10,8 @@ using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
+using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Api.Controllers.V1;
@@ -19,8 +21,9 @@ public class TopicsControllerTests
     private readonly Mock<INamespaceRepository> _namespaceRepository;
     private readonly Mock<IServiceBusClientCache> _clientCache;
     private readonly Mock<IConnectionStringProtector> _connectionStringProtector;
-    private readonly Mock<IMessageSender> _messageSender;
-    private readonly Mock<IMessageReceiver> _messageReceiver;
+    private readonly Mock<IMessageOperationsService> _messageOperationsService;
+    private readonly Mock<ICloudMessagingProvider> _cloudProvider;
+    private readonly CloudProviderRouter _providerRouter;
     private readonly Mock<ILogger<TopicsController>> _logger;
     private readonly TopicsController _controller;
 
@@ -29,16 +32,20 @@ public class TopicsControllerTests
         _namespaceRepository = new Mock<INamespaceRepository>();
         _clientCache = new Mock<IServiceBusClientCache>();
         _connectionStringProtector = new Mock<IConnectionStringProtector>();
-        _messageSender = new Mock<IMessageSender>();
-        _messageReceiver = new Mock<IMessageReceiver>();
+        _messageOperationsService = new Mock<IMessageOperationsService>();
+        _cloudProvider = new Mock<ICloudMessagingProvider>();
+        _cloudProvider.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Azure);
+        _cloudProvider.Setup(p => p.ListEntitiesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Success([]));
+        _providerRouter = new CloudProviderRouter([_cloudProvider.Object]);
         _logger = new Mock<ILogger<TopicsController>>();
 
         _controller = new TopicsController(
             _namespaceRepository.Object,
             _clientCache.Object,
             _connectionStringProtector.Object,
-            _messageSender.Object,
-            _messageReceiver.Object,
+            _messageOperationsService.Object,
+            _providerRouter,
             _logger.Object)
         {
             ControllerContext = new ControllerContext
@@ -90,7 +97,7 @@ public class TopicsControllerTests
     {
         var act = () => new TopicsController(
             null!, _clientCache.Object, _connectionStringProtector.Object,
-            _messageSender.Object, _messageReceiver.Object, _logger.Object);
+            _messageOperationsService.Object, _providerRouter, _logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -99,7 +106,7 @@ public class TopicsControllerTests
     {
         var act = () => new TopicsController(
             _namespaceRepository.Object, _clientCache.Object, _connectionStringProtector.Object,
-            _messageSender.Object, _messageReceiver.Object, null!);
+            _messageOperationsService.Object, _providerRouter, null!);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -219,26 +226,25 @@ public class TopicsControllerTests
             new() { MessageId = "msg-1", SequenceNumber = 1, Body = "hello", EnqueuedTime = DateTimeOffset.UtcNow, DeliveryCount = 1 }
         };
 
-        _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
 
-        _connectionStringProtector.Setup(p => p.Unprotect(It.IsAny<string>()))
-            .Returns(Result<string>.Success("Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=Test;SharedAccessKey=abc="));
-
-        var wrapperMock = new Mock<IServiceBusClientWrapper>();
-        var subDto = new SubscriptionRuntimePropertiesDto(
-            "test-sub", "test-topic", 10, 5, 0, 0, "Active",
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
-            false, true, true, true, 10,
-            TimeSpan.FromDays(14), TimeSpan.FromMinutes(1), TimeSpan.MaxValue, null, null);
-        wrapperMock.Setup(w => w.GetSubscriptionsAsync("test-topic", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<IReadOnlyList<SubscriptionRuntimePropertiesDto>>.Success(new[] { subDto }));
-        _clientCache.Setup(c => c.GetOrCreate(nsId, It.IsAny<string>()))
-            .Returns(wrapperMock.Object);
+        _cloudProvider.Setup(p => p.ListEntitiesAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Success(
+                [new CloudEntity
+                {
+                    Name = "test-topic/subscriptions/test-sub",
+                    EntityType = "Subscription",
+                    ActiveMessageCount = 10,
+                    DeadLetterCount = 5,
+                    Provider = CloudProviderType.Azure,
+                }]));
 
         var result = await _controller.GetSubscriptionMessages(nsId, "test-topic", "test-sub");
 
-        result.Result.Should().BeOfType<OkObjectResult>();
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<PaginatedResponse<MessageResponse>>().Subject;
+        response.TotalCount.Should().Be(10);
     }
 
     [Fact]
@@ -251,18 +257,11 @@ public class TopicsControllerTests
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
         var messages = new List<Message>();
-        _messageReceiver.Setup(r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
 
-        _connectionStringProtector.Setup(p => p.Unprotect(It.IsAny<string>()))
-            .Returns(Result<string>.Success("Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=Test;SharedAccessKey=abc="));
-
-        var wrapperMock = new Mock<IServiceBusClientWrapper>();
-        wrapperMock.Setup(w => w.GetSubscriptionsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<IReadOnlyList<SubscriptionRuntimePropertiesDto>>.Success(
-                Array.Empty<SubscriptionRuntimePropertiesDto>()));
-        _clientCache.Setup(c => c.GetOrCreate(nsId, It.IsAny<string>()))
-            .Returns(wrapperMock.Object);
+        _cloudProvider.Setup(p => p.ListEntitiesAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Success([]));
 
         var result = await _controller.GetSubscriptionMessages(nsId, "test-topic", "test-sub", queueType: "deadletter");
 
@@ -275,7 +274,7 @@ public class TopicsControllerTests
         var ns = CreateTestNamespace();
         var nsId = ns.Id;
 
-        _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Failure(Error.ExternalService("err", "timeout")));
 
         var result = await _controller.GetSubscriptionMessages(nsId, "test-topic", "test-sub");
@@ -293,7 +292,7 @@ public class TopicsControllerTests
             new() { MessageId = "msg-1", SequenceNumber = 1, Body = "hello", EnqueuedTime = DateTimeOffset.UtcNow, DeliveryCount = 1 }
         };
 
-        _messageReceiver.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
 
         _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
@@ -318,7 +317,7 @@ public class TopicsControllerTests
         _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        _messageReceiver.Setup(r => r.DeadLetterMessagesAsync(It.IsAny<DeadLetterRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.DeadLetterMessagesAsync(It.IsAny<DeadLetterRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<int>.Success(3));
 
         var result = await _controller.DeadLetterSubscriptionMessages(nsId, "test-topic", "test-sub", messageCount: 3);
@@ -369,7 +368,7 @@ public class TopicsControllerTests
         _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        _messageReceiver.Setup(r => r.DeadLetterMessagesAsync(It.IsAny<DeadLetterRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(r => r.DeadLetterMessagesAsync(It.IsAny<DeadLetterRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<int>.Failure(Error.ExternalService("err", "Service Bus error")));
 
         var result = await _controller.DeadLetterSubscriptionMessages(nsId, "test-topic", "test-sub");
@@ -414,7 +413,7 @@ public class TopicsControllerTests
 
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
-        _messageSender.Setup(s => s.SendAsync(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()))
+        _messageOperationsService.Setup(s => s.SendAsync(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
 
         var request = new SendMessageRequest(Body: "test message");

@@ -1,21 +1,44 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { namespacesApi } from '@/lib/api/namespaces';
-import { CreateNamespaceRequest, ApiError } from '@/lib/api/types';
+import { Namespace, CreateNamespaceRequest, ApiError } from '@/lib/api/types';
+import { useDemoContext } from '@/lib/demo/DemoContext';
+import { getMockNamespaces } from '@/lib/demo/mockProviders';
 import toast from 'react-hot-toast';
 
 export function useNamespaces() {
-  return useQuery({
-    queryKey: ['namespaces'],
-    queryFn: namespacesApi.list,
-  });
+  const { isDemoMode, cloudProvider } = useDemoContext();
+
+  const options = isDemoMode && cloudProvider
+    ? {
+        queryKey: ['namespaces', 'demo', cloudProvider] as [string, string, string],
+        queryFn: (): Promise<Namespace[]> => Promise.resolve(getMockNamespaces(cloudProvider)),
+        staleTime: Infinity as number,
+      }
+    : {
+        queryKey: ['namespaces'] as [string],
+        queryFn: namespacesApi.list,
+      };
+
+  return useQuery<Namespace[]>(options as Parameters<typeof useQuery<Namespace[]>>[0]);
 }
 
 export function useNamespace(id: string) {
-  return useQuery({
-    queryKey: ['namespaces', id],
-    queryFn: () => namespacesApi.get(id),
-    enabled: !!id,
-  });
+  const { isDemoMode, cloudProvider } = useDemoContext();
+
+  const options = isDemoMode && cloudProvider
+    ? {
+        queryKey: ['namespaces', 'demo', cloudProvider, id] as [string, string, string, string],
+        queryFn: (): Promise<Namespace> => Promise.resolve(getMockNamespaces(cloudProvider)[0]),
+        enabled: !!id,
+        staleTime: Infinity as number,
+      }
+    : {
+        queryKey: ['namespaces', id] as [string, string],
+        queryFn: () => namespacesApi.get(id),
+        enabled: !!id,
+      };
+
+  return useQuery<Namespace>(options as Parameters<typeof useQuery<Namespace>>[0]);
 }
 
 export function useCreateNamespace() {

@@ -20,8 +20,7 @@ namespace ServiceHub.Api.Controllers.V1;
 [Tags("Messages")]
 public sealed class MessagesController : ApiControllerBase
 {
-    private readonly IMessageSender _messageSender;
-    private readonly IMessageReceiver _messageReceiver;
+    private readonly IMessageOperationsService _messageOperationsService;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<MessagesController> _logger;
@@ -29,20 +28,17 @@ public sealed class MessagesController : ApiControllerBase
     /// <summary>
     /// Initializes a new instance of the <see cref="MessagesController"/> class.
     /// </summary>
-    /// <param name="messageSender">The message sender service.</param>
-    /// <param name="messageReceiver">The message receiver service.</param>
+    /// <param name="messageOperationsService">The provider-aware message operations service.</param>
     /// <param name="namespaceRepository">The namespace repository.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="auditLogger">The security audit logger.</param>
     public MessagesController(
-        IMessageSender messageSender,
-        IMessageReceiver messageReceiver,
+        IMessageOperationsService messageOperationsService,
         INamespaceRepository namespaceRepository,
         ILogger<MessagesController> logger,
         IAuditLogger? auditLogger = null)
     {
-        _messageSender = messageSender ?? throw new ArgumentNullException(nameof(messageSender));
-        _messageReceiver = messageReceiver ?? throw new ArgumentNullException(nameof(messageReceiver));
+        _messageOperationsService = messageOperationsService ?? throw new ArgumentNullException(nameof(messageOperationsService));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -102,7 +98,7 @@ public sealed class MessagesController : ApiControllerBase
             MaxMessages: Math.Clamp(maxMessages, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages),
             FromSequenceNumber: fromSequenceNumber);
 
-        var result = await _messageReceiver.PeekMessagesAsync(request, cancellationToken);
+        var result = await _messageOperationsService.PeekMessagesAsync(request, cancellationToken);
         if (result.IsFailure)
         {
             return ToActionResult<IReadOnlyList<MessageResponse>>(result.Error);
@@ -169,7 +165,7 @@ public sealed class MessagesController : ApiControllerBase
             MaxMessages: Math.Clamp(maxMessages, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages),
             FromSequenceNumber: fromSequenceNumber);
 
-        var result = await _messageReceiver.PeekMessagesAsync(request, cancellationToken);
+        var result = await _messageOperationsService.PeekMessagesAsync(request, cancellationToken);
         if (result.IsFailure)
         {
             return ToActionResult<IReadOnlyList<MessageResponse>>(result.Error);
@@ -233,7 +229,7 @@ public sealed class MessagesController : ApiControllerBase
             MaxMessages: Math.Clamp(maxMessages, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages),
             FromSequenceNumber: fromSequenceNumber);
 
-        var result = await _messageReceiver.PeekDeadLetterMessagesAsync(request, cancellationToken);
+        var result = await _messageOperationsService.PeekDeadLetterMessagesAsync(request, cancellationToken);
         if (result.IsFailure)
         {
             return ToActionResult<IReadOnlyList<MessageResponse>>(result.Error);
@@ -300,7 +296,7 @@ public sealed class MessagesController : ApiControllerBase
             MaxMessages: Math.Clamp(maxMessages, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages),
             FromSequenceNumber: fromSequenceNumber);
 
-        var result = await _messageReceiver.PeekDeadLetterMessagesAsync(request, cancellationToken);
+        var result = await _messageOperationsService.PeekDeadLetterMessagesAsync(request, cancellationToken);
         if (result.IsFailure)
         {
             return ToActionResult<IReadOnlyList<MessageResponse>>(result.Error);
@@ -445,7 +441,7 @@ public sealed class MessagesController : ApiControllerBase
                 detail: "Replay is blocked for production namespaces. Validate in DEV and UAT first.");
         }
 
-        var result = await _messageReceiver.ReplayMessageAsync(
+        var result = await _messageOperationsService.ReplayMessageAsync(
             namespaceId,
             entityName,
             subscriptionName,
@@ -481,54 +477,4 @@ public sealed class MessagesController : ApiControllerBase
         _logger.LogInformation("Message {SequenceNumber} replayed successfully", sequenceNumber);
         return Accepted();
     }
-
-    /* PURGE ENDPOINT DISABLED - Azure Service Bus Limitation
-     * 
-     * The Azure Service Bus SDK does not support direct access to messages by sequence number
-     * for active queues/subscriptions. The only way to delete a specific message is to:
-     * 1. Receive messages in batches (which locks them)
-     * 2. Scan through each batch looking for the target sequence number
-     * 3. Complete (delete) the target and abandon all others
-     * 
-     * This approach is fundamentally flawed because:
-     * - It's extremely slow for large queues (O(n) complexity)
-     * - It locks messages during scanning, affecting other consumers
-     * - It times out for queues with many messages (>100 messages)
-     * - Race conditions with concurrent consumers
-     * 
-     * This feature can be re-enabled if Microsoft adds support for targeted message deletion.
-     * 
-    [RequireScope(ApiKeyScopes.MessagesSend)]
-    [HttpDelete("purge")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> PurgeMessage(
-        [FromQuery] Guid namespaceId,
-        [FromQuery] long sequenceNumber,
-        [FromQuery] string entityName,
-        [FromQuery] string? subscriptionName = null,
-        [FromQuery] bool fromDeadLetter = false,
-        CancellationToken cancellationToken = default)
-    {
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
-        if (namespaceResult.IsFailure)
-        {
-            return ToActionResult(Shared.Results.Result.Failure(namespaceResult.Error));
-        }
-
-        var result = await _messageReceiver.PurgeMessageAsync(
-            namespaceId,
-            entityName,
-            subscriptionName,
-            sequenceNumber,
-            fromDeadLetter,
-            cancellationToken);
-
-        if (result.IsFailure)
-        {
-            return ToActionResult(result);
-        }
-
-        return NoContent();
-    }
-    */
 }

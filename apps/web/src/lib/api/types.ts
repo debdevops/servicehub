@@ -176,32 +176,6 @@ export interface GetInsightsParams {
   insightType?: InsightType;
 }
 
-// Correlation Explorer DTOs
-export interface CorrelationTimelineEntry {
-  source: 'Live' | 'History';
-  namespaceId: string;
-  namespaceDisplayName: string;
-  entityName: string;
-  entityPath?: string | null;
-  messageId: string;
-  sequenceNumber: number;
-  state: string;
-  timestamp: string;
-  deadLetterReason?: string | null;
-  bodyPreview?: string | null;
-  sizeInBytes: number;
-}
-
-export interface CorrelationTimelineResponse {
-  correlationId: string;
-  entries: CorrelationTimelineEntry[];
-  totalCount: number;
-  namespacesSearched: number;
-  entitiesSearched: number;
-  isPartialResult: boolean;
-  searchDurationMs: number;
-}
-
 // Cross-Cloud Message Trace DTOs
 export interface CrossCloudTraceHop {
   cloudProvider: CloudProviderType;

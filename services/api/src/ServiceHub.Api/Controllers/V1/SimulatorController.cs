@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Controllers;
+using ServiceHub.Api.Filters;
 using ServiceHub.Core.Enums;
 using ServiceHub.Simulator;
 using ServiceHub.Simulator.Store;
@@ -8,11 +9,14 @@ namespace ServiceHub.Api.Controllers.V1;
 
 /// <summary>
 /// Management endpoints for the in-memory simulator.
-/// Only registered in the middleware pipeline when
-/// <c>ASPNETCORE_ENVIRONMENT=Simulator</c>.
+/// The <see cref="SimulatorOnlyAttribute"/> constraint makes every action here
+/// unroutable (404) unless <c>ASPNETCORE_ENVIRONMENT=Simulator</c>, so its
+/// state-mutating endpoints cannot bind in Development/Production even if the
+/// controller assembly is loaded.
 /// </summary>
 [Route("api/v1/simulator")]
 [Tags("Simulator")]
+[SimulatorOnly]
 public sealed class SimulatorController : ApiControllerBase
 {
     private readonly ISimulatorStore _store;

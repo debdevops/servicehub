@@ -18,3 +18,12 @@ export function useHealthStatus() {
     retry: 1,
   });
 }
+
+export function useHealthReport() {
+  return useQuery({
+    queryKey: ['health', 'report'],
+    queryFn: healthApi.getReport,
+    refetchInterval: (query) => query.state.status === 'error' ? false : 15_000, // Stop on error
+    retry: 1,
+  });
+}

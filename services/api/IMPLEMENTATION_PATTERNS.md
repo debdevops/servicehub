@@ -138,7 +138,7 @@ graph TD
     D --> L["AddSecurityHeadersConfiguration"]
     D --> M["AddSwaggerConfiguration"]
     
-    E --> N["IServiceBusClientCache<br/>IServiceBusClientFactory<br/>IMessageSender<br/>IMessageReceiver"]
+    E --> N["IServiceBusClientCache<br/>IServiceBusClientFactory<br/>IMessageOperationsService<br/>CloudProviderRouter → ICloudMessagingProvider<br/>(Azure/AWS/GCP)"]
     
     F --> O["INamespaceRepository<br/>InMemoryNamespaceRepository"]
     
@@ -157,7 +157,7 @@ services.TryAddSingleton<IServiceBusClientFactory, ServiceBusClientFactory>();
 services.TryAddSingleton<IConnectionStringProtector, ConnectionStringProtector>();
 
 // 3. Scoped - per request lifecycle
-services.TryAddScoped<IMessageService, MessageService>();
+services.TryAddScoped<IMessageOperationsService, MessageOperationsService>();
 
 // 4. Options Pattern - for configuration
 services.Configure<SecurityHeadersOptions>(configuration.GetSection("SecurityHeaders"));
@@ -176,13 +176,14 @@ services.AddScoped(typeof(ILogger<>), typeof(RedactingLoggerProvider));
 │ SINGLETON: Stateless, thread-safe, expensive to create     │
 │ ├─ ServiceBusClientCache                                   │
 │ ├─ ConnectionStringProtector                               │
-│ ├─ IAIServiceClient                                        │
+│ ├─ CloudProviderRouter                                      │
+│ ├─ IAIServiceClient (stub — not implemented)                │
 │ └─ Loggers                                                 │
 ├─────────────────────────────────────────────────────────────┤
 │ SCOPED: Request-scoped state, per-request instances       │
-│ ├─ INamespaceService                                       │
-│ ├─ IMessageService                                         │
-│ ├─ IQueueService                                           │
+│ ├─ INamespaceRepository                                     │
+│ ├─ IMessageOperationsService                                │
+│ ├─ ICloudMessagingProvider (one per registered provider)    │
 │ └─ HttpContext-dependent services                          │
 ├─────────────────────────────────────────────────────────────┤
 │ TRANSIENT: New instance every time (avoid for expensive)  │

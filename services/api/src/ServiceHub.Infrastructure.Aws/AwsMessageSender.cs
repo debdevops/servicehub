@@ -1,6 +1,8 @@
 using Amazon.SQS;
 using Amazon.SimpleNotificationService;
 using Microsoft.Extensions.Logging;
+using Polly;
+using ServiceHub.Infrastructure.Aws.Resilience;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Interfaces;
@@ -31,6 +33,7 @@ public sealed class AwsMessageSender : IMessageSender
     private readonly IAwsClientFactory _clientFactory;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly ILogger<AwsMessageSender> _logger;
+    private readonly ResiliencePipeline _resiliencePipeline;
 
     private const int SqsMaxBatchSize = 10;
 
@@ -48,6 +51,7 @@ public sealed class AwsMessageSender : IMessageSender
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _resiliencePipeline = AwsResiliencePipeline.Create(_logger);
     }
 
     /// <inheritdoc/>
@@ -72,12 +76,15 @@ public sealed class AwsMessageSender : IMessageSender
             if (request.EntityName.StartsWith("arn:aws:sns", StringComparison.OrdinalIgnoreCase))
             {
                 var sns = _clientFactory.GetSnsClient(nsResult.Value);
-                await sns.PublishAsync(new SnsPublishRequest
+                var snsRequest = new SnsPublishRequest
                 {
                     TopicArn = request.EntityName,
                     Message = request.Body,
                     MessageAttributes = BuildSnsMessageAttributes(request)
-                }, cancellationToken).ConfigureAwait(false);
+                };
+                await _resiliencePipeline.ExecuteAsync(async ct =>
+                    await sns.PublishAsync(snsRequest, ct).ConfigureAwait(false),
+                    cancellationToken).ConfigureAwait(false);
 
                 _logger.LogInformation("Published message to SNS topic {TopicArn}", LogRedactor.SanitiseForLog(request.EntityName));
                 return Result.Success();
@@ -87,7 +94,9 @@ public sealed class AwsMessageSender : IMessageSender
             var sqs = _clientFactory.GetSqsClient(nsResult.Value);
             var queueUrl = await ResolveQueueUrlAsync(sqs, request.EntityName, cancellationToken).ConfigureAwait(false);
             var sqsRequest = BuildSqsRequest(queueUrl, request);
-            await sqs.SendMessageAsync(sqsRequest, cancellationToken).ConfigureAwait(false);
+            await _resiliencePipeline.ExecuteAsync(async ct =>
+                await sqs.SendMessageAsync(sqsRequest, ct).ConfigureAwait(false),
+                cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation("Sent message to SQS queue {QueueName}", LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Success();
@@ -146,11 +155,13 @@ public sealed class AwsMessageSender : IMessageSender
 
             try
             {
-                var batchResponse = await sqs.SendMessageBatchAsync(new SqsBatchRequest
-                {
-                    QueueUrl = queueUrl,
-                    Entries = entries
-                }, cancellationToken).ConfigureAwait(false);
+                var batchResponse = await _resiliencePipeline.ExecuteAsync(async ct =>
+                    await sqs.SendMessageBatchAsync(new SqsBatchRequest
+                    {
+                        QueueUrl = queueUrl,
+                        Entries = entries
+                    }, ct).ConfigureAwait(false),
+                    cancellationToken).ConfigureAwait(false);
 
                 failed.AddRange(batchResponse.Failed.Select(f => $"[{f.Id}] {f.Message}"));
             }

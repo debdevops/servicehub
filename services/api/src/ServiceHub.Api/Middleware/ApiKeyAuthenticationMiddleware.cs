@@ -173,6 +173,9 @@ public sealed class ApiKeyAuthenticationMiddleware
 
             _logger.LogDebug("EasyAuth already authenticated request for {Method} {Path}, skipping API key auth",
                 safeMethod, safePath);
+
+            await _next(context);
+            return;
         }
 
         // Try SPA token first (co-hosted browser requests)

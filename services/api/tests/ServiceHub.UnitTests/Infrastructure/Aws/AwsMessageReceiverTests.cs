@@ -105,6 +105,38 @@ public sealed class AwsMessageReceiverTests
     }
 
     [Fact]
+    public async Task PeekMessagesAsync_WhenTransientErrorThenSuccess_RetriesAndSucceeds()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        var sqsClient = new Mock<IAmazonSQS>();
+        // First call throws a transient (503) error, second call succeeds — the
+        // resilience pipeline should retry and ultimately succeed.
+        sqsClient.SetupSequence(s => s.GetQueueUrlAsync(It.IsAny<GetQueueUrlRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new AmazonSQSException("throttled") { StatusCode = System.Net.HttpStatusCode.ServiceUnavailable })
+            .ReturnsAsync(new GetQueueUrlResponse { QueueUrl = "https://sqs.us-east-1.amazonaws.com/1/test-queue" });
+        sqsClient.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ReceiveMessageResponse { Messages = new List<Amazon.SQS.Model.Message>() });
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<Namespace>())).Returns(sqsClient.Object);
+
+        var sut = new AwsMessageReceiver(factory.Object, repo.Object, NullLogger<AwsMessageReceiver>.Instance);
+
+        var result = await sut.PeekMessagesAsync(
+            new GetMessagesRequest(TestNamespaceId, "test-queue", null, false, 10),
+            CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        sqsClient.Verify(
+            s => s.GetQueueUrlAsync(It.IsAny<GetQueueUrlRequest>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+    }
+
+    [Fact]
     public async Task PeekMessagesAsync_WhenQueueUrlFails_ReturnsFailure()
     {
         var ns = BuildNamespace();

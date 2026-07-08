@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Interfaces;
@@ -10,24 +11,20 @@ namespace ServiceHub.Infrastructure.BackgroundServices;
 /// </summary>
 public sealed class AnomalyDetectionWorker : BackgroundService
 {
-    private readonly INamespaceRepository _namespaceRepository;
-    private readonly IAIServiceClient _aiServiceClient;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<AnomalyDetectionWorker> _logger;
     private readonly TimeSpan _detectionInterval = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AnomalyDetectionWorker"/> class.
     /// </summary>
-    /// <param name="namespaceRepository">The namespace repository.</param>
-    /// <param name="aiServiceClient">The AI service client.</param>
+    /// <param name="serviceProvider">Root service provider for per-cycle scope creation.</param>
     /// <param name="logger">The logger instance.</param>
     public AnomalyDetectionWorker(
-        INamespaceRepository namespaceRepository,
-        IAIServiceClient aiServiceClient,
+        IServiceProvider serviceProvider,
         ILogger<AnomalyDetectionWorker> logger)
     {
-        _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
-        _aiServiceClient = aiServiceClient ?? throw new ArgumentNullException(nameof(aiServiceClient));
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -71,8 +68,12 @@ public sealed class AnomalyDetectionWorker : BackgroundService
 
     private async Task DetectAnomaliesAsync(CancellationToken cancellationToken)
     {
+        using var scope = _serviceProvider.CreateScope();
+        var aiServiceClient = scope.ServiceProvider.GetRequiredService<IAIServiceClient>();
+        var namespaceRepository = scope.ServiceProvider.GetRequiredService<INamespaceRepository>();
+
         // Check if AI service is available
-        var availabilityResult = await _aiServiceClient.IsAvailableAsync(cancellationToken).ConfigureAwait(false);
+        var availabilityResult = await aiServiceClient.IsAvailableAsync(cancellationToken).ConfigureAwait(false);
 
         if (availabilityResult.IsFailure || !availabilityResult.Value)
         {
@@ -80,7 +81,7 @@ public sealed class AnomalyDetectionWorker : BackgroundService
             return;
         }
 
-        var namespacesResult = await _namespaceRepository.GetActiveAsync(cancellationToken).ConfigureAwait(false);
+        var namespacesResult = await namespaceRepository.GetActiveAsync(cancellationToken).ConfigureAwait(false);
 
         if (namespacesResult.IsFailure)
         {

@@ -195,10 +195,10 @@ jobs:
     name: E2E — Simulator Mode (Playwright)
     runs-on: ubuntu-latest
     needs: [build-and-test-backend, build-and-test-frontend]
-    # Run on direct pushes to feature/multi-cloud AND on PRs targeting it
+    # Run on pushes to main and on pull requests targeting main
     if: |
-      github.ref == 'refs/heads/feature/multi-cloud' ||
-      github.head_ref == 'feature/multi-cloud'
+      github.ref == 'refs/heads/main' ||
+      github.event_name == 'pull_request'
 
     steps:
       - name: Checkout code
