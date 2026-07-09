@@ -242,4 +242,66 @@ public sealed class GcpMessagingProviderTests
             result.Error.Code.Should().Be("GCP.PubSub.ListFailed");
         }
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Resilience pipeline coverage on provider-level SDK calls
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private static Namespace BuildServiceAccountNamespace() =>
+        Namespace.Create(
+            "test-gcp-ns-json",
+            """{"type":"service_account","project_id":"my-project","private_key_id":"k1","private_key":"-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n","client_email":"svc@my-project.iam.gserviceaccount.com"}""",
+            provider: CloudProviderType.Gcp,
+            gcpProjectId: "my-project").Value;
+
+    [Fact]
+    public async Task ValidateConnectionAsync_TransientRpcError_IsRetried()
+    {
+        var subscriberClient = new Mock<Google.Cloud.PubSub.V1.SubscriberServiceApiClient>();
+        subscriberClient.SetupSequence(c => c.ListSubscriptionsAsync(
+                It.IsAny<Google.Cloud.PubSub.V1.ListSubscriptionsRequest>(),
+                It.IsAny<Google.Api.Gax.Grpc.CallSettings>()))
+            .Throws(new Grpc.Core.RpcException(new Grpc.Core.Status(Grpc.Core.StatusCode.Unavailable, "transient")))
+            .Throws(new Grpc.Core.RpcException(new Grpc.Core.Status(Grpc.Core.StatusCode.PermissionDenied, "denied")));
+
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetSubscriberClientAsync(It.IsAny<Namespace>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(subscriberClient.Object);
+        var provider = BuildProvider(factory: factory.Object);
+
+        var result = await provider.ValidateConnectionAsync(BuildServiceAccountNamespace(), CancellationToken.None);
+
+        // The transient Unavailable is retried once by the pipeline; the retry then hits the
+        // non-transient PermissionDenied, which surfaces as the auth failure — two calls total.
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("GCP.PubSub.AuthFailed");
+        subscriberClient.Verify(c => c.ListSubscriptionsAsync(
+                It.IsAny<Google.Cloud.PubSub.V1.ListSubscriptionsRequest>(),
+                It.IsAny<Google.Api.Gax.Grpc.CallSettings>()),
+            Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task ValidateConnectionAsync_NonTransientRpcError_IsNotRetried()
+    {
+        var subscriberClient = new Mock<Google.Cloud.PubSub.V1.SubscriberServiceApiClient>();
+        subscriberClient.Setup(c => c.ListSubscriptionsAsync(
+                It.IsAny<Google.Cloud.PubSub.V1.ListSubscriptionsRequest>(),
+                It.IsAny<Google.Api.Gax.Grpc.CallSettings>()))
+            .Throws(new Grpc.Core.RpcException(new Grpc.Core.Status(Grpc.Core.StatusCode.PermissionDenied, "denied")));
+
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetSubscriberClientAsync(It.IsAny<Namespace>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(subscriberClient.Object);
+        var provider = BuildProvider(factory: factory.Object);
+
+        var result = await provider.ValidateConnectionAsync(BuildServiceAccountNamespace(), CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("GCP.PubSub.AuthFailed");
+        subscriberClient.Verify(c => c.ListSubscriptionsAsync(
+                It.IsAny<Google.Cloud.PubSub.V1.ListSubscriptionsRequest>(),
+                It.IsAny<Google.Api.Gax.Grpc.CallSettings>()),
+            Times.Once);
+    }
 }
