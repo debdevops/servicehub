@@ -3,11 +3,13 @@ using Amazon.SQS.Model;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Microsoft.Extensions.Logging;
+using Polly;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Aws.Models;
+using ServiceHub.Infrastructure.Aws.Resilience;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Infrastructure.Aws;
@@ -22,6 +24,7 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
     private readonly AwsMessageSender _sender;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly ILogger<AwsMessagingProvider> _logger;
+    private readonly ResiliencePipeline _resiliencePipeline;
 
     /// <summary>
     /// Initialises a new instance of <see cref="AwsMessagingProvider"/>.
@@ -43,6 +46,7 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
         _sender = sender ?? throw new ArgumentNullException(nameof(sender));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _resiliencePipeline = AwsResiliencePipeline.Create(_logger);
     }
 
     /// <inheritdoc/>
@@ -64,7 +68,9 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
         {
             var sqs = _clientFactory.GetSqsClient(ns);
             // List queues with max 1 result — validates credentials without requiring a specific queue.
-            await sqs.ListQueuesAsync(new ListQueuesRequest { MaxResults = 1 }, ct).ConfigureAwait(false);
+            await _resiliencePipeline.ExecuteAsync(
+                async token => await sqs.ListQueuesAsync(new ListQueuesRequest { MaxResults = 1 }, token).ConfigureAwait(false),
+                ct).ConfigureAwait(false);
             _logger.LogInformation("AWS SQS connection validated for namespace {NamespaceId}", ns.Id);
             return Result.Success();
         }
@@ -101,22 +107,26 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
             var sqs = _clientFactory.GetSqsClient(ns);
 
             // List all SQS queues
-            var listResponse = await sqs.ListQueuesAsync(new ListQueuesRequest(), ct).ConfigureAwait(false);
+            var listResponse = await _resiliencePipeline.ExecuteAsync(
+                async token => await sqs.ListQueuesAsync(new ListQueuesRequest(), token).ConfigureAwait(false),
+                ct).ConfigureAwait(false);
 
             foreach (var queueUrl in listResponse.QueueUrls)
             {
                 try
                 {
-                    var attrs = await sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
-                    {
-                        QueueUrl = queueUrl,
-                        AttributeNames = new List<string>
+                    var attrs = await _resiliencePipeline.ExecuteAsync(
+                        async token => await sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
                         {
-                            "ApproximateNumberOfMessages",
-                            "ApproximateNumberOfMessagesNotVisible",
-                            "RedrivePolicy"
-                        }
-                    }, ct).ConfigureAwait(false);
+                            QueueUrl = queueUrl,
+                            AttributeNames = new List<string>
+                            {
+                                "ApproximateNumberOfMessages",
+                                "ApproximateNumberOfMessagesNotVisible",
+                                "RedrivePolicy"
+                            }
+                        }, token).ConfigureAwait(false),
+                        ct).ConfigureAwait(false);
 
                     var visible = (long)attrs.ApproximateNumberOfMessages;
                     var inFlight = (long)attrs.ApproximateNumberOfMessagesNotVisible;
@@ -142,7 +152,9 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
             try
             {
                 var sns = _clientFactory.GetSnsClient(ns);
-                var topicsResponse = await sns.ListTopicsAsync(ct).ConfigureAwait(false);
+                var topicsResponse = await _resiliencePipeline.ExecuteAsync(
+                    async token => await sns.ListTopicsAsync(token).ConfigureAwait(false),
+                    ct).ConfigureAwait(false);
 
                 foreach (var topic in topicsResponse.Topics)
                 {
@@ -188,7 +200,9 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
         try
         {
             var sns = _clientFactory.GetSnsClient(nsResult.Value);
-            var response = await sns.ListSubscriptionsByTopicAsync(topicArn, ct).ConfigureAwait(false);
+            var response = await _resiliencePipeline.ExecuteAsync(
+                async token => await sns.ListSubscriptionsByTopicAsync(topicArn, token).ConfigureAwait(false),
+                ct).ConfigureAwait(false);
 
             var subscriptions = response.Subscriptions
                 .Select(sub => new SnsSubscriptionStatus(
