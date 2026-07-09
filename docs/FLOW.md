@@ -54,11 +54,12 @@ graph LR
   - GCP: `GcpResiliencePipeline.Create()` — retries `RpcException` for `Unavailable`,
     `DeadlineExceeded`, `Internal`, `ResourceExhausted`, `Aborted`.
 - **Provider registration today**: `AddAzureProvider()` is always called from `Program.cs`.
-  `AddAwsProvider()` / `AddGcpProvider()` exist and are fully implemented and unit-tested, but are
-  **not called** on this branch — Azure is the only live provider in a non-Simulator deployment.
-  This is a deliberate wiring decision, not a bug (see `CLAUDE.md`). Simulator mode
-  (`ASPNETCORE_ENVIRONMENT=Simulator`) registers all three via `AddSimulatorProviders()`, which is
-  the only way to exercise the AWS/GCP code paths end-to-end without live credentials today.
+  `AddAwsProvider()` / `AddGcpProvider()` are called when `CloudProviders:Aws:Enabled` /
+  `CloudProviders:Gcp:Enabled` is set (both default `false` in `appsettings.json`); enabling a
+  flag registers that provider's `ICloudMessagingProvider`, client factory, and connectivity
+  health check. Simulator mode (`ASPNETCORE_ENVIRONMENT=Simulator`) registers all three via
+  `AddSimulatorProviders()` regardless of the flags — still the recommended way to exercise the
+  AWS/GCP code paths end-to-end without live credentials.
 
 ### Provider-specific behavior worth knowing
 
