@@ -1,6 +1,8 @@
 using ServiceHub.Api.Extensions;
 using ServiceHub.Api.Logging;
 using ServiceHub.Infrastructure;
+using ServiceHub.Infrastructure.Aws;
+using ServiceHub.Infrastructure.Gcp;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Simulator;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -59,6 +61,20 @@ if (builder.Environment.IsEnvironment("Simulator"))
 else
 {
     builder.Services.AddAzureProvider();
+
+    // AWS/GCP are preview providers, disabled by default. Enabling a flag registers
+    // that provider's ICloudMessagingProvider, its client factory, and its
+    // connectivity health check ("aws-connectivity" / "gcp-connectivity").
+    // Registration is inert until a namespace for that provider exists.
+    if (builder.Configuration.GetValue("CloudProviders:Aws:Enabled", false))
+    {
+        builder.Services.AddAwsProvider();
+    }
+
+    if (builder.Configuration.GetValue("CloudProviders:Gcp:Enabled", false))
+    {
+        builder.Services.AddGcpProvider();
+    }
 }
 
 // Background workers (DLQ monitoring, message polling, anomaly detection).
