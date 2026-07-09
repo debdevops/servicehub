@@ -178,6 +178,11 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
             _logger.LogError(ex, "SQS error listing entities for namespace {NamespaceId}", namespaceId);
             return Result.Failure<IReadOnlyList<CloudEntity>>(Error.ExternalService("AWS.SQS.ListFailed", ex.Message));
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Error listing entities for namespace {NamespaceId}", namespaceId);
+            return Result.Failure<IReadOnlyList<CloudEntity>>(Error.ExternalService("AWS.SQS.ListFailed", ex.Message));
+        }
     }
 
     // ── AWS-specific features ─────────────────────────────────────────────────
