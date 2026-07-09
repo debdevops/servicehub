@@ -289,6 +289,30 @@ public sealed class AwsMessagingProviderTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // ListEntitiesAsync — factory configuration error (fail-closed credentials)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ListEntitiesAsync_WhenFactoryFailsClosed_ReturnsFailureInsteadOfThrowing()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<Namespace>()))
+            .Throws(new InvalidOperationException("Namespace has an unsupported AWS auth type."));
+
+        var provider = BuildProvider(factory: factory.Object, repo: repo.Object);
+
+        var result = await provider.ListEntitiesAsync(TestNamespaceId, CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().Be("AWS.SQS.ListFailed");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // GetSnsFanoutMapAsync
     // ─────────────────────────────────────────────────────────────────────────
 

@@ -23,14 +23,24 @@ public sealed class GcpMessagingProviderTests
             provider: CloudProviderType.Gcp,
             gcpProjectId: gcpProjectId).Value;
 
+    private static IConnectionStringProtector BuildPassThroughProtector()
+    {
+        var protector = new Mock<IConnectionStringProtector>();
+        protector.Setup(p => p.Unprotect(It.IsAny<string>()))
+            .Returns<string>(Result.Success);
+        return protector.Object;
+    }
+
     private static GcpMessagingProvider BuildProvider(
         IGcpClientFactory? factory = null,
         INamespaceRepository? repo = null,
         GcpMessageReceiver? receiver = null,
-        GcpMessageSender? sender = null)
+        GcpMessageSender? sender = null,
+        IConnectionStringProtector? protector = null)
     {
         factory ??= new Mock<IGcpClientFactory>().Object;
         repo ??= new Mock<INamespaceRepository>().Object;
+        protector ??= BuildPassThroughProtector();
 
         if (receiver is null)
         {
@@ -49,7 +59,7 @@ public sealed class GcpMessagingProviderTests
         }
 
         return new GcpMessagingProvider(
-            factory, receiver, sender, repo,
+            factory, receiver, sender, repo, protector,
             NullLogger<GcpMessagingProvider>.Instance);
     }
 
@@ -72,6 +82,7 @@ public sealed class GcpMessagingProviderTests
         var act = () => new GcpMessagingProvider(
             null!, receiver, sender,
             new Mock<INamespaceRepository>().Object,
+            BuildPassThroughProtector(),
             NullLogger<GcpMessagingProvider>.Instance);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("clientFactory");
@@ -90,6 +101,7 @@ public sealed class GcpMessagingProviderTests
             null!,
             sender,
             new Mock<INamespaceRepository>().Object,
+            BuildPassThroughProtector(),
             NullLogger<GcpMessagingProvider>.Instance);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("receiver");
@@ -303,5 +315,69 @@ public sealed class GcpMessagingProviderTests
                 It.IsAny<Google.Cloud.PubSub.V1.ListSubscriptionsRequest>(),
                 It.IsAny<Google.Api.Gax.Grpc.CallSettings>()),
             Times.Once);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ValidateConnectionAsync — encrypted-at-rest connection strings
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private const string ValidServiceAccountJson =
+        """{"type":"service_account","project_id":"my-project","private_key_id":"k1","private_key":"-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n","client_email":"svc@my-project.iam.gserviceaccount.com"}""";
+
+    [Fact]
+    public async Task ValidateConnectionAsync_EncryptedServiceAccountKey_UnprotectsBeforeShapeValidation()
+    {
+        var encryptedNs = Namespace.Create(
+            "test-gcp-ns-enc",
+            "ENC:V2:not-json-ciphertext",
+            provider: CloudProviderType.Gcp,
+            gcpProjectId: "my-project").Value;
+
+        var protector = new Mock<IConnectionStringProtector>();
+        protector.Setup(p => p.Unprotect("ENC:V2:not-json-ciphertext"))
+            .Returns(Result.Success(ValidServiceAccountJson));
+
+        var subscriberClient = new Mock<Google.Cloud.PubSub.V1.SubscriberServiceApiClient>();
+        subscriberClient.Setup(c => c.ListSubscriptionsAsync(
+                It.IsAny<Google.Cloud.PubSub.V1.ListSubscriptionsRequest>(),
+                It.IsAny<Google.Api.Gax.Grpc.CallSettings>()))
+            .Throws(new Grpc.Core.RpcException(new Grpc.Core.Status(Grpc.Core.StatusCode.PermissionDenied, "denied")));
+
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetSubscriberClientAsync(It.IsAny<Namespace>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(subscriberClient.Object);
+        var provider = BuildProvider(factory: factory.Object, protector: protector.Object);
+
+        var result = await provider.ValidateConnectionAsync(encryptedNs, CancellationToken.None);
+
+        // The ciphertext is not JSON — reaching the auth-failure path proves the shape
+        // check ran on the decrypted value instead of rejecting the ciphertext outright.
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("GCP.PubSub.AuthFailed");
+        protector.Verify(p => p.Unprotect("ENC:V2:not-json-ciphertext"), Times.Once);
+    }
+
+    [Fact]
+    public async Task ValidateConnectionAsync_WhenUnprotectFails_ReturnsFailureWithoutNetworkCall()
+    {
+        var encryptedNs = Namespace.Create(
+            "test-gcp-ns-badenc",
+            "ENC:V2:corrupted-ciphertext",
+            provider: CloudProviderType.Gcp,
+            gcpProjectId: "my-project").Value;
+
+        var protector = new Mock<IConnectionStringProtector>();
+        protector.Setup(p => p.Unprotect(It.IsAny<string>()))
+            .Returns(Result.Failure<string>(Error.Validation("Security.DecryptionFailed", "Decryption failed.")));
+
+        var factory = new Mock<IGcpClientFactory>();
+        var provider = BuildProvider(factory: factory.Object, protector: protector.Object);
+
+        var result = await provider.ValidateConnectionAsync(encryptedNs, CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Security.DecryptionFailed");
+        factory.Verify(f => f.GetSubscriberClientAsync(It.IsAny<Namespace>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 }
