@@ -289,6 +289,30 @@ public sealed class AwsMessagingProviderTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // ListEntitiesAsync — factory configuration error (fail-closed credentials)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ListEntitiesAsync_WhenFactoryFailsClosed_ReturnsFailureInsteadOfThrowing()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<Namespace>()))
+            .Throws(new InvalidOperationException("Namespace has an unsupported AWS auth type."));
+
+        var provider = BuildProvider(factory: factory.Object, repo: repo.Object);
+
+        var result = await provider.ListEntitiesAsync(TestNamespaceId, CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().Be("AWS.SQS.ListFailed");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // GetSnsFanoutMapAsync
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -405,5 +429,54 @@ public sealed class AwsMessagingProviderTests
 
         sub1.Should().Be(sub2);
         sub1.Should().NotBe(sub3);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Resilience pipeline coverage on provider-level SDK calls
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ValidateConnectionAsync_TransientSqsError_IsRetriedAndSucceeds()
+    {
+        var sqsClient = new Mock<IAmazonSQS>();
+        sqsClient.SetupSequence(s => s.ListQueuesAsync(It.IsAny<ListQueuesRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new AmazonSQSException("throttled") { StatusCode = System.Net.HttpStatusCode.ServiceUnavailable })
+            .ReturnsAsync(new ListQueuesResponse { QueueUrls = new List<string>() });
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<Namespace>())).Returns(sqsClient.Object);
+        var provider = BuildProvider(factory: factory.Object);
+
+        var result = await provider.ValidateConnectionAsync(BuildNamespace(), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        sqsClient.Verify(
+            s => s.ListQueuesAsync(It.IsAny<ListQueuesRequest>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task ValidateConnectionAsync_NonTransientAuthError_IsNotRetried()
+    {
+        var sqsClient = new Mock<IAmazonSQS>();
+        var authError = new AmazonSQSException("denied")
+        {
+            ErrorCode = "InvalidClientTokenId",
+            StatusCode = System.Net.HttpStatusCode.Forbidden,
+        };
+        sqsClient.Setup(s => s.ListQueuesAsync(It.IsAny<ListQueuesRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(authError);
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<Namespace>())).Returns(sqsClient.Object);
+        var provider = BuildProvider(factory: factory.Object);
+
+        var result = await provider.ValidateConnectionAsync(BuildNamespace(), CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("AWS.SQS.AuthFailed");
+        sqsClient.Verify(
+            s => s.ListQueuesAsync(It.IsAny<ListQueuesRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }
