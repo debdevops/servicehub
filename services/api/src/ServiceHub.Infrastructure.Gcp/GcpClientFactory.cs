@@ -16,15 +16,19 @@ namespace ServiceHub.Infrastructure.Gcp;
 /// per namespace. Clients are cached by (namespaceId, entityId) to avoid expensive re-creation.
 /// </summary>
 /// <remarks>
-/// Credential resolution order:
+/// Credential resolution:
 /// <list type="number">
 /// <item><description>
 /// <see cref="ConnectionAuthType.GcpServiceAccount"/> — connection string is a Service Account JSON key
 /// (the raw JSON, not a file path). Parses to <see cref="ServiceAccountCredential"/>.
 /// </description></item>
 /// <item><description>
-/// Any other auth type — uses Application Default Credentials (Workload Identity,
-/// gcloud ADC, etc.).
+/// <see cref="ConnectionAuthType.GcpWorkloadIdentity"/> — uses Application Default Credentials
+/// (the explicit keyless opt-in).
+/// </description></item>
+/// <item><description>
+/// Any other auth type fails closed with a configuration error — the host's ambient
+/// identity is never borrowed implicitly.
 /// </description></item>
 /// </list>
 /// </remarks>
@@ -153,13 +157,22 @@ public sealed class GcpClientFactory : IGcpClientFactory
 
     private async Task<GoogleCredential> ResolveCredentialAsync(Namespace ns)
     {
-        // GcpServiceAccount = Service Account JSON key stored in connection string
-        // (the auth type Namespace.Create assigns to GCP namespaces).
-        if (ns.AuthType == ConnectionAuthType.GcpServiceAccount && !string.IsNullOrWhiteSpace(ns.ConnectionString))
+        switch (ns.AuthType)
         {
-            var unprotected = _protector.Unprotect(ns.ConnectionString);
-            if (unprotected.IsSuccess)
+            // GcpServiceAccount = Service Account JSON key stored in connection string
+            // (the auth type Namespace.Create assigns to GCP namespaces). Fails closed:
+            // a missing or unparsable key is a configuration error, never an ADC fallback.
+            case ConnectionAuthType.GcpServiceAccount:
             {
+                if (string.IsNullOrWhiteSpace(ns.ConnectionString))
+                    throw new InvalidOperationException(
+                        $"GcpServiceAccount namespace {ns.Id} has no Service Account key in ConnectionString.");
+
+                var unprotected = _protector.Unprotect(ns.ConnectionString);
+                if (unprotected.IsFailure)
+                    throw new InvalidOperationException(
+                        $"Failed to decrypt the Service Account key for namespace {ns.Id}: {unprotected.Error.Message}");
+
                 try
                 {
                     using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(unprotected.Value));
@@ -171,14 +184,25 @@ public sealed class GcpClientFactory : IGcpClientFactory
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to parse Service Account JSON for namespace {NamespaceId}", ns.Id);
+                    throw new InvalidOperationException(
+                        $"The Service Account key for namespace {ns.Id} is not a valid Google credential.", ex);
                 }
             }
-        }
 
-        // Workload Identity / ADC fallback
-        _logger.LogDebug("Using Application Default Credentials for namespace {NamespaceId}", ns.Id);
-        var adc = await GoogleCredential.GetApplicationDefaultAsync().ConfigureAwait(false);
-        return adc.CreateScoped(["https://www.googleapis.com/auth/pubsub"]);
+            // Workload Identity Federation is the explicit keyless opt-in for ADC.
+            case ConnectionAuthType.GcpWorkloadIdentity:
+            {
+                _logger.LogDebug("Using Application Default Credentials for namespace {NamespaceId}", ns.Id);
+                var adc = await GoogleCredential.GetApplicationDefaultAsync().ConfigureAwait(false);
+                return adc.CreateScoped(["https://www.googleapis.com/auth/pubsub"]);
+            }
+
+            // Fail closed: any other auth type is a configuration error — never borrow
+            // the host's ambient identity for a namespace that didn't opt into it.
+            default:
+                throw new InvalidOperationException(
+                    $"Namespace {ns.Id} has auth type {ns.AuthType}, which is not a supported GCP auth type. " +
+                    "Expected GcpServiceAccount or GcpWorkloadIdentity.");
+        }
     }
 }

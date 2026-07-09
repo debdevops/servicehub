@@ -1,10 +1,12 @@
 using Google.Api.Gax.ResourceNames;
 using Google.Cloud.PubSub.V1;
 using Microsoft.Extensions.Logging;
+using Polly;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
+using ServiceHub.Infrastructure.Gcp.Resilience;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Infrastructure.Gcp;
@@ -19,6 +21,7 @@ public sealed class GcpMessagingProvider : ICloudMessagingProvider
     private readonly GcpMessageSender _sender;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly ILogger<GcpMessagingProvider> _logger;
+    private readonly ResiliencePipeline _resiliencePipeline;
 
     /// <summary>
     /// Initialises a new instance of <see cref="GcpMessagingProvider"/>.
@@ -40,6 +43,7 @@ public sealed class GcpMessagingProvider : ICloudMessagingProvider
         _sender = sender ?? throw new ArgumentNullException(nameof(sender));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _resiliencePipeline = GcpResiliencePipeline.Create(_logger);
     }
 
     /// <inheritdoc/>
@@ -84,20 +88,25 @@ public sealed class GcpMessagingProvider : ICloudMessagingProvider
             var client = await _clientFactory.GetSubscriberClientAsync(
                 ns, "_servicehub_validate_probe_", ct).ConfigureAwait(false);
 
-            var listRequest = new Google.Cloud.PubSub.V1.ListSubscriptionsRequest
+            // The enumerator is created inside the retry callback so a transient failure
+            // starts a fresh enumeration instead of reusing a faulted one.
+            await _resiliencePipeline.ExecuteAsync(async token =>
             {
-                Project = $"projects/{ns.GcpProjectId}"
-            };
-            var enumerator = client.ListSubscriptionsAsync(listRequest).GetAsyncEnumerator(ct);
-            try
-            {
-                // Any response (even empty) means credentials are valid and the project is reachable.
-                await enumerator.MoveNextAsync().ConfigureAwait(false);
-            }
-            finally
-            {
-                await enumerator.DisposeAsync().ConfigureAwait(false);
-            }
+                var listRequest = new Google.Cloud.PubSub.V1.ListSubscriptionsRequest
+                {
+                    Project = $"projects/{ns.GcpProjectId}"
+                };
+                var enumerator = client.ListSubscriptionsAsync(listRequest).GetAsyncEnumerator(token);
+                try
+                {
+                    // Any response (even empty) means credentials are valid and the project is reachable.
+                    await enumerator.MoveNextAsync().ConfigureAwait(false);
+                }
+                finally
+                {
+                    await enumerator.DisposeAsync().ConfigureAwait(false);
+                }
+            }, ct).ConfigureAwait(false);
 
             _logger.LogInformation("GCP Pub/Sub connection validated for namespace {NamespaceId}", ns.Id);
             return Result.Success();
@@ -181,31 +190,43 @@ public sealed class GcpMessagingProvider : ICloudMessagingProvider
             var topicAdminClient = await _clientFactory.GetTopicAdminClientAsync(ns, ct).ConfigureAwait(false);
             var project = new ProjectName(ns.GcpProjectId);
 
-            // List topics using the credentialed topic-admin client
-            await foreach (var topic in topicAdminClient.ListTopicsAsync(project).WithCancellation(ct))
+            // Each listing is collected inside its retry callback so a mid-enumeration
+            // transient failure restarts that enumeration without duplicating entities.
+            var topics = await _resiliencePipeline.ExecuteAsync(async token =>
             {
-                entities.Add(new CloudEntity
+                var collected = new List<CloudEntity>();
+                await foreach (var topic in topicAdminClient.ListTopicsAsync(project).WithCancellation(token))
                 {
-                    Name = topic.TopicName.TopicId,
-                    EntityType = "Topic",
-                    Provider = CloudProviderType.Gcp
-                });
-            }
+                    collected.Add(new CloudEntity
+                    {
+                        Name = topic.TopicName.TopicId,
+                        EntityType = "Topic",
+                        Provider = CloudProviderType.Gcp
+                    });
+                }
+                return collected;
+            }, ct).ConfigureAwait(false);
+            entities.AddRange(topics);
 
-            // List subscriptions using the subscriber client
-            var subRequest = new Google.Cloud.PubSub.V1.ListSubscriptionsRequest
+            var subscriptions = await _resiliencePipeline.ExecuteAsync(async token =>
             {
-                Project = $"projects/{ns.GcpProjectId}"
-            };
-            await foreach (var sub in subscriberClient.ListSubscriptionsAsync(subRequest).WithCancellation(ct))
-            {
-                entities.Add(new CloudEntity
+                var collected = new List<CloudEntity>();
+                var subRequest = new Google.Cloud.PubSub.V1.ListSubscriptionsRequest
                 {
-                    Name = sub.SubscriptionName.SubscriptionId,
-                    EntityType = "Subscription",
-                    Provider = CloudProviderType.Gcp
-                });
-            }
+                    Project = $"projects/{ns.GcpProjectId}"
+                };
+                await foreach (var sub in subscriberClient.ListSubscriptionsAsync(subRequest).WithCancellation(token))
+                {
+                    collected.Add(new CloudEntity
+                    {
+                        Name = sub.SubscriptionName.SubscriptionId,
+                        EntityType = "Subscription",
+                        Provider = CloudProviderType.Gcp
+                    });
+                }
+                return collected;
+            }, ct).ConfigureAwait(false);
+            entities.AddRange(subscriptions);
 
             return Result.Success<IReadOnlyList<CloudEntity>>(entities);
         }

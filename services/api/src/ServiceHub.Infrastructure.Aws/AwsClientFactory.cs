@@ -16,8 +16,9 @@ namespace ServiceHub.Infrastructure.Aws;
 /// Connection string conventions:
 /// <list type="bullet">
 ///   <item><term>AwsAccessKey</term><description>Stored as <c>AKID:SecretKey</c> (AES-GCM encrypted at rest).</description></item>
-///   <item><term>AwsIamRole</term><description>Role ARN stored as the connection string (no secret needed).</description></item>
+///   <item><term>AwsIamRole</term><description>Role ARN stored as the connection string (encrypted at rest like every credential; legacy plaintext ARNs still resolve).</description></item>
 /// </list>
+/// Any other auth type is a configuration error and fails closed — no ambient or anonymous fallback.
 /// </para>
 /// </summary>
 public sealed class AwsClientFactory : IAwsClientFactory
@@ -97,9 +98,9 @@ public sealed class AwsClientFactory : IAwsClientFactory
 
             case ConnectionAuthType.AwsIamRole:
             {
-                // RoleArn is stored in the connection string (plaintext — no secret value).
-                var roleArn = ns.ConnectionString ?? throw new InvalidOperationException(
-                    $"AwsIamRole namespace {ns.Id} has no RoleArn in ConnectionString.");
+                // RoleArn rides the encrypted ConnectionString like every other stored value
+                // (Unprotect passes legacy plaintext ARNs through unchanged).
+                var roleArn = DecryptConnectionString(ns);
 
                 // AssumeRoleAWSCredentials takes source credentials + the role ARN to assume.
                 // Use the default credential chain as the source (instance profile, env vars, etc.).
@@ -112,10 +113,11 @@ public sealed class AwsClientFactory : IAwsClientFactory
                 return FallbackCredentialsFactory.GetCredentials();
 
             default:
-                _logger.LogWarning(
-                    "Namespace {NamespaceId} has auth type {AuthType} which is not an AWS auth type. Using anonymous credentials.",
-                    ns.Id, ns.AuthType);
-                return new AnonymousAWSCredentials();
+                // Fail closed: a namespace whose auth type is not an AWS auth type is a
+                // configuration error — never fall back to ambient or anonymous credentials.
+                throw new InvalidOperationException(
+                    $"Namespace {ns.Id} has auth type {ns.AuthType}, which is not a supported AWS auth type. " +
+                    "Expected AwsAccessKey, AwsIamRole, or AwsOidc.");
         }
     }
 
