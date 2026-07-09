@@ -19,7 +19,7 @@ namespace ServiceHub.Infrastructure.Gcp;
 /// Credential resolution order:
 /// <list type="number">
 /// <item><description>
-/// <see cref="ConnectionAuthType.ServicePrincipal"/> — connection string is a Service Account JSON key
+/// <see cref="ConnectionAuthType.GcpServiceAccount"/> — connection string is a Service Account JSON key
 /// (the raw JSON, not a file path). Parses to <see cref="ServiceAccountCredential"/>.
 /// </description></item>
 /// <item><description>
@@ -153,8 +153,9 @@ public sealed class GcpClientFactory : IGcpClientFactory
 
     private async Task<GoogleCredential> ResolveCredentialAsync(Namespace ns)
     {
-        // ServicePrincipal = Service Account JSON key stored in connection string
-        if (ns.AuthType == ConnectionAuthType.ServicePrincipal && !string.IsNullOrWhiteSpace(ns.ConnectionString))
+        // GcpServiceAccount = Service Account JSON key stored in connection string
+        // (the auth type Namespace.Create assigns to GCP namespaces).
+        if (ns.AuthType == ConnectionAuthType.GcpServiceAccount && !string.IsNullOrWhiteSpace(ns.ConnectionString))
         {
             var unprotected = _protector.Unprotect(ns.ConnectionString);
             if (unprotected.IsSuccess)

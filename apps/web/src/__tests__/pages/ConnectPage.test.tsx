@@ -1,21 +1,30 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ConnectPage } from '@/pages/ConnectPage';
+
+const { mockCreateNs, mockProviderStatus } = vi.hoisted(() => ({
+  mockCreateNs: vi.fn(),
+  mockProviderStatus: vi.fn(),
+}));
 
 // Mock hooks used by ConnectPage
 vi.mock('@/hooks/useNamespaces', () => ({
   useNamespaces: () => ({ data: [], isLoading: false }),
   useNamespace: () => ({ data: undefined, isLoading: false }),
   useCreateNamespace: () => ({
-    mutateAsync: vi.fn().mockResolvedValue({ id: 'ns-new', name: 'test-ns', displayName: 'Test NS' }),
+    mutateAsync: mockCreateNs,
     isPending: false,
   }),
   useDeleteNamespace: () => ({
     mutateAsync: vi.fn().mockResolvedValue(undefined),
     isPending: false,
   }),
+}));
+
+vi.mock('@/hooks/useCloudBridge', () => ({
+  useProviderStatus: () => mockProviderStatus(),
 }));
 
 vi.mock('react-hot-toast', () => ({
@@ -35,7 +44,11 @@ function renderConnectPage() {
 }
 
 describe('ConnectPage', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreateNs.mockResolvedValue({ id: 'ns-new', name: 'test-ns', displayName: 'Test NS' });
+    mockProviderStatus.mockReturnValue({ data: { Aws: true, Gcp: true } });
+  });
 
   it('renders without crashing', () => {
     const { container } = renderConnectPage();
@@ -105,5 +118,121 @@ describe('ConnectPage', () => {
   it('shows saved connections section', () => {
     renderConnectPage();
     expect(screen.getByText('Saved Connections')).toBeInTheDocument();
+  });
+});
+
+describe('ConnectPage multi-cloud provider gating', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreateNs.mockResolvedValue({ id: 'ns-new', name: 'test-ns', displayName: 'Test NS' });
+    mockProviderStatus.mockReturnValue({ data: { Aws: true, Gcp: true } });
+  });
+
+  const selectProvider = (title: 'Amazon Web Services SQS' | 'Google Cloud Pub/Sub') => {
+    fireEvent.click(screen.getByTitle(title));
+  };
+
+  // The display-name placeholder is provider-specific; match on the shared prefix.
+  const fillDisplayName = () => {
+    fireEvent.change(screen.getByPlaceholderText(/e\.g\., Production/i), {
+      target: { value: 'My Connection' },
+    });
+  };
+
+  it('disables submit and explains when AWS is disabled on the server', () => {
+    mockProviderStatus.mockReturnValue({ data: { Aws: false, Gcp: false } });
+    renderConnectPage();
+    selectProvider('Amazon Web Services SQS');
+
+    expect(screen.getByText(/AWS SQS\/SNS is disabled on this server/i)).toBeInTheDocument();
+    expect(screen.getByText(/CloudProviders:Aws:Enabled/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Connect$/ })).toBeDisabled();
+  });
+
+  it('disables submit and explains when GCP is disabled on the server', () => {
+    mockProviderStatus.mockReturnValue({ data: { Aws: false, Gcp: false } });
+    renderConnectPage();
+    selectProvider('Google Cloud Pub/Sub');
+
+    expect(screen.getByText(/GCP Pub\/Sub is disabled on this server/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Connect$/ })).toBeDisabled();
+  });
+
+  it('treats providers as disabled while status is still loading', () => {
+    mockProviderStatus.mockReturnValue({ data: undefined });
+    renderConnectPage();
+    selectProvider('Amazon Web Services SQS');
+
+    expect(screen.getByRole('button', { name: /^Connect$/ })).toBeDisabled();
+  });
+
+  it('shows preview copy and keeps submit enabled when AWS is enabled', () => {
+    renderConnectPage();
+    selectProvider('Amazon Web Services SQS');
+
+    expect(screen.getByText(/AWS SQS\/SNS — preview/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Connect$/ })).toBeEnabled();
+  });
+
+  it('submits AWS namespaces with authType awsAccessKey and AKID:Secret credentials', async () => {
+    renderConnectPage();
+    selectProvider('Amazon Web Services SQS');
+    fillDisplayName();
+    fireEvent.change(screen.getByPlaceholderText('AKIAIOSFODNN7EXAMPLE'), {
+      target: { value: 'AKIAIOSFODNN7EXAMPLE' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/wJalrXUtnFEMI/), {
+      target: { value: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Connect$/ }));
+
+    await waitFor(() => expect(mockCreateNs).toHaveBeenCalledTimes(1));
+    expect(mockCreateNs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authType: 'awsAccessKey',
+        cloudProvider: 'aws',
+        connectionString: 'AKIAIOSFODNN7EXAMPLE:wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+        awsRegion: 'us-east-1',
+      })
+    );
+  });
+
+  it('submits GCP namespaces with authType gcpServiceAccount and the service account JSON', async () => {
+    renderConnectPage();
+    selectProvider('Google Cloud Pub/Sub');
+    fillDisplayName();
+    fireEvent.change(screen.getByPlaceholderText('my-project-123'), {
+      target: { value: 'my-project-123' },
+    });
+    const saJson = '{"type":"service_account","project_id":"my-project-123"}';
+    fireEvent.change(screen.getByPlaceholderText(/service_account/), {
+      target: { value: saJson },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Connect$/ }));
+
+    await waitFor(() => expect(mockCreateNs).toHaveBeenCalledTimes(1));
+    expect(mockCreateNs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authType: 'gcpServiceAccount',
+        cloudProvider: 'gcp',
+        connectionString: saJson,
+        gcpProjectId: 'my-project-123',
+      })
+    );
+  });
+
+  it('does not call create when the selected provider is disabled', async () => {
+    mockProviderStatus.mockReturnValue({ data: { Aws: false, Gcp: false } });
+    renderConnectPage();
+    selectProvider('Amazon Web Services SQS');
+    fillDisplayName();
+
+    // Button is disabled; submit the form directly to exercise the handler guard too.
+    const form = screen.getByRole('button', { name: /^Connect$/ }).closest('form')!;
+    fireEvent.submit(form);
+
+    await waitFor(() => expect(mockCreateNs).not.toHaveBeenCalled());
   });
 });

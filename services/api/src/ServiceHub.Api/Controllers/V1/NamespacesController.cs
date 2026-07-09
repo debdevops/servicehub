@@ -9,6 +9,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Events;
 using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Validation;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 
@@ -28,6 +29,7 @@ public sealed class NamespacesController : ApiControllerBase
     private readonly IConnectionStringProtector _connectionStringProtector;
     private readonly IAuditLogger _auditLogger;
     private readonly IPlatformEventBus? _eventBus;
+    private readonly IEnumerable<ICloudMessagingProvider> _messagingProviders;
     private readonly ILogger<NamespacesController> _logger;
 
     /// <summary>
@@ -40,6 +42,8 @@ public sealed class NamespacesController : ApiControllerBase
     /// <param name="logger">The logger.</param>
     /// <param name="auditLogger">The security audit logger.</param>
     /// <param name="eventBus">The platform event bus. Optional — omitted in test contexts.</param>
+    /// <param name="messagingProviders">The registered cloud messaging providers, used to reject
+    /// creation of namespaces for providers that are not enabled on this server.</param>
     public NamespacesController(
         INamespaceRepository namespaceRepository,
         IServiceBusClientFactory clientFactory,
@@ -47,7 +51,8 @@ public sealed class NamespacesController : ApiControllerBase
         IConnectionStringProtector connectionStringProtector,
         ILogger<NamespacesController> logger,
         IAuditLogger? auditLogger = null,
-        IPlatformEventBus? eventBus = null)
+        IPlatformEventBus? eventBus = null,
+        IEnumerable<ICloudMessagingProvider>? messagingProviders = null)
     {
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
@@ -55,6 +60,7 @@ public sealed class NamespacesController : ApiControllerBase
         _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
         _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _eventBus = eventBus;
+        _messagingProviders = messagingProviders ?? [];
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -86,6 +92,42 @@ public sealed class NamespacesController : ApiControllerBase
     {
         _logger.LogInformation("Creating namespace with name {Name}", LogRedactor.SanitiseForLog(request.Name));
 
+        // Auth types whose credential material is stored (encrypted) in ConnectionString:
+        // Azure connection strings, AWS access key pairs, GCP service account JSON keys.
+        var storesCredential = request.AuthType is ConnectionAuthType.ConnectionString
+            or ConnectionAuthType.AwsAccessKey
+            or ConnectionAuthType.GcpServiceAccount;
+
+        if (request.AuthType == ConnectionAuthType.AwsAccessKey && request.Provider != CloudProviderType.Aws)
+        {
+            return ToActionResult<NamespaceResponse>(Error.Validation(
+                ErrorCodes.Namespace.ConnectionStringInvalid,
+                "AuthType 'AwsAccessKey' is only valid when Provider is Aws."));
+        }
+
+        if (request.AuthType == ConnectionAuthType.GcpServiceAccount && request.Provider != CloudProviderType.Gcp)
+        {
+            return ToActionResult<NamespaceResponse>(Error.Validation(
+                ErrorCodes.Namespace.ConnectionStringInvalid,
+                "AuthType 'GcpServiceAccount' is only valid when Provider is Gcp."));
+        }
+
+        // Reject namespaces for providers that are not registered on this server, so the
+        // API cannot mint namespace records nothing can serve. Azure is always registered
+        // in real deployments; Simulator mode registers all three providers.
+        if (request.Provider is CloudProviderType.Aws or CloudProviderType.Gcp
+            && !_messagingProviders.Any(p => p.ProviderType == request.Provider))
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Title = "Provider not enabled",
+                Detail = $"The '{request.Provider}' cloud provider is not enabled on this server. " +
+                         $"Set 'CloudProviders:{request.Provider}:Enabled' to 'true' in appsettings and restart.",
+                Instance = HttpContext.Request.Path
+            });
+        }
+
         // Owner-scoped duplicate checks: only look within the same tenant's pool.
         var ownerNamespaces = await _namespaceRepository.GetByOwnerAsync(OwnerId, cancellationToken);
         if (ownerNamespaces.IsSuccess)
@@ -102,7 +144,7 @@ public sealed class NamespacesController : ApiControllerBase
             }
 
             // Hash-based duplicate connection string check — O(1) hash compare, no decryption needed.
-            if (request.AuthType == ConnectionAuthType.ConnectionString && !string.IsNullOrEmpty(request.ConnectionString))
+            if (storesCredential && !string.IsNullOrEmpty(request.ConnectionString))
             {
                 var incomingHash = Namespace.ComputeConnectionStringHash(request.ConnectionString);
                 var connStringConflict = ownerNamespaces.Value.FirstOrDefault(n =>
@@ -122,15 +164,22 @@ public sealed class NamespacesController : ApiControllerBase
         // Create the namespace entity based on auth type
         Result<Namespace> createResult;
 
-        if (request.AuthType == ConnectionAuthType.ConnectionString)
+        if (storesCredential)
         {
             if (string.IsNullOrEmpty(request.ConnectionString))
             {
                 return BadRequest("Connection string is required for connection string authentication.");
             }
 
-            // Validate the connection string format BEFORE encryption
-            var validationResult = _clientFactory.ValidateConnectionString(request.ConnectionString);
+            // Validate the plaintext credential format BEFORE encryption, branched by provider:
+            // Azure keeps the Service Bus connection string check; AWS and GCP validate their
+            // own credential formats with the same rigor.
+            var validationResult = request.Provider switch
+            {
+                CloudProviderType.Aws => CloudCredentialValidator.ValidateAwsAccessKeyPair(request.ConnectionString),
+                CloudProviderType.Gcp => CloudCredentialValidator.ValidateGcpServiceAccountJson(request.ConnectionString),
+                _ => _clientFactory.ValidateConnectionString(request.ConnectionString),
+            };
             if (validationResult.IsFailure)
             {
                 return ToActionResult<NamespaceResponse>(validationResult.Error);
