@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight, AlertTriangle } from 'lucide-react';
 import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@/hooks/useNamespaces';
+import { useProviderStatus } from '@/hooks/useCloudBridge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { HelpTooltip } from '@/components/help';
 import { tooltips } from '@/lib/helpContent';
@@ -54,6 +55,14 @@ export function ConnectPage() {
   const createNamespace = useCreateNamespace();
   const deleteNamespace = useDeleteNamespace();
 
+  // Whether the AWS/GCP providers are actually enabled on this server
+  // (CloudProviders:{provider}:Enabled). Treated as disabled until known.
+  const { data: providerStatus } = useProviderStatus();
+  const awsEnabled = providerStatus?.Aws === true;
+  const gcpEnabled = providerStatus?.Gcp === true;
+  const selectedProviderDisabled =
+    (cloudProvider === 'aws' && !awsEnabled) || (cloudProvider === 'gcp' && !gcpEnabled);
+
   const extractNamespaceFromConnectionString = (connString: string): string | null => {
     try {
       // Extract namespace from connection string Endpoint
@@ -75,6 +84,14 @@ export function ConnectPage() {
       return;
     }
 
+    if (selectedProviderDisabled) {
+      toast.error(
+        `${cloudProvider === 'aws' ? 'AWS' : 'GCP'} support is not enabled on this server. ` +
+        'An operator must enable it in the API configuration.'
+      );
+      return;
+    }
+
     if (cloudProvider === 'aws') {
       // AWS connection: build name from region endpoint and connection string from access key
       if (!awsAccessKeyId.trim() || !awsSecretKey.trim() || !awsRegion.trim()) {
@@ -91,6 +108,7 @@ export function ConnectPage() {
         await createNamespace.mutateAsync({
           name: namespaceName,
           connectionString: awsConnectionString,
+          authType: 'awsAccessKey',
           displayName: displayName.trim(),
           environment,
           cloudProvider: 'aws',
@@ -116,6 +134,7 @@ export function ConnectPage() {
         await createNamespace.mutateAsync({
           name: gcpProjectId.trim(),
           connectionString: gcpServiceAccountJson.trim(),
+          authType: 'gcpServiceAccount',
           displayName: displayName.trim(),
           environment,
           cloudProvider: 'gcp',
@@ -342,15 +361,31 @@ export function ConnectPage() {
                 </button>
               </div>
 
-              {/* Provider coming-soon notices for non-Azure */}
+              {/* Provider availability notices for non-Azure, driven by the server's feature flags */}
               {cloudProvider === 'aws' && (
                 <div className="mt-2 p-2 rounded bg-orange-50 border border-orange-200 text-xs text-orange-700">
-                  <strong>AWS SQS — Phase 2 (coming soon).</strong> You can save the connection details now; full message browsing will be enabled when the AWS provider ships.
+                  {awsEnabled ? (
+                    <>
+                      <strong>AWS SQS/SNS — preview.</strong> Credentials are encrypted at rest; message browsing is read-only by default.
+                    </>
+                  ) : (
+                    <>
+                      <strong>AWS SQS/SNS is disabled on this server.</strong> An operator must set <code>CloudProviders:Aws:Enabled</code> to <code>true</code> in the API configuration and restart — or use Simulator mode to explore without credentials.
+                    </>
+                  )}
                 </div>
               )}
               {cloudProvider === 'gcp' && (
                 <div className="mt-2 p-2 rounded bg-green-50 border border-green-200 text-xs text-green-700">
-                  <strong>GCP Pub/Sub — Phase 2 (coming soon).</strong> You can save the connection details now; full message browsing will be enabled when the GCP provider ships.
+                  {gcpEnabled ? (
+                    <>
+                      <strong>GCP Pub/Sub — preview.</strong> Credentials are encrypted at rest; message browsing is read-only by default.
+                    </>
+                  ) : (
+                    <>
+                      <strong>GCP Pub/Sub is disabled on this server.</strong> An operator must set <code>CloudProviders:Gcp:Enabled</code> to <code>true</code> in the API configuration and restart — or use Simulator mode to explore without credentials.
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -670,7 +705,7 @@ export function ConnectPage() {
 
               <button
                 type="submit"
-                disabled={createNamespace.isPending}
+                disabled={createNamespace.isPending || selectedProviderDisabled}
                 className={`w-full px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 text-white disabled:opacity-50 ${
                   cloudProvider === 'aws'
                     ? 'bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300'

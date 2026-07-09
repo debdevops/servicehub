@@ -12,6 +12,10 @@ vi.mock('react-router-dom', async () => {
 
 const mockDeleteNs = vi.fn().mockResolvedValue(undefined);
 
+vi.mock('@/hooks/useCloudBridge', () => ({
+  useProviderStatus: () => ({ data: { Aws: false, Gcp: false } }),
+}));
+
 vi.mock('@/hooks/useNamespaces', () => ({
   useNamespaces: () => ({
     data: [
