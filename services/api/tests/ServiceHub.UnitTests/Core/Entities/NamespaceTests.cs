@@ -212,6 +212,8 @@ public sealed class NamespaceTests
     [InlineData("test-namespace.servicebus.windows.net", true)]
     [InlineData("my-test-ns.servicebus.windows.net", true)]
     [InlineData("test-namespace.servicebus.chinacloudapi.cn", true)]
+    [InlineData("sqs.us-east-1.amazonaws.com", true)]
+    [InlineData("sqs.us-east-1.example.com", false)]
     [InlineData("test123", true)]
     [InlineData("test-ns-123", true)]
     [InlineData("invalid..name", false)]

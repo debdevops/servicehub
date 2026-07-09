@@ -533,6 +533,8 @@ public sealed class Namespace
     /// Validates the namespace name format.
     /// Accepts:
     /// - Azure Service Bus FQDN: *.servicebus.windows.net (and national cloud variants)
+    /// - AWS regional endpoint hostname: *.amazonaws.com (e.g. sqs.us-east-1.amazonaws.com,
+    ///   the name the UI derives for AWS namespaces)
     /// - AWS SQS URL: https://sqs.{region}.amazonaws.com/{account}/{queue}
     /// - Generic short name: 3–256 chars of letters, digits, hyphens, underscores or dots,
     ///   not starting or ending with a hyphen (covers Azure short namespace names,
@@ -545,13 +547,15 @@ public sealed class Namespace
 
         var trimmed = name.Trim();
 
-        // Azure FQDN — must end with a known servicebus suffix
+        // FQDN — must end with a known servicebus suffix (Azure) or amazonaws.com
+        // (AWS regional endpoint hostnames, e.g. sqs.us-east-1.amazonaws.com from the UI)
         if (trimmed.Contains('.') && !trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
             return trimmed.EndsWith(".servicebus.windows.net", StringComparison.OrdinalIgnoreCase)
                 || trimmed.EndsWith(".servicebus.chinacloudapi.cn", StringComparison.OrdinalIgnoreCase)
                 || trimmed.EndsWith(".servicebus.usgovcloudapi.net", StringComparison.OrdinalIgnoreCase)
-                || trimmed.EndsWith(".servicebus.cloudapi.de", StringComparison.OrdinalIgnoreCase);
+                || trimmed.EndsWith(".servicebus.cloudapi.de", StringComparison.OrdinalIgnoreCase)
+                || trimmed.EndsWith(".amazonaws.com", StringComparison.OrdinalIgnoreCase);
         }
 
         // AWS SQS endpoint URL: https://sqs.{region}.amazonaws.com/{account}/{queue-or-topic}

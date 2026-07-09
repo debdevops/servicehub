@@ -32,9 +32,14 @@ export interface Namespace {
   gcpProjectId?: string;
 }
 
+// Matches the backend ConnectionAuthType enum (camelCase serialization).
+// Azure omits authType and defaults to 'connectionString' server-side.
+export type ConnectionAuthType = 'connectionString' | 'awsAccessKey' | 'gcpServiceAccount';
+
 export interface CreateNamespaceRequest {
   name: string;
   connectionString: string;
+  authType?: ConnectionAuthType;
   displayName?: string;
   description?: string;
   environment?: EnvironmentType;
