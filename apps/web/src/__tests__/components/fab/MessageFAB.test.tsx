@@ -24,12 +24,12 @@ vi.mock('react-hot-toast', () => ({
 
 // Mock child modals — keep them lightweight, expose the entity defaults they receive
 vi.mock('@/components/fab/SendMessageModal', () => ({
-  SendMessageModal: ({ isOpen, defaultEntityType, defaultQueueName }: { isOpen: boolean; defaultEntityType?: string; defaultQueueName?: string | null }) =>
+  SendMessageModal: ({ isOpen, defaultEntityType, defaultEntityName }: { isOpen: boolean; defaultEntityType?: string; defaultEntityName?: string | null }) =>
     isOpen ? (
       <div data-testid="send-modal">
         SendMessageModal
         <span data-testid="send-modal-entity-type">{defaultEntityType ?? 'unset'}</span>
-        <span data-testid="send-modal-entity-name">{defaultQueueName ?? 'unset'}</span>
+        <span data-testid="send-modal-entity-name">{defaultEntityName ?? 'unset'}</span>
       </div>
     ) : null,
 }));
