@@ -86,9 +86,8 @@ export function MainLayout() {
   // FAB: only in DEV environment with Manage (write) permission — never in UAT/Prod or read-only connections
   const canUseFab = currentNamespace?.environment === 'dev' && currentNamespace?.hasManagePermission === true;
 
-  // Determine entity type and names for FAB
+  // Determine entity type for FAB
   const entityType: 'queue' | 'topic' = topicName ? 'topic' : 'queue';
-  const entityName = queueName || topicName || '';
 
   const handleMessagesGenerated = () => {
     // Mark stale without triggering an immediate burst refetch — the next
@@ -130,9 +129,9 @@ export function MainLayout() {
 
       {/* FAB - Show on messages page in DEV with Manage permission, never in Demo mode */}
       {isMessagesPage && canUseFab && !isDemoMode && (
-        <MessageFAB 
+        <MessageFAB
           namespaceId={namespaceId}
-          queueName={entityName}
+          queueName={queueName}
           entityType={entityType}
           topicName={topicName}
           subscriptionName={subscriptionName}
