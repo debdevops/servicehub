@@ -477,4 +477,120 @@ public sealed class MessagesController : ApiControllerBase
         _logger.LogInformation("Message {SequenceNumber} replayed successfully", sequenceNumber);
         return Accepted();
     }
+
+    /// <summary>
+    /// Purges (permanently deletes) a single message from the active or dead-letter queue.
+    /// </summary>
+    /// <remarks>
+    /// Supported for AWS SQS (delete by receipt handle) and GCP Pub/Sub (acknowledge).
+    /// Azure Service Bus has no reliable single-message delete; the provider returns an error.
+    /// </remarks>
+    [RequireScope(ApiKeyScopes.MessagesSend)]
+    [HttpDelete("purge")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
+    public async Task<IActionResult> PurgeMessage(
+        [FromQuery] Guid namespaceId,
+        [FromQuery] long sequenceNumber,
+        [FromQuery] string entityName,
+        [FromQuery] string? subscriptionName = null,
+        [FromQuery] bool fromDeadLetter = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentPurgeMessage))
+        {
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: IntentHeaders.IntentPurgeMessage,
+                outcome: "Denied",
+                namespaceId: namespaceId,
+                resourceName: entityName,
+                sequenceNumber: sequenceNumber,
+                detail: "Missing explicit intent headers");
+
+            return Problem(
+                statusCode: StatusCodes.Status428PreconditionRequired,
+                title: "Explicit Intent Required",
+                detail: IntentHeaders.BuildIntentRequiredDetail("message purge"));
+        }
+
+        _logger.LogInformation(
+            "Purging message {SequenceNumber} from {EntityName} (deadLetter: {FromDeadLetter}) in namespace {NamespaceId}",
+            sequenceNumber,
+            LogRedactor.SanitiseForLog(entityName),
+            fromDeadLetter,
+            namespaceId);
+
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult(Shared.Results.Result.Failure(namespaceResult.Error));
+        }
+
+        var ns = namespaceResult.Value;
+        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return NotFound();
+        }
+
+        // Safety-by-default guard: destructive purge is blocked in production.
+        if (ns.Environment == EnvironmentType.Prod)
+        {
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: IntentHeaders.IntentPurgeMessage,
+                outcome: "Denied",
+                namespaceId: namespaceId,
+                environment: ns.Environment,
+                resourceName: entityName,
+                sequenceNumber: sequenceNumber,
+                detail: "Purge blocked in production environment");
+
+            return Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "Production Restriction",
+                detail: "Purge is blocked for production namespaces. Validate in DEV and UAT first.");
+        }
+
+        var result = await _messageOperationsService.PurgeMessageAsync(
+            namespaceId,
+            entityName,
+            subscriptionName,
+            sequenceNumber,
+            fromDeadLetter,
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: IntentHeaders.IntentPurgeMessage,
+                outcome: "Failed",
+                namespaceId: namespaceId,
+                environment: ns.Environment,
+                resourceName: entityName,
+                sequenceNumber: sequenceNumber,
+                detail: result.Error.Message);
+            return ToActionResult(result);
+        }
+
+        _auditLogger.LogCriticalAction(
+            HttpContext,
+            OwnerId,
+            action: IntentHeaders.IntentPurgeMessage,
+            outcome: "Succeeded",
+            namespaceId: namespaceId,
+            environment: ns.Environment,
+            resourceName: entityName,
+            sequenceNumber: sequenceNumber,
+            detail: "Purge completed");
+
+        _logger.LogInformation("Message {SequenceNumber} purged successfully", sequenceNumber);
+        return Accepted();
+    }
 }
