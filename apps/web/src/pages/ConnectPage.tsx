@@ -12,7 +12,7 @@ import toast from 'react-hot-toast';
 /**
  * Connection Setup Page
  * 
- * Onboarding-style screen for connecting to Azure Service Bus namespaces.
+ * Onboarding-style screen for connecting cloud messaging namespaces (Azure Service Bus, AWS SQS/SNS, GCP Pub/Sub).
  */
 export function ConnectPage() {
   const navigate = useNavigate();
@@ -244,7 +244,7 @@ export function ConnectPage() {
             <span className="text-xs font-semibold text-sky-700">Free · Open Source · No installation</span>
           </div>
           <h1 className="text-2xl font-bold text-gray-900 leading-tight">
-            Debug Azure Service Bus{' '}
+            Debug your cloud message queues{' '}
             <span className="text-primary-600">in seconds.</span>
           </h1>
           <p className="text-sm text-gray-500 mt-1">
@@ -816,7 +816,7 @@ export function ConnectPage() {
                       <span className="text-2xl">📭</span>
                     </div>
                     <h3 className="font-medium text-gray-900 mb-1">No saved connections yet</h3>
-                    <p className="text-sm text-gray-500">Add your first Service Bus to get started</p>
+                    <p className="text-sm text-gray-500">Connect your first namespace to get started</p>
                   </div>
                 )}
               </div>
@@ -885,7 +885,7 @@ export function ConnectPage() {
                 <span className="text-sm font-bold text-primary-600">1</span>
               </div>
               <p className="text-sm font-semibold text-gray-900">60 seconds to your first message view</p>
-              <p className="text-xs text-gray-500 mt-1.5">Paste a Listen-only connection string — no admin rights, no Azure Portal clutter, no SDK to install</p>
+              <p className="text-xs text-gray-500 mt-1.5">Paste read-only credentials — no admin rights, no cloud console clutter, no SDK to install</p>
             </div>
             <div className="text-center p-5 bg-white rounded-xl border border-gray-200 shadow-sm">
               <div className="w-9 h-9 bg-primary-50 border border-primary-100 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -918,7 +918,7 @@ export function ConnectPage() {
               <h4 className="font-semibold text-gray-900 mb-2">847 messages failing? Find the pattern in 30 seconds.</h4>
               <p className="text-xs text-gray-600">
                 Group by error, spot the duplicate root cause (null ref, version mismatch, timeout), apply a fix, 1-click bulk replay.
-                Azure Portal: 30 min. ServiceHub: 2 min.
+                Cloud console: 30 min. ServiceHub: 2 min.
               </p>
             </div>
 
@@ -953,7 +953,7 @@ export function ConnectPage() {
           <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl border border-gray-200 p-6">
             <h4 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
               <span className="text-base">⚡</span>
-              ServiceHub vs Azure Portal
+              ServiceHub vs Cloud Consoles
             </h4>
             <div className="space-y-3 text-sm">
               {[
@@ -971,7 +971,7 @@ export function ConnectPage() {
               ))}
               <div className="flex items-center text-[10px] text-gray-400 pt-1 border-t border-gray-100">
                 <span className="flex-1" />
-                <span className="w-24 text-center">Azure Portal</span>
+                <span className="w-24 text-center">Cloud Console</span>
                 <span className="w-24 text-center text-primary-600 font-semibold">ServiceHub</span>
               </div>
             </div>

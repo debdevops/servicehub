@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/debdevops/servicehub/blob/main/SECURITY.md
+    about: Do NOT open a public issue for security vulnerabilities — follow the responsible disclosure process instead.
+  - name: 💬 Questions & help
+    url: https://github.com/debdevops/servicehub/discussions
+    about: Ask questions or discuss ideas before opening an issue.
