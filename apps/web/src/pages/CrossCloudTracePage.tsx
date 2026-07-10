@@ -65,7 +65,7 @@ function FlowDiagram({ clouds, hops, summaries }: FlowDiagramProps) {
               {hopsPerCloud(cloud)} hop{hopsPerCloud(cloud) !== 1 ? 's' : ''}
             </span>
             {!wasSearched(cloud) && (
-              <span className="text-xs text-amber-600 font-medium">Phase 2</span>
+              <span className="text-xs text-amber-600 font-medium">Not searched</span>
             )}
           </div>
           {/* Connector arrow (not after last node) */}
@@ -169,7 +169,7 @@ function NamespaceSummaryRow({ summary }: { summary: CrossCloudNamespaceSummary 
       ) : (
         <span className="flex items-center gap-1 text-amber-600 text-xs font-medium" title={summary.skipReason ?? ''}>
           <Clock className="w-3.5 h-3.5" />
-          {summary.skipReason?.startsWith('AWS') || summary.skipReason?.startsWith('GCP') ? 'Phase 2' : 'Skipped'}
+          {summary.skipReason?.includes('not enabled') ? 'Not enabled' : 'Skipped'}
         </span>
       )}
     </div>
@@ -368,7 +368,8 @@ export function CrossCloudTracePage() {
               {result.namespaceSummaries.some(s => !s.wasSearched && (s.cloudProvider === 'aws' || s.cloudProvider === 'gcp')) && (
                 <p className="mt-2 text-xs text-gray-400 flex items-center gap-1">
                   <Info className="w-3.5 h-3.5" />
-                  AWS and GCP namespace search will be available in Phase 2.
+                  AWS/GCP namespaces are searched when their provider is enabled on the
+                  server (CloudProviders:Aws/Gcp:Enabled) — skipped ones show the reason above.
                 </p>
               )}
             </div>
