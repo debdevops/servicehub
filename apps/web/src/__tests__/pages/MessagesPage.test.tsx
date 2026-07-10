@@ -24,9 +24,11 @@ vi.mock('@/hooks/useNamespaces', () => ({
 
 // Mock heavy components
 vi.mock('@/components/messages', () => ({
-  MessageList: ({ messages, onQueueTabChange, activeCounts }: any) => (
+  MessageList: ({ messages, onQueueTabChange, activeCounts, onSelectMessage, selectedId }: any) => (
     <div data-testid="message-list">
       <span>{messages.length} messages</span>
+      <span data-testid="selected-id">{selectedId ?? 'none'}</span>
+      <button onClick={() => onSelectMessage('msg-2')}>Select msg-2</button>
       <button onClick={() => onQueueTabChange('active')}>Active ({activeCounts.active})</button>
       <button onClick={() => onQueueTabChange('deadletter')}>Dead-Letter ({activeCounts.deadletter})</button>
     </div>
@@ -264,5 +266,34 @@ describe('MessagesPage', () => {
     const Wrapper = createWrapper('/messages?namespace=ns1&topic=orders&subscription=sub1');
     render(<Wrapper><MessagesPage /></Wrapper>);
     expect(screen.getByTestId('message-list')).toBeInTheDocument();
+  });
+
+  describe('Message deep links', () => {
+    it('restores selection from the ?message= URL parameter on load', () => {
+      const Wrapper = createWrapper('/messages?namespace=ns1&queue=test-queue&message=msg-1');
+      render(<Wrapper><MessagesPage /></Wrapper>);
+      expect(screen.getByTestId('selected-id')).toHaveTextContent('msg-1');
+    });
+
+    it('shows no selection when the URL has no message parameter', () => {
+      const Wrapper = createWrapper();
+      render(<Wrapper><MessagesPage /></Wrapper>);
+      expect(screen.getByTestId('selected-id')).toHaveTextContent('none');
+    });
+
+    it('updates selection when a message is chosen', () => {
+      const Wrapper = createWrapper();
+      render(<Wrapper><MessagesPage /></Wrapper>);
+      fireEvent.click(screen.getByText('Select msg-2'));
+      expect(screen.getByTestId('selected-id')).toHaveTextContent('msg-2');
+    });
+
+    it('clears the selection when switching queue tabs', () => {
+      const Wrapper = createWrapper('/messages?namespace=ns1&queue=test-queue&message=msg-1');
+      render(<Wrapper><MessagesPage /></Wrapper>);
+      expect(screen.getByTestId('selected-id')).toHaveTextContent('msg-1');
+      fireEvent.click(screen.getByText(/Dead-Letter \(/));
+      expect(screen.getByTestId('selected-id')).toHaveTextContent('none');
+    });
   });
 });

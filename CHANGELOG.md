@@ -15,7 +15,7 @@
 
 - **AWS and GCP now have resilience pipelines matching Azure's retry pattern** — `AwsResiliencePipeline` and `GcpResiliencePipeline` (Polly-based, 3 retries, exponential backoff with jitter, 1s base / 30s cap) wrap the AWS SQS/SNS and GCP Pub/Sub message receivers/senders, retrying only transient errors (AWS: SDK-marked retryable or 5xx/429; GCP: `Unavailable`/`DeadlineExceeded`/`Internal`/`ResourceExhausted`/`Aborted` gRPC codes).
 - **GCP Pub/Sub message count normalized** — `GcpMessageReceiver.GetMessageCountAsync` previously could surface as a failure; Pub/Sub has no direct count API, so it now returns a neutral `Success(0)`, consistent with the existing "unsupported read" convention used elsewhere (e.g. `GetScheduledMessagesAsync`).
-- **DLQ background monitoring now skips non-Azure namespaces explicitly** — `DlqMonitorWorker` filters to Azure namespaces before scanning (DLQ monitoring is Azure-only today) and logs how many namespaces were skipped, instead of attempting and failing an Azure client build against AWS/GCP namespaces every poll cycle.
+- **DLQ background monitoring is provider-aware** — `DlqMonitorWorker` scans all active namespaces regardless of provider; `DlqMonitorService` resolves each namespace's provider through `CloudProviderRouter`, skipping only namespaces whose provider is not registered on this server (with an explanatory log entry) instead of attempting an Azure client build against AWS/GCP namespaces. Provider conventions are handled per cloud: GCP `-dlq` dead-letter topic subscriptions, Azure `DeadLetterCount` short-circuiting.
 
 ### Changed
 

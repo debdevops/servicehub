@@ -25,6 +25,9 @@ Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-
 
 **ServiceHub is an ultra-fast, self-hosted web application that gives engineers full forensic visibility into their cloud message queues** — like a debugger, but for Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub.
 
+> [!IMPORTANT]
+> **Built for strict environments.** Read-only by default (`Peek`, never consume) · connection strings AES-GCM-256 encrypted at rest · **zero external calls** — pattern analysis runs entirely in your browser, no message data ever leaves your network · destructive actions (replay, send) blocked on production namespaces. Details in [Security](#security).
+
 > [!TIP]
 > **No credentials?** Try the built-in [Simulator Mode](#simulator-mode) — runs 3 synthetic namespaces (Azure + AWS + GCP) with 50 seeded messages each. No cloud account needed.
 
@@ -267,10 +270,10 @@ ServiceHub uses client-side heuristic pattern detection — pure JavaScript in y
 Bug fixes, features, and documentation improvements are welcome!
 
 ```bash
-# Unit tests (Vitest — 1,045 tests, ≥60% coverage required)
+# Unit tests (Vitest — 1,100+ tests, ≥60% coverage required)
 cd apps/web && npm run test:coverage
 
-# Backend tests (xUnit — 1,327 tests)
+# Backend tests (xUnit — 1,500+ unit + integration tests)
 cd services/api && dotnet test
 
 # E2E tests (Playwright — requires ./run.sh --simulator)
