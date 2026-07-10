@@ -262,4 +262,96 @@ public class MessagesControllerTests
     }
 
     #endregion
+
+    #region PurgeMessage Tests
+
+    [Fact]
+    public async Task PurgeMessage_Success_ShouldReturnAccepted()
+    {
+        SetIntentHeaders(IntentHeaders.IntentPurgeMessage);
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _messageOperationsService.Setup(r => r.PurgeMessageAsync(ns.Id, "my-queue", null, 42, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var result = await _controller.PurgeMessage(ns.Id, 42, "my-queue", null, fromDeadLetter: true);
+
+        result.Should().BeOfType<AcceptedResult>();
+        _messageOperationsService.Verify(r => r.PurgeMessageAsync(ns.Id, "my-queue", null, 42, true, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task PurgeMessage_MissingIntentHeaders_ShouldReturn428()
+    {
+        var ns = CreateTestNamespace();
+
+        var result = await _controller.PurgeMessage(ns.Id, 42, "my-queue");
+
+        var problem = result.Should().BeOfType<ObjectResult>().Subject;
+        problem.StatusCode.Should().Be(StatusCodes.Status428PreconditionRequired);
+        _messageOperationsService.Verify(
+            r => r.PurgeMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task PurgeMessage_ProductionNamespace_ShouldReturn403()
+    {
+        SetIntentHeaders(IntentHeaders.IntentPurgeMessage);
+        var ns = Namespace.Create(
+            "prod-namespace",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
+            "Prod NS",
+            environment: ServiceHub.Core.Enums.EnvironmentType.Prod).Value;
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var result = await _controller.PurgeMessage(ns.Id, 42, "my-queue");
+
+        var problem = result.Should().BeOfType<ObjectResult>().Subject;
+        problem.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        _messageOperationsService.Verify(
+            r => r.PurgeMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task PurgeMessage_WrongOwner_ShouldReturnNotFound()
+    {
+        SetIntentHeaders(IntentHeaders.IntentPurgeMessage);
+        var ns = Namespace.Create(
+            "other-owner-namespace",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
+            "Other NS",
+            ownerId: "entra:someone-else").Value;
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var result = await _controller.PurgeMessage(ns.Id, 42, "my-queue");
+
+        result.Should().BeOfType<NotFoundResult>();
+        _messageOperationsService.Verify(
+            r => r.PurgeMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task PurgeMessage_OperationFails_ShouldReturnError()
+    {
+        SetIntentHeaders(IntentHeaders.IntentPurgeMessage);
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _messageOperationsService.Setup(r => r.PurgeMessageAsync(ns.Id, "my-queue", null, 42, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.ExternalService("AWS.SQS.PurgeFailed", "SQS error")));
+
+        var result = await _controller.PurgeMessage(ns.Id, 42, "my-queue");
+
+        result.Should().NotBeOfType<AcceptedResult>();
+    }
+
+    #endregion
 }

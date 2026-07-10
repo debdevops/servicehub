@@ -9,6 +9,7 @@ public static class IntentHeaders
     public const string ConfirmHeaderName = "X-ServiceHub-Confirm";
 
     public const string IntentReplayMessage = "messages:replay";
+    public const string IntentPurgeMessage = "messages:purge";
     public const string IntentSendMessage = "messages:send";
     public const string IntentDeadLetter = "messages:deadletter";
     public const string IntentCancelScheduled = "messages:cancel-scheduled";
