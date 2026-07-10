@@ -103,19 +103,18 @@ export const messagesApi = {
     });
   },
 
-  /* PURGE API DISABLED - Azure Service Bus Limitation
-   * The Service Bus SDK doesn't support direct message deletion by sequence number.
-   * Re-enable if Microsoft adds targeted message deletion support.
-   *
   // DELETE /api/v1/messages/purge
+  // Supported for AWS SQS and GCP Pub/Sub; Azure Service Bus has no reliable
+  // single-message delete, so the UI disables this action for Azure namespaces.
   purge: async (
-    namespaceId: string, 
+    namespaceId: string,
     sequenceNumber: number,
     entityName: string,
     subscriptionName?: string,
     fromDeadLetter?: boolean
   ): Promise<void> => {
     await apiClient.delete('/messages/purge', {
+      headers: withRiskIntent(riskIntent.purgeMessage),
       params: {
         namespaceId,
         sequenceNumber,
@@ -125,7 +124,6 @@ export const messagesApi = {
       }
     });
   },
-  */
 
   // POST /api/v1/namespaces/{namespaceId}/queues/{queueName}/deadletter
   // Moves messages to the dead-letter queue for testing
