@@ -25,8 +25,17 @@ Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-
 
 **ServiceHub is an ultra-fast, self-hosted web application that gives engineers full forensic visibility into their cloud message queues** — like a debugger, but for Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub.
 
+> **Your cloud console shows you counts. ServiceHub shows you answers.**
+
+> [!IMPORTANT]
+> **Built for strict environments.** Read-only by default (`Peek`, never consume) · connection strings AES-GCM-256 encrypted at rest · **zero external calls by default** — pattern analysis runs entirely in your browser and no message data ever leaves your network ([telemetry](#application-insights-telemetry) is opt-in and disabled unless you enable it) · destructive actions (replay, send) blocked on production namespaces. Details in [Security](#security).
+
 > [!TIP]
 > **No credentials?** Try the built-in [Simulator Mode](#simulator-mode) — runs 3 synthetic namespaces (Azure + AWS + GCP) with 50 seeded messages each. No cloud account needed.
+
+<p align="center">
+  <img src="docs/screenshots/servicehub-architecture.png" alt="ServiceHub at a glance — one unified UI, a provider-aware core with safety rails, and native support for Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub" width="100%">
+</p>
 
 | Capability | Standard Cloud Portals | ServiceHub |
 |---|---|---|
@@ -35,6 +44,7 @@ Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-
 | Dead-letter queue investigation | ❌ One at a time | ✅ Batch analysis + AI patterns |
 | AI pattern detection | ❌ Not available | ✅ Client-side clustering, zero data sent |
 | Replay from DLQ | ❌ Not available | ✅ One-click or auto-replay rules |
+| Delete a single message | ❌ Not available | ✅ Purge (AWS & GCP; Azure SDK has no single-message delete) |
 | Multi-namespace support | ❌ Portal only | ✅ Manage multiple connections |
 | Correlation ID tracing | ❌ Not available | ✅ Trace journeys across all queues |
 | Scheduled message management | ❌ Not available | ✅ View, reschedule, and cancel |
@@ -44,7 +54,7 @@ Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-
 
 ## Core Capabilities
 
-ServiceHub's deepest and most mature features are built natively for Azure Service Bus.
+Everything below serves three jobs: **Investigate** the failure, **Recover** the messages, **Prevent** the repeat. ServiceHub's deepest and most mature features are built natively for Azure Service Bus.
 
 ### 🔌 Connect in 30 Seconds — Zero Configuration
 Enter your connection string once and you're browsing messages instantly. Supports Listen-only (read-only), Send, and Manage policies. Connection strings are **AES-GCM encrypted at rest** — no plain-text secrets stored anywhere.
@@ -64,8 +74,8 @@ Click **AI Findings** to see error pattern clusters detected across your current
 > [!NOTE]
 > **Zero-trust privacy:** All analysis runs entirely in your browser. No message content ever leaves your environment.
 
-### 💀 Dead-Letter Queue Investigation
-Select the **Dead-Letter** tab to inspect failed messages in full. Each DLQ message shows exactly why Azure moved the message, the full error text from the broker, the AI Assessment, and a one-click Replay button to resend it after fixing the root cause.
+### 💀 Dead-Letter Queue Investigation & Recovery
+Select the **Dead-Letter** tab to inspect failed messages in full. Each DLQ message shows exactly why the broker moved it, the full error text, the assessment in plain English, and one-click actions: **Replay** it back to the main queue after fixing the root cause, or **Purge** it permanently (AWS & GCP — Azure's SDK has no reliable single-message delete, so the action is disabled there rather than pretending).
 
 ### 📊 DLQ Intelligence — Persistent History & 30-Day Trends
 DLQ Intelligence automatically scans your dead-letter queues and stores every finding in a local SQLite database — so you can track failures over time, not just during the current session. Features include a 30-day trend chart, auto-categorization (Transient, MaxDelivery, Expired, DataQuality, Authorization), and CSV/JSON exports.
@@ -88,14 +98,15 @@ See every message queued for future delivery. Reschedule or cancel individual me
 
 ServiceHub extends beyond Azure Service Bus to support **AWS SQS/SNS** and **GCP Pub/Sub** via the Cloud Bridge.
 
-| Provider | Status | Queues | Dead-Letter | Replay | Cross-Cloud Trace |
-|----------|--------|--------|-------------|--------|-------------------|
-| **Azure Service Bus** | ✅ GA | ✅ | ✅ | ✅ | ✅ |
-| **AWS SQS / SNS** | 🔶 Preview | ✅ | ✅ (MaxReceive) | ✅ | ✅¹ |
-| **GCP Pub/Sub** | 🔶 Preview | ✅ | ✅ peek (nack/ack deadline)² | ✅ | ✅¹ |
+| Provider | Status | Browse & Search | Dead-Letter | Replay | Purge | Send & Test Tools³ | Cross-Cloud Trace |
+|----------|--------|-----------------|-------------|--------|-------|--------------------|-------------------|
+| **Azure Service Bus** | ✅ GA | ✅ | ✅ | ✅ | — (SDK limitation) | ✅ | ✅ |
+| **AWS SQS / SNS** | 🔶 Preview | ✅ | ✅ (redrive DLQ) | ✅ | ✅ | ✅ | ✅¹ |
+| **GCP Pub/Sub** | 🔶 Preview | ✅ | ✅ peek (nack/ack deadline)² | ✅ | ✅ | ✅ | ✅¹ |
 
 ¹ Cross-Cloud Trace searches any namespace whose provider is registered in the API's dependency-injection container. Azure is always registered; AWS/GCP registration is disabled by default in this build — use Simulator mode, or register the provider, to exercise AWS/GCP trace search.
-² GCP Pub/Sub supports peeking dead-lettered messages via the subscription's configured dead-letter topic, but not manually moving a message to the DLQ on demand — Pub/Sub dead-lettering is policy-driven via `MaxDeliveryAttempts` on the subscription. Message counts are also unavailable via the Pub/Sub API and are reported as `0`.
+² GCP Pub/Sub dead-lettering is policy-driven via `MaxDeliveryAttempts`; ServiceHub reads the DLQ through the subscription's configured dead-letter topic, and its test tooling moves messages there by republishing through the subscription's dead-letter policy. Message counts are unavailable via the Pub/Sub API and are reported as `0`.
+³ Test tools (send a message, generate realistic test data, push messages to the DLQ) are available only on **DEV** namespaces with a Manage-level connection — never in UAT or production.
 
 ### 🌐 Cross-Cloud Trace
 Connect namespaces from two or more cloud providers and use **Multi-Cloud Trace** to trace a single Correlation ID or message GUID as it routes from Azure $\rightarrow$ AWS $\rightarrow$ GCP (or any combination). The result is a visual routing path diagram, a chronological hop timeline, and a namespace search-coverage panel.
@@ -260,6 +271,9 @@ Yes. Listen-only mode is fully read-only. Deploy ServiceHub inside your private 
 **How does AI analysis work without an API key?**
 ServiceHub uses client-side heuristic pattern detection — pure JavaScript in your browser. No GPT, no external service, no data exfiltration.
 
+**Can I delete a single message?**
+On AWS (delete by receipt handle) and GCP (acknowledge), yes — the Purge action, guarded by explicit-intent headers and blocked on production namespaces. Azure Service Bus has no reliable single-message delete in the SDK, so ServiceHub disables the action there instead of faking it.
+
 ---
 
 ## Contributing
@@ -267,10 +281,10 @@ ServiceHub uses client-side heuristic pattern detection — pure JavaScript in y
 Bug fixes, features, and documentation improvements are welcome!
 
 ```bash
-# Unit tests (Vitest — 1,045 tests, ≥60% coverage required)
+# Unit tests (Vitest — 1,100+ tests, ≥60% coverage required)
 cd apps/web && npm run test:coverage
 
-# Backend tests (xUnit — 1,327 tests)
+# Backend tests (xUnit — 1,500+ unit + integration tests)
 cd services/api && dotnet test
 
 # E2E tests (Playwright — requires ./run.sh --simulator)
@@ -280,8 +294,15 @@ For deep backend developer guidelines, refer to the [API README](services/api/RE
 
 ---
 
-## Welcome Page
-ServiceHub ships with a public **landing / welcome page** at the root path (`/`) that serves as the entry point for new users. The CTA in the welcome page reads **"Open ServiceHub"** rather than "Demo" to reflect that the hosted application is a fully functional production deployment — not a restricted preview.
+## Roadmap
+
+ServiceHub is built depth-first: make one workflow excellent before adding the next surface.
+
+- **Now (MVP)** — the forensic core across Azure (GA) and AWS/GCP (preview): explore, search, DLQ investigation, replay, purge, send, auto-replay rules, simulator, live updates.
+- **Next** — operational habit: bulk replay/purge with dry-run preview, DLQ triage inbox, live tail, fleet dashboard across namespaces, Slack/Teams alert cards, Docker packaging.
+- **Later** — team & governance: SSO, role-based access, approval workflows for destructive operations, audit export.
+
+Have a use-case that should shape this? [Open a feature request](https://github.com/debdevops/servicehub/issues/new) — describe the problem, not just the solution.
 
 ---
 

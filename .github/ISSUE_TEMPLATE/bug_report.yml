@@ -1,0 +1,83 @@
+name: Bug report
+description: Something in ServiceHub isn't working as expected
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Before submitting, please search
+        [existing issues](https://github.com/debdevops/servicehub/issues) to avoid duplicates.
+
+        ⚠️ **Security vulnerabilities:** do NOT report them here — see [SECURITY.md](https://github.com/debdevops/servicehub/blob/main/SECURITY.md) for responsible disclosure.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected to happen instead.
+      placeholder: "When I click Replay on a DLQ message, the request fails with..."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Connect a namespace with provider '...'
+        2. Open the Dead-Letter tab on queue '...'
+        3. Click '...'
+        4. See error
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Cloud provider
+      description: Which provider does this affect?
+      options:
+        - Azure Service Bus
+        - AWS SQS/SNS
+        - GCP Pub/Sub
+        - Simulator mode
+        - Not provider-specific
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Run mode
+      options:
+        - "./run.sh (development, real credentials)"
+        - "./run.sh --simulator"
+        - Self-hosted deployment
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ServiceHub version
+      description: From the `.version` file or the version badge in the UI footer.
+      placeholder: "3.3.0"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, .NET SDK version (`dotnet --version`), Node version (`node --version`), browser.
+      placeholder: |
+        OS: macOS 15.5
+        .NET: 10.0.100
+        Node: 22.11.0
+        Browser: Chrome 138
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        API console output or browser console errors.
+        ⚠️ **Redact any connection strings, keys, or secrets before pasting.**
+      render: shell

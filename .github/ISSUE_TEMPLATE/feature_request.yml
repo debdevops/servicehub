@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest an idea or improvement for ServiceHub
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! Please describe the **use-case, not just the solution** —
+        understanding the problem you're solving helps us design the right feature.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the situation where you hit this limitation. What were you doing? What slowed you down?
+      placeholder: "During an incident I needed to replay ~500 DLQ messages matching a specific error, but..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would you like ServiceHub to solve it? Rough ideas are fine.
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Which provider(s) does this involve?
+      multiple: true
+      options:
+        - Azure Service Bus
+        - AWS SQS/SNS
+        - GCP Pub/Sub
+        - Simulator mode
+        - All / not provider-specific
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: Workarounds you use today (scripts, portal, CLI, other tools).
