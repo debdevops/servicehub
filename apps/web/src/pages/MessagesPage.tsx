@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useDeferredValue } from 'react';
+import { useState, useMemo, useEffect, useRef, useDeferredValue } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause } from 'lucide-react';
@@ -143,8 +143,21 @@ export function MessagesPage() {
     }
   }, [namespaces, namespaceId, searchParams, setSearchParams]);
 
-  // Selected message for detail panel
-  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  // Selected message for detail panel — initialized from the URL so message
+  // links ("?message=<id>") can be shared and restore the selection on load
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
+    () => searchParams.get('message')
+  );
+
+  const syncMessageParam = (id: string | null) => {
+    const newParams = new URLSearchParams(searchParams);
+    if (id) {
+      newParams.set('message', id);
+    } else {
+      newParams.delete('message');
+    }
+    setSearchParams(newParams, { replace: true });
+  };
   
   // Queue tab: active or deadletter (sync with URL parameter)
   const [queueTab, setQueueTab] = useState<QueueTab>('active');
@@ -166,9 +179,26 @@ export function MessagesPage() {
     }
   }, [queueTypeParam]);
 
-  // Clear selection when switching queues/topics to prevent stale detail panel
+  // Clear selection when switching queues/topics to prevent stale detail panel,
+  // and drop the ?message= param so the URL never carries a deep link into an
+  // entity the message doesn't belong to. Skipped on first render so a
+  // deep-linked "?message=<id>" selection survives page load.
+  const isFirstEntityRender = useRef(true);
   useEffect(() => {
+    if (isFirstEntityRender.current) {
+      isFirstEntityRender.current = false;
+      return;
+    }
     setSelectedMessageId(null);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('message');
+      return next;
+    }, { replace: true });
+    // setSearchParams is deliberately omitted from deps: react-router recreates it on
+    // every location change, so including it re-runs this effect after each URL update
+    // and wipes a selection the instant it is made.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [namespaceId, queueName, topicName, subscriptionName]);
 
   // Reset pagination when queue/topic/tab changes
@@ -337,19 +367,21 @@ export function MessagesPage() {
     setPaginationState(prev => ({ ...prev, skip: prev.skip + BATCH_SIZE }));
   };
 
-  // Handle message selection
+  // Handle message selection — mirrored into the URL so the link is shareable
   const handleSelectMessage = (id: string) => {
     setSelectedMessageId(id);
+    syncMessageParam(id);
   };
 
   // Handle queue tab change
   const handleQueueTabChange = (tab: QueueTab) => {
     setQueueTab(tab);
     setSelectedMessageId(null); // Clear selection when switching tabs
-    
-    // Update URL to keep it in sync with tab state
+
+    // Update URL to keep it in sync with tab state (and drop the stale message link)
     const newParams = new URLSearchParams(searchParams);
     newParams.set('queueType', tab);
+    newParams.delete('message');
     setSearchParams(newParams, { replace: true });
     
     // Refresh counts when switching between active/dlq tabs
