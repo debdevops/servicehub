@@ -28,7 +28,7 @@ Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-
 > **Your cloud console shows you counts. ServiceHub shows you answers.**
 
 > [!IMPORTANT]
-> **Built for strict environments.** Read-only by default (`Peek`, never consume) · connection strings AES-GCM-256 encrypted at rest · **zero external calls** — pattern analysis runs entirely in your browser, no message data ever leaves your network · destructive actions (replay, send) blocked on production namespaces. Details in [Security](#security).
+> **Built for strict environments.** Read-only by default (`Peek`, never consume) · connection strings AES-GCM-256 encrypted at rest · **zero external calls by default** — pattern analysis runs entirely in your browser and no message data ever leaves your network ([telemetry](#application-insights-telemetry) is opt-in and disabled unless you enable it) · destructive actions (replay, send) blocked on production namespaces. Details in [Security](#security).
 
 > [!TIP]
 > **No credentials?** Try the built-in [Simulator Mode](#simulator-mode) — runs 3 synthetic namespaces (Azure + AWS + GCP) with 50 seeded messages each. No cloud account needed.
