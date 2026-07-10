@@ -179,8 +179,10 @@ export function MessagesPage() {
     }
   }, [queueTypeParam]);
 
-  // Clear selection when switching queues/topics to prevent stale detail panel.
-  // Skipped on first render so a deep-linked "?message=<id>" selection survives page load.
+  // Clear selection when switching queues/topics to prevent stale detail panel,
+  // and drop the ?message= param so the URL never carries a deep link into an
+  // entity the message doesn't belong to. Skipped on first render so a
+  // deep-linked "?message=<id>" selection survives page load.
   const isFirstEntityRender = useRef(true);
   useEffect(() => {
     if (isFirstEntityRender.current) {
@@ -188,6 +190,15 @@ export function MessagesPage() {
       return;
     }
     setSelectedMessageId(null);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('message');
+      return next;
+    }, { replace: true });
+    // setSearchParams is deliberately omitted from deps: react-router recreates it on
+    // every location change, so including it re-runs this effect after each URL update
+    // and wipes a selection the instant it is made.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [namespaceId, queueName, topicName, subscriptionName]);
 
   // Reset pagination when queue/topic/tab changes
