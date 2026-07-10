@@ -2,6 +2,7 @@ export const riskIntent = {
   sendMessage: 'messages:send',
   deadLetter: 'messages:deadletter',
   replayMessage: 'messages:replay',
+  purgeMessage: 'messages:purge',
   cancelScheduled: 'messages:cancel-scheduled',
   deleteNamespace: 'namespaces:delete',
   replayAllRules: 'rules:replay-all',
