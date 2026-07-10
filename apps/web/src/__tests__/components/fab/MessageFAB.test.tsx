@@ -203,31 +203,28 @@ describe('MessageFAB', () => {
   });
 
   // ── Provider gating ───────────────────────────────────────────────────────────
-  // Test actions are enabled for Azure and AWS (SQS send / SNS publish / manual DLQ
-  // via redrive target); GCP stays disabled — Pub/Sub DLQ is policy-driven.
+  // Test actions are enabled for all providers: Azure (native), AWS (SQS send /
+  // SNS publish / manual DLQ via redrive target), GCP (publish / manual DLQ by
+  // republishing to the subscription's dead-letter topic).
 
-  it('enables Send, Generate, and Test DLQ for AWS namespaces', async () => {
-    renderFAB({ cloudProvider: 'aws' });
+  it.each(['aws', 'gcp'] as const)('enables Send, Generate, and Test DLQ for %s namespaces', async (provider) => {
+    renderFAB({ cloudProvider: provider });
     await userEvent.click(screen.getByTitle('Open message menu'));
-    const sendBtn = screen.getByText('Send Message').closest('button')!;
-    const generateBtn = screen.getByText('Generate Messages').closest('button')!;
-    const dlqBtn = screen.getByText('Test DLQ').closest('button')!;
-    expect(sendBtn).not.toBeDisabled();
-    expect(generateBtn).not.toBeDisabled();
-    expect(dlqBtn).not.toBeDisabled();
-    expect(screen.queryByText(/test actions unavailable/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Send Message').closest('button')).not.toBeDisabled();
+    expect(screen.getByText('Generate Messages').closest('button')).not.toBeDisabled();
+    expect(screen.getByText('Test DLQ').closest('button')).not.toBeDisabled();
   });
 
-  it('opens SendMessageModal for AWS namespaces', async () => {
-    renderFAB({ cloudProvider: 'aws' });
+  it.each(['aws', 'gcp'] as const)('opens SendMessageModal for %s namespaces', async (provider) => {
+    renderFAB({ cloudProvider: provider });
     await userEvent.click(screen.getByTitle('Open message menu'));
     await userEvent.click(screen.getByText('Send Message'));
     expect(screen.getByTestId('send-modal')).toBeInTheDocument();
   });
 
-  it('dead-letters messages for AWS namespaces when Test DLQ is clicked', async () => {
+  it.each(['aws', 'gcp'] as const)('dead-letters messages for %s namespaces when Test DLQ is clicked', async (provider) => {
     const { messagesApi } = await import('@/lib/api/messages');
-    renderFAB({ cloudProvider: 'aws' });
+    renderFAB({ cloudProvider: provider });
     await userEvent.click(screen.getByTitle('Open message menu'));
     await userEvent.click(screen.getByText('Test DLQ'));
     expect(messagesApi.deadLetter).toHaveBeenCalledWith(
@@ -235,17 +232,8 @@ describe('MessageFAB', () => {
     );
   });
 
-  it('disables Send, Generate, and Test DLQ for GCP namespaces with an explanatory notice', async () => {
-    renderFAB({ cloudProvider: 'gcp' });
-    await userEvent.click(screen.getByTitle('Open message menu'));
-    expect(screen.getByText('Send Message').closest('button')).toBeDisabled();
-    expect(screen.getByText('Generate Messages').closest('button')).toBeDisabled();
-    expect(screen.getByText('Test DLQ').closest('button')).toBeDisabled();
-    expect(screen.getByText(/test actions unavailable/i)).toBeInTheDocument();
-  });
-
-  it('keeps destructive actions disabled in production regardless of provider', async () => {
-    renderFAB({ cloudProvider: 'aws', environment: 'prod' });
+  it.each(['azure', 'aws', 'gcp'] as const)('keeps destructive actions disabled in production for %s', async (provider) => {
+    renderFAB({ cloudProvider: provider, environment: 'prod' });
     await userEvent.click(screen.getByTitle('Open message menu'));
     expect(screen.getByText('Send Message').closest('button')).toBeDisabled();
     expect(screen.getByText('Generate Messages').closest('button')).toBeDisabled();

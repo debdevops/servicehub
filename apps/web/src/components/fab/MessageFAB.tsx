@@ -9,8 +9,10 @@ import type { CloudProviderType } from '@/lib/api/types';
 
 // ============================================================================
 // MessageFAB - Enhanced Floating Action Button with multiple actions
-// Master control for messaging test operations — Azure Service Bus and AWS SQS/SNS
-// (GCP Pub/Sub excluded: manual dead-lettering is policy-driven and unsupported).
+// Master control for messaging test operations across all providers:
+// Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub. Rendered only for DEV
+// namespaces with Manage permission (gated in MainLayout); production
+// namespaces additionally disable all destructive actions here.
 // Handles both Queues and Topic Subscriptions
 // ============================================================================
 
@@ -40,11 +42,11 @@ export function MessageFAB({
   onMessagesGenerated,
 }: MessageFABProps) {
   const isProd = environment?.toLowerCase() === 'prod';
-  // Test actions are supported for Azure (native) and AWS (SQS send / SNS publish /
-  // manual DLQ via the queue's redrive target). GCP Pub/Sub is excluded: dead-lettering
-  // is policy-driven (MaxDeliveryAttempts) and cannot be triggered manually.
-  const isGcp = cloudProvider === 'gcp';
-  const providerLabel = cloudProvider === 'aws' ? 'AWS SQS' : cloudProvider === 'gcp' ? 'GCP Pub/Sub' : 'Azure Service Bus';
+  // Test actions are supported for all providers: Azure (native), AWS (SQS send /
+  // SNS publish / manual DLQ via the queue's redrive target), and GCP (publish /
+  // manual DLQ by republishing to the subscription's dead-letter topic). AWS and
+  // GCP require a DLQ/dead-letter policy on the entity — a clear error explains
+  // this when it is missing.
   const fabBgColor = cloudProvider === 'aws'
     ? 'bg-gradient-to-br from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 ring-orange-200'
     : cloudProvider === 'gcp'
@@ -233,12 +235,6 @@ export function MessageFAB({
             </div>
           </button>
 
-          {isGcp && (
-            <div className="px-3 py-1.5 text-[11px] font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-lg mb-2 flex items-center gap-1.5">
-              <span>⚡</span> GCP Pub/Sub — test actions unavailable (DLQ is policy-driven)
-            </div>
-          )}
-
           {isProd && (
             <div className="px-3 py-1.5 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg mb-2 flex items-center gap-1.5">
               <span>⚠</span> Production — destructive actions disabled
@@ -248,29 +244,29 @@ export function MessageFAB({
           {/* Dead-Letter Messages Option */}
           <button
             onClick={isProd ? undefined : handleDeadLetter}
-            disabled={!hasValidEntity || isDeadLettering || isProd || isGcp}
+            disabled={!hasValidEntity || isDeadLettering || isProd}
             className={`
               flex items-center gap-3
               px-4 py-3
               border rounded-xl shadow-lg
               transition-all duration-150
               group
-              ${!hasValidEntity || isProd || isGcp
+              ${!hasValidEntity || isProd
                 ? 'bg-gray-100 border-gray-200 cursor-not-allowed opacity-50'
                 : 'bg-white hover:bg-red-50 border-gray-200 hover:border-red-300 hover:shadow-xl'
               }
             `}
-            title={isProd ? 'Quick Actions are disabled for Production namespaces' : isGcp ? `Test actions are not supported for ${providerLabel} — Pub/Sub dead-lettering is policy-driven` : 'For testing: moves up to 3 messages from the active queue to the dead-letter queue'}
+            title={isProd ? 'Quick Actions are disabled for Production namespaces' : 'For testing: moves up to 3 messages from the active queue to the dead-letter queue'}
           >
             <div className={`p-2 rounded-lg transition-colors ${
-              !hasValidEntity || isProd || isGcp
+              !hasValidEntity || isProd
                 ? 'bg-gray-200' 
                 : 'bg-red-100 group-hover:bg-red-200'
             }`}>
-              <Skull className={`w-5 h-5 ${!hasValidEntity || isProd || isGcp ? 'text-gray-400' : 'text-red-600'}`} />
+              <Skull className={`w-5 h-5 ${!hasValidEntity || isProd ? 'text-gray-400' : 'text-red-600'}`} />
             </div>
             <div className="text-left">
-              <div className={`text-sm font-semibold ${!hasValidEntity || isProd || isGcp ? 'text-gray-400' : 'text-gray-800'}`}>
+              <div className={`text-sm font-semibold ${!hasValidEntity || isProd ? 'text-gray-400' : 'text-gray-800'}`}>
                 {isDeadLettering ? 'Moving...' : 'Test DLQ'}
               </div>
               <div className="text-xs text-gray-500 max-w-[180px]">
@@ -282,19 +278,19 @@ export function MessageFAB({
           {/* Generate Messages Option */}
           <button
             onClick={handleOpenGenerate}
-            disabled={isProd || isGcp}
+            disabled={isProd}
             className={`
               flex items-center gap-3
               px-4 py-3
               border rounded-xl shadow-lg
               transition-all duration-150
               group
-              ${isProd || isGcp
+              ${isProd
                 ? 'bg-gray-100 border-gray-200 cursor-not-allowed opacity-50'
                 : 'bg-white hover:bg-amber-50 border-gray-200 hover:border-amber-300 hover:shadow-xl'
               }
             `}
-            title={isProd ? 'Quick Actions are disabled for Production namespaces' : isGcp ? `Test actions are not supported for ${providerLabel} — Pub/Sub dead-lettering is policy-driven` : undefined}
+            title={isProd ? 'Quick Actions are disabled for Production namespaces' : undefined}
           >
             <div className="p-2 bg-amber-100 rounded-lg group-hover:bg-amber-200 transition-colors">
               <Wand2 className="w-5 h-5 text-amber-600" />
@@ -308,19 +304,19 @@ export function MessageFAB({
           {/* Send Message Option */}
           <button
             onClick={handleOpenSend}
-            disabled={isProd || isGcp}
+            disabled={isProd}
             className={`
               flex items-center gap-3
               px-4 py-3
               border rounded-xl shadow-lg
               transition-all duration-150
               group
-              ${isProd || isGcp
+              ${isProd
                 ? 'bg-gray-100 border-gray-200 cursor-not-allowed opacity-50'
                 : 'bg-white hover:bg-sky-50 border-gray-200 hover:border-sky-300 hover:shadow-xl'
               }
             `}
-            title={isProd ? 'Quick Actions are disabled for Production namespaces' : isGcp ? `Test actions are not supported for ${providerLabel} — Pub/Sub dead-lettering is policy-driven` : undefined}
+            title={isProd ? 'Quick Actions are disabled for Production namespaces' : undefined}
           >
             <div className="p-2 bg-sky-100 rounded-lg group-hover:bg-sky-200 transition-colors">
               <Send className="w-5 h-5 text-sky-600" />
