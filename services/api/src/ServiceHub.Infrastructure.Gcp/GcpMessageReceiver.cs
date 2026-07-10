@@ -175,23 +175,92 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Pub/Sub has no native manual dead-letter API (dead-lettering is policy-driven via
+    /// MaxDeliveryAttempts). This mirrors the AWS approach for test-driven dead-lettering:
+    /// pull messages from the source subscription, republish them to the subscription's
+    /// configured dead-letter topic with a <c>DeadLetterReason</c> attribute, then acknowledge
+    /// the originals. Requires a dead-letter policy on the subscription — fails with a clear
+    /// validation error otherwise, matching the AWS "no DLQ configured" behaviour.
+    /// </remarks>
     public async Task<Result<int>> DeadLetterMessagesAsync(
         DeadLetterRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        // Pub/Sub DLQ is policy-driven (MaxDeliveryAttempts). Manual DLQ is achieved by
-        // nacking a message until it reaches the MaxDeliveryAttempts threshold.
-        // Simulate by simply acknowledging-and-discarding from the main subscription (not ideal)
-        // and logging a warning. Real implementations should configure the dead-letter policy.
-        _logger.LogWarning(
-            "GCP Pub/Sub does not support direct dead-lettering. " +
-            "Configure a dead-letter policy on subscription {Subscription} with MaxDeliveryAttempts.",
-            SanitizeForLog(request.EntityName));
-        return await Task.FromResult(Result.Failure<int>(Error.Validation(
-            "GCP.PubSub.NoManualDlq",
-            "GCP Pub/Sub requires a dead-letter policy to be configured on the subscription. " +
-            "Manual dead-lettering is not supported. Set MaxDeliveryAttempts on the subscription."))).ConfigureAwait(false);
+
+        var nsResult = await _namespaceRepository.GetByIdAsync(request.NamespaceId, cancellationToken).ConfigureAwait(false);
+        if (nsResult.IsFailure)
+            return Result.Failure<int>(nsResult.Error);
+
+        var ns = nsResult.Value;
+
+        try
+        {
+            var subscriber = await _clientFactory.GetSubscriberClientAsync(
+                ns, request.EntityName, cancellationToken).ConfigureAwait(false);
+            var subResourceName = GetSubscriptionResourceName(ns, request.EntityName);
+
+            // Resolve the dead-letter topic from the subscription's policy — the authoritative
+            // Pub/Sub source for where dead-lettered messages belong.
+            var subscription = await subscriber.GetSubscriptionAsync(new GetSubscriptionRequest
+            {
+                Subscription = subResourceName
+            }, cancellationToken).ConfigureAwait(false);
+
+            var deadLetterTopic = subscription.DeadLetterPolicy?.DeadLetterTopic;
+            if (string.IsNullOrEmpty(deadLetterTopic))
+            {
+                return Result.Failure<int>(Error.Validation("GCP.PubSub.NoDlq",
+                    $"Subscription {request.EntityName} has no dead-letter policy configured. " +
+                    "Set a dead-letter topic and MaxDeliveryAttempts on the subscription."));
+            }
+
+            var deadLetterTopicId = TopicName.Parse(deadLetterTopic).TopicId;
+            var publisher = await _clientFactory.GetPublisherClientAsync(
+                ns, deadLetterTopicId, cancellationToken).ConfigureAwait(false);
+
+            // Pull with a real ack window (no nack) — these messages are being removed.
+            var pull = await subscriber.PullAsync(new PullRequest
+            {
+                Subscription = subResourceName,
+                MaxMessages = request.ValidatedMessageCount
+            }, cancellationToken).ConfigureAwait(false);
+
+            if (pull.ReceivedMessages.Count == 0)
+                return Result.Success(0);
+
+            var ackIds = new List<string>(pull.ReceivedMessages.Count);
+            foreach (var received in pull.ReceivedMessages)
+            {
+                var forwarded = new PubsubMessage { Data = received.Message.Data };
+                foreach (var attribute in received.Message.Attributes)
+                    forwarded.Attributes[attribute.Key] = attribute.Value;
+                forwarded.Attributes["DeadLetterReason"] = request.Reason;
+                if (!string.IsNullOrEmpty(request.ErrorDescription))
+                    forwarded.Attributes["DeadLetterErrorDescription"] = request.ErrorDescription;
+
+                await publisher.PublishAsync(forwarded).ConfigureAwait(false);
+                ackIds.Add(received.AckId);
+            }
+
+            // Acknowledge the originals — removes them from the source subscription.
+            await subscriber.AcknowledgeAsync(new AcknowledgeRequest
+            {
+                Subscription = subResourceName,
+                AckIds = { ackIds }
+            }, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Dead-lettered {Count} messages from subscription {Subscription} to topic {Topic}",
+                ackIds.Count, SanitizeForLog(request.EntityName), SanitizeForLog(deadLetterTopicId));
+            return Result.Success(ackIds.Count);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Error dead-lettering Pub/Sub messages from {Subscription}", SanitizeForLog(request.EntityName));
+            return Result.Failure<int>(Error.ExternalService("GCP.PubSub.DlqFailed", ex.Message));
+        }
     }
 
     /// <inheritdoc/>
