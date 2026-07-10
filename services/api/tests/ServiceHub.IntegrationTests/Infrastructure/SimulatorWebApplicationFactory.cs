@@ -31,6 +31,7 @@ public sealed class SimulatorWebApplicationFactory : WebApplicationFactory<Progr
                 ["Security:Authentication:Enabled"] = "false",
                 ["Cors:AllowedOrigins:0"] = "*",
                 ["NamespaceRepository:DataDirectory"] = _testDataDir,
+                ["DlqDatabase:DataDirectory"] = _testDataDir,
                 ["RateLimit:MaxRequests"] = "9999",
             });
         });
