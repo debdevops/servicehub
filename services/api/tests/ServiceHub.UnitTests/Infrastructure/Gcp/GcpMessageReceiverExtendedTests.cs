@@ -177,7 +177,7 @@ public sealed class GcpMessageReceiverExtendedTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // DeadLetterMessagesAsync — always returns validation failure for GCP
+    // DeadLetterMessagesAsync — pull → republish to dead-letter topic → ack
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -193,20 +193,159 @@ public sealed class GcpMessageReceiverExtendedTests
     }
 
     [Fact]
-    public async Task DeadLetterMessagesAsync_AlwaysReturnsValidationFailure()
+    public async Task DeadLetterMessagesAsync_NoDeadLetterPolicy_ReturnsNoDlqValidation()
     {
-        // GCP Pub/Sub manual DLQ is not supported — requires policy-driven approach
-        var sut = new GcpMessageReceiver(
-            new Mock<IGcpClientFactory>().Object,
-            new Mock<INamespaceRepository>().Object,
-            NullLogger<GcpMessageReceiver>.Instance);
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        var request = new DeadLetterRequest(TestNamespaceId, "my-sub", "manual reason", 1);
+        var subscriber = new Mock<SubscriberServiceApiClient>();
+        subscriber.Setup(s => s.GetSubscriptionAsync(It.IsAny<GetSubscriptionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Subscription()); // no DeadLetterPolicy
 
-        var result = await sut.DeadLetterMessagesAsync(request);
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetSubscriberClientAsync(ns, "my-sub", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(subscriber.Object);
+
+        var sut = new GcpMessageReceiver(factory.Object, repo.Object, NullLogger<GcpMessageReceiver>.Instance);
+
+        var result = await sut.DeadLetterMessagesAsync(new DeadLetterRequest(TestNamespaceId, "my-sub", SubscriptionName: null, MessageCount: 1, Reason: "manual reason"));
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("GCP.PubSub.NoManualDlq");
+        result.Error.Code.Should().Be("GCP.PubSub.NoDlq");
+    }
+
+    [Fact]
+    public async Task DeadLetterMessagesAsync_WithPolicy_RepublishesToDeadLetterTopicAndAcks()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var subscriber = new Mock<SubscriberServiceApiClient>();
+        subscriber.Setup(s => s.GetSubscriptionAsync(It.IsAny<GetSubscriptionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Subscription
+            {
+                DeadLetterPolicy = new DeadLetterPolicy { DeadLetterTopic = "projects/my-project/topics/orders-dl" }
+            });
+        subscriber.Setup(s => s.PullAsync(It.IsAny<PullRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PullResponse
+            {
+                ReceivedMessages =
+                {
+                    new ReceivedMessage
+                    {
+                        AckId = "ack-1",
+                        Message = new PubsubMessage
+                        {
+                            MessageId = "m1",
+                            Data = Google.Protobuf.ByteString.CopyFromUtf8("{\"orderId\":1}"),
+                            Attributes = { ["source"] = "test" }
+                        }
+                    },
+                    new ReceivedMessage
+                    {
+                        AckId = "ack-2",
+                        Message = new PubsubMessage
+                        {
+                            MessageId = "m2",
+                            Data = Google.Protobuf.ByteString.CopyFromUtf8("{\"orderId\":2}")
+                        }
+                    }
+                }
+            });
+
+        AcknowledgeRequest? ackRequest = null;
+        subscriber.Setup(s => s.AcknowledgeAsync(It.IsAny<AcknowledgeRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<AcknowledgeRequest, CancellationToken>((req, _) => ackRequest = req)
+            .Returns(Task.CompletedTask);
+
+        var published = new List<PubsubMessage>();
+        var publisher = new Mock<PublisherClient>();
+        publisher.Setup(p => p.PublishAsync(It.IsAny<PubsubMessage>()))
+            .Callback<PubsubMessage>(published.Add)
+            .ReturnsAsync("published-id");
+
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetSubscriberClientAsync(ns, "my-sub", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(subscriber.Object);
+        factory.Setup(f => f.GetPublisherClientAsync(ns, "orders-dl", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(publisher.Object);
+
+        var sut = new GcpMessageReceiver(factory.Object, repo.Object, NullLogger<GcpMessageReceiver>.Instance);
+
+        var result = await sut.DeadLetterMessagesAsync(new DeadLetterRequest(
+            TestNamespaceId, "my-sub", SubscriptionName: null,
+            MessageCount: 2, Reason: "TestingDLQ", ErrorDescription: "moved via ServiceHub"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(2);
+
+        // Republished to the policy's dead-letter topic with reason attributes, originals preserved
+        published.Should().HaveCount(2);
+        published[0].Attributes["DeadLetterReason"].Should().Be("TestingDLQ");
+        published[0].Attributes["DeadLetterErrorDescription"].Should().Be("moved via ServiceHub");
+        published[0].Attributes["source"].Should().Be("test");
+
+        // Originals acknowledged (removed from the source subscription)
+        ackRequest.Should().NotBeNull();
+        ackRequest!.AckIds.Should().BeEquivalentTo(new[] { "ack-1", "ack-2" });
+    }
+
+    [Fact]
+    public async Task DeadLetterMessagesAsync_EmptySourceSubscription_ReturnsZero()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var subscriber = new Mock<SubscriberServiceApiClient>();
+        subscriber.Setup(s => s.GetSubscriptionAsync(It.IsAny<GetSubscriptionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Subscription
+            {
+                DeadLetterPolicy = new DeadLetterPolicy { DeadLetterTopic = "projects/my-project/topics/orders-dl" }
+            });
+        subscriber.Setup(s => s.PullAsync(It.IsAny<PullRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PullResponse());
+
+        var publisher = new Mock<PublisherClient>();
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetSubscriberClientAsync(ns, "my-sub", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(subscriber.Object);
+        factory.Setup(f => f.GetPublisherClientAsync(ns, "orders-dl", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(publisher.Object);
+
+        var sut = new GcpMessageReceiver(factory.Object, repo.Object, NullLogger<GcpMessageReceiver>.Instance);
+
+        var result = await sut.DeadLetterMessagesAsync(new DeadLetterRequest(TestNamespaceId, "my-sub", SubscriptionName: null, MessageCount: 3, Reason: "TestingDLQ"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(0);
+        publisher.Verify(p => p.PublishAsync(It.IsAny<PubsubMessage>()), Times.Never);
+        subscriber.Verify(s => s.AcknowledgeAsync(It.IsAny<AcknowledgeRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeadLetterMessagesAsync_ClientError_ReturnsDlqFailed()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetSubscriberClientAsync(ns, "my-sub", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("credential failure"));
+
+        var sut = new GcpMessageReceiver(factory.Object, repo.Object, NullLogger<GcpMessageReceiver>.Instance);
+
+        var result = await sut.DeadLetterMessagesAsync(new DeadLetterRequest(TestNamespaceId, "my-sub", SubscriptionName: null, MessageCount: 1, Reason: "TestingDLQ"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().Be("GCP.PubSub.DlqFailed");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
