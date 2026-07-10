@@ -15,7 +15,7 @@ interface SendMessageModalProps {
   onClose: () => void;
   onSend: (data: MessagePayload) => void;
   defaultNamespaceId?: string | null;
-  defaultQueueName?: string | null;
+  defaultEntityName?: string | null;
   defaultEntityType?: 'queue' | 'topic';
 }
 
@@ -42,7 +42,7 @@ export function SendMessageModal({
   onClose, 
   onSend,
   defaultNamespaceId,
-  defaultQueueName,
+  defaultEntityName,
   defaultEntityType
 }: SendMessageModalProps) {
   const { data: namespaces } = useNamespaces();
@@ -52,7 +52,7 @@ export function SendMessageModal({
   const sendMessage = useSendMessage();
 
   const [entityType, setEntityType] = useState<'queue' | 'topic'>(defaultEntityType || 'queue');
-  const [entity, setEntity] = useState(defaultQueueName || '');
+  const [entity, setEntity] = useState(defaultEntityName || '');
   const [body, setBody] = useState('{\n  "orderId": "ORD-2026-12345",\n  "amount": 99.99,\n  "currency": "USD"\n}');
   const [contentType, setContentType] = useState('application/json');
   const [properties, setProperties] = useState<MessageProperty[]>([
@@ -70,9 +70,9 @@ export function SendMessageModal({
   // Update selected namespace, entity, and entity type when defaults change
   useEffect(() => {
     if (defaultNamespaceId) setSelectedNamespace(defaultNamespaceId);
-    if (defaultQueueName) setEntity(defaultQueueName);
+    if (defaultEntityName) setEntity(defaultEntityName);
     if (defaultEntityType) setEntityType(defaultEntityType);
-  }, [defaultNamespaceId, defaultQueueName, defaultEntityType]);
+  }, [defaultNamespaceId, defaultEntityName, defaultEntityType]);
 
   // Handle Escape key to close modal
   useEffect(() => {

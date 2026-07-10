@@ -357,7 +357,7 @@ export function MessageFAB({
         onClose={() => setActiveModal(null)}
         onSend={handleSend}
         defaultNamespaceId={namespaceId}
-        defaultQueueName={entityType === 'topic' ? topicName : queueName}
+        defaultEntityName={entityType === 'topic' ? topicName : queueName}
         defaultEntityType={entityType}
       />
 
