@@ -31,6 +31,10 @@ Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-
 > [!TIP]
 > **No credentials?** Try the built-in [Simulator Mode](#simulator-mode) — runs 3 synthetic namespaces (Azure + AWS + GCP) with 50 seeded messages each. No cloud account needed.
 
+<p align="center">
+  <img src="docs/screenshots/servicehub-architecture.png" alt="ServiceHub at a glance — one unified UI, a provider-aware core with safety rails, and native support for Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub" width="100%">
+</p>
+
 | Capability | Standard Cloud Portals | ServiceHub |
 |---|---|---|
 | View message body & content | ❌ Count only | ✅ Full body + syntax highlighting |
