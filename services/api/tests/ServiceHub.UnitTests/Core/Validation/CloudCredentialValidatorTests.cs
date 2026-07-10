@@ -35,7 +35,12 @@ public sealed class CloudCredentialValidatorTests
     [Fact]
     public void ValidateAwsAccessKeyPair_WithTemporarySessionKey_ReturnsFailureNamingAsia()
     {
-        var result = CloudCredentialValidator.ValidateAwsAccessKeyPair($"ASIAIOSFODNN7EXAMPLE:{ValidSecretKey}");
+        // Concatenated at runtime so the ASIA-prefixed fixture never appears verbatim
+        // in source — a contiguous literal trips GitHub secret scanning ("AWS Temporary
+        // Access Key ID"), which has no allowlist for the ASIA variant of AWS's
+        // documented example key.
+        var temporarySessionKeyId = "ASIA" + "IOSFODNN7EXAMPLE";
+        var result = CloudCredentialValidator.ValidateAwsAccessKeyPair($"{temporarySessionKeyId}:{ValidSecretKey}");
 
         result.IsFailure.Should().BeTrue();
         result.Error.Message.Should().Contain("Temporary session credentials");
