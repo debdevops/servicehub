@@ -65,7 +65,7 @@ public sealed class EasyAuthMiddleware
         {
             _logger.LogInformation(
                 "EasyAuth is enabled in configuration but Azure Easy Auth is not detected " +
-                "(WEBSITE_AUTH_ENABLED is not set). The X-MS-CLIENT-PRINCIPAL-ID header will be " +
+                "(WEBSITE_AUTH_ENABLED is not set to 'True'). The X-MS-CLIENT-PRINCIPAL-ID header will be " +
                 "ignored to prevent identity spoofing. If a trusted proxy strips and injects this " +
                 "header on your platform, set Security:EasyAuth:TrustClientPrincipalHeader=true.");
         }

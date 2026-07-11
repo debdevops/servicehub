@@ -225,6 +225,47 @@ public class AnomaliesControllerTests
     }
 
     [Fact]
+    public async Task GetById_NamespaceNotFound_ShouldReturnNotFound()
+    {
+        var anomaly = Anomaly.Create(
+            Guid.NewGuid(),
+            "test-queue",
+            AnomalyType.HighMessageVolume,
+            50,
+            "Message volume anomaly");
+
+        _aiServiceClient.Setup(a => a.GetAnomalyByIdAsync(anomaly.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Anomaly>.Success(anomaly));
+        _namespaceRepository.Setup(r => r.GetByIdAsync(anomaly.NamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("NOT_FOUND", "Namespace not found")));
+
+        var result = await _controller.GetById(anomaly.Id);
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task GetById_NamespaceLookupFails_ShouldPropagateError()
+    {
+        var anomaly = Anomaly.Create(
+            Guid.NewGuid(),
+            "test-queue",
+            AnomalyType.HighMessageVolume,
+            50,
+            "Message volume anomaly");
+
+        _aiServiceClient.Setup(a => a.GetAnomalyByIdAsync(anomaly.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Anomaly>.Success(anomaly));
+        _namespaceRepository.Setup(r => r.GetByIdAsync(anomaly.NamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(Error.Internal("DB_ERR", "Database unavailable")));
+
+        var result = await _controller.GetById(anomaly.Id);
+
+        var objectResult = result.Result.Should().BeOfType<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+    }
+
+    [Fact]
     public async Task GetById_NotFound_ShouldReturnNotFound()
     {
         var id = Guid.NewGuid();

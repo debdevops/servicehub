@@ -149,6 +149,12 @@ public sealed class AnomaliesController : ApiControllerBase
         // the anomaly ID exists.
         var namespaceResult = await _namespaceRepository.GetByIdAsync(result.Value.NamespaceId, cancellationToken);
         if (namespaceResult.IsFailure
+            && namespaceResult.Error.Type != ServiceHub.Shared.Results.ErrorType.NotFound)
+        {
+            return ToActionResult<AnomalyInfo>(namespaceResult.Error);
+        }
+
+        if (namespaceResult.IsFailure
             || !string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
         {
             return ToActionResult<AnomalyInfo>(ServiceHub.Shared.Results.Error.NotFound(

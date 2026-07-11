@@ -76,6 +76,7 @@ public class EasyAuthMiddlewareTests
     {
         // Azure App Service sets WEBSITE_AUTH_ENABLED=True on the worker when
         // Easy Auth is active — the only environment where the header is unforgeable.
+        var previousValue = Environment.GetEnvironmentVariable("WEBSITE_AUTH_ENABLED");
         Environment.SetEnvironmentVariable("WEBSITE_AUTH_ENABLED", "True");
         try
         {
@@ -92,7 +93,7 @@ public class EasyAuthMiddlewareTests
         }
         finally
         {
-            Environment.SetEnvironmentVariable("WEBSITE_AUTH_ENABLED", null);
+            Environment.SetEnvironmentVariable("WEBSITE_AUTH_ENABLED", previousValue);
         }
     }
 
