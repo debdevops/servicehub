@@ -15,11 +15,16 @@ public sealed class RateLimitingMiddleware
     // CRITICAL FIX: Bound dictionary size to prevent DoS via memory exhaustion
     private const int MaxTrackedClients = 10_000;
 
+    // Full-dictionary expiry sweeps are O(n); running one per request would make every
+    // request pay for the whole client table. Sweep at most once per interval instead.
+    private static readonly TimeSpan CleanupInterval = TimeSpan.FromSeconds(30);
+
     private readonly RequestDelegate _next;
     private readonly ILogger<RateLimitingMiddleware> _logger;
     private readonly RateLimitOptions _options;
     private readonly HttpHeadersOptions _headersOptions;
     private readonly ConcurrentDictionary<string, RateLimitEntry> _clients = new();
+    private long _lastCleanupTicks;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RateLimitingMiddleware"/> class.
@@ -143,6 +148,18 @@ public sealed class RateLimitingMiddleware
 
     private void CleanupExpiredEntries(DateTime now)
     {
+        var lastCleanup = Interlocked.Read(ref _lastCleanupTicks);
+        if (now.Ticks - lastCleanup < CleanupInterval.Ticks)
+        {
+            return;
+        }
+
+        // Only one request per interval performs the sweep; losers of the race skip it.
+        if (Interlocked.CompareExchange(ref _lastCleanupTicks, now.Ticks, lastCleanup) != lastCleanup)
+        {
+            return;
+        }
+
         var expiredKeys = _clients
             .Where(kvp => now - kvp.Value.WindowStart > _options.WindowDuration * 2)
             .Select(kvp => kvp.Key)

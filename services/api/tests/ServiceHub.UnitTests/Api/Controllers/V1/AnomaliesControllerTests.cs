@@ -189,12 +189,80 @@ public class AnomaliesControllerTests
 
         _aiServiceClient.Setup(a => a.GetAnomalyByIdAsync(anomaly.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Anomaly>.Success(anomaly));
+        _namespaceRepository.Setup(r => r.GetByIdAsync(anomaly.NamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateTestNamespace()));
 
         var result = await _controller.GetById(anomaly.Id);
 
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var response = okResult.Value.Should().BeOfType<AnomalyInfo>().Subject;
         response.Id.Should().Be(anomaly.Id);
+    }
+
+    [Fact]
+    public async Task GetById_NamespaceOwnedByAnotherTenant_ShouldReturnNotFound()
+    {
+        var anomaly = Anomaly.Create(
+            Guid.NewGuid(),
+            "test-queue",
+            AnomalyType.HighMessageVolume,
+            50,
+            "Message volume anomaly");
+
+        var foreignNamespace = Namespace.Create(
+            "other-namespace",
+            "Endpoint=sb://other.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
+            ownerId: "key_othertenant").Value;
+
+        _aiServiceClient.Setup(a => a.GetAnomalyByIdAsync(anomaly.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Anomaly>.Success(anomaly));
+        _namespaceRepository.Setup(r => r.GetByIdAsync(anomaly.NamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(foreignNamespace));
+
+        var result = await _controller.GetById(anomaly.Id);
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task GetById_NamespaceNotFound_ShouldReturnNotFound()
+    {
+        var anomaly = Anomaly.Create(
+            Guid.NewGuid(),
+            "test-queue",
+            AnomalyType.HighMessageVolume,
+            50,
+            "Message volume anomaly");
+
+        _aiServiceClient.Setup(a => a.GetAnomalyByIdAsync(anomaly.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Anomaly>.Success(anomaly));
+        _namespaceRepository.Setup(r => r.GetByIdAsync(anomaly.NamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("NOT_FOUND", "Namespace not found")));
+
+        var result = await _controller.GetById(anomaly.Id);
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task GetById_NamespaceLookupFails_ShouldPropagateError()
+    {
+        var anomaly = Anomaly.Create(
+            Guid.NewGuid(),
+            "test-queue",
+            AnomalyType.HighMessageVolume,
+            50,
+            "Message volume anomaly");
+
+        _aiServiceClient.Setup(a => a.GetAnomalyByIdAsync(anomaly.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Anomaly>.Success(anomaly));
+        _namespaceRepository.Setup(r => r.GetByIdAsync(anomaly.NamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(Error.Internal("DB_ERR", "Database unavailable")));
+
+        var result = await _controller.GetById(anomaly.Id);
+
+        var objectResult = result.Result.Should().BeOfType<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
     }
 
     [Fact]
