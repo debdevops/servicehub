@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
 using ServiceHub.Api.Controllers.V1;
+using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
@@ -14,18 +15,34 @@ namespace ServiceHub.UnitTests.Api.Controllers.V1;
 public sealed class CloudBridgeControllerTests
 {
     private readonly Mock<ILogger<CloudBridgeController>> _loggerMock = new();
+    private readonly Mock<INamespaceRepository> _namespaceRepositoryMock = new();
     private readonly List<ICloudMessagingProvider> _providers = new();
     private readonly CloudBridgeController _controller;
 
     public CloudBridgeControllerTests()
     {
-        _controller = new CloudBridgeController(_providers, _loggerMock.Object)
+        // Default: any namespace lookup succeeds and belongs to the SPA owner
+        // (the OwnerId ApiControllerBase falls back to when none is set).
+        _namespaceRepositoryMock
+            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid _, CancellationToken _) => Result<Namespace>.Success(CreateNamespace(Namespace.SpaOwnerId)));
+
+        _controller = new CloudBridgeController(_providers, _namespaceRepositoryMock.Object, _loggerMock.Object)
         {
             ControllerContext = new ControllerContext
             {
                 HttpContext = new DefaultHttpContext()
             }
         };
+    }
+
+    private static Namespace CreateNamespace(string ownerId)
+    {
+        return Namespace.Create(
+            "aws-queue",
+            "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue",
+            provider: CloudProviderType.Aws,
+            ownerId: ownerId).Value;
     }
 
     [Fact]
@@ -146,6 +163,70 @@ public sealed class CloudBridgeControllerTests
         var okResult = (OkObjectResult)result;
         var returned = (IReadOnlyList<CloudEntity>)okResult.Value!;
         returned.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task ListEntities_NamespaceOwnedByAnotherTenant_ReturnsNotFound()
+    {
+        // Arrange
+        var nsId = Guid.NewGuid();
+        var awsProvider = new Mock<ICloudMessagingProvider>();
+        awsProvider.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Aws);
+        _providers.Add(awsProvider.Object);
+
+        _namespaceRepositoryMock
+            .Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateNamespace("key_othertenant")));
+
+        // Act
+        var result = await _controller.ListEntities(nsId, "Aws", CancellationToken.None);
+
+        // Assert
+        result.Should().BeOfType<NotFoundObjectResult>();
+        awsProvider.Verify(
+            p => p.ListEntitiesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ListEntities_NamespaceNotFound_ReturnsNotFound()
+    {
+        // Arrange
+        var nsId = Guid.NewGuid();
+        var awsProvider = new Mock<ICloudMessagingProvider>();
+        awsProvider.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Aws);
+        _providers.Add(awsProvider.Object);
+
+        _namespaceRepositoryMock
+            .Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("Namespace.NotFound", "Not found.")));
+
+        // Act
+        var result = await _controller.ListEntities(nsId, "Aws", CancellationToken.None);
+
+        // Assert
+        result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task GetVisibilityStatus_NamespaceOwnedByAnotherTenant_ReturnsNotFound()
+    {
+        // Arrange
+        var nsId = Guid.NewGuid();
+        var awsProvider = new Mock<ICloudMessagingProvider>();
+        awsProvider.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Aws);
+        _providers.Add(awsProvider.Object);
+
+        _namespaceRepositoryMock
+            .Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateNamespace("key_othertenant")));
+
+        // Act
+        var result = await _controller.GetVisibilityStatus(nsId, "my-queue", "Aws", CancellationToken.None);
+
+        // Assert
+        result.Should().BeOfType<NotFoundObjectResult>();
+        awsProvider.Verify(p => p.GetMessageReceiver(), Times.Never);
     }
 
     [Fact]

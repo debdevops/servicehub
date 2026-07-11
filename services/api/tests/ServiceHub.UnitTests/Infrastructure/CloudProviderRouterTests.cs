@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Api.Controllers.V1;
+using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
@@ -17,7 +18,18 @@ public sealed class CloudProviderRouterTests
 
     private static CloudBridgeController BuildController(params ICloudMessagingProvider[] providers)
     {
-        var ctrl = new CloudBridgeController(providers, NullLogger<CloudBridgeController>.Instance);
+        // Ownership checks pass by default: every namespace resolves to the SPA owner,
+        // matching the OwnerId ApiControllerBase falls back to.
+        var namespaceRepository = new Mock<INamespaceRepository>();
+        namespaceRepository
+            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(Namespace.Create(
+                "aws-queue",
+                "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue",
+                provider: CloudProviderType.Aws).Value));
+
+        var ctrl = new CloudBridgeController(
+            providers, namespaceRepository.Object, NullLogger<CloudBridgeController>.Instance);
         ctrl.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext(),
