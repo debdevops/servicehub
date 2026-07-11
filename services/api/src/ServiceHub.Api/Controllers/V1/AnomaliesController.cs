@@ -144,6 +144,24 @@ public sealed class AnomaliesController : ApiControllerBase
             return ToActionResult<AnomalyInfo>(result.Error);
         }
 
+        // TENANT ISOLATION: an anomaly is only visible to the owner of the namespace
+        // it was detected in. Return 404 (not 403) on mismatch to avoid leaking that
+        // the anomaly ID exists.
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(result.Value.NamespaceId, cancellationToken);
+        if (namespaceResult.IsFailure
+            && namespaceResult.Error.Type != ServiceHub.Shared.Results.ErrorType.NotFound)
+        {
+            return ToActionResult<AnomalyInfo>(namespaceResult.Error);
+        }
+
+        if (namespaceResult.IsFailure
+            || !string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return ToActionResult<AnomalyInfo>(ServiceHub.Shared.Results.Error.NotFound(
+                "Anomaly.NotFound",
+                $"Anomaly with ID '{id}' was not found."));
+        }
+
         return Ok(MapToAnomalyInfo(result.Value));
     }
 
