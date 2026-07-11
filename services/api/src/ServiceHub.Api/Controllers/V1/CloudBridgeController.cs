@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Shared.Constants;
+using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Api.Controllers.V1;
 
@@ -15,6 +17,7 @@ namespace ServiceHub.Api.Controllers.V1;
 public sealed class CloudBridgeController : ApiControllerBase
 {
     private readonly IEnumerable<ICloudMessagingProvider> _providers;
+    private readonly INamespaceRepository _namespaceRepository;
     private readonly ILogger<CloudBridgeController> _logger;
 
     /// <summary>
@@ -22,9 +25,11 @@ public sealed class CloudBridgeController : ApiControllerBase
     /// </summary>
     public CloudBridgeController(
         IEnumerable<ICloudMessagingProvider> providers,
+        INamespaceRepository namespaceRepository,
         ILogger<CloudBridgeController> logger)
     {
         _providers = providers;
+        _namespaceRepository = namespaceRepository;
         _logger = logger;
     }
 
@@ -86,6 +91,9 @@ public sealed class CloudBridgeController : ApiControllerBase
         var resolved = ResolveProvider(provider, out var error);
         if (resolved is null) return error!;
 
+        var ownershipError = await VerifyNamespaceOwnershipAsync(namespaceId, ct).ConfigureAwait(false);
+        if (ownershipError is not null) return ownershipError;
+
         var result = await resolved.ListEntitiesAsync(namespaceId, ct).ConfigureAwait(false);
         if (!result.IsSuccess)
         {
@@ -133,6 +141,9 @@ public sealed class CloudBridgeController : ApiControllerBase
         var resolved = ResolveProvider(provider, out var error);
         if (resolved is null) return error!;
 
+        var ownershipError = await VerifyNamespaceOwnershipAsync(namespaceId, ct).ConfigureAwait(false);
+        if (ownershipError is not null) return ownershipError;
+
         if (resolved.ProviderType == CloudProviderType.Aws)
         {
             if (resolved.GetMessageReceiver() is not IVisibilityStatusProvider awsReceiver)
@@ -177,6 +188,27 @@ public sealed class CloudBridgeController : ApiControllerBase
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    // TENANT ISOLATION: the provider layer resolves connections by namespace ID alone,
+    // so ownership must be enforced here. Returns 404 (not 403) on mismatch to avoid
+    // leaking that the ID is in use — same convention as NamespacesController.
+    private async Task<IActionResult?> VerifyNamespaceOwnershipAsync(Guid namespaceId, CancellationToken ct)
+    {
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, ct).ConfigureAwait(false);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult(Result.Failure(namespaceResult.Error));
+        }
+
+        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return ToActionResult(Result.Failure(Error.NotFound(
+                ErrorCodes.Namespace.NotFound,
+                $"Namespace with ID '{namespaceId}' was not found.")));
+        }
+
+        return null;
+    }
 
     private static string SanitizeForLog(string? value)
         => (value ?? string.Empty)

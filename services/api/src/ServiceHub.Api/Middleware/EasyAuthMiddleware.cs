@@ -43,7 +43,32 @@ public sealed class EasyAuthMiddleware
         // and passes through without setting OwnerId (allowing legacy SPA token path).
         // Defaults to enabled to preserve current behavior when setting is absent.
         var easyAuthEnabledSetting = configuration["Security:EasyAuth:Enabled"];
-        _enabled = !bool.TryParse(easyAuthEnabledSetting, out var enabled) || enabled;
+        var configEnabled = !bool.TryParse(easyAuthEnabledSetting, out var enabled) || enabled;
+
+        // SECURITY: X-MS-CLIENT-PRINCIPAL-ID is only unforgeable when Azure's
+        // authentication layer sits in front of the app and strips the header from
+        // inbound traffic. On any other host (AWS ECS, GCP Cloud Run, bare Kestrel)
+        // a client can send the header directly and mint an arbitrary identity.
+        // Trust it only when Azure Easy Auth is provably active for this worker
+        // (App Service sets WEBSITE_AUTH_ENABLED=True), or when the operator
+        // explicitly asserts their front end strips and injects the header.
+        var behindAzureEasyAuth = string.Equals(
+            Environment.GetEnvironmentVariable("WEBSITE_AUTH_ENABLED"),
+            "True",
+            StringComparison.OrdinalIgnoreCase);
+        var explicitHeaderTrust = configuration.GetValue(
+            "Security:EasyAuth:TrustClientPrincipalHeader", false);
+
+        _enabled = configEnabled && (behindAzureEasyAuth || explicitHeaderTrust);
+
+        if (configEnabled && !_enabled)
+        {
+            _logger.LogInformation(
+                "EasyAuth is enabled in configuration but Azure Easy Auth is not detected " +
+                "(WEBSITE_AUTH_ENABLED is not set). The X-MS-CLIENT-PRINCIPAL-ID header will be " +
+                "ignored to prevent identity spoofing. If a trusted proxy strips and injects this " +
+                "header on your platform, set Security:EasyAuth:TrustClientPrincipalHeader=true.");
+        }
     }
 
     /// <summary>
