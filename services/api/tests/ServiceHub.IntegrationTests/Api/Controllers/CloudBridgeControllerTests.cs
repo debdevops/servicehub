@@ -32,6 +32,7 @@ public sealed class CloudBridgeTestFactory : WebApplicationFactory<Program>
                 ["Cors:AllowedOrigins:0"] = "*",
                 ["RateLimiting:Enabled"] = "false",
                 ["NamespaceRepository:DataDirectory"] = _testDataDir,
+                ["DlqDatabase:DataDirectory"] = _testDataDir,
                 // Explicitly disable both cloud providers so no external SDK clients are initialised
                 ["CloudProviders:Aws:Enabled"] = "false",
                 ["CloudProviders:Gcp:Enabled"] = "false",
@@ -196,6 +197,7 @@ public sealed class CloudBridgeEnabledProvidersFactory : WebApplicationFactory<P
                 ["Cors:AllowedOrigins:0"] = "*",
                 ["RateLimiting:Enabled"] = "false",
                 ["NamespaceRepository:DataDirectory"] = _testDataDir,
+                ["DlqDatabase:DataDirectory"] = _testDataDir,
             });
         });
 

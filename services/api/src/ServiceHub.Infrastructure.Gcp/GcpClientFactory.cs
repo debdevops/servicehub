@@ -39,8 +39,12 @@ public sealed class GcpClientFactory : IGcpClientFactory
 
     // Cache key: "{namespaceId}:{entityId}"
     private readonly ConcurrentDictionary<string, PublisherClient> _publisherCache = new();
-    private readonly ConcurrentDictionary<string, SubscriberServiceApiClient> _subscriberCache = new();
-    private readonly ConcurrentDictionary<Guid, PublisherServiceApiClient> _topicAdminCache = new();
+
+    // SubscriberServiceApiClient/PublisherServiceApiClient expose no Dispose/Shutdown of their
+    // own when built with explicit ChannelCredentials, so the underlying gRPC channel — the
+    // thing actually holding the socket — is tracked alongside the client and shut down explicitly.
+    private readonly ConcurrentDictionary<string, (SubscriberServiceApiClient Client, ChannelBase Channel)> _subscriberCache = new();
+    private readonly ConcurrentDictionary<Guid, (PublisherServiceApiClient Client, ChannelBase Channel)> _topicAdminCache = new();
 
     /// <summary>
     /// Initialises a new instance of <see cref="GcpClientFactory"/>.
@@ -89,7 +93,7 @@ public sealed class GcpClientFactory : IGcpClientFactory
 
         var cacheKey = $"{ns.Id}:{subscriptionId}";
         if (_subscriberCache.TryGetValue(cacheKey, out var cached))
-            return cached;
+            return cached.Client;
 
         var credential = await ResolveCredentialAsync(ns).ConfigureAwait(false);
 
@@ -100,7 +104,7 @@ public sealed class GcpClientFactory : IGcpClientFactory
 
         var client = await clientBuilder.BuildAsync(ct).ConfigureAwait(false);
 
-        _subscriberCache.TryAdd(cacheKey, client);
+        _subscriberCache.TryAdd(cacheKey, (client, clientBuilder.LastCreatedChannel));
         var projectId = GetProjectId(ns);
         _logger.LogDebug("Created SubscriberServiceApiClient for subscription {SubscriptionId} in project {ProjectId}",
             LogRedactor.SanitiseForLog(subscriptionId), LogRedactor.SanitiseForLog(projectId));
@@ -113,7 +117,7 @@ public sealed class GcpClientFactory : IGcpClientFactory
         ArgumentNullException.ThrowIfNull(ns);
 
         if (_topicAdminCache.TryGetValue(ns.Id, out var cached))
-            return cached;
+            return cached.Client;
 
         var credential = await ResolveCredentialAsync(ns).ConfigureAwait(false);
 
@@ -124,7 +128,7 @@ public sealed class GcpClientFactory : IGcpClientFactory
 
         var client = await clientBuilder.BuildAsync(ct).ConfigureAwait(false);
 
-        _topicAdminCache.TryAdd(ns.Id, client);
+        _topicAdminCache.TryAdd(ns.Id, (client, clientBuilder.LastCreatedChannel));
         _logger.LogDebug("Created PublisherServiceApiClient (topic admin) for project {ProjectId}",
             LogRedactor.SanitiseForLog(GetProjectId(ns)));
         return client;
@@ -135,6 +139,10 @@ public sealed class GcpClientFactory : IGcpClientFactory
     {
         var prefix = $"{namespaceId}:";
 
+        // Bound the shutdown wait but still honour the caller's cancellation.
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
         foreach (var key in _publisherCache.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList())
         {
             if (_publisherCache.TryRemove(key, out var publisher))
@@ -142,7 +150,7 @@ public sealed class GcpClientFactory : IGcpClientFactory
                 _logger.LogInformation("Shutting down PublisherClient for namespace {NamespaceId}", namespaceId);
                 try
                 {
-                    await publisher.ShutdownAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                    await publisher.ShutdownAsync(linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -153,12 +161,31 @@ public sealed class GcpClientFactory : IGcpClientFactory
 
         foreach (var key in _subscriberCache.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList())
         {
-            _subscriberCache.TryRemove(key, out _);
+            if (_subscriberCache.TryRemove(key, out var entry))
+            {
+                _logger.LogInformation("Shutting down SubscriberServiceApiClient channel for namespace {NamespaceId}", namespaceId);
+                try
+                {
+                    await entry.Channel.ShutdownAsync().WaitAsync(linkedCts.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error shutting down SubscriberServiceApiClient channel for namespace {NamespaceId}", namespaceId);
+                }
+            }
         }
 
-        if (_topicAdminCache.TryRemove(namespaceId, out _))
+        if (_topicAdminCache.TryRemove(namespaceId, out var topicAdminEntry))
         {
-            _logger.LogInformation("Removed cached topic-admin client for namespace {NamespaceId}", namespaceId);
+            _logger.LogInformation("Shutting down topic-admin client channel for namespace {NamespaceId}", namespaceId);
+            try
+            {
+                await topicAdminEntry.Channel.ShutdownAsync().WaitAsync(linkedCts.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error shutting down topic-admin client channel for namespace {NamespaceId}", namespaceId);
+            }
         }
     }
 
