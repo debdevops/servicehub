@@ -64,17 +64,13 @@ public sealed class SubscriptionsController : ApiControllerBase
             LogRedactor.SanitiseForLog(topicName),
             namespaceId);
 
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(namespaceResult.Error);
         }
 
         var ns = namespaceResult.Value;
-        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
-        {
-            return NotFound();
-        }
 
         if (ns.ConnectionString is null)
         {
@@ -131,17 +127,13 @@ public sealed class SubscriptionsController : ApiControllerBase
             LogRedactor.SanitiseForLog(topicName),
             namespaceId);
 
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult<SubscriptionRuntimePropertiesDto>(namespaceResult.Error);
         }
 
         var ns = namespaceResult.Value;
-        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
-        {
-            return NotFound();
-        }
 
         if (ns.ConnectionString is null)
         {

@@ -69,6 +69,13 @@ jobs:
             --no-build \
             --configuration Release \
             --logger "console;verbosity=summary"
+
+      - name: Run integration tests — block deployment if tests fail
+        run: |
+          dotnet test services/api/tests/ServiceHub.IntegrationTests \
+            --no-build \
+            --configuration Release \
+            --logger "console;verbosity=summary"
           echo "✅ All tests passed — proceeding with deployment"
 
       - name: Publish .NET API (includes wwwroot from React build)

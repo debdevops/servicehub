@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Interfaces;
+using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Api.Controllers;
@@ -19,6 +21,34 @@ public abstract class ApiControllerBase : ControllerBase
         HttpContext.Items.TryGetValue("OwnerId", out var v) && v is string s
             ? s
             : Namespace.SpaOwnerId;
+
+    /// <summary>
+    /// Fetches a namespace by ID and verifies it belongs to <see cref="OwnerId"/>, so every
+    /// controller enforces tenant isolation through this single, tested path instead of
+    /// reimplementing the ownership check inline. Returns the same NotFound failure whether
+    /// the namespace doesn't exist or simply isn't owned by the caller, so the two cases
+    /// can't be distinguished from the response (avoids leaking namespace existence).
+    /// </summary>
+    protected async Task<Result<Namespace>> GetOwnedNamespaceAsync(
+        INamespaceRepository namespaceRepository,
+        Guid namespaceId,
+        CancellationToken cancellationToken)
+    {
+        var namespaceResult = await namespaceRepository.GetByIdAsync(namespaceId, cancellationToken).ConfigureAwait(false);
+        if (namespaceResult.IsFailure)
+        {
+            return namespaceResult;
+        }
+
+        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
+        {
+            return Result.Failure<Namespace>(Error.NotFound(
+                ErrorCodes.Namespace.NotFound,
+                $"Namespace with ID '{namespaceId}' was not found."));
+        }
+
+        return namespaceResult;
+    }
 
     /// <summary>
     /// Converts a Result to an appropriate ActionResult.

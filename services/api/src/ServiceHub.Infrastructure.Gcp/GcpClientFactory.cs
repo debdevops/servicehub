@@ -130,6 +130,38 @@ public sealed class GcpClientFactory : IGcpClientFactory
         return client;
     }
 
+    /// <inheritdoc/>
+    public async Task RemoveClientAsync(Guid namespaceId, CancellationToken cancellationToken = default)
+    {
+        var prefix = $"{namespaceId}:";
+
+        foreach (var key in _publisherCache.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList())
+        {
+            if (_publisherCache.TryRemove(key, out var publisher))
+            {
+                _logger.LogInformation("Shutting down PublisherClient for namespace {NamespaceId}", namespaceId);
+                try
+                {
+                    await publisher.ShutdownAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error shutting down PublisherClient for namespace {NamespaceId}", namespaceId);
+                }
+            }
+        }
+
+        foreach (var key in _subscriberCache.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList())
+        {
+            _subscriberCache.TryRemove(key, out _);
+        }
+
+        if (_topicAdminCache.TryRemove(namespaceId, out _))
+        {
+            _logger.LogInformation("Removed cached topic-admin client for namespace {NamespaceId}", namespaceId);
+        }
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private string GetProjectId(Namespace ns)

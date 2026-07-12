@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
 using ServiceHub.Api.Authorization;
@@ -52,7 +53,10 @@ public class NamespacesControllerTests
         {
             ControllerContext = new ControllerContext
             {
-                HttpContext = new DefaultHttpContext()
+                HttpContext = new DefaultHttpContext
+                {
+                    RequestServices = new ServiceCollection().BuildServiceProvider()
+                }
             }
         };
 
