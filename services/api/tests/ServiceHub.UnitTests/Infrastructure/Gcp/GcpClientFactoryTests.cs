@@ -105,4 +105,35 @@ public sealed class GcpClientFactoryTests
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*Failed to decrypt*");
     }
+
+    [Fact]
+    public async Task RemoveClientAsync_EvictsCachedClients_SoNextGetCreatesFreshOnes()
+    {
+        var factory = BuildFactory();
+        var ns = ServiceAccountNamespace(ValidServiceAccountJson());
+
+        var publisherBefore = await factory.GetPublisherClientAsync(ns, "topic-1", CancellationToken.None);
+        var subscriberBefore = await factory.GetSubscriberClientAsync(ns, "sub-1", CancellationToken.None);
+        var topicAdminBefore = await factory.GetTopicAdminClientAsync(ns, CancellationToken.None);
+
+        await factory.RemoveClientAsync(ns.Id, CancellationToken.None);
+
+        var publisherAfter = await factory.GetPublisherClientAsync(ns, "topic-1", CancellationToken.None);
+        var subscriberAfter = await factory.GetSubscriberClientAsync(ns, "sub-1", CancellationToken.None);
+        var topicAdminAfter = await factory.GetTopicAdminClientAsync(ns, CancellationToken.None);
+
+        publisherAfter.Should().NotBeSameAs(publisherBefore);
+        subscriberAfter.Should().NotBeSameAs(subscriberBefore);
+        topicAdminAfter.Should().NotBeSameAs(topicAdminBefore);
+    }
+
+    [Fact]
+    public async Task RemoveClientAsync_WithNothingCached_DoesNotThrow()
+    {
+        var factory = BuildFactory();
+
+        var act = async () => await factory.RemoveClientAsync(Guid.NewGuid(), CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+    }
 }

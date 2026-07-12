@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
 import { messagesApi } from '@/lib/api/messages';
 import { GetMessagesParams, PaginatedResponse, Message, ApiError } from '@/lib/api/types';
 import { useDemoContext } from '@/lib/demo/DemoContext';
@@ -17,9 +17,9 @@ export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean 
 
   const sanitizedName = sanitizeQueueName(params.queueOrTopicName);
 
-  const options = isDemoMode && cloudProvider
+  const options: UseQueryOptions<PaginatedResponse<Message>, ApiError> = isDemoMode && cloudProvider
     ? {
-        queryKey: ['messages', 'demo', cloudProvider, sanitizedName, params.queueType, params.skip] as const,
+        queryKey: ['messages', 'demo', cloudProvider, sanitizedName, params.queueType, params.skip],
         queryFn: (): Promise<PaginatedResponse<Message>> => Promise.resolve(
           getMockMessages(
             cloudProvider,
@@ -30,13 +30,13 @@ export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean 
           )
         ),
         enabled: !!sanitizedName,
-        staleTime: Infinity as number,
-        refetchInterval: false as const,
+        staleTime: Infinity,
+        refetchInterval: false,
         refetchIntervalInBackground: false,
-        retry: false as const,
+        retry: false,
       }
     : {
-        queryKey: ['messages', { ...params, queueOrTopicName: sanitizedName }] as const,
+        queryKey: ['messages', { ...params, queueOrTopicName: sanitizedName }],
         queryFn: async (): Promise<PaginatedResponse<Message>> => {
           try {
             return await messagesApi.list({ ...params, queueOrTopicName: sanitizedName });
@@ -57,7 +57,7 @@ export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean 
         },
         enabled: !!params.namespaceId && !!sanitizedName,
         staleTime: 10_000,
-        refetchInterval: params.autoRefresh !== false ? 30_000 : (false as const),
+        refetchInterval: params.autoRefresh !== false ? 30_000 : false,
         refetchIntervalInBackground: false,
         retry: (failureCount: number, error: ApiError) => {
           if (error?.response?.status === 404) return false;
@@ -71,9 +71,7 @@ export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean 
         },
       };
 
-  return useQuery<PaginatedResponse<Message>, ApiError>(
-    options as Parameters<typeof useQuery<PaginatedResponse<Message>, ApiError>>[0]
-  );
+  return useQuery(options);
 }
 
 export function useMessage(namespaceId: string, messageId: string) {
@@ -117,6 +115,7 @@ export function useSendMessage() {
         }),
         queryClient.invalidateQueries({ queryKey: ['queues', variables.namespaceId], refetchType: 'active' }),
         queryClient.invalidateQueries({ queryKey: ['subscriptions', variables.namespaceId], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['namespace-stats', variables.namespaceId], refetchType: 'active' }),
       ]);
       toast.success('Message sent successfully');
     },
@@ -152,6 +151,7 @@ export function useReplayMessage() {
         }),
         queryClient.invalidateQueries({ queryKey: ['queues', variables.namespaceId], refetchType: 'active' }),
         queryClient.invalidateQueries({ queryKey: ['subscriptions', variables.namespaceId], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['namespace-stats', variables.namespaceId], refetchType: 'active' }),
       ]);
       toast.success('Message replayed successfully');
     },

@@ -75,17 +75,13 @@ public sealed class TopicsController : ApiControllerBase
     {
         _logger.LogInformation("Getting all topics for namespace {NamespaceId}", namespaceId);
 
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult<IReadOnlyList<TopicRuntimePropertiesDto>>(namespaceResult.Error);
         }
 
         var ns = namespaceResult.Value;
-        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
-        {
-            return NotFound();
-        }
 
         if (ns.ConnectionString is null)
         {
@@ -151,17 +147,13 @@ public sealed class TopicsController : ApiControllerBase
             LogRedactor.SanitiseForLog(topicName),
             namespaceId);
 
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult<TopicRuntimePropertiesDto>(namespaceResult.Error);
         }
 
         var ns = namespaceResult.Value;
-        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
-        {
-            return NotFound();
-        }
 
         if (ns.ConnectionString is null)
         {
@@ -238,17 +230,13 @@ public sealed class TopicsController : ApiControllerBase
             namespaceId);
 
         // Verify namespace exists
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult(Shared.Results.Result.Failure(namespaceResult.Error));
         }
 
         var ns = namespaceResult.Value;
-        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
-        {
-            return NotFound();
-        }
 
         // Check if namespace has Send permission (required to send messages)
         if (!ns.HasSendPermission)
@@ -451,17 +439,13 @@ public sealed class TopicsController : ApiControllerBase
             LogRedactor.SanitiseForLog(reason));
 
         // Get namespace to check permissions
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult<DeadLetterResponse>(namespaceResult.Error);
         }
 
         var ns = namespaceResult.Value;
-        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
-        {
-            return NotFound();
-        }
         
         // Check if namespace has Send permission (required to dead-letter messages)
         if (!ns.HasSendPermission)

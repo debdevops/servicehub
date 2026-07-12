@@ -192,40 +192,36 @@ public sealed class MessageOperationsService : IMessageOperationsService
 
         var ns = nsResult.Value;
 
-        try
+        if (!_router.IsRegistered(ns.Provider))
         {
-            var provider = _router.Resolve(ns.Provider);
-            return (ns, provider);
+            throw new ProviderNotRegisteredException(
+                $"The '{ns.Provider}' cloud provider is not enabled on this server (namespace: {namespaceId}). " +
+                $"Set 'CloudProviders:{ns.Provider}:Enabled' to 'true' in appsettings and restart.");
         }
-        catch (InvalidOperationException ex)
-        {
-            throw new InvalidOperationException($"No ICloudMessagingProvider registered for provider '{ns.Provider}' (namespace: {namespaceId}). {ex.Message}", ex);
-        }
+
+        var provider = _router.Resolve(ns.Provider);
+        return (ns, provider);
     }
 
     // Centralized exception -> Result mapping helpers to avoid duplicated logic
     private static Result<T> ConvertExceptionToResult<T>(Exception ex, string externalErrorCode)
     {
+        if (ex is ProviderNotRegisteredException)
+            return Result.Failure<T>(Error.ExternalService(externalErrorCode, ex.Message));
+
         if (ex is InvalidOperationException)
-        {
-            var message = ex.Message ?? "Provider resolution failed";
-            if (message.Contains("Namespace", StringComparison.OrdinalIgnoreCase))
-                return Result.Failure<T>(Error.NotFound(ErrorCodes.Namespace.NotFound, message));
-            return Result.Failure<T>(Error.ExternalService(externalErrorCode, message));
-        }
+            return Result.Failure<T>(Error.NotFound(ErrorCodes.Namespace.NotFound, ex.Message ?? "Provider resolution failed"));
 
         return Result.Failure<T>(Error.Internal(ErrorCodes.General.UnexpectedError, ex.Message));
     }
 
     private static Result ConvertExceptionToResult(Exception ex, string externalErrorCode)
     {
+        if (ex is ProviderNotRegisteredException)
+            return Result.Failure(Error.ExternalService(externalErrorCode, ex.Message));
+
         if (ex is InvalidOperationException)
-        {
-            var message = ex.Message ?? "Provider resolution failed";
-            if (message.Contains("Namespace", StringComparison.OrdinalIgnoreCase))
-                return Result.Failure(Error.NotFound(ErrorCodes.Namespace.NotFound, message));
-            return Result.Failure(Error.ExternalService(externalErrorCode, message));
-        }
+            return Result.Failure(Error.NotFound(ErrorCodes.Namespace.NotFound, ex.Message ?? "Provider resolution failed"));
 
         return Result.Failure(Error.Internal(ErrorCodes.General.UnexpectedError, ex.Message));
     }

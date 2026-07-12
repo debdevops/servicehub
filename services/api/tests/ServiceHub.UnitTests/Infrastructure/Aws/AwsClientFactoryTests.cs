@@ -92,4 +92,36 @@ public sealed class AwsClientFactoryTests
         client.Should().NotBeNull();
         protector.Verify(p => p.Unprotect("ENC:V2:pretend-ciphertext"), Times.Once);
     }
+
+    [Fact]
+    public void RemoveClient_DisposesAndEvictsCachedClients_SoNextGetCreatesFreshOnes()
+    {
+        var factory = BuildFactory();
+        var ns = Namespace.Create(
+            "sqs.us-east-1.amazonaws.com",
+            "AKIAIOSFODNN7EXAMPLE:wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            provider: CloudProviderType.Aws,
+            awsRegion: "us-east-1").Value;
+
+        var sqsBefore = factory.GetSqsClient(ns);
+        var snsBefore = factory.GetSnsClient(ns);
+
+        factory.RemoveClient(ns.Id);
+
+        var sqsAfter = factory.GetSqsClient(ns);
+        var snsAfter = factory.GetSnsClient(ns);
+
+        sqsAfter.Should().NotBeSameAs(sqsBefore);
+        snsAfter.Should().NotBeSameAs(snsBefore);
+    }
+
+    [Fact]
+    public void RemoveClient_WithNothingCached_DoesNotThrow()
+    {
+        var factory = BuildFactory();
+
+        var act = () => factory.RemoveClient(Guid.NewGuid());
+
+        act.Should().NotThrow();
+    }
 }

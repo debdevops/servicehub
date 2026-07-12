@@ -102,21 +102,27 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
         if (connectionString.StartsWith(LegacyV2Prefix, StringComparison.Ordinal))
         {
             var legacyResult = UnprotectLegacyV2(connectionString);
-            if (legacyResult.IsSuccess)
+            if (legacyResult.IsFailure)
             {
-                connectionString = legacyResult.Value;
-                // Re-encrypt with new format below
+                // Do not fall through and re-encrypt the undecryptable ciphertext itself —
+                // that would silently and permanently discard the real connection string.
+                return Result.Failure<string>(legacyResult.Error);
             }
+
+            connectionString = legacyResult.Value;
+            // Re-encrypt with new format below
         }
 
         // Handle legacy protected strings - decrypt first if needed
         if (connectionString.StartsWith(LegacyProtectedPrefix, StringComparison.Ordinal))
         {
             var legacyResult = UnprotectLegacy(connectionString);
-            if (legacyResult.IsSuccess)
+            if (legacyResult.IsFailure)
             {
-                connectionString = legacyResult.Value;
+                return Result.Failure<string>(legacyResult.Error);
             }
+
+            connectionString = legacyResult.Value;
         }
 
         if (!_encryptionEnabled)

@@ -57,6 +57,22 @@ public sealed class AwsClientFactory : IAwsClientFactory
         return _snsCache.GetOrAdd(ns.Id, _ => CreateSnsClient(ns));
     }
 
+    /// <inheritdoc/>
+    public void RemoveClient(Guid namespaceId)
+    {
+        if (_sqsCache.TryRemove(namespaceId, out var sqsClient))
+        {
+            _logger.LogInformation("Removing and disposing SQS client for namespace {NamespaceId}", namespaceId);
+            sqsClient.Dispose();
+        }
+
+        if (_snsCache.TryRemove(namespaceId, out var snsClient))
+        {
+            _logger.LogInformation("Removing and disposing SNS client for namespace {NamespaceId}", namespaceId);
+            snsClient.Dispose();
+        }
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private IAmazonSQS CreateSqsClient(Namespace ns)

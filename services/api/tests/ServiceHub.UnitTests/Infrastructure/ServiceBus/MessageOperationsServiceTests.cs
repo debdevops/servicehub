@@ -65,7 +65,7 @@ public class MessageOperationsServiceTests
     }
 
     [Fact]
-    public async Task SendAsync_ProviderNotRegistered_ReturnsFailure()
+    public async Task SendAsync_ProviderNotRegistered_ReturnsExternalServiceError()
     {
         var nsId = Guid.NewGuid();
         var nsRes = Namespace.CreateWithManagedIdentity("test", provider: CloudProviderType.Azure);
@@ -75,7 +75,7 @@ public class MessageOperationsServiceTests
         nsRepo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        // Router with no providers -> Resolve will throw
+        // Router with no providers registered -> the provider's flag is disabled
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
 
         var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
@@ -84,9 +84,8 @@ public class MessageOperationsServiceTests
         var res = await svc.SendAsync(req);
 
         res.IsFailure.Should().BeTrue();
-        res.Error.Should().NotBeNull();
-        new[] { ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, ServiceHub.Shared.Constants.ErrorCodes.General.UnexpectedError }
-            .Should().Contain(res.Error.Code);
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Message.SendFailed);
+        res.Error.Type.Should().Be(ErrorType.ExternalService);
     }
 
     [Fact]
@@ -129,7 +128,7 @@ public class MessageOperationsServiceTests
     }
 
     [Fact]
-    public async Task PeekMessagesAsync_ProviderNotRegistered_ReturnsFailure()
+    public async Task PeekMessagesAsync_ProviderNotRegistered_ReturnsExternalServiceError()
     {
         var nsId = Guid.NewGuid();
         var nsRes = Namespace.CreateWithManagedIdentity("test", provider: CloudProviderType.Azure);
@@ -146,7 +145,8 @@ public class MessageOperationsServiceTests
         var res = await svc.PeekMessagesAsync(req);
 
         res.IsFailure.Should().BeTrue();
-        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Message.ReceiveFailed);
+        res.Error.Type.Should().Be(ErrorType.ExternalService);
     }
 
     [Fact]
@@ -372,7 +372,7 @@ public class MessageOperationsServiceTests
     }
 
     [Fact]
-    public async Task PeekDeadLetterMessagesAsync_ProviderNotRegistered_ReturnsFailure()
+    public async Task PeekDeadLetterMessagesAsync_ProviderNotRegistered_ReturnsExternalServiceError()
     {
         var nsRes = Namespace.CreateWithManagedIdentity("test", provider: CloudProviderType.Azure);
         var ns = nsRes.Value;
@@ -388,7 +388,8 @@ public class MessageOperationsServiceTests
         var res = await svc.PeekDeadLetterMessagesAsync(req);
 
         res.IsFailure.Should().BeTrue();
-        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Message.ReceiveFailed);
+        res.Error.Type.Should().Be(ErrorType.ExternalService);
     }
 
     [Fact]
@@ -424,7 +425,7 @@ public class MessageOperationsServiceTests
     }
 
     [Fact]
-    public async Task ReplayMessageAsync_ProviderNotRegistered_ReturnsFailure()
+    public async Task ReplayMessageAsync_ProviderNotRegistered_ReturnsExternalServiceError()
     {
         var nsRes = Namespace.CreateWithManagedIdentity("test", provider: CloudProviderType.Azure);
         var ns = nsRes.Value;
@@ -439,7 +440,8 @@ public class MessageOperationsServiceTests
         var res = await svc.ReplayMessageAsync(ns.Id, "queue", null, 123L);
 
         res.IsFailure.Should().BeTrue();
-        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Message.ReceiveFailed);
+        res.Error.Type.Should().Be(ErrorType.ExternalService);
     }
 
     [Fact]
@@ -474,7 +476,7 @@ public class MessageOperationsServiceTests
     }
 
     [Fact]
-    public async Task PurgeMessageAsync_ProviderNotRegistered_ReturnsFailure()
+    public async Task PurgeMessageAsync_ProviderNotRegistered_ReturnsExternalServiceError()
     {
         var nsRes = Namespace.CreateWithManagedIdentity("test", provider: CloudProviderType.Azure);
         var ns = nsRes.Value;
@@ -489,7 +491,8 @@ public class MessageOperationsServiceTests
         var res = await svc.PurgeMessageAsync(ns.Id, "queue", null, 123L, false);
 
         res.IsFailure.Should().BeTrue();
-        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Message.ReceiveFailed);
+        res.Error.Type.Should().Be(ErrorType.ExternalService);
     }
 
     [Fact]
@@ -524,7 +527,7 @@ public class MessageOperationsServiceTests
     }
 
     [Fact]
-    public async Task GetMessageCountAsync_ProviderNotRegistered_ReturnsFailure()
+    public async Task GetMessageCountAsync_ProviderNotRegistered_ReturnsExternalServiceError()
     {
         var nsRes = Namespace.CreateWithManagedIdentity("test", provider: CloudProviderType.Azure);
         var ns = nsRes.Value;
@@ -539,7 +542,8 @@ public class MessageOperationsServiceTests
         var res = await svc.GetMessageCountAsync(ns.Id, "queue", null);
 
         res.IsFailure.Should().BeTrue();
-        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Message.ReceiveFailed);
+        res.Error.Type.Should().Be(ErrorType.ExternalService);
     }
 
     [Fact]
@@ -560,7 +564,7 @@ public class MessageOperationsServiceTests
     }
 
     [Fact]
-    public async Task GetScheduledMessagesAsync_ProviderNotRegistered_ReturnsFailure()
+    public async Task GetScheduledMessagesAsync_ProviderNotRegistered_ReturnsExternalServiceError()
     {
         var nsRes = Namespace.CreateWithManagedIdentity("test", provider: CloudProviderType.Azure);
         var ns = nsRes.Value;
@@ -575,7 +579,8 @@ public class MessageOperationsServiceTests
         var res = await svc.GetScheduledMessagesAsync(ns.Id, "queue", null, 10);
 
         res.IsFailure.Should().BeTrue();
-        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Message.ScheduledListFailed);
+        res.Error.Type.Should().Be(ErrorType.ExternalService);
     }
 
     [Fact]
@@ -642,7 +647,7 @@ public class MessageOperationsServiceTests
     }
 
     [Fact]
-    public async Task SendBatchAsync_ProviderNotRegistered_ReturnsFailure()
+    public async Task SendBatchAsync_ProviderNotRegistered_ReturnsExternalServiceError()
     {
         var nsRes = Namespace.CreateWithManagedIdentity("test", provider: CloudProviderType.Azure);
         var ns = nsRes.Value;
@@ -658,7 +663,8 @@ public class MessageOperationsServiceTests
         var res = await svc.SendBatchAsync(requests);
 
         res.IsFailure.Should().BeTrue();
-        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Message.SendFailed);
+        res.Error.Type.Should().Be(ErrorType.ExternalService);
     }
 
     [Fact]

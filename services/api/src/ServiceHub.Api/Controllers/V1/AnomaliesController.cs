@@ -66,15 +66,10 @@ public sealed class AnomaliesController : ApiControllerBase
             end);
 
         // Verify namespace exists and belongs to the current owner
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult<AnomalyDetectionResponse>(namespaceResult.Error);
-        }
-
-        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
-        {
-            return NotFound();
         }
 
         // Check AI service availability
