@@ -54,6 +54,15 @@ jobs:
             --logger "console;verbosity=normal" \
             --logger "trx;LogFileName=results.trx"
 
+      - name: Run integration tests
+        run: |
+          dotnet test services/api/tests/ServiceHub.IntegrationTests/ServiceHub.IntegrationTests.csproj \
+            --configuration Release \
+            --settings services/api/coverlet.runsettings \
+            --results-directory services/api/TestResults \
+            --logger "console;verbosity=normal" \
+            --logger "trx;LogFileName=integration-results.trx"
+
       - name: Install report generator
         run: |
           dotnet tool install --global dotnet-reportgenerator-globaltool \

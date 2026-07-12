@@ -23,7 +23,8 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["Security:SecurityHeaders:Enabled"] = "true",
                 ["Cors:AllowedOrigins:0"] = "*",
                 ["RateLimiting:Enabled"] = "false",
-                ["NamespaceRepository:DataDirectory"] = _testDataDir
+                ["NamespaceRepository:DataDirectory"] = _testDataDir,
+                ["DlqDatabase:DataDirectory"] = _testDataDir
             });
         });
 

@@ -253,6 +253,29 @@ public sealed class ConnectionStringProtectorTests
         result.IsFailure.Should().BeTrue();
     }
 
+    [Fact]
+    public void Protect_WithUndecryptableLegacyV2String_ShouldFailInsteadOfReEncryptingCiphertext()
+    {
+        var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
+        // ENC:V2: prefix but garbage payload — must not be silently re-encrypted as if it were plaintext.
+        var invalid = "ENC:V2:bm90dmFsaWQ=";
+
+        var result = protector.Protect(invalid);
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Protect_WithInvalidLegacyProtectedString_ShouldFailInsteadOfReEncryptingCiphertext()
+    {
+        var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
+        var invalid = "PROTECTED:!!!not-valid-base64!!!";
+
+        var result = protector.Protect(invalid);
+
+        result.IsFailure.Should().BeTrue();
+    }
+
     // ── Namespace.ComputeConnectionStringHash ────────────────────────
 
     [Fact]

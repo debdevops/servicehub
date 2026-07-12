@@ -77,17 +77,10 @@ public sealed class MessagesController : ApiControllerBase
             namespaceId);
 
         // TENANT ISOLATION: Verify the namespace belongs to the current authenticated user.
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult<IReadOnlyList<MessageResponse>>(namespaceResult.Error);
-        }
-
-        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
-        {
-            return ToActionResult<IReadOnlyList<MessageResponse>>(Error.NotFound(
-                ErrorCodes.Namespace.NotFound,
-                $"Namespace with ID '{namespaceId}' was not found."));
         }
 
         var request = new GetMessagesRequest(
@@ -144,17 +137,10 @@ public sealed class MessagesController : ApiControllerBase
             namespaceId);
 
         // TENANT ISOLATION: Verify the namespace belongs to the current authenticated user.
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult<IReadOnlyList<MessageResponse>>(namespaceResult.Error);
-        }
-
-        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
-        {
-            return ToActionResult<IReadOnlyList<MessageResponse>>(Error.NotFound(
-                ErrorCodes.Namespace.NotFound,
-                $"Namespace with ID '{namespaceId}' was not found."));
         }
 
         var request = new GetMessagesRequest(
@@ -208,17 +194,10 @@ public sealed class MessagesController : ApiControllerBase
             namespaceId);
 
         // TENANT ISOLATION: Verify the namespace belongs to the current authenticated user.
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult<IReadOnlyList<MessageResponse>>(namespaceResult.Error);
-        }
-
-        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
-        {
-            return ToActionResult<IReadOnlyList<MessageResponse>>(Error.NotFound(
-                ErrorCodes.Namespace.NotFound,
-                $"Namespace with ID '{namespaceId}' was not found."));
         }
 
         var request = new GetMessagesRequest(
@@ -275,17 +254,10 @@ public sealed class MessagesController : ApiControllerBase
             namespaceId);
 
         // TENANT ISOLATION: Verify the namespace belongs to the current authenticated user.
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult<IReadOnlyList<MessageResponse>>(namespaceResult.Error);
-        }
-
-        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
-        {
-            return ToActionResult<IReadOnlyList<MessageResponse>>(Error.NotFound(
-                ErrorCodes.Namespace.NotFound,
-                $"Namespace with ID '{namespaceId}' was not found."));
         }
 
         var request = new GetMessagesRequest(
@@ -386,18 +358,14 @@ public sealed class MessagesController : ApiControllerBase
             LogRedactor.SanitiseForLog(entityName),
             namespaceId);
 
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult(Shared.Results.Result.Failure(namespaceResult.Error));
         }
 
         var ns = namespaceResult.Value;
-        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
-        {
-            return NotFound();
-        }
-        
+
         // Check if namespace has Send permission
         if (!ns.HasSendPermission)
         {

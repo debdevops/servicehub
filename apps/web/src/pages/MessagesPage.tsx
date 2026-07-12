@@ -316,9 +316,12 @@ export function MessagesPage() {
   }, [displayInsights]);
 
   // Get messages from API - sort by enqueued time descending (newest first)
-  const messages: Message[] = paginationState.allMessages
-    .map(msg => transformMessage(msg, insightMessageIds, queueTab))
-    .sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime());
+  const messages: Message[] = useMemo(
+    () => paginationState.allMessages
+      .map(msg => transformMessage(msg, insightMessageIds, queueTab))
+      .sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime()),
+    [paginationState.allMessages, insightMessageIds, queueTab]
+  );
 
   // Find selected message
   const selectedMessage = useMemo(
@@ -504,6 +507,7 @@ export function MessagesPage() {
           <input
             type="text"
             placeholder="Search messages by ID, properties, or content..."
+            aria-label="Search messages"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 rounded-lg text-sm bg-white border border-gray-300 text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-all"
@@ -511,6 +515,7 @@ export function MessagesPage() {
           {searchInput && (
             <button
               onClick={() => setSearchInput('')}
+              aria-label="Clear search"
               className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
             >
               <X className="w-4 h-4" />
@@ -520,8 +525,10 @@ export function MessagesPage() {
 
         {/* Filter Button */}
         <div className="relative">
-          <button 
+          <button
             onClick={() => setShowFilterPanel(!showFilterPanel)}
+            aria-label="Filter messages by status"
+            aria-expanded={showFilterPanel}
             className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm transition-colors ${
               statusFilter !== 'all' || showFilterPanel
                 ? 'border-sky-300 bg-sky-50 text-sky-700'
@@ -566,10 +573,12 @@ export function MessagesPage() {
 
         {/* AI Findings Button */}
         <div className="relative">
-          <button 
+          <button
             onClick={() => setShowAIDropdown(!showAIDropdown)}
+            aria-label="AI Findings"
+            aria-expanded={showAIDropdown}
             className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm font-medium transition-colors ${
-              showAIDropdown 
+              showAIDropdown
                 ? 'border-primary-300 bg-primary-50 text-primary-700'
                 : 'border-gray-200 hover:bg-gray-50 text-gray-700'
             }`}

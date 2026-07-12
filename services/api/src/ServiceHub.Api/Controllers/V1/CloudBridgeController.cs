@@ -194,17 +194,10 @@ public sealed class CloudBridgeController : ApiControllerBase
     // leaking that the ID is in use — same convention as NamespacesController.
     private async Task<IActionResult?> VerifyNamespaceOwnershipAsync(Guid namespaceId, CancellationToken ct)
     {
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, ct).ConfigureAwait(false);
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, ct).ConfigureAwait(false);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult(Result.Failure(namespaceResult.Error));
-        }
-
-        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
-        {
-            return ToActionResult(Result.Failure(Error.NotFound(
-                ErrorCodes.Namespace.NotFound,
-                $"Namespace with ID '{namespaceId}' was not found.")));
         }
 
         return null;

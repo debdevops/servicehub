@@ -43,6 +43,9 @@ export function useCancelScheduledMessage() {
       queryClient.invalidateQueries({
         queryKey: ['queues', variables.namespaceId],
       });
+      queryClient.invalidateQueries({
+        queryKey: ['namespace-stats', variables.namespaceId],
+      });
     },
 
     onError: (error: ApiError) => {

@@ -1,10 +1,14 @@
-import { useQuery, useQueries } from '@tanstack/react-query';
+import { useQuery, useQueries, UseQueryOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import { Queue, ApiError } from '@/lib/api/types';
 import { useDemoContext } from '@/lib/demo/DemoContext';
 import { getMockQueues } from '@/lib/demo/mockProviders';
 
-const queuesQueryOptions = (namespaceId: string, autoRefresh: boolean, refetchMs: number = 30_000) => ({
+const queuesQueryOptions = (
+  namespaceId: string,
+  autoRefresh: boolean,
+  refetchMs: number = 30_000,
+): UseQueryOptions<Queue[], ApiError> => ({
   queryKey: ['queues', namespaceId] as const,
   queryFn: async (): Promise<Queue[]> => {
     const response = await apiClient.get<Queue[]>(`/namespaces/${namespaceId}/queues`, {
@@ -29,19 +33,19 @@ export function useQueues(namespaceId: string, autoRefresh: boolean = true, refe
 
   // Compute query options once — both branches return Queue[] so the
   // return type is always UseQueryResult<Queue[], ApiError>.
-  const options = isDemoMode && cloudProvider
+  const options: UseQueryOptions<Queue[], ApiError> = isDemoMode && cloudProvider
     ? {
-        queryKey: ['queues', 'demo', cloudProvider] as [string, string, string],
+        queryKey: ['queues', 'demo', cloudProvider],
         queryFn: (): Promise<Queue[]> => Promise.resolve(getMockQueues(cloudProvider)),
-        staleTime: Infinity as number,
+        staleTime: Infinity,
         enabled: true,
-        refetchInterval: false as const,
+        refetchInterval: false,
         refetchIntervalInBackground: false,
-        retry: false as const,
+        retry: false,
       }
     : queuesQueryOptions(namespaceId, autoRefresh, refetchMs);
 
-  return useQuery<Queue[], ApiError>(options as Parameters<typeof useQuery<Queue[], ApiError>>[0]);
+  return useQuery(options);
 }
 
 export interface NamespaceQueueStats {

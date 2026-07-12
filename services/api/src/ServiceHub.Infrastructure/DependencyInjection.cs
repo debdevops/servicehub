@@ -166,17 +166,23 @@ public static class DependencyInjection
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddDlqDatabase(this IServiceCollection services, IConfiguration? configuration = null)
     {
-        var dataDir = configuration?["DlqDatabase:DataDirectory"]
-            ?? Path.Combine(AppContext.BaseDirectory, "data");
-
-        Directory.CreateDirectory(dataDir);
-
-        var dbPath = Path.Combine(dataDir, "servicehub-dlq.db");
-        var connectionString = $"Data Source={dbPath}";
-
         services.AddDbContext<DlqDbContext>((serviceProvider, options) =>
         {
-            options.UseSqlite(connectionString);
+            // Resolved lazily from the fully-built DI container instead of the
+            // eagerly-captured `configuration` parameter: at AddDlqDatabase's registration
+            // time (during Program.cs's synchronous top-level startup), a test host's
+            // ConfigureAppConfiguration overrides (e.g. DlqDatabase:DataDirectory) have not
+            // necessarily been layered in yet, so reading them here would silently fall back
+            // to the shared default path — causing concurrent test hosts to race on the same
+            // SQLite file. Resolving IConfiguration from the built container guarantees the
+            // final, fully-merged configuration is used.
+            var resolvedConfiguration = serviceProvider.GetRequiredService<IConfiguration>();
+            var dataDir = resolvedConfiguration["DlqDatabase:DataDirectory"]
+                ?? Path.Combine(AppContext.BaseDirectory, "data");
+            Directory.CreateDirectory(dataDir);
+
+            var dbPath = Path.Combine(dataDir, "servicehub-dlq.db");
+            options.UseSqlite($"Data Source={dbPath}");
 
             // EnableDetailedErrors surfaces EF Core internals (SQL, schema) in error messages.
             // Only enable in Development to prevent information leakage in production.
