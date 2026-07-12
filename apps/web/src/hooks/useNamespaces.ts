@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
 import { namespacesApi } from '@/lib/api/namespaces';
 import { Namespace, CreateNamespaceRequest, ApiError } from '@/lib/api/types';
 import { useDemoContext } from '@/lib/demo/DemoContext';
@@ -8,37 +8,37 @@ import toast from 'react-hot-toast';
 export function useNamespaces() {
   const { isDemoMode, cloudProvider } = useDemoContext();
 
-  const options = isDemoMode && cloudProvider
+  const options: UseQueryOptions<Namespace[]> = isDemoMode && cloudProvider
     ? {
-        queryKey: ['namespaces', 'demo', cloudProvider] as [string, string, string],
+        queryKey: ['namespaces', 'demo', cloudProvider],
         queryFn: (): Promise<Namespace[]> => Promise.resolve(getMockNamespaces(cloudProvider)),
-        staleTime: Infinity as number,
+        staleTime: Infinity,
       }
     : {
-        queryKey: ['namespaces'] as [string],
+        queryKey: ['namespaces'],
         queryFn: namespacesApi.list,
       };
 
-  return useQuery<Namespace[]>(options as Parameters<typeof useQuery<Namespace[]>>[0]);
+  return useQuery(options);
 }
 
 export function useNamespace(id: string) {
   const { isDemoMode, cloudProvider } = useDemoContext();
 
-  const options = isDemoMode && cloudProvider
+  const options: UseQueryOptions<Namespace> = isDemoMode && cloudProvider
     ? {
-        queryKey: ['namespaces', 'demo', cloudProvider, id] as [string, string, string, string],
+        queryKey: ['namespaces', 'demo', cloudProvider, id],
         queryFn: (): Promise<Namespace> => Promise.resolve(getMockNamespaces(cloudProvider)[0]),
         enabled: !!id,
-        staleTime: Infinity as number,
+        staleTime: Infinity,
       }
     : {
-        queryKey: ['namespaces', id] as [string, string],
+        queryKey: ['namespaces', id],
         queryFn: () => namespacesApi.get(id),
         enabled: !!id,
       };
 
-  return useQuery<Namespace>(options as Parameters<typeof useQuery<Namespace>>[0]);
+  return useQuery(options);
 }
 
 export function useCreateNamespace() {

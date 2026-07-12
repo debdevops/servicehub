@@ -37,4 +37,12 @@ public interface IGcpClientFactory
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A configured <see cref="PublisherServiceApiClient"/>.</returns>
     Task<PublisherServiceApiClient> GetTopicAdminClientAsync(Namespace ns, CancellationToken ct);
+
+    /// <summary>
+    /// Shuts down and removes any cached publisher/subscriber/topic-admin clients for the
+    /// given namespace, e.g. when the namespace is deleted. A no-op if nothing is cached.
+    /// </summary>
+    /// <param name="namespaceId">The namespace identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task RemoveClientAsync(Guid namespaceId, CancellationToken cancellationToken = default);
 }

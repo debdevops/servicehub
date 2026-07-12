@@ -10,6 +10,8 @@ using ServiceHub.Core.Events;
 using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Validation;
+using ServiceHub.Infrastructure.Aws;
+using ServiceHub.Infrastructure.Gcp;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 
@@ -338,19 +340,12 @@ public sealed class NamespacesController : ApiControllerBase
 
         _logger.LogInformation("Getting namespace {NamespaceId}", id);
 
-        var result = await _namespaceRepository.GetByIdAsync(id, cancellationToken);
+        // TENANT ISOLATION: Returns 404 (not 403) when the namespace exists but belongs
+        // to a different owner, to avoid leaking that the ID is in use.
+        var result = await GetOwnedNamespaceAsync(_namespaceRepository, id, cancellationToken);
         if (result.IsFailure)
         {
             return ToActionResult<NamespaceResponse>(result.Error);
-        }
-
-        // TENANT ISOLATION: Return 404 (not 403) when the namespace exists but belongs
-        // to a different owner, to avoid leaking that the ID is in use.
-        if (!string.Equals(result.Value.OwnerId, OwnerId, StringComparison.Ordinal))
-        {
-            return ToActionResult<NamespaceResponse>(Error.NotFound(
-                ErrorCodes.Namespace.NotFound,
-                $"Namespace with ID '{id}' was not found."));
         }
 
         var response = MapToResponse(result.Value);
@@ -388,18 +383,11 @@ public sealed class NamespacesController : ApiControllerBase
 
         _logger.LogInformation("Testing connection for namespace {NamespaceId}", id);
 
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(id, cancellationToken);
+        // TENANT ISOLATION: Returns 404 when the namespace exists but belongs to a different owner.
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, id, cancellationToken);
         if (namespaceResult.IsFailure)
         {
             return ToActionResult<ConnectionTestResponse>(namespaceResult.Error);
-        }
-
-        // TENANT ISOLATION: Return 404 when the namespace exists but belongs to a different owner.
-        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
-        {
-            return ToActionResult<ConnectionTestResponse>(Error.NotFound(
-                ErrorCodes.Namespace.NotFound,
-                $"Namespace with ID '{id}' was not found."));
         }
 
         var ns = namespaceResult.Value;
@@ -515,21 +503,13 @@ public sealed class NamespacesController : ApiControllerBase
             return Forbid();
         }
 
-        // Verify the namespace exists first; subsequent operations use the
-        // repository-verified entity ID, not the raw user-supplied route value.
-        var getResult = await _namespaceRepository.GetByIdAsync(id, cancellationToken);
+        // Verify the namespace exists and is owned by the caller first; subsequent
+        // operations use the repository-verified entity ID, not the raw route value.
+        var getResult = await GetOwnedNamespaceAsync(_namespaceRepository, id, cancellationToken);
         if (getResult.IsFailure)
             return ToActionResult(Result.Failure(getResult.Error));
 
         var ns = getResult.Value;
-
-        // TENANT ISOLATION: Return 404 when namespace exists but belongs to a different owner.
-        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
-        {
-            return ToActionResult(Result.Failure(Error.NotFound(
-                ErrorCodes.Namespace.NotFound,
-                $"Namespace with ID '{id}' was not found.")));
-        }
 
         _logger.LogInformation("Deleting namespace {NamespaceId}", ns.Id);
         _auditLogger.LogCriticalAction(
@@ -544,6 +524,13 @@ public sealed class NamespacesController : ApiControllerBase
 
         if (_clientCache.Contains(ns.Id))
             await _clientCache.RemoveAsync(ns.Id, cancellationToken);
+
+        // AWS/GCP client factories are only registered when their provider flag is enabled,
+        // so they're resolved optionally here rather than as a hard constructor dependency.
+        HttpContext.RequestServices.GetService<IAwsClientFactory>()?.RemoveClient(ns.Id);
+        var gcpClientFactory = HttpContext.RequestServices.GetService<IGcpClientFactory>();
+        if (gcpClientFactory is not null)
+            await gcpClientFactory.RemoveClientAsync(ns.Id, cancellationToken);
 
         var result = await _namespaceRepository.DeleteAsync(ns.Id, cancellationToken);
         if (result.IsFailure)
@@ -622,13 +609,11 @@ public sealed class NamespacesController : ApiControllerBase
         Guid id,
         CancellationToken cancellationToken = default)
     {
-        var nsResult = await _namespaceRepository.GetByIdAsync(id, cancellationToken);
+        var nsResult = await GetOwnedNamespaceAsync(_namespaceRepository, id, cancellationToken);
         if (nsResult.IsFailure)
             return ToActionResult<NamespaceStatsResponse>(nsResult.Error);
 
         var ns = nsResult.Value;
-        if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
-            return NotFound();
 
         if (string.IsNullOrEmpty(ns.ConnectionString))
             return Ok(new NamespaceStatsResponse(0, 0, 0, 0, 0, 0));

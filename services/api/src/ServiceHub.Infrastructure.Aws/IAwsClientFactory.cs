@@ -23,4 +23,11 @@ public interface IAwsClientFactory
     /// <param name="ns">The namespace whose credentials and region to use.</param>
     /// <returns>An <see cref="IAmazonSimpleNotificationService"/> client ready for use.</returns>
     IAmazonSimpleNotificationService GetSnsClient(Namespace ns);
+
+    /// <summary>
+    /// Disposes and removes any cached SQS/SNS clients for the given namespace, e.g. when
+    /// the namespace is deleted. A no-op if nothing is cached for that namespace.
+    /// </summary>
+    /// <param name="namespaceId">The namespace identifier.</param>
+    void RemoveClient(Guid namespaceId);
 }
