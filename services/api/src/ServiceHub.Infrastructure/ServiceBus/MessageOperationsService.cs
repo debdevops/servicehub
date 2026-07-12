@@ -187,7 +187,7 @@ public sealed class MessageOperationsService : IMessageOperationsService
         if (nsResult.IsFailure)
         {
             var msg = nsResult.Error?.Message ?? "Namespace lookup failed";
-            throw new InvalidOperationException($"Failed to resolve Namespace '{namespaceId}': {msg}");
+            throw new NamespaceResolutionException($"Failed to resolve Namespace '{namespaceId}': {msg}");
         }
 
         var ns = nsResult.Value;
@@ -206,22 +206,22 @@ public sealed class MessageOperationsService : IMessageOperationsService
     // Centralized exception -> Result mapping helpers to avoid duplicated logic
     private static Result<T> ConvertExceptionToResult<T>(Exception ex, string externalErrorCode)
     {
-        if (ex is ProviderNotRegisteredException)
-            return Result.Failure<T>(Error.ExternalService(externalErrorCode, ex.Message));
+        if (ex is NamespaceResolutionException)
+            return Result.Failure<T>(Error.NotFound(ErrorCodes.Namespace.NotFound, ex.Message));
 
         if (ex is InvalidOperationException)
-            return Result.Failure<T>(Error.NotFound(ErrorCodes.Namespace.NotFound, ex.Message ?? "Provider resolution failed"));
+            return Result.Failure<T>(Error.ExternalService(externalErrorCode, ex.Message ?? "Provider resolution failed"));
 
         return Result.Failure<T>(Error.Internal(ErrorCodes.General.UnexpectedError, ex.Message));
     }
 
     private static Result ConvertExceptionToResult(Exception ex, string externalErrorCode)
     {
-        if (ex is ProviderNotRegisteredException)
-            return Result.Failure(Error.ExternalService(externalErrorCode, ex.Message));
+        if (ex is NamespaceResolutionException)
+            return Result.Failure(Error.NotFound(ErrorCodes.Namespace.NotFound, ex.Message));
 
         if (ex is InvalidOperationException)
-            return Result.Failure(Error.NotFound(ErrorCodes.Namespace.NotFound, ex.Message ?? "Provider resolution failed"));
+            return Result.Failure(Error.ExternalService(externalErrorCode, ex.Message ?? "Provider resolution failed"));
 
         return Result.Failure(Error.Internal(ErrorCodes.General.UnexpectedError, ex.Message));
     }
