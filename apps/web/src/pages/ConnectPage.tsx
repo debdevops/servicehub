@@ -547,6 +547,7 @@ export function ConnectPage() {
                       <option value="eu-west-1">eu-west-1 — Europe (Ireland)</option>
                       <option value="eu-west-2">eu-west-2 — Europe (London)</option>
                       <option value="eu-central-1">eu-central-1 — Europe (Frankfurt)</option>
+                      <option value="ap-south-1">ap-south-1 — Asia Pacific (Mumbai)</option>
                       <option value="ap-southeast-1">ap-southeast-1 — Asia Pacific (Singapore)</option>
                       <option value="ap-southeast-2">ap-southeast-2 — Asia Pacific (Sydney)</option>
                       <option value="ap-northeast-1">ap-northeast-1 — Asia Pacific (Tokyo)</option>
