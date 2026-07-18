@@ -22,6 +22,11 @@ interface MessageListProps {
   onLoadMore?: () => void;
   /** True while a tab switch is waiting for fresh messages from the API. */
   isSyncing?: boolean;
+  /**
+   * Provider-specific tab wording. Defaults to Azure's "Active" / "Dead-Letter";
+   * AWS passes "Queue" / "DLQ" plus a tooltip naming the separate DLQ queue.
+   */
+  tabLabels?: { active: string; deadletter: string; deadletterTitle?: string };
 }
 
 // ============================================================================
@@ -177,6 +182,7 @@ export function MessageList({
   isLoadingMore = false,
   onLoadMore,
   isSyncing = false,
+  tabLabels = { active: 'Active', deadletter: 'Dead-Letter' },
 }: MessageListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -248,7 +254,7 @@ export function MessageList({
             }
           `}
         >
-          Active ({activeCounts.active.toLocaleString()})
+          {tabLabels.active} ({activeCounts.active.toLocaleString()})
         </button>
         <button
           onClick={() => onQueueTabChange('deadletter')}
@@ -260,8 +266,8 @@ export function MessageList({
             }
           `}
         >
-          <span className="flex items-center justify-center gap-2">
-            Dead-Letter ({activeCounts.deadletter.toLocaleString()})
+          <span className="flex items-center justify-center gap-2" title={tabLabels.deadletterTitle}>
+            {tabLabels.deadletter} ({activeCounts.deadletter.toLocaleString()})
             {activeCounts.deadletter > 0 && (
               <span className="w-2 h-2 rounded-full bg-red-500" />
             )}

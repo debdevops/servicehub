@@ -108,6 +108,8 @@ export interface Queue {
   maxSizeInMegabytes: number;
   sizeInBytes: number;
   status: string;
+  /** AWS SQS only: name of the separate DLQ queue this queue redrives to. */
+  deadLetterTargetQueue?: string | null;
 }
 
 export interface Topic {

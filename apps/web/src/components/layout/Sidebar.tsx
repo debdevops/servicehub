@@ -30,6 +30,7 @@ import { useIsSimulatorMode } from '@/hooks/useSimulator';
 import { useQueries } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import { ProviderBadge } from '@/components/ProviderBadge';
+import { AwsQueueList, AwsTopicList } from '@/components/layout/AwsEntityTree';
 import type { CloudProviderType } from '@/lib/api/types';
 import { useDemoContext } from '@/lib/demo/DemoContext';
 import { getMockStats } from '@/lib/demo/mockProviders';
@@ -319,14 +320,22 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
               ) : queuesLoading ? (
                 <div className="px-3 py-2 text-xs text-gray-500">Loading...</div>
               ) : queues && queues.length > 0 ? (
-                queues.map((queue) => (
-                  <QueueItem 
-                    key={queue.name} 
-                    queue={queue} 
-                    namespaceId={namespace.id} 
+                namespace.cloudProvider === 'aws' ? (
+                  <AwsQueueList
+                    queues={queues}
+                    namespaceId={namespace.id}
                     messagesBasePath={messagesBasePath}
                   />
-                ))
+                ) : (
+                  queues.map((queue) => (
+                    <QueueItem
+                      key={queue.name}
+                      queue={queue}
+                      namespaceId={namespace.id}
+                      messagesBasePath={messagesBasePath}
+                    />
+                  ))
+                )
               ) : (
                 <div className="px-3 py-2 text-xs text-gray-500">No queues found</div>
               )}
@@ -357,14 +366,22 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
               ) : topicsLoading ? (
                 <div className="px-3 py-2 text-xs text-gray-500">Loading...</div>
               ) : topics && topics.length > 0 ? (
-                topics.map((topic) => (
-                  <TopicItem 
-                    key={topic.name} 
-                    topic={topic} 
-                    namespaceId={namespace.id} 
+                namespace.cloudProvider === 'aws' ? (
+                  <AwsTopicList
+                    topics={topics}
+                    namespaceId={namespace.id}
                     messagesBasePath={messagesBasePath}
                   />
-                ))
+                ) : (
+                  topics.map((topic) => (
+                    <TopicItem
+                      key={topic.name}
+                      topic={topic}
+                      namespaceId={namespace.id}
+                      messagesBasePath={messagesBasePath}
+                    />
+                  ))
+                )
               ) : (
                 <div className="px-3 py-2 text-xs text-gray-500">No topics found</div>
               )}

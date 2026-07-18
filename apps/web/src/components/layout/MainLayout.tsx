@@ -83,6 +83,20 @@ export function MainLayout() {
   // Resolve current namespace to check environment and permissions
   const { data: namespaces } = useNamespaces();
   const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
+
+  // Provider theme: the UI chrome follows the cloud being worked on
+  // (Azure sky blue by default, AWS light orange, GCP light green — see index.css).
+  // Falls back to the active namespace's provider when no ?namespace= is present.
+  const themeProvider =
+    currentNamespace?.cloudProvider ??
+    namespaces?.find(ns => ns.isActive)?.cloudProvider ??
+    'azure';
+  useEffect(() => {
+    document.documentElement.dataset.provider = themeProvider;
+    return () => {
+      delete document.documentElement.dataset.provider;
+    };
+  }, [themeProvider]);
   // FAB: only in DEV environment with Manage (write) permission — never in UAT/Prod or read-only connections
   const canUseFab = currentNamespace?.environment === 'dev' && currentNamespace?.hasManagePermission === true;
 
