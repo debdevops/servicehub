@@ -8,6 +8,7 @@ using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Api.Controllers.V1;
@@ -17,6 +18,8 @@ public class SubscriptionsControllerTests
     private readonly Mock<INamespaceRepository> _namespaceRepository;
     private readonly Mock<IServiceBusClientCache> _clientCache;
     private readonly Mock<IConnectionStringProtector> _connectionStringProtector;
+    private readonly Mock<ICloudMessagingProvider> _cloudProvider;
+    private readonly CloudProviderRouter _providerRouter;
     private readonly Mock<ILogger<SubscriptionsController>> _logger;
     private readonly SubscriptionsController _controller;
 
@@ -25,12 +28,16 @@ public class SubscriptionsControllerTests
         _namespaceRepository = new Mock<INamespaceRepository>();
         _clientCache = new Mock<IServiceBusClientCache>();
         _connectionStringProtector = new Mock<IConnectionStringProtector>();
+        _cloudProvider = new Mock<ICloudMessagingProvider>();
+        _cloudProvider.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Azure);
+        _providerRouter = new CloudProviderRouter([_cloudProvider.Object]);
         _logger = new Mock<ILogger<SubscriptionsController>>();
 
         _controller = new SubscriptionsController(
             _namespaceRepository.Object,
             _clientCache.Object,
             _connectionStringProtector.Object,
+            _providerRouter,
             _logger.Object)
         {
             ControllerContext = new ControllerContext
@@ -80,7 +87,7 @@ public class SubscriptionsControllerTests
     public void Constructor_NullRepository_ShouldThrow()
     {
         var act = () => new SubscriptionsController(
-            null!, _clientCache.Object, _connectionStringProtector.Object, _logger.Object);
+            null!, _clientCache.Object, _connectionStringProtector.Object, _providerRouter, _logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -88,7 +95,7 @@ public class SubscriptionsControllerTests
     public void Constructor_NullLogger_ShouldThrow()
     {
         var act = () => new SubscriptionsController(
-            _namespaceRepository.Object, _clientCache.Object, _connectionStringProtector.Object, null!);
+            _namespaceRepository.Object, _clientCache.Object, _connectionStringProtector.Object, _providerRouter, null!);
         act.Should().Throw<ArgumentNullException>();
     }
 

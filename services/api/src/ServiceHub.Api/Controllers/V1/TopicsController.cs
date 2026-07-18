@@ -157,11 +157,14 @@ public sealed class TopicsController : ApiControllerBase
             return ToActionResult<IReadOnlyList<TopicRuntimePropertiesDto>>(entitiesResult.Error);
         }
 
-        var topics = entitiesResult.Value
+        var entities = entitiesResult.Value;
+        var topics = entities
             .Where(e => e.EntityType.EndsWith("Topic", StringComparison.OrdinalIgnoreCase))
             .Select(e => new TopicRuntimePropertiesDto(
                 Name: e.Name,
-                SubscriptionCount: 0,
+                SubscriptionCount: entities.Count(s =>
+                    string.Equals(s.EntityType, "Subscription", StringComparison.OrdinalIgnoreCase) &&
+                    s.Name.StartsWith(e.Name + "/", StringComparison.Ordinal)),
                 SizeInBytes: 0,
                 Status: "Active",
                 CreatedAt: DateTimeOffset.MinValue,
