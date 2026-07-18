@@ -144,6 +144,11 @@ export function useReplayAll() {
         );
       } else if (result.totalMatched === 0) {
         toast('No messages matched this rule\'s conditions', { icon: 'ℹ️' });
+      } else if (result.failed === 0 && result.skipped > 0) {
+        toast(
+          `${result.skipped} matched message${result.skipped === 1 ? ' was' : 's were'} skipped (stale or out-of-scope records) — nothing to replay`,
+          { icon: 'ℹ️', duration: 6000 },
+        );
       } else {
         toast.error(`All ${result.totalMatched} matched messages failed to replay`);
       }
