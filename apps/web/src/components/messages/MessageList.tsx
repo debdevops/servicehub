@@ -20,6 +20,8 @@ interface MessageListProps {
   hasMoreMessages?: boolean;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
+  /** True while a tab switch is waiting for fresh messages from the API. */
+  isSyncing?: boolean;
 }
 
 // ============================================================================
@@ -174,6 +176,7 @@ export function MessageList({
   hasMoreMessages = false,
   isLoadingMore = false,
   onLoadMore,
+  isSyncing = false,
 }: MessageListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -266,8 +269,16 @@ export function MessageList({
         </button>
       </div>
 
+      {/* Sync indicator — fresh data for this tab is still on its way */}
+      {isSyncing && (
+        <div className="flex items-center justify-center gap-2 px-4 py-2 bg-sky-50 border-b border-sky-100 text-sky-700 text-xs font-medium shrink-0" role="status">
+          <div className="w-3.5 h-3.5 border-2 border-sky-300 border-t-sky-600 rounded-full animate-spin" />
+          Syncing {queueTab === 'deadletter' ? 'dead-letter' : 'active'} messages…
+        </div>
+      )}
+
       {/* Virtualized List */}
-      <div ref={parentRef} className="flex-1 overflow-auto">
+      <div ref={parentRef} className={`flex-1 overflow-auto ${isSyncing ? 'opacity-60 transition-opacity' : ''}`}>
         <div
           style={{
             height: virtualizer.getTotalSize(),
@@ -299,17 +310,30 @@ export function MessageList({
           })}
         </div>
 
-        {/* Empty State */}
+        {/* Empty State — while syncing, show a loading hint instead of a
+            misleading "No messages" verdict the fetch may be about to overturn */}
         {filteredMessages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8">
-            <CheckCircle size={48} className="text-gray-300 mb-4" />
-            <p className="text-lg font-medium">No messages</p>
-            <p className="text-sm text-gray-400 text-center max-w-xs">
-              {queueTab === 'deadletter'
-                ? 'Dead-letter queue is empty — no messages have been dead-lettered'
-                : 'Active queue is empty — no messages are currently pending'}
-            </p>
-          </div>
+          isSyncing ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8" role="status">
+              <div className="w-10 h-10 border-4 border-sky-200 border-t-sky-500 rounded-full animate-spin mb-4" />
+              <p className="text-lg font-medium">
+                Loading {queueTab === 'deadletter' ? 'dead-letter' : 'active'} messages…
+              </p>
+              <p className="text-sm text-gray-400 text-center max-w-xs">
+                Fetching the latest messages from the queue
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8">
+              <CheckCircle size={48} className="text-gray-300 mb-4" />
+              <p className="text-lg font-medium">No messages</p>
+              <p className="text-sm text-gray-400 text-center max-w-xs">
+                {queueTab === 'deadletter'
+                  ? 'Dead-letter queue is empty — no messages have been dead-lettered'
+                  : 'Active queue is empty — no messages are currently pending'}
+              </p>
+            </div>
+          )
         )}
       </div>
 

@@ -221,6 +221,23 @@ export function MessagesPage() {
   const { data: queuesData, refetch: refetchQueues } = useQueues(namespaceId || '', autoRefreshEnabled);
   const { data: subscriptionsData, refetch: refetchSubscriptions } = useSubscriptions(namespaceId || '', topicName || '', autoRefreshEnabled);
 
+  // Track Active ⇄ Dead-Letter switches so the list can show a sync indicator
+  // while the new tab's messages are fetched. Without this, a cached (stale)
+  // list renders instantly with no hint that fresh data is still loading.
+  const [isTabSyncing, setIsTabSyncing] = useState(false);
+  const prevQueueTabRef = useRef(queueTab);
+  useEffect(() => {
+    if (prevQueueTabRef.current !== queueTab) {
+      prevQueueTabRef.current = queueTab;
+      setIsTabSyncing(true);
+    }
+  }, [queueTab]);
+  useEffect(() => {
+    if (isTabSyncing && !isFetching) {
+      setIsTabSyncing(false);
+    }
+  }, [isTabSyncing, isFetching]);
+
   // Accumulate messages when new data arrives
   useEffect(() => {
     if (messagesData?.items) {
@@ -686,6 +703,7 @@ export function MessagesPage() {
           hasMoreMessages={hasMoreMessages}
           isLoadingMore={isLoadingMore}
           onLoadMore={handleLoadMore}
+          isSyncing={isTabSyncing}
         />
 
         {/* Right: Detail Panel */}
