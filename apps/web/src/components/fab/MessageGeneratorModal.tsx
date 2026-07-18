@@ -40,6 +40,7 @@ interface MessageGeneratorModalProps {
   onClose: () => void;
   defaultNamespaceId?: string | null;
   defaultEntityName?: string | null;
+  defaultEntityType?: 'queue' | 'topic';
   onGenerated?: () => void;
 }
 
@@ -91,6 +92,7 @@ export function MessageGeneratorModal({
   onClose,
   defaultNamespaceId,
   defaultEntityName,
+  defaultEntityType = 'queue',
   onGenerated,
 }: MessageGeneratorModalProps) {
   // Data fetching
@@ -101,7 +103,7 @@ export function MessageGeneratorModal({
   const { data: topics } = useTopics(selectedNamespace);
 
   // Form state
-  const [targetType, setTargetType] = useState<TargetType>('queue');
+  const [targetType, setTargetType] = useState<TargetType>(defaultEntityType);
   const [selectedEntity, setSelectedEntity] = useState(defaultEntityName || '');
   const [volume, setVolume] = useState<VolumePreset>(50);
   const [selectedScenarios, setSelectedScenarios] = useState<MessageScenario[]>(getDefaultScenarios());
@@ -109,11 +111,13 @@ export function MessageGeneratorModal({
   const [isGenerating, setIsGenerating] = useState(false);
   const [showCleanup, setShowCleanup] = useState(false);
 
-  // Update defaults when props change
+  // Update defaults when props change — including the entity kind, so a topic
+  // opened from the FAB generates via the topics route instead of the queue route.
   useEffect(() => {
     if (defaultNamespaceId) setSelectedNamespace(defaultNamespaceId);
     if (defaultEntityName) setSelectedEntity(defaultEntityName);
-  }, [defaultNamespaceId, defaultEntityName]);
+    setTargetType(defaultEntityType);
+  }, [defaultNamespaceId, defaultEntityName, defaultEntityType]);
 
   // Reset entity when namespace changes
   useEffect(() => {
@@ -175,8 +179,8 @@ export function MessageGeneratorModal({
         const results = await Promise.allSettled(
           batch.map(async (msg) => {
             await messagesApi.send(
-              selectedNamespace, 
-              selectedEntity, 
+              selectedNamespace,
+              selectedEntity,
               {
                 body: msg.body,
                 contentType: msg.contentType,

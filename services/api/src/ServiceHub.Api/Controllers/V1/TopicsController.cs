@@ -332,10 +332,11 @@ public sealed class TopicsController : ApiControllerBase
         }
 
         // Create a request with the topic name and namespace ID
-        var sendRequest = request with 
-        { 
+        var sendRequest = request with
+        {
             EntityName = topicName,
-            NamespaceId = namespaceId
+            NamespaceId = namespaceId,
+            IsTopic = true
         };
 
         var result = await _messageOperationsService.SendAsync(sendRequest, cancellationToken);

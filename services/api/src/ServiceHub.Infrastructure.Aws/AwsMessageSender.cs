@@ -72,13 +72,32 @@ public sealed class AwsMessageSender : IMessageSender
 
         try
         {
-            // SNS publish if entity is a topic ARN
-            if (request.EntityName.StartsWith("arn:aws:sns", StringComparison.OrdinalIgnoreCase))
+            // SNS publish if the entity is a topic (flagged by the topics endpoint,
+            // or given directly as a topic ARN)
+            if (request.IsTopic ||
+                request.EntityName.StartsWith("arn:aws:sns", StringComparison.OrdinalIgnoreCase))
             {
                 var sns = _clientFactory.GetSnsClient(nsResult.Value);
+
+                var topicArn = request.EntityName;
+                if (!topicArn.StartsWith("arn:aws:sns", StringComparison.OrdinalIgnoreCase))
+                {
+                    var topicsResponse = await _resiliencePipeline.ExecuteAsync(async ct =>
+                        await sns.ListTopicsAsync(ct).ConfigureAwait(false),
+                        cancellationToken).ConfigureAwait(false);
+
+                    var match = topicsResponse.Topics.FirstOrDefault(t =>
+                        t.TopicArn.EndsWith(":" + request.EntityName, StringComparison.OrdinalIgnoreCase));
+                    if (match is null)
+                        return Result.Failure(Error.NotFound("AWS.SNS.TopicNotFound",
+                            $"SNS topic '{request.EntityName}' was not found."));
+
+                    topicArn = match.TopicArn;
+                }
+
                 var snsRequest = new SnsPublishRequest
                 {
-                    TopicArn = request.EntityName,
+                    TopicArn = topicArn,
                     Message = request.Body,
                     MessageAttributes = BuildSnsMessageAttributes(request)
                 };
@@ -216,37 +235,49 @@ public sealed class AwsMessageSender : IMessageSender
         return sqsRequest;
     }
 
-    private static Dictionary<string, SqsMessageAttr> BuildSqsMessageAttributes(
-        SendMessageRequest request)
+    // SQS and SNS both reject messages with more than 10 message attributes.
+    private const int MaxMessageAttributes = 10;
+    private const string OverflowAttributeName = "shs-overflow-properties";
+
+    /// <summary>
+    /// Flattens application properties to string pairs within the provider's
+    /// 10-attribute limit. When there are more, the first nine are kept as-is and
+    /// the remainder are folded into a single JSON attribute so no data is lost.
+    /// </summary>
+    private static List<KeyValuePair<string, string>> FlattenProperties(SendMessageRequest request)
     {
         if (request.ApplicationProperties is null || request.ApplicationProperties.Count == 0)
             return [];
 
-        return request.ApplicationProperties
-            .Select(kvp => new { kvp.Key, Value = kvp.Value?.ToString() })
-            .Where(x => x.Value is not null)
-            .ToDictionary(
-                x => x.Key,
-                x => new SqsMessageAttr { DataType = "String", StringValue = x.Value! });
+        var pairs = request.ApplicationProperties
+            .Select(kvp => new KeyValuePair<string, string?>(kvp.Key, kvp.Value?.ToString()))
+            .Where(kvp => kvp.Value is not null)
+            .Select(kvp => new KeyValuePair<string, string>(kvp.Key, kvp.Value!))
+            .ToList();
+
+        if (pairs.Count <= MaxMessageAttributes)
+            return pairs;
+
+        var kept = pairs.Take(MaxMessageAttributes - 1).ToList();
+        var overflow = pairs.Skip(MaxMessageAttributes - 1)
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        kept.Add(new KeyValuePair<string, string>(
+            OverflowAttributeName,
+            System.Text.Json.JsonSerializer.Serialize(overflow)));
+        return kept;
     }
+
+    private static Dictionary<string, SqsMessageAttr> BuildSqsMessageAttributes(
+        SendMessageRequest request)
+        => FlattenProperties(request).ToDictionary(
+            kvp => kvp.Key,
+            kvp => new SqsMessageAttr { DataType = "String", StringValue = kvp.Value });
 
     private static Dictionary<string, SnsMessageAttr> BuildSnsMessageAttributes(
         SendMessageRequest request)
-    {
-        if (request.ApplicationProperties is null || request.ApplicationProperties.Count == 0)
-            return [];
-
-        return request.ApplicationProperties
-            .Select(kvp => new { kvp.Key, Value = kvp.Value?.ToString() })
-            .Where(x => x.Value is not null)
-            .ToDictionary(
-                x => x.Key,
-                x => new SnsMessageAttr
-                {
-                    DataType = "String",
-                    StringValue = x.Value!
-                });
-    }
+        => FlattenProperties(request).ToDictionary(
+            kvp => kvp.Key,
+            kvp => new SnsMessageAttr { DataType = "String", StringValue = kvp.Value });
 
     private static bool IsFifo(string entityName) =>
         entityName.EndsWith(".fifo", StringComparison.OrdinalIgnoreCase);

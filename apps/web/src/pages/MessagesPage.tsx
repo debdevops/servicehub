@@ -165,6 +165,17 @@ export function MessagesPage() {
   // Auto-refresh control
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
 
+  // SQS has no true peek: every browse is a receive that increments the message's
+  // ReceiveCount, so background polling would push messages over the queue's
+  // maxReceiveCount and silently dead-letter them. Disable auto-refresh for AWS —
+  // the user can still refresh manually or re-enable the toggle deliberately.
+  const isAwsNamespace = namespaces?.find(ns => ns.id === namespaceId)?.cloudProvider === 'aws';
+  useEffect(() => {
+    if (isAwsNamespace) {
+      setAutoRefreshEnabled(false);
+    }
+  }, [isAwsNamespace, namespaceId]);
+
   // Pagination constants and state
   const BATCH_SIZE = 50; // Load 50 messages per batch for optimal performance
   const [paginationState, setPaginationState] = useState({ skip: 0, allMessages: [] as APIMessage[] });
@@ -684,6 +695,14 @@ export function MessagesPage() {
             <span className="font-semibold">More messages available:</span> Showing {messages.length.toLocaleString()} of {totalMessagesInQueue.toLocaleString()} messages.
             Scroll down or click "Load More" to view additional messages.
           </span>
+        </div>
+      )}
+
+      {/* AWS SQS semantics notice — browsing counts as deliveries */}
+      {isAwsNamespace && (
+        <div className="px-4 py-1.5 bg-amber-50 border-b border-amber-100 text-amber-700 text-xs shrink-0">
+          AWS SQS counts every view as a delivery — repeated refreshes can move messages to the DLQ
+          once the queue's redrive policy limit is reached. Auto-refresh is off by default here.
         </div>
       )}
 

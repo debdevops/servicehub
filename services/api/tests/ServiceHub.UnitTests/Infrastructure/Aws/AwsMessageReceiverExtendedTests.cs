@@ -359,7 +359,7 @@ public sealed class AwsMessageReceiverExtendedTests
     }
 
     [Fact]
-    public async Task ReplayMessageAsync_WhenReceiptHandleNotCached_ReturnsNotFound()
+    public async Task ReplayMessageAsync_WhenMessageNotInDlq_ReturnsNotFound()
     {
         var ns = BuildNamespace();
         var repo = new Mock<INamespaceRepository>();
@@ -379,12 +379,17 @@ public sealed class AwsMessageReceiverExtendedTests
                 }
             });
 
+        // The DLQ scan finds no messages at all
+        sqsClient.Setup(s => s.ReceiveMessageAsync(
+            It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ReceiveMessageResponse { Messages = [] });
+
         var factory = new Mock<IAwsClientFactory>();
         factory.Setup(f => f.GetSqsClient(It.IsAny<SHNamespace>())).Returns(sqsClient.Object);
 
         var sut = new AwsMessageReceiver(factory.Object, repo.Object, NullLogger<AwsMessageReceiver>.Instance);
 
-        // sequence number 99999 is not in cache
+        // No message in the DLQ hashes to sequence number 99999
         var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, 99999L);
 
         result.IsSuccess.Should().BeFalse();
