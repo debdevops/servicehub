@@ -39,7 +39,9 @@ export function MessageFAB({
   onMessagesGenerated,
 }: MessageFABProps) {
   const isProd = environment?.toLowerCase() === 'prod';
-  const isNonAzure = cloudProvider === 'aws' || cloudProvider === 'gcp';
+  // AWS SQS send/dead-letter are fully supported server-side; GCP Pub/Sub still
+  // lacks manual dead-lettering, so write actions stay gated for GCP only.
+  const isWriteGated = cloudProvider === 'gcp';
   const providerLabel = cloudProvider === 'aws' ? 'AWS SQS' : cloudProvider === 'gcp' ? 'GCP Pub/Sub' : 'Azure Service Bus';
   const fabBgColor = cloudProvider === 'aws'
     ? 'bg-gradient-to-br from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 ring-orange-200'
@@ -229,7 +231,7 @@ export function MessageFAB({
             </div>
           </button>
 
-          {isNonAzure && (
+          {isWriteGated && (
             <div className="px-3 py-1.5 text-[11px] font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-lg mb-2 flex items-center gap-1.5">
               <span>⚡</span> {providerLabel} — write operations in Phase 2
             </div>
@@ -244,29 +246,29 @@ export function MessageFAB({
           {/* Dead-Letter Messages Option */}
           <button
             onClick={isProd ? undefined : handleDeadLetter}
-            disabled={!hasValidEntity || isDeadLettering || isProd || isNonAzure}
+            disabled={!hasValidEntity || isDeadLettering || isProd || isWriteGated}
             className={`
               flex items-center gap-3
               px-4 py-3
               border rounded-xl shadow-lg
               transition-all duration-150
               group
-              ${!hasValidEntity || isProd || isNonAzure
+              ${!hasValidEntity || isProd || isWriteGated
                 ? 'bg-gray-100 border-gray-200 cursor-not-allowed opacity-50'
                 : 'bg-white hover:bg-red-50 border-gray-200 hover:border-red-300 hover:shadow-xl'
               }
             `}
-            title={isProd ? 'Quick Actions are disabled for Production namespaces' : isNonAzure ? `Write operations for ${providerLabel} coming in Phase 2` : 'For testing: moves up to 3 messages from the active queue to the dead-letter queue'}
+            title={isProd ? 'Quick Actions are disabled for Production namespaces' : isWriteGated ? `Write operations for ${providerLabel} coming in Phase 2` : 'For testing: moves up to 3 messages from the active queue to the dead-letter queue'}
           >
             <div className={`p-2 rounded-lg transition-colors ${
-              !hasValidEntity || isProd || isNonAzure
+              !hasValidEntity || isProd || isWriteGated
                 ? 'bg-gray-200' 
                 : 'bg-red-100 group-hover:bg-red-200'
             }`}>
-              <Skull className={`w-5 h-5 ${!hasValidEntity || isProd || isNonAzure ? 'text-gray-400' : 'text-red-600'}`} />
+              <Skull className={`w-5 h-5 ${!hasValidEntity || isProd || isWriteGated ? 'text-gray-400' : 'text-red-600'}`} />
             </div>
             <div className="text-left">
-              <div className={`text-sm font-semibold ${!hasValidEntity || isProd || isNonAzure ? 'text-gray-400' : 'text-gray-800'}`}>
+              <div className={`text-sm font-semibold ${!hasValidEntity || isProd || isWriteGated ? 'text-gray-400' : 'text-gray-800'}`}>
                 {isDeadLettering ? 'Moving...' : 'Test DLQ'}
               </div>
               <div className="text-xs text-gray-500 max-w-[180px]">
@@ -278,19 +280,19 @@ export function MessageFAB({
           {/* Generate Messages Option */}
           <button
             onClick={handleOpenGenerate}
-            disabled={isProd || isNonAzure}
+            disabled={isProd || isWriteGated}
             className={`
               flex items-center gap-3
               px-4 py-3
               border rounded-xl shadow-lg
               transition-all duration-150
               group
-              ${isProd || isNonAzure
+              ${isProd || isWriteGated
                 ? 'bg-gray-100 border-gray-200 cursor-not-allowed opacity-50'
                 : 'bg-white hover:bg-amber-50 border-gray-200 hover:border-amber-300 hover:shadow-xl'
               }
             `}
-            title={isProd ? 'Quick Actions are disabled for Production namespaces' : isNonAzure ? `Write operations for ${providerLabel} coming in Phase 2` : undefined}
+            title={isProd ? 'Quick Actions are disabled for Production namespaces' : isWriteGated ? `Write operations for ${providerLabel} coming in Phase 2` : undefined}
           >
             <div className="p-2 bg-amber-100 rounded-lg group-hover:bg-amber-200 transition-colors">
               <Wand2 className="w-5 h-5 text-amber-600" />
@@ -304,19 +306,19 @@ export function MessageFAB({
           {/* Send Message Option */}
           <button
             onClick={handleOpenSend}
-            disabled={isProd || isNonAzure}
+            disabled={isProd || isWriteGated}
             className={`
               flex items-center gap-3
               px-4 py-3
               border rounded-xl shadow-lg
               transition-all duration-150
               group
-              ${isProd || isNonAzure
+              ${isProd || isWriteGated
                 ? 'bg-gray-100 border-gray-200 cursor-not-allowed opacity-50'
                 : 'bg-white hover:bg-sky-50 border-gray-200 hover:border-sky-300 hover:shadow-xl'
               }
             `}
-            title={isProd ? 'Quick Actions are disabled for Production namespaces' : isNonAzure ? `Write operations for ${providerLabel} coming in Phase 2` : undefined}
+            title={isProd ? 'Quick Actions are disabled for Production namespaces' : isWriteGated ? `Write operations for ${providerLabel} coming in Phase 2` : undefined}
           >
             <div className="p-2 bg-sky-100 rounded-lg group-hover:bg-sky-200 transition-colors">
               <Send className="w-5 h-5 text-sky-600" />

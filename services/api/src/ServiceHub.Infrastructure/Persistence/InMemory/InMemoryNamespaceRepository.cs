@@ -392,7 +392,10 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
     {
         try
         {
-            Result<Namespace> createResult = snapshot.AuthType == ConnectionAuthType.ConnectionString
+            // Dispatch on stored credentials, not AuthType: AWS/GCP namespaces persist with
+            // AwsAccessKey/GcpServiceAccount auth types but still carry a connection string,
+            // and CreateWithManagedIdentity would reject (and drop) them on reload.
+            Result<Namespace> createResult = !string.IsNullOrWhiteSpace(snapshot.ConnectionString)
                 ? Namespace.Create(
                     snapshot.Name,
                     snapshot.ConnectionString ?? string.Empty,
