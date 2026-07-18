@@ -23,6 +23,10 @@ namespace ServiceHub.Core.DTOs.Responses;
 /// <param name="DefaultMessageTimeToLive">The default message time to live.</param>
 /// <param name="LockDuration">The lock duration.</param>
 /// <param name="AutoDeleteOnIdle">The auto-delete on idle duration.</param>
+/// <param name="DeadLetterTargetQueue">
+/// Name of the separate DLQ queue this queue redrives to (AWS SQS only;
+/// Azure exposes the DLQ as a sub-queue, so this stays null there).
+/// </param>
 public sealed record QueueRuntimePropertiesDto(
     string Name,
     long ActiveMessageCount,
@@ -43,7 +47,8 @@ public sealed record QueueRuntimePropertiesDto(
     int MaxDeliveryCount,
     TimeSpan DefaultMessageTimeToLive,
     TimeSpan LockDuration,
-    TimeSpan AutoDeleteOnIdle);
+    TimeSpan AutoDeleteOnIdle,
+    string? DeadLetterTargetQueue = null);
 
 /// <summary>
 /// Runtime properties of a Service Bus topic.

@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause } from 'lucide-react';
 import { MessageList, MessageDetailPanel, type QueueTab } from '@/components/messages';
+import { AwsTopicFanout } from '@/components/aws/AwsTopicFanout';
 import { AIFindingsDropdown } from '@/components/ai';
 import { MessageListSkeleton } from '@/components/messages/MessageListSkeleton';
 import { HelpTooltip } from '@/components/help';
@@ -170,6 +171,10 @@ export function MessagesPage() {
   // maxReceiveCount and silently dead-letter them. Disable auto-refresh for AWS —
   // the user can still refresh manually or re-enable the toggle deliberately.
   const isAwsNamespace = namespaces?.find(ns => ns.id === namespaceId)?.cloudProvider === 'aws';
+
+  // AWS SNS topics render the fan-out dashboard, so their (non-existent)
+  // message list must never be fetched.
+  const isAwsTopicFanout = isAwsNamespace && !!topicName && !subscriptionName;
   useEffect(() => {
     if (isAwsNamespace) {
       setAutoRefreshEnabled(false);
@@ -220,7 +225,7 @@ export function MessagesPage() {
   // Fetch messages from API for current tab
   const { data: messagesData, isLoading, error, refetch, isFetching, dataUpdatedAt } = useMessages({
     namespaceId: namespaceId || '',
-    queueOrTopicName: entityName,
+    queueOrTopicName: isAwsTopicFanout ? '' : entityName,
     entityType,
     queueType: queueTab,
     skip: paginationState.skip,
@@ -466,6 +471,14 @@ export function MessagesPage() {
     if (seconds < 60) return `${seconds}s ago`;
     return `${Math.floor(seconds / 60)}m ago`;
   };
+
+  // AWS SNS topics store no messages — show the fan-out dashboard instead of a
+  // message list (checked before the loading/error returns so the topic's
+  // pointless message fetch can't hijack the view). Azure topics keep the
+  // existing subscription-based flow.
+  if (isAwsNamespace && namespaceId && topicName && !subscriptionName) {
+    return <AwsTopicFanout namespaceId={namespaceId} topicName={topicName} />;
+  }
 
   // Loading state
   if (isLoading) {
@@ -723,6 +736,16 @@ export function MessagesPage() {
           isLoadingMore={isLoadingMore}
           onLoadMore={handleLoadMore}
           isSyncing={isTabSyncing}
+          tabLabels={isAwsNamespace ? {
+            active: 'Queue',
+            deadletter: 'DLQ',
+            deadletterTitle: (() => {
+              const dlqName = queuesData?.find(q => q.name === queueName)?.deadLetterTargetQueue;
+              return dlqName
+                ? `Separate SQS queue: ${dlqName} (redrive target)`
+                : 'Messages in the redrive dead-letter queue';
+            })(),
+          } : undefined}
         />
 
         {/* Right: Detail Panel */}

@@ -178,7 +178,8 @@ public sealed class QueuesController : ApiControllerBase
                 MaxDeliveryCount: 0,
                 DefaultMessageTimeToLive: TimeSpan.Zero,
                 LockDuration: TimeSpan.Zero,
-                AutoDeleteOnIdle: TimeSpan.Zero))
+                AutoDeleteOnIdle: TimeSpan.Zero,
+                DeadLetterTargetQueue: e.DeadLetterTargetName))
             .ToList();
 
         _logger.LogInformation(

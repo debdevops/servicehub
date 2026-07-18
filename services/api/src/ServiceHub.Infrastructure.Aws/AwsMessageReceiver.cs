@@ -562,41 +562,45 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
     {
         var allMessages = new List<SqsMessage>();
         var seenMessageIds = new HashSet<string>(StringComparer.Ordinal);
-        var remaining = maxMessages;
+        var quietRounds = 0;
 
-        while (remaining > 0)
+        // Each SQS receive samples a subset of the queue's distributed hosts, so
+        // enumerating even a small queue takes several rounds. Keep requesting full
+        // batches (never fewer — smaller requests sample fewer hosts) until several
+        // consecutive rounds yield nothing new.
+        for (var i = 0; i < MaxScanBatches && allMessages.Count < maxMessages; i++)
         {
-            var batch = Math.Min(remaining, SqsMaxBatchSize);
             var response = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
             {
                 QueueUrl = queueUrl,
-                MaxNumberOfMessages = batch,
+                MaxNumberOfMessages = SqsMaxBatchSize,
                 VisibilityTimeout = 0,      // ← peek: immediately re-visible
+                WaitTimeSeconds = 1,        // long poll: samples all servers, not a subset
                 MessageSystemAttributeNames = new List<string> { "All" },
                 MessageAttributeNames = new List<string> { "All" }
             }, ct).ConfigureAwait(false);
-
-            if (response.Messages.Count == 0)
-                break;
 
             // Standard queues deliver at-least-once, and with VisibilityTimeout=0
             // the same message can be returned again — dedupe for display.
             var added = 0;
             foreach (var message in response.Messages)
             {
-                if (seenMessageIds.Add(message.MessageId))
+                if (allMessages.Count < maxMessages && seenMessageIds.Add(message.MessageId))
                 {
                     allMessages.Add(message);
                     added++;
                 }
             }
 
-            remaining -= added;
-
-            // SQS may return fewer than requested even when messages exist.
-            // Stop looping on a short batch, or when a batch was all duplicates.
-            if (response.Messages.Count < batch || added == 0)
-                break;
+            if (added == 0)
+            {
+                if (++quietRounds >= 5)
+                    break;
+            }
+            else
+            {
+                quietRounds = 0;
+            }
         }
 
         return allMessages;
@@ -687,6 +691,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                     QueueUrl = queueUrl,
                     MaxNumberOfMessages = SqsMaxBatchSize,
                     VisibilityTimeout = ScanLockSeconds,
+                    WaitTimeSeconds = 1,    // long poll: samples all servers, not a subset
                     MessageSystemAttributeNames = new List<string> { "All" },
                     MessageAttributeNames = new List<string> { "All" }
                 }, ct).ConfigureAwait(false);

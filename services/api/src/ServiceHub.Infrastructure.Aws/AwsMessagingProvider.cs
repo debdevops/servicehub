@@ -158,7 +158,8 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
                                       countsByName.TryGetValue(redriveTargetName, out var dlqCount)
                         ? dlqCount
                         : 0,
-                    Provider = CloudProviderType.Aws
+                    Provider = CloudProviderType.Aws,
+                    DeadLetterTargetName = redriveTargetName
                 });
             }
 
