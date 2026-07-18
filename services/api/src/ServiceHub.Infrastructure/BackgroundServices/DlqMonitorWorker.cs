@@ -155,6 +155,15 @@ public sealed class DlqMonitorWorker : BackgroundService
                                     var matchingRules = ruleEngine.FindMatchingRules(message, enabledRules);
                                     foreach (var (rule, action) in matchingRules)
                                     {
+                                        // Honour the rule's grace period (measured from DLQ detection)
+                                        // so operators can inspect messages before auto-replay fires;
+                                        // the message is retried on a later poll cycle.
+                                        if (action.DelaySeconds > 0 &&
+                                            DateTimeOffset.UtcNow < message.DetectedAtUtc.AddSeconds(action.DelaySeconds))
+                                        {
+                                            break;
+                                        }
+
                                         var replayResult = await replayExecutor.ExecuteAsync(
                                             message, rule, action, stoppingToken);
 
