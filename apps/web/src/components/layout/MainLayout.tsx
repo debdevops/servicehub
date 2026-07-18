@@ -10,6 +10,7 @@ import { GuidedTour, isTourCompleted } from '@/components/help/GuidedTour';
 import { CommandPalette } from '@/components/CommandPalette';
 import { KeyboardShortcutsOverlay } from '@/components/KeyboardShortcutsOverlay';
 import { useNamespaces } from '@/hooks/useNamespaces';
+import { getThemeProvider, setThemeProvider, subscribeThemeProvider } from '@/lib/providerTheme';
 import { useDemoContext } from '@/lib/demo/DemoContext';
 
 export function MainLayout() {
@@ -84,13 +85,14 @@ export function MainLayout() {
   const { data: namespaces } = useNamespaces();
   const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
 
-  // Provider theme: the UI chrome follows the cloud being worked on
+  // Provider theme: the UI chrome follows the cloud the user is working in
   // (Azure sky blue by default, AWS light orange, GCP light green — see index.css).
-  // Falls back to the active namespace's provider when no ?namespace= is present.
-  const themeProvider =
-    currentNamespace?.cloudProvider ??
-    namespaces?.find(ns => ns.isActive)?.cloudProvider ??
-    'azure';
+  // The sticky signal updates on sidebar namespace clicks and URL navigation.
+  const [themeProvider, setThemeProviderState] = useState(getThemeProvider);
+  useEffect(() => subscribeThemeProvider(setThemeProviderState), []);
+  useEffect(() => {
+    setThemeProvider(currentNamespace?.cloudProvider);
+  }, [currentNamespace?.cloudProvider]);
   useEffect(() => {
     document.documentElement.dataset.provider = themeProvider;
     return () => {

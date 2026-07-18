@@ -31,6 +31,7 @@ import { useQueries } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import { ProviderBadge } from '@/components/ProviderBadge';
 import { AwsQueueList, AwsTopicList } from '@/components/layout/AwsEntityTree';
+import { setThemeProvider } from '@/lib/providerTheme';
 import type { CloudProviderType } from '@/lib/api/types';
 import { useDemoContext } from '@/lib/demo/DemoContext';
 import { getMockStats } from '@/lib/demo/mockProviders';
@@ -264,9 +265,13 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
 
   return (
     <div className="mb-2">
-      {/* Namespace Header */}
+      {/* Namespace Header — clicking also declares "I'm working in this cloud",
+          which drives the provider theme (blue/orange/green) */}
       <button
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => {
+          setThemeProvider(namespace.cloudProvider ?? 'azure');
+          setIsExpanded(!isExpanded);
+        }}
         className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-all ${
           namespace.isActive
             ? 'bg-gray-50 border border-gray-200'
