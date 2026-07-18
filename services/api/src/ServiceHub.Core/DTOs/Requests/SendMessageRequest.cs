@@ -17,6 +17,11 @@ namespace ServiceHub.Core.DTOs.Requests;
 /// <param name="TimeToLiveSeconds">Optional time-to-live in seconds.</param>
 /// <param name="ScheduledEnqueueTimeUtc">Optional scheduled enqueue time for delayed delivery.</param>
 /// <param name="ApplicationProperties">Optional application-specific properties.</param>
+/// <param name="IsTopic">
+/// True when <paramref name="EntityName"/> refers to a topic rather than a queue.
+/// Azure Service Bus resolves either transparently by name, but providers with
+/// separate services per entity kind (e.g., AWS SNS vs SQS) need the distinction.
+/// </param>
 public sealed record SendMessageRequest(
     Guid? NamespaceId = null,
     string? EntityName = null,
@@ -31,4 +36,5 @@ public sealed record SendMessageRequest(
     string? To = null,
     int? TimeToLiveSeconds = null,
     DateTimeOffset? ScheduledEnqueueTimeUtc = null,
-    IReadOnlyDictionary<string, object>? ApplicationProperties = null);
+    IReadOnlyDictionary<string, object>? ApplicationProperties = null,
+    bool IsTopic = false);
