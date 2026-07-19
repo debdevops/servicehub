@@ -67,7 +67,7 @@ export function MessageSendFAB({ namespaceId, queueName, onMessageSent }: Messag
         onClose={() => setIsModalOpen(false)}
         onSend={handleSend}
         defaultNamespaceId={namespaceId}
-        defaultQueueName={queueName}
+        defaultEntityName={queueName}
       />
     </>
   );

@@ -168,3 +168,40 @@ export function useReplayMessage() {
     },
   });
 }
+
+export function usePurgeMessage() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      namespaceId,
+      sequenceNumber,
+      entityName,
+      subscriptionName,
+      fromDeadLetter
+    }: {
+      namespaceId: string;
+      sequenceNumber: number;
+      entityName: string;
+      subscriptionName?: string;
+      fromDeadLetter?: boolean;
+    }) =>
+      messagesApi.purge(namespaceId, sequenceNumber, entityName, subscriptionName, fromDeadLetter),
+    onSuccess: async (_, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['messages', { namespaceId: variables.namespaceId, queueOrTopicName: variables.entityName }],
+          exact: false,
+          refetchType: 'active',
+        }),
+        queryClient.invalidateQueries({ queryKey: ['queues', variables.namespaceId], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['subscriptions', variables.namespaceId], refetchType: 'active' }),
+      ]);
+      toast.success('Message purged successfully');
+    },
+    onError: (error: ApiError) => {
+      const errorMsg = error?.response?.data?.message || error?.message || 'Failed to purge message';
+      toast.error(errorMsg, { duration: Infinity });
+    },
+  });
+}

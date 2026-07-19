@@ -15,7 +15,7 @@ interface SendMessageModalProps {
   onClose: () => void;
   onSend: (data: MessagePayload) => void;
   defaultNamespaceId?: string | null;
-  defaultQueueName?: string | null;
+  defaultEntityName?: string | null;
   defaultEntityType?: 'queue' | 'topic';
 }
 
@@ -42,8 +42,8 @@ export function SendMessageModal({
   onClose,
   onSend,
   defaultNamespaceId,
-  defaultQueueName,
-  defaultEntityType = 'queue'
+  defaultEntityName,
+  defaultEntityType
 }: SendMessageModalProps) {
   const { data: namespaces } = useNamespaces();
   const [selectedNamespace, setSelectedNamespace] = useState(defaultNamespaceId || '');
@@ -51,8 +51,8 @@ export function SendMessageModal({
   const { data: topics } = useTopics(selectedNamespace);
   const sendMessage = useSendMessage();
 
-  const [entityType, setEntityType] = useState<'queue' | 'topic'>(defaultEntityType);
-  const [entity, setEntity] = useState(defaultQueueName || '');
+  const [entityType, setEntityType] = useState<'queue' | 'topic'>(defaultEntityType || 'queue');
+  const [entity, setEntity] = useState(defaultEntityName || '');
   const [body, setBody] = useState('{\n  "orderId": "ORD-2026-12345",\n  "amount": 99.99,\n  "currency": "USD"\n}');
   const [contentType, setContentType] = useState('application/json');
   const [properties, setProperties] = useState<MessageProperty[]>([
@@ -67,13 +67,12 @@ export function SendMessageModal({
   const [sendMultiple, setSendMultiple] = useState(false);
   const [messageCount, setMessageCount] = useState(1);
 
-  // Update selected namespace and entity when defaults change — including the
-  // entity kind, so a topic opened from the FAB is sent via the topics route.
+  // Update selected namespace, entity, and entity type when defaults change
   useEffect(() => {
     if (defaultNamespaceId) setSelectedNamespace(defaultNamespaceId);
-    if (defaultQueueName) setEntity(defaultQueueName);
-    setEntityType(defaultEntityType);
-  }, [defaultNamespaceId, defaultQueueName, defaultEntityType]);
+    if (defaultEntityName) setEntity(defaultEntityName);
+    if (defaultEntityType) setEntityType(defaultEntityType);
+  }, [defaultNamespaceId, defaultEntityName, defaultEntityType]);
 
   // Handle Escape key to close modal
   useEffect(() => {

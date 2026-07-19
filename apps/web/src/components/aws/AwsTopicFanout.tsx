@@ -142,7 +142,7 @@ export function AwsTopicFanout({ namespaceId, topicName }: AwsTopicFanoutProps) 
         onClose={() => setPublishOpen(false)}
         onSend={() => setPublishOpen(false)}
         defaultNamespaceId={namespaceId}
-        defaultQueueName={topicName}
+        defaultEntityName={topicName}
         defaultEntityType="topic"
       />
     </div>

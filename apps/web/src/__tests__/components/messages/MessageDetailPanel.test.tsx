@@ -9,6 +9,10 @@ vi.mock('@/hooks/useTabPersistence', () => ({
 }));
 vi.mock('@/hooks/useMessages', () => ({
   useReplayMessage: vi.fn(),
+  usePurgeMessage: vi.fn(),
+}));
+vi.mock('@/hooks/useNamespaces', () => ({
+  useNamespaces: vi.fn(),
 }));
 vi.mock('@/components/messages/tabs', () => ({
   PropertiesTab: ({ message }: { message: any }) => (
@@ -33,10 +37,13 @@ vi.mock('react-hot-toast', () => ({
 }));
 
 import { useTabPersistence } from '@/hooks/useTabPersistence';
-import { useReplayMessage } from '@/hooks/useMessages';
+import { useReplayMessage, usePurgeMessage } from '@/hooks/useMessages';
+import { useNamespaces } from '@/hooks/useNamespaces';
 
 const mockUseTabPersistence = useTabPersistence as ReturnType<typeof vi.fn>;
 const mockUseReplayMessage = useReplayMessage as ReturnType<typeof vi.fn>;
+const mockUsePurgeMessage = usePurgeMessage as ReturnType<typeof vi.fn>;
+const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 
 const mockMessage = {
   id: 'msg-aaa-bbb-111',
@@ -78,9 +85,21 @@ function createWrapper(path = '/messages?namespace=ns1&queue=test-queue') {
   );
 }
 
+function makeNamespace(cloudProvider: 'azure' | 'aws' | 'gcp') {
+  return {
+    id: 'ns1',
+    name: 'test-ns',
+    environment: 'dev',
+    hasSendPermission: true,
+    cloudProvider,
+  };
+}
+
 beforeEach(() => {
   mockUseTabPersistence.mockReturnValue(['properties', vi.fn()]);
   mockUseReplayMessage.mockReturnValue({ mutateAsync: vi.fn(), isPending: false });
+  mockUsePurgeMessage.mockReturnValue({ mutateAsync: vi.fn(), isPending: false });
+  mockUseNamespaces.mockReturnValue({ data: undefined });
 });
 
 describe('MessageDetailPanel', () => {
@@ -227,5 +246,70 @@ describe('MessageDetailPanel', () => {
     render(<Wrapper><MessageDetailPanel message={plainMessage} /></Wrapper>);
     // Title should fallback to 'Message' with ID subtitle
     expect(screen.getByText('Message')).toBeInTheDocument();
+  });
+
+  describe('Purge provider gating', () => {
+    it('disables Purge with explanation for Azure namespaces', () => {
+      mockUseNamespaces.mockReturnValue({ data: [makeNamespace('azure')] });
+      const Wrapper = createWrapper();
+      render(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
+      const purgeBtn = screen.getByLabelText('Purge not supported for Azure Service Bus');
+      expect(purgeBtn).toBeDisabled();
+      expect(purgeBtn).toHaveAttribute('title', expect.stringContaining('not supported for Azure Service Bus'));
+    });
+
+    it('disables Purge when namespace data is unavailable', () => {
+      mockUseNamespaces.mockReturnValue({ data: undefined });
+      const Wrapper = createWrapper();
+      render(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
+      expect(screen.getByLabelText('Purge not supported for Azure Service Bus')).toBeDisabled();
+    });
+
+    it('enables Purge for AWS namespaces', () => {
+      mockUseNamespaces.mockReturnValue({ data: [makeNamespace('aws')] });
+      const Wrapper = createWrapper();
+      render(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
+      expect(screen.getByLabelText('Permanently delete message')).not.toBeDisabled();
+    });
+
+    it('enables Purge for GCP namespaces', () => {
+      mockUseNamespaces.mockReturnValue({ data: [makeNamespace('gcp')] });
+      const Wrapper = createWrapper();
+      render(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
+      expect(screen.getByLabelText('Permanently delete message')).not.toBeDisabled();
+    });
+
+    it('blocks Purge for production AWS namespaces', () => {
+      mockUseNamespaces.mockReturnValue({ data: [{ ...makeNamespace('aws'), environment: 'prod' }] });
+      const Wrapper = createWrapper();
+      render(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
+      expect(screen.getByLabelText('Purge blocked in production')).toBeDisabled();
+    });
+
+    it('opens danger confirm dialog when Purge is clicked', () => {
+      mockUseNamespaces.mockReturnValue({ data: [makeNamespace('aws')] });
+      const Wrapper = createWrapper();
+      render(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
+      fireEvent.click(screen.getByLabelText('Permanently delete message'));
+      expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
+      expect(screen.getByText('Permanently Delete Message')).toBeInTheDocument();
+    });
+
+    it('calls purge with fromDeadLetter for DLQ messages on confirm', () => {
+      const mutateAsync = vi.fn().mockResolvedValue(undefined);
+      mockUsePurgeMessage.mockReturnValue({ mutateAsync, isPending: false });
+      mockUseNamespaces.mockReturnValue({ data: [makeNamespace('aws')] });
+      const Wrapper = createWrapper();
+      render(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
+      fireEvent.click(screen.getByLabelText('Permanently delete message'));
+      fireEvent.click(screen.getByText('Confirm'));
+      expect(mutateAsync).toHaveBeenCalledWith({
+        namespaceId: 'ns1',
+        sequenceNumber: 42,
+        entityName: 'test-queue',
+        subscriptionName: undefined,
+        fromDeadLetter: true,
+      });
+    });
   });
 });
