@@ -149,7 +149,9 @@ export function MessageFAB({
           'topic',
           subscriptionName
         );
-        toast.success(`✅ Moved ${result.deadLetteredCount} messages to DLQ from ${topicName}/${subscriptionName}`);
+        if (result.deadLetteredCount > 0) {
+          toast.success(`✅ Moved ${result.deadLetteredCount} messages to DLQ from ${topicName}/${subscriptionName}`);
+        }
       } else if (queueName) {
         // Dead-letter from queue
         result = await messagesApi.deadLetter(
@@ -160,20 +162,25 @@ export function MessageFAB({
           'Manually moved to DLQ for testing purposes via ServiceHub UI',
           'queue'
         );
-        toast.success(`✅ Moved ${result.deadLetteredCount} messages to DLQ from ${queueName}`);
+        if (result.deadLetteredCount > 0) {
+          toast.success(`✅ Moved ${result.deadLetteredCount} messages to DLQ from ${queueName}`);
+        }
       }
 
-      if (result && result.deadLetteredCount > 0) {
-        // Refresh to show updated counts immediately with refetch
+      if (result) {
+        // Refresh even when nothing was moved: a 0-count usually means the queue
+        // is empty (e.g. an external consumer drained it), so the currently
+        // displayed message list is a stale snapshot that must be reconciled.
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' }),
           queryClient.invalidateQueries({ queryKey: ['queues', namespaceId], refetchType: 'active' }),
           queryClient.invalidateQueries({ queryKey: ['topics', namespaceId], refetchType: 'active' }),
           queryClient.invalidateQueries({ queryKey: ['subscriptions', namespaceId], refetchType: 'active' }),
         ]);
-      } else if (result && result.deadLetteredCount === 0) {
+      }
+      if (result && result.deadLetteredCount === 0) {
         toast(
-          'No active messages were available to dead-letter. If you just sent messages, an external consumer may be draining this queue.',
+          'No active messages were available to dead-letter — the queue is empty right now. The list has been refreshed; if you just sent messages, an external consumer may be draining this queue.',
           { icon: 'ℹ️', duration: 6000 }
         );
       }
