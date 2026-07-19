@@ -33,4 +33,10 @@ public sealed class CloudEntity
     /// Gets or sets the cloud provider that owns this entity.
     /// </summary>
     public CloudProviderType Provider { get; init; }
+
+    /// <summary>
+    /// Gets or sets the name of the separate dead-letter queue this entity redrives to,
+    /// for providers where the DLQ is its own queue (e.g., AWS SQS RedrivePolicy).
+    /// </summary>
+    public string? DeadLetterTargetName { get; init; }
 }

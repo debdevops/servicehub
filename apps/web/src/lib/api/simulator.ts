@@ -50,7 +50,9 @@ export interface DlqFloodRequest {
 
 /** GET /api/v1/simulator/status */
 export async function getSimulatorStatus(): Promise<SimulatorStatus> {
-  const response = await apiClient.get<SimulatorStatus>('/simulator/status');
+  // _silent: this probe 404s by design when the API is not running in
+  // simulator mode — it must never surface an error toast.
+  const response = await apiClient.get<SimulatorStatus>('/simulator/status', { _silent: true });
   return response.data;
 }
 

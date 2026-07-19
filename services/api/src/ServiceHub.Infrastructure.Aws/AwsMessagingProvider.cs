@@ -111,6 +111,8 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
                 async token => await sqs.ListQueuesAsync(new ListQueuesRequest(), token).ConfigureAwait(false),
                 ct).ConfigureAwait(false);
 
+            var queueSnapshots = new List<(string Name, long ActiveCount, string? RedriveTargetName)>();
+
             foreach (var queueUrl in listResponse.QueueUrls)
             {
                 try
@@ -134,18 +136,31 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
                     // Extract queue name from URL
                     var queueName = queueUrl.Split('/').LastOrDefault() ?? queueUrl;
 
-                    entities.Add(new CloudEntity
-                    {
-                        Name = queueName,
-                        EntityType = "Queue",
-                        ActiveMessageCount = visible + inFlight,
-                        Provider = CloudProviderType.Aws
-                    });
+                    queueSnapshots.Add((queueName, visible + inFlight, ParseRedriveTargetName(attrs)));
                 }
                 catch (AmazonSQSException ex)
                 {
                     _logger.LogWarning(ex, "Could not get attributes for queue {QueueUrl}", queueUrl);
                 }
+            }
+
+            // SQS surfaces the DLQ as a separate queue; report its depth as the source
+            // queue's dead-letter count so the UI's Azure-style DLQ tab shows real numbers.
+            var countsByName = queueSnapshots.ToDictionary(q => q.Name, q => q.ActiveCount, StringComparer.OrdinalIgnoreCase);
+            foreach (var (queueName, activeCount, redriveTargetName) in queueSnapshots)
+            {
+                entities.Add(new CloudEntity
+                {
+                    Name = queueName,
+                    EntityType = "Queue",
+                    ActiveMessageCount = activeCount,
+                    DeadLetterCount = redriveTargetName is not null &&
+                                      countsByName.TryGetValue(redriveTargetName, out var dlqCount)
+                        ? dlqCount
+                        : 0,
+                    Provider = CloudProviderType.Aws,
+                    DeadLetterTargetName = redriveTargetName
+                });
             }
 
             // List SNS topics
@@ -158,12 +173,38 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
 
                 foreach (var topic in topicsResponse.Topics)
                 {
+                    // ARNs contain ':' which breaks URL routing downstream — expose the friendly name.
+                    var topicName = topic.TopicArn[(topic.TopicArn.LastIndexOf(':') + 1)..];
                     entities.Add(new CloudEntity
                     {
-                        Name = topic.TopicArn,
+                        Name = topicName,
                         EntityType = "SNS Topic",
                         Provider = CloudProviderType.Aws
                     });
+
+                    try
+                    {
+                        var subsResponse = await _resiliencePipeline.ExecuteAsync(
+                            async token => await sns.ListSubscriptionsByTopicAsync(topic.TopicArn, token).ConfigureAwait(false),
+                            ct).ConfigureAwait(false);
+
+                        foreach (var sub in subsResponse.Subscriptions)
+                        {
+                            var endpointName = string.IsNullOrEmpty(sub.Endpoint)
+                                ? sub.Protocol
+                                : sub.Endpoint[(sub.Endpoint.LastIndexOf(':') + 1)..];
+                            entities.Add(new CloudEntity
+                            {
+                                Name = $"{topicName}/{endpointName}",
+                                EntityType = "Subscription",
+                                Provider = CloudProviderType.Aws
+                            });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Could not list SNS subscriptions for topic {TopicArn}", topic.TopicArn);
+                    }
                 }
             }
             catch (Exception ex)
@@ -224,5 +265,30 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
             _logger.LogError(ex, "Error getting SNS fanout map for topic {TopicArn}", topicArn);
             return Result.Failure<SnsFanoutMap>(Error.ExternalService("AWS.SNS.FanoutMapFailed", ex.Message));
         }
+    }
+
+    private static string? ParseRedriveTargetName(GetQueueAttributesResponse attrs)
+    {
+        if (attrs.Attributes is null ||
+            !attrs.Attributes.TryGetValue("RedrivePolicy", out var redriveJson) ||
+            string.IsNullOrWhiteSpace(redriveJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(redriveJson);
+            if (doc.RootElement.TryGetProperty("deadLetterTargetArn", out var arnElement) &&
+                arnElement.GetString() is { Length: > 0 } arn)
+            {
+                return arn[(arn.LastIndexOf(':') + 1)..];
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+        }
+
+        return null;
     }
 }

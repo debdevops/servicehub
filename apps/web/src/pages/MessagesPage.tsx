@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause } from 'lucide-react';
 import { MessageList, MessageDetailPanel, type QueueTab } from '@/components/messages';
+import { AwsTopicFanout } from '@/components/aws/AwsTopicFanout';
 import { AIFindingsDropdown } from '@/components/ai';
 import { MessageListSkeleton } from '@/components/messages/MessageListSkeleton';
 import { HelpTooltip } from '@/components/help';
@@ -165,6 +166,21 @@ export function MessagesPage() {
   // Auto-refresh control
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
 
+  // SQS has no true peek: every browse is a receive that increments the message's
+  // ReceiveCount, so background polling would push messages over the queue's
+  // maxReceiveCount and silently dead-letter them. Disable auto-refresh for AWS —
+  // the user can still refresh manually or re-enable the toggle deliberately.
+  const isAwsNamespace = namespaces?.find(ns => ns.id === namespaceId)?.cloudProvider === 'aws';
+
+  // AWS SNS topics render the fan-out dashboard, so their (non-existent)
+  // message list must never be fetched.
+  const isAwsTopicFanout = isAwsNamespace && !!topicName && !subscriptionName;
+  useEffect(() => {
+    if (isAwsNamespace) {
+      setAutoRefreshEnabled(false);
+    }
+  }, [isAwsNamespace, namespaceId]);
+
   // Pagination constants and state
   const BATCH_SIZE = 50; // Load 50 messages per batch for optimal performance
   const [paginationState, setPaginationState] = useState({ skip: 0, allMessages: [] as APIMessage[] });
@@ -209,7 +225,7 @@ export function MessagesPage() {
   // Fetch messages from API for current tab
   const { data: messagesData, isLoading, error, refetch, isFetching, dataUpdatedAt } = useMessages({
     namespaceId: namespaceId || '',
-    queueOrTopicName: entityName,
+    queueOrTopicName: isAwsTopicFanout ? '' : entityName,
     entityType,
     queueType: queueTab,
     skip: paginationState.skip,
@@ -220,6 +236,23 @@ export function MessagesPage() {
   // Fetch authoritative counts from queue/subscription metadata
   const { data: queuesData, refetch: refetchQueues } = useQueues(namespaceId || '', autoRefreshEnabled);
   const { data: subscriptionsData, refetch: refetchSubscriptions } = useSubscriptions(namespaceId || '', topicName || '', autoRefreshEnabled);
+
+  // Track Active ⇄ Dead-Letter switches so the list can show a sync indicator
+  // while the new tab's messages are fetched. Without this, a cached (stale)
+  // list renders instantly with no hint that fresh data is still loading.
+  const [isTabSyncing, setIsTabSyncing] = useState(false);
+  const prevQueueTabRef = useRef(queueTab);
+  useEffect(() => {
+    if (prevQueueTabRef.current !== queueTab) {
+      prevQueueTabRef.current = queueTab;
+      setIsTabSyncing(true);
+    }
+  }, [queueTab]);
+  useEffect(() => {
+    if (isTabSyncing && !isFetching) {
+      setIsTabSyncing(false);
+    }
+  }, [isTabSyncing, isFetching]);
 
   // Accumulate messages when new data arrives
   useEffect(() => {
@@ -438,6 +471,14 @@ export function MessagesPage() {
     if (seconds < 60) return `${seconds}s ago`;
     return `${Math.floor(seconds / 60)}m ago`;
   };
+
+  // AWS SNS topics store no messages — show the fan-out dashboard instead of a
+  // message list (checked before the loading/error returns so the topic's
+  // pointless message fetch can't hijack the view). Azure topics keep the
+  // existing subscription-based flow.
+  if (isAwsNamespace && namespaceId && topicName && !subscriptionName) {
+    return <AwsTopicFanout namespaceId={namespaceId} topicName={topicName} />;
+  }
 
   // Loading state
   if (isLoading) {
@@ -670,6 +711,14 @@ export function MessagesPage() {
         </div>
       )}
 
+      {/* AWS SQS semantics notice — browsing counts as deliveries */}
+      {isAwsNamespace && (
+        <div className="px-4 py-1.5 bg-amber-50 border-b border-amber-100 text-amber-700 text-xs shrink-0">
+          AWS SQS counts every view as a delivery — repeated refreshes can move messages to the DLQ
+          once the queue's redrive policy limit is reached. Auto-refresh is off by default here.
+        </div>
+      )}
+
       {/* Split View: Message List + Detail Panel */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left: Message List */}
@@ -686,6 +735,17 @@ export function MessagesPage() {
           hasMoreMessages={hasMoreMessages}
           isLoadingMore={isLoadingMore}
           onLoadMore={handleLoadMore}
+          isSyncing={isTabSyncing}
+          tabLabels={isAwsNamespace ? {
+            active: 'Queue',
+            deadletter: 'DLQ',
+            deadletterTitle: (() => {
+              const dlqName = queuesData?.find(q => q.name === queueName)?.deadLetterTargetQueue;
+              return dlqName
+                ? `Separate SQS queue: ${dlqName} (redrive target)`
+                : 'Messages in the redrive dead-letter queue';
+            })(),
+          } : undefined}
         />
 
         {/* Right: Detail Panel */}

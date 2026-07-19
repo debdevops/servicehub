@@ -172,7 +172,10 @@ export function MessageFAB({
           queryClient.invalidateQueries({ queryKey: ['subscriptions', namespaceId], refetchType: 'active' }),
         ]);
       } else if (result && result.deadLetteredCount === 0) {
-        toast('No messages available to dead-letter', { icon: 'ℹ️' });
+        toast(
+          'No active messages were available to dead-letter. If you just sent messages, an external consumer may be draining this queue.',
+          { icon: 'ℹ️', duration: 6000 }
+        );
       }
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string; message?: string } }; message?: string };
@@ -260,7 +263,7 @@ export function MessageFAB({
           >
             <div className={`p-2 rounded-lg transition-colors ${
               !hasValidEntity || isProd
-                ? 'bg-gray-200' 
+                ? 'bg-gray-200'
                 : 'bg-red-100 group-hover:bg-red-200'
             }`}>
               <Skull className={`w-5 h-5 ${!hasValidEntity || isProd ? 'text-gray-400' : 'text-red-600'}`} />

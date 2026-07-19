@@ -19,6 +19,7 @@ public sealed class CloudBridgeTestFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        builder.UseSetting("Configuration:SkipLocalSettings", "true");
         builder.ConfigureAppConfiguration((_, config) =>
         {
             // Add our overrides last so they take precedence over appsettings.Development.json
@@ -185,6 +186,7 @@ public sealed class CloudBridgeEnabledProvidersFactory : WebApplicationFactory<P
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        builder.UseSetting("Configuration:SkipLocalSettings", "true");
         builder.ConfigureAppConfiguration((_, config) =>
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>

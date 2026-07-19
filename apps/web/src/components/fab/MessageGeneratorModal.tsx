@@ -111,7 +111,8 @@ export function MessageGeneratorModal({
   const [isGenerating, setIsGenerating] = useState(false);
   const [showCleanup, setShowCleanup] = useState(false);
 
-  // Update defaults when props change
+  // Update defaults when props change — including the entity kind, so a topic
+  // opened from the FAB generates via the topics route instead of the queue route.
   useEffect(() => {
     if (defaultNamespaceId) setSelectedNamespace(defaultNamespaceId);
     if (defaultEntityName) setSelectedEntity(defaultEntityName);
@@ -178,8 +179,8 @@ export function MessageGeneratorModal({
         const results = await Promise.allSettled(
           batch.map(async (msg) => {
             await messagesApi.send(
-              selectedNamespace, 
-              selectedEntity, 
+              selectedNamespace,
+              selectedEntity,
               {
                 body: msg.body,
                 contentType: msg.contentType,

@@ -86,9 +86,44 @@ public sealed class DlqMonitorWorker : BackgroundService
                     continue;
                 }
 
-                _logger.LogInformation("Scanning DLQs for {Count} namespace(s): {Namespaces}", 
-                    namespaces.Count, 
+                _logger.LogInformation("Scanning DLQs for {Count} namespace(s): {Namespaces}",
+                    namespaces.Count,
                     string.Join(", ", namespaces.Select(n => $"{LogRedactor.SanitiseForLog(n.Name)} (ID: {n.Id})")));
+
+                // Archive Active DLQ records whose namespace registration no longer exists —
+                // they can never be scanned or replayed, and would otherwise keep matching
+                // auto-replay rules (and failing) forever.
+                try
+                {
+                    var allNamespacesResult = await namespaceRepo.GetAllAsync(stoppingToken);
+                    if (allNamespacesResult.IsSuccess)
+                    {
+                        var knownIds = allNamespacesResult.Value.Select(n => n.Id).ToHashSet();
+                        var reconcileDb = scope.ServiceProvider.GetRequiredService<DlqDbContext>();
+                        var orphans = (await reconcileDb.DlqMessages
+                                .Where(m => m.Status == Core.Enums.DlqMessageStatus.Active)
+                                .ToListAsync(stoppingToken))
+                            .Where(m => !knownIds.Contains(m.NamespaceId))
+                            .ToList();
+                        if (orphans.Count > 0)
+                        {
+                            foreach (var orphan in orphans)
+                            {
+                                orphan.Status = Core.Enums.DlqMessageStatus.Archived;
+                                orphan.ArchivedAt = DateTimeOffset.UtcNow;
+                            }
+
+                            await reconcileDb.SaveChangesAsync(stoppingToken);
+                            _logger.LogInformation(
+                                "Archived {Count} orphaned DLQ record(s) belonging to unregistered namespaces",
+                                orphans.Count);
+                        }
+                    }
+                }
+                catch (Exception reconcileEx) when (reconcileEx is not OperationCanceledException)
+                {
+                    _logger.LogWarning(reconcileEx, "Failed to archive orphaned DLQ records");
+                }
 
                     using var semaphore = new SemaphoreSlim(MaxParallelScans);
                 var tasks = namespaces.Select(async ns =>
@@ -155,6 +190,15 @@ public sealed class DlqMonitorWorker : BackgroundService
                                     var matchingRules = ruleEngine.FindMatchingRules(message, enabledRules);
                                     foreach (var (rule, action) in matchingRules)
                                     {
+                                        // Honour the rule's grace period (measured from DLQ detection)
+                                        // so operators can inspect messages before auto-replay fires;
+                                        // the message is retried on a later poll cycle.
+                                        if (action.DelaySeconds > 0 &&
+                                            DateTimeOffset.UtcNow < message.DetectedAtUtc.AddSeconds(action.DelaySeconds))
+                                        {
+                                            break;
+                                        }
+
                                         var replayResult = await replayExecutor.ExecuteAsync(
                                             message, rule, action, stoppingToken);
 

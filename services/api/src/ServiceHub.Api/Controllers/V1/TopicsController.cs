@@ -83,6 +83,11 @@ public sealed class TopicsController : ApiControllerBase
 
         var ns = namespaceResult.Value;
 
+        if (ns.Provider != CloudProviderType.Azure)
+        {
+            return await GetAllViaProviderAsync(ns, cancellationToken);
+        }
+
         if (ns.ConnectionString is null)
         {
             return BadRequest("Namespace does not have a connection string configured.");
@@ -120,6 +125,68 @@ public sealed class TopicsController : ApiControllerBase
                 Detail = $"Unable to connect to the Service Bus namespace. Verify the connection string is valid and the namespace is reachable. ({ex.GetType().Name})"
             });
         }
+    }
+
+    /// <summary>
+    /// Lists topics for non-Azure namespaces via the registered <see cref="ICloudMessagingProvider"/>.
+    /// Matches any "*Topic" entity type ("SNS Topic" on AWS, "Topic" on GCP); provider entity
+    /// snapshots only carry name and message counts, so Azure-specific runtime properties are
+    /// returned as neutral defaults.
+    /// </summary>
+    private async Task<ActionResult<IReadOnlyList<TopicRuntimePropertiesDto>>> GetAllViaProviderAsync(
+        Core.Entities.Namespace ns,
+        CancellationToken cancellationToken)
+    {
+        if (!_providerRouter.IsRegistered(ns.Provider))
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Title = "Provider not enabled",
+                Detail = $"The '{ns.Provider}' cloud provider is not enabled on this server. " +
+                         $"Set 'CloudProviders:{ns.Provider}:Enabled' to 'true' in appsettings and restart.",
+                Instance = HttpContext.Request.Path
+            });
+        }
+
+        var entitiesResult = await _providerRouter
+            .Resolve(ns.Provider)
+            .ListEntitiesAsync(ns.Id, cancellationToken);
+        if (entitiesResult.IsFailure)
+        {
+            return ToActionResult<IReadOnlyList<TopicRuntimePropertiesDto>>(entitiesResult.Error);
+        }
+
+        var entities = entitiesResult.Value;
+        var topics = entities
+            .Where(e => e.EntityType.EndsWith("Topic", StringComparison.OrdinalIgnoreCase))
+            .Select(e => new TopicRuntimePropertiesDto(
+                Name: e.Name,
+                SubscriptionCount: entities.Count(s =>
+                    string.Equals(s.EntityType, "Subscription", StringComparison.OrdinalIgnoreCase) &&
+                    s.Name.StartsWith(e.Name + "/", StringComparison.Ordinal)),
+                SizeInBytes: 0,
+                Status: "Active",
+                CreatedAt: DateTimeOffset.MinValue,
+                UpdatedAt: DateTimeOffset.MinValue,
+                AccessedAt: DateTimeOffset.MinValue,
+                RequiresDuplicateDetection: false,
+                EnablePartitioning: false,
+                EnableBatchedOperations: false,
+                SupportOrdering: false,
+                MaxSizeInMegabytes: 0,
+                DefaultMessageTimeToLive: TimeSpan.Zero,
+                AutoDeleteOnIdle: TimeSpan.Zero,
+                DuplicateDetectionHistoryTimeWindow: TimeSpan.Zero))
+            .ToList();
+
+        _logger.LogInformation(
+            "Retrieved {TopicCount} topics for namespace {NamespaceId} via {Provider} provider",
+            topics.Count,
+            ns.Id,
+            ns.Provider);
+
+        return Ok(topics);
     }
 
     /// <summary>
@@ -265,10 +332,11 @@ public sealed class TopicsController : ApiControllerBase
         }
 
         // Create a request with the topic name and namespace ID
-        var sendRequest = request with 
-        { 
+        var sendRequest = request with
+        {
             EntityName = topicName,
-            NamespaceId = namespaceId
+            NamespaceId = namespaceId,
+            IsTopic = true
         };
 
         var result = await _messageOperationsService.SendAsync(sendRequest, cancellationToken);

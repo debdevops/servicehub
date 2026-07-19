@@ -38,8 +38,8 @@ export interface MessagePayload {
 }
 
 export function SendMessageModal({ 
-  isOpen, 
-  onClose, 
+  isOpen,
+  onClose,
   onSend,
   defaultNamespaceId,
   defaultEntityName,

@@ -32,24 +32,38 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
     private readonly ILogger<AwsMessageReceiver> _logger;
     private readonly ResiliencePipeline _resiliencePipeline;
 
-    // Maps synthetic sequence number → SQS ReceiptHandle so replay/purge can find the message.
-    // Receipt handles are large opaque strings; we expose a stable long ID to the UI layer.
-    private readonly ConcurrentDictionary<long, string> _receiptHandleCache = new();
-
     // Caches DLQ URL per (namespaceId, sourceQueueUrl) to avoid repeated GetQueueAttributes calls.
     private readonly ConcurrentDictionary<string, string> _dlqUrlCache = new();
-
-    /// <summary>Maximum receipt-handle cache entries before LRU-style eviction is triggered.</summary>
-    private const int ReceiptHandleCacheMaxSize = 50_000;
-
-    /// <summary>Number of oldest entries to evict when the receipt-handle cache is at capacity.</summary>
-    private const int ReceiptHandleCacheEvictCount = 5_000;
 
     /// <summary>Maximum DLQ URL cache entries (one per distinct source queue).</summary>
     private const int DlqUrlCacheMaxSize = 1_000;
 
     /// <summary>SQS hard limit for ReceiveMessage batch size.</summary>
     private const int SqsMaxBatchSize = 10;
+
+    /// <summary>Visibility lock (seconds) applied while scanning a queue for a target message.</summary>
+    private const int ScanLockSeconds = 60;
+
+    // Scans hold visibility locks while iterating, so two concurrent scans of the
+    // same queue (a UI peek racing the DLQ monitor's peek, or a replay/purge scan)
+    // would hide messages from each other and report them missing. Serialize
+    // receive-scans per queue URL within this process; entries are one semaphore
+    // per distinct queue URL, so growth is bounded by the number of queues.
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _queueScanGates = new();
+
+    private static SemaphoreSlim GetScanGate(string queueUrl) =>
+        _queueScanGates.GetOrAdd(queueUrl, static _ => new SemaphoreSlim(1, 1));
+
+    private const int MaxMessageAttributes = 10;
+
+    private const string OverflowAttributeName = "shs-overflow-properties";
+
+    private const string DeadLetterReasonAttribute = "DeadLetterReason";
+
+    private const string DeadLetterDescriptionAttribute = "DeadLetterErrorDescription";
+
+    /// <summary>Upper bound of receive batches when scanning for a target message.</summary>
+    private const int MaxScanBatches = 20;
 
     /// <summary>
     /// Initialises a new instance of <see cref="AwsMessageReceiver"/>.
@@ -79,6 +93,11 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        // An SNS "subscription" is an SQS endpoint queue named after the subscription;
+        // topic-scoped requests must target that queue, not the topic name.
+        if (!string.IsNullOrEmpty(request.SubscriptionName))
+            request = request with { EntityName = request.SubscriptionName };
 
         var nsResult = await _namespaceRepository.GetByIdAsync(request.NamespaceId, cancellationToken).ConfigureAwait(false);
         if (nsResult.IsFailure)
@@ -128,6 +147,9 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        if (!string.IsNullOrEmpty(request.SubscriptionName))
+            request = request with { EntityName = request.SubscriptionName };
 
         var nsResult = await _namespaceRepository.GetByIdAsync(request.NamespaceId, cancellationToken).ConfigureAwait(false);
         if (nsResult.IsFailure)
@@ -223,6 +245,9 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         DeadLetterRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (!string.IsNullOrEmpty(request.SubscriptionName))
+            request = request with { EntityName = request.SubscriptionName };
+
         // For AWS: send a message with a custom DeadLetterReason attribute to the DLQ URL.
         var nsResult = await _namespaceRepository.GetByIdAsync(request.NamespaceId, cancellationToken).ConfigureAwait(false);
         if (nsResult.IsFailure)
@@ -241,39 +266,45 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             // Receive messages from source and delete them (they're now in the DLQ by policy-driven path)
             // For manual dead-lettering, we receive them and send to DLQ directly.
             var count = Math.Min(request.ValidatedMessageCount, SqsMaxBatchSize);
-            var received = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
-            {
-                QueueUrl = sourceUrl,
-                MaxNumberOfMessages = count,
-                VisibilityTimeout = 30,
-                MessageSystemAttributeNames = new List<string> { "All" },
-                MessageAttributeNames = new List<string> { "All" }
-            }, cancellationToken).ConfigureAwait(false);
-
-            if (received.Messages.Count == 0)
-                return Result.Success(0);
-
-            // Send each to DLQ with reason attribute, then delete from source
             var deadLettered = 0;
-            foreach (var msg in received.Messages)
+            var gate = GetScanGate(sourceUrl);
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                await sqs.SendMessageAsync(new SqsSend
-                {
-                    QueueUrl = dlqUrl,
-                    MessageBody = msg.Body,
-                    MessageAttributes = new Dictionary<string, MessageAttributeValue>
-                    {
-                        ["DeadLetterReason"] = new MessageAttributeValue { DataType = "String", StringValue = request.Reason }
-                    }
-                }, cancellationToken).ConfigureAwait(false);
-
-                await sqs.DeleteMessageAsync(new DeleteMessageRequest
+                var received = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
                 {
                     QueueUrl = sourceUrl,
-                    ReceiptHandle = msg.ReceiptHandle
+                    MaxNumberOfMessages = count,
+                    VisibilityTimeout = 30,
+                    MessageSystemAttributeNames = new List<string> { "All" },
+                    MessageAttributeNames = new List<string> { "All" }
                 }, cancellationToken).ConfigureAwait(false);
 
-                deadLettered++;
+                if (received.Messages.Count == 0)
+                    return Result.Success(0);
+
+                // Send each to DLQ with reason attribute, then delete from source
+                foreach (var msg in received.Messages)
+                {
+                    await sqs.SendMessageAsync(new SqsSend
+                    {
+                        QueueUrl = dlqUrl,
+                        MessageBody = msg.Body,
+                        MessageAttributes = BuildDeadLetterAttributes(msg, request.Reason, request.ErrorDescription)
+                    }, cancellationToken).ConfigureAwait(false);
+
+                    await sqs.DeleteMessageAsync(new DeleteMessageRequest
+                    {
+                        QueueUrl = sourceUrl,
+                        ReceiptHandle = msg.ReceiptHandle
+                    }, cancellationToken).ConfigureAwait(false);
+
+                    deadLettered++;
+                }
+            }
+            finally
+            {
+                gate.Release();
             }
 
             _logger.LogInformation("Dead-lettered {Count} messages from {QueueName}", deadLettered, SanitizeForLog(request.EntityName));
@@ -294,6 +325,9 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         long sequenceNumber,
         CancellationToken cancellationToken = default)
     {
+        if (!string.IsNullOrEmpty(subscriptionName))
+            entityName = subscriptionName;
+
         var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken).ConfigureAwait(false);
         if (nsResult.IsFailure)
             return Result.Failure(nsResult.Error);
@@ -309,34 +343,14 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                 return Result.Failure(Error.Validation("AWS.SQS.NoDlq",
                     $"Queue {entityName} has no DLQ configured."));
 
-            // Receive the target message from DLQ with a real visibility window
-            if (!_receiptHandleCache.TryGetValue(sequenceNumber, out var cachedHandle))
-            {
-                // Receipt handle not in cache — scan for the message
-                _logger.LogWarning("Receipt handle for sequence {Seq} not cached, scanning DLQ for {QueueName}", sequenceNumber, SanitizeForLog(entityName));
-                return Result.Failure(Error.NotFound("AWS.SQS.MessageNotFound",
-                    $"Message with sequence number {sequenceNumber} not found in receipt handle cache. " +
-                    "Peek the DLQ first to populate the cache before replaying."));
-            }
-
-            // Receive from DLQ with proper visibility timeout to lock the message
-            var received = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
-            {
-                QueueUrl = dlqUrl,
-                MaxNumberOfMessages = 1,
-                VisibilityTimeout = 30,
-                MessageSystemAttributeNames = new List<string> { "All" },
-                MessageAttributeNames = new List<string> { "All" }
-            }, cancellationToken).ConfigureAwait(false);
-
-            var target = received.Messages.FirstOrDefault(m =>
-                string.Equals(m.ReceiptHandle, cachedHandle, StringComparison.Ordinal));
-
+            // Sequence numbers are derived from the stable SQS MessageId, so the target
+            // can be located by scanning the DLQ — no prior peek or cache required.
+            var target = await FindAndLockMessageAsync(sqs, dlqUrl, sequenceNumber, cancellationToken).ConfigureAwait(false);
             if (target is null)
             {
-                _logger.LogWarning("Message with sequence {Seq} not found in DLQ receive batch", sequenceNumber);
+                _logger.LogWarning("Message with sequence {Seq} not found in DLQ for {QueueName}", sequenceNumber, SanitizeForLog(entityName));
                 return Result.Failure(Error.NotFound("AWS.SQS.MessageNotFound",
-                    $"Message {sequenceNumber} could not be received from the DLQ."));
+                    $"Message {sequenceNumber} was not found in the DLQ — it may have been consumed, replayed, or expired."));
             }
 
             // CRITICAL ORDER: Send to source BEFORE deleting from DLQ
@@ -353,7 +367,6 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                 ReceiptHandle = target.ReceiptHandle
             }, cancellationToken).ConfigureAwait(false);
 
-            _receiptHandleCache.TryRemove(sequenceNumber, out _);
             _logger.LogInformation("Replayed message {Seq} from DLQ to {QueueName}", sequenceNumber, SanitizeForLog(entityName));
             return Result.Success();
         }
@@ -373,6 +386,9 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         bool fromDeadLetter,
         CancellationToken cancellationToken = default)
     {
+        if (!string.IsNullOrEmpty(subscriptionName))
+            entityName = subscriptionName;
+
         var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken).ConfigureAwait(false);
         if (nsResult.IsFailure)
             return Result.Failure(nsResult.Error);
@@ -396,19 +412,19 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                 targetUrl = sourceUrl;
             }
 
-            if (!_receiptHandleCache.TryGetValue(sequenceNumber, out var receiptHandle))
+            var target = await FindAndLockMessageAsync(sqs, targetUrl, sequenceNumber, cancellationToken).ConfigureAwait(false);
+            if (target is null)
             {
                 return Result.Failure(Error.NotFound("AWS.SQS.MessageNotFound",
-                    $"Message {sequenceNumber} not found in receipt handle cache."));
+                    $"Message {sequenceNumber} was not found in the queue — it may have been consumed, replayed, or expired."));
             }
 
             await sqs.DeleteMessageAsync(new DeleteMessageRequest
             {
                 QueueUrl = targetUrl,
-                ReceiptHandle = receiptHandle
+                ReceiptHandle = target.ReceiptHandle
             }, cancellationToken).ConfigureAwait(false);
 
-            _receiptHandleCache.TryRemove(sequenceNumber, out _);
             _logger.LogInformation("Purged message {Seq} from {Queue}", sequenceNumber, SanitizeForLog(entityName));
             return Result.Success();
         }
@@ -569,30 +585,89 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         IAmazonSQS sqs, string queueUrl, int maxMessages, CancellationToken ct)
     {
         var allMessages = new List<SqsMessage>();
-        var remaining = maxMessages;
+        var receivedByMessageId = new Dictionary<string, SqsMessage>(StringComparer.Ordinal);
+        var quietRounds = 0;
 
-        while (remaining > 0)
+        var gate = GetScanGate(queueUrl);
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            var batch = Math.Min(remaining, SqsMaxBatchSize);
-            var response = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
+            // Each SQS receive samples a subset of the queue's distributed hosts, so
+            // enumerating even a small queue takes several rounds. Hold the scan lock
+            // while iterating so each message is received exactly once per peek —
+            // every receive bumps ApproximateReceiveCount, and re-receiving the same
+            // messages round after round trips the queue's redrive policy, silently
+            // dead-lettering healthy messages. Locks are released in the finally.
+            for (var i = 0; i < MaxScanBatches && allMessages.Count < maxMessages; i++)
             {
-                QueueUrl = queueUrl,
-                MaxNumberOfMessages = batch,
-                VisibilityTimeout = 0,      // ← peek: immediately re-visible
-                MessageSystemAttributeNames = new List<string> { "All" },
-                MessageAttributeNames = new List<string> { "All" }
-            }, ct).ConfigureAwait(false);
+                var response = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
+                {
+                    QueueUrl = queueUrl,
+                    MaxNumberOfMessages = SqsMaxBatchSize,
+                    VisibilityTimeout = ScanLockSeconds,
+                    WaitTimeSeconds = 1,    // long poll: samples all servers, not a subset
+                    MessageSystemAttributeNames = new List<string> { "All" },
+                    MessageAttributeNames = new List<string> { "All" }
+                }, ct).ConfigureAwait(false);
 
-            if (response.Messages.Count == 0)
-                break;
+                var added = 0;
+                foreach (var message in response.Messages)
+                {
+                    // At-least-once delivery can still duplicate; keep the latest
+                    // receipt handle, which is the only one valid for release.
+                    var isNew = !receivedByMessageId.ContainsKey(message.MessageId);
+                    receivedByMessageId[message.MessageId] = message;
 
-            allMessages.AddRange(response.Messages);
-            remaining -= response.Messages.Count;
+                    if (isNew && allMessages.Count < maxMessages)
+                    {
+                        allMessages.Add(message);
+                        added++;
+                    }
+                }
 
-            // SQS may return fewer than requested even when messages exist.
-            // Stop looping if we got a full batch to avoid infinite polling.
-            if (response.Messages.Count < batch)
-                break;
+                if (added == 0)
+                {
+                    if (++quietRounds >= 5)
+                        break;
+                }
+                else
+                {
+                    quietRounds = 0;
+                }
+            }
+        }
+        finally
+        {
+            try
+            {
+                // Peek must not consume: make everything we received visible again; if
+                // release fails they reappear on their own once the scan lock expires.
+                // Runs even when the caller cancelled, so locks are not left behind.
+                foreach (var chunk in receivedByMessageId.Values.Chunk(SqsMaxBatchSize))
+                {
+                    try
+                    {
+                        await sqs.ChangeMessageVisibilityBatchAsync(new ChangeMessageVisibilityBatchRequest
+                        {
+                            QueueUrl = queueUrl,
+                            Entries = chunk.Select((m, idx) => new ChangeMessageVisibilityBatchRequestEntry
+                            {
+                                Id = idx.ToString(),
+                                ReceiptHandle = m.ReceiptHandle,
+                                VisibilityTimeout = 0
+                            }).ToList()
+                        }, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (AmazonSQSException ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to release visibility for peeked messages; they will reappear after {Seconds}s", ScanLockSeconds);
+                    }
+                }
+            }
+            finally
+            {
+                gate.Release();
+            }
         }
 
         return allMessages;
@@ -608,20 +683,9 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
 
         foreach (var msg in sqsMessages)
         {
-            // Derive a stable long ID from the receipt handle hash for the UI sequence number.
-            var seqNum = ComputeSequenceNumber(msg.ReceiptHandle);
-
-            // Evict oldest entries if cache is at capacity to prevent unbounded memory growth.
-            if (_receiptHandleCache.Count >= ReceiptHandleCacheMaxSize)
-            {
-                var toEvict = _receiptHandleCache.Keys
-                    .Take(ReceiptHandleCacheEvictCount)
-                    .ToList();
-                foreach (var evictKey in toEvict)
-                    _receiptHandleCache.TryRemove(evictKey, out _);
-                _logger.LogDebug("Evicted {Count} receipt handle cache entries to maintain capacity", toEvict.Count);
-            }
-            _receiptHandleCache.TryAdd(seqNum, msg.ReceiptHandle);
+            // Derive a stable long ID from the SQS MessageId, so a message keeps the same
+            // sequence number across peeks/restarts and replay/purge can find it by scanning.
+            var seqNum = ComputeSequenceNumber(msg.MessageId);
 
             // Parse system attributes
             _ = long.TryParse(
@@ -636,12 +700,17 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                 ? DateTimeOffset.FromUnixTimeMilliseconds(sentEpochMs)
                 : DateTimeOffset.UtcNow;
 
+            // The dead-letter markers stamped by manual dead-lettering are ServiceHub
+            // metadata, not user properties — promote them to the dedicated fields.
+            msg.MessageAttributes.TryGetValue(DeadLetterReasonAttribute, out var dlReason);
+            msg.MessageAttributes.TryGetValue(DeadLetterDescriptionAttribute, out var dlDescription);
+
             // Map MessageAttributes → ApplicationProperties
-            var appProps = msg.MessageAttributes.Count > 0
-                ? msg.MessageAttributes.ToDictionary(
+            var appProps = msg.MessageAttributes
+                .Where(kvp => kvp.Key is not (DeadLetterReasonAttribute or DeadLetterDescriptionAttribute))
+                .ToDictionary(
                     kvp => kvp.Key,
-                    kvp => (object)kvp.Value.StringValue)
-                : null;
+                    kvp => (object)kvp.Value.StringValue);
 
             mapped.Add(new CoreMessage
             {
@@ -656,6 +725,8 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                 NamespaceId = namespaceId,
                 EntityName = entityName,
                 IsFromDeadLetter = fromDlq,
+                DeadLetterReason = dlReason?.StringValue,
+                DeadLetterErrorDescription = dlDescription?.StringValue,
                 State = ServiceHub.Core.Enums.MessageState.Active
             });
         }
@@ -663,13 +734,140 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         return mapped;
     }
 
-    private static long ComputeSequenceNumber(string receiptHandle)
+    /// <summary>
+    /// Copies the message's original attributes and stamps the dead-letter reason
+    /// (and optional description). SQS caps messages at 10 attributes, so excess
+    /// originals are spilled into the same overflow JSON property the send path
+    /// uses, merging with an existing overflow attribute if one is present.
+    /// </summary>
+    private static Dictionary<string, MessageAttributeValue> BuildDeadLetterAttributes(
+        SqsMessage msg, string reason, string? errorDescription)
+    {
+        var attrs = new Dictionary<string, MessageAttributeValue>(msg.MessageAttributes)
+        {
+            [DeadLetterReasonAttribute] = new MessageAttributeValue { DataType = "String", StringValue = reason }
+        };
+        if (!string.IsNullOrEmpty(errorDescription))
+            attrs[DeadLetterDescriptionAttribute] = new MessageAttributeValue { DataType = "String", StringValue = errorDescription };
+
+        if (attrs.Count <= MaxMessageAttributes)
+            return attrs;
+
+        var overflow = attrs.TryGetValue(OverflowAttributeName, out var existing) && existing.StringValue is { Length: > 0 }
+            ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(existing.StringValue) ?? new Dictionary<string, string>()
+            : new Dictionary<string, string>();
+
+        var spillKeys = attrs.Keys
+            .Where(k => k is not (DeadLetterReasonAttribute or DeadLetterDescriptionAttribute or OverflowAttributeName))
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .Take(attrs.Count - MaxMessageAttributes + (attrs.ContainsKey(OverflowAttributeName) ? 0 : 1))
+            .ToList();
+
+        foreach (var key in spillKeys)
+        {
+            overflow[key] = attrs[key].StringValue ?? string.Empty;
+            attrs.Remove(key);
+        }
+
+        attrs[OverflowAttributeName] = new MessageAttributeValue
+        {
+            DataType = "String",
+            StringValue = System.Text.Json.JsonSerializer.Serialize(overflow)
+        };
+        return attrs;
+    }
+
+    private static long ComputeSequenceNumber(string messageId)
     {
         // Use a stable 64-bit hash derived from SHA-256 so sequence numbers:
         //  1. Are consistent across process restarts (unlike GetHashCode which is randomized)
         //  2. Have negligible collision probability (2^63 space vs 2^31 for GetHashCode)
         var hash = System.Security.Cryptography.SHA256.HashData(
-            System.Text.Encoding.UTF8.GetBytes(receiptHandle));
+            System.Text.Encoding.UTF8.GetBytes(messageId));
         return BitConverter.ToInt64(hash, 0) & long.MaxValue; // keep positive
+    }
+
+    /// <summary>
+    /// Scans a queue for the message whose MessageId hashes to <paramref name="sequenceNumber"/>,
+    /// locking received messages behind a visibility window during the scan. The target (if found)
+    /// stays locked and is returned with a fresh receipt handle; all other messages are released.
+    /// </summary>
+    private async Task<SqsMessage?> FindAndLockMessageAsync(
+        IAmazonSQS sqs, string queueUrl, long sequenceNumber, CancellationToken ct)
+    {
+        SqsMessage? target = null;
+        var nonTargets = new List<SqsMessage>();
+        var seenIds = new HashSet<string>(StringComparer.Ordinal);
+
+        var gate = GetScanGate(queueUrl);
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            for (var i = 0; i < MaxScanBatches && target is null; i++)
+            {
+                var response = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
+                {
+                    QueueUrl = queueUrl,
+                    MaxNumberOfMessages = SqsMaxBatchSize,
+                    VisibilityTimeout = ScanLockSeconds,
+                    WaitTimeSeconds = 1,    // long poll: samples all servers, not a subset
+                    MessageSystemAttributeNames = new List<string> { "All" },
+                    MessageAttributeNames = new List<string> { "All" }
+                }, ct).ConfigureAwait(false);
+
+                if (response.Messages.Count == 0)
+                    break;
+
+                var progressed = false;
+                foreach (var message in response.Messages)
+                {
+                    if (!seenIds.Add(message.MessageId))
+                        continue;
+
+                    progressed = true;
+                    if (ComputeSequenceNumber(message.MessageId) == sequenceNumber)
+                        target = message;
+                    else
+                        nonTargets.Add(message);
+                }
+
+                if (!progressed)
+                    break;
+            }
+        }
+        finally
+        {
+            try
+            {
+                // Release the messages we merely inspected; if this fails they become
+                // visible again on their own once the scan lock expires.
+                foreach (var chunk in nonTargets.Chunk(SqsMaxBatchSize))
+                {
+                    try
+                    {
+                        await sqs.ChangeMessageVisibilityBatchAsync(new ChangeMessageVisibilityBatchRequest
+                        {
+                            QueueUrl = queueUrl,
+                            Entries = chunk.Select((m, idx) => new ChangeMessageVisibilityBatchRequestEntry
+                            {
+                                Id = idx.ToString(),
+                                ReceiptHandle = m.ReceiptHandle,
+                                VisibilityTimeout = 0
+                            }).ToList()
+                        }, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (AmazonSQSException ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to release visibility for scanned messages; they will reappear after {Seconds}s", ScanLockSeconds);
+                    }
+                }
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+
+        return target;
     }
 }

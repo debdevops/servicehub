@@ -10,6 +10,7 @@ import { GuidedTour, isTourCompleted } from '@/components/help/GuidedTour';
 import { CommandPalette } from '@/components/CommandPalette';
 import { KeyboardShortcutsOverlay } from '@/components/KeyboardShortcutsOverlay';
 import { useNamespaces } from '@/hooks/useNamespaces';
+import { getThemeProvider, setThemeProvider, subscribeThemeProvider } from '@/lib/providerTheme';
 import { useDemoContext } from '@/lib/demo/DemoContext';
 
 export function MainLayout() {
@@ -83,6 +84,21 @@ export function MainLayout() {
   // Resolve current namespace to check environment and permissions
   const { data: namespaces } = useNamespaces();
   const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
+
+  // Provider theme: the UI chrome follows the cloud the user is working in
+  // (Azure sky blue by default, AWS light orange, GCP light green — see index.css).
+  // The sticky signal updates on sidebar namespace clicks and URL navigation.
+  const [themeProvider, setThemeProviderState] = useState(getThemeProvider);
+  useEffect(() => subscribeThemeProvider(setThemeProviderState), []);
+  useEffect(() => {
+    setThemeProvider(currentNamespace?.cloudProvider);
+  }, [currentNamespace?.cloudProvider]);
+  useEffect(() => {
+    document.documentElement.dataset.provider = themeProvider;
+    return () => {
+      delete document.documentElement.dataset.provider;
+    };
+  }, [themeProvider]);
   // FAB: only in DEV environment with Manage (write) permission — never in UAT/Prod or read-only connections
   const canUseFab = currentNamespace?.environment === 'dev' && currentNamespace?.hasManagePermission === true;
 

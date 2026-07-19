@@ -83,6 +83,11 @@ public sealed class QueuesController : ApiControllerBase
 
         var ns = namespaceResult.Value;
 
+        if (ns.Provider != CloudProviderType.Azure)
+        {
+            return await GetAllViaProviderAsync(ns, cancellationToken);
+        }
+
         if (ns.ConnectionString is null)
         {
             return BadRequest("Namespace does not have a connection string configured.");
@@ -120,6 +125,70 @@ public sealed class QueuesController : ApiControllerBase
                 Detail = $"Unable to connect to the Service Bus namespace. Verify the connection string is valid and the namespace is reachable. ({ex.GetType().Name})"
             });
         }
+    }
+
+    /// <summary>
+    /// Lists queues for non-Azure namespaces via the registered <see cref="ICloudMessagingProvider"/>.
+    /// Provider entity snapshots only carry name and message counts, so Azure-specific
+    /// runtime properties are returned as neutral defaults.
+    /// </summary>
+    private async Task<ActionResult<IReadOnlyList<QueueRuntimePropertiesDto>>> GetAllViaProviderAsync(
+        Core.Entities.Namespace ns,
+        CancellationToken cancellationToken)
+    {
+        if (!_providerRouter.IsRegistered(ns.Provider))
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Title = "Provider not enabled",
+                Detail = $"The '{ns.Provider}' cloud provider is not enabled on this server. " +
+                         $"Set 'CloudProviders:{ns.Provider}:Enabled' to 'true' in appsettings and restart.",
+                Instance = HttpContext.Request.Path
+            });
+        }
+
+        var entitiesResult = await _providerRouter
+            .Resolve(ns.Provider)
+            .ListEntitiesAsync(ns.Id, cancellationToken);
+        if (entitiesResult.IsFailure)
+        {
+            return ToActionResult<IReadOnlyList<QueueRuntimePropertiesDto>>(entitiesResult.Error);
+        }
+
+        var queues = entitiesResult.Value
+            .Where(e => string.Equals(e.EntityType, "Queue", StringComparison.OrdinalIgnoreCase))
+            .Select(e => new QueueRuntimePropertiesDto(
+                Name: e.Name,
+                ActiveMessageCount: e.ActiveMessageCount,
+                DeadLetterMessageCount: e.DeadLetterCount,
+                ScheduledMessageCount: 0,
+                TransferMessageCount: 0,
+                TransferDeadLetterMessageCount: 0,
+                SizeInBytes: 0,
+                Status: "Active",
+                CreatedAt: DateTimeOffset.MinValue,
+                UpdatedAt: DateTimeOffset.MinValue,
+                AccessedAt: DateTimeOffset.MinValue,
+                RequiresSession: false,
+                RequiresDuplicateDetection: false,
+                EnablePartitioning: false,
+                EnableBatchedOperations: false,
+                MaxSizeInMegabytes: 0,
+                MaxDeliveryCount: 0,
+                DefaultMessageTimeToLive: TimeSpan.Zero,
+                LockDuration: TimeSpan.Zero,
+                AutoDeleteOnIdle: TimeSpan.Zero,
+                DeadLetterTargetQueue: e.DeadLetterTargetName))
+            .ToList();
+
+        _logger.LogInformation(
+            "Retrieved {QueueCount} queues for namespace {NamespaceId} via {Provider} provider",
+            queues.Count,
+            ns.Id,
+            ns.Provider);
+
+        return Ok(queues);
     }
 
     /// <summary>

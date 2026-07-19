@@ -2,7 +2,9 @@ using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Responses;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.Api.Controllers.V1;
@@ -18,6 +20,7 @@ public sealed class SubscriptionsController : ApiControllerBase
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IServiceBusClientCache _clientCache;
     private readonly IConnectionStringProtector _connectionStringProtector;
+    private readonly CloudProviderRouter _providerRouter;
     private readonly ILogger<SubscriptionsController> _logger;
 
     /// <summary>
@@ -26,16 +29,19 @@ public sealed class SubscriptionsController : ApiControllerBase
     /// <param name="namespaceRepository">The namespace repository.</param>
     /// <param name="clientCache">The Service Bus client cache.</param>
     /// <param name="connectionStringProtector">The connection string protector.</param>
+    /// <param name="providerRouter">Router used to resolve the namespace's cloud provider.</param>
     /// <param name="logger">The logger.</param>
     public SubscriptionsController(
         INamespaceRepository namespaceRepository,
         IServiceBusClientCache clientCache,
         IConnectionStringProtector connectionStringProtector,
+        CloudProviderRouter providerRouter,
         ILogger<SubscriptionsController> logger)
     {
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
         _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
+        _providerRouter = providerRouter ?? throw new ArgumentNullException(nameof(providerRouter));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -71,6 +77,11 @@ public sealed class SubscriptionsController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+
+        if (ns.Provider != CloudProviderType.Azure)
+        {
+            return await GetAllViaProviderAsync(ns, topicName, cancellationToken);
+        }
 
         if (ns.ConnectionString is null)
         {
@@ -154,5 +165,72 @@ public sealed class SubscriptionsController : ApiControllerBase
         }
 
         return Ok(subscriptionResult.Value);
+    }
+
+    /// <summary>
+    /// Lists subscriptions for non-Azure namespaces via the registered <see cref="ICloudMessagingProvider"/>.
+    /// Provider entity snapshots expose subscriptions as "{topicName}/{subscriptionName}" entries
+    /// (e.g., AWS SNS fanout endpoints); Azure-specific runtime properties are returned as neutral defaults.
+    /// </summary>
+    private async Task<ActionResult<IReadOnlyList<SubscriptionRuntimePropertiesDto>>> GetAllViaProviderAsync(
+        Core.Entities.Namespace ns,
+        string topicName,
+        CancellationToken cancellationToken)
+    {
+        if (!_providerRouter.IsRegistered(ns.Provider))
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Title = "Provider not enabled",
+                Detail = $"The '{ns.Provider}' cloud provider is not enabled on this server. " +
+                         $"Set 'CloudProviders:{ns.Provider}:Enabled' to 'true' in appsettings and restart.",
+                Instance = HttpContext.Request.Path
+            });
+        }
+
+        var entitiesResult = await _providerRouter
+            .Resolve(ns.Provider)
+            .ListEntitiesAsync(ns.Id, cancellationToken);
+        if (entitiesResult.IsFailure)
+        {
+            return ToActionResult<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(entitiesResult.Error);
+        }
+
+        var prefix = topicName + "/";
+        var subscriptions = entitiesResult.Value
+            .Where(e => string.Equals(e.EntityType, "Subscription", StringComparison.OrdinalIgnoreCase) &&
+                        e.Name.StartsWith(prefix, StringComparison.Ordinal))
+            .Select(e => new SubscriptionRuntimePropertiesDto(
+                Name: e.Name[prefix.Length..],
+                TopicName: topicName,
+                ActiveMessageCount: e.ActiveMessageCount,
+                DeadLetterMessageCount: e.DeadLetterCount,
+                TransferMessageCount: 0,
+                TransferDeadLetterMessageCount: 0,
+                Status: "Active",
+                CreatedAt: DateTimeOffset.MinValue,
+                UpdatedAt: DateTimeOffset.MinValue,
+                AccessedAt: DateTimeOffset.MinValue,
+                RequiresSession: false,
+                EnableBatchedOperations: false,
+                EnableDeadLetteringOnMessageExpiration: false,
+                EnableDeadLetteringOnFilterEvaluationExceptions: false,
+                MaxDeliveryCount: 0,
+                DefaultMessageTimeToLive: TimeSpan.Zero,
+                LockDuration: TimeSpan.Zero,
+                AutoDeleteOnIdle: TimeSpan.Zero,
+                ForwardTo: null,
+                ForwardDeadLetteredMessagesTo: null))
+            .ToList();
+
+        _logger.LogInformation(
+            "Retrieved {SubscriptionCount} subscriptions for topic {TopicName} in namespace {NamespaceId} via {Provider} provider",
+            subscriptions.Count,
+            LogRedactor.SanitiseForLog(topicName),
+            ns.Id,
+            ns.Provider);
+
+        return Ok(subscriptions);
     }
 }

@@ -560,12 +560,17 @@ public sealed class RulesController : ApiControllerBase
                 var nsResult = await nsRepo.GetByIdAsync(group.Key.NamespaceId, ct);
                 if (nsResult.IsFailure)
                 {
+                    // The namespace registration is gone (deleted or re-created with a new ID),
+                    // so these records can never be replayed. Archive them so they stop
+                    // matching — otherwise every replay-all re-fails on the same orphans.
                     foreach (var msg in group)
                     {
-                        failed++;
+                        skipped++;
+                        msg.Status = DlqMessageStatus.Archived;
+                        msg.ArchivedAt = DateTimeOffset.UtcNow;
                         results.Add(new ReplayAllItemResponse(
                             DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
-                            Outcome: "Failed", Error: $"Namespace not found: {nsResult.Error.Message}"));
+                            Outcome: "Skipped", Error: "Namespace no longer registered — record archived"));
                     }
                     continue;
                 }

@@ -166,6 +166,61 @@ public class TopicsControllerTests
         result.Result.Should().BeOfType<BadRequestObjectResult>();
     }
 
+    [Fact]
+    public async Task GetAll_AwsNamespace_ShouldListTopicsViaProvider()
+    {
+        var ns = Namespace.Create(
+            "aws-dev-ns", "AKIAEXAMPLE:secretkey",
+            provider: CloudProviderType.Aws, awsRegion: "ap-south-1").Value;
+
+        var awsProvider = new Mock<ICloudMessagingProvider>();
+        awsProvider.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Aws);
+        awsProvider.Setup(p => p.ListEntitiesAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Success(
+            [
+                new CloudEntity { Name = "orders", EntityType = "Queue", ActiveMessageCount = 5, DeadLetterCount = 2, Provider = CloudProviderType.Aws },
+                new CloudEntity { Name = "arn:aws:sns:ap-south-1:123456789012:orders", EntityType = "SNS Topic", Provider = CloudProviderType.Aws },
+            ]));
+
+        var controller = new TopicsController(
+            _namespaceRepository.Object,
+            _clientCache.Object,
+            _connectionStringProtector.Object,
+            _messageOperationsService.Object,
+            new CloudProviderRouter([_cloudProvider.Object, awsProvider.Object]),
+            _logger.Object)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var result = await controller.GetAll(ns.Id);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var topics = okResult.Value.Should().BeAssignableTo<IReadOnlyList<TopicRuntimePropertiesDto>>().Subject;
+        topics.Should().ContainSingle();
+        topics[0].Name.Should().Be("arn:aws:sns:ap-south-1:123456789012:orders");
+        _clientCache.Verify(c => c.GetOrCreate(It.IsAny<Guid>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetAll_AwsNamespace_ProviderNotRegistered_ShouldReturn503()
+    {
+        var ns = Namespace.Create(
+            "aws-dev-ns", "AKIAEXAMPLE:secretkey",
+            provider: CloudProviderType.Aws, awsRegion: "ap-south-1").Value;
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var result = await _controller.GetAll(ns.Id);
+
+        var objectResult = result.Result.Should().BeOfType<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
+    }
+
     #endregion
 
     #region GetByName Tests
