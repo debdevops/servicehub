@@ -10,8 +10,12 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Load appsettings.Local.json (git-ignored) for local dev secrets
-builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
+// Load appsettings.Local.json (git-ignored) for local dev secrets. Test hosts set
+// SkipLocalSettings so a dev machine's local overrides can't leak into assertions.
+if (!builder.Configuration.GetValue("Configuration:SkipLocalSettings", false))
+{
+    builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
+}
 
 // Configure logging with redaction
 builder.Logging.ClearProviders();
