@@ -1,9 +1,15 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useQueries } from '@tanstack/react-query';
 import { Plus, Zap, RefreshCw, ToggleLeft, ToggleRight, Pencil, Trash2, FlaskConical, Play, AlertTriangle, X, Shield, Brain } from 'lucide-react';
 import { RuleBuilderDialog, TemplateGalleryDialog, RuleTestDialog } from '@/components/rules';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { HelpTooltip } from '@/components/help';
 import { tooltips } from '@/lib/helpContent';
+import { useNamespaces } from '@/hooks/useNamespaces';
+import { useAllNamespacesQueues } from '@/hooks/useQueues';
+import { apiClient } from '@/lib/api/client';
+import { findRuleEntityWarnings, type KnownEntities } from '@/lib/ruleValidation';
+import type { Topic } from '@/lib/api/types';
 import {
   useRules,
   useCreateRule,
@@ -23,6 +29,36 @@ import type {
 
 export function RulesPage() {
   const { data: rules, isLoading, refetch, isFetching } = useRules();
+
+  // Entities across every connected namespace (all providers) — used to flag
+  // rules whose entity references no longer exist anywhere.
+  const { data: namespaces } = useNamespaces();
+  const namespaceIds = useMemo(() => namespaces?.map((ns) => ns.id) ?? [], [namespaces]);
+  const allQueueStats = useAllNamespacesQueues(namespaceIds, false);
+  const topicResults = useQueries({
+    queries: namespaceIds.map((id) => ({
+      queryKey: ['topics', id] as const,
+      queryFn: async (): Promise<Topic[]> => {
+        const response = await apiClient.get<Topic[]>(`/namespaces/${id}/topics`, { _silent: true });
+        return response.data;
+      },
+      enabled: !!id,
+      staleTime: 60_000,
+      refetchIntervalInBackground: false,
+      retry: 1,
+    })),
+  });
+  const knownEntities: KnownEntities = useMemo(
+    () => ({
+      queues: allQueueStats.flatMap((s) => s.queues?.map((q) => q.name) ?? []),
+      topics: topicResults.flatMap((r) => r.data?.map((t) => t.name) ?? []),
+      loaded:
+        namespaceIds.length > 0 &&
+        allQueueStats.every((s) => !s.isLoading) &&
+        topicResults.every((r) => !r.isLoading),
+    }),
+    [allQueueStats, topicResults, namespaceIds.length],
+  );
   const createMutation = useCreateRule();
   const updateMutation = useUpdateRule();
   const deleteMutation = useDeleteRule();
@@ -160,6 +196,7 @@ export function RulesPage() {
               <RuleCard
                 key={rule.id}
                 rule={rule}
+                entityWarnings={findRuleEntityWarnings(rule.conditions, rule.action, knownEntities)}
                 onEdit={() => handleEdit(rule)}
                 onDelete={() => handleDelete(rule)}
                 onToggle={() => toggleMutation.mutate(rule.id)}
@@ -188,6 +225,7 @@ export function RulesPage() {
         initialConditions={templatePrefill?.conditions}
         initialAction={templatePrefill?.action}
         isSaving={createMutation.isPending || updateMutation.isPending}
+        knownEntities={knownEntities}
       />
 
       <TemplateGalleryDialog
@@ -227,6 +265,7 @@ export function RulesPage() {
 
 function RuleCard({
   rule,
+  entityWarnings,
   onEdit,
   onDelete,
   onToggle,
@@ -235,6 +274,7 @@ function RuleCard({
   isReplayingAll,
 }: {
   rule: RuleResponse;
+  entityWarnings: string[];
   onEdit: () => void;
   onDelete: () => void;
   onToggle: () => void;
@@ -246,12 +286,18 @@ function RuleCard({
     rule.matchCount > 0
       ? Math.round((rule.successCount / rule.matchCount) * 100)
       : 0;
+  // Mirrors the backend circuit-breaker threshold (30% over recent replays) so
+  // users see WHY a rule is about to be — or should be — disabled.
+  const isFailing = rule.enabled && rule.matchCount >= 5 && successPct < 30;
+  const hasEntityWarning = entityWarnings.length > 0;
 
   return (
     <div
       className={`border rounded-xl p-4 transition-all ${
         rule.enabled
-          ? 'border-gray-200 bg-white hover:shadow-md'
+          ? hasEntityWarning || isFailing
+            ? 'border-amber-300 bg-amber-50/40 hover:shadow-md'
+            : 'border-gray-200 bg-white hover:shadow-md'
           : 'border-gray-100 bg-gray-50 opacity-75'
       }`}
     >
@@ -269,6 +315,23 @@ function RuleCard({
             </span>
           )}
           <h3 className="text-sm font-bold text-gray-900 truncate">{rule.name}</h3>
+          {hasEntityWarning && (
+            <span
+              className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 rounded"
+              title={entityWarnings.join('\n')}
+            >
+              <AlertTriangle className="w-3 h-3" />
+              entity missing
+            </span>
+          )}
+          {isFailing && (
+            <span
+              className="shrink-0 px-1.5 py-0.5 text-[10px] font-bold text-red-700 bg-red-100 border border-red-200 rounded"
+              title={`Only ${successPct}% of replays succeed — fix the root cause or disable this rule`}
+            >
+              failing
+            </span>
+          )}
         </div>
         <button
           onClick={onToggle}
@@ -347,6 +410,14 @@ function RuleCard({
           </strong>
         </span>
       </div>
+
+      {hasEntityWarning && (
+        <div className="mb-3 px-2.5 py-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 space-y-0.5">
+          {entityWarnings.map((warning, i) => (
+            <p key={i}>⚠ {warning}</p>
+          ))}
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex items-center gap-1.5 border-t border-gray-100 pt-3">

@@ -60,6 +60,7 @@ public sealed class CloudBridgeControllerTests
         result.Should().BeOfType<OkObjectResult>();
         var okResult = (OkObjectResult)result;
         var status = (Dictionary<string, bool>)okResult.Value!;
+        status.Should().ContainKey("Azure");
         status.Should().ContainKey("Aws").WhoseValue.Should().BeTrue();
         status.Should().ContainKey("Gcp").WhoseValue.Should().BeFalse();
     }

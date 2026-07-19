@@ -19,7 +19,10 @@ import { useQuery } from '@tanstack/react-query';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues, useAllNamespacesQueues, NamespaceQueueStats } from '@/hooks/useQueues';
+import { useTopics } from '@/hooks/useTopics';
 import { useEventStream } from '@/hooks/useEventStream';
+import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
+import { setThemeProvider } from '@/lib/providerTheme';
 import { Namespace, EnvironmentType } from '@/lib/api/types';
 import { apiClient } from '@/lib/api/client';
 import { getHealthGrade } from '@/lib/healthGrade';
@@ -379,11 +382,38 @@ export interface NamespaceCardProps {
 
 export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, sseConnected = false }: NamespaceCardProps) {
   const navigate = useNavigate();
+  const providerStyle = getProviderStyle(namespace.cloudProvider);
   const { data: queues, isLoading: queuesLoading, isError } = useQueues(
     namespace.id,
     true,
     sseConnected ? QUEUES_POLL_MS.relaxed : QUEUES_POLL_MS.normal,
   );
+  const { data: topics } = useTopics(namespace.id, false);
+
+  // Land the user on a concrete entity instead of the "No entity selected"
+  // empty state: first browsable queue (skipping AWS companion DLQ queues),
+  // then an AWS topic's fan-out view, then the multi-cloud overview.
+  const handleBrowseQueues = () => {
+    setThemeProvider(namespace.cloudProvider);
+    const dlqTargets = new Set(
+      (queues ?? []).map((q) => q.deadLetterTargetQueue).filter(Boolean) as string[],
+    );
+    const firstQueue = (queues ?? []).find((q) => !dlqTargets.has(q.name)) ?? queues?.[0];
+    if (firstQueue) {
+      navigate(`/messages?namespace=${namespace.id}&queue=${encodeURIComponent(firstQueue.name)}&queueType=active`);
+      return;
+    }
+    const firstTopic = topics?.[0];
+    if (firstTopic && namespace.cloudProvider === 'aws') {
+      navigate(`/messages?namespace=${namespace.id}&topic=${encodeURIComponent(firstTopic.name)}`);
+      return;
+    }
+    navigate('/messages-overview?tab=active');
+  };
+
+  const handleViewDlq = () => {
+    navigate(`/dlq-history?namespace=${namespace.id}`);
+  };
 
   // Use the stats endpoint for accurate totals (includes subscription DLQs)
   const { data: stats, isLoading: statsLoading } = useQuery({
@@ -433,13 +463,14 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
   return (
     <div
       className={`rounded-xl border shadow-sm overflow-hidden bg-white ${
-        isDlqSpike ? 'border-red-300' : 'border-emerald-200'
+        isDlqSpike ? 'border-red-300' : providerStyle.headerBorder
       }`}
     >
-      {/* Card Header */}
-      <div className="px-5 pt-5 pb-3">
+      {/* Card Header — tinted by cloud provider (Azure blue / AWS orange / GCP green) */}
+      <div className={`px-5 pt-5 pb-3 ${providerStyle.headerBg}`}>
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2 mb-1">
+            <ProviderBadge provider={namespace.cloudProvider} />
             <EnvironmentBadge env={namespace.environment} />
             <h3 className="text-base font-semibold text-gray-900 truncate">{displayName}</h3>
             {dlqDelta > 0 && (
@@ -503,13 +534,13 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
       {/* Action Buttons */}
       <div className="flex gap-2 px-5 pb-5">
         <button
-          onClick={() => navigate(`/messages?namespace=${namespace.id}`)}
+          onClick={handleBrowseQueues}
           className="flex-1 px-3 py-2 text-sm font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors"
         >
           Browse Queues
         </button>
         <button
-          onClick={() => navigate(`/dlq-history?namespace=${namespace.id}`)}
+          onClick={handleViewDlq}
           className="flex-1 px-3 py-2 text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
         >
           View DLQ History

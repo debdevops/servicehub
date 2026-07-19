@@ -10,6 +10,7 @@ using ServiceHub.Infrastructure.Aws;
 using ServiceHub.Shared.Results;
 using SHMessage = ServiceHub.Core.Entities.Message;
 using SHNamespace = ServiceHub.Core.Entities.Namespace;
+using SqsSendRequest = Amazon.SQS.Model.SendMessageRequest;
 
 namespace ServiceHub.UnitTests.Infrastructure.Aws;
 
@@ -394,6 +395,158 @@ public sealed class AwsMessageReceiverExtendedTests
 
         result.IsSuccess.Should().BeFalse();
         result.Error.Code.Should().Be("AWS.SQS.MessageNotFound");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // DeadLetterMessagesAsync — long-poll scan
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private static Mock<IAmazonSQS> BuildSqsWithDlq()
+    {
+        var sqsClient = new Mock<IAmazonSQS>();
+        sqsClient.Setup(s => s.GetQueueUrlAsync(
+                It.Is<GetQueueUrlRequest>(r => r.QueueName == QueueName), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GetQueueUrlResponse { QueueUrl = QueueUrl });
+        sqsClient.Setup(s => s.GetQueueUrlAsync(
+                It.Is<GetQueueUrlRequest>(r => r.QueueName == "test-queue-dlq"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GetQueueUrlResponse { QueueUrl = DlqUrl });
+        sqsClient.Setup(s => s.GetQueueAttributesAsync(
+                It.Is<GetQueueAttributesRequest>(r => r.AttributeNames.Contains("RedrivePolicy")),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GetQueueAttributesResponse
+            {
+                Attributes = new Dictionary<string, string>
+                {
+                    ["RedrivePolicy"] = @"{""maxReceiveCount"":3,""deadLetterTargetArn"":""arn:aws:sqs:us-east-1:123456:test-queue-dlq""}"
+                }
+            });
+        return sqsClient;
+    }
+
+    [Fact]
+    public async Task DeadLetterMessagesAsync_WhenFirstReceiveEmpty_KeepsScanningAndDeadLetters()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        var sqsClient = BuildSqsWithDlq();
+        // Short-poll-style empty first round, messages on the second — the scan
+        // must tolerate empty rounds instead of concluding the queue is empty.
+        sqsClient.SetupSequence(s => s.ReceiveMessageAsync(
+                It.Is<ReceiveMessageRequest>(r => r.QueueUrl == QueueUrl), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ReceiveMessageResponse { Messages = [] })
+            .ReturnsAsync(new ReceiveMessageResponse
+            {
+                Messages =
+                [
+                    BuildSqsMessage(messageId: "dl-1", receiptHandle: "rh-dl-1"),
+                    BuildSqsMessage(messageId: "dl-2", receiptHandle: "rh-dl-2")
+                ]
+            });
+        sqsClient.Setup(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SendMessageResponse());
+        sqsClient.Setup(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteMessageResponse());
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<SHNamespace>())).Returns(sqsClient.Object);
+
+        var sut = new AwsMessageReceiver(factory.Object, repo.Object, NullLogger<AwsMessageReceiver>.Instance);
+
+        var result = await sut.DeadLetterMessagesAsync(
+            new DeadLetterRequest(TestNamespaceId, QueueName, null, MessageCount: 2, Reason: "TestingDLQ"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(2);
+        sqsClient.Verify(s => s.ReceiveMessageAsync(
+            It.Is<ReceiveMessageRequest>(r => r.QueueUrl == QueueUrl && r.WaitTimeSeconds == 1),
+            It.IsAny<CancellationToken>()), Times.Exactly(2));
+        sqsClient.Verify(s => s.SendMessageAsync(
+            It.Is<SqsSendRequest>(r => r.QueueUrl == DlqUrl),
+            It.IsAny<CancellationToken>()), Times.Exactly(2));
+        sqsClient.Verify(s => s.DeleteMessageAsync(
+            It.Is<DeleteMessageRequest>(r => r.QueueUrl == QueueUrl),
+            It.IsAny<CancellationToken>()), Times.Exactly(2));
+        // Everything received was moved, so nothing should be released.
+        sqsClient.Verify(s => s.ChangeMessageVisibilityBatchAsync(
+            It.IsAny<ChangeMessageVisibilityBatchRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeadLetterMessagesAsync_WhenMoreReceivedThanRequested_ReleasesLeftovers()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        var sqsClient = BuildSqsWithDlq();
+        sqsClient.Setup(s => s.ReceiveMessageAsync(
+                It.Is<ReceiveMessageRequest>(r => r.QueueUrl == QueueUrl), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ReceiveMessageResponse
+            {
+                Messages =
+                [
+                    BuildSqsMessage(messageId: "dl-1", receiptHandle: "rh-dl-1"),
+                    BuildSqsMessage(messageId: "dl-2", receiptHandle: "rh-dl-2"),
+                    BuildSqsMessage(messageId: "dl-3", receiptHandle: "rh-dl-3")
+                ]
+            });
+        sqsClient.Setup(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SendMessageResponse());
+        sqsClient.Setup(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteMessageResponse());
+        sqsClient.Setup(s => s.ChangeMessageVisibilityBatchAsync(
+                It.IsAny<ChangeMessageVisibilityBatchRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChangeMessageVisibilityBatchResponse());
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<SHNamespace>())).Returns(sqsClient.Object);
+
+        var sut = new AwsMessageReceiver(factory.Object, repo.Object, NullLogger<AwsMessageReceiver>.Instance);
+
+        var result = await sut.DeadLetterMessagesAsync(
+            new DeadLetterRequest(TestNamespaceId, QueueName, null, MessageCount: 1, Reason: "TestingDLQ"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(1);
+        sqsClient.Verify(s => s.SendMessageAsync(
+            It.Is<SqsSendRequest>(r => r.QueueUrl == DlqUrl),
+            It.IsAny<CancellationToken>()), Times.Once);
+        // The two extra messages must be made visible again on the source queue.
+        sqsClient.Verify(s => s.ChangeMessageVisibilityBatchAsync(
+            It.Is<ChangeMessageVisibilityBatchRequest>(r =>
+                r.QueueUrl == QueueUrl && r.Entries.Count == 2 &&
+                r.Entries.All(e => e.VisibilityTimeout == 0)),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeadLetterMessagesAsync_WhenQueueEmpty_ReturnsZero()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        var sqsClient = BuildSqsWithDlq();
+        sqsClient.Setup(s => s.ReceiveMessageAsync(
+                It.Is<ReceiveMessageRequest>(r => r.QueueUrl == QueueUrl), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ReceiveMessageResponse { Messages = [] });
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<SHNamespace>())).Returns(sqsClient.Object);
+
+        var sut = new AwsMessageReceiver(factory.Object, repo.Object, NullLogger<AwsMessageReceiver>.Instance);
+
+        var result = await sut.DeadLetterMessagesAsync(
+            new DeadLetterRequest(TestNamespaceId, QueueName, null, MessageCount: 3, Reason: "TestingDLQ"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(0);
+        sqsClient.Verify(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
