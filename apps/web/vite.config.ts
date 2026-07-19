@@ -72,10 +72,17 @@ export default defineConfig({
         secure: false,
       },
       // Also proxy health checks so they work through the same port.
+      // /health is BOTH a backend endpoint and an SPA route: XHR/fetch calls
+      // (Accept: application/json) go to the backend, while browser page
+      // navigations (Accept: text/html — deep links, refreshes) get the SPA
+      // shell so the System Health page renders instead of raw JSON.
       '/health': {
         target: apiProxyTarget,
         changeOrigin: true,
         secure: false,
+        bypass: (req) => {
+          if (req.headers.accept?.includes('text/html')) return '/index.html';
+        },
       },
     },
   },

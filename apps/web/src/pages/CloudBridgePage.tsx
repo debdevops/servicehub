@@ -5,6 +5,7 @@ import { useNamespaces } from '@/hooks/useNamespaces';
 import type { CloudEntity } from '@/lib/api/cloudBridge';
 
 const PROVIDER_LABELS: Record<string, string> = {
+  Azure: 'Azure Service Bus',
   Aws: 'AWS SQS / SNS',
   Gcp: 'GCP Pub/Sub',
 };
@@ -145,6 +146,15 @@ export function CloudBridgePage() {
 
   const hasEnabledProviders = enabledProviders.length > 0;
 
+  // A namespace belongs to exactly one cloud — only query that cloud's
+  // provider for it instead of erroring the mismatched ones.
+  const selectedNamespace = namespaces?.find((ns) => ns.id === selectedNamespaceId);
+  const sectionsForNamespace = enabledProviders.filter(
+    ([key]) =>
+      !selectedNamespace?.cloudProvider ||
+      key.toLowerCase() === selectedNamespace.cloudProvider,
+  );
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Header */}
@@ -153,7 +163,7 @@ export function CloudBridgePage() {
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Cloud Bridge</h1>
           <p className="text-sm text-gray-500">
-            Browse AWS SQS / SNS and GCP Pub/Sub entities alongside Azure Service Bus.
+            Browse queues, topics and subscriptions across Azure Service Bus, AWS SQS / SNS, and GCP Pub/Sub.
           </p>
         </div>
       </div>
@@ -224,7 +234,7 @@ export function CloudBridgePage() {
           </div>
 
           {selectedNamespaceId &&
-            enabledProviders.map(([key]) => (
+            sectionsForNamespace.map(([key]) => (
               <ProviderSection
                 key={key}
                 provider={key}

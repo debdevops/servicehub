@@ -93,12 +93,18 @@ export function MainLayout() {
   useEffect(() => {
     setThemeProvider(currentNamespace?.cloudProvider);
   }, [currentNamespace?.cloudProvider]);
+  // Quick Access pages keep the neutral light-blue chrome; the provider tint
+  // (AWS orange / GCP green) applies only once the user moves into a cloud's
+  // message space. The sticky provider signal still updates in the background
+  // so the tint is correct the moment a messages view opens.
+  const inProviderSpace = window.location.pathname.endsWith('/messages');
+  const appliedTheme = inProviderSpace ? themeProvider : 'azure';
   useEffect(() => {
-    document.documentElement.dataset.provider = themeProvider;
+    document.documentElement.dataset.provider = appliedTheme;
     return () => {
       delete document.documentElement.dataset.provider;
     };
-  }, [themeProvider]);
+  }, [appliedTheme]);
   // FAB: only in DEV environment with Manage (write) permission — never in UAT/Prod or read-only connections
   const canUseFab = currentNamespace?.environment === 'dev' && currentNamespace?.hasManagePermission === true;
 

@@ -175,10 +175,10 @@ describe('DashboardPage', () => {
     expect(await screen.findByText(/DLQ: 15 messages need attention/i)).toBeInTheDocument();
   });
 
-  it('Browse Queues button navigates to messages page', async () => {
+  it('Browse Queues button navigates straight to the first queue', async () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
     fireEvent.click(await screen.findByRole('button', { name: /browse queues/i }));
-    expect(mockNavigate).toHaveBeenCalledWith('/messages?namespace=ns1');
+    expect(mockNavigate).toHaveBeenCalledWith('/messages?namespace=ns1&queue=queue-1&queueType=active');
   });
 
   it('View DLQ History button navigates to dlq-history page', async () => {

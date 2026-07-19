@@ -42,8 +42,7 @@ public sealed class CloudBridgeController : ApiControllerBase
     /// </summary>
     /// <remarks>
     /// A provider is considered "available" when it has been registered in the DI container
-    /// (i.e. its feature flag was <c>true</c> at startup). The Azure provider is always
-    /// present and is not listed here.
+    /// (i.e. its feature flag was <c>true</c> at startup). Azure is always registered.
     /// </remarks>
     /// <response code="200">Dictionary of provider name → available flag.</response>
     [HttpGet("provider-status")]
@@ -55,6 +54,7 @@ public sealed class CloudBridgeController : ApiControllerBase
 
         var status = new Dictionary<string, bool>
         {
+            [CloudProviderType.Azure.ToString()] = registered.Contains(CloudProviderType.Azure),
             [CloudProviderType.Aws.ToString()] = registered.Contains(CloudProviderType.Aws),
             [CloudProviderType.Gcp.ToString()] = registered.Contains(CloudProviderType.Gcp),
         };
