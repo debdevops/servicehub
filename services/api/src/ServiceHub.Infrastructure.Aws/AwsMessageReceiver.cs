@@ -263,28 +263,54 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                 return Result.Failure<int>(Error.Validation("AWS.SQS.NoDlq",
                     $"Queue {request.EntityName} has no DLQ configured."));
 
-            // Receive messages from source and delete them (they're now in the DLQ by policy-driven path)
-            // For manual dead-lettering, we receive them and send to DLQ directly.
+            // Manual dead-lettering: receive from the source, copy to the DLQ, delete
+            // from the source. Uses the same long-poll scan discipline as peek — a
+            // single short-poll receive samples only a subset of SQS hosts and often
+            // returns empty even when the queue visibly holds messages, which the UI
+            // surfaced as "no active messages to dead-letter".
             var count = Math.Min(request.ValidatedMessageCount, SqsMaxBatchSize);
             var deadLettered = 0;
+            var receivedById = new Dictionary<string, SqsMessage>(StringComparer.Ordinal);
+            var movedIds = new HashSet<string>(StringComparer.Ordinal);
+            var quietRounds = 0;
             var gate = GetScanGate(sourceUrl);
             await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                var received = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
+                for (var i = 0; i < MaxScanBatches && receivedById.Count < count; i++)
                 {
-                    QueueUrl = sourceUrl,
-                    MaxNumberOfMessages = count,
-                    VisibilityTimeout = 30,
-                    MessageSystemAttributeNames = new List<string> { "All" },
-                    MessageAttributeNames = new List<string> { "All" }
-                }, cancellationToken).ConfigureAwait(false);
+                    var received = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
+                    {
+                        QueueUrl = sourceUrl,
+                        MaxNumberOfMessages = SqsMaxBatchSize,
+                        VisibilityTimeout = ScanLockSeconds,
+                        WaitTimeSeconds = 1,    // long poll: samples all servers, not a subset
+                        MessageSystemAttributeNames = new List<string> { "All" },
+                        MessageAttributeNames = new List<string> { "All" }
+                    }, cancellationToken).ConfigureAwait(false);
 
-                if (received.Messages.Count == 0)
-                    return Result.Success(0);
+                    var added = 0;
+                    foreach (var msg in received.Messages)
+                    {
+                        var isNew = !receivedById.ContainsKey(msg.MessageId);
+                        receivedById[msg.MessageId] = msg;
+                        if (isNew)
+                            added++;
+                    }
+
+                    if (added == 0)
+                    {
+                        if (++quietRounds >= 5)
+                            break;
+                    }
+                    else
+                    {
+                        quietRounds = 0;
+                    }
+                }
 
                 // Send each to DLQ with reason attribute, then delete from source
-                foreach (var msg in received.Messages)
+                foreach (var msg in receivedById.Values.Take(count))
                 {
                     await sqs.SendMessageAsync(new SqsSend
                     {
@@ -299,12 +325,44 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                         ReceiptHandle = msg.ReceiptHandle
                     }, cancellationToken).ConfigureAwait(false);
 
+                    movedIds.Add(msg.MessageId);
                     deadLettered++;
                 }
             }
             finally
             {
-                gate.Release();
+                try
+                {
+                    // Release messages that were received but not moved; if release
+                    // fails they reappear on their own once the scan lock expires.
+                    var leftovers = receivedById.Values
+                        .Where(m => !movedIds.Contains(m.MessageId))
+                        .ToList();
+                    foreach (var chunk in leftovers.Chunk(SqsMaxBatchSize))
+                    {
+                        try
+                        {
+                            await sqs.ChangeMessageVisibilityBatchAsync(new ChangeMessageVisibilityBatchRequest
+                            {
+                                QueueUrl = sourceUrl,
+                                Entries = chunk.Select((m, idx) => new ChangeMessageVisibilityBatchRequestEntry
+                                {
+                                    Id = idx.ToString(),
+                                    ReceiptHandle = m.ReceiptHandle,
+                                    VisibilityTimeout = 0
+                                }).ToList()
+                            }, CancellationToken.None).ConfigureAwait(false);
+                        }
+                        catch (AmazonSQSException ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to release visibility for scanned messages; they will reappear after {Seconds}s", ScanLockSeconds);
+                        }
+                    }
+                }
+                finally
+                {
+                    gate.Release();
+                }
             }
 
             _logger.LogInformation("Dead-lettered {Count} messages from {QueueName}", deadLettered, SanitizeForLog(request.EntityName));
