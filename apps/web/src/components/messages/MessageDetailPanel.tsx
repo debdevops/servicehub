@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { FileText, Code, Bot, List, Inbox, AlertTriangle } from 'lucide-react';
-import { Play, Clipboard } from 'lucide-react'; // Trash2 removed - purge feature disabled
+import { Play, Clipboard, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { useTabPersistence, type DetailTab } from '@/hooks/useTabPersistence';
 import { PropertiesTab, BodyTab, AIInsightsTab, HeadersTab } from './tabs';
-import { useReplayMessage } from '@/hooks/useMessages';
+import { useReplayMessage, usePurgeMessage } from '@/hooks/useMessages';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CopyButton } from '@/components/CopyButton';
@@ -90,16 +90,19 @@ interface ConfirmState {
   title: string;
   message: string;
   variant: 'default' | 'danger';
-  action: 'replay' | null; // 'purge' removed - Azure Service Bus limitation
+  action: 'replay' | 'purge' | null;
 }
 
 function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
   const replayMessage = useReplayMessage();
+  const purgeMessage = usePurgeMessage();
   const { data: namespaces } = useNamespaces();
   const currentNs = namespaces?.find(ns => ns.id === namespaceId);
   const isProd = currentNs?.environment === 'prod';
   const hasSendPermission = currentNs?.hasSendPermission !== false;
-  // const purgeMessage = usePurgeMessage(); // Removed - Azure Service Bus limitation
+  // Purge is provider-gated: AWS (delete by receipt handle) and GCP (acknowledge)
+  // support single-message deletion; Azure Service Bus does not.
+  const purgeSupported = currentNs?.cloudProvider === 'aws' || currentNs?.cloudProvider === 'gcp';
   const [searchParams] = useSearchParams();
   
   const [confirmState, setConfirmState] = useState<ConfirmState>({
@@ -119,9 +122,9 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
   const entityName = topicName || queueName || '';
   const isFromDeadLetter = message.queueType === 'deadletter' || !!message.deadLetterReason;
 
-  const openConfirm = (action: 'replay') => {
+  const openConfirm = (action: 'replay' | 'purge') => {
     const shortId = message.id?.split('-').slice(0, 2).join('-') || `#${message.sequenceNumber}`;
-    
+
     if (action === 'replay') {
       setConfirmState({
         isOpen: true,
@@ -130,9 +133,7 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
         variant: 'default',
         action: 'replay',
       });
-    }
-    /* PURGE REMOVED - Azure Service Bus limitation
-    else if (action === 'purge') {
+    } else if (action === 'purge') {
       setConfirmState({
         isOpen: true,
         title: 'Permanently Delete Message',
@@ -141,7 +142,6 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
         action: 'purge',
       });
     }
-    */
   };
 
   const handleConfirm = async () => {
@@ -157,24 +157,21 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
 
     try {
       if (confirmState.action === 'replay') {
-        await replayMessage.mutateAsync({ 
-          namespaceId, 
+        await replayMessage.mutateAsync({
+          namespaceId,
           sequenceNumber: message.sequenceNumber,
           entityName,
           subscriptionName: subscriptionName || undefined
         });
-      }
-      /* PURGE REMOVED - Azure Service Bus limitation
-      else if (confirmState.action === 'purge') {
-        await purgeMessage.mutateAsync({ 
-          namespaceId, 
+      } else if (confirmState.action === 'purge') {
+        await purgeMessage.mutateAsync({
+          namespaceId,
           sequenceNumber: message.sequenceNumber,
           entityName,
           subscriptionName: subscriptionName || undefined,
           fromDeadLetter: isFromDeadLetter
         });
       }
-      */
     } catch {
       // Error handled by mutation hook
     } finally {
@@ -272,20 +269,39 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
           <Clipboard size={16} />
           Copy ID
         </button>
-        {/* PURGE BUTTON DISABLED - Azure Service Bus limitation prevents reliable individual message deletion
-           The Service Bus SDK doesn't support direct access to messages by sequence number for active queues.
-           Scanning through messages is too slow and times out for large queues.
-           This feature can be re-enabled if Microsoft adds support for targeted message deletion.
-        <button
-          className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-red-50 text-gray-700 hover:text-red-600 border border-gray-200 hover:border-red-200 rounded-lg font-medium transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
-          onClick={() => openConfirm('purge')}
-          disabled={purgeMessage.isPending || !namespaceId}
-          aria-label="Permanently delete message"
-        >
-          <Trash2 size={16} />
-          {purgeMessage.isPending ? 'Purging...' : 'Purge'}
-        </button>
-        */}
+        {/* Purge — provider-gated: enabled for AWS/GCP, disabled with explanation for Azure */}
+        {!purgeSupported ? (
+          <button
+            disabled
+            title="Purge is not supported for Azure Service Bus — the SDK has no reliable single-message delete by sequence number"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-400 border border-gray-200 rounded-lg font-medium cursor-not-allowed"
+            aria-label="Purge not supported for Azure Service Bus"
+          >
+            <Trash2 size={16} />
+            Purge
+          </button>
+        ) : isProd ? (
+          <button
+            disabled
+            title="Purge is disabled for production namespaces. Validate in DEV and UAT first."
+            className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-400 border border-red-200 rounded-lg font-medium cursor-not-allowed"
+            aria-label="Purge blocked in production"
+          >
+            <Trash2 size={16} />
+            PROD — Purge Blocked
+          </button>
+        ) : (
+          <button
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-red-50 text-gray-700 hover:text-red-600 border border-gray-200 hover:border-red-200 rounded-lg font-medium transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
+            onClick={() => openConfirm('purge')}
+            disabled={purgeMessage.isPending || !namespaceId}
+            title="Permanently delete this message — cannot be undone"
+            aria-label="Permanently delete message"
+          >
+            <Trash2 size={16} />
+            {purgeMessage.isPending ? 'Purging...' : 'Purge'}
+          </button>
+        )}
       </div>
 
       <ConfirmDialog
@@ -293,7 +309,7 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
         title={confirmState.title}
         message={confirmState.message}
         variant={confirmState.variant}
-        confirmLabel={'Confirm'} // Was: confirmState.action === 'purge' ? 'Delete' : 'Confirm'
+        confirmLabel={confirmState.action === 'purge' ? 'Delete' : 'Confirm'}
         onConfirm={handleConfirm}
         onCancel={handleCancel}
       />

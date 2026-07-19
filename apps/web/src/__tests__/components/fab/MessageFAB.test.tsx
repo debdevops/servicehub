@@ -22,15 +22,27 @@ vi.mock('react-hot-toast', () => ({
   }),
 }));
 
-// Mock child modals — keep them lightweight
+// Mock child modals — keep them lightweight, expose the entity defaults they receive
 vi.mock('@/components/fab/SendMessageModal', () => ({
-  SendMessageModal: ({ isOpen }: { isOpen: boolean }) =>
-    isOpen ? <div data-testid="send-modal">SendMessageModal</div> : null,
+  SendMessageModal: ({ isOpen, defaultEntityType, defaultEntityName }: { isOpen: boolean; defaultEntityType?: string; defaultEntityName?: string | null }) =>
+    isOpen ? (
+      <div data-testid="send-modal">
+        SendMessageModal
+        <span data-testid="send-modal-entity-type">{defaultEntityType ?? 'unset'}</span>
+        <span data-testid="send-modal-entity-name">{defaultEntityName ?? 'unset'}</span>
+      </div>
+    ) : null,
 }));
 
 vi.mock('@/components/fab/MessageGeneratorModal', () => ({
-  MessageGeneratorModal: ({ isOpen }: { isOpen: boolean }) =>
-    isOpen ? <div data-testid="generator-modal">MessageGeneratorModal</div> : null,
+  MessageGeneratorModal: ({ isOpen, defaultTargetType, defaultEntityName }: { isOpen: boolean; defaultTargetType?: string; defaultEntityName?: string | null }) =>
+    isOpen ? (
+      <div data-testid="generator-modal">
+        MessageGeneratorModal
+        <span data-testid="generator-modal-target-type">{defaultTargetType ?? 'unset'}</span>
+        <span data-testid="generator-modal-entity-name">{defaultEntityName ?? 'unset'}</span>
+      </div>
+    ) : null,
 }));
 
 vi.mock('@/lib/api/messages', () => ({
@@ -160,5 +172,72 @@ describe('MessageFAB', () => {
     renderFAB({ namespaceId: 'ns-1', queueName: null, entityType: 'topic', topicName: 'orders-topic', subscriptionName: null });
     const dlqButtons = document.querySelectorAll('button[disabled]');
     expect(dlqButtons.length).toBeGreaterThan(0);
+  });
+
+  // ── Entity-type forwarding to modals ─────────────────────────────────────────
+  // Regression: modals used to default to 'queue' even on topic pages, so Send/
+  // Generate posted to a queue named after the topic (404 for every message).
+
+  it('forwards queue entity type and queue name to SendMessageModal', async () => {
+    renderFAB({ entityType: 'queue', queueName: 'orders' });
+    await userEvent.click(screen.getByTitle('Open message menu'));
+    await userEvent.click(screen.getByText('Send Message'));
+    expect(screen.getByTestId('send-modal-entity-type')).toHaveTextContent('queue');
+    expect(screen.getByTestId('send-modal-entity-name')).toHaveTextContent('orders');
+  });
+
+  it('forwards topic entity type and topic name to SendMessageModal on topic pages', async () => {
+    renderFAB({ entityType: 'topic', queueName: null, topicName: 'orders-topic', subscriptionName: 'sub-1' });
+    await userEvent.click(screen.getByTitle('Open message menu'));
+    await userEvent.click(screen.getByText('Send Message'));
+    expect(screen.getByTestId('send-modal-entity-type')).toHaveTextContent('topic');
+    expect(screen.getByTestId('send-modal-entity-name')).toHaveTextContent('orders-topic');
+  });
+
+  it('forwards topic target type and topic name to MessageGeneratorModal on topic pages', async () => {
+    renderFAB({ entityType: 'topic', queueName: null, topicName: 'orders-topic', subscriptionName: 'sub-1' });
+    await userEvent.click(screen.getByTitle('Open message menu'));
+    await userEvent.click(screen.getByText('Generate Messages'));
+    expect(screen.getByTestId('generator-modal-target-type')).toHaveTextContent('topic');
+    expect(screen.getByTestId('generator-modal-entity-name')).toHaveTextContent('orders-topic');
+  });
+
+  // ── Provider gating ───────────────────────────────────────────────────────────
+  // Test actions are enabled for all providers: Azure (native), AWS (SQS send /
+  // SNS publish / manual DLQ via redrive target), GCP (publish / manual DLQ by
+  // republishing to the subscription's dead-letter topic).
+
+  it.each(['aws', 'gcp'] as const)('enables Send, Generate, and Test DLQ for %s namespaces', async (provider) => {
+    renderFAB({ cloudProvider: provider });
+    await userEvent.click(screen.getByTitle('Open message menu'));
+    expect(screen.getByText('Send Message').closest('button')).not.toBeDisabled();
+    expect(screen.getByText('Generate Messages').closest('button')).not.toBeDisabled();
+    expect(screen.getByText('Test DLQ').closest('button')).not.toBeDisabled();
+  });
+
+  it.each(['aws', 'gcp'] as const)('opens SendMessageModal for %s namespaces', async (provider) => {
+    renderFAB({ cloudProvider: provider });
+    await userEvent.click(screen.getByTitle('Open message menu'));
+    await userEvent.click(screen.getByText('Send Message'));
+    expect(screen.getByTestId('send-modal')).toBeInTheDocument();
+  });
+
+  it.each(['aws', 'gcp'] as const)('dead-letters messages for %s namespaces when Test DLQ is clicked', async (provider) => {
+    const { messagesApi } = await import('@/lib/api/messages');
+    renderFAB({ cloudProvider: provider });
+    await userEvent.click(screen.getByTitle('Open message menu'));
+    await userEvent.click(screen.getByText('Test DLQ'));
+    expect(messagesApi.deadLetter).toHaveBeenCalledWith(
+      'ns-1', 'orders', 3, 'TestingDLQ', expect.any(String), 'queue'
+    );
+  });
+
+  it.each(['azure', 'aws', 'gcp'] as const)('keeps destructive actions disabled in production for %s', async (provider) => {
+    renderFAB({ cloudProvider: provider, environment: 'prod' });
+    await userEvent.click(screen.getByTitle('Open message menu'));
+    expect(screen.getByText('Send Message').closest('button')).toBeDisabled();
+    expect(screen.getByText('Generate Messages').closest('button')).toBeDisabled();
+    expect(screen.getByText('Test DLQ').closest('button')).toBeDisabled();
+    expect(screen.getByText(/Production — destructive actions disabled/)).toBeInTheDocument();
   });
 });

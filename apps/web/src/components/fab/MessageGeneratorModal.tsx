@@ -40,7 +40,7 @@ interface MessageGeneratorModalProps {
   onClose: () => void;
   defaultNamespaceId?: string | null;
   defaultEntityName?: string | null;
-  defaultEntityType?: 'queue' | 'topic';
+  defaultTargetType?: 'queue' | 'topic';
   onGenerated?: () => void;
 }
 
@@ -92,7 +92,7 @@ export function MessageGeneratorModal({
   onClose,
   defaultNamespaceId,
   defaultEntityName,
-  defaultEntityType = 'queue',
+  defaultTargetType,
   onGenerated,
 }: MessageGeneratorModalProps) {
   // Data fetching
@@ -103,7 +103,7 @@ export function MessageGeneratorModal({
   const { data: topics } = useTopics(selectedNamespace);
 
   // Form state
-  const [targetType, setTargetType] = useState<TargetType>(defaultEntityType);
+  const [targetType, setTargetType] = useState<TargetType>(defaultTargetType || 'queue');
   const [selectedEntity, setSelectedEntity] = useState(defaultEntityName || '');
   const [volume, setVolume] = useState<VolumePreset>(50);
   const [selectedScenarios, setSelectedScenarios] = useState<MessageScenario[]>(getDefaultScenarios());
@@ -116,8 +116,8 @@ export function MessageGeneratorModal({
   useEffect(() => {
     if (defaultNamespaceId) setSelectedNamespace(defaultNamespaceId);
     if (defaultEntityName) setSelectedEntity(defaultEntityName);
-    setTargetType(defaultEntityType);
-  }, [defaultNamespaceId, defaultEntityName, defaultEntityType]);
+    if (defaultTargetType) setTargetType(defaultTargetType);
+  }, [defaultNamespaceId, defaultEntityName, defaultTargetType]);
 
   // Reset entity when namespace changes
   useEffect(() => {
