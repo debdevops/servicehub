@@ -20,6 +20,7 @@ public sealed class SimulatorWebApplicationFactory : WebApplicationFactory<Progr
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Simulator");
+        builder.UseSetting("Configuration:SkipLocalSettings", "true");
 
         builder.ConfigureAppConfiguration((_, config) =>
         {

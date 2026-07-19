@@ -33,6 +33,10 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             // Override any services if needed for testing
         });
 
+        // Keep a dev machine's appsettings.Local.json (e.g. provider flags) out of
+        // test assertions; UseSetting is read before Program.cs loads the file.
+        builder.UseSetting("Configuration:SkipLocalSettings", "true");
+
         // Use Development environment to skip rate limiting middleware
         builder.UseEnvironment("Development");
     }
