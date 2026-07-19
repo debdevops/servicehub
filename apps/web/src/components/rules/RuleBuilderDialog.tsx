@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Info } from 'lucide-react';
+import { Plus, Trash2, Info, AlertTriangle } from 'lucide-react';
 import type { RuleCondition, RuleAction, RuleResponse, CreateRuleRequest } from '@/lib/api/rules';
+import { findRuleEntityWarnings, type KnownEntities } from '@/lib/ruleValidation';
 
 const FIELD_OPTIONS = [
   { value: 'DeadLetterReason', label: 'Dead Letter Reason' },
@@ -36,6 +37,7 @@ interface RuleBuilderDialogProps {
   initialConditions?: RuleCondition[];
   initialAction?: RuleAction;
   isSaving?: boolean;
+  knownEntities?: KnownEntities;
 }
 
 const defaultCondition: RuleCondition = {
@@ -59,6 +61,7 @@ export function RuleBuilderDialog({
   initialConditions,
   initialAction,
   isSaving,
+  knownEntities,
 }: RuleBuilderDialogProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -129,6 +132,13 @@ export function RuleBuilderDialog({
 
   const canSave = name.trim().length > 0 && conditions.every((c) => c.value.trim().length > 0);
 
+  // Live cross-check against real entities so users see BEFORE saving that a
+  // rule references a queue/topic that doesn't exist in any connected cloud.
+  const entityWarnings = knownEntities
+    ? findRuleEntityWarnings(conditions, action, knownEntities)
+    : [];
+  const hasWarnings = entityWarnings.length > 0;
+
   if (!open) return null;
 
   return (
@@ -149,9 +159,14 @@ export function RuleBuilderDialog({
             <button
               onClick={handleSave}
               disabled={!canSave || isSaving}
-              className="px-4 py-1.5 text-sm font-medium text-white bg-primary-500 rounded-lg hover:bg-primary-600 disabled:opacity-50 transition-colors"
+              className={`px-4 py-1.5 text-sm font-medium text-white rounded-lg disabled:opacity-50 transition-colors ${
+                hasWarnings
+                  ? 'bg-amber-500 hover:bg-amber-600'
+                  : 'bg-primary-500 hover:bg-primary-600'
+              }`}
+              title={hasWarnings ? entityWarnings.join('\n') : undefined}
             >
-              {isSaving ? 'Saving...' : 'Save'}
+              {isSaving ? 'Saving...' : hasWarnings ? 'Save Anyway' : 'Save'}
             </button>
           </div>
         </div>
@@ -390,6 +405,23 @@ export function RuleBuilderDialog({
               className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm"
             />
           </div>
+
+          {/* Entity validation warnings */}
+          {hasWarnings && (
+            <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-800">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-semibold">This rule references entities that don&apos;t exist:</p>
+                {entityWarnings.map((warning, i) => (
+                  <p key={i}>{warning}</p>
+                ))}
+                <p className="text-amber-700">
+                  Check the spelling against your connected namespaces, or save anyway if the
+                  entity will be created later.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Safety Notice */}
           <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">

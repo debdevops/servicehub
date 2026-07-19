@@ -12,6 +12,8 @@ import {
 import { DlqHistoryTable, DlqTimelineDrawer } from '@/components/dlq';
 import { useDlqHistory, useDlqSummary } from '@/hooks/useDlqHistory';
 import { useNamespaces } from '@/hooks/useNamespaces';
+import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
+import type { Namespace } from '@/lib/api/types';
 import { dlqHistoryApi } from '@/lib/api/dlqHistory';
 import { HelpTooltip } from '@/components/help';
 import { tooltips } from '@/lib/helpContent';
@@ -97,6 +99,46 @@ function TrendChart({ trend }: { trend: TrendPoint[] }) {
         })}
       </div>
     </div>
+  );
+}
+
+// ─── Namespace widget strip — one card per connected cloud namespace ─
+
+function NamespaceDlqWidget({
+  namespace,
+  isSelected,
+  onSelect,
+}: {
+  namespace: Namespace;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const style = getProviderStyle(namespace.cloudProvider);
+  const { data: summary } = useDlqSummary(namespace.id);
+  const activeDlq = summary?.activeMessages ?? 0;
+
+  return (
+    <button
+      onClick={onSelect}
+      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border text-left transition-all shrink-0 ${
+        isSelected
+          ? `${style.headerBg} ${style.headerBorder} shadow-sm ring-1 ring-inset ring-current ${style.accentText}`
+          : `bg-white border-gray-200 ${style.cardHover}`
+      }`}
+      title={`Show DLQ intelligence for ${namespace.displayName || namespace.name}`}
+    >
+      <ProviderBadge provider={namespace.cloudProvider} />
+      <span className="text-sm font-medium text-gray-800 truncate max-w-[160px]">
+        {namespace.displayName || namespace.name}
+      </span>
+      <span
+        className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+          activeDlq > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-400'
+        }`}
+      >
+        {activeDlq.toLocaleString()} active
+      </span>
+    </button>
   );
 }
 
@@ -282,6 +324,24 @@ export function DlqHistoryPage() {
             </button>
           </div>
         </div>
+
+        {/* Namespace widgets — every connected cloud; click switches the
+            detail below to that namespace without leaving the page */}
+        {namespaces && namespaces.length > 0 && (
+          <div className="flex flex-wrap gap-2 pb-1 mb-3">
+            {namespaces.map((ns) => (
+              <NamespaceDlqWidget
+                key={ns.id}
+                namespace={ns}
+                isSelected={ns.id === namespaceId}
+                onSelect={() => {
+                  setPage(1);
+                  setSearchParams({ namespace: ns.id });
+                }}
+              />
+            ))}
+          </div>
+        )}
 
         {/* Summary Cards */}
         {summary && (

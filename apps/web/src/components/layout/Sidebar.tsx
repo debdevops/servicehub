@@ -19,7 +19,6 @@ import {
   FlaskConical,
   Route,
 } from 'lucide-react';
-import toast from 'react-hot-toast';
 import { useState } from 'react';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues } from '@/hooks/useQueues';
@@ -409,9 +408,6 @@ export function Sidebar() {
   // Get active namespace for Quick Access
   const activeNamespace = namespaces?.find(ns => ns.isActive);
   
-  // Fetch queues and topics for Quick Access buttons
-  const { data: queues } = useQueues(activeNamespace?.id || '');
-  const { data: topics } = useTopics(activeNamespace?.id || '');
 
   // In demo mode, use mock stats; otherwise use real API stats
   const demoStats = isDemoMode && cloudProvider ? getMockStats(cloudProvider) : null;
@@ -533,65 +529,23 @@ export function Sidebar() {
             )}
           </NavLink>
 
+          {/* Multi-cloud overviews: every namespace (Azure, AWS, GCP) with its
+              entities as clickable widgets — no provider is favoured. */}
           <button
-            onClick={() => {
-              const activeNamespace = namespaces?.find(ns => ns.isActive);
-              if (!activeNamespace) {
-                toast.error('No active namespace selected');
-                return;
-              }
-              
-              // Navigate to first queue if available
-              const firstQueue = queues?.[0];
-              if (firstQueue) {
-                navigate(`${navPrefix}/messages?namespace=${activeNamespace.id}&queue=${firstQueue.name}&queueType=active`);
-                return;
-              }
-              
-              // If no queues, check for topics (user will need to select subscription)
-              const firstTopic = topics?.[0];
-              if (firstTopic) {
-                toast('Select a subscription from the topic to view messages', { icon: 'ℹ️' });
-                return;
-              }
-              
-              toast('No queues or topics available', { icon: 'ℹ️' });
-            }}
+            onClick={() => navigate(`${navPrefix}/messages-overview?tab=active`)}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border border-gray-200 hover:border-sky-300 shadow-sm"
           >
             <Database className="w-4 h-4 text-sky-500" />
             <span className="flex-1 text-left">Active Messages</span>
-            <span className="text-xs text-sky-600 font-medium">View All</span>
+            <span className="text-xs text-sky-600 font-medium">All Clouds</span>
           </button>
           <button
-            onClick={() => {
-              const activeNamespace = namespaces?.find(ns => ns.isActive);
-              if (!activeNamespace) {
-                toast.error('No active namespace selected');
-                return;
-              }
-              
-              // Navigate to first queue's DLQ if available
-              const firstQueue = queues?.[0];
-              if (firstQueue) {
-                navigate(`${navPrefix}/messages?namespace=${activeNamespace.id}&queue=${firstQueue.name}&queueType=deadletter`);
-                return;
-              }
-              
-              // If no queues, check for topics
-              const firstTopic = topics?.[0];
-              if (firstTopic) {
-                toast('Select a subscription from the topic to view DLQ', { icon: '⚠️' });
-                return;
-              }
-              
-              toast('No queues or topics available for DLQ view', { icon: '⚠️' });
-            }}
+            onClick={() => navigate(`${navPrefix}/messages-overview?tab=deadletter`)}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-red-50 text-gray-700 hover:text-red-700 border border-gray-200 hover:border-red-300 shadow-sm"
           >
             <AlertCircle className="w-4 h-4 text-red-500" />
             <span className="flex-1 text-left">Dead-Letter</span>
-            <span className="text-xs text-red-600 font-medium">DLQ</span>
+            <span className="text-xs text-red-600 font-medium">All Clouds</span>
           </button>
           <NavLink
             to={activeNamespace ? `${navPrefix}/dlq-history?namespace=${activeNamespace.id}` : `${navPrefix}/dlq-history`}

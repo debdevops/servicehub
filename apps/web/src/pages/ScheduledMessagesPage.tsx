@@ -1,15 +1,90 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
-import { Clock, RefreshCw, XCircle, Calendar, AlertCircle, Inbox, CalendarClock, Plus } from 'lucide-react';
+import { Clock, RefreshCw, XCircle, Calendar, AlertCircle, Inbox, CalendarClock, Plus, Info } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues } from '@/hooks/useQueues';
 import { useScheduledMessages, useCancelScheduledMessage } from '@/hooks/useScheduledMessages';
 import { useSendMessage } from '@/hooks/useMessages';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CopyButton } from '@/components/CopyButton';
-import { Message } from '@/lib/api/types';
+import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
+import { apiClient } from '@/lib/api/client';
+import { Message, Namespace } from '@/lib/api/types';
 import toast from 'react-hot-toast';
+
+// Native message scheduling is an Azure Service Bus feature. SQS tops out at a
+// 15-minute DelaySeconds and Pub/Sub has no per-message scheduling at all, so
+// those providers get an explanatory panel instead of an empty table.
+const SCHEDULING_UNSUPPORTED: Record<string, { title: string; detail: string }> = {
+  aws: {
+    title: 'AWS SQS does not support scheduled messages',
+    detail:
+      'SQS only offers DelaySeconds (max 15 minutes) at send time. For real scheduling on AWS, use EventBridge Scheduler to publish into the queue at the target time.',
+  },
+  gcp: {
+    title: 'GCP Pub/Sub does not support scheduled messages',
+    detail:
+      'Pub/Sub has no per-message scheduling. Use Cloud Tasks or Cloud Scheduler to publish into the topic at the target time.',
+  },
+};
+
+function NamespaceScheduleWidget({
+  namespace,
+  isSelected,
+  onSelect,
+}: {
+  namespace: Namespace;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const style = getProviderStyle(namespace.cloudProvider);
+  const unsupported = SCHEDULING_UNSUPPORTED[namespace.cloudProvider ?? 'azure'];
+  const { data: stats } = useQuery({
+    queryKey: ['namespace-stats', namespace.id] as const,
+    queryFn: async () => {
+      const response = await apiClient.get<{ totalScheduled: number }>(
+        `/namespaces/${namespace.id}/stats`,
+        { _silent: true } as Record<string, unknown>,
+      );
+      return response.data;
+    },
+    enabled: !unsupported,
+    staleTime: 30_000,
+    refetchIntervalInBackground: false,
+  });
+
+  return (
+    <button
+      onClick={onSelect}
+      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border text-left transition-all shrink-0 ${
+        isSelected
+          ? `${style.headerBg} ${style.headerBorder} shadow-sm ring-1 ring-inset ring-current ${style.accentText}`
+          : `bg-white border-gray-200 ${style.cardHover}`
+      }`}
+      title={unsupported ? unsupported.title : `View scheduled messages in ${namespace.displayName || namespace.name}`}
+    >
+      <ProviderBadge provider={namespace.cloudProvider} />
+      <span className="text-sm font-medium text-gray-800 truncate max-w-[160px]">
+        {namespace.displayName || namespace.name}
+      </span>
+      {unsupported ? (
+        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+          not supported
+        </span>
+      ) : (
+        <span
+          className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+            (stats?.totalScheduled ?? 0) > 0 ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-400'
+          }`}
+        >
+          {(stats?.totalScheduled ?? 0).toLocaleString()} scheduled
+        </span>
+      )}
+    </button>
+  );
+}
 
 // ============================================================================
 // ScheduledMessagesPage - Dashboard for viewing and cancelling scheduled messages
@@ -479,13 +554,18 @@ export function ScheduledMessagesPage() {
   const { data: namespaces } = useNamespaces();
   const { data: queues } = useQueues(selectedNamespaceId);
 
+  const selectedNamespace = namespaces?.find((ns) => ns.id === selectedNamespaceId);
+  const unsupported = selectedNamespace
+    ? SCHEDULING_UNSUPPORTED[selectedNamespace.cloudProvider ?? 'azure']
+    : undefined;
+
   const {
     data: paginatedMessages,
     isLoading,
     isError,
     refetch,
     isFetching,
-  } = useScheduledMessages(selectedNamespaceId, selectedQueue);
+  } = useScheduledMessages(selectedNamespaceId, unsupported ? '' : selectedQueue);
 
   const messages = paginatedMessages?.items ?? [];
   const scheduledCount = paginatedMessages?.totalCount ?? messages.length;
@@ -527,6 +607,20 @@ export function ScheduledMessagesPage() {
         </div>
       </div>
 
+      {/* Namespace widgets — one per connected cloud (Azure, AWS, GCP) */}
+      {namespaces && namespaces.length > 0 && (
+        <div className="bg-white border-b border-gray-100 px-6 py-3 flex flex-wrap gap-2 shrink-0">
+          {namespaces.map((ns) => (
+            <NamespaceScheduleWidget
+              key={ns.id}
+              namespace={ns}
+              isSelected={ns.id === selectedNamespaceId}
+              onSelect={() => setNamespace(ns.id)}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Filters */}
       <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-4 shrink-0">
         <div className="flex items-center gap-2">
@@ -550,7 +644,7 @@ export function ScheduledMessagesPage() {
           <select
             value={selectedQueue}
             onChange={(e) => setQueue(e.target.value)}
-            disabled={!selectedNamespaceId}
+            disabled={!selectedNamespaceId || !!unsupported}
             className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 min-w-[180px] disabled:bg-gray-50 disabled:cursor-not-allowed"
           >
             <option value="">Select queue…</option>
@@ -573,7 +667,13 @@ export function ScheduledMessagesPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto bg-gray-50">
-        {!selectedNamespaceId || !selectedQueue ? (
+        {unsupported ? (
+          <div className="flex flex-col items-center justify-center h-full text-center px-6">
+            <Info className="w-12 h-12 text-gray-300 mb-3" />
+            <p className="text-gray-600 font-semibold">{unsupported.title}</p>
+            <p className="text-gray-400 text-sm mt-2 max-w-md">{unsupported.detail}</p>
+          </div>
+        ) : !selectedNamespaceId || !selectedQueue ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <Calendar className="w-12 h-12 text-gray-300 mb-3" />
             <p className="text-gray-500 font-medium">Select a namespace and queue</p>

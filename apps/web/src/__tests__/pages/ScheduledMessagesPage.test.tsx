@@ -120,8 +120,9 @@ describe('ScheduledMessagesPage', () => {
 
   it('renders namespace selector with all namespaces', () => {
     renderPage();
-    expect(screen.getByText('Prod Namespace')).toBeInTheDocument();
-    expect(screen.getByText('Dev Namespace')).toBeInTheDocument();
+    // Names appear in the dropdown and again in the provider widget strip
+    expect(screen.getAllByText('Prod Namespace').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Dev Namespace').length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows placeholder when no namespace selected', () => {

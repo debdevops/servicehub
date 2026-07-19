@@ -106,7 +106,8 @@ describe('DlqHistoryPage', () => {
   it('shows namespace name in subtitle when namespace resolved', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><DlqHistoryPage /></Wrapper>);
-    expect(screen.getByText(/My Namespace/)).toBeInTheDocument();
+    // Name appears in the subtitle and again in the namespace widget strip
+    expect(screen.getAllByText(/My Namespace/).length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders DlqHistoryTable', () => {

@@ -22,6 +22,7 @@ const CloudBridgePageLazy = lazy(() => import('./pages/CloudBridgePage').then(m 
 const SimulatorPageLazy = lazy(() => import('./pages/SimulatorPage').then(m => ({ default: m.SimulatorPage })));
 const CrossCloudTracePageLazy = lazy(() => import('./pages/CrossCloudTracePage').then(m => ({ default: m.CrossCloudTracePage })));
 const AuditPageLazy = lazy(() => import('./pages/AuditPage').then(m => ({ default: m.AuditPage })));
+const MessagesOverviewPageLazy = lazy(() => import('./pages/MessagesOverviewPage'));
 
 // Loading fallback component (co-located here intentionally — used only by router)
 // eslint-disable-next-line react-refresh/only-export-components
@@ -77,6 +78,14 @@ function DemoGcpLayout() {
 // Shared page children — EXACT same pages as the real app
 const sharedChildren = [
   { path: 'messages', element: <MessagesPage /> },
+  {
+    path: 'messages-overview',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <MessagesOverviewPageLazy />
+      </Suspense>
+    ),
+  },
   { path: 'connect', element: <ConnectPage /> },
   { path: 'rules', element: <RulesPage /> },
   { path: 'health', element: <HealthPage /> },
@@ -230,6 +239,14 @@ export const router = createBrowserRouter([
       {
         path: 'messages',
         element: <MessagesPage />,
+      },
+      {
+        path: 'messages-overview',
+        element: (
+          <Suspense fallback={<PageLoading />}>
+            <MessagesOverviewPageLazy />
+          </Suspense>
+        ),
       },
       {
         path: 'connect',
