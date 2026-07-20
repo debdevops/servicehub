@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ConnectPage } from '@/pages/ConnectPage';
+import toast from 'react-hot-toast';
 
 const { mockCreateNs, mockProviderStatus } = vi.hoisted(() => ({
   mockCreateNs: vi.fn(),
@@ -198,17 +199,19 @@ describe('ConnectPage multi-cloud provider gating', () => {
     );
   });
 
-  it('submits GCP namespaces with authType gcpServiceAccount and the service account JSON', async () => {
+  it('submits GCP namespaces with authType gcpServiceAccount and the uploaded key file content', async () => {
     renderConnectPage();
     selectProvider('Google Cloud Pub/Sub');
     fillDisplayName();
-    fireEvent.change(screen.getByPlaceholderText('my-project-123'), {
-      target: { value: 'my-project-123' },
-    });
     const saJson = '{"type":"service_account","project_id":"my-project-123"}';
-    fireEvent.change(screen.getByPlaceholderText(/service_account/), {
-      target: { value: saJson },
+    const file = new File([saJson], 'my-key.json', { type: 'application/json' });
+    fireEvent.change(screen.getByLabelText(/service account json key file/i), {
+      target: { files: [file] },
     });
+    // FileReader is async — wait for the selected-file chip to render
+    await screen.findByText('my-key.json');
+    // project_id is auto-filled from the key file
+    expect(screen.getByPlaceholderText('my-project-123')).toHaveValue('my-project-123');
 
     fireEvent.click(screen.getByRole('button', { name: /^Connect$/ }));
 
@@ -221,6 +224,23 @@ describe('ConnectPage multi-cloud provider gating', () => {
         gcpProjectId: 'my-project-123',
       })
     );
+  });
+
+  it('rejects an uploaded file that is not a service account key', async () => {
+    renderConnectPage();
+    selectProvider('Google Cloud Pub/Sub');
+    fillDisplayName();
+    const file = new File(['{"type":"authorized_user"}'], 'not-a-key.json', {
+      type: 'application/json',
+    });
+    fireEvent.change(screen.getByLabelText(/service account json key file/i), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('service account key'))
+    );
+    expect(screen.queryByText('not-a-key.json')).not.toBeInTheDocument();
   });
 
   it('does not call create when the selected provider is disabled', async () => {
