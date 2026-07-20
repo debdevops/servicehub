@@ -138,6 +138,23 @@ Connect namespaces from two or more cloud providers and use **Multi-Cloud Trace*
 | Scheduled Messages | [![Scheduled](docs/screenshots/28-ServiceHub-Schedule-Message.png)](docs/screenshots/28-ServiceHub-Schedule-Message.png) |
 | System Health | [![Health](docs/screenshots/29-ServiceHub-System-Health-Status.png)](docs/screenshots/29-ServiceHub-System-Health-Status.png) |
 
+### Multi-Cloud Showcase
+
+Captured live against Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub connected simultaneously — real traffic, not mocked data.
+
+| Feature | Preview |
+|---|---|
+| Multi-Namespace Dashboard (Azure + AWS + GCP) | [![Dashboard](docs/screenshots/30-ServiceHub-MultiCloud-Dashboard.png)](docs/screenshots/30-ServiceHub-MultiCloud-Dashboard.png) |
+| Connect — saved connections across all 3 providers | [![Connect](docs/screenshots/31-ServiceHub-Connect-MultiCloud.png)](docs/screenshots/31-ServiceHub-Connect-MultiCloud.png) |
+| Messages Overview — every cloud, one screen | [![Overview](docs/screenshots/32-ServiceHub-Messages-Overview-MultiCloud.png)](docs/screenshots/32-ServiceHub-Messages-Overview-MultiCloud.png) |
+| AWS SNS Fan-Out Dashboard | [![SNS](docs/screenshots/33-ServiceHub-AWS-SNS-FanOut.png)](docs/screenshots/33-ServiceHub-AWS-SNS-FanOut.png) |
+| GCP Pub/Sub Message Detail | [![GCP](docs/screenshots/34-ServiceHub-GCP-Message-Detail.png)](docs/screenshots/34-ServiceHub-GCP-Message-Detail.png) |
+| Message Detail — Replay disabled on active messages (safety rail) | [![Safety](docs/screenshots/35-ServiceHub-Message-Detail-Safety.png)](docs/screenshots/35-ServiceHub-Message-Detail-Safety.png) |
+| Auto-Replay Rule Builder | [![Rule Builder](docs/screenshots/36-ServiceHub-Auto-Replay-Rule-Builder.png)](docs/screenshots/36-ServiceHub-Auto-Replay-Rule-Builder.png) |
+| DLQ Intelligence — multi-cloud filters | [![DLQ Intelligence](docs/screenshots/37-ServiceHub-DLQ-Intelligence-MultiCloud.png)](docs/screenshots/37-ServiceHub-DLQ-Intelligence-MultiCloud.png) |
+| Security & Privacy — data-flow diagram | [![Security](docs/screenshots/38-ServiceHub-Security-Privacy.png)](docs/screenshots/38-ServiceHub-Security-Privacy.png) |
+| Cloud Bridge — cross-provider entity browser | [![Cloud Bridge](docs/screenshots/39-ServiceHub-Cloud-Bridge.png)](docs/screenshots/39-ServiceHub-Cloud-Bridge.png) |
+
 ---
 
 ## Real-World Scenarios
