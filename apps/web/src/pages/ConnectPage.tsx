@@ -46,10 +46,12 @@ export function ConnectPage() {
         parsed = JSON.parse(text);
       } catch {
         toast.error('That file is not valid JSON. Upload the key file downloaded from GCP.');
+        if (gcpKeyFileInputRef.current) gcpKeyFileInputRef.current.value = '';
         return;
       }
       if (parsed?.type !== 'service_account') {
         toast.error('That JSON is not a service account key (expected "type": "service_account").');
+        if (gcpKeyFileInputRef.current) gcpKeyFileInputRef.current.value = '';
         return;
       }
       setGcpServiceAccountJson(text);
@@ -58,7 +60,10 @@ export function ConnectPage() {
         setGcpProjectId(parsed.project_id);
       }
     };
-    reader.onerror = () => toast.error('Could not read the selected file.');
+    reader.onerror = () => {
+      toast.error('Could not read the selected file.');
+      if (gcpKeyFileInputRef.current) gcpKeyFileInputRef.current.value = '';
+    };
     reader.readAsText(file);
   };
 
