@@ -177,13 +177,19 @@ public sealed class DlqMonitorService : IDlqMonitorService
     {
         if (cloudEntityType == "Subscription")
         {
-            // Azure subscriptions are listed as "topic/subscriptions/subscription";
-            // GCP subscriptions are listed by their bare subscription ID.
+            // Azure subscriptions are listed as "topic/subscriptions/subscription".
             var idx = fullName.IndexOf(SubscriptionPathSegment, StringComparison.Ordinal);
             if (idx >= 0)
             {
                 return (fullName[(idx + SubscriptionPathSegment.Length)..], fullName[..idx],
                     ServiceBusEntityType.Subscription);
+            }
+
+            // AWS SNS fanout endpoints and GCP subscriptions are listed as "topic/subscription".
+            var slashIdx = fullName.LastIndexOf('/');
+            if (slashIdx >= 0)
+            {
+                return (fullName[(slashIdx + 1)..], fullName[..slashIdx], ServiceBusEntityType.Subscription);
             }
 
             return (fullName, null, ServiceBusEntityType.Subscription);

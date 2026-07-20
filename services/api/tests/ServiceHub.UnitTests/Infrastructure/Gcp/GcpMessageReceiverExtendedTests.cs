@@ -353,17 +353,29 @@ public sealed class GcpMessageReceiverExtendedTests
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ReplayMessageAsync_WhenSequenceNotInCache_ReturnsNotFound()
+    public async Task ReplayMessageAsync_NoDeadLetterPolicyConfigured_ReturnsNoDlqValidation()
     {
-        var sut = new GcpMessageReceiver(
-            new Mock<IGcpClientFactory>().Object,
-            new Mock<INamespaceRepository>().Object,
-            NullLogger<GcpMessageReceiver>.Instance);
+        // Replay always resolves the DLQ subscription from the source subscription's own
+        // DeadLetterPolicy (there's no cross-request cache to check anymore — see
+        // GcpMessageReceiver's class remarks on why replay/purge re-scan instead of caching).
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        // Sequence 42 was never cached (no prior peek)
+        var subscriber = new Mock<SubscriberServiceApiClient>();
+        subscriber.Setup(s => s.GetSubscriptionAsync(It.IsAny<GetSubscriptionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Subscription()); // no DeadLetterPolicy
+
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetSubscriberClientAsync(ns, "my-sub", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(subscriber.Object);
+
+        var sut = new GcpMessageReceiver(factory.Object, repo.Object, NullLogger<GcpMessageReceiver>.Instance);
+
         var result = await sut.ReplayMessageAsync(TestNamespaceId, "my-sub", null, 42L);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("GCP.PubSub.MessageNotFound");
+        result.Error.Code.Should().Be("GCP.PubSub.NoDlq");
     }
 }

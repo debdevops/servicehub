@@ -230,7 +230,10 @@ public sealed class GcpMessagingProvider : ICloudMessagingProvider
                 {
                     collected.Add(new CloudEntity
                     {
-                        Name = sub.SubscriptionName.SubscriptionId,
+                        // Mirrors the "{topicName}/{subscriptionName}" convention documented on
+                        // SubscriptionsController.GetAllViaProviderAsync (also used by AWS SNS
+                        // fanout endpoints) so topic subscription-counts and listings resolve.
+                        Name = $"{sub.TopicAsTopicName.TopicId}/{sub.SubscriptionName.SubscriptionId}",
                         EntityType = "Subscription",
                         Provider = CloudProviderType.Gcp
                     });
