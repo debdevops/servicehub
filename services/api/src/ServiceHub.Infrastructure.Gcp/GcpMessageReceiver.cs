@@ -24,6 +24,15 @@ namespace ServiceHub.Infrastructure.Gcp;
 /// reset to zero, making them immediately re-deliverable. This means no consumer is blocked
 /// and no message is acknowledged.
 /// </para>
+/// <para>
+/// Sequence numbers are a stable hash of each message's <c>MessageId</c> (not its ack ID, which
+/// is single-delivery and rotates on every pull). Replay/purge don't rely on any cross-request
+/// cache of a message's ack ID — background DLQ scanning (see <c>DlqMonitorWorker</c>) pulls the
+/// same subscriptions on its own schedule, nacking whatever it finds, which would otherwise
+/// invalidate a cached ack ID before a user acts on it. Instead, replay/purge re-scan the target
+/// subscription for the matching <c>MessageId</c> hash at act-time and use its current ack ID —
+/// the same design AWS uses for the equivalent SQS receipt-handle problem.
+/// </para>
 /// </summary>
 public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusProvider
 {
@@ -32,15 +41,18 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
     private readonly ILogger<GcpMessageReceiver> _logger;
     private readonly ResiliencePipeline _resiliencePipeline;
 
-    // Maps synthetic sequence number → ack ID for replay/purge operations.
-    // ConcurrentDictionary ensures thread-safe access from parallel async continuations.
-    private readonly ConcurrentDictionary<long, string> _ackIdCache = new();
+    // Serializes scans (FindAndLockMessageAsync) per subscription so a replay/purge scan and a
+    // concurrent DlqMonitorWorker tick against the same subscription don't race each other's
+    // ack IDs. Static for the same reason AWS's _queueScanGates is: this receiver is AddScoped
+    // (a new instance per HTTP request), but the gate must hold across the whole process.
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _scanGates = new();
 
-    /// <summary>Maximum number of ack-ID cache entries before eviction is triggered.</summary>
-    private const int AckIdCacheMaxSize = 50_000;
+    private const int MaxScanBatches = 5;
+    private const int ScanBatchSize = 100;
+    private const int ScanLockSeconds = 30;
 
-    /// <summary>Number of oldest entries to evict when the cache reaches <see cref="AckIdCacheMaxSize"/>.</summary>
-    private const int AckIdCacheEvictCount = 1_000;
+    private static SemaphoreSlim GetScanGate(string subscriptionResourceName) =>
+        _scanGates.GetOrAdd(subscriptionResourceName, static _ => new SemaphoreSlim(1, 1));
 
     /// <summary>
     /// Initialises a new instance of <see cref="GcpMessageReceiver"/>.
@@ -79,12 +91,16 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
 
         try
         {
+            // Topic/subscription-shaped requests (mirroring Azure/AWS addressing) carry the
+            // subscription in SubscriptionName and the topic in EntityName; GCP has no
+            // separate topic read path, so the subscription is what we actually pull from.
+            var subscriptionId = request.SubscriptionName ?? request.EntityName;
             var mapped = await _resiliencePipeline.ExecuteAsync(async ct =>
             {
                 var subscriber = await _clientFactory.GetSubscriberClientAsync(
-                    ns, request.EntityName, ct).ConfigureAwait(false);
+                    ns, subscriptionId, ct).ConfigureAwait(false);
 
-                var subResourceName = GetSubscriptionResourceName(ns, request.EntityName);
+                var subResourceName = GetSubscriptionResourceName(ns, subscriptionId);
                 var messages = await PullAndNackAsync(subscriber, subResourceName, request.MaxMessages, ct).ConfigureAwait(false);
                 return MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: false);
             }, linkedCts.Token).ConfigureAwait(false);
@@ -112,9 +128,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // In GCP Pub/Sub, dead-letter messages are forwarded to a separate dead-letter topic's subscription.
-        // Convention: the dead-letter subscription is named "{subscriptionId}-dlq" or passed explicitly.
-        var dlqSubscription = $"{request.EntityName}-dlq";
+        var subscriptionId = request.SubscriptionName ?? request.EntityName;
 
         var nsResult = await _namespaceRepository.GetByIdAsync(request.NamespaceId, cancellationToken).ConfigureAwait(false);
         if (nsResult.IsFailure)
@@ -129,26 +143,29 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         {
             var mapped = await _resiliencePipeline.ExecuteAsync(async ct =>
             {
-                var subscriber = await _clientFactory.GetSubscriberClientAsync(
-                    ns, dlqSubscription, ct).ConfigureAwait(false);
+                var (dlqSubscriptionId, _) = await ResolveDlqRouteAsync(ns, subscriptionId, ct).ConfigureAwait(false);
+                if (dlqSubscriptionId is null)
+                    return new List<Message>();
 
-                var subResourceName = GetSubscriptionResourceName(ns, dlqSubscription);
-                var messages = await PullAndNackAsync(subscriber, subResourceName, request.MaxMessages, ct).ConfigureAwait(false);
+                var dlqSubscriber = await _clientFactory.GetSubscriberClientAsync(
+                    ns, dlqSubscriptionId, ct).ConfigureAwait(false);
+                var dlqSubResourceName = GetSubscriptionResourceName(ns, dlqSubscriptionId);
+                var messages = await PullAndNackAsync(dlqSubscriber, dlqSubResourceName, request.MaxMessages, ct).ConfigureAwait(false);
                 return MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: true);
             }, linkedCts.Token).ConfigureAwait(false);
 
-            _logger.LogDebug("Peeked {Count} DLQ messages from Pub/Sub subscription {Subscription}", mapped.Count, dlqSubscription);
+            _logger.LogDebug("Peeked {Count} DLQ messages for Pub/Sub subscription {Subscription}", mapped.Count, SanitizeForLog(subscriptionId));
             return Result.Success<IReadOnlyList<Message>>(mapped);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning("GCP Pub/Sub DLQ peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, SanitizeForLog(dlqSubscription));
+            _logger.LogWarning("GCP Pub/Sub DLQ peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, SanitizeForLog(subscriptionId));
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
                 "GCP.PubSub.Timeout", $"Pub/Sub DLQ operation timed out after {OperationTimeoutSeconds}s."));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error peeking Pub/Sub DLQ messages from {Subscription}", SanitizeForLog(dlqSubscription));
+            _logger.LogError(ex, "Error peeking Pub/Sub DLQ messages from {Subscription}", SanitizeForLog(subscriptionId));
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService("GCP.PubSub.DlqPeekFailed", ex.Message));
         }
     }
@@ -195,11 +212,13 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
 
         var ns = nsResult.Value;
 
+        var subscriptionId = request.SubscriptionName ?? request.EntityName;
+
         try
         {
             var subscriber = await _clientFactory.GetSubscriberClientAsync(
-                ns, request.EntityName, cancellationToken).ConfigureAwait(false);
-            var subResourceName = GetSubscriptionResourceName(ns, request.EntityName);
+                ns, subscriptionId, cancellationToken).ConfigureAwait(false);
+            var subResourceName = GetSubscriptionResourceName(ns, subscriptionId);
 
             // Resolve the dead-letter topic from the subscription's policy — the authoritative
             // Pub/Sub source for where dead-lettered messages belong.
@@ -212,7 +231,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             if (string.IsNullOrEmpty(deadLetterTopic))
             {
                 return Result.Failure<int>(Error.Validation("GCP.PubSub.NoDlq",
-                    $"Subscription {request.EntityName} has no dead-letter policy configured. " +
+                    $"Subscription {subscriptionId} has no dead-letter policy configured. " +
                     "Set a dead-letter topic and MaxDeliveryAttempts on the subscription."));
             }
 
@@ -253,12 +272,12 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
 
             _logger.LogInformation(
                 "Dead-lettered {Count} messages from subscription {Subscription} to topic {Topic}",
-                ackIds.Count, SanitizeForLog(request.EntityName), SanitizeForLog(deadLetterTopicId));
+                ackIds.Count, SanitizeForLog(subscriptionId), SanitizeForLog(deadLetterTopicId));
             return Result.Success(ackIds.Count);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error dead-lettering Pub/Sub messages from {Subscription}", SanitizeForLog(request.EntityName));
+            _logger.LogError(ex, "Error dead-lettering Pub/Sub messages from {Subscription}", SanitizeForLog(subscriptionId));
             return Result.Failure<int>(Error.ExternalService("GCP.PubSub.DlqFailed", ex.Message));
         }
     }
@@ -271,37 +290,60 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         long sequenceNumber,
         CancellationToken cancellationToken = default)
     {
-        if (!_ackIdCache.TryGetValue(sequenceNumber, out var ackId))
-        {
-            return Result.Failure(Error.NotFound("GCP.PubSub.MessageNotFound",
-                $"Message {sequenceNumber} not found in ack ID cache. Peek the subscription first."));
-        }
-
         var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken).ConfigureAwait(false);
         if (nsResult.IsFailure)
             return Result.Failure(nsResult.Error);
 
+        var baseSubscriptionId = subscriptionName ?? entityName;
+
         try
         {
-            var subscriber = await _clientFactory.GetSubscriberClientAsync(
-                nsResult.Value, entityName, cancellationToken).ConfigureAwait(false);
-
-            var subResourceName = GetSubscriptionResourceName(nsResult.Value, entityName);
-            // Nack the message (ack deadline 0) — forces immediate redelivery
-            await subscriber.ModifyAckDeadlineAsync(new ModifyAckDeadlineRequest
+            // Replay always moves a message from the DLQ back to its source topic (mirrors the
+            // AWS provider, which always resolves and scans the DLQ queue here too). Pub/Sub has
+            // no cross-subscription "move", so this publishes a fresh copy of the scanned payload
+            // to the source topic, then permanently acknowledges the DLQ copy.
+            var (dlqSubscriptionId, sourceTopicId) = await ResolveDlqRouteAsync(
+                nsResult.Value, baseSubscriptionId, cancellationToken).ConfigureAwait(false);
+            if (dlqSubscriptionId is null || sourceTopicId is null)
             {
-                Subscription = subResourceName,
-                AckIds = { ackId },
-                AckDeadlineSeconds = 0
+                return Result.Failure(Error.Validation("GCP.PubSub.NoDlq",
+                    $"Subscription {baseSubscriptionId} has no dead-letter subscription to replay from."));
+            }
+
+            var dlqSubscriber = await _clientFactory.GetSubscriberClientAsync(
+                nsResult.Value, dlqSubscriptionId, cancellationToken).ConfigureAwait(false);
+            var dlqSubResourceName = GetSubscriptionResourceName(nsResult.Value, dlqSubscriptionId);
+
+            var target = await FindAndLockMessageAsync(dlqSubscriber, dlqSubResourceName, sequenceNumber, cancellationToken)
+                .ConfigureAwait(false);
+            if (target is null)
+            {
+                return Result.Failure(Error.NotFound("GCP.PubSub.MessageNotFound",
+                    $"Message {sequenceNumber} not found in DLQ subscription {dlqSubscriptionId}."));
+            }
+
+            var publisher = await _clientFactory.GetPublisherClientAsync(
+                nsResult.Value, sourceTopicId, cancellationToken).ConfigureAwait(false);
+            var republished = new PubsubMessage { Data = target.Message.Data };
+            foreach (var attribute in target.Message.Attributes)
+                republished.Attributes[attribute.Key] = attribute.Value;
+            await publisher.PublishAsync(republished).ConfigureAwait(false);
+
+            // Acknowledge = permanently remove the DLQ copy now that a fresh one has been published.
+            await dlqSubscriber.AcknowledgeAsync(new AcknowledgeRequest
+            {
+                Subscription = dlqSubResourceName,
+                AckIds = { target.AckId }
             }, cancellationToken).ConfigureAwait(false);
 
-            _ackIdCache.TryRemove(sequenceNumber, out _);
-            _logger.LogInformation("Replayed Pub/Sub message {Seq} on subscription {Subscription}", sequenceNumber, SanitizeForLog(entityName));
+            _logger.LogInformation(
+                "Replayed Pub/Sub message {Seq} from {DlqSubscription} to topic {Topic}",
+                sequenceNumber, SanitizeForLog(dlqSubscriptionId), SanitizeForLog(sourceTopicId));
             return Result.Success();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error replaying Pub/Sub message {Seq} for {Subscription}", sequenceNumber, SanitizeForLog(entityName));
+            _logger.LogError(ex, "Error replaying Pub/Sub message {Seq} for {Subscription}", sequenceNumber, SanitizeForLog(baseSubscriptionId));
             return Result.Failure(Error.ExternalService("GCP.PubSub.ReplayFailed", ex.Message));
         }
     }
@@ -315,38 +357,56 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         bool fromDeadLetter,
         CancellationToken cancellationToken = default)
     {
-        if (!_ackIdCache.TryGetValue(sequenceNumber, out var ackId))
-        {
-            return Result.Failure(Error.NotFound("GCP.PubSub.MessageNotFound",
-                $"Message {sequenceNumber} not found in ack ID cache. Peek the subscription first."));
-        }
-
         var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken).ConfigureAwait(false);
         if (nsResult.IsFailure)
             return Result.Failure(nsResult.Error);
 
-        var subscriptionId = fromDeadLetter ? $"{entityName}-dlq" : entityName;
+        var baseSubscriptionId = subscriptionName ?? entityName;
 
         try
         {
+            string subscriptionId;
+            if (fromDeadLetter)
+            {
+                var (dlqSubscriptionId, _) = await ResolveDlqRouteAsync(
+                    nsResult.Value, baseSubscriptionId, cancellationToken).ConfigureAwait(false);
+                if (dlqSubscriptionId is null)
+                {
+                    return Result.Failure(Error.Validation("GCP.PubSub.NoDlq",
+                        $"Subscription {baseSubscriptionId} has no dead-letter subscription to purge from."));
+                }
+                subscriptionId = dlqSubscriptionId;
+            }
+            else
+            {
+                subscriptionId = baseSubscriptionId;
+            }
+
             var subscriber = await _clientFactory.GetSubscriberClientAsync(
                 nsResult.Value, subscriptionId, cancellationToken).ConfigureAwait(false);
-
             var subResourceName = GetSubscriptionResourceName(nsResult.Value, subscriptionId);
+
+            var target = await FindAndLockMessageAsync(subscriber, subResourceName, sequenceNumber, cancellationToken)
+                .ConfigureAwait(false);
+            if (target is null)
+            {
+                return Result.Failure(Error.NotFound("GCP.PubSub.MessageNotFound",
+                    $"Message {sequenceNumber} not found in subscription {subscriptionId}."));
+            }
+
             // Acknowledge = permanently delete from subscription
             await subscriber.AcknowledgeAsync(new AcknowledgeRequest
             {
                 Subscription = subResourceName,
-                AckIds = { ackId }
+                AckIds = { target.AckId }
             }, cancellationToken).ConfigureAwait(false);
 
-            _ackIdCache.TryRemove(sequenceNumber, out _);
             _logger.LogInformation("Purged Pub/Sub message {Seq} from {Subscription}", sequenceNumber, SanitizeForLog(subscriptionId));
             return Result.Success();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error purging Pub/Sub message {Seq} from {Subscription}", sequenceNumber, SanitizeForLog(subscriptionId));
+            _logger.LogError(ex, "Error purging Pub/Sub message {Seq} from {Subscription}", sequenceNumber, SanitizeForLog(baseSubscriptionId));
             return Result.Failure(Error.ExternalService("GCP.PubSub.PurgeFailed", ex.Message));
         }
     }
@@ -413,30 +473,144 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         => (value ?? string.Empty)
             .Replace("\r", string.Empty, StringComparison.Ordinal)
             .Replace("\n", string.Empty, StringComparison.Ordinal);
+    /// <summary>
+    /// Pulls up to <paramref name="maxMessages"/> distinct messages, immediately nacking each
+    /// batch to keep the read non-destructive. A single Pull call doesn't reliably return
+    /// everything currently available — especially under concurrent contention from other
+    /// pullers on the same subscription, like <c>DlqMonitorWorker</c>'s own background scan —
+    /// so this loops (deduping by MessageId) until a quiet round or <see cref="MaxScanBatches"/>
+    /// is hit, mirroring the AWS provider's equivalent peek-completeness fix for SQS.
+    /// </summary>
     private async Task<List<ReceivedMessage>> PullAndNackAsync(
         SubscriberServiceApiClient subscriber, string subscriptionResourceName, int maxMessages, CancellationToken ct)
     {
-        var pullRequest = new PullRequest
-        {
-            Subscription = subscriptionResourceName,
-            MaxMessages = maxMessages
-        };
+        var messages = new List<ReceivedMessage>();
+        var seenIds = new HashSet<string>(StringComparer.Ordinal);
 
-        var response = await subscriber.PullAsync(pullRequest, ct).ConfigureAwait(false);
-        var messages = response.ReceivedMessages.ToList();
-
-        if (messages.Count > 0)
+        for (var i = 0; i < MaxScanBatches && messages.Count < maxMessages; i++)
         {
-            // ModifyAckDeadline(0) = immediately re-queue (peek pattern)
-            await subscriber.ModifyAckDeadlineAsync(new ModifyAckDeadlineRequest
+            var response = await subscriber.PullAsync(new PullRequest
             {
                 Subscription = subscriptionResourceName,
-                AckIds = { messages.Select(m => m.AckId) },
-                AckDeadlineSeconds = 0
+                MaxMessages = maxMessages - messages.Count
             }, ct).ConfigureAwait(false);
+
+            if (response.ReceivedMessages.Count == 0)
+                break;
+
+            var newlySeen = response.ReceivedMessages.Where(m => seenIds.Add(m.Message.MessageId)).ToList();
+            messages.AddRange(newlySeen);
+
+            if (newlySeen.Count > 0)
+            {
+                // ModifyAckDeadline(0) = immediately re-queue (peek pattern)
+                await subscriber.ModifyAckDeadlineAsync(new ModifyAckDeadlineRequest
+                {
+                    Subscription = subscriptionResourceName,
+                    AckIds = { newlySeen.Select(m => m.AckId) },
+                    AckDeadlineSeconds = 0
+                }, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                break; // quiet round: everything in this batch was a dup we've already released
+            }
         }
 
         return messages;
+    }
+
+    /// <summary>
+    /// Scans a subscription for the message whose MessageId hashes to <paramref name="sequenceNumber"/>,
+    /// extending the ack deadline on everything received during the scan so a concurrent puller
+    /// (e.g. <c>DlqMonitorWorker</c>'s own background scan) can't steal it mid-search. The target
+    /// (if found) is returned with a fresh, currently-valid ack ID; every other message seen is
+    /// released (nacked) back for immediate redelivery to other viewers.
+    /// </summary>
+    private async Task<ReceivedMessage?> FindAndLockMessageAsync(
+        SubscriberServiceApiClient subscriber, string subscriptionResourceName, long sequenceNumber, CancellationToken ct)
+    {
+        ReceivedMessage? target = null;
+        var nonTargets = new List<ReceivedMessage>();
+        var seenIds = new HashSet<string>(StringComparer.Ordinal);
+
+        var gate = GetScanGate(subscriptionResourceName);
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            for (var i = 0; i < MaxScanBatches && target is null; i++)
+            {
+                var response = await subscriber.PullAsync(new PullRequest
+                {
+                    Subscription = subscriptionResourceName,
+                    MaxMessages = ScanBatchSize
+                }, ct).ConfigureAwait(false);
+
+                if (response.ReceivedMessages.Count == 0)
+                    break;
+
+                var progressed = false;
+                var newlySeen = new List<ReceivedMessage>();
+                foreach (var received in response.ReceivedMessages)
+                {
+                    if (!seenIds.Add(received.Message.MessageId))
+                        continue;
+
+                    progressed = true;
+                    newlySeen.Add(received);
+                    if (ComputeSequenceNumber(received.Message.MessageId) == sequenceNumber)
+                        target = received;
+                    else
+                        nonTargets.Add(received);
+                }
+
+                if (newlySeen.Count > 0)
+                {
+                    // Hold everything we've seen so far behind a real lock for the rest of the
+                    // scan — otherwise it becomes redeliverable to another puller before we've
+                    // decided whether it's the target.
+                    await subscriber.ModifyAckDeadlineAsync(new ModifyAckDeadlineRequest
+                    {
+                        Subscription = subscriptionResourceName,
+                        AckIds = { newlySeen.Select(m => m.AckId) },
+                        AckDeadlineSeconds = ScanLockSeconds
+                    }, ct).ConfigureAwait(false);
+                }
+
+                if (!progressed)
+                    break;
+            }
+        }
+        finally
+        {
+            try
+            {
+                if (nonTargets.Count > 0)
+                {
+                    try
+                    {
+                        await subscriber.ModifyAckDeadlineAsync(new ModifyAckDeadlineRequest
+                        {
+                            Subscription = subscriptionResourceName,
+                            AckIds = { nonTargets.Select(m => m.AckId) },
+                            AckDeadlineSeconds = 0
+                        }, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex,
+                            "Failed to release scanned Pub/Sub messages; they reappear after the {Seconds}s lock expires",
+                            ScanLockSeconds);
+                    }
+                }
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+
+        return target;
     }
 
     private List<Message> MapToMessages(
@@ -450,14 +624,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         foreach (var received in gcpMessages)
         {
             var msg = received.Message;
-            var seqNum = ComputeSequenceNumber(received.AckId);
-            if (_ackIdCache.Count >= AckIdCacheMaxSize)
-            {
-                var toEvict = _ackIdCache.Keys.Take(AckIdCacheEvictCount).ToList();
-                foreach (var evictKey in toEvict)
-                    _ackIdCache.TryRemove(evictKey, out _);
-            }
-            _ackIdCache.TryAdd(seqNum, received.AckId);
+            var seqNum = ComputeSequenceNumber(msg.MessageId);
 
             var body = msg.Data?.IsEmpty == false
                 ? Utf8Enc.UTF8.GetString(msg.Data.ToByteArray())
@@ -487,13 +654,15 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         return mapped;
     }
 
-    private static long ComputeSequenceNumber(string ackId)
+    private static long ComputeSequenceNumber(string messageId)
     {
-        // Use a stable 64-bit hash derived from SHA-256 so sequence numbers:
-        //  1. Are consistent across process restarts (unlike GetHashCode which is randomized)
-        //  2. Have negligible collision probability (2^63 space vs 2^31 for GetHashCode)
+        // Hash the stable MessageId, not the single-delivery ack ID (which rotates on every
+        // pull) — the same sequence number must still resolve the message after the ack ID a
+        // user's peek saw has been superseded by a later pull (e.g. DlqMonitorWorker's own scan).
+        // SHA-256 keeps this consistent across process restarts (unlike GetHashCode, which is
+        // randomized) with negligible collision probability (2^63 space vs 2^31 for GetHashCode).
         var hash = System.Security.Cryptography.SHA256.HashData(
-            System.Text.Encoding.UTF8.GetBytes(ackId));
+            System.Text.Encoding.UTF8.GetBytes(messageId));
         return BitConverter.ToInt64(hash, 0) & long.MaxValue; // keep positive
     }
 
@@ -501,5 +670,41 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
     {
         var projectId = ns.GcpProjectId ?? "unknown-project";
         return SubscriptionName.FromProjectSubscription(projectId, subscriptionId).ToString();
+    }
+
+    /// <summary>
+    /// Resolves the subscription that reads from a source subscription's configured
+    /// dead-letter topic, plus the source subscription's own topic (where a replayed message
+    /// must be re-published — Pub/Sub has no cross-subscription "move"). There is no fixed
+    /// naming convention for the DLQ subscription, so it reads the source subscription's
+    /// <c>DeadLetterPolicy</c> to find the DLQ topic, then returns the first subscription
+    /// attached to that topic. <c>DlqSubscriptionId</c> is <see langword="null"/> if the source
+    /// subscription has no dead-letter policy or its DLQ topic has no subscription.
+    /// </summary>
+    private async Task<(string? DlqSubscriptionId, string? SourceTopicId)> ResolveDlqRouteAsync(
+        Core.Entities.Namespace ns, string subscriptionId, CancellationToken ct)
+    {
+        var subscriber = await _clientFactory.GetSubscriberClientAsync(ns, subscriptionId, ct).ConfigureAwait(false);
+        var subResourceName = GetSubscriptionResourceName(ns, subscriptionId);
+        var subscription = await subscriber.GetSubscriptionAsync(new GetSubscriptionRequest
+        {
+            Subscription = subResourceName
+        }, ct).ConfigureAwait(false);
+
+        var sourceTopicId = subscription.TopicAsTopicName?.TopicId;
+
+        var deadLetterTopic = subscription.DeadLetterPolicy?.DeadLetterTopic;
+        if (string.IsNullOrEmpty(deadLetterTopic))
+            return (null, sourceTopicId);
+
+        var topicAdmin = await _clientFactory.GetTopicAdminClientAsync(ns, ct).ConfigureAwait(false);
+        await foreach (var subName in topicAdmin
+            .ListTopicSubscriptionsAsync(TopicName.Parse(deadLetterTopic))
+            .WithCancellation(ct))
+        {
+            return (SubscriptionName.Parse(subName).SubscriptionId, sourceTopicId);
+        }
+
+        return (null, sourceTopicId);
     }
 }

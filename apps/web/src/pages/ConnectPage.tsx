@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight, AlertTriangle } from 'lucide-react';
+import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight, AlertTriangle, Upload, FileJson, X } from 'lucide-react';
 import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@/hooks/useNamespaces';
 import { useProviderStatus } from '@/hooks/useCloudBridge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -33,6 +33,45 @@ export function ConnectPage() {
   // GCP-specific fields
   const [gcpProjectId, setGcpProjectId] = useState('');
   const [gcpServiceAccountJson, setGcpServiceAccountJson] = useState('');
+  const [gcpKeyFileName, setGcpKeyFileName] = useState('');
+  const gcpKeyFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleGcpKeyFileSelected = (file: File | undefined) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result ?? '');
+      let parsed: { type?: unknown; project_id?: unknown };
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        toast.error('That file is not valid JSON. Upload the key file downloaded from GCP.');
+        if (gcpKeyFileInputRef.current) gcpKeyFileInputRef.current.value = '';
+        return;
+      }
+      if (parsed?.type !== 'service_account') {
+        toast.error('That JSON is not a service account key (expected "type": "service_account").');
+        if (gcpKeyFileInputRef.current) gcpKeyFileInputRef.current.value = '';
+        return;
+      }
+      setGcpServiceAccountJson(text);
+      setGcpKeyFileName(file.name);
+      if (!gcpProjectId.trim() && typeof parsed.project_id === 'string') {
+        setGcpProjectId(parsed.project_id);
+      }
+    };
+    reader.onerror = () => {
+      toast.error('Could not read the selected file.');
+      if (gcpKeyFileInputRef.current) gcpKeyFileInputRef.current.value = '';
+    };
+    reader.readAsText(file);
+  };
+
+  const clearGcpKeyFile = () => {
+    setGcpServiceAccountJson('');
+    setGcpKeyFileName('');
+    if (gcpKeyFileInputRef.current) gcpKeyFileInputRef.current.value = '';
+  };
   
   // v3.1.0 HKDF upgrade notice
   const [showHkdfNotice, setShowHkdfNotice] = useState(
@@ -127,7 +166,7 @@ export function ConnectPage() {
     if (cloudProvider === 'gcp') {
       // GCP connection: project ID as name, service account JSON as connection string
       if (!gcpProjectId.trim() || !gcpServiceAccountJson.trim()) {
-        toast.error('GCP Project ID and Service Account JSON are required.');
+        toast.error('GCP Project ID and a service account key file are required.');
         return;
       }
       try {
@@ -142,7 +181,7 @@ export function ConnectPage() {
         });
         setDisplayName('');
         setGcpProjectId('');
-        setGcpServiceAccountJson('');
+        clearGcpKeyFile();
       } catch {
         // Error handled by mutation hook
       }
@@ -626,21 +665,51 @@ export function ConnectPage() {
 
                   <div className="mb-3">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Service Account JSON <span className="text-red-500">*</span>
+                      Service Account Key File <span className="text-red-500">*</span>
                       <HelpTooltip
-                        text="Paste the full service account JSON key file. The account needs roles/pubsub.subscriber on the project."
+                        text="Upload the service account JSON key file downloaded from GCP. The account needs roles/pubsub.subscriber on the project."
                         position="right"
                         className="ml-1"
                       />
                     </label>
-                    <textarea
-                      value={gcpServiceAccountJson}
-                      onChange={(e) => setGcpServiceAccountJson(e.target.value)}
-                      placeholder={'{\n  "type": "service_account",\n  "project_id": "...",\n  ...\n}'}
-                      rows={5}
-                      required={cloudProvider === 'gcp'}
-                      className="w-full px-3 py-2 rounded-lg text-xs font-mono bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-green-300 resize-y"
+                    <input
+                      ref={gcpKeyFileInputRef}
+                      type="file"
+                      accept=".json,application/json"
+                      aria-label="Service account JSON key file"
+                      onChange={(e) => handleGcpKeyFileSelected(e.target.files?.[0])}
+                      className="hidden"
                     />
+                    {gcpKeyFileName ? (
+                      <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-green-200 bg-green-50">
+                        <span className="flex items-center gap-2 text-green-800 text-xs font-mono truncate">
+                          <FileJson className="w-4 h-4 shrink-0" />
+                          {gcpKeyFileName}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={clearGcpKeyFile}
+                          aria-label="Remove key file"
+                          className="text-green-700 hover:text-green-900 shrink-0 ml-2"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => gcpKeyFileInputRef.current?.click()}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          handleGcpKeyFileSelected(e.dataTransfer.files?.[0]);
+                        }}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-4 rounded-lg text-sm bg-white border-2 border-dashed border-gray-300 text-gray-600 hover:border-green-400 hover:text-green-700 focus:outline-none focus:ring-2 focus:ring-green-400"
+                      >
+                        <Upload className="w-4 h-4" />
+                        Upload service account key (.json) — or drag &amp; drop
+                      </button>
+                    )}
                     <p className="text-xs text-gray-500 mt-1">
                       Credentials are AES-GCM encrypted before storage and never returned to the browser.
                     </p>

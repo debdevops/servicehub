@@ -14,7 +14,8 @@ namespace ServiceHub.UnitTests.Infrastructure.Gcp;
 /// <summary>
 /// Regression pack for <see cref="GcpMessageReceiver"/> happy paths: these pin the
 /// provider semantics a developer must be able to rely on — peek is non-destructive
-/// (pull + immediate nack), DLQ peeks target the "-dlq" convention subscription,
+/// (pull + immediate nack), DLQ subscriptions are resolved dynamically from the source
+/// subscription's own DeadLetterPolicy (there's no fixed Pub/Sub naming convention),
 /// replay/purge act on the cached ack ID, and mapping preserves message fidelity.
 /// </summary>
 public sealed class GcpMessageReceiverRegressionTests
@@ -22,7 +23,6 @@ public sealed class GcpMessageReceiverRegressionTests
     private static readonly Guid TestNamespaceId = Guid.NewGuid();
     private const string SubId = "orders-sub";
     private const string SubResource = "projects/my-project/subscriptions/orders-sub";
-    private const string DlqSubResource = "projects/my-project/subscriptions/orders-sub-dlq";
 
     private static Namespace BuildNamespace() =>
         Namespace.Create(
@@ -142,28 +142,33 @@ public sealed class GcpMessageReceiverRegressionTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // PeekDeadLetterMessagesAsync — targets the "-dlq" convention subscription
+    // PeekDeadLetterMessagesAsync — resolves the DLQ subscription dynamically from
+    // the source subscription's own DeadLetterPolicy (no fixed naming convention).
+    // The success path (GetSubscriptionAsync → ListTopicSubscriptionsAsync → pull) isn't
+    // asserted end-to-end here: GAX's PagedAsyncEnumerable has no public constructor to
+    // fake in a unit test (same limitation noted in
+    // GcpMessagingProviderTests.ListEntitiesAsync_WhenExceptionOccurs_ReturnsExternalServiceFailure),
+    // so this pins the deterministic no-policy-configured path instead.
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task PeekDeadLetterMessagesAsync_PullsFromDlqSubscriptionAndFlagsMessages()
+    public async Task PeekDeadLetterMessagesAsync_NoDeadLetterPolicyConfigured_ReturnsEmpty()
     {
         var ns = BuildNamespace();
-        var pull = new PullResponse { ReceivedMessages = { BuildReceived("ack-dl", "m-dl", "dead body") } };
-        // The DLQ peek must resolve "{entity}-dlq", not the source subscription.
-        var (sut, subscriber) = BuildSut(ns, $"{SubId}-dlq", pull);
+        var subscriber = new Mock<SubscriberServiceApiClient>();
+        subscriber.Setup(s => s.GetSubscriptionAsync(It.IsAny<GetSubscriptionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Subscription());
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetSubscriberClientAsync(ns, SubId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(subscriber.Object);
+        var sut = new GcpMessageReceiver(factory.Object, BuildRepo(ns).Object, NullLogger<GcpMessageReceiver>.Instance);
 
         var result = await sut.PeekDeadLetterMessagesAsync(new GetMessagesRequest(TestNamespaceId, SubId, null, true, 10));
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().HaveCount(1);
-        result.Value[0].IsFromDeadLetter.Should().BeTrue();
-        result.Value[0].EntityName.Should().Be(SubId);
-        subscriber.Verify(s => s.PullAsync(
-            It.Is<PullRequest>(r => r.Subscription == DlqSubResource),
-            It.IsAny<CancellationToken>()), Times.Once);
-        subscriber.Verify(s => s.ModifyAckDeadlineAsync(
-            It.Is<ModifyAckDeadlineRequest>(r => r.Subscription == DlqSubResource && r.AckDeadlineSeconds == 0),
+        result.Value.Should().BeEmpty();
+        subscriber.Verify(s => s.GetSubscriptionAsync(
+            It.Is<GetSubscriptionRequest>(r => r.Subscription == SubResource),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -172,29 +177,25 @@ public sealed class GcpMessageReceiverRegressionTests
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ReplayMessageAsync_AfterPeek_NacksCachedAckIdAndInvalidatesCache()
+    public async Task ReplayMessageAsync_NoDeadLetterPolicyConfigured_ReturnsValidationFailure()
     {
+        // Replay always targets the DLQ (mirrors AWS, which always resolves and scans its DLQ
+        // queue here too), resolved the same way Peek/Purge-from-DLQ do — via the source
+        // subscription's own DeadLetterPolicy. With none configured, replay fails before ever
+        // scanning for the target message.
         var ns = BuildNamespace();
-        var pull = new PullResponse { ReceivedMessages = { BuildReceived("ack-replay", "m1", "body") } };
-        var (sut, subscriber) = BuildSut(ns, SubId, pull);
+        var subscriber = new Mock<SubscriberServiceApiClient>();
+        subscriber.Setup(s => s.GetSubscriptionAsync(It.IsAny<GetSubscriptionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Subscription());
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetSubscriberClientAsync(ns, SubId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(subscriber.Object);
+        var sut = new GcpMessageReceiver(factory.Object, BuildRepo(ns).Object, NullLogger<GcpMessageReceiver>.Instance);
 
-        var peek = await sut.PeekMessagesAsync(new GetMessagesRequest(TestNamespaceId, SubId, null, false, 10));
-        var seq = peek.Value[0].SequenceNumber;
+        var replay = await sut.ReplayMessageAsync(TestNamespaceId, SubId, null, sequenceNumber: 123456);
 
-        var replay = await sut.ReplayMessageAsync(TestNamespaceId, SubId, null, seq);
-
-        replay.IsSuccess.Should().BeTrue();
-        subscriber.Verify(s => s.ModifyAckDeadlineAsync(
-            It.Is<ModifyAckDeadlineRequest>(r =>
-                r.Subscription == SubResource &&
-                r.AckDeadlineSeconds == 0 &&
-                r.AckIds.Contains("ack-replay")),
-            It.IsAny<CancellationToken>()), Times.AtLeastOnce);
-
-        // The ack ID is single-use: a second replay of the same sequence must miss.
-        var secondReplay = await sut.ReplayMessageAsync(TestNamespaceId, SubId, null, seq);
-        secondReplay.IsSuccess.Should().BeFalse();
-        secondReplay.Error.Code.Should().Be("GCP.PubSub.MessageNotFound");
+        replay.IsSuccess.Should().BeFalse();
+        replay.Error.Code.Should().Be("GCP.PubSub.NoDlq");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -221,34 +222,24 @@ public sealed class GcpMessageReceiverRegressionTests
     }
 
     [Fact]
-    public async Task PurgeMessageAsync_FromDeadLetter_AcknowledgesOnDlqSubscription()
+    public async Task PurgeMessageAsync_FromDeadLetter_NoDeadLetterPolicyConfigured_ReturnsValidationFailure()
     {
+        // Purging from the DLQ resolves the DLQ subscription the same way peek does (via the
+        // source subscription's DeadLetterPolicy); with none configured there's nothing to purge
+        // from, and purge fails before ever scanning for the target message.
         var ns = BuildNamespace();
-        var pull = new PullResponse { ReceivedMessages = { BuildReceived("ack-dl-purge", "m1", "body") } };
-
-        // Peek the DLQ (fills the ack cache), then purge from the DLQ.
         var subscriber = new Mock<SubscriberServiceApiClient>();
-        subscriber.Setup(s => s.PullAsync(It.IsAny<PullRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(pull);
-        subscriber.Setup(s => s.ModifyAckDeadlineAsync(It.IsAny<ModifyAckDeadlineRequest>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-        subscriber.Setup(s => s.AcknowledgeAsync(It.IsAny<AcknowledgeRequest>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+        subscriber.Setup(s => s.GetSubscriptionAsync(It.IsAny<GetSubscriptionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Subscription());
         var factory = new Mock<IGcpClientFactory>();
-        factory.Setup(f => f.GetSubscriberClientAsync(ns, $"{SubId}-dlq", It.IsAny<CancellationToken>()))
+        factory.Setup(f => f.GetSubscriberClientAsync(ns, SubId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(subscriber.Object);
         var sut = new GcpMessageReceiver(factory.Object, BuildRepo(ns).Object, NullLogger<GcpMessageReceiver>.Instance);
 
-        var peek = await sut.PeekDeadLetterMessagesAsync(new GetMessagesRequest(TestNamespaceId, SubId, null, true, 10));
-        var seq = peek.Value[0].SequenceNumber;
+        var purge = await sut.PurgeMessageAsync(TestNamespaceId, SubId, null, sequenceNumber: 123456, fromDeadLetter: true);
 
-        var purge = await sut.PurgeMessageAsync(TestNamespaceId, SubId, null, seq, fromDeadLetter: true);
-
-        purge.IsSuccess.Should().BeTrue();
-        subscriber.Verify(s => s.AcknowledgeAsync(
-            It.Is<AcknowledgeRequest>(r =>
-                r.Subscription == DlqSubResource && r.AckIds.Contains("ack-dl-purge")),
-            It.IsAny<CancellationToken>()), Times.Once);
+        purge.IsSuccess.Should().BeFalse();
+        purge.Error.Code.Should().Be("GCP.PubSub.NoDlq");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
