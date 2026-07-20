@@ -18,7 +18,7 @@ provider, or that this doc's callers (CHANGELOG.md, docs/COMPREHENSIVE-GUIDE.md)
 | `MessagesController`, `QueuesController`, `TopicsController` | → `IMessageOperationsService` → `CloudProviderRouter` → `ICloudMessagingProvider` |
 | `CrossCloudTraceController` | → **its own dispatch**: Azure via `IAzureTraceSearcher`, non-Azure via a directly-injected `IEnumerable<ICloudMessagingProvider>` — **not** through `CloudProviderRouter` |
 | `DlqHistoryController` | → `IDlqHistoryService` → SQLite (`DlqDbContext`) — **no cloud SDK call at all**, it only reads/writes locally persisted DLQ Intelligence history |
-| `DlqMonitorWorker` (background) | → filters to Azure namespaces only, then scans via the Azure provider path; non-Azure namespaces are skipped with a log line, not attempted |
+| `DlqMonitorWorker` (background) | → `DlqMonitorService.ScanNamespaceAsync` → `CloudProviderRouter.Resolve(namespace.Provider)` — provider-aware; a namespace is skipped (with a log line) only if its provider has no `ICloudMessagingProvider` registered on this server at all |
 | `SimulatorController` | → in-memory simulator store, reachable only when `ASPNETCORE_ENVIRONMENT=Simulator` |
 
 The rest of this doc walks through each row.
@@ -120,25 +120,30 @@ graph LR
   message ID returns `NotFound`, not the record.
 - `DlqMessage` (the row persisted per dead-lettered message) has a `CloudProvider` column
   (`CloudProviderType`, defaults to `Azure` for rows written before the column existed). It's
-  populated by whichever background process detected the dead-letter — currently only
-  `DlqMonitorWorker`, which is Azure-only (see §4), so in practice every row today is `Azure`
-  until AWS/GCP monitoring is added.
+  populated by whichever background process detected the dead-letter — `DlqMonitorWorker`, which
+  scans every registered provider (see §4), so rows are attributed to the namespace's real
+  provider (`Azure`/`Aws`/`Gcp`), not defaulted.
 - This whole path never calls a cloud SDK — it's a read/write against the local SQLite database
   only. `DlqMonitorWorker` is what populates that database in the first place.
 
 ---
 
-## 4. Background DLQ monitoring — Azure only today
+## 4. Background DLQ monitoring — provider-aware
 
 `DlqMonitorWorker` polls active namespaces on an interval, scans each for newly dead-lettered
-messages, and persists findings via `DlqHistoryService`/`DlqDbContext`. It explicitly filters to
-`namespace.Provider == CloudProviderType.Azure` before scanning:
+messages, and persists findings via `DlqHistoryService`/`DlqDbContext`. `DlqMonitorService.ScanNamespaceAsync`
+resolves the namespace's provider through `CloudProviderRouter` — the same router `IMessageOperationsService`
+uses in §1 — rather than hardcoding Azure:
 
-- Non-Azure namespaces are skipped up front (not attempted-then-failed), with a debug log noting
-  how many were skipped per poll cycle.
-- This is a scope limitation, not a routing bug — AWS/GCP background DLQ monitoring doesn't exist
-  yet. `MessagesController`'s on-demand `PeekDeadLetterMessagesAsync` (§1) already works for
-  AWS/GCP; it's only the *automatic, scheduled* scan that's Azure-only.
+- A namespace is skipped up front (not attempted-then-failed) only if `CloudProviderRouter.IsRegistered`
+  returns false for its provider (e.g. the `CloudProviders:Aws:Enabled` / `:Gcp:Enabled` flags are off
+  on this server) — with a log line noting why.
+- Provider-specific conventions inside the scan: Azure short-circuits via the entity's own
+  `DeadLetterCount`; AWS and GCP peek their DLQ side directly (GCP resolves the dead-letter
+  subscription dynamically from the source subscription's `DeadLetterPolicy` — there's no fixed
+  naming convention for it in real Pub/Sub).
+- This means DLQ Intelligence (§3), 30-day trend, and Auto-Replay Rules all operate on real-time
+  Azure **and** AWS/GCP dead-letter data whenever those providers are registered — not Azure only.
 
 ---
 
@@ -189,3 +194,8 @@ present the same proxy IP and all tenants would share one bucket. Default limit:
 `SimulatorOnlyAttribute.cs`, `SimulatorController.cs`, `Program.cs`, `RateLimitingMiddleware.cs`,
 `appsettings.json` — all read directly in the session that produced this document (2026-07-07).
 If behavior here looks wrong, re-check these files rather than assuming this doc is still current.
+
+**§3/§4 updated 2026-07-20**: `DlqMonitorService.cs` re-read directly against a live 3-cloud
+session (Azure + AWS + GCP simultaneously connected and dead-lettering) — confirmed
+`ScanNamespaceAsync` resolves the namespace's actual provider via `CloudProviderRouter` rather
+than hardcoding Azure, contradicting the original 2026-07-07 text this doc shipped with.
