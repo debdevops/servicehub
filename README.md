@@ -125,35 +125,66 @@ Connect namespaces from two or more cloud providers and use **Multi-Cloud Trace*
 
 ## Visual Showcase
 
-| Feature | Preview |
-|---|---|
-| Connect Page | [![Connect](docs/screenshots/01-ServiceHub-Connect-Page-1.png)](docs/screenshots/01-ServiceHub-Connect-Page-1.png) |
-| Message Browser | [![Browser](docs/screenshots/07-ServiceHub-Home-Page-2.png)](docs/screenshots/07-ServiceHub-Home-Page-2.png) |
-| Message Detail (JSON) | [![Detail](docs/screenshots/12-ServiceHub-Message-Detail-Expanded.png)](docs/screenshots/12-ServiceHub-Message-Detail-Expanded.png) |
-| DLQ Investigation | [![DLQ](docs/screenshots/14-ServiceHub-Home-DLQ-1.png)](docs/screenshots/14-ServiceHub-Home-DLQ-1.png) |
-| AI Pattern Findings | [![AI](docs/screenshots/25-ServiceHub-AI-Findings.png)](docs/screenshots/25-ServiceHub-AI-Findings.png) |
-| DLQ Intelligence | [![Intelligence](docs/screenshots/20-ServiceHub-DLQ-Intelligence.png)](docs/screenshots/20-ServiceHub-DLQ-Intelligence.png) |
-| Auto-Replay Rules | [![Rules](docs/screenshots/22-ServiceHub-Auto-Replay-1.png)](docs/screenshots/22-ServiceHub-Auto-Replay-1.png) |
-| Correlation Explorer | [![Correlation](docs/screenshots/27-ServiceHub-CorelationId-Explorer.png)](docs/screenshots/27-ServiceHub-CorelationId-Explorer.png) |
-| Scheduled Messages | [![Scheduled](docs/screenshots/28-ServiceHub-Schedule-Message.png)](docs/screenshots/28-ServiceHub-Schedule-Message.png) |
-| System Health | [![Health](docs/screenshots/29-ServiceHub-System-Health-Status.png)](docs/screenshots/29-ServiceHub-System-Health-Status.png) |
+Every screenshot below is a real capture — live Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub namespaces connected to ServiceHub simultaneously, not mocked data. Click any image to open it full-size.
 
-### Multi-Cloud Showcase
+### 🚀 Connect & Overview
 
-Captured live against Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub connected simultaneously — real traffic, not mocked data.
+<table>
+<tr>
+<td width="33%"><a href="docs/screenshots/31-ServiceHub-Connect-MultiCloud.png"><img src="docs/screenshots/31-ServiceHub-Connect-MultiCloud.png" width="100%"/></a><br/><sub><b>Connect</b> — saved connections across Azure, AWS &amp; GCP, plus one-click demos</sub></td>
+<td width="33%"><a href="docs/screenshots/30-ServiceHub-MultiCloud-Dashboard.png"><img src="docs/screenshots/30-ServiceHub-MultiCloud-Dashboard.png" width="100%"/></a><br/><sub><b>Multi-Namespace Dashboard</b> — all 3 clouds, sorted by DLQ severity</sub></td>
+<td width="33%"><a href="docs/screenshots/32-ServiceHub-Messages-Overview-MultiCloud.png"><img src="docs/screenshots/32-ServiceHub-Messages-Overview-MultiCloud.png" width="100%"/></a><br/><sub><b>Messages Overview</b> — every queue and topic, one screen</sub></td>
+</tr>
+</table>
 
-| Feature | Preview |
-|---|---|
-| Multi-Namespace Dashboard (Azure + AWS + GCP) | [![Dashboard](docs/screenshots/30-ServiceHub-MultiCloud-Dashboard.png)](docs/screenshots/30-ServiceHub-MultiCloud-Dashboard.png) |
-| Connect — saved connections across all 3 providers | [![Connect](docs/screenshots/31-ServiceHub-Connect-MultiCloud.png)](docs/screenshots/31-ServiceHub-Connect-MultiCloud.png) |
-| Messages Overview — every cloud, one screen | [![Overview](docs/screenshots/32-ServiceHub-Messages-Overview-MultiCloud.png)](docs/screenshots/32-ServiceHub-Messages-Overview-MultiCloud.png) |
-| AWS SNS Fan-Out Dashboard | [![SNS](docs/screenshots/33-ServiceHub-AWS-SNS-FanOut.png)](docs/screenshots/33-ServiceHub-AWS-SNS-FanOut.png) |
-| GCP Pub/Sub Message Detail | [![GCP](docs/screenshots/34-ServiceHub-GCP-Message-Detail.png)](docs/screenshots/34-ServiceHub-GCP-Message-Detail.png) |
-| Message Detail — Replay disabled on active messages (safety rail) | [![Safety](docs/screenshots/35-ServiceHub-Message-Detail-Safety.png)](docs/screenshots/35-ServiceHub-Message-Detail-Safety.png) |
-| Auto-Replay Rule Builder | [![Rule Builder](docs/screenshots/36-ServiceHub-Auto-Replay-Rule-Builder.png)](docs/screenshots/36-ServiceHub-Auto-Replay-Rule-Builder.png) |
-| DLQ Intelligence — multi-cloud filters | [![DLQ Intelligence](docs/screenshots/37-ServiceHub-DLQ-Intelligence-MultiCloud.png)](docs/screenshots/37-ServiceHub-DLQ-Intelligence-MultiCloud.png) |
-| Security & Privacy — data-flow diagram | [![Security](docs/screenshots/38-ServiceHub-Security-Privacy.png)](docs/screenshots/38-ServiceHub-Security-Privacy.png) |
-| Cloud Bridge — cross-provider entity browser | [![Cloud Bridge](docs/screenshots/39-ServiceHub-Cloud-Bridge.png)](docs/screenshots/39-ServiceHub-Cloud-Bridge.png) |
+### 🔍 Message Browsing & Forensics
+
+<table>
+<tr>
+<td width="33%"><a href="docs/screenshots/07-ServiceHub-Home-Page-2.png"><img src="docs/screenshots/07-ServiceHub-Home-Page-2.png" width="100%"/></a><br/><sub><b>Message Browser</b> — Active queue, full body previews</sub></td>
+<td width="33%"><a href="docs/screenshots/35-ServiceHub-Message-Detail-Safety.png"><img src="docs/screenshots/35-ServiceHub-Message-Detail-Safety.png" width="100%"/></a><br/><sub><b>Message Detail</b> — full forensic properties; Replay correctly disabled on active messages</sub></td>
+<td width="33%"><a href="docs/screenshots/34-ServiceHub-GCP-Message-Detail.png"><img src="docs/screenshots/34-ServiceHub-GCP-Message-Detail.png" width="100%"/></a><br/><sub><b>GCP Pub/Sub Message Detail</b> — same forensic UI, different cloud</sub></td>
+</tr>
+</table>
+
+### 💀 Dead-Letter Investigation & Automation
+
+<table>
+<tr>
+<td width="33%"><a href="docs/screenshots/40-ServiceHub-DLQ-Populated-MultiCloud.png"><img src="docs/screenshots/40-ServiceHub-DLQ-Populated-MultiCloud.png" width="100%"/></a><br/><sub><b>Dead-Letter Queue</b> — populated with real failures, AI-tagged</sub></td>
+<td width="33%"><a href="docs/screenshots/41-ServiceHub-AI-Findings-Real-Pattern.png"><img src="docs/screenshots/41-ServiceHub-AI-Findings-Real-Pattern.png" width="100%"/></a><br/><sub><b>AI Pattern Findings</b> — a real detected cluster (88% match), computed client-side</sub></td>
+<td width="33%"><a href="docs/screenshots/37-ServiceHub-DLQ-Intelligence-MultiCloud.png"><img src="docs/screenshots/37-ServiceHub-DLQ-Intelligence-MultiCloud.png" width="100%"/></a><br/><sub><b>DLQ Intelligence</b> — 30-day trend, live per-provider filters (AWS/GCP/Azure), CSV/JSON export</sub></td>
+</tr>
+<tr>
+<td width="33%"><a href="docs/screenshots/33-ServiceHub-AWS-SNS-FanOut.png"><img src="docs/screenshots/33-ServiceHub-AWS-SNS-FanOut.png" width="100%"/></a><br/><sub><b>AWS SNS Fan-Out Dashboard</b> — subscription status &amp; live queue depth</sub></td>
+<td width="33%"><a href="docs/screenshots/22-ServiceHub-Auto-Replay-1.png"><img src="docs/screenshots/22-ServiceHub-Auto-Replay-1.png" width="100%"/></a><br/><sub><b>Auto-Replay Rules</b> — AI-generated and template-based recovery rules</sub></td>
+<td width="33%"><a href="docs/screenshots/36-ServiceHub-Auto-Replay-Rule-Builder.png"><img src="docs/screenshots/36-ServiceHub-Auto-Replay-Rule-Builder.png" width="100%"/></a><br/><sub><b>Rule Builder</b> — conditions, actions, and a visible circuit-breaker safety note</sub></td>
+</tr>
+</table>
+
+### 🛠️ Testing Tools (DEV namespaces only)
+
+<table>
+<tr>
+<td width="50%"><a href="docs/screenshots/42-ServiceHub-Send-Message-Dialog.png"><img src="docs/screenshots/42-ServiceHub-Send-Message-Dialog.png" width="100%"/></a><br/><sub><b>Send Message</b> — queue/topic target, custom properties, schedule-or-send-now</sub></td>
+<td width="50%"><a href="docs/screenshots/43-ServiceHub-Message-Generator-Dialog.png"><img src="docs/screenshots/43-ServiceHub-Message-Generator-Dialog.png" width="100%"/></a><br/><sub><b>Message Generator</b> — realistic multi-scenario test data, up to 200 messages</sub></td>
+</tr>
+</table>
+
+### 🔎 Search, Scheduling & Operations
+
+<table>
+<tr>
+<td width="33%"><a href="docs/screenshots/27-ServiceHub-CorelationId-Explorer.png"><img src="docs/screenshots/27-ServiceHub-CorelationId-Explorer.png" width="100%"/></a><br/><sub><b>Correlation Explorer</b> — trace a message's full journey</sub></td>
+<td width="33%"><a href="docs/screenshots/28-ServiceHub-Schedule-Message.png"><img src="docs/screenshots/28-ServiceHub-Schedule-Message.png" width="100%"/></a><br/><sub><b>Scheduled Messages</b> — view, reschedule, cancel</sub></td>
+<td width="33%"><a href="docs/screenshots/39-ServiceHub-Cloud-Bridge.png"><img src="docs/screenshots/39-ServiceHub-Cloud-Bridge.png" width="100%"/></a><br/><sub><b>Cloud Bridge</b> — cross-provider entity browser</sub></td>
+</tr>
+<tr>
+<td width="33%"><a href="docs/screenshots/29-ServiceHub-System-Health-Status.png"><img src="docs/screenshots/29-ServiceHub-System-Health-Status.png" width="100%"/></a><br/><sub><b>System Health</b> — live process metrics</sub></td>
+<td width="33%"><a href="docs/screenshots/38-ServiceHub-Security-Privacy.png"><img src="docs/screenshots/38-ServiceHub-Security-Privacy.png" width="100%"/></a><br/><sub><b>Security &amp; Privacy</b> — the data-flow diagram, in-app</sub></td>
+<td width="33%"></td>
+</tr>
+</table>
 
 ---
 
