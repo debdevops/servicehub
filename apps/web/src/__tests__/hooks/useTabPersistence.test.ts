@@ -73,7 +73,6 @@ describe('useTabPersistence', () => {
         new StorageEvent('storage', {
           key: STORAGE_KEY,
           newValue: 'headers',
-          storageArea: localStorage,
         })
       );
     });
@@ -89,7 +88,6 @@ describe('useTabPersistence', () => {
         new StorageEvent('storage', {
           key: STORAGE_KEY,
           newValue: 'garbage-value',
-          storageArea: localStorage,
         })
       );
     });
@@ -106,7 +104,6 @@ describe('useTabPersistence', () => {
         new StorageEvent('storage', {
           key: 'some-other-key',
           newValue: 'body',
-          storageArea: localStorage,
         })
       );
     });
@@ -123,7 +120,6 @@ describe('useTabPersistence', () => {
         new StorageEvent('storage', {
           key: STORAGE_KEY,
           newValue: null,
-          storageArea: localStorage,
         })
       );
     });
