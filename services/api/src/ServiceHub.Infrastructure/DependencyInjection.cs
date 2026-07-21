@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.AI;
@@ -10,6 +11,7 @@ using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.BulkOperations;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Persistence.InMemory;
+using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Infrastructure.Events;
 using ServiceHub.Infrastructure.Events.Handlers;
@@ -211,7 +213,16 @@ public static class DependencyInjection
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();
+
+        // Forensic engine — base engine registered both unkeyed (so provider-specific decorators
+        // like AwsForensicEngine/GcpForensicEngine can resolve it as their base-engine dependency)
+        // and keyed under CloudProviderType.Azure (so ForensicEngineRouter can resolve it
+        // uniformly alongside any provider-specific engines registered elsewhere). Callers that
+        // need provider-aware dispatch should depend on IForensicEngineRouter, not IForensicEngine
+        // directly — see DlqMonitorService.
         services.TryAddScoped<IForensicEngine, ForensicEngine>();
+        services.TryAddKeyedScoped<IForensicEngine, ForensicEngine>(CloudProviderType.Azure);
+        services.TryAddScoped<IForensicEngineRouter, ForensicEngineRouter>();
 
         // Audit Trail — registered as singleton so the channel is shared across all
         // request scopes. The BackgroundService lifetime matches the application lifetime.

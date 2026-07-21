@@ -18,7 +18,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
 {
     private readonly DlqDbContext _dbContext;
     private readonly Mock<INamespaceRepository> _repoMock = new();
-    private readonly Mock<IForensicEngine> _forensicMock = new();
+    private readonly Mock<IForensicEngineRouter> _forensicMock = new();
     private readonly Mock<ICloudMessagingProvider> _providerMock = new();
     private readonly Mock<IMessageReceiver> _receiverMock = new();
 

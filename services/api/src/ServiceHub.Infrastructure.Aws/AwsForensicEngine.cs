@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
@@ -43,9 +44,12 @@ public sealed class AwsForensicEngine : IForensicEngine
         var awsHit = AwsForensicExtensions.Evaluate(msg);
         if (awsHit is not null)
         {
-            // Replay safety is always Unsafe for SQS DLQ messages —
-            // replaying before root cause is confirmed risks re-poisoning.
-            const string replaySafety = "ManualReviewRequired";
+            // AWS-specific rule hits always require manual review — replaying before the root
+            // cause is confirmed risks re-poisoning. Uses the same closed vocabulary as the base
+            // engine (ReplaySafetyLevels) so downstream consumers (BulkOperationService's
+            // unsafe-replay count, the DLQ history/export API, the frontend's safety badge) don't
+            // need to special-case a provider-specific string.
+            var replaySafety = ReplaySafetyLevels.RequiresReview;
 
             _logger.LogDebug(
                 "AwsForensic hit for message {MessageId}: {Category} ({Confidence:P0}) — {RootCause}",

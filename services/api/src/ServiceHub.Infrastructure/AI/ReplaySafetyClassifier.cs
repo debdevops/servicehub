@@ -1,3 +1,4 @@
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 
@@ -9,48 +10,44 @@ namespace ServiceHub.Infrastructure.AI;
 /// </summary>
 internal static class ReplaySafetyClassifier
 {
-    internal const string Safe = "Safe";
-    internal const string Unsafe = "Unsafe";
-    internal const string RequiresReview = "RequiresReview";
-
     /// <summary>
-    /// Returns <c>Safe</c>, <c>Unsafe</c>, or <c>RequiresReview</c>.
+    /// Returns one of the <see cref="ReplaySafetyLevels"/> values.
     /// </summary>
     internal static string Classify(DlqMessage msg, FailureCategory category)
     {
         // Transient failures are usually safe to retry
         if (category == FailureCategory.Transient)
-            return msg.DeliveryCount <= 10 ? Safe : RequiresReview;
+            return msg.DeliveryCount <= 10 ? ReplaySafetyLevels.Safe : ReplaySafetyLevels.RequiresReview;
 
         // Expired messages cannot be replayed meaningfully
         if (category == FailureCategory.Expired)
-            return Unsafe;
+            return ReplaySafetyLevels.Unsafe;
 
         // Auth failures need credential fixes first
         if (category == FailureCategory.Authorization)
-            return Unsafe;
+            return ReplaySafetyLevels.Unsafe;
 
         // Data quality issues will fail again without a fix
         if (category == FailureCategory.DataQuality)
-            return Unsafe;
+            return ReplaySafetyLevels.Unsafe;
 
         // Quota exceeded — depends on whether the quota was temporary
         if (category == FailureCategory.QuotaExceeded)
-            return RequiresReview;
+            return ReplaySafetyLevels.RequiresReview;
 
         // Max delivery — the message has already been retried beyond the limit
         if (category == FailureCategory.MaxDelivery)
-            return msg.DeliveryCount <= 5 ? RequiresReview : Unsafe;
+            return msg.DeliveryCount <= 5 ? ReplaySafetyLevels.RequiresReview : ReplaySafetyLevels.Unsafe;
 
         // ResourceNotFound — might resolve if the resource is recreated
         if (category == FailureCategory.ResourceNotFound)
-            return RequiresReview;
+            return ReplaySafetyLevels.RequiresReview;
 
         // ProcessingError is ambiguous
         if (category == FailureCategory.ProcessingError)
-            return RequiresReview;
+            return ReplaySafetyLevels.RequiresReview;
 
         // Unknown — can't make a call
-        return RequiresReview;
+        return ReplaySafetyLevels.RequiresReview;
     }
 }

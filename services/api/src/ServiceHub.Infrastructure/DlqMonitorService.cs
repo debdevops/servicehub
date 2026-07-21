@@ -24,7 +24,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
     private readonly DlqDbContext _dbContext;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly CloudProviderRouter _router;
-    private readonly IForensicEngine _forensicEngine;
+    private readonly IForensicEngineRouter _forensicEngine;
     private readonly ILogger<DlqMonitorService> _logger;
 
     private const int MaxBodyPreviewLength = 500;
@@ -38,7 +38,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
         DlqDbContext dbContext,
         INamespaceRepository namespaceRepository,
         CloudProviderRouter router,
-        IForensicEngine forensicEngine,
+        IForensicEngineRouter forensicEngine,
         ILogger<DlqMonitorService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));

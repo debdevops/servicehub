@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
@@ -68,7 +69,7 @@ public sealed class BulkOperationService : IBulkOperationService
         var unsafeReplayCount = 0;
         if (request.OperationType == BulkOperationType.Replay)
         {
-            unsafeReplayCount = await query.CountAsync(m => m.ReplaySafety == "Unsafe", cancellationToken);
+            unsafeReplayCount = await query.CountAsync(m => m.ReplaySafety == ReplaySafetyLevels.Unsafe, cancellationToken);
             if (unsafeReplayCount > 0)
             {
                 warnings.Add(

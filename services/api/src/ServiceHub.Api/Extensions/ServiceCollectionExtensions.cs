@@ -5,6 +5,8 @@ using ServiceHub.Api.Filters;
 using ServiceHub.Api.Middleware;
 using ServiceHub.Api.Security;
 using ServiceHub.Infrastructure;
+using ServiceHub.Infrastructure.Aws;
+using ServiceHub.Infrastructure.Gcp;
 
 namespace ServiceHub.Api.Extensions;
 
@@ -23,6 +25,14 @@ public static class ServiceCollectionExtensions
     {
         // Add infrastructure services (pass configuration for encryption key)
         services.AddInfrastructure(configuration);
+
+        // Provider-specific forensic classification tiers — registered unconditionally
+        // (independent of the CloudProviders:Aws/Gcp:Enabled live-provider flags) so both the
+        // Simulator's seeded AWS/GCP DLQ messages and any real flag-enabled namespace get
+        // provider-aware forensic analysis via IForensicEngineRouter. See
+        // AwsDependencyInjection.AddAwsForensicIntelligence / GcpDependencyInjection.AddGcpForensicIntelligence.
+        services.AddAwsForensicIntelligence();
+        services.AddGcpForensicIntelligence();
 
         // Add API services
         services.AddApiServices(configuration);

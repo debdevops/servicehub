@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
@@ -42,7 +43,9 @@ public sealed class GcpForensicEngine : IForensicEngine
         var gcpHit = GcpForensicExtensions.Evaluate(msg);
         if (gcpHit is not null)
         {
-            const string replaySafety = "ManualReviewRequired";
+            // Uses the same closed vocabulary as the base engine (ReplaySafetyLevels) so
+            // downstream consumers don't need to special-case a provider-specific string.
+            var replaySafety = ReplaySafetyLevels.RequiresReview;
 
             _logger.LogDebug(
                 "GcpForensic hit for message {MessageId}: {Category} ({Confidence:P0}) — {RootCause}",
