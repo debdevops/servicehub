@@ -209,4 +209,21 @@ public sealed class ScopeAuthorizationFilterTests
 
         context.Result.Should().BeNull();
     }
+
+    [Fact]
+    public async Task RequiredScope_OidcAuth_BypassesScopeCheck()
+    {
+        // OIDC Bearer auth grants full access, same trust model as SpaToken/EasyAuth — no
+        // ApiKeyConfig needed. Isolation for OIDC identities comes from their own per-user
+        // OwnerId, not from scope restriction.
+        var filter = CreateFilter();
+        var context = CreateContext(
+            keyConfig: null,
+            endpointMetadata: new List<object> { new RequireScopeAttribute("dlq:write") },
+            authMethod: "Oidc");
+
+        await filter.OnAuthorizationAsync(context);
+
+        context.Result.Should().BeNull();
+    }
 }

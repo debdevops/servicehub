@@ -79,11 +79,53 @@ Check every item before allowing users to access your instance.
 > **This is by design for single-operator self-hosting** — the SPA-token path assumes one trust boundary, where everyone who can reach the UI is trusted as the instance administrator.
 >
 > **If more than one trust level must be isolated, or you expose ServiceHub beyond a single operator:**
-> - Enable **Azure App Service Easy Auth** (or an equivalent reverse-proxy authenticator). ServiceHub's `EasyAuthMiddleware` reads the injected `X-MS-CLIENT-PRINCIPAL-ID` and assigns each user a distinct owner ID (`entra:{oid}`) for per-user tenant isolation; Easy Auth requests bypass the shared SPA-owner path.
+> - **On Azure App Service**: enable **Easy Auth**. ServiceHub's `EasyAuthMiddleware` reads the injected `X-MS-CLIENT-PRINCIPAL-ID` and assigns each user a distinct owner ID (`entra:{oid}`) for per-user tenant isolation; Easy Auth requests bypass the shared SPA-owner path.
+> - **On AWS, GCP, Docker Compose, on-prem, or any other host**: enable **OIDC Bearer authentication** (`Security:Oidc:*`) instead — see below. Easy Auth only works behind Azure's own auth proxy; OIDC is the portable equivalent for every other deployment target.
 > - Restrict who can reach the URL at the network layer (App Service Access Restrictions, private endpoints, or VPN).
 > - For headless/API automation, issue a **scoped API key** rather than relying on the SPA token — scoped keys get their own isolated owner ID and least-privilege scopes.
 
-- [ ] If more than one person or role must be isolated from one another, **Azure Easy Auth (or an equivalent identity layer) is enabled** — the SPA token alone grants a shared, full-scope admin session to anyone who can load the UI.
+- [ ] If more than one person or role must be isolated from one another, **Azure Easy Auth or OIDC Bearer authentication (or an equivalent identity layer) is enabled** — the SPA token alone grants a shared, full-scope admin session to anyone who can load the UI.
+
+### OIDC Bearer authentication (any host, any standards-compliant IdP)
+
+> ⚠️ Same trust-model caveat as Easy Auth: a validated OIDC identity gets a **full-scope
+> session**, isolated from other identities only by its own `oidc:{sub}` owner ID — it is not
+> scope-restricted the way a scoped API key is. Use it to give each real person or service their
+> own isolated tenant, not to enforce least-privilege within a single organization; use scoped
+> API keys for that.
+
+Unlike Easy Auth, which only works behind Azure App Service's built-in authentication proxy, OIDC
+Bearer authentication works identically regardless of where ServiceHub runs — AWS ECS, GCP Cloud
+Run, Docker Compose, bare metal, or Azure App Service itself. It validates `Authorization: Bearer
+<JWT>` tokens against your identity provider's own signing keys (fetched from
+`{Authority}/.well-known/openid-configuration` and auto-rotated), so there is no upstream-header
+trust assumption to get wrong — the token's signature is the proof.
+
+**When to use it**: your organization's own reverse proxy or API gateway already performs the
+interactive OIDC login and forwards a validated Bearer token to ServiceHub, or your CLI/automation
+obtains a token from your IdP via `client_credentials` and passes it directly. ServiceHub does not
+implement an interactive login UI itself — exactly like Easy Auth, where Azure's own infrastructure
+handles the login redirect and ServiceHub only trusts the resulting identity signal.
+
+**Setup**:
+
+1. Register ServiceHub as an application/client with your identity provider (Entra ID, Okta,
+   Auth0, Ping, Google Workspace, or any other OIDC-compliant IdP) and note its **Authority**
+   (issuer URL) and the **Audience** (your app's client ID).
+2. Set:
+   ```bash
+   Security__Oidc__Enabled=true
+   Security__Oidc__Authority=https://your-idp.example.com   # must be HTTPS
+   Security__Oidc__Audience=your-servicehub-client-id
+   ```
+3. Restart. ServiceHub fails fast at startup if `Enabled=true` with a non-HTTPS or missing
+   `Authority`, or a missing `Audience` — see `docs/CONFIGURATION.md`.
+4. Callers present `Authorization: Bearer <token>` on every request. A validated token is
+   isolated under owner ID `oidc:{sub}` — that identity's namespaces, DLQ history, and audit
+   trail are separate from every other identity (SPA, other OIDC subjects, API keys).
+
+A missing, expired, or invalid Bearer token is never a hard rejection by itself — the request
+simply falls through to the SPA token or API key path, same as an untrusted Easy Auth header.
 
 - [ ] `Security__Authentication__Enabled` is `true`
   - **Why**: When false, the API accepts requests from anyone who can reach the URL. When true, every non-health endpoint requires a valid API key.
@@ -131,6 +173,7 @@ Understand this before connecting any real namespace.
 | **Message content** | Read transiently from Azure Service Bus to display in your browser. Never written to disk, never logged, never stored in the DLQ database. The DLQ intelligence database stores only aggregated metadata (queue names, error counts, timestamps) — not message bodies. |
 | **API requests and response times** | Sent to **your** Application Insights resource only, if you configure one. Zero telemetry if you leave the connection string empty. |
 | **API keys and SPA tokens** | Stripped from all log lines by `LogRedactor.cs` before any write operation. They appear as `[REDACTED]` in any log output. |
+| **OIDC Bearer tokens** | Never logged, in full or in part — only the HTTP method, path, and (on failure) the validation exception type are logged. Signing keys are fetched from your IdP's own discovery document and cached in memory; the raw token itself is never persisted anywhere. |
 
 ---
 

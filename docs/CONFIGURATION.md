@@ -28,6 +28,7 @@ key `Security:EncryptionKey` becomes the environment variable `SECURITY__ENCRYPT
 | `Security:Authentication:Enabled` | `SECURITY__AUTHENTICATION__ENABLED` | `true` | Enables `X-API-KEY` authentication. |
 | `Security:Authentication:ApiKeys` | — | `[]` | API key definitions (key + scopes). |
 | `Security:EasyAuth:Enabled` | `SECURITY__EASYAUTH__ENABLED` | `true` | Trust Azure App Service EasyAuth headers. Only unforgeable behind Azure's proxy — leave off elsewhere. |
+| `Security:Oidc:*` | `SECURITY__OIDC__*` | `Enabled=false` | Provider-neutral per-user SSO for any OIDC identity provider, on any host. See [Oidc](#oidc-byo-idp-sso---validated-at-startup) below. |
 
 ## Cloud providers
 
@@ -95,6 +96,33 @@ self-hosted and has no way to know its own externally-reachable address, so if y
 `https://servicehub.mycompany.com`), Slack/Teams notifications add a deep "Investigate" link/button
 back into your ServiceHub instance; without it, notifications are still sent, just without the
 link.
+
+## Oidc (BYO-IdP SSO) — *validated at startup*
+
+Provider-neutral per-user authentication: validates `Authorization: Bearer <JWT>` tokens issued
+by any standards-compliant OIDC identity provider (Entra ID, Okta, Auth0, Ping, Google Workspace,
+...). Unlike `Security:EasyAuth`, which only works behind Azure App Service's built-in auth proxy,
+this works identically on Azure, AWS, GCP, Docker Compose, or bare Kestrel — signing keys are
+fetched and auto-rotated from the IdP's own discovery document
+(`{Authority}/.well-known/openid-configuration`), so there's nothing platform-specific to trust.
+
+| Key | Default | Constraint |
+|---|---|---|
+| `Security:Oidc:Enabled` | `false` | — |
+| `Security:Oidc:Authority` | `""` | Valid absolute **HTTPS** URL **when enabled** — the discovery document and signing keys fetched from it must not be interceptable |
+| `Security:Oidc:Audience` | `""` | Required (non-empty) **when enabled** — the client/application ID this instance was registered as with the IdP |
+| `Security:Oidc:ClockSkewSeconds` | `120` | ≥ 0 |
+
+A validated token sets `OwnerId` to `oidc:{sub}` — each authenticated human/service gets their own
+isolated namespace/DLQ/audit scope, unlike the shared `__spa__` identity every browser session
+gets today. OIDC-authenticated requests are trusted the same way SPA/EasyAuth sessions are (full
+access, not scope-restricted) — scopes remain an API-key-only concept; see
+`self-hosting/security-hardening/README.md` for the full trust-model writeup and setup steps.
+
+This middleware never hard-rejects a request itself: a missing, expired, or invalid Bearer token
+simply falls through to the SPA token / API key path, exactly like an untrusted EasyAuth header
+does. `ApiKeyAuthenticationMiddleware` owns the final "nothing authenticated this request"
+401.
 
 ## Telemetry (opt-in, both disabled by default)
 

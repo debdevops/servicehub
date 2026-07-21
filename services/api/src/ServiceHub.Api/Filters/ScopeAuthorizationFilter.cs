@@ -36,10 +36,12 @@ public sealed class ScopeAuthorizationFilter : IAsyncAuthorizationFilter
             return;
         }
 
-        // SPA token and EasyAuth (Azure AD) authentication grant full access.
-        // Scope restrictions only apply to external API key consumers.
+        // SPA token, EasyAuth (Azure AD), and OIDC Bearer authentication grant full access.
+        // Scope restrictions only apply to external API key consumers. OIDC identities are
+        // isolated by their own per-user OwnerId (see OidcBearerAuthenticationMiddleware) even
+        // though they aren't scope-restricted — the same trust model EasyAuth already uses.
         if (context.HttpContext.Items.TryGetValue("AuthMethod", out var authMethod)
-            && authMethod is "SpaToken" or "EasyAuth")
+            && authMethod is "SpaToken" or "EasyAuth" or "Oidc")
         {
             return;
         }

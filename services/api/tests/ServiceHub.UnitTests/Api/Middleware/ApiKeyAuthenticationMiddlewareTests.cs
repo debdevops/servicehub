@@ -455,7 +455,7 @@ public class ApiKeyAuthenticationMiddlewareTests
     [Fact]
     public async Task InvokeAsync_OwnerIdSetButNotEasyAuth_ShouldNotShortCircuit()
     {
-        // Only AuthMethod == "EasyAuth" may skip credential checks; an OwnerId set by
+        // Only AuthMethod == "EasyAuth" or "Oidc" may skip credential checks; an OwnerId set by
         // anything else must still be authenticated.
         RequestDelegate next = _ => Task.CompletedTask;
         var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
@@ -469,6 +469,31 @@ public class ApiKeyAuthenticationMiddlewareTests
         await middleware.InvokeAsync(context);
 
         context.Response.StatusCode.Should().Be(401);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_OidcAuthenticated_WithoutSpaTokenOrApiKey_ShouldCallNext()
+    {
+        // OIDC-authenticated request (validated by OidcBearerAuthenticationMiddleware
+        // upstream) with no other credential must pass through, not 401 at the API-key
+        // fall-through — same short-circuit EasyAuth already gets.
+        var nextCalled = false;
+        RequestDelegate next = _ => { nextCalled = true; return Task.CompletedTask; };
+        var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Items["OwnerId"] = "oidc:user-abc";
+        context.Items["Authenticated"] = true;
+        context.Items["AuthMethod"] = "Oidc";
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
+        context.Response.StatusCode.Should().Be(200);
+        context.Items["OwnerId"].Should().Be("oidc:user-abc");
     }
 
     [Fact]

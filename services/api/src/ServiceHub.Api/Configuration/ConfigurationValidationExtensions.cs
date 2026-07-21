@@ -17,7 +17,7 @@ namespace ServiceHub.Api.Configuration;
 public static class ConfigurationValidationExtensions
 {
     /// <summary>
-    /// Adds validated options for the ServiceBus, RateLimit and Webhooks sections.
+    /// Adds validated options for the ServiceBus, RateLimit, Webhooks and Oidc sections.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configuration">The application configuration.</param>
@@ -55,10 +55,25 @@ public static class ConfigurationValidationExtensions
                 "Webhooks:PublicUrl must be a valid absolute http/https URL when set.")
             .ValidateOnStart();
 
+        services.AddOptions<OidcOptions>()
+            .Bind(configuration.GetSection(OidcOptions.SectionName))
+            .Validate(
+                o => !o.Enabled || IsHttpsUrl(o.Authority),
+                "Security:Oidc:Authority must be a valid absolute HTTPS URL when Security:Oidc:Enabled is true — " +
+                "the discovery document and signing keys fetched from it must not be interceptable.")
+            .Validate(
+                o => !o.Enabled || !string.IsNullOrWhiteSpace(o.Audience),
+                "Security:Oidc:Audience is required when Security:Oidc:Enabled is true.")
+            .Validate(o => o.ClockSkewSeconds >= 0, "Security:Oidc:ClockSkewSeconds must be non-negative.")
+            .ValidateOnStart();
+
         return services;
     }
 
     private static bool IsUsableHttpUrl(string? url)
         => Uri.TryCreate(url, UriKind.Absolute, out var uri)
            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
+    private static bool IsHttpsUrl(string? url)
+        => Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps;
 }

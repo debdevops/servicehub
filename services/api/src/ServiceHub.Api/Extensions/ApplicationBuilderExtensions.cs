@@ -41,6 +41,12 @@ public static class ApplicationBuilderExtensions
         // In Production (Easy Auth enabled): sets OwnerId from Entra Object ID.
         app.UseMiddleware<EasyAuthMiddleware>();
 
+        // OIDC Bearer token authentication — the provider-neutral counterpart to EasyAuth above,
+        // for any standards-compliant identity provider (Entra ID, Okta, Auth0, ...) on any host
+        // (AWS, GCP, Docker Compose, bare Kestrel). Disabled by default (Security:Oidc:Enabled).
+        // Must also run BEFORE ApiKeyAuthenticationMiddleware, same reason as EasyAuth.
+        app.UseMiddleware<OidcBearerAuthenticationMiddleware>();
+
         // API Key authentication (legacy path for dev or external API clients)
         app.UseMiddleware<ApiKeyAuthenticationMiddleware>();
 

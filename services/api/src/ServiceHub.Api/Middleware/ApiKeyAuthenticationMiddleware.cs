@@ -158,10 +158,12 @@ public sealed class ApiKeyAuthenticationMiddleware
             return;
         }
 
-        // If EasyAuthMiddleware already set OwnerId (Azure Easy Auth was successful),
-        // skip all legacy auth logic (SPA token, API key) and pass through.
-        // This ensures EasyAuth-authenticated requests bypass the SPA-token-only path.
-        if (context.Items.ContainsKey("OwnerId") && context.Items["AuthMethod"] is "EasyAuth")
+        // If EasyAuthMiddleware or OidcBearerAuthenticationMiddleware already set OwnerId
+        // (an upstream identity provider successfully authenticated this request), skip all
+        // legacy auth logic (SPA token, API key) and pass through. Only these two explicit
+        // AuthMethod values may short-circuit here — an OwnerId set by anything else still
+        // requires a credential below.
+        if (context.Items.ContainsKey("OwnerId") && context.Items["AuthMethod"] is "EasyAuth" or "Oidc")
         {
             // Sanitize log inputs to prevent log injection
             var safeMethod = (context.Request.Method ?? string.Empty)
@@ -171,7 +173,7 @@ public sealed class ApiKeyAuthenticationMiddleware
                 .Replace("\r", string.Empty)
                 .Replace("\n", string.Empty);
 
-            _logger.LogDebug("EasyAuth already authenticated request for {Method} {Path}, skipping API key auth",
+            _logger.LogDebug("Upstream identity provider already authenticated request for {Method} {Path}, skipping API key auth",
                 safeMethod, safePath);
 
             await _next(context);
