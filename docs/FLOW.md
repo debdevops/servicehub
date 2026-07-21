@@ -366,6 +366,42 @@ same namespace without literally sharing credentials.
 
 ---
 
+## 10. Audit log retention — opt-in, instance-wide, set-based delete
+
+```mermaid
+%%{init: {'theme':'dark'}}%%
+graph LR
+    ARW["AuditRetentionWorker<br/>(BackgroundService)"] -->|"every SweepIntervalHours,<br/>only if Enabled"| PURGE["IAuditService.PurgeExpiredAsync"]
+    ADMIN["POST /audit/purge<br/>(admin scope, on demand)"] --> AC["AuditController"] --> PURGE
+    PURGE -->|"ExecuteDeleteAsync<br/>(set-based, no row loading)"| DB[("SQLite — AuditLogs")]
+```
+
+- **A separate worker from `AuditService`, on purpose**: `AuditService` (`AuditService.cs`) is
+  already a `BackgroundService` that drains the audit write channel, but its loop blocks on
+  `WaitToReadAsync` until a write occurs. Retention needs to run on its own fixed clock regardless
+  of write activity, so `AuditRetentionWorker` is a second, independent `BackgroundService` rather
+  than a second responsibility folded into the write-drain loop.
+- **Off by default, instance-wide, not per-tenant**: matches the `Security:*` config posture
+  established by Easy Auth/OIDC/Webhooks this phase — audit logs are kept forever until an
+  operator explicitly opts in, and the retention window applies to every owner's logs at once
+  (a real compliance retention policy is set once for a deployment, not configured per user).
+- **Set-based delete, not load-then-delete**: `PurgeExpiredAsync` uses EF Core's
+  `ExecuteDeleteAsync` (a single `DELETE ... WHERE Timestamp < @cutoff`), so a purge sweep never
+  loads however many expired rows exist into memory first — it scales the same way whether 10 or
+  10 million rows have aged out.
+- **Two paths to the same operation**: the scheduled sweep and the on-demand
+  `POST /api/v1/audit/purge` endpoint both call the identical `IAuditService.PurgeExpiredAsync` —
+  no duplicated purge logic, and an operator tightening their retention policy doesn't have to
+  wait up to `SweepIntervalHours` for it to take effect.
+- **Deliberately scoped to `AuditLogs` only**: `DlqMessages` has similar unbounded-growth
+  characteristics, but its retention semantics are genuinely more complex — an `Active`
+  (unresolved) DLQ message almost certainly should never be time-based-purged the way a
+  already-processed audit log entry safely can be, so a DLQ retention policy needs its own status-
+  aware design rather than reusing this exact mechanism. Tracked as separate future work, not
+  silently out of scope.
+
+---
+
 ## Sources checked for this document
 
 `MessagesController.cs`, `QueuesController.cs`, `TopicsController.cs`, `CrossCloudTraceController.cs`,
@@ -411,3 +447,17 @@ boundary changed. See `docs/EXTENDING-PROVIDERS.md` and `tests/ServiceHub.UnitTe
 distinct scoped API keys (real cross-identity isolation, not just mocked): the owner key shared a
 namespace with the second key's derived owner ID, and only after that grant could the second key
 successfully peek/browse it — before the grant it got the same 404 any unrelated caller gets.
+
+**§10 added 2026-07-21**: `AuditRetentionWorker.cs`, `AuditService.cs` (`PurgeExpiredAsync`),
+`AuditController.cs` (`Purge`), `AuditRetentionOptions.cs` — deletion correctness (only rows older
+than the cutoff are removed, across all owners) is proven against a real SQLite engine in
+`AuditServiceTests.cs` and `ServiceHub.IntegrationTests/Api/Controllers/AuditControllerTests.cs`
+(the latter seeds genuinely old- and recent-timestamped rows through `DlqDbContext` and asserts on
+survivorship after purge). Live Docker verification in Simulator mode with
+`Audit:Retention:Enabled=true` confirmed the deployment-level wiring the tests can't reach: the
+worker logs its configured retention/sweep interval on startup, and `POST /api/v1/audit/purge`
+returns the correct live contract end-to-end through the real pipeline — 428 with no intent
+headers, 400 on invalid `olderThanDays`, and 200 with an accurate `cutoffUtc` and `deletedCount`
+once intent headers and a valid body are supplied. The minimal ASP.NET runtime image has no
+`sqlite3` CLI to backdate a row for an in-container sweep-deletion demo, so that specific proof is
+left to the test suite rather than faked here.

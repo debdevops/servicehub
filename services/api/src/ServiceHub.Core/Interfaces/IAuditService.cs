@@ -54,6 +54,19 @@ public interface IAuditService
         DateTimeOffset? from = null,
         DateTimeOffset? to = null,
         CancellationToken cancellationToken = default);
+
+    // ─── Retention ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Permanently deletes every audit log entry timestamped strictly before
+    /// <paramref name="olderThan"/>, across all owners — retention is an instance-wide policy,
+    /// not per-tenant. Used by the automatic retention sweep (<c>Audit:Retention:Enabled</c>)
+    /// and available for on-demand purge.
+    /// </summary>
+    /// <param name="olderThan">The cutoff — entries timestamped before this are deleted.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of entries deleted.</returns>
+    Task<Result<int>> PurgeExpiredAsync(DateTimeOffset olderThan, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Paginated result for audit log queries.</summary>

@@ -145,6 +145,25 @@ the same thing. Role names and literal scopes can be freely mixed in the same li
 `["Viewer", "audit:read"]`. Expansion happens once, at config-load time for API keys and at token
 validation time for OIDC — `ScopeAuthorizationFilter` only ever sees the expanded scope list.
 
+## Audit log retention — *validated at startup*
+
+Audit logs are kept forever by default — no automatic deletion, ever, unless you opt in. This is
+an instance-wide policy (like `Security:*`), not per-tenant: a single retention window applies to
+every owner's audit logs, matching how a real compliance retention policy is set once for a whole
+deployment.
+
+| Key | Default | Constraint |
+|---|---|---|
+| `Audit:Retention:Enabled` | `false` | — |
+| `Audit:Retention:RetentionDays` | `365` | ≥ 1 **when enabled** |
+| `Audit:Retention:SweepIntervalHours` | `24` | ≥ 1 |
+
+When enabled, a background worker (`AuditRetentionWorker`) sweeps on the configured interval and
+permanently deletes entries older than `RetentionDays`, using a set-based `DELETE` (never loads
+matching rows into memory, so it scales regardless of table size). For enforcing a tightened
+policy immediately rather than waiting for the next sweep, `POST /api/v1/audit/purge` (requires
+`X-ServiceHub-Intent: audit:purge`, `admin` scope) purges on demand and returns the count deleted.
+
 ## Telemetry (opt-in, both disabled by default)
 
 | Key | Env var | Default | Notes |

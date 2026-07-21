@@ -155,7 +155,8 @@ public static class DependencyInjection
     }
 
     /// <summary>
-    /// Adds background services for anomaly detection, DLQ monitoring, and bulk operations.
+    /// Adds background services for anomaly detection, DLQ monitoring, bulk operations, and
+    /// audit-log retention.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The service collection for chaining.</returns>
@@ -164,6 +165,7 @@ public static class DependencyInjection
         services.AddHostedService<AnomalyDetectionWorker>();
         services.AddHostedService<DlqMonitorWorker>();
         services.AddHostedService<BulkOperationWorker>();
+        services.AddHostedService<AuditRetentionWorker>();
 
         return services;
     }

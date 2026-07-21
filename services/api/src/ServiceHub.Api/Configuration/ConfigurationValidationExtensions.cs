@@ -17,7 +17,8 @@ namespace ServiceHub.Api.Configuration;
 public static class ConfigurationValidationExtensions
 {
     /// <summary>
-    /// Adds validated options for the ServiceBus, RateLimit, Webhooks and Oidc sections.
+    /// Adds validated options for the ServiceBus, RateLimit, Webhooks, Oidc, and Audit
+    /// Retention sections.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configuration">The application configuration.</param>
@@ -65,6 +66,16 @@ public static class ConfigurationValidationExtensions
                 o => !o.Enabled || !string.IsNullOrWhiteSpace(o.Audience),
                 "Security:Oidc:Audience is required when Security:Oidc:Enabled is true.")
             .Validate(o => o.ClockSkewSeconds >= 0, "Security:Oidc:ClockSkewSeconds must be non-negative.")
+            .ValidateOnStart();
+
+        services.AddOptions<AuditRetentionOptions>()
+            .Bind(configuration.GetSection(AuditRetentionOptions.SectionName))
+            .Validate(
+                o => !o.Enabled || o.RetentionDays >= 1,
+                "Audit:Retention:RetentionDays must be at least 1 when Audit:Retention:Enabled is true.")
+            .Validate(
+                o => o.SweepIntervalHours >= 1,
+                "Audit:Retention:SweepIntervalHours must be at least 1.")
             .ValidateOnStart();
 
         return services;

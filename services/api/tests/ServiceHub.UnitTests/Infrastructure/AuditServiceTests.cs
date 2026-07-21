@@ -228,4 +228,52 @@ public class AuditServiceTests : IDisposable
         savedLog.Should().NotBeNull();
         savedLog!.Action.Should().Be("Test.Background");
     }
+
+    // ── PurgeExpiredAsync ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task PurgeExpiredAsync_DeletesOnlyEntriesOlderThanCutoff()
+    {
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-30);
+        _dbContext.AuditLogs.AddRange(
+            new AuditLog { Id = Guid.NewGuid(), Timestamp = cutoff.AddDays(-10), OwnerId = "__spa__", UserIdentity = "old@test.com", Action = "Old.Action", Outcome = "Success" },
+            new AuditLog { Id = Guid.NewGuid(), Timestamp = cutoff.AddDays(10), OwnerId = "__spa__", UserIdentity = "recent@test.com", Action = "Recent.Action", Outcome = "Success" });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _auditService.PurgeExpiredAsync(cutoff);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(1);
+        var remaining = await _dbContext.AuditLogs.ToListAsync();
+        remaining.Should().ContainSingle(l => l.UserIdentity == "recent@test.com");
+    }
+
+    [Fact]
+    public async Task PurgeExpiredAsync_PurgesAcrossAllOwners_NotJustOne()
+    {
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-30);
+        _dbContext.AuditLogs.AddRange(
+            new AuditLog { Id = Guid.NewGuid(), Timestamp = cutoff.AddDays(-5), OwnerId = "__spa__", UserIdentity = "a@test.com", Action = "A", Outcome = "Success" },
+            new AuditLog { Id = Guid.NewGuid(), Timestamp = cutoff.AddDays(-5), OwnerId = "other_owner", UserIdentity = "b@test.com", Action = "B", Outcome = "Success" });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _auditService.PurgeExpiredAsync(cutoff);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task PurgeExpiredAsync_NothingExpired_ReturnsZero()
+    {
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-30);
+        _dbContext.AuditLogs.Add(
+            new AuditLog { Id = Guid.NewGuid(), Timestamp = DateTimeOffset.UtcNow, OwnerId = "__spa__", UserIdentity = "recent@test.com", Action = "Recent", Outcome = "Success" });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _auditService.PurgeExpiredAsync(cutoff);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(0);
+    }
 }

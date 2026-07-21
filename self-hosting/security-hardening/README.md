@@ -175,6 +175,20 @@ identity, `key_{hash}` for a scoped API key).
 > each action — a shared collaborator does not retroactively see another owner's past
 > investigation history for that namespace.
 
+### Audit log retention
+
+- [ ] If your organization has a defined audit-log retention policy (a common SOC2/ISO 27001/GDPR
+      data-minimization requirement), **`Audit__Retention__Enabled` is `true`** and
+      `Audit__Retention__RetentionDays` matches your policy.
+  - **Why**: Off by default — audit logs are kept forever unless you opt in, so upgrading never
+    silently deletes existing compliance records. If your policy requires bounded retention (e.g.
+    "delete audit records after 2 years"), this must be explicitly enabled; nothing purges on its
+    own otherwise.
+  - A background sweep (`Audit__Retention__SweepIntervalHours`, default every 24h) enforces this
+    automatically. `POST /api/v1/audit/purge` (requires `admin` scope and
+    `X-ServiceHub-Intent: audit:purge`) enforces a tightened policy immediately instead of waiting
+    for the next scheduled sweep.
+
 - [ ] `Security__Authentication__Enabled` is `true`
   - **Why**: When false, the API accepts requests from anyone who can reach the URL. When true, every non-health endpoint requires a valid API key.
 
