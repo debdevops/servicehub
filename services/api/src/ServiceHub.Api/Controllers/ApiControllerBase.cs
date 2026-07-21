@@ -23,13 +23,47 @@ public abstract class ApiControllerBase : ControllerBase
             : Namespace.SpaOwnerId;
 
     /// <summary>
-    /// Fetches a namespace by ID and verifies it belongs to <see cref="OwnerId"/>, so every
-    /// controller enforces tenant isolation through this single, tested path instead of
-    /// reimplementing the ownership check inline. Returns the same NotFound failure whether
-    /// the namespace doesn't exist or simply isn't owned by the caller, so the two cases
-    /// can't be distinguished from the response (avoids leaking namespace existence).
+    /// Fetches a namespace by ID and verifies <see cref="OwnerId"/> may access it — either as
+    /// the namespace's owner, or because the owner explicitly shared it (see
+    /// <see cref="Namespace.IsAccessibleBy"/>) — so every controller enforces tenant isolation
+    /// through this single, tested path instead of reimplementing the check inline. Returns the
+    /// same NotFound failure whether the namespace doesn't exist or simply isn't accessible to
+    /// the caller, so the two cases can't be distinguished from the response (avoids leaking
+    /// namespace existence).
+    /// <para>
+    /// Use this for read/operate actions (browse, peek, replay, purge, Live Tail). For actions
+    /// only the true owner may perform (delete, share, revoke), use
+    /// <see cref="GetExclusivelyOwnedNamespaceAsync"/> instead.
+    /// </para>
     /// </summary>
     protected async Task<Result<Namespace>> GetOwnedNamespaceAsync(
+        INamespaceRepository namespaceRepository,
+        Guid namespaceId,
+        CancellationToken cancellationToken)
+    {
+        var namespaceResult = await namespaceRepository.GetByIdAsync(namespaceId, cancellationToken).ConfigureAwait(false);
+        if (namespaceResult.IsFailure)
+        {
+            return namespaceResult;
+        }
+
+        if (!namespaceResult.Value.IsAccessibleBy(OwnerId))
+        {
+            return Result.Failure<Namespace>(Error.NotFound(
+                ErrorCodes.Namespace.NotFound,
+                $"Namespace with ID '{namespaceId}' was not found."));
+        }
+
+        return namespaceResult;
+    }
+
+    /// <summary>
+    /// Fetches a namespace by ID and verifies <see cref="OwnerId"/> is its <b>true owner</b> —
+    /// a shared-with owner is not sufficient. Use this for privilege-sensitive actions a shared
+    /// collaborator must not be able to perform: deleting the namespace, or changing who it's
+    /// shared with. For everyday read/operate actions, use <see cref="GetOwnedNamespaceAsync"/>.
+    /// </summary>
+    protected async Task<Result<Namespace>> GetExclusivelyOwnedNamespaceAsync(
         INamespaceRepository namespaceRepository,
         Guid namespaceId,
         CancellationToken cancellationToken)

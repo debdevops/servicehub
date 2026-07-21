@@ -157,6 +157,24 @@ There's no separate `Admin` role — an API key or OIDC token with no scopes at 
 `admin` scope) already has full access. Role names and literal scopes can be mixed freely in the
 same list.
 
+### Namespace sharing (Preview)
+
+A namespace's owner can grant another owner identity live operational access — browse, peek,
+replay/purge, Live Tail — via `POST /api/v1/namespaces/{id}/share` (both this and the revoke
+endpoint require `X-ServiceHub-Intent: namespaces:share`). Use `GET /api/v1/me` to discover the
+exact owner ID string a colleague needs to share with them (e.g. `oidc:{sub}` for an OIDC
+identity, `key_{hash}` for a scoped API key).
+
+> ⚠️ Sharing grants the same full live-access trust the namespace's own owner has — it is not
+> scope-restricted. Only the true owner can share or revoke (a shared collaborator cannot
+> re-share or delete the namespace), but once shared, the collaborator can do anything the owner
+> could do operationally on that namespace.
+>
+> **Known limitation**: shared access covers live operations only. DLQ Intelligence history, Bulk
+> Operation job history, and audit trail entries remain visible only to whichever owner performed
+> each action — a shared collaborator does not retroactively see another owner's past
+> investigation history for that namespace.
+
 - [ ] `Security__Authentication__Enabled` is `true`
   - **Why**: When false, the API accepts requests from anyone who can reach the URL. When true, every non-health endpoint requires a valid API key.
 

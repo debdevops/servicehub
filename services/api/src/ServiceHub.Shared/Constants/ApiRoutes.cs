@@ -340,4 +340,11 @@ public static class ApiRoutes
         /// <summary>Route for audit trail summary statistics.</summary>
         public const string Summary = $"{Base}/summary";
     }
+
+    /// <summary>Route for the caller-identity ("whoami") endpoint.</summary>
+    public static class Me
+    {
+        /// <summary>Base route for the caller-identity endpoint.</summary>
+        public const string Base = $"{VersionedBase}/me";
+    }
 }

@@ -315,6 +315,57 @@ subscription, that only runs while a user has explicitly opened it.
 
 ---
 
+## 9. Namespace sharing — one leverage point, one deliberate boundary (Preview)
+
+```mermaid
+%%{init: {'theme':'dark'}}%%
+graph LR
+    OWNER["Owner<br/>POST /namespaces/{id}/share"] --> NC["NamespacesController"]
+    NC -->|"true-owner check"| GEO["GetExclusivelyOwnedNamespaceAsync"]
+    GEO --> NS["Namespace.ShareWith(granteeId)"]
+    NS --> REPO["INamespaceRepository.UpdateAsync<br/>(JSON snapshot file)"]
+
+    GRANTEE["Shared collaborator<br/>any request"] --> C7["7 controllers<br/>(Messages, Queues, Topics, ...)"]
+    C7 --> GOA["GetOwnedNamespaceAsync"]
+    GOA -->|"Namespace.IsAccessibleBy"| ALLOW["owner OR shared → live access"]
+
+    GRANTEE -.->|"DLQ history / Bulk job history / Audit"| BLOCKED["still owner-only —\nnot yet resolved through sharing"]
+```
+
+Before this, `Namespace.OwnerId` was a single immutable string — two engineers (even two distinct
+OIDC identities, §"OIDC Bearer authentication" in the CHANGELOG) could not both operate on the
+same namespace without literally sharing credentials.
+
+- **One field, one high-leverage check point, not a Team/Group domain concept**: `Namespace`
+  gained `SharedWithOwnerIds` (mutable, unlike the immutable `OwnerId`) and `IsAccessibleBy(caller)`.
+  `ApiControllerBase.GetOwnedNamespaceAsync` — already the single path 7 controllers and 23 call
+  sites used for "does this caller own this namespace" — now calls `IsAccessibleBy` instead of an
+  exact `OwnerId` match, so sharing propagates to every one of those call sites (Messages, Queues,
+  Topics, Subscriptions, Anomalies, CloudBridge, Namespaces) with one change, not 23.
+- **A second, stricter check point for privilege-sensitive actions**: `GetExclusivelyOwnedNamespaceAsync`
+  (true owner only, no shared-access bypass) gates namespace delete, share, and revoke — a shared
+  collaborator gets full live operational access but can never re-share, revoke someone else's
+  access, or delete the namespace out from under its owner.
+- **Deliberately not centralized further, on purpose**: ownership enforcement in this codebase is
+  not actually one pattern — `RulesController` and `BulkOperationService` (Infrastructure layer)
+  each reimplement their own raw `OwnerId` equality check independently of `GetOwnedNamespaceAsync`,
+  and `DlqHistoryService`, `AuditLog`, and `BulkOperationJob` all stamp whichever owner performed
+  an action onto the record at write time rather than resolving it dynamically through the
+  namespace. Retrofitting all of that to resolve through `IsAccessibleBy` — so a shared
+  collaborator also sees historical DLQ Intelligence records, past bulk job runs, and audit trail
+  entries another owner created — is a real, separate, multi-service consistency project (a research
+  pass identified at least 4 distinct enforcement patterns and 4 owner-stamped entity types before
+  this feature shipped). Shipping that alongside the live-access change risked an inconsistent,
+  partially-working feature; it's tracked as explicit future work instead — see the CHANGELOG
+  entry's "Known limitation" note.
+- **No DB migration needed**: `Namespace` persists as a full-snapshot JSON file
+  (`servicehub-namespaces.json`), not a SQLite table — adding `SharedWithOwnerIds` is a plain
+  additive field; `System.Text.Json` deserializes older files (missing the key entirely) with the
+  C# default (`null`), normalized to an empty list on rehydration. This is why this feature could
+  ship safely in the time other identity-stamped-entity retrofits (DLQ, Bulk Ops, Audit) could not.
+
+---
+
 ## Sources checked for this document
 
 `MessagesController.cs`, `QueuesController.cs`, `TopicsController.cs`, `CrossCloudTraceController.cs`,
@@ -352,3 +403,11 @@ frame within one poll cycle.
 — the diagrams' *behavior* is unchanged (same singleton router instance, same
 `Resolve`/`IsRegistered` calls), only the compile-time dependency direction at the Api/Infrastructure
 boundary changed. See `docs/EXTENDING-PROVIDERS.md` and `tests/ServiceHub.UnitTests/Architecture/ApiLayerBoundaryTests.cs`.
+
+**§9 added 2026-07-21**: `Namespace.cs` (`SharedWithOwnerIds`, `ShareWith`, `RevokeShare`,
+`IsAccessibleBy`), `InMemoryNamespaceRepository.cs`, `ApiControllerBase.cs`
+(`GetExclusivelyOwnedNamespaceAsync`), `NamespacesController.cs` (`Share`, `RevokeShare`),
+`MeController.cs` — verified live against a running Docker container in Simulator mode with two
+distinct scoped API keys (real cross-identity isolation, not just mocked): the owner key shared a
+namespace with the second key's derived owner ID, and only after that grant could the second key
+successfully peek/browse it — before the grant it got the same 404 any unrelated caller gets.

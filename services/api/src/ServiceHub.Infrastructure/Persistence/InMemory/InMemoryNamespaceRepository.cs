@@ -131,8 +131,9 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
     {
         // SPA owner also owns legacy namespaces that pre-date the OwnerId field
         // (they were written without an OwnerId and deserialise to the default value).
+        // IsAccessibleBy also includes namespaces explicitly shared with this owner.
         var namespaces = _namespaces.Values
-            .Where(n => string.Equals(n.OwnerId, ownerId, StringComparison.Ordinal))
+            .Where(n => n.IsAccessibleBy(ownerId))
             .ToList();
 
         _logger.LogDebug(
@@ -382,6 +383,7 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
             HasManagePermission = ns.HasManagePermission,
             Environment = ns.Environment,
             OwnerId = ns.OwnerId,
+            SharedWithOwnerIds = ns.SharedWithOwnerIds.Count > 0 ? [.. ns.SharedWithOwnerIds] : null,
             ConnectionStringHash = ns.ConnectionStringHash,
             Provider = ns.Provider,
             AwsRegion = ns.AwsRegion,
@@ -437,6 +439,7 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
             SetPrivateProperty(ns, nameof(Namespace.HasSendPermission), snapshot.HasSendPermission);
             SetPrivateProperty(ns, nameof(Namespace.HasManagePermission), snapshot.HasManagePermission);
             SetPrivateProperty(ns, nameof(Namespace.Environment), snapshot.Environment);
+            SetPrivateProperty(ns, nameof(Namespace.SharedWithOwnerIds), (IReadOnlyList<string>)(snapshot.SharedWithOwnerIds ?? []));
 
             if (!snapshot.IsActive)
             {
@@ -483,6 +486,12 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
         /// namespaces written before this field existed remain visible to the instance admin.
         /// </summary>
         public string OwnerId { get; init; } = Namespace.SpaOwnerId;
+        /// <summary>
+        /// Additional owner IDs this namespace is shared with. Null/absent on files written
+        /// before sharing existed — deserialises to null and is normalised to an empty list on
+        /// rehydration, so older snapshot files load unaffected.
+        /// </summary>
+        public List<string>? SharedWithOwnerIds { get; init; }
         /// <summary>SHA-256 hash of the plaintext connection string for fast deduplication.</summary>
         public string? ConnectionStringHash { get; init; }
         /// <summary>Cloud provider (Azure, AWS, GCP). Defaults to Azure for backward compatibility.</summary>

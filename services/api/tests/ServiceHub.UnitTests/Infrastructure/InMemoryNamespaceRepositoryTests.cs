@@ -284,4 +284,82 @@ public sealed class InMemoryNamespaceRepositoryTests : IDisposable
         var act = CreateSut;
         act.Should().NotThrow();
     }
+
+    // ── Sharing ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetByOwnerAsync_IncludesNamespacesSharedWithThatOwner()
+    {
+        var ns = Namespace.Create(ValidName, ValidConnectionString, ownerId: "owner-a").Value;
+        ns.ShareWith("owner-b");
+        await _sut.AddAsync(ns);
+
+        var result = await _sut.GetByOwnerAsync("owner-b");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle(n => n.Id == ns.Id);
+    }
+
+    [Fact]
+    public async Task GetByOwnerAsync_UnrelatedOwner_DoesNotSeeSharedNamespace()
+    {
+        var ns = Namespace.Create(ValidName, ValidConnectionString, ownerId: "owner-a").Value;
+        ns.ShareWith("owner-b");
+        await _sut.AddAsync(ns);
+
+        var result = await _sut.GetByOwnerAsync("owner-c");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UpdateAsync_PersistsSharedWithOwnerIds_NewInstanceLoadsThem()
+    {
+        var ns = Namespace.Create(ValidName, ValidConnectionString, ownerId: "owner-a").Value;
+        await _sut.AddAsync(ns);
+
+        ns.ShareWith("owner-b");
+        await _sut.UpdateAsync(ns);
+
+        // Create a second instance pointing at the same directory — proves SharedWithOwnerIds
+        // round-trips through the JSON snapshot file, not just the in-memory dictionary.
+        var sut2 = CreateSut();
+        var result = await sut2.GetByIdAsync(ns.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.SharedWithOwnerIds.Should().Contain("owner-b");
+    }
+
+    [Fact]
+    public async Task LoadFromDisk_LegacySnapshotWithoutSharedWithOwnerIdsField_RehydratesAsEmpty()
+    {
+        // Simulates a namespace file written before sharing existed — the sharedWithOwnerIds
+        // key is entirely absent from the JSON, not present-but-null.
+        Directory.CreateDirectory(_tempDir);
+        var storagePath = Path.Combine(_tempDir, "servicehub-namespaces.json");
+        var namespaceId = Guid.NewGuid();
+        var legacyJson = $$"""
+            [
+              {
+                "id": "{{namespaceId}}",
+                "name": "{{ValidName}}",
+                "connectionString": "{{ValidConnectionString}}",
+                "authType": 0,
+                "isActive": true,
+                "createdAt": "2026-01-01T00:00:00+00:00",
+                "environment": 0,
+                "ownerId": "__spa__",
+                "provider": 0
+              }
+            ]
+            """;
+        await File.WriteAllTextAsync(storagePath, legacyJson);
+
+        var sut2 = CreateSut();
+        var result = await sut2.GetByIdAsync(namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.SharedWithOwnerIds.Should().BeEmpty();
+    }
 }

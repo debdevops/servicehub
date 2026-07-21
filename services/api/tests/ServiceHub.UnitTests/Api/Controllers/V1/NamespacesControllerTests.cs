@@ -470,6 +470,94 @@ public class NamespacesControllerTests
 
     #endregion
 
+    #region Share / RevokeShare Tests
+
+    [Fact]
+    public async Task Share_Success_ReturnsOkWithUpdatedNamespace()
+    {
+        SetIntentHeaders(IntentHeaders.IntentShareNamespace);
+        var ns = CreateTestNamespace(); // owned by the default SPA owner, matching the controller's caller identity
+        var id = ns.Id;
+        _namespaceRepository.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+        _namespaceRepository.Setup(r => r.UpdateAsync(ns, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var result = await _controller.Share(id, new ShareNamespaceRequest("colleague-owner-id"));
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<NamespaceResponse>().Subject;
+        response.SharedWithOwnerIds.Should().Contain("colleague-owner-id");
+    }
+
+    // Missing-intent-headers (428, via Problem()) is covered in the integration test suite —
+    // Problem() requires ProblemDetailsFactory, which this Moq-based harness doesn't register
+    // (same convention already established for Delete's equivalent path elsewhere in this file).
+
+    [Fact]
+    public async Task Share_NotOwner_ReturnsNotFound()
+    {
+        SetIntentHeaders(IntentHeaders.IntentShareNamespace);
+        var ns = Namespace.Create(
+            "other-owner-ns.servicebus.windows.net",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
+            ownerId: "someone-else").Value;
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        var result = await _controller.Share(ns.Id, new ShareNamespaceRequest("colleague-owner-id"));
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task Share_WithOwnersOwnId_ReturnsBadRequest()
+    {
+        SetIntentHeaders(IntentHeaders.IntentShareNamespace);
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        var result = await _controller.Share(ns.Id, new ShareNamespaceRequest(Namespace.SpaOwnerId));
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task RevokeShare_Success_ReturnsNoContent()
+    {
+        SetIntentHeaders(IntentHeaders.IntentShareNamespace);
+        var ns = CreateTestNamespace();
+        ns.ShareWith("colleague-owner-id");
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+        _namespaceRepository.Setup(r => r.UpdateAsync(ns, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var result = await _controller.RevokeShare(ns.Id, "colleague-owner-id");
+
+        result.Should().BeOfType<NoContentResult>();
+        ns.SharedWithOwnerIds.Should().NotContain("colleague-owner-id");
+    }
+
+    [Fact]
+    public async Task RevokeShare_NotOwner_ReturnsNotFound()
+    {
+        SetIntentHeaders(IntentHeaders.IntentShareNamespace);
+        var ns = Namespace.Create(
+            "other-owner-ns2.servicebus.windows.net",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
+            ownerId: "someone-else").Value;
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        var result = await _controller.RevokeShare(ns.Id, "colleague-owner-id");
+
+        result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    #endregion
+
     #region Platform Event — Publisher Tests
 
     // ── Create ─────────────────────────────────────────────────────────────────
