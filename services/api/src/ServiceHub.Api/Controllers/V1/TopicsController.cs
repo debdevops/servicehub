@@ -6,7 +6,6 @@ using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
-using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.Api.Controllers.V1;
@@ -23,7 +22,7 @@ public sealed class TopicsController : ApiControllerBase
     private readonly IServiceBusClientCache _clientCache;
     private readonly IConnectionStringProtector _connectionStringProtector;
     private readonly IMessageOperationsService _messageOperationsService;
-    private readonly CloudProviderRouter _providerRouter;
+    private readonly ICloudProviderRouter _providerRouter;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<TopicsController> _logger;
 
@@ -42,7 +41,7 @@ public sealed class TopicsController : ApiControllerBase
         IServiceBusClientCache clientCache,
         IConnectionStringProtector connectionStringProtector,
         IMessageOperationsService messageOperationsService,
-        CloudProviderRouter providerRouter,
+        ICloudProviderRouter providerRouter,
         ILogger<TopicsController> logger,
         IAuditLogger? auditLogger = null)
     {

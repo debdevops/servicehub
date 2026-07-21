@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Security;
-using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
@@ -37,7 +36,7 @@ public sealed class MessagesController : ApiControllerBase
 
     private readonly IMessageOperationsService _messageOperationsService;
     private readonly INamespaceRepository _namespaceRepository;
-    private readonly CloudProviderRouter _providerRouter;
+    private readonly ICloudProviderRouter _providerRouter;
     private readonly ILiveTailSessionFactory _liveTailSessionFactory;
     private readonly ILiveTailConnectionLimiter _liveTailConnectionLimiter;
     private readonly IAuditLogger _auditLogger;
@@ -56,7 +55,7 @@ public sealed class MessagesController : ApiControllerBase
     public MessagesController(
         IMessageOperationsService messageOperationsService,
         INamespaceRepository namespaceRepository,
-        CloudProviderRouter providerRouter,
+        ICloudProviderRouter providerRouter,
         ILiveTailSessionFactory liveTailSessionFactory,
         ILiveTailConnectionLimiter liveTailConnectionLimiter,
         ILogger<MessagesController> logger,

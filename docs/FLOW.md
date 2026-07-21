@@ -344,3 +344,11 @@ completion, list, idempotent cancel).
 Docker container in Simulator mode: Azure and GCP streams open and emit heartbeats, AWS returns
 409, and a message sent mid-session via `POST .../queues/orders/messages` appeared as a `data:`
 frame within one poll cycle.
+
+**2026-07-21, architecture hardening**: `QueuesController`, `TopicsController`,
+`SubscriptionsController`, and `MessagesController` now depend on the new
+`ServiceHub.Core.Interfaces.ICloudProviderRouter` instead of the concrete
+`ServiceHub.Infrastructure.Routing.CloudProviderRouter` shown in the diagrams above (§1, §7, §8)
+— the diagrams' *behavior* is unchanged (same singleton router instance, same
+`Resolve`/`IsRegistered` calls), only the compile-time dependency direction at the Api/Infrastructure
+boundary changed. See `docs/EXTENDING-PROVIDERS.md` and `tests/ServiceHub.UnitTests/Architecture/ApiLayerBoundaryTests.cs`.

@@ -40,6 +40,14 @@ if (builder.Configuration.GetValue("CloudProviders:Kafka:Enabled", false))
 gives callers `IsRegistered(type)` for feature-flag-style checks. None of this needs touching —
 it was designed to take an arbitrary number of providers.
 
+If you're adding a new Api controller that needs to check `IsRegistered`/`Resolve` a provider
+(most won't — that's what `IMessageOperationsService` is for), depend on
+`ServiceHub.Core.Interfaces.ICloudProviderRouter`, not the concrete
+`ServiceHub.Infrastructure.Routing.CloudProviderRouter`. Both are registered against the same DI
+instance (see `AddServiceBus()` in `DependencyInjection.cs`), so this costs nothing at runtime —
+it's what keeps the Api layer decoupled from Infrastructure implementation details, and it's
+enforced by `tests/ServiceHub.UnitTests/Architecture/ApiLayerBoundaryTests.cs`.
+
 **`Message.ApplicationProperties`** (`IReadOnlyDictionary<string, object>?`) is already a generic
 attribute bag. Kafka headers or RabbitMQ headers map onto it directly — don't add new typed
 fields to `Message` for a new provider's header/attribute concept; put them here.

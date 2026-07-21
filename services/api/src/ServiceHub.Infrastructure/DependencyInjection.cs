@@ -79,6 +79,13 @@ public static class DependencyInjection
         // scoped — a root-built singleton cannot resolve them under scope validation.
         services.TryAddScoped(sp => new ServiceHub.Infrastructure.Routing.CloudProviderRouter(sp.GetServices<ICloudMessagingProvider>()));
 
+        // Also expose ICloudProviderRouter to the same scoped instance, so the Api layer
+        // (controllers) can depend on the Core interface instead of the concrete
+        // Infrastructure type — mirrors the IPlatformEventBus/InProcessPlatformEventBus
+        // pattern below. Infrastructure-internal consumers keep resolving the concrete type.
+        services.TryAddScoped<Core.Interfaces.ICloudProviderRouter>(
+            sp => sp.GetRequiredService<ServiceHub.Infrastructure.Routing.CloudProviderRouter>());
+
         // Health check
         services.AddHealthChecks()
             .AddCheck<ServiceBusHealthCheck>("servicebus", tags: ["ready", "servicebus"]);
