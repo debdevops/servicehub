@@ -212,6 +212,58 @@ present the same proxy IP and all tenants would share one bucket. Default limit:
 
 ---
 
+## 7. Bulk Operations — a durable job, not a request/response cycle
+
+```mermaid
+%%{init: {'theme':'dark'}}%%
+graph LR
+    C["BulkOperationsController"] -->|"Preview"| SVC["IBulkOperationService<br/>(BulkOperationService)"]
+    C -->|"Create"| SVC
+    SVC -->|"persist Pending job"| DB[("SQLite —<br/>BulkOperationJobs")]
+    SVC -->|"Enqueue(jobId)"| Q["IBulkOperationQueue<br/>(in-process Channel)"]
+    W["BulkOperationWorker<br/>(BackgroundService)"] -->|"DequeueAllAsync"| Q
+    W --> EX["IBulkOperationExecutor<br/>(BulkOperationExecutor)"]
+    EX -->|"one call per message"| IMOS["IMessageOperationsService"]
+    IMOS --> CPR["CloudProviderRouter"] --> AZP["Azure / AWS / GCP provider"]
+    EX -->|"progress every 5 messages"| DB
+    C -->|"Get / List / Cancel"| DB
+```
+
+"Replay/purge these 3,000 messages matching this filter" was explicitly deferred out of Phase 2
+pending "a durable job/operation abstraction + safety rails" (`docs-private/technical-review/21-
+PHASE2-IMPLEMENTATION-PLAN.md`) — a single HTTP request can't safely process an unbounded batch
+(the existing `RulesController.ReplayAll` hits exactly this limit today: a hard-coded 30-second
+`CancellationTokenSource`, no progress reporting, no cancellation). Bulk Operations solves this
+with a persisted job row polled to completion instead of one long-lived request.
+
+- **Provider-neutral by construction**: `BulkOperationExecutor` calls `IMessageOperationsService
+  .ReplayMessageAsync`/`PurgeMessageAsync` once per matched message — the exact same
+  provider-agnostic facade `MessagesController`'s single-message replay/purge already uses (§1).
+  No Azure/AWS/GCP-specific code exists in the bulk-operations layer at all; this is a deliberate
+  improvement over `RulesController.ReplayAll`, which is Azure-only (it calls
+  `IServiceBusClientCache` directly).
+- **In-process, not distributed**: `IBulkOperationQueue` is a singleton in-memory `Channel<Guid>`
+  plus a `CancellationTokenSource` registry for live cancellation — consistent with ServiceHub's
+  current single-instance architecture (SQLite, in-process `IPlatformEventBus`). Job durability
+  comes from the persisted `BulkOperationJob` row, not the queue: if the process restarts with a
+  job still `Running`, `BulkOperationWorker` marks it `Failed` ("interrupted by a restart") at
+  startup rather than silently losing or double-processing it; `Pending` jobs (never started) are
+  simply re-enqueued.
+- **Capability-gated up front, not per message**: `SupportsPurge` etc. is a fact about the
+  namespace's provider as a whole (`ProviderCapabilities`, `docs/EXTENDING-PROVIDERS.md`), so it's
+  checked once at preview/creation time — a whole job is rejected with an explanatory warning
+  rather than silently skipping a subset of messages.
+- **Progress is polling, not SSE**: `GET /api/v1/bulk-operations/{id}` is the source of truth,
+  polled by the frontend every ~1.5s while the job is active. The platform event bus (used
+  elsewhere for DLQ spike alerts, §4) deliberately strips `Payload` from its SSE wire format
+  (`EventStreamItem`) and uses drop-oldest buffers — adequate for "something changed, go refetch"
+  hints, not for precise `processed/total` counts, so it isn't used here.
+- **Safety rails match single-message replay/purge exactly**: same production-namespace block,
+  same `Send`-permission check for replay, same `X-ServiceHub-Intent`/`X-ServiceHub-Confirm`
+  explicit-intent headers (`bulk:replay`/`bulk:purge`) before a job can be created.
+
+---
+
 ## Sources checked for this document
 
 `MessagesController.cs`, `QueuesController.cs`, `TopicsController.cs`, `CrossCloudTraceController.cs`,
@@ -227,3 +279,10 @@ If behavior here looks wrong, re-check these files rather than assuming this doc
 session (Azure + AWS + GCP simultaneously connected and dead-lettering) — confirmed
 `ScanNamespaceAsync` resolves the namespace's actual provider via `CloudProviderRouter` rather
 than hardcoding Azure, contradicting the original 2026-07-07 text this doc shipped with.
+
+**§7 added 2026-07-21**: `BulkOperationsController.cs`, `BulkOperationService.cs`,
+`BulkOperationExecutor.cs`, `BulkOperationWorker.cs`, `BulkOperationQueue.cs`,
+`BulkOperationMatching.cs`, `IBulkOperationService.cs`, `IBulkOperationExecutor.cs`,
+`IBulkOperationQueue.cs`, `RulesController.cs` (`ReplayAll`) — verified live end-to-end against
+Simulator-mode Azure/AWS/GCP namespaces in a running Docker container (preview, create, poll to
+completion, list, idempotent cancel).

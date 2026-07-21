@@ -11,6 +11,9 @@ vi.mock('@/hooks/useDlqHistory', () => ({
 vi.mock('@/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
+vi.mock('@/hooks/useCloudBridge', () => ({
+  useProviderCapabilities: vi.fn(),
+}));
 vi.mock('@/components/dlq', () => ({
   DlqHistoryTable: ({ items, isLoading }: { items: any[]; isLoading: boolean }) => (
     <div data-testid="dlq-history-table">
@@ -21,6 +24,10 @@ vi.mock('@/components/dlq', () => ({
     messageId ? <div data-testid="timeline-drawer">Timeline {messageId}</div> : null,
   StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,
   CategoryBadge: ({ category }: { category: string }) => <span>{category}</span>,
+  BulkOperationPreviewModal: ({ operationType }: { operationType: string }) => (
+    <div data-testid="bulk-preview-modal">Preview: {operationType}</div>
+  ),
+  BulkOperationProgressPanel: () => <div data-testid="bulk-progress-panel">Progress</div>,
 }));
 vi.mock('@/lib/api/dlqHistory', () => ({
   dlqHistoryApi: {
@@ -34,16 +41,22 @@ vi.mock('react-hot-toast', () => ({
 
 import { useDlqHistory, useDlqSummary } from '@/hooks/useDlqHistory';
 import { useNamespaces } from '@/hooks/useNamespaces';
+import { useProviderCapabilities } from '@/hooks/useCloudBridge';
 import userEvent from '@testing-library/user-event';
 import { dlqHistoryApi } from '@/lib/api/dlqHistory';
 
 const mockUseDlqHistory = useDlqHistory as ReturnType<typeof vi.fn>;
 const mockUseDlqSummary = useDlqSummary as ReturnType<typeof vi.fn>;
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
+const mockUseProviderCapabilities = useProviderCapabilities as ReturnType<typeof vi.fn>;
 
 const mockNamespaces = [
-  { id: 'ns1', name: 'my-namespace', displayName: 'My Namespace', isActive: true },
+  { id: 'ns1', name: 'my-namespace', displayName: 'My Namespace', isActive: true, environment: 'dev', cloudProvider: 'aws' },
 ];
+
+const mockCapabilitiesMap = {
+  Aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, notes: '' },
+};
 
 const mockDlqData = {
   items: [
@@ -88,6 +101,7 @@ beforeEach(() => {
   mockUseNamespaces.mockReturnValue({ data: mockNamespaces });
   mockUseDlqHistory.mockReturnValue({ data: mockDlqData, isLoading: false, refetch: vi.fn(), isFetching: false });
   mockUseDlqSummary.mockReturnValue({ data: mockSummary });
+  mockUseProviderCapabilities.mockReturnValue({ data: mockCapabilitiesMap });
 });
 
 describe('DlqHistoryPage', () => {
@@ -222,5 +236,47 @@ describe('DlqHistoryPage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><DlqHistoryPage /></Wrapper>);
     expect(screen.queryByText('Replayed')).not.toBeInTheDocument();
+  });
+
+  describe('Bulk operations', () => {
+    it('enables Bulk Replay and Bulk Purge for a dev namespace whose provider supports purge', () => {
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      expect(screen.getByRole('button', { name: /Bulk Replay/ })).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: /Bulk Purge/ })).not.toBeDisabled();
+    });
+
+    it('disables both bulk actions for a production namespace', () => {
+      mockUseNamespaces.mockReturnValue({
+        data: [{ ...mockNamespaces[0], environment: 'prod' }],
+      });
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      expect(screen.getByRole('button', { name: /Bulk Replay/ })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Bulk Purge/ })).toBeDisabled();
+    });
+
+    it('disables Bulk Purge (but not Bulk Replay) when the provider does not support purge', () => {
+      mockUseProviderCapabilities.mockReturnValue({
+        data: { Aws: { ...mockCapabilitiesMap.Aws, supportsPurge: false, notes: 'Purge not supported' } },
+      });
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      expect(screen.getByRole('button', { name: /Bulk Replay/ })).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: /Bulk Purge/ })).toBeDisabled();
+    });
+
+    it('opens the preview modal for the correct operation type when clicked', async () => {
+      const user = userEvent.setup();
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      await user.click(screen.getByRole('button', { name: /Bulk Replay/ }));
+
+      expect(screen.getByTestId('bulk-preview-modal')).toHaveTextContent('Preview: Replay');
+    });
   });
 });

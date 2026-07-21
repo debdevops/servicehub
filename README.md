@@ -86,6 +86,9 @@ One cross-namespace operations dashboard that aggregates dead-letter health acro
 ### 🗂️ DLQ Triage Inbox
 Turn the dead-letter history into a triage workflow. From any message, **Resolve**, **Archive**, or **Ignore** it — or **Reopen** something you triaged earlier — with the lifecycle status, timestamps, and notes tracked for you. Inbox-zero for dead letters.
 
+### 🔁 Bulk Operations — Replay or Purge Thousands, With a Dry Run First
+"Replay everything matching this filter" as a real workflow, not a one-message-at-a-time chore. Preview the exact match count and a sample before anything mutates, then run it as a cancellable background job with a live progress panel — no request timeout on large batches, no guessing what happened. Blocked in production namespaces and gated by provider capability (purge isn't offered where the provider can't reliably support it) exactly like single-message actions.
+
 ### ⚡ Auto-Replay Rules — Automate Your Recovery
 Define rules that watch DLQ messages and automatically replay them when conditions match. Recover from common failures without manual intervention.
 - **AI-generated rules** or pre-built templates for timeouts and throttles.

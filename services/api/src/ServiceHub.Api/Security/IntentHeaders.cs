@@ -15,6 +15,8 @@ public static class IntentHeaders
     public const string IntentCancelScheduled = "messages:cancel-scheduled";
     public const string IntentDeleteNamespace = "namespaces:delete";
     public const string IntentReplayAllRules = "rules:replay-all";
+    public const string IntentBulkReplay = "bulk:replay";
+    public const string IntentBulkPurge = "bulk:purge";
 
     /// <summary>
     /// Validates that the caller supplied explicit intent headers for a risky operation.

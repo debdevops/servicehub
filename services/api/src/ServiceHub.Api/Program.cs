@@ -224,6 +224,47 @@ static async Task ApplySchemaUpgradesAsync(DlqDbContext dbContext, ILogger logge
                 """);
             logger.LogInformation("Schema upgrade applied: AuditLogs table and indexes created");
         }
+
+        // Migration: Create BulkOperationJobs table (added for Bulk Operations)
+        // EnsureCreatedAsync creates this table in new databases; existing databases need the DDL.
+        if (!await TableExistsAsync(connection, "BulkOperationJobs"))
+        {
+            logger.LogWarning("BulkOperationJobs table is missing — applying schema upgrade");
+            await ExecuteNonQueryAsync(connection, """
+                CREATE TABLE IF NOT EXISTS "BulkOperationJobs" (
+                    "Id"                      TEXT NOT NULL CONSTRAINT "PK_BulkOperationJobs" PRIMARY KEY,
+                    "OwnerId"                 TEXT NOT NULL,
+                    "OperationType"           TEXT NOT NULL,
+                    "Status"                  TEXT NOT NULL,
+                    "NamespaceId"             TEXT NOT NULL,
+                    "NamespaceDisplayName"    TEXT NOT NULL,
+                    "EntityNameFilter"        TEXT,
+                    "StatusFilter"            TEXT,
+                    "CategoryFilter"          TEXT,
+                    "FromFilter"              TEXT,
+                    "ToFilter"                TEXT,
+                    "TotalMatched"            INTEGER NOT NULL,
+                    "ProcessedCount"          INTEGER NOT NULL,
+                    "SuccessCount"            INTEGER NOT NULL,
+                    "FailureCount"            INTEGER NOT NULL,
+                    "SkippedCount"            INTEGER NOT NULL,
+                    "FailureSampleJson"       TEXT,
+                    "ErrorSummary"            TEXT,
+                    "CreatedAt"               TEXT NOT NULL,
+                    "StartedAt"               TEXT,
+                    "CompletedAt"             TEXT,
+                    "CancellationRequestedAt" TEXT,
+                    "CorrelationId"           TEXT
+                );
+                CREATE INDEX IF NOT EXISTS "IX_BulkOperationJobs_Owner_CreatedAt"
+                    ON "BulkOperationJobs" ("OwnerId", "CreatedAt");
+                CREATE INDEX IF NOT EXISTS "IX_BulkOperationJobs_Owner_Namespace_CreatedAt"
+                    ON "BulkOperationJobs" ("OwnerId", "NamespaceId", "CreatedAt");
+                CREATE INDEX IF NOT EXISTS "IX_BulkOperationJobs_Status"
+                    ON "BulkOperationJobs" ("Status");
+                """);
+            logger.LogInformation("Schema upgrade applied: BulkOperationJobs table and indexes created");
+        }
     }
     finally
     {

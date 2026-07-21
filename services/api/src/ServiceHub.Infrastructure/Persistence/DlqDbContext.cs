@@ -29,6 +29,9 @@ public sealed class DlqDbContext : DbContext
     /// <summary>Persistent audit trail entries.</summary>
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
+    /// <summary>Bulk replay/purge operation jobs.</summary>
+    public DbSet<BulkOperationJob> BulkOperationJobs => Set<BulkOperationJob>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -40,6 +43,7 @@ public sealed class DlqDbContext : DbContext
         ConfigureReplayHistory(modelBuilder);
         ConfigureAutoReplayRule(modelBuilder);
         ConfigureAuditLog(modelBuilder);
+        ConfigureBulkOperationJob(modelBuilder);
     }
 
     private static void ApplyUtcDateTimeConverters(ModelBuilder modelBuilder)
@@ -325,5 +329,61 @@ public sealed class DlqDbContext : DbContext
 
         entity.HasIndex(e => e.Action)
             .HasDatabaseName("IX_AuditLogs_Action");
+    }
+
+    private static void ConfigureBulkOperationJob(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<BulkOperationJob>();
+
+        entity.ToTable("BulkOperationJobs");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.OperationType)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.Status)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        entity.Property(e => e.NamespaceDisplayName)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.EntityNameFilter)
+            .HasMaxLength(512);
+
+        entity.Property(e => e.StatusFilter)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        entity.Property(e => e.CategoryFilter)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        entity.Property(e => e.FailureSampleJson)
+            .HasMaxLength(8192);
+
+        entity.Property(e => e.ErrorSummary)
+            .HasMaxLength(2048);
+
+        entity.Property(e => e.CorrelationId)
+            .HasMaxLength(256);
+
+        // Owner-scoped job history, most recent first — the list endpoint's primary access path.
+        entity.HasIndex(e => new { e.OwnerId, e.CreatedAt })
+            .HasDatabaseName("IX_BulkOperationJobs_Owner_CreatedAt");
+
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.CreatedAt })
+            .HasDatabaseName("IX_BulkOperationJobs_Owner_Namespace_CreatedAt");
+
+        // Worker startup scan for jobs left Pending/Running across a restart.
+        entity.HasIndex(e => e.Status)
+            .HasDatabaseName("IX_BulkOperationJobs_Status");
     }
 }

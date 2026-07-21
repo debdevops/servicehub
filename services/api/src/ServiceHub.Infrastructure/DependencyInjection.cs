@@ -7,6 +7,7 @@ using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.AI;
 using ServiceHub.Infrastructure.BackgroundServices;
+using ServiceHub.Infrastructure.BulkOperations;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Persistence.InMemory;
 using ServiceHub.Infrastructure.Security;
@@ -154,6 +155,7 @@ public static class DependencyInjection
         services.AddHostedService<MessagePollingWorker>();
         services.AddHostedService<AnomalyDetectionWorker>();
         services.AddHostedService<DlqMonitorWorker>();
+        services.AddHostedService<BulkOperationWorker>();
 
         return services;
     }
@@ -206,6 +208,14 @@ public static class DependencyInjection
         services.AddSingleton<AuditService>();
         services.AddSingleton<IAuditService>(sp => sp.GetRequiredService<AuditService>());
         services.AddHostedService(sp => sp.GetRequiredService<AuditService>());
+
+        // Bulk Operations — the queue is a singleton (process-wide hand-off + cancellation
+        // registry, mirrors AuditService/InProcessPlatformEventBus); the service and executor
+        // are scoped like every other DlqDbContext-backed service. The worker itself is
+        // registered by AddBackgroundWorkers(), not here — same split DlqMonitorWorker uses.
+        services.TryAddSingleton<IBulkOperationQueue, BulkOperationQueue>();
+        services.TryAddScoped<IBulkOperationService, BulkOperationService>();
+        services.TryAddScoped<IBulkOperationExecutor, BulkOperationExecutor>();
 
         return services;
     }
