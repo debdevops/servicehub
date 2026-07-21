@@ -48,8 +48,12 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends curl \
  && rm -rf /var/lib/apt/lists/*
 
-# Copy the published API, then drop the freshly built SPA into wwwroot.
+# Copy the published API, then drop the freshly built SPA into wwwroot. The API publishes its
+# own (stale, git-committed) wwwroot as content, and COPY merges directories rather than
+# mirroring them — so old hash-named assets must be wiped first or they'd linger in the image
+# alongside the fresh build.
 COPY --from=api /app/publish ./
+RUN rm -rf ./wwwroot
 COPY --from=web /repo/apps/web/dist ./wwwroot/
 
 # The namespace store (JSON) and the SQLite DLQ/audit database live under this directory.
