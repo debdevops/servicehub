@@ -68,6 +68,16 @@ graph LR
 | Peek dead-letter messages | ✅ | ✅ | ✅ (via convention subscription `{name}-dlq`) |
 | Manual dead-letter (move a message to DLQ on demand) | ✅ | ✅ (`MaxReceive` redrive) | ❌ — Pub/Sub dead-lettering is policy-driven via `MaxDeliveryAttempts`; `DeadLetterMessagesAsync` returns a `Validation` failure explaining this |
 | Message count | ✅ | ✅ | Normalized to `Success(0)` — Pub/Sub has no direct count API; mirrors the "unsupported read" convention used by `GetScheduledMessagesAsync` |
+| Purge (delete a single message by identity) | ❌ — no reliable single-message delete by sequence number | ✅ | ✅ |
+| Scheduled messages (queryable/cancellable) | ✅ | ❌ — SQS only offers `DelaySeconds` (max 15 min) at send time | ❌ |
+
+**As of Phase 3**, this table is also machine-readable: every `ICloudMessagingProvider` implementation
+declares a `Capabilities` property (`ServiceHub.Core.Models.ProviderCapabilities`) with the same four
+booleans plus a human-readable `Notes` explanation, and `GET /api/v1/cloud-bridge/capabilities` exposes
+it to the frontend. This replaced two independent, hand-rolled per-feature capability maps that had
+drifted apart (`ScheduledMessagesPage`'s local `SCHEDULING_UNSUPPORTED` map and
+`MessageDetailPanel`'s inline `purgeSupported` boolean) with one shared `useProviderCapabilities()`
+hook — see `ServiceHub.Core/Models/ProviderCapabilities.cs` and `docs/EXTENDING-PROVIDERS.md`.
 
 ---
 
@@ -93,6 +103,14 @@ It resolves namespaces by provider itself and dispatches to two different code p
   by `ProviderType`. If no provider is registered for that type, the namespace is marked
   `WasSearched: false` with a human-readable `SkipReason` (e.g. `"AWS provider is not enabled on
   this server."`) rather than failing the whole trace or silently omitting the namespace.
+- **Both paths now search dead-letter messages, not just active ones** (fixed in Phase 3). The
+  non-Azure path previously only peeked active messages (`FromDeadLetter: false`), so a message
+  found dead-lettered on AWS/GCP was silently invisible to a trace that found the same shape of
+  message correctly on Azure (`IAzureTraceSearcher` always checked both). The non-Azure path now
+  peeks the dead-letter queue too, gated on `entity.DeadLetterCount > 0` only when the resolved
+  provider's `Capabilities.SupportsMessageCounts` is true (AWS) — GCP never populates that count
+  (see §1's capability table), so its dead-letter peek always runs unconditionally rather than
+  being silently skipped.
 
 This means AWS/GCP node search in Cross-Cloud Trace is **fully implemented**, not a "coming later"
 feature — it's gated purely on whether `AddAwsProvider()`/`AddGcpProvider()` are called for the
@@ -101,7 +119,10 @@ end-to-end.
 
 **Why this hasn't been unified with §1's router**: no functional reason found in source — it
 predates the `IMessageOperationsService`/`CloudProviderRouter` introduction and was carried forward
-as-is. Flagging it here rather than describing it as unified elsewhere in the docs.
+as-is. Unifying it fully would also require `CloudEntity` to separate topic/subscription into
+first-class parent/child fields instead of the current encoded `"topic/subscriptions/sub"` name
+string, which `AzureTraceSearcher`'s dual active+DLQ walk relies on implicitly — left as the next
+step rather than attempted in the same pass as the dead-letter parity fix above.
 
 ---
 
@@ -138,10 +159,17 @@ uses in §1 — rather than hardcoding Azure:
 - A namespace is skipped up front (not attempted-then-failed) only if `CloudProviderRouter.IsRegistered`
   returns false for its provider (e.g. the `CloudProviders:Aws:Enabled` / `:Gcp:Enabled` flags are off
   on this server) — with a log line noting why.
-- Provider-specific conventions inside the scan: Azure short-circuits via the entity's own
-  `DeadLetterCount`; AWS and GCP peek their DLQ side directly (GCP resolves the dead-letter
-  subscription dynamically from the source subscription's `DeadLetterPolicy` — there's no fixed
-  naming convention for it in real Pub/Sub).
+- **Capability-driven short-circuit (Phase 3):** an entity is skipped without a peek when
+  `entity.DeadLetterCount == 0` **and** the resolved provider's `Capabilities.SupportsMessageCounts`
+  is true — true for both Azure and AWS (`AwsMessagingProvider.ListEntitiesAsync` reliably
+  populates `DeadLetterCount` via the redrive-target queue's live count), false for GCP (Pub/Sub
+  has no count API, so `CloudEntity.DeadLetterCount` is never populated and the scan always peeks
+  unconditionally). Before Phase 3 this was hardcoded to `provider == Azure`, which meant AWS was
+  always peeked even when its (accurate) reported count was zero — a real inefficiency, not just
+  duplicated logic; fixed using the same `ProviderCapabilities` model the cross-cloud-trace
+  dead-letter parity fix (§2) uses.
+- GCP additionally resolves its dead-letter subscription dynamically from the source
+  subscription's `DeadLetterPolicy` — there's no fixed naming convention for it in real Pub/Sub.
 - This means DLQ Intelligence (§3), 30-day trend, and Auto-Replay Rules all operate on real-time
   Azure **and** AWS/GCP dead-letter data whenever those providers are registered — not Azure only.
 

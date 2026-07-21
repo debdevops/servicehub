@@ -181,47 +181,66 @@ public sealed class CrossCloudTraceController : ApiControllerBase
                 var nsDisplayName = ns.DisplayName ?? ns.Name;
                 Interlocked.Add(ref entitiesSearched, entitiesResult.Value.Count);
 
+                // GCP never reports a real DeadLetterCount (Pub/Sub has no count API — see
+                // ProviderCapabilities.SupportsMessageCounts), so gating the DLQ peek on that
+                // count would silently skip every GCP dead-letter search. Only trust the count
+                // as an optimization for providers that actually populate it.
+                var trustDeadLetterCount = matchingProvider.Capabilities.SupportsMessageCounts;
+
                 var entityTasks = entitiesResult.Value.Select(async entity =>
                 {
                     try
                     {
-                        var peekReq = new GetMessagesRequest(
-                            NamespaceId: ns.Id,
-                            EntityName: entity.Name,
-                            SubscriptionName: null,
-                            FromDeadLetter: false,
-                            MaxMessages: GetMessagesRequest.MaxAllowedMessages);
-
-                        var peekResult = await receiver.PeekMessagesAsync(peekReq, searchToken).ConfigureAwait(false);
-                        if (!peekResult.IsSuccess) return;
-
-                        foreach (var msg in peekResult.Value)
+                        async Task SearchAsync(bool fromDeadLetter)
                         {
-                            // Check CorrelationId property first (AWS maps it from MessageAttributes,
-                            // GCP maps it from message attributes if the sender sets it).
-                            // Fall back to ApplicationProperties for providers that use attribute bags.
-                            var msgCorrelationId = msg.CorrelationId
-                                ?? GetCorrelationFromProperties(msg.ApplicationProperties);
+                            var peekReq = new GetMessagesRequest(
+                                NamespaceId: ns.Id,
+                                EntityName: entity.Name,
+                                SubscriptionName: null,
+                                FromDeadLetter: fromDeadLetter,
+                                MaxMessages: GetMessagesRequest.MaxAllowedMessages);
 
-                            if (string.Equals(msgCorrelationId, traceId, StringComparison.OrdinalIgnoreCase))
+                            var peekResult = await receiver.PeekMessagesAsync(peekReq, searchToken).ConfigureAwait(false);
+                            if (!peekResult.IsSuccess) return;
+
+                            foreach (var msg in peekResult.Value)
                             {
-                                Interlocked.Increment(ref nsHopCount);
-                                hops.Add(new CrossCloudTraceHop(
-                                    CloudProvider: providerLabel,
-                                    NamespaceId: ns.Id,
-                                    NamespaceDisplayName: nsDisplayName,
-                                    EntityName: entity.Name,
-                                    EntityPath: entity.Name,
-                                    MessageId: msg.MessageId,
-                                    SequenceNumber: msg.SequenceNumber,
-                                    State: msg.State.ToString(),
-                                    Timestamp: msg.EnqueuedTime,
-                                    DeadLetterReason: msg.DeadLetterReason,
-                                    BodyPreview: msg.Body != null && msg.Body.Length > 200 ? msg.Body[..200] : msg.Body,
-                                    SizeInBytes: msg.SizeInBytes,
-                                    Source: "Live",
-                                    HopIndex: 0));
+                                // Check CorrelationId property first (AWS maps it from MessageAttributes,
+                                // GCP maps it from message attributes if the sender sets it).
+                                // Fall back to ApplicationProperties for providers that use attribute bags.
+                                var msgCorrelationId = msg.CorrelationId
+                                    ?? GetCorrelationFromProperties(msg.ApplicationProperties);
+
+                                if (string.Equals(msgCorrelationId, traceId, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    Interlocked.Increment(ref nsHopCount);
+                                    hops.Add(new CrossCloudTraceHop(
+                                        CloudProvider: providerLabel,
+                                        NamespaceId: ns.Id,
+                                        NamespaceDisplayName: nsDisplayName,
+                                        EntityName: entity.Name,
+                                        EntityPath: fromDeadLetter ? $"{entity.Name}/$DeadLetterQueue" : entity.Name,
+                                        MessageId: msg.MessageId,
+                                        SequenceNumber: msg.SequenceNumber,
+                                        State: msg.State.ToString(),
+                                        Timestamp: msg.EnqueuedTime,
+                                        DeadLetterReason: msg.DeadLetterReason,
+                                        BodyPreview: msg.Body != null && msg.Body.Length > 200 ? msg.Body[..200] : msg.Body,
+                                        SizeInBytes: msg.SizeInBytes,
+                                        Source: "Live",
+                                        HopIndex: 0));
+                                }
                             }
+                        }
+
+                        await SearchAsync(fromDeadLetter: false).ConfigureAwait(false);
+
+                        // Mirror the Azure trace searcher: also search the dead-letter queue,
+                        // not just active messages, so a replayed/discarded message's DLQ hop
+                        // isn't silently missing for AWS/GCP while present for Azure.
+                        if (!trustDeadLetterCount || entity.DeadLetterCount > 0)
+                        {
+                            await SearchAsync(fromDeadLetter: true).ConfigureAwait(false);
                         }
                     }
                     catch (OperationCanceledException) { Interlocked.Exchange(ref isPartialResultFlag, 1); }

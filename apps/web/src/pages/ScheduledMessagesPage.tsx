@@ -7,6 +7,8 @@ import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues } from '@/hooks/useQueues';
 import { useScheduledMessages, useCancelScheduledMessage } from '@/hooks/useScheduledMessages';
 import { useSendMessage } from '@/hooks/useMessages';
+import { useProviderCapabilities } from '@/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@/lib/api/cloudBridge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CopyButton } from '@/components/CopyButton';
 import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
@@ -14,21 +16,22 @@ import { apiClient } from '@/lib/api/client';
 import { Message, Namespace } from '@/lib/api/types';
 import toast from 'react-hot-toast';
 
-// Native message scheduling is an Azure Service Bus feature. SQS tops out at a
-// 15-minute DelaySeconds and Pub/Sub has no per-message scheduling at all, so
-// those providers get an explanatory panel instead of an empty table.
-const SCHEDULING_UNSUPPORTED: Record<string, { title: string; detail: string }> = {
-  aws: {
-    title: 'AWS SQS does not support scheduled messages',
-    detail:
-      'SQS only offers DelaySeconds (max 15 minutes) at send time. For real scheduling on AWS, use EventBridge Scheduler to publish into the queue at the target time.',
-  },
-  gcp: {
-    title: 'GCP Pub/Sub does not support scheduled messages',
-    detail:
-      'Pub/Sub has no per-message scheduling. Use Cloud Tasks or Cloud Scheduler to publish into the topic at the target time.',
-  },
-};
+/**
+ * Derives the "scheduling unsupported" panel copy from the shared provider-capabilities
+ * API (`GET /cloud-bridge/capabilities`) instead of a hardcoded per-provider map, so a
+ * future provider that also lacks scheduled messages is handled automatically.
+ */
+function useSchedulingUnsupported(namespace: Namespace | undefined | null) {
+  const { data: capabilitiesMap } = useProviderCapabilities();
+  const capabilities = getProviderCapabilities(capabilitiesMap, namespace?.cloudProvider);
+  if (!capabilities || capabilities.supportsScheduledMessages) return undefined;
+
+  const providerLabel = getProviderStyle(namespace?.cloudProvider).label;
+  return {
+    title: `${providerLabel} does not support scheduled messages`,
+    detail: capabilities.notes,
+  };
+}
 
 function NamespaceScheduleWidget({
   namespace,
@@ -40,7 +43,7 @@ function NamespaceScheduleWidget({
   onSelect: () => void;
 }) {
   const style = getProviderStyle(namespace.cloudProvider);
-  const unsupported = SCHEDULING_UNSUPPORTED[namespace.cloudProvider ?? 'azure'];
+  const unsupported = useSchedulingUnsupported(namespace);
   const { data: stats } = useQuery({
     queryKey: ['namespace-stats', namespace.id] as const,
     queryFn: async () => {
@@ -555,9 +558,7 @@ export function ScheduledMessagesPage() {
   const { data: queues } = useQueues(selectedNamespaceId);
 
   const selectedNamespace = namespaces?.find((ns) => ns.id === selectedNamespaceId);
-  const unsupported = selectedNamespace
-    ? SCHEDULING_UNSUPPORTED[selectedNamespace.cloudProvider ?? 'azure']
-    : undefined;
+  const unsupported = useSchedulingUnsupported(selectedNamespace);
 
   const {
     data: paginatedMessages,

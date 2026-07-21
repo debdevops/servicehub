@@ -46,6 +46,9 @@ public sealed class InMemoryMessagingProvider : ICloudMessagingProvider
     /// </remarks>
     public CloudProviderType ProviderType => CloudProviderType.Azure;
 
+    /// <inheritdoc/>
+    public ProviderCapabilities Capabilities => ProviderCapabilities.Azure;
+
     /// <summary>
     /// Returns <see langword="true"/> when the mock provider should handle the given namespace.
     /// </summary>

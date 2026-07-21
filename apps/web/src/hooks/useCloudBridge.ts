@@ -12,6 +12,21 @@ export function useProviderStatus() {
   });
 }
 
+/**
+ * Returns what each cloud provider genuinely supports (message counts, manual dead-letter,
+ * purge, scheduled messages) — the single source of truth for provider-gated UI, replacing
+ * ad-hoc per-page capability checks. Capabilities are static platform facts, so this is
+ * cached generously and never depends on which provider flags are enabled.
+ */
+export function useProviderCapabilities() {
+  return useQuery({
+    queryKey: ['cloud-bridge', 'capabilities'],
+    queryFn: cloudBridgeApi.getCapabilities,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+}
+
 export interface UseCloudEntitiesParams {
   namespaceId: string | null;
   provider: string | null;

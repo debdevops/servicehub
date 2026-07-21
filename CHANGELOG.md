@@ -2,6 +2,16 @@
 
 ## [Unreleased] — 2026-07-07
 
+### Added
+
+- **Provider Capability Descriptor** — `ICloudMessagingProvider.Capabilities` (`ServiceHub.Core.Models.ProviderCapabilities`) declares, per provider, whether message counts, manual dead-lettering, purge, and scheduled messages are genuinely supported, plus a human-readable explanation. Exposed via `GET /api/v1/cloud-bridge/capabilities`. This replaces two independent, drifting hardcoded capability checks in the frontend (`ScheduledMessagesPage`'s local `SCHEDULING_UNSUPPORTED` map and `MessageDetailPanel`'s inline `purgeSupported` boolean) with one shared `useProviderCapabilities()` hook, and is the extension seam a future non-cloud provider (Kafka, RabbitMQ, ...) declares once instead of requiring new provider-type branches at every call site. See `docs/EXTENDING-PROVIDERS.md`.
+- **`docs/EXTENDING-PROVIDERS.md`** — guide for implementing a new `ICloudMessagingProvider`, documenting what's already generic (DI registration, `CloudProviderRouter`, the `ApplicationProperties` attribute bag) versus the real constraints the Azure/AWS/GCP providers hit (the `sequenceNumber: long` message-identity assumption, no non-destructive peek on AWS/GCP, the single-opaque-string credential model, the closed `ServiceBusEntityType` enum).
+
+### Fixed
+
+- **Cross-Cloud Trace missed dead-lettered messages for AWS/GCP** — `CrossCloudTraceController`'s non-Azure search path only peeked active messages (`FromDeadLetter: false`), while the Azure path (`IAzureTraceSearcher`) always searched both active and dead-letter messages. A message dead-lettered on AWS/GCP was silently invisible to a trace that found the equivalent Azure message correctly. The non-Azure path now searches the dead-letter queue too, using each provider's declared `Capabilities.SupportsMessageCounts` to decide whether `entity.DeadLetterCount` can be trusted as an optimization gate (GCP never populates it, so its dead-letter search always runs unconditionally).
+- **AWS DLQ background scanning peeked every queue on every cycle, even when empty** — `DlqMonitorService`'s "skip the peek when the entity reports zero dead-letter messages" optimization was hardcoded to `provider == Azure`, even though `AwsMessagingProvider.ListEntitiesAsync` reliably populates `DeadLetterCount` too (via the redrive-target queue's live count). AWS namespaces were peeked unconditionally regardless of their real DLQ depth. Now gated on `Capabilities.SupportsMessageCounts` (true for Azure and AWS, false for GCP) instead of a provider-type check — the same capability-driven pattern as the cross-cloud-trace fix above, and a mechanical instance of the "capability-driven over provider-conditional" architecture principle applied to existing code, not just new code.
+
 ### Security
 
 - **Fixed cross-owner IDOR in DLQ Intelligence** — `IDlqHistoryService.GetByIdAsync`, `GetTimelineAsync`, `UpdateNotesAsync`, and `GetSummaryAsync` previously took no owner parameter, so any authenticated caller who guessed/enumerated a DLQ message ID could read or annotate another tenant's message. All four methods (plus `GetHistoryAsync`/`ExportAsync`, already scoped) now require `ownerId` and filter on it consistently, matching the isolation already applied to the list endpoint.

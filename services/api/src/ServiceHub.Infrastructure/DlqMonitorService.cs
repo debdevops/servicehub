@@ -100,9 +100,13 @@ public sealed class DlqMonitorService : IDlqMonitorService
             if (ns.Provider == CloudProviderType.Gcp && entity.Name.EndsWith("-dlq", StringComparison.Ordinal))
                 continue;
 
-            // Azure reports DeadLetterCount, so entities with 0 can be skipped without peeking.
-            // AWS/GCP entity listings do not populate DeadLetterCount — peek unconditionally.
-            if (ns.Provider == CloudProviderType.Azure && entity.DeadLetterCount == 0)
+            // A provider that genuinely reports live message counts (Azure, AWS — both populate
+            // DeadLetterCount reliably in ListEntitiesAsync) means entities with 0 can be skipped
+            // without peeking. GCP's Capabilities.SupportsMessageCounts is false (Pub/Sub has no
+            // count API, so CloudEntity.DeadLetterCount is never populated) — peek unconditionally
+            // rather than trusting an always-zero count. This mirrors the same capability check
+            // CrossCloudTraceController uses for its own dead-letter-peek gate.
+            if (provider.Capabilities.SupportsMessageCounts && entity.DeadLetterCount == 0)
             {
                 scannedEntities[entity.Name] = 0;
                 continue;

@@ -6,15 +6,17 @@ import React from 'react';
 vi.mock('@/lib/api/cloudBridge', () => ({
   cloudBridgeApi: {
     getProviderStatus: vi.fn(),
+    getCapabilities: vi.fn(),
     listEntities: vi.fn(),
     getVisibilityStatus: vi.fn(),
   },
 }));
 
 import { cloudBridgeApi } from '@/lib/api/cloudBridge';
-import { useProviderStatus, useCloudEntities, useVisibilityStatus } from '@/hooks/useCloudBridge';
+import { useProviderStatus, useProviderCapabilities, useCloudEntities, useVisibilityStatus } from '@/hooks/useCloudBridge';
 
 const mockGetProviderStatus = cloudBridgeApi.getProviderStatus as ReturnType<typeof vi.fn>;
+const mockGetCapabilities = cloudBridgeApi.getCapabilities as ReturnType<typeof vi.fn>;
 const mockListEntities = cloudBridgeApi.listEntities as ReturnType<typeof vi.fn>;
 const mockGetVisibilityStatus = cloudBridgeApi.getVisibilityStatus as ReturnType<typeof vi.fn>;
 
@@ -49,6 +51,28 @@ describe('useProviderStatus', () => {
     const { result } = renderHook(() => useProviderStatus(), { wrapper: createWrapper() });
     await waitFor(() => expect(result.current.isError).toBe(true), { timeout: 5000 });
     expect(result.current.error).toBeDefined();
+  });
+});
+
+describe('useProviderCapabilities', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('returns loading initially', () => {
+    mockGetCapabilities.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useProviderCapabilities(), { wrapper: createWrapper() });
+    expect(result.current.isLoading).toBe(true);
+  });
+
+  it('returns the capabilities map on success', async () => {
+    const capabilitiesMap = {
+      Azure: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: false, supportsScheduledMessages: true, notes: '' },
+      Aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, notes: '' },
+      Gcp: { supportsMessageCounts: false, supportsManualDeadLetter: false, supportsPurge: true, supportsScheduledMessages: false, notes: '' },
+    };
+    mockGetCapabilities.mockResolvedValue(capabilitiesMap);
+    const { result } = renderHook(() => useProviderCapabilities(), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(capabilitiesMap);
   });
 });
 

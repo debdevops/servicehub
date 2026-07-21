@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 
@@ -61,6 +63,43 @@ public sealed class CloudBridgeController : ApiControllerBase
 
         return Ok(status);
     }
+
+    // -------------------------------------------------------------------------
+    // GET api/v1/cloud-bridge/capabilities
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Returns what each cloud provider genuinely supports (message counts, manual
+    /// dead-lettering, purge, scheduled messages), so the UI can ask once instead of
+    /// hardcoding provider-specific checks per feature.
+    /// </summary>
+    /// <remarks>
+    /// Capabilities are facts about the messaging platform itself, not about a live
+    /// connection, so this returns all three known providers regardless of whether their
+    /// feature flag is enabled on this server — see <c>ProviderCapabilities</c>.
+    /// </remarks>
+    /// <response code="200">Dictionary of provider name → capabilities.</response>
+    [HttpGet("capabilities")]
+    [RequireScope(ApiKeyScopes.NamespacesRead)]
+    [ProducesResponseType(typeof(Dictionary<string, ProviderCapabilitiesResponse>), StatusCodes.Status200OK)]
+    public IActionResult GetCapabilities()
+    {
+        var capabilities = new Dictionary<string, ProviderCapabilitiesResponse>
+        {
+            [CloudProviderType.Azure.ToString()] = ToResponse(ProviderCapabilities.Azure),
+            [CloudProviderType.Aws.ToString()] = ToResponse(ProviderCapabilities.Aws),
+            [CloudProviderType.Gcp.ToString()] = ToResponse(ProviderCapabilities.Gcp),
+        };
+
+        return Ok(capabilities);
+    }
+
+    private static ProviderCapabilitiesResponse ToResponse(ProviderCapabilities c) => new(
+        SupportsMessageCounts: c.SupportsMessageCounts,
+        SupportsManualDeadLetter: c.SupportsManualDeadLetter,
+        SupportsPurge: c.SupportsPurge,
+        SupportsScheduledMessages: c.SupportsScheduledMessages,
+        Notes: c.Notes);
 
     // -------------------------------------------------------------------------
     // GET api/v1/cloud-bridge/namespaces/{namespaceId}/entities?provider=Aws

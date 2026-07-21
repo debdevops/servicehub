@@ -30,6 +30,9 @@ public sealed class SimulatedGcpMessagingProvider : ICloudMessagingProvider
     public CloudProviderType ProviderType => CloudProviderType.Gcp;
 
     /// <inheritdoc/>
+    public ProviderCapabilities Capabilities => ProviderCapabilities.Gcp;
+
+    /// <inheritdoc/>
     public Task<Result> ValidateConnectionAsync(Namespace ns, CancellationToken ct) =>
         Task.FromResult(Result.Success());
 

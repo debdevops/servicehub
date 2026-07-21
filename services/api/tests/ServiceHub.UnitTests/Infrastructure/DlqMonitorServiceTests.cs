@@ -45,6 +45,12 @@ public sealed class DlqMonitorServiceTests : IDisposable
     private DlqMonitorService CreateSut(CloudProviderType registeredProvider)
     {
         _providerMock.SetupGet(p => p.ProviderType).Returns(registeredProvider);
+        _providerMock.SetupGet(p => p.Capabilities).Returns(registeredProvider switch
+        {
+            CloudProviderType.Aws => ProviderCapabilities.Aws,
+            CloudProviderType.Gcp => ProviderCapabilities.Gcp,
+            _ => ProviderCapabilities.Azure,
+        });
         _providerMock.Setup(p => p.GetMessageReceiver()).Returns(_receiverMock.Object);
         var router = new CloudProviderRouter(new[] { _providerMock.Object });
         return new DlqMonitorService(
@@ -426,13 +432,39 @@ public sealed class DlqMonitorServiceTests : IDisposable
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task ScanNamespace_AwsQueueWithZeroListedDlqCount_StillPeeked_StoresWithAwsProvider()
+    public async Task ScanNamespace_AwsQueueWithZeroDlqCount_NotPeeked_ReconcilesStaleMessages()
     {
         var sut = CreateSut(CloudProviderType.Aws);
         SetupNamespace(CloudProviderType.Aws);
 
-        // AWS ListEntitiesAsync never populates DeadLetterCount — the scan must peek anyway.
+        // AWS ListEntitiesAsync reliably populates DeadLetterCount (via the redrive-target
+        // queue's ApproximateNumberOfMessages — see AwsMessagingProvider.ListEntitiesAsync),
+        // same as Azure. A genuine 0 is trusted and skips the peek entirely.
+        _dbContext.DlqMessages.Add(MakeStoredMessage("stale-msg", 99, "orders", CloudProviderType.Aws));
+        await _dbContext.SaveChangesAsync();
+
         SetupEntities(MakeEntity("orders", "Queue", 0, CloudProviderType.Aws));
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+
+        _receiverMock.Verify(
+            r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        var msg = await _dbContext.DlqMessages.FirstAsync();
+        msg.Status.Should().Be(DlqMessageStatus.Replayed);
+        msg.ReplayedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ScanNamespace_AwsQueueWithPositiveDlqCount_Peeked_StoresWithAwsProvider()
+    {
+        var sut = CreateSut(CloudProviderType.Aws);
+        SetupNamespace(CloudProviderType.Aws);
+
+        SetupEntities(MakeEntity("orders", "Queue", 1, CloudProviderType.Aws));
         SetupPeek(MakeMessage(111, "sqs-msg-1"));
         SetupForensic();
 
@@ -458,7 +490,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
         _dbContext.DlqMessages.Add(MakeStoredMessage("sqs-msg-1", 111, "orders", CloudProviderType.Aws));
         await _dbContext.SaveChangesAsync();
 
-        SetupEntities(MakeEntity("orders", "Queue", 0, CloudProviderType.Aws));
+        SetupEntities(MakeEntity("orders", "Queue", 1, CloudProviderType.Aws));
         SetupPeek(MakeMessage(222, "sqs-msg-1")); // same MessageId, new sequence number
 
         var result = await sut.ScanNamespaceAsync(_namespaceId);
@@ -481,7 +513,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
         _dbContext.DlqMessages.Add(MakeStoredMessage("gone-msg", 111, "orders", CloudProviderType.Aws));
         await _dbContext.SaveChangesAsync();
 
-        SetupEntities(MakeEntity("orders", "Queue", 0, CloudProviderType.Aws));
+        SetupEntities(MakeEntity("orders", "Queue", 1, CloudProviderType.Aws));
         SetupPeek(MakeMessage(222, "other-msg"));
         SetupForensic();
 

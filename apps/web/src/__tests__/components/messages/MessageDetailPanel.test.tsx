@@ -14,6 +14,9 @@ vi.mock('@/hooks/useMessages', () => ({
 vi.mock('@/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
+vi.mock('@/hooks/useCloudBridge', () => ({
+  useProviderCapabilities: vi.fn(),
+}));
 vi.mock('@/components/messages/tabs', () => ({
   PropertiesTab: ({ message }: { message: any }) => (
     <div data-testid="properties-tab">Properties: {message.id}</div>
@@ -39,11 +42,37 @@ vi.mock('react-hot-toast', () => ({
 import { useTabPersistence } from '@/hooks/useTabPersistence';
 import { useReplayMessage, usePurgeMessage } from '@/hooks/useMessages';
 import { useNamespaces } from '@/hooks/useNamespaces';
+import { useProviderCapabilities } from '@/hooks/useCloudBridge';
 
 const mockUseTabPersistence = useTabPersistence as ReturnType<typeof vi.fn>;
 const mockUseReplayMessage = useReplayMessage as ReturnType<typeof vi.fn>;
 const mockUsePurgeMessage = usePurgeMessage as ReturnType<typeof vi.fn>;
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
+const mockUseProviderCapabilities = useProviderCapabilities as ReturnType<typeof vi.fn>;
+
+const mockCapabilitiesMap = {
+  Azure: {
+    supportsMessageCounts: true,
+    supportsManualDeadLetter: true,
+    supportsPurge: false,
+    supportsScheduledMessages: true,
+    notes: 'Purge is not supported — the SDK has no reliable single-message delete by sequence number.',
+  },
+  Aws: {
+    supportsMessageCounts: true,
+    supportsManualDeadLetter: true,
+    supportsPurge: true,
+    supportsScheduledMessages: false,
+    notes: 'Scheduled messages are not supported.',
+  },
+  Gcp: {
+    supportsMessageCounts: false,
+    supportsManualDeadLetter: false,
+    supportsPurge: true,
+    supportsScheduledMessages: false,
+    notes: 'Message counts and manual dead-lettering are not supported.',
+  },
+};
 
 const mockMessage = {
   id: 'msg-aaa-bbb-111',
@@ -100,6 +129,7 @@ beforeEach(() => {
   mockUseReplayMessage.mockReturnValue({ mutateAsync: vi.fn(), isPending: false });
   mockUsePurgeMessage.mockReturnValue({ mutateAsync: vi.fn(), isPending: false });
   mockUseNamespaces.mockReturnValue({ data: undefined });
+  mockUseProviderCapabilities.mockReturnValue({ data: mockCapabilitiesMap });
 });
 
 describe('MessageDetailPanel', () => {
@@ -253,16 +283,24 @@ describe('MessageDetailPanel', () => {
       mockUseNamespaces.mockReturnValue({ data: [makeNamespace('azure')] });
       const Wrapper = createWrapper();
       render(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
-      const purgeBtn = screen.getByLabelText('Purge not supported for Azure Service Bus');
+      const purgeBtn = screen.getByLabelText(/Purge not supported/);
       expect(purgeBtn).toBeDisabled();
-      expect(purgeBtn).toHaveAttribute('title', expect.stringContaining('not supported for Azure Service Bus'));
+      expect(purgeBtn).toHaveAttribute('title', mockCapabilitiesMap.Azure.notes);
     });
 
     it('disables Purge when namespace data is unavailable', () => {
       mockUseNamespaces.mockReturnValue({ data: undefined });
       const Wrapper = createWrapper();
       render(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
-      expect(screen.getByLabelText('Purge not supported for Azure Service Bus')).toBeDisabled();
+      expect(screen.getByLabelText(/Purge not supported/)).toBeDisabled();
+    });
+
+    it('disables Purge with a generic reason while capabilities are still loading', () => {
+      mockUseNamespaces.mockReturnValue({ data: [makeNamespace('aws')] });
+      mockUseProviderCapabilities.mockReturnValue({ data: undefined });
+      const Wrapper = createWrapper();
+      render(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
+      expect(screen.getByLabelText(/Purge not supported/)).toBeDisabled();
     });
 
     it('enables Purge for AWS namespaces', () => {
