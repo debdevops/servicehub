@@ -19,18 +19,21 @@ namespace ServiceHub.Infrastructure.Routing;
 /// </summary>
 public sealed class ForensicEngineRouter : IForensicEngineRouter
 {
-    private readonly IKeyedServiceProvider _keyedServices;
+    private readonly IServiceProvider _serviceProvider;
 
     /// <summary>
     /// Initialises a new instance of <see cref="ForensicEngineRouter"/>.
     /// </summary>
-    /// <param name="keyedServices">
-    /// The application's keyed service provider. The default ASP.NET Core container implements
-    /// this automatically, so no special registration is required to inject it.
+    /// <param name="serviceProvider">
+    /// The application's service provider. Keyed resolution is done via the
+    /// <c>GetKeyedService</c>/<c>GetRequiredKeyedService</c> extension methods, which the default
+    /// ASP.NET Core container supports on any <see cref="IServiceProvider"/> — unlike
+    /// <see cref="IKeyedServiceProvider"/>, <see cref="IServiceProvider"/> is always
+    /// constructor-injectable without extra registration.
     /// </param>
-    public ForensicEngineRouter(IKeyedServiceProvider keyedServices)
+    public ForensicEngineRouter(IServiceProvider serviceProvider)
     {
-        _keyedServices = keyedServices ?? throw new ArgumentNullException(nameof(keyedServices));
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
     }
 
     /// <inheritdoc />
@@ -38,8 +41,8 @@ public sealed class ForensicEngineRouter : IForensicEngineRouter
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        var engine = _keyedServices.GetKeyedService<IForensicEngine>(message.CloudProvider)
-            ?? _keyedServices.GetRequiredKeyedService<IForensicEngine>(CloudProviderType.Azure);
+        var engine = _serviceProvider.GetKeyedService<IForensicEngine>(message.CloudProvider)
+            ?? _serviceProvider.GetRequiredKeyedService<IForensicEngine>(CloudProviderType.Azure);
 
         return engine.Analyse(message);
     }

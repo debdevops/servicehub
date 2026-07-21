@@ -178,9 +178,12 @@ When OpenTelemetry is enabled, ServiceHub also emits domain SLIs under the **`Se
 
 ## AI / pattern detection
 
-| Key | Default | Notes |
-|---|---|---|
-| `AI:Enabled` | `false` | ServiceHub performs **no external AI calls**. Message/DLQ pattern detection is heuristic and runs locally (in the browser and in local backend heuristics). This flag gates that local feature only. |
+ServiceHub performs **no external AI calls**. Message/DLQ pattern detection is heuristic and runs
+locally: client-side in the browser (`apps/web/src/lib/ai`, always on — see
+`VITE_ENABLE_AI_INSIGHTS` in `self-hosting/local-development/README.md` to hide it in the UI) and
+as deterministic/heuristic DLQ forensic classification in the backend (`ForensicEngine` and its
+AWS/GCP-aware variants, always on — there is no backend toggle, since these are pure, free,
+local computations with no cost or privacy tradeoff to gate).
 
 ## CORS, security headers, health checks
 

@@ -38,7 +38,7 @@ public sealed class ForensicEngineRouterTests
     private static readonly ForensicEngineResult GcpResult =
         new(FailureCategory.ProcessingError, 0.85, "gcp", "RequiresReview", "GCP-Deterministic");
 
-    private static IKeyedServiceProvider BuildProvider(
+    private static IServiceProvider BuildProvider(
         IForensicEngine? azure = null, IForensicEngine? aws = null, IForensicEngine? gcp = null)
     {
         var services = new ServiceCollection();
@@ -49,7 +49,7 @@ public sealed class ForensicEngineRouterTests
         if (gcp is not null)
             services.AddKeyedSingleton(CloudProviderType.Gcp, (_, _) => gcp);
 
-        return (IKeyedServiceProvider)services.BuildServiceProvider();
+        return services.BuildServiceProvider();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -57,10 +57,10 @@ public sealed class ForensicEngineRouterTests
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Constructor_NullKeyedServices_Throws()
+    public void Constructor_NullServiceProvider_Throws()
     {
         var act = () => new ForensicEngineRouter(null!);
-        act.Should().Throw<ArgumentNullException>().WithParameterName("keyedServices");
+        act.Should().Throw<ArgumentNullException>().WithParameterName("serviceProvider");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

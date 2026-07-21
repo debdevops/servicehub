@@ -18,7 +18,6 @@ import { DEMO_NAMESPACE_IDS } from '@/lib/demo/mockProviders';
 const DashboardPageLazy = lazy(() => import('./pages/DashboardPage'));
 const FleetPageLazy = lazy(() => import('./pages/FleetPage'));
 const DlqHistoryPageLazy = lazy(() => import('./pages/DlqHistoryPage'));
-const InsightsPageLazy = lazy(() => import('./pages/InsightsPage').then(m => ({ default: m.InsightsPage })));
 const CloudBridgePageLazy = lazy(() => import('./pages/CloudBridgePage').then(m => ({ default: m.CloudBridgePage })));
 const SimulatorPageLazy = lazy(() => import('./pages/SimulatorPage').then(m => ({ default: m.SimulatorPage })));
 const CrossCloudTracePageLazy = lazy(() => import('./pages/CrossCloudTracePage').then(m => ({ default: m.CrossCloudTracePage })));
@@ -114,14 +113,6 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <DlqHistoryPageLazy />
-      </Suspense>
-    ),
-  },
-  {
-    path: 'insights',
-    element: (
-      <Suspense fallback={<PageLoading />}>
-        <InsightsPageLazy />
       </Suspense>
     ),
   },
@@ -302,14 +293,6 @@ export const router = createBrowserRouter([
         element: (
           <Suspense fallback={<PageLoading />}>
             <SimulatorPageLazy />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'insights',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <InsightsPageLazy />
           </Suspense>
         ),
       },
