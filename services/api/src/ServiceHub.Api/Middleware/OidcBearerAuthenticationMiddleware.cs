@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
+using ServiceHub.Api.Authorization;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Security;
 
@@ -29,6 +30,15 @@ namespace ServiceHub.Api.Middleware;
 /// fall back to the SPA token or a scoped API key. If an upstream middleware already set
 /// <c>OwnerId</c> (e.g. Easy Auth succeeded on the same request), this middleware is a no-op —
 /// it never overwrites an identity another mechanism already established.
+/// </para>
+/// <para>
+/// A validated token gets full access by default (the same trust EasyAuth/SPA sessions get) —
+/// but if the token carries the standard OAuth2 <c>scope</c> claim, those scopes (or role names
+/// resolved via <see cref="ApiKeyRoles.Expand"/>) are recorded on <c>context.Items["OidcScopes"]</c>
+/// and <c>ScopeAuthorizationFilter</c> enforces them exactly like a scoped API key. Most identity
+/// providers don't emit an application-specific <c>scope</c> claim without deliberate app
+/// registration configuration, so this is opt-in per deployment, not a behaviour change for
+/// existing OIDC deployments.
 /// </para>
 /// </summary>
 public sealed class OidcBearerAuthenticationMiddleware
@@ -128,6 +138,22 @@ public sealed class OidcBearerAuthenticationMiddleware
             context.Items["OwnerId"] = $"oidc:{subject}";
             context.Items["Authenticated"] = true;
             context.Items["AuthMethod"] = "Oidc";
+
+            // Optional standard OAuth2 'scope' claim (RFC 8693) — a space-delimited string,
+            // e.g. "dlq:read dlq:write" or a role name like "Viewer". When present,
+            // ScopeAuthorizationFilter enforces it exactly like a scoped API key. When absent
+            // (the common case — most IdPs don't emit app-specific scopes without deliberate
+            // configuration), OIDC identities keep the full-access trust SPA/EasyAuth already
+            // get, unchanged from prior behaviour.
+            var scopeClaim = principal.FindFirst("scope")?.Value;
+            if (!string.IsNullOrWhiteSpace(scopeClaim))
+            {
+                var rawScopes = scopeClaim.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (rawScopes.Length > 0)
+                {
+                    context.Items["OidcScopes"] = ApiKeyRoles.Expand(rawScopes);
+                }
+            }
 
             _logger.LogDebug(
                 "OIDC authentication successful for {Method} {Path}",

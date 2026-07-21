@@ -113,7 +113,16 @@ public sealed class ApiKeyAuthenticationMiddleware
             {
                 if (!string.IsNullOrWhiteSpace(keyConfig.Key) && !IsPlaceholderKey(keyConfig.Key))
                 {
-                    _apiKeyLookup[keyConfig.Key] = keyConfig;
+                    // Expand any role names (e.g. "Viewer") in Scopes into their bundled scopes
+                    // once, at load time, so HasScope() never has to re-expand on every request.
+                    _apiKeyLookup[keyConfig.Key] = keyConfig.Scopes is { Length: > 0 }
+                        ? new ApiKeyConfiguration
+                        {
+                            Key = keyConfig.Key,
+                            Scopes = ApiKeyRoles.Expand(keyConfig.Scopes),
+                            Description = keyConfig.Description,
+                        }
+                        : keyConfig;
                 }
                 else if (!string.IsNullOrWhiteSpace(keyConfig.Key) && IsPlaceholderKey(keyConfig.Key))
                 {

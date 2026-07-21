@@ -27,6 +27,7 @@ key `Security:EncryptionKey` becomes the environment variable `SECURITY__ENCRYPT
 | `Security:EnableConnectionStringEncryption` | `SECURITY__ENABLECONNECTIONSTRINGENCRYPTION` | `true` | AES-GCM-256 encryption of stored connection strings. |
 | `Security:Authentication:Enabled` | `SECURITY__AUTHENTICATION__ENABLED` | `true` | Enables `X-API-KEY` authentication. |
 | `Security:Authentication:ApiKeys` | — | `[]` | API key definitions (key + scopes). |
+| `Security:Authentication:ScopedApiKeys[].Scopes` | — | `[]` | Literal scopes (`"dlq:read"`) and/or role names (`"Viewer"`, `"Operator"`, `"Auditor"`) — freely mixable in the same list. See [Roles](#api-key--oidc-roles). |
 | `Security:EasyAuth:Enabled` | `SECURITY__EASYAUTH__ENABLED` | `true` | Trust Azure App Service EasyAuth headers. Only unforgeable behind Azure's proxy — leave off elsewhere. |
 | `Security:Oidc:*` | `SECURITY__OIDC__*` | `Enabled=false` | Provider-neutral per-user SSO for any OIDC identity provider, on any host. See [Oidc](#oidc-byo-idp-sso---validated-at-startup) below. |
 
@@ -115,14 +116,34 @@ fetched and auto-rotated from the IdP's own discovery document
 
 A validated token sets `OwnerId` to `oidc:{sub}` — each authenticated human/service gets their own
 isolated namespace/DLQ/audit scope, unlike the shared `__spa__` identity every browser session
-gets today. OIDC-authenticated requests are trusted the same way SPA/EasyAuth sessions are (full
-access, not scope-restricted) — scopes remain an API-key-only concept; see
+gets today. By default OIDC-authenticated requests are trusted the same way SPA/EasyAuth sessions
+are (full access) — but if the token carries a standard OAuth2 `scope` claim, it's enforced
+exactly like a scoped API key's `Scopes`; see [Roles](#api-key--oidc-roles) below and
 `self-hosting/security-hardening/README.md` for the full trust-model writeup and setup steps.
 
 This middleware never hard-rejects a request itself: a missing, expired, or invalid Bearer token
 simply falls through to the SPA token / API key path, exactly like an untrusted EasyAuth header
 does. `ApiKeyAuthenticationMiddleware` owns the final "nothing authenticated this request"
 401.
+
+## API key / OIDC roles
+
+A role is a named bundle of scopes (`ServiceHub.Api.Authorization.ApiKeyRoles`) — shorthand so an
+operator (or an enterprise IdP's app-registration scope mapping) doesn't have to enumerate
+individual scopes by hand. A role name is valid anywhere a scope is accepted: a scoped API key's
+`Scopes` array, or an OIDC token's `scope` claim.
+
+| Role | Scopes granted |
+|---|---|
+| `Viewer` | `namespaces:read`, `queues:read`, `topics:read`, `subscriptions:read`, `messages:peek`, `dlq:read`, `anomalies:read` |
+| `Operator` | Viewer scopes + `messages:send`, `dlq:write` |
+| `Auditor` | Viewer scopes + `audit:read` |
+
+There is no separate `Admin` role — the existing `admin` scope (or an API key/OIDC token with no
+scopes at all) already grants everything; a role bundle for that would just be another name for
+the same thing. Role names and literal scopes can be freely mixed in the same list, e.g.
+`["Viewer", "audit:read"]`. Expansion happens once, at config-load time for API keys and at token
+validation time for OIDC — `ScopeAuthorizationFilter` only ever sees the expanded scope list.
 
 ## Telemetry (opt-in, both disabled by default)
 

@@ -88,11 +88,13 @@ Check every item before allowing users to access your instance.
 
 ### OIDC Bearer authentication (any host, any standards-compliant IdP)
 
-> ⚠️ Same trust-model caveat as Easy Auth: a validated OIDC identity gets a **full-scope
-> session**, isolated from other identities only by its own `oidc:{sub}` owner ID — it is not
-> scope-restricted the way a scoped API key is. Use it to give each real person or service their
-> own isolated tenant, not to enforce least-privilege within a single organization; use scoped
-> API keys for that.
+> ⚠️ Same trust-model caveat as Easy Auth by default: a validated OIDC identity gets a
+> **full-scope session**, isolated from other identities only by its own `oidc:{sub}` owner ID.
+> If your IdP's app registration is configured to emit an OAuth2 `scope` claim on the token
+> (literal scopes like `dlq:read`, or role names — see [Roles](#roles-scope-bundles-for-api-keys-and-oidc)
+> below), ServiceHub enforces it exactly like a scoped API key instead. Without that claim,
+> every validated OIDC identity is unrestricted (but still isolated by owner ID) — use scoped API
+> keys if you need least-privilege enforcement without configuring your IdP's claim mapping.
 
 Unlike Easy Auth, which only works behind Azure App Service's built-in authentication proxy, OIDC
 Bearer authentication works identically regardless of where ServiceHub runs — AWS ECS, GCP Cloud
@@ -123,9 +125,37 @@ handles the login redirect and ServiceHub only trusts the resulting identity sig
 4. Callers present `Authorization: Bearer <token>` on every request. A validated token is
    isolated under owner ID `oidc:{sub}` — that identity's namespaces, DLQ history, and audit
    trail are separate from every other identity (SPA, other OIDC subjects, API keys).
+5. **Optional** — to enforce least-privilege instead of full access, configure your IdP's app
+   registration to emit an OAuth2 `scope` claim on the token (a space-delimited string, e.g.
+   `"dlq:read dlq:write"` or a role name like `"Viewer"` — see Roles below). Most IdPs don't do
+   this without deliberate configuration, so existing OIDC deployments are unaffected until you
+   opt in.
 
 A missing, expired, or invalid Bearer token is never a hard rejection by itself — the request
 simply falls through to the SPA token or API key path, same as an untrusted Easy Auth header.
+
+### Roles (scope bundles for API keys and OIDC)
+
+A role is a named bundle of scopes, so an operator doesn't have to enumerate individual scopes by
+hand for every key (or every IdP group-to-scope mapping). Use a role name anywhere a scope is
+accepted — a scoped API key's `Scopes` array, or an OIDC token's `scope` claim:
+
+| Role | Grants |
+|---|---|
+| `Viewer` | Browse namespaces, entities, and messages — read-only |
+| `Operator` | Viewer + send messages, replay/purge DLQ messages |
+| `Auditor` | Viewer + audit trail access, for compliance review without operational access |
+
+```json
+"ScopedApiKeys": [
+  { "Key": "...", "Scopes": ["Viewer"], "Description": "Read-only key" },
+  { "Key": "...", "Scopes": ["Operator"], "Description": "On-call ops key" }
+]
+```
+
+There's no separate `Admin` role — an API key or OIDC token with no scopes at all (or the literal
+`admin` scope) already has full access. Role names and literal scopes can be mixed freely in the
+same list.
 
 - [ ] `Security__Authentication__Enabled` is `true`
   - **Why**: When false, the API accepts requests from anyone who can reach the URL. When true, every non-health endpoint requires a valid API key.

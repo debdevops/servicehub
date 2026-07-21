@@ -36,13 +36,18 @@ public sealed class OidcBearerAuthenticationMiddlewareTests
         string? audience = Audience,
         string? subject = "user-123",
         DateTime? expires = null,
-        SecurityKey? signingKey = null)
+        SecurityKey? signingKey = null,
+        string? scope = null)
     {
         var handler = new JwtSecurityTokenHandler();
         var claims = new List<Claim>();
         if (subject is not null)
         {
             claims.Add(new Claim("sub", subject));
+        }
+        if (scope is not null)
+        {
+            claims.Add(new Claim("scope", scope));
         }
 
         var token = new JwtSecurityToken(
@@ -140,6 +145,52 @@ public sealed class OidcBearerAuthenticationMiddlewareTests
         context.Items["OwnerId"].Should().Be("oidc:user-abc");
         context.Items["Authenticated"].Should().Be(true);
         context.Items["AuthMethod"].Should().Be("Oidc");
+    }
+
+    // ── Optional 'scope' claim ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task InvokeAsync_ValidTokenWithoutScopeClaim_DoesNotSetOidcScopes()
+    {
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = CreateMiddleware(next);
+
+        var context = new DefaultHttpContext();
+        context.Request.Headers.Authorization = $"Bearer {BuildToken()}";
+
+        await middleware.InvokeAsync(context);
+
+        context.Items.Should().NotContainKey("OidcScopes");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ValidTokenWithScopeClaim_SetsOidcScopes()
+    {
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = CreateMiddleware(next);
+
+        var context = new DefaultHttpContext();
+        context.Request.Headers.Authorization = $"Bearer {BuildToken(scope: "dlq:read dlq:write")}";
+
+        await middleware.InvokeAsync(context);
+
+        context.Items["OidcScopes"].Should().BeEquivalentTo(new[] { "dlq:read", "dlq:write" });
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ScopeClaimContainsRoleName_ExpandsToScopes()
+    {
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = CreateMiddleware(next);
+
+        var context = new DefaultHttpContext();
+        context.Request.Headers.Authorization = $"Bearer {BuildToken(scope: "Viewer")}";
+
+        await middleware.InvokeAsync(context);
+
+        var scopes = (string[])context.Items["OidcScopes"]!;
+        scopes.Should().Contain("dlq:read");
+        scopes.Should().Contain("namespaces:read");
     }
 
     // ── Invalid tokens fall through gracefully (no hard 401 here) ──────────────

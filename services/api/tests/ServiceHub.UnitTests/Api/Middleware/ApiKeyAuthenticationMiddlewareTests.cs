@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
+using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Middleware;
 using ServiceHub.Api.Security;
 
@@ -275,6 +276,33 @@ public class ApiKeyAuthenticationMiddlewareTests
 
         // Placeholder keys should be rejected (403 = not in lookup)
         context.Response.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task LoadApiKeys_ScopedKeyWithRoleName_ExpandsToScopesAtLoadTime()
+    {
+        var dict = new Dictionary<string, string?>
+        {
+            ["Security:Authentication:Enabled"] = "true",
+            ["Security:Authentication:ScopedApiKeys:0:Key"] = "viewer-key",
+            ["Security:Authentication:ScopedApiKeys:0:Scopes:0"] = "Viewer",
+            ["Security:Authentication:ScopedApiKeys:0:Description"] = "Viewer role key",
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Request.Headers["X-API-KEY"] = "viewer-key";
+
+        await middleware.InvokeAsync(context);
+
+        var keyConfig = (ApiKeyConfiguration)context.Items["ApiKeyConfig"]!;
+        keyConfig.Scopes.Should().Contain(ApiKeyScopes.DlqRead);
+        keyConfig.Scopes.Should().Contain(ApiKeyScopes.NamespacesRead);
+        keyConfig.Scopes.Should().NotContain(ApiKeyScopes.MessagesSend);
     }
 
     [Fact]
