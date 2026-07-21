@@ -4,6 +4,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Events;
+using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.BulkOperations;
 using ServiceHub.Infrastructure.Persistence;
@@ -17,6 +19,7 @@ public sealed class BulkOperationExecutorTests : IDisposable
     private readonly Mock<INamespaceRepository> _namespaceRepositoryMock = new();
     private readonly Mock<IMessageOperationsService> _messageOperationsMock = new();
     private readonly Mock<IAuditService> _auditServiceMock = new();
+    private readonly Mock<IPlatformEventBus> _eventBusMock = new();
     private readonly Guid _namespaceId = Guid.NewGuid();
     private const string OwnerId = "entra:test-owner-123";
 
@@ -38,7 +41,7 @@ public sealed class BulkOperationExecutorTests : IDisposable
 
     private BulkOperationExecutor CreateSut() => new(
         _dbContext, _namespaceRepositoryMock.Object, _messageOperationsMock.Object,
-        _auditServiceMock.Object, NullLogger<BulkOperationExecutor>.Instance);
+        _auditServiceMock.Object, _eventBusMock.Object, NullLogger<BulkOperationExecutor>.Instance);
 
     private Namespace SetupNamespace(EnvironmentType environment = EnvironmentType.Dev)
     {
@@ -345,4 +348,67 @@ public sealed class BulkOperationExecutorTests : IDisposable
             log.UserIdentity == "system:bulk-operation" &&
             log.Outcome == nameof(BulkOperationStatus.Completed))), Times.Once);
     }
+
+    // ── Platform events ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ExecuteAsync_OnSuccessfulCompletion_PublishesBulkOperationCompletedEvent()
+    {
+        var sut = CreateSut();
+        SetupNamespace();
+        AddDlqMessage(1);
+        var job = await AddJobAsync(operationType: BulkOperationType.Replay);
+
+        _messageOperationsMock
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        _eventBusMock.Verify(b => b.PublishAsync(It.Is<PlatformEvent>(evt =>
+            evt.EventType == EventTypes.BulkOperationCompleted &&
+            evt.Category == EventCategories.BulkOperation &&
+            evt.Severity == EventSeverity.Info &&
+            evt.NamespaceId == _namespaceId &&
+            evt.Actor == $"owner:{OwnerId}" &&
+            GetPayload(evt).JobId == job.Id &&
+            GetPayload(evt).OperationType == BulkOperationType.Replay &&
+            GetPayload(evt).Status == BulkOperationStatus.Completed &&
+            GetPayload(evt).SuccessCount == 1 &&
+            GetPayload(evt).FailureCount == 0), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_OnFailedReplay_PublishesEventWithWarningSeverity()
+    {
+        var sut = CreateSut();
+        SetupNamespace();
+        AddDlqMessage(7);
+        var job = await AddJobAsync();
+
+        _messageOperationsMock
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.ExternalService("Provider.Error", "message not found")));
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        _eventBusMock.Verify(b => b.PublishAsync(It.Is<PlatformEvent>(evt =>
+            evt.Severity == EventSeverity.Warning &&
+            GetPayload(evt).Status == BulkOperationStatus.CompletedWithErrors &&
+            GetPayload(evt).FailureCount == 1), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_JobNotPending_DoesNotPublishEvent()
+    {
+        var sut = CreateSut();
+        var job = await AddJobAsync(status: BulkOperationStatus.Completed);
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        _eventBusMock.Verify(b => b.PublishAsync(It.IsAny<PlatformEvent>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private static BulkOperationCompletedPayload GetPayload(PlatformEvent evt) =>
+        (BulkOperationCompletedPayload)evt.Payload!;
 }

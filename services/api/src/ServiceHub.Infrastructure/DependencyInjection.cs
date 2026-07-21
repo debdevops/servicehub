@@ -232,6 +232,13 @@ public static class DependencyInjection
         services.Configure<WebhookOptions>(opts =>
             configuration?.GetSection(WebhookOptions.SectionName).Bind(opts));
 
+        // One IWebhookMessageFormatter per WebhookFormat — WebhookNotifier selects among them
+        // at send time based on WebhookOptions.Format. A future destination format is a new
+        // registration here, not a change to WebhookNotifier or any existing formatter.
+        services.AddSingleton<Core.Interfaces.IWebhookMessageFormatter, Webhooks.GenericWebhookFormatter>();
+        services.AddSingleton<Core.Interfaces.IWebhookMessageFormatter, Webhooks.SlackWebhookFormatter>();
+        services.AddSingleton<Core.Interfaces.IWebhookMessageFormatter, Webhooks.TeamsWebhookFormatter>();
+
         services.AddHttpClient<IWebhookNotifier, WebhookNotifier>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(30);
@@ -276,6 +283,10 @@ public static class DependencyInjection
         // safely resolve the scoped IWebhookNotifier dependency.
         services.AddSingleton<WebhookDlqSpikeHandler>();
 
+        // WebhookBulkOperationCompletedHandler bridges BulkOperationCompleted events to
+        // IWebhookNotifier — same pattern as WebhookDlqSpikeHandler above.
+        services.AddSingleton<WebhookBulkOperationCompletedHandler>();
+
         return services;
     }
 
@@ -291,5 +302,8 @@ public static class DependencyInjection
         var bus = serviceProvider.GetRequiredService<Core.Interfaces.IPlatformEventBus>();
         var webhookHandler = serviceProvider.GetRequiredService<WebhookDlqSpikeHandler>();
         bus.Subscribe(webhookHandler.HandleAsync);
+
+        var bulkOperationWebhookHandler = serviceProvider.GetRequiredService<WebhookBulkOperationCompletedHandler>();
+        bus.Subscribe(bulkOperationWebhookHandler.HandleAsync);
     }
 }

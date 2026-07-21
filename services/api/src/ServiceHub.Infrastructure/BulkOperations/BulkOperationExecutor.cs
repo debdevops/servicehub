@@ -4,6 +4,8 @@ using Microsoft.Extensions.Logging;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Events;
+using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Persistence;
 
@@ -33,6 +35,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IMessageOperationsService _messageOperationsService;
     private readonly IAuditService _auditService;
+    private readonly IPlatformEventBus _eventBus;
     private readonly ILogger<BulkOperationExecutor> _logger;
 
     /// <summary>Initialises a new instance of <see cref="BulkOperationExecutor"/>.</summary>
@@ -41,12 +44,14 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         INamespaceRepository namespaceRepository,
         IMessageOperationsService messageOperationsService,
         IAuditService auditService,
+        IPlatformEventBus eventBus,
         ILogger<BulkOperationExecutor> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _messageOperationsService = messageOperationsService ?? throw new ArgumentNullException(nameof(messageOperationsService));
         _auditService = auditService ?? throw new ArgumentNullException(nameof(auditService));
+        _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -111,6 +116,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
 
             await _dbContext.SaveChangesAsync(CancellationToken.None);
             RecordCompletionAudit(job);
+            await PublishCompletionEventAsync(job);
         }
     }
 
@@ -291,6 +297,46 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
             ErrorDetails = job.ErrorSummary,
             CorrelationId = job.CorrelationId,
         });
+    }
+
+    /// <summary>
+    /// Publishes <see cref="EventTypes.BulkOperationCompleted"/> so subscribers — currently
+    /// <c>WebhookBulkOperationCompletedHandler</c>, bridging to Slack/Teams/generic webhook
+    /// alerts — learn the job finished. <see cref="IPlatformEventBus.PublishAsync"/> is
+    /// non-blocking by contract, so this never slows down the worker's next job.
+    /// </summary>
+    private async Task PublishCompletionEventAsync(BulkOperationJob job)
+    {
+        var payload = new BulkOperationCompletedPayload
+        {
+            JobId = job.Id,
+            OperationType = job.OperationType,
+            Status = job.Status,
+            NamespaceId = job.NamespaceId,
+            NamespaceName = job.NamespaceDisplayName,
+            TotalMatched = job.TotalMatched,
+            SuccessCount = job.SuccessCount,
+            FailureCount = job.FailureCount,
+            SkippedCount = job.SkippedCount,
+            CompletedAtUtc = job.CompletedAt ?? DateTimeOffset.UtcNow,
+        };
+
+        var evt = new PlatformEvent
+        {
+            Source = "ServiceHub.Infrastructure.BulkOperations.BulkOperationExecutor",
+            Category = EventCategories.BulkOperation,
+            EventType = EventTypes.BulkOperationCompleted,
+            Severity = job.Status is BulkOperationStatus.Failed or BulkOperationStatus.CompletedWithErrors
+                ? EventSeverity.Warning
+                : EventSeverity.Info,
+            NamespaceId = job.NamespaceId,
+            NamespaceName = job.NamespaceDisplayName,
+            CorrelationId = job.CorrelationId,
+            Actor = $"owner:{job.OwnerId}",
+            Payload = payload,
+        };
+
+        await _eventBus.PublishAsync(evt, CancellationToken.None);
     }
 
     private enum MessageOutcome

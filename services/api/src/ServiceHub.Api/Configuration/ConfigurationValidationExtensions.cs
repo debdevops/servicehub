@@ -47,6 +47,12 @@ public static class ConfigurationValidationExtensions
                 "Webhooks:Url must be a valid absolute http/https URL when Webhooks:Enabled is true.")
             .Validate(o => o.DlqSpikeThreshold >= 1, "Webhooks:DlqSpikeThreshold must be at least 1.")
             .Validate(o => o.CooldownSeconds >= 0, "Webhooks:CooldownSeconds must be non-negative.")
+            .Validate(
+                o => Enum.IsDefined(o.Format),
+                "Webhooks:Format must be one of Generic, Slack, Teams.")
+            .Validate(
+                o => o.PublicUrl is null || IsUsableHttpUrl(o.PublicUrl),
+                "Webhooks:PublicUrl must be a valid absolute http/https URL when set.")
             .ValidateOnStart();
 
         return services;

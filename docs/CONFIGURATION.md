@@ -65,14 +65,36 @@ In the Docker image both default to `/var/servicehub/data`, exposed as a volume.
 | `RateLimit:MaxRequests` | `300` (Prod: `60`) | ≥ 1 |
 | `RateLimit:WindowDuration` | `00:01:00` | > 0 |
 
-## Webhooks (DLQ-spike alerts) — *validated at startup*
+## Webhooks (DLQ-spike + bulk operation alerts) — *validated at startup*
+
+Fires on two triggers: a DLQ spike (≥ `DlqSpikeThreshold` new messages in one scan cycle, subject
+to `CooldownSeconds`) and every completed bulk replay/purge job (no threshold or cooldown — each
+job result is worth reporting). Delivery always goes through the same outbound SSRF guard as
+other ServiceHub egress: HTTPS-only, and the target host must not resolve to a loopback or
+RFC-1918/link-local address.
 
 | Key | Default | Constraint |
 |---|---|---|
 | `Webhooks:Enabled` | `false` | — |
-| `Webhooks:Url` | `""` | Valid absolute http/https URL **when enabled** |
+| `Webhooks:Url` | `""` | Valid absolute http/https URL **when enabled**; must also pass the SSRF guard (HTTPS, non-internal host) to actually deliver |
 | `Webhooks:DlqSpikeThreshold` | `10` | ≥ 1 |
 | `Webhooks:CooldownSeconds` | `300` | ≥ 0 |
+| `Webhooks:Format` | `Generic` | One of `Generic`, `Slack`, `Teams` |
+| `Webhooks:PublicUrl` | `null` (unset) | Valid absolute http/https URL **when set** |
+
+`Webhooks:Format` selects the payload shape sent to `Webhooks:Url`:
+- **`Generic`** (default) — the original flat JSON body. Existing deployments are unaffected by
+  upgrading; nothing changes unless you opt into `Slack` or `Teams`.
+- **`Slack`** — Block Kit payload compatible with a Slack [Incoming
+  Webhook](https://api.slack.com/messaging/webhooks).
+- **`Teams`** — legacy `MessageCard` payload compatible with a Microsoft Teams Incoming Webhook
+  connector.
+
+`Webhooks:PublicUrl` is optional and only affects `Slack`/`Teams` payloads. ServiceHub is
+self-hosted and has no way to know its own externally-reachable address, so if you set it (e.g.
+`https://servicehub.mycompany.com`), Slack/Teams notifications add a deep "Investigate" link/button
+back into your ServiceHub instance; without it, notifications are still sent, just without the
+link.
 
 ## Telemetry (opt-in, both disabled by default)
 

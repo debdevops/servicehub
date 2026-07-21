@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
 using System.Net.Http.Json;
-using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Security;
@@ -11,16 +11,20 @@ using ServiceHub.Shared.Results;
 namespace ServiceHub.Infrastructure;
 
 /// <summary>
-/// Sends webhook HTTP POST notifications when DLQ activity exceeds the configured threshold.
-/// Includes a per-namespace cooldown to prevent alert storms.
+/// Sends webhook HTTP POST notifications for DLQ spikes and bulk operation completions.
+/// Payload shape is delegated to an <see cref="IWebhookMessageFormatter"/> selected by
+/// <c>WebhookOptions.Format</c> (generic JSON, Slack, or Teams). Includes a per-namespace
+/// cooldown on DLQ spike alerts to prevent alert storms.
 /// </summary>
 public sealed class WebhookNotifier : IWebhookNotifier
 {
     private readonly HttpClient _httpClient;
     private readonly WebhookOptions _options;
+    private readonly IReadOnlyDictionary<WebhookFormat, IWebhookMessageFormatter> _formatters;
     private readonly ILogger<WebhookNotifier> _logger;
 
-    // Tracks when the last notification was sent for each namespace (cooldown).
+    // Tracks when the last DLQ-spike notification was sent for each namespace (cooldown).
+    // Bulk-operation-completed notifications are not cooled down — see NotifyBulkOperationCompletedAsync.
     private readonly ConcurrentDictionary<Guid, DateTimeOffset> _lastNotified = new();
 
     /// <summary>
@@ -29,11 +33,15 @@ public sealed class WebhookNotifier : IWebhookNotifier
     public WebhookNotifier(
         HttpClient httpClient,
         IOptions<WebhookOptions> options,
+        IEnumerable<IWebhookMessageFormatter> formatters,
         ILogger<WebhookNotifier> logger)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        ArgumentNullException.ThrowIfNull(formatters);
+        _formatters = formatters.ToDictionary(f => f.Format);
     }
 
     /// <inheritdoc />
@@ -49,14 +57,6 @@ public sealed class WebhookNotifier : IWebhookNotifier
             return Result.Success();
         }
 
-        if (string.IsNullOrWhiteSpace(_options.Url))
-        {
-            _logger.LogWarning("Webhook URL is not configured, skipping DLQ spike alert");
-            return Result.Failure(Error.Validation("Webhook.NoUrl", "Webhook URL is not configured"));
-        }
-
-        // SSRF guard: only allow HTTPS URLs pointing to non-private, non-loopback hosts.
-        // This prevents the webhook from being misconfigured to reach internal services.
         if (!TryGetSafeWebhookUri(_options.Url, out var webhookUri))
         {
             _logger.LogWarning("Webhook URL {Url} is not a permitted destination (must be HTTPS and not an internal address)",
@@ -81,41 +81,106 @@ public sealed class WebhookNotifier : IWebhookNotifier
             return Result.Success();
         }
 
-        var payload = new DlqSpikePayload
-        {
-            NamespaceId = namespaceId,
-            NamespaceName = namespaceName,
-            NewMessageCount = newMessageCount,
-            Threshold = _options.DlqSpikeThreshold,
-            DetectedAtUtc = now,
-            Source = "ServiceHub"
-        };
+        var notification = new DlqSpikeNotification(
+            NamespaceId: namespaceId,
+            NamespaceName: namespaceName,
+            NewMessageCount: newMessageCount,
+            Threshold: _options.DlqSpikeThreshold,
+            DetectedAtUtc: now,
+            InvestigateUrl: BuildInvestigateUrl(namespaceId));
 
+        var formatter = ResolveFormatter();
+        var payload = formatter.BuildDlqSpikePayload(notification);
+
+        var sendResult = await PostAsync(webhookUri, payload,
+            $"DLQ spike webhook for namespace {LogRedactor.SanitiseForLog(namespaceName)}",
+            cancellationToken);
+
+        if (sendResult.IsSuccess)
+        {
+            _lastNotified[namespaceId] = now;
+        }
+
+        return sendResult;
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> NotifyBulkOperationCompletedAsync(
+        Guid jobId,
+        BulkOperationType operationType,
+        BulkOperationStatus status,
+        Guid namespaceId,
+        string namespaceName,
+        int totalMatched,
+        int successCount,
+        int failureCount,
+        int skippedCount,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_options.Enabled)
+        {
+            _logger.LogDebug("Webhook notifications are disabled, skipping bulk operation alert");
+            return Result.Success();
+        }
+
+        if (!TryGetSafeWebhookUri(_options.Url, out var webhookUri))
+        {
+            _logger.LogWarning("Webhook URL {Url} is not a permitted destination (must be HTTPS and not an internal address)",
+                _options.Url);
+            return Result.Failure(Error.Validation("Webhook.InvalidUrl",
+                "Webhook URL must be an HTTPS URL pointing to an external host"));
+        }
+
+        // No threshold/cooldown gate: a bulk operation is a single, deliberate, human-triggered
+        // action, not a recurring scan result — every completion is worth reporting once.
+        var notification = new BulkOperationCompletedNotification(
+            JobId: jobId,
+            OperationType: operationType,
+            Status: status,
+            NamespaceId: namespaceId,
+            NamespaceName: namespaceName,
+            TotalMatched: totalMatched,
+            SuccessCount: successCount,
+            FailureCount: failureCount,
+            SkippedCount: skippedCount,
+            CompletedAtUtc: DateTimeOffset.UtcNow,
+            InvestigateUrl: BuildInvestigateUrl(namespaceId));
+
+        var formatter = ResolveFormatter();
+        var payload = formatter.BuildBulkOperationCompletedPayload(notification);
+
+        return await PostAsync(webhookUri, payload,
+            $"bulk operation webhook for job {jobId}",
+            cancellationToken);
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private IWebhookMessageFormatter ResolveFormatter() =>
+        _formatters.TryGetValue(_options.Format, out var formatter)
+            ? formatter
+            : _formatters[WebhookFormat.Generic];
+
+    private string? BuildInvestigateUrl(Guid namespaceId) =>
+        string.IsNullOrWhiteSpace(_options.PublicUrl)
+            ? null
+            : $"{_options.PublicUrl.TrimEnd('/')}/dlq-history?namespace={namespaceId}";
+
+    private async Task<Result> PostAsync(Uri webhookUri, object payload, string logDescription, CancellationToken cancellationToken)
+    {
         try
         {
-            _logger.LogInformation(
-                "Sending DLQ spike webhook for namespace {Namespace}: {Count} new messages (threshold: {Threshold})",
-                LogRedactor.SanitiseForLog(namespaceName),
-                newMessageCount,
-                _options.DlqSpikeThreshold);
+            _logger.LogInformation("Sending {Description}", logDescription);
 
-            using var response = await _httpClient.PostAsJsonAsync(
-                webhookUri, payload, cancellationToken);
+            using var response = await _httpClient.PostAsJsonAsync(webhookUri, payload, cancellationToken);
 
             if (response.IsSuccessStatusCode)
             {
-                _lastNotified[namespaceId] = now;
-                _logger.LogInformation(
-                    "DLQ spike webhook sent successfully for namespace {Namespace}",
-                    LogRedactor.SanitiseForLog(namespaceName));
+                _logger.LogInformation("{Description} sent successfully", logDescription);
                 return Result.Success();
             }
 
-            _logger.LogWarning(
-                "DLQ spike webhook returned {StatusCode} for namespace {Namespace}",
-                (int)response.StatusCode,
-                LogRedactor.SanitiseForLog(namespaceName));
-
+            _logger.LogWarning("{Description} returned HTTP {StatusCode}", logDescription, (int)response.StatusCode);
             return Result.Failure(Error.ExternalService(
                 "Webhook.HttpError",
                 $"Webhook returned HTTP {(int)response.StatusCode}"));
@@ -126,10 +191,7 @@ public sealed class WebhookNotifier : IWebhookNotifier
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
-                "Failed to send DLQ spike webhook for namespace {Namespace}",
-                LogRedactor.SanitiseForLog(namespaceName));
-
+            _logger.LogError(ex, "Failed to send {Description}", logDescription);
             return Result.Failure(Error.ExternalService(
                 "Webhook.Failed",
                 $"Webhook notification failed: {ex.Message}"));
@@ -194,29 +256,5 @@ public sealed class WebhookNotifier : IWebhookNotifier
         }
 
         return false;
-    }
-
-    /// <summary>
-    /// Payload sent to the webhook endpoint.
-    /// </summary>
-    internal sealed class DlqSpikePayload
-    {
-        [JsonPropertyName("namespaceId")]
-        public Guid NamespaceId { get; init; }
-
-        [JsonPropertyName("namespaceName")]
-        public string NamespaceName { get; init; } = string.Empty;
-
-        [JsonPropertyName("newMessageCount")]
-        public int NewMessageCount { get; init; }
-
-        [JsonPropertyName("threshold")]
-        public int Threshold { get; init; }
-
-        [JsonPropertyName("detectedAtUtc")]
-        public DateTimeOffset DetectedAtUtc { get; init; }
-
-        [JsonPropertyName("source")]
-        public string Source { get; init; } = "ServiceHub";
     }
 }

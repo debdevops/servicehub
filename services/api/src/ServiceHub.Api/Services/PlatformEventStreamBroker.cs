@@ -45,6 +45,7 @@ public sealed class PlatformEventStreamBroker
         EventTypes.DlqSpikeDetected,
         EventTypes.ReplayCompleted,
         EventTypes.RuleMatched,
+        EventTypes.BulkOperationCompleted,
     };
 
     private readonly ConcurrentDictionary<Guid, Connection> _connections = new();
