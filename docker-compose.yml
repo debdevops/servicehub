@@ -1,0 +1,47 @@
+# ServiceHub — zero-credential demo via Docker Compose.
+#
+#   docker compose up --build
+#   → open http://localhost:8080  (seeds synthetic Azure + AWS + GCP namespaces)
+#
+# This runs Simulator mode: no cloud credentials, no secrets, nothing to configure.
+# For a real deployment see the "production" service below and self-hosting/README.md.
+services:
+  servicehub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: servicehub:local
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Simulator
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------------------
+  # Production example — connect to real cloud messaging. Uncomment, then supply a random key:
+  #   SECURITY__ENCRYPTIONKEY=$(openssl rand -hex 32) docker compose up -d servicehub-prod
+  # Data (namespace store + SQLite DLQ/audit DB) is persisted to the named volume.
+  # ---------------------------------------------------------------------------------------
+  # servicehub-prod:
+  #   build: { context: ., dockerfile: Dockerfile }
+  #   image: servicehub:local
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     ASPNETCORE_ENVIRONMENT: Production
+  #     SECURITY__ENCRYPTIONKEY: ${SECURITY__ENCRYPTIONKEY:?set a 32-byte random hex key}
+  #     # Enable preview providers if needed:
+  #     # CloudProviders__Aws__Enabled: "true"
+  #     # CloudProviders__Gcp__Enabled: "true"
+  #   volumes:
+  #     - servicehub-data:/var/servicehub/data
+  #   restart: unless-stopped
+
+volumes:
+  servicehub-data:

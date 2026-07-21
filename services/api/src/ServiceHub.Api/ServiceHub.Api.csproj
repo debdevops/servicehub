@@ -25,6 +25,13 @@
     <!-- AspNetCore.HealthChecks.UI.Client: no .NET 10 release yet; 9.0.0 is the latest compatible version -->
     <PackageReference Include="AspNetCore.HealthChecks.UI.Client" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.9" />
+    <!-- OpenTelemetry: vendor-neutral traces + metrics. Inert unless OpenTelemetry:Enabled
+         (or the OTEL_EXPORTER_OTLP_ENDPOINT env var) is set — see ObservabilityExtensions. -->
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
   </ItemGroup>
 
   <ItemGroup>

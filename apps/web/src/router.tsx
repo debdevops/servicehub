@@ -16,6 +16,7 @@ import { DEMO_NAMESPACE_IDS } from '@/lib/demo/mockProviders';
 
 // Lazy-load heavy pages to improve initial bundle size and cold-start performance
 const DashboardPageLazy = lazy(() => import('./pages/DashboardPage'));
+const FleetPageLazy = lazy(() => import('./pages/FleetPage'));
 const DlqHistoryPageLazy = lazy(() => import('./pages/DlqHistoryPage'));
 const InsightsPageLazy = lazy(() => import('./pages/InsightsPage').then(m => ({ default: m.InsightsPage })));
 const CloudBridgePageLazy = lazy(() => import('./pages/CloudBridgePage').then(m => ({ default: m.CloudBridgePage })));
@@ -97,6 +98,14 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <DashboardPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'fleet',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <FleetPageLazy />
       </Suspense>
     ),
   },

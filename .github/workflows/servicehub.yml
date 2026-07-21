@@ -42,6 +42,19 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore services/api/ServiceHub.sln
 
+      - name: Audit NuGet packages for known vulnerabilities
+        run: |
+          echo "=== dotnet list package --vulnerable (incl. transitive) ==="
+          # Capture the report; TreatWarningsAsErrors already blocks vulnerable *direct*
+          # packages at build time, this also surfaces transitive advisories in CI.
+          REPORT=$(dotnet list services/api/ServiceHub.sln package --vulnerable --include-transitive 2>&1 || true)
+          echo "$REPORT"
+          if echo "$REPORT" | grep -qiE '\b(High|Critical)\b'; then
+            echo "❌ High/Critical severity vulnerabilities found in NuGet dependencies."
+            exit 1
+          fi
+          echo "✅ No high/critical NuGet vulnerabilities detected"
+
       - name: Build solution
         run: dotnet build services/api/ServiceHub.sln --no-restore --configuration Release
 
@@ -333,3 +346,52 @@ jobs:
       - name: Stop API
         if: always()
         run: kill ${{ env.API_PID }} 2>/dev/null || true
+
+  container-security:
+    name: Container Build, Scan & SBOM
+    runs-on: ubuntu-latest
+    # Validates the Dockerfile actually builds, scans the image for known CVEs, and
+    # publishes a CycloneDX SBOM as a build artifact. Does not push the image.
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: servicehub:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: servicehub:ci
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Generate CycloneDX SBOM from image
+        if: always()
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: servicehub:ci
+          scan-type: image
+          format: cyclonedx
+          output: servicehub-sbom.cdx.json
+
+      - name: Upload SBOM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.run_number }}
+          path: servicehub-sbom.cdx.json
+          retention-days: 30
+          if-no-files-found: ignore

@@ -80,6 +80,12 @@ Select the **Dead-Letter** tab to inspect failed messages in full. Each DLQ mess
 ### 📊 DLQ Intelligence — Persistent History & 30-Day Trends
 DLQ Intelligence automatically scans your dead-letter queues and stores every finding in a local SQLite database — so you can track failures over time, not just during the current session. Features include a 30-day trend chart, auto-categorization (Transient, MaxDelivery, Expired, DataQuality, Authorization), and CSV/JSON exports.
 
+### 🛰️ Fleet Operations — "What died overnight, across everything?"
+One cross-namespace operations dashboard that aggregates dead-letter health across **all** your namespaces at once — the daily glance you open with your coffee, not just during an incident. See total active backlog, what's new in the last 24h–7d, a 7-day fleet trend, top failure categories, and a worst-first namespace table (severity, active count, top offending entity, oldest un-actioned message). Click any namespace to jump straight into its DLQ history.
+
+### 🗂️ DLQ Triage Inbox
+Turn the dead-letter history into a triage workflow. From any message, **Resolve**, **Archive**, or **Ignore** it — or **Reopen** something you triaged earlier — with the lifecycle status, timestamps, and notes tracked for you. Inbox-zero for dead letters.
+
 ### ⚡ Auto-Replay Rules — Automate Your Recovery
 Define rules that watch DLQ messages and automatically replay them when conditions match. Recover from common failures without manual intervention.
 - **AI-generated rules** or pre-built templates for timeouts and throttles.
@@ -231,7 +237,28 @@ Follow this path before connecting to a production namespace. This protects your
 
 ## Quick Start
 
-### One-Command Setup (Recommended)
+### Docker — zero-credential demo (fastest)
+
+```bash
+docker compose up --build
+```
+
+Open **[http://localhost:8080](http://localhost:8080)** — Simulator mode boots with synthetic Azure + AWS + GCP namespaces, no cloud credentials required. One image serves both the SPA and the API.
+
+To point at real cloud messaging, run the image in Production mode with your own encryption key:
+
+```bash
+docker build -t servicehub .
+docker run --rm -p 8080:8080 \
+  -e ASPNETCORE_ENVIRONMENT=Production \
+  -e SECURITY__ENCRYPTIONKEY="$(openssl rand -hex 32)" \
+  -v servicehub-data:/var/servicehub/data \
+  servicehub
+```
+
+The namespace store and SQLite DLQ/audit database persist to the `servicehub-data` volume. See [self-hosting/README.md](self-hosting/README.md) and [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for all options.
+
+### One-Command Setup (from source)
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git
@@ -272,8 +299,13 @@ ServiceHub is built for strict enterprise environments.
 - **No message persistence** — Messages are displayed in-memory only during your session; never written to a database.
 - **Log redaction** — Backend logging pipeline strips connection strings, API keys, and access tokens.
 
-### Application Insights Telemetry
-ServiceHub optionally emits telemetry to Azure Application Insights. When enabled, telemetry is strictly limited to request durations, error codes, and system metrics. Connection strings, message payloads, business IDs, and user inputs are **explicitly excluded**. Application Insights is **disabled by default**.
+### Telemetry (opt-in, vendor-neutral)
+ServiceHub can emit operational telemetry two ways, **both disabled by default**:
+
+- **OpenTelemetry** — vendor-neutral traces + metrics over OTLP, for Prometheus/Grafana/Datadog/Jaeger or any OTLP collector. Enable by setting `OpenTelemetry:Enabled=true` or the standard `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable.
+- **Azure Application Insights** — enabled when `ApplicationInsights:ConnectionString` is set.
+
+When enabled, telemetry is strictly limited to request durations, error codes, and system metrics. Connection strings, message payloads, business IDs, and user inputs are **explicitly excluded**.
 
 ---
 
@@ -356,7 +388,7 @@ For deep backend developer guidelines, refer to the [API README](services/api/RE
 ServiceHub is built depth-first: make one workflow excellent before adding the next surface.
 
 - **Now (MVP)** — the forensic core across Azure (GA) and AWS/GCP (preview): explore, search, DLQ investigation, replay, purge, send, auto-replay rules, simulator, live updates.
-- **Next** — operational habit: bulk replay/purge with dry-run preview, DLQ triage inbox, live tail, fleet dashboard across namespaces, Slack/Teams alert cards, Docker packaging.
+- **Next** — operational habit: bulk replay/purge with dry-run preview, DLQ triage inbox, live tail, fleet dashboard across namespaces, Slack/Teams alert cards.
 - **Later** — team & governance: SSO, role-based access, approval workflows for destructive operations, audit export.
 
 Have a use-case that should shape this? [Open a feature request](https://github.com/debdevops/servicehub/issues/new) — describe the problem, not just the solution.

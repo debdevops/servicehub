@@ -1,3 +1,4 @@
+using ServiceHub.Api.Configuration;
 using ServiceHub.Api.Extensions;
 using ServiceHub.Api.Logging;
 using ServiceHub.Infrastructure;
@@ -48,6 +49,10 @@ builder.WebHost.ConfigureKestrel(options =>
 // Add Application Insights telemetry (cost-effective configuration)
 builder.Services.AddApplicationInsightsTelemetryConfiguration(builder.Configuration, builder.Environment);
 
+// Add vendor-neutral OpenTelemetry (traces + metrics). Inert unless explicitly enabled or an
+// OTLP endpoint is configured — see ObservabilityExtensions. Coexists with App Insights.
+builder.Services.AddOpenTelemetryObservability(builder.Configuration);
+
 // Add ServiceHub API services
 builder.Services.AddServiceHubApi(builder.Configuration);
 
@@ -87,6 +92,9 @@ else
 builder.Services.AddBackgroundWorkers();
 
 var app = builder.Build();
+
+// Emit a single, secret-free summary of the effective configuration for operability.
+app.LogStartupSummary();
 
 // Wire Platform Event subscribers before any hosted service starts.
 // This registers WebhookDlqSpikeHandler (and future handlers) with the

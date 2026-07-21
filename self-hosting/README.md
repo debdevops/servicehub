@@ -21,6 +21,33 @@ Before you start, confirm the following are installed on your machine.
 
 ## Choose your deployment path
 
+### 🐳 Run with Docker
+
+**Fastest path to a deployable artifact — one image serves the SPA and the API.**
+
+```bash
+# Zero-credential demo (Simulator mode)
+docker compose up --build            # → http://localhost:8080
+
+# Real deployment (bring your own encryption key + persistent volume)
+docker build -t servicehub .
+docker run --rm -p 8080:8080 \
+  -e ASPNETCORE_ENVIRONMENT=Production \
+  -e SECURITY__ENCRYPTIONKEY="$(openssl rand -hex 32)" \
+  -v servicehub-data:/var/servicehub/data \
+  servicehub
+```
+
+The image runs as a non-root user, exposes port `8080`, includes a container `HEALTHCHECK`
+against `/health/live`, and persists the namespace store + SQLite DLQ/audit DB to
+`/var/servicehub/data`. All settings are in [../docs/CONFIGURATION.md](../docs/CONFIGURATION.md).
+
+> **Note:** In Production mode the app **will not start** without a real `SECURITY__ENCRYPTIONKEY`
+> (this is intentional — it prevents shipping with a known default key). The Simulator demo
+> needs no key.
+
+---
+
 ### 💻 Run locally on your machine
 
 **Fastest option — zero cloud dependencies.**

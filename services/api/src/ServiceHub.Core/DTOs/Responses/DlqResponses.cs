@@ -124,3 +124,10 @@ public sealed record DlqTrendPointResponse(
 /// Request DTO for updating notes on a DLQ message.
 /// </summary>
 public sealed record UpdateDlqNotesRequest(string Notes);
+
+/// <summary>
+/// Request DTO for triaging a DLQ message (status transition).
+/// </summary>
+/// <param name="Status">Target lifecycle status (Active, Archived, Discarded, Resolved).</param>
+/// <param name="Notes">Optional notes to record alongside the transition.</param>
+public sealed record UpdateDlqStatusRequest(DlqMessageStatus Status, string? Notes = null);

@@ -259,6 +259,11 @@ public static class ApiRoutes
         public const string Notes = $"{History}/{{id:long}}/notes";
 
         /// <summary>
+        /// Route for triaging a DLQ message (status transition).
+        /// </summary>
+        public const string Status = $"{History}/{{id:long}}/status";
+
+        /// <summary>
         /// Route for exporting DLQ messages.
         /// </summary>
         public const string Export = $"{Base}/export";
@@ -291,6 +296,16 @@ public static class ApiRoutes
             /// <summary>Route for rule execution statistics.</summary>
             public const string Stats = $"{Base}/{{id:long}}/stats";
         }
+    }
+
+    /// <summary>Routes for the cross-namespace fleet operations overview.</summary>
+    public static class Fleet
+    {
+        /// <summary>Base route for fleet operations.</summary>
+        public const string Base = $"{VersionedBase}/fleet";
+
+        /// <summary>Route for the fleet-wide DLQ overview.</summary>
+        public const string Overview = $"{Base}/overview";
     }
 
     /// <summary>Routes for cross-cloud correlation tracing.</summary>

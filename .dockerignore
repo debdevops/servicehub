@@ -1,0 +1,36 @@
+# Keep the build context small and reproducible — never copy build outputs, deps, or secrets.
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/coverage/
+**/playwright-report/
+**/test-results/
+**/TestResults/
+
+# Local secrets & environment overrides (must never enter an image)
+**/appsettings.Local.json
+**/*.user
+.env
+.env.*
+!apps/web/.env.production
+
+# VCS / tooling / editor
+.git/
+.github/
+.vscode/
+.venv/
+**/.DS_Store
+
+# Docs & private material — not needed to build or run the app
+docs/
+docs-private/
+self-hosting/
+deploy/
+azuredevops/
+*.md
+!README.md
+
+# Local data
+**/servicehub-namespaces.json
+**/*.db

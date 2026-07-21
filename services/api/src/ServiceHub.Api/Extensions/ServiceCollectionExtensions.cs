@@ -96,8 +96,14 @@ public static class ServiceCollectionExtensions
         // Security audit trail for critical operations
         services.AddSingleton<IAuditLogger, SecurityAuditLogger>();
 
-        // Rate limit options (read from RateLimit config section)
-        services.Configure<RateLimitOptions>(configuration.GetSection("RateLimit"));
+        // Domain metrics (fleet backlog, etc.). AddMetrics guarantees IMeterFactory is available;
+        // the meter is only exported when OpenTelemetry is enabled.
+        services.AddMetrics();
+        services.AddSingleton<Telemetry.ServiceHubMetrics>();
+
+        // Strongly-typed, validated configuration (ServiceBus, RateLimit, Webhooks) with
+        // fail-fast at startup. Also binds RateLimitOptions from the "RateLimit" section.
+        services.AddServiceHubConfigurationValidation(configuration);
 
         return services;
     }

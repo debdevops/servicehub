@@ -196,6 +196,7 @@ public static class DependencyInjection
         // Register DLQ services
         services.TryAddScoped<IDlqMonitorService, DlqMonitorService>();
         services.TryAddScoped<IDlqHistoryService, DlqHistoryService>();
+        services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();
         services.TryAddScoped<IForensicEngine, ForensicEngine>();

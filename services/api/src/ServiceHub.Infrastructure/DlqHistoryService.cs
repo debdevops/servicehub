@@ -239,6 +239,76 @@ public sealed class DlqHistoryService : IDlqHistoryService
         }
     }
 
+    // Manual triage may only move a message to one of these lifecycle states. Replayed /
+    // ReplayFailed are outcomes of the replay flow and must not be settable by hand, so a
+    // "Replayed" status always corresponds to a real replay attempt.
+    private static readonly HashSet<DlqMessageStatus> ManualTriageTargets =
+    [
+        DlqMessageStatus.Active,
+        DlqMessageStatus.Archived,
+        DlqMessageStatus.Discarded,
+        DlqMessageStatus.Resolved
+    ];
+
+    /// <inheritdoc />
+    public async Task<Result<DlqMessage>> UpdateStatusAsync(
+        string ownerId,
+        long id,
+        DlqMessageStatus newStatus,
+        string? notes = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!ManualTriageTargets.Contains(newStatus))
+        {
+            return Result<DlqMessage>.Failure(Error.Validation(
+                "Dlq.InvalidStatusTransition",
+                $"'{newStatus}' is not a valid triage status. Allowed: Active, Archived, Discarded, Resolved."));
+        }
+
+        try
+        {
+            var message = await _dbContext.DlqMessages
+                .FirstOrDefaultAsync(m => m.Id == id && m.OwnerId == ownerId, cancellationToken);
+            if (message == null)
+                return Result<DlqMessage>.Failure(Error.NotFound("Dlq.NotFound", $"DLQ message with ID {id} was not found"));
+
+            var now = DateTimeOffset.UtcNow;
+            message.Status = newStatus;
+
+            switch (newStatus)
+            {
+                case DlqMessageStatus.Archived:
+                    message.ArchivedAt = now;
+                    break;
+                case DlqMessageStatus.Resolved:
+                case DlqMessageStatus.Discarded:
+                    message.ResolvedAt = now;
+                    break;
+                case DlqMessageStatus.Active:
+                    // Re-opening a triaged message: clear the resolution stamps.
+                    message.ArchivedAt = null;
+                    message.ResolvedAt = null;
+                    break;
+            }
+
+            if (!string.IsNullOrWhiteSpace(notes))
+                message.UserNotes = notes;
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation(
+                "DLQ message {Id} triaged to {Status} for owner {OwnerId}", id, newStatus, ownerId);
+
+            return message;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update status for DLQ message {Id}", id);
+            return Result<DlqMessage>.Failure(
+                Error.Internal("Dlq.UpdateFailed", $"Failed to update status: {ex.Message}"));
+        }
+    }
+
     /// <inheritdoc />
     public async Task<Result<DlqSummary>> GetSummaryAsync(
         string ownerId, Guid? namespaceId = null, int days = 30, CancellationToken cancellationToken = default)

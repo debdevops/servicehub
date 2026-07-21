@@ -6,12 +6,14 @@ vi.mock('@/hooks/useDlqHistory', () => ({
   useDlqTimeline: vi.fn(),
   useDlqMessageDetail: vi.fn(),
   useUpdateDlqNotes: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useUpdateDlqStatus: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
-import { useDlqTimeline, useDlqMessageDetail } from '@/hooks/useDlqHistory';
+import { useDlqTimeline, useDlqMessageDetail, useUpdateDlqStatus } from '@/hooks/useDlqHistory';
 
 const mockUseDlqTimeline = useDlqTimeline as ReturnType<typeof vi.fn>;
 const mockUseDlqMessageDetail = useDlqMessageDetail as ReturnType<typeof vi.fn>;
+const mockUseUpdateDlqStatus = useUpdateDlqStatus as ReturnType<typeof vi.fn>;
 
 const mockTimeline = {
   events: [
@@ -162,5 +164,28 @@ describe('DlqTimelineDrawer', () => {
     mockUseDlqTimeline.mockReturnValue({ data: { events: [] }, isLoading: false });
     render(<DlqTimelineDrawer messageId={1} onClose={vi.fn()} />);
     expect(screen.getByText('No timeline events available.')).toBeInTheDocument();
+  });
+
+  it('shows triage actions for an active message and triggers a status transition', () => {
+    const mutate = vi.fn();
+    mockUseUpdateDlqStatus.mockReturnValue({ mutate, isPending: false });
+    render(<DlqTimelineDrawer messageId={1} onClose={vi.fn()} />);
+
+    const resolve = screen.getByRole('button', { name: 'Resolve' });
+    expect(resolve).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ignore' })).toBeInTheDocument();
+
+    fireEvent.click(resolve);
+    expect(mutate).toHaveBeenCalledWith({ id: 1, status: 'Resolved' });
+  });
+
+  it('shows a Reopen action for a resolved message', () => {
+    mockUseDlqMessageDetail.mockReturnValue({
+      data: { ...mockDetail, status: 'Resolved' },
+      isLoading: false,
+    });
+    render(<DlqTimelineDrawer messageId={1} onClose={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Reopen' })).toBeInTheDocument();
   });
 });

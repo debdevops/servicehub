@@ -8,8 +8,14 @@ using ServiceHub.Shared.Results;
 namespace ServiceHub.Infrastructure.AI;
 
 /// <summary>
-/// Stub implementation of the AI service client.
-/// This is a placeholder for future Azure OpenAI or ML integration.
+/// Intentionally-inert stub for the AI service client contract.
+/// <para>
+/// ServiceHub makes <b>no external AI API calls of any kind</b>. Its DLQ/message pattern
+/// detection is heuristic and runs locally (client-side in the SPA and in local backend
+/// heuristics). This stub exists only to satisfy the <see cref="IAIServiceClient"/> seam;
+/// every method reports "not available" so callers degrade gracefully. It deliberately does
+/// not — and must not — reach out to any hosted model or remote endpoint.
+/// </para>
 /// </summary>
 public sealed class AIServiceClient : IAIServiceClient
 {

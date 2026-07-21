@@ -1,0 +1,114 @@
+# Configuration Reference
+
+ServiceHub is configured through the standard ASP.NET Core configuration stack. Every setting
+can be supplied by (in increasing order of precedence):
+
+1. `appsettings.json` (shipped defaults)
+2. `appsettings.{Environment}.json` — `Development`, `Production`, `Simulator`
+3. `appsettings.Local.json` (git-ignored; for local secrets)
+4. **Environment variables** (recommended for secrets and containers)
+
+Environment variables use `__` (double underscore) to represent nested keys. For example the
+key `Security:EncryptionKey` becomes the environment variable `SECURITY__ENCRYPTIONKEY`.
+
+> **Startup validation.** Several sections are validated when the process starts
+> (`ValidateOnStart`). If a value is structurally invalid — for example a negative
+> `RateLimit:MaxRequests`, or `Webhooks:Enabled=true` with no valid `Webhooks:Url` — ServiceHub
+> **fails fast with a clear message** instead of surfacing an opaque error later. A one-line,
+> secret-free summary of the effective configuration is also logged at startup.
+
+---
+
+## Security
+
+| Key | Env var | Default | Notes |
+|---|---|---|---|
+| `Security:EncryptionKey` | `SECURITY__ENCRYPTIONKEY` | placeholder | **Required in non-Development.** 32-byte random hex recommended (`openssl rand -hex 32`). The app **refuses to start** in non-Development if this is a placeholder/dev value. |
+| `Security:EnableConnectionStringEncryption` | `SECURITY__ENABLECONNECTIONSTRINGENCRYPTION` | `true` | AES-GCM-256 encryption of stored connection strings. |
+| `Security:Authentication:Enabled` | `SECURITY__AUTHENTICATION__ENABLED` | `true` | Enables `X-API-KEY` authentication. |
+| `Security:Authentication:ApiKeys` | — | `[]` | API key definitions (key + scopes). |
+| `Security:EasyAuth:Enabled` | `SECURITY__EASYAUTH__ENABLED` | `true` | Trust Azure App Service EasyAuth headers. Only unforgeable behind Azure's proxy — leave off elsewhere. |
+
+## Cloud providers
+
+| Key | Env var | Default | Notes |
+|---|---|---|---|
+| `CloudProviders:Aws:Enabled` | `CLOUDPROVIDERS__AWS__ENABLED` | `false` | Registers the AWS (preview) provider. Inert until an AWS namespace exists. |
+| `CloudProviders:Gcp:Enabled` | `CLOUDPROVIDERS__GCP__ENABLED` | `false` | Registers the GCP (preview) provider. Inert until a GCP namespace exists. |
+
+Azure is always registered as the live provider outside Simulator mode. Simulator mode registers all three unconditionally.
+
+## Persistence (data directory)
+
+| Key | Env var | Default | Notes |
+|---|---|---|---|
+| `DlqDatabase:DataDirectory` | `DLQDATABASE__DATADIRECTORY` | `/var/servicehub/data` (Prod) | Directory holding `servicehub-dlq.db` (SQLite: DLQ history, auto-replay rules, audit logs). |
+| `NamespaceRepository:DataDirectory` | `NAMESPACEREPOSITORY__DATADIRECTORY` | `/var/servicehub/data` (Prod) | Directory holding `servicehub-namespaces.json`. Must resolve under the app base or `/home`, `/var`, `/opt`, or the temp dir. |
+
+In the Docker image both default to `/var/servicehub/data`, exposed as a volume.
+
+## ServiceBus (client tuning) — *validated at startup*
+
+| Key | Default | Constraint |
+|---|---|---|
+| `ServiceBus:ConnectionCacheExpirationMinutes` | `60` | 1–1440 |
+| `ServiceBus:MaxConcurrentCalls` | `10` | 1–1000 |
+| `ServiceBus:PrefetchCount` | `100` | 0–10000 |
+| `ServiceBus:RetryCount` | `3` | 0–20 |
+| `ServiceBus:RetryDelayMs` | `1000` | 0–600000 |
+| `ServiceBus:MaxRetryDelayMs` | `30000` | ≥ `RetryDelayMs` |
+
+## Rate limiting (production only) — *validated at startup*
+
+| Key | Default | Constraint |
+|---|---|---|
+| `RateLimit:MaxRequests` | `300` (Prod: `60`) | ≥ 1 |
+| `RateLimit:WindowDuration` | `00:01:00` | > 0 |
+
+## Webhooks (DLQ-spike alerts) — *validated at startup*
+
+| Key | Default | Constraint |
+|---|---|---|
+| `Webhooks:Enabled` | `false` | — |
+| `Webhooks:Url` | `""` | Valid absolute http/https URL **when enabled** |
+| `Webhooks:DlqSpikeThreshold` | `10` | ≥ 1 |
+| `Webhooks:CooldownSeconds` | `300` | ≥ 0 |
+
+## Telemetry (opt-in, both disabled by default)
+
+| Key | Env var | Default | Notes |
+|---|---|---|---|
+| `OpenTelemetry:Enabled` | `OPENTELEMETRY__ENABLED` | `false` | Enables OpenTelemetry traces + metrics. |
+| `OpenTelemetry:Otlp:Endpoint` | `OPENTELEMETRY__OTLP__ENDPOINT` | — | OTLP collector endpoint (e.g. `http://otel-collector:4317`). Setting this (or the standard `OTEL_EXPORTER_OTLP_ENDPOINT`) also enables OpenTelemetry. |
+| `ApplicationInsights:ConnectionString` | `APPLICATIONINSIGHTS__CONNECTIONSTRING` | `""` | Enables Azure Application Insights when set. |
+
+`OpenTelemetry` and `ApplicationInsights` can be used together or independently. Neither ever emits connection strings, message payloads, or user input.
+
+When OpenTelemetry is enabled, ServiceHub also emits domain SLIs under the **`ServiceHub.Operations`** meter (e.g. `servicehub.fleet.overview.requests` and `servicehub.fleet.active_backlog`), alongside the standard ASP.NET Core / HTTP / runtime instrumentation.
+
+## AI / pattern detection
+
+| Key | Default | Notes |
+|---|---|---|
+| `AI:Enabled` | `false` | ServiceHub performs **no external AI calls**. Message/DLQ pattern detection is heuristic and runs locally (in the browser and in local backend heuristics). This flag gates that local feature only. |
+
+## CORS, security headers, health checks
+
+See `appsettings.json` for `Cors`, `SecurityHeaders`, and `HealthChecks` sections. Defaults are
+production-safe (deny-by-default CSP, HSTS, `nosniff`, `frame-ancestors 'none'`). In development
+a relaxed CSP is used automatically.
+
+---
+
+## Minimal production environment variables
+
+```bash
+ASPNETCORE_ENVIRONMENT=Production
+SECURITY__ENCRYPTIONKEY=<32-byte random hex>       # required — app won't start without it
+DLQDATABASE__DATADIRECTORY=/var/servicehub/data    # a persistent volume
+NAMESPACEREPOSITORY__DATADIRECTORY=/var/servicehub/data
+# Optional:
+# OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+# CLOUDPROVIDERS__AWS__ENABLED=true
+# CLOUDPROVIDERS__GCP__ENABLED=true
+```

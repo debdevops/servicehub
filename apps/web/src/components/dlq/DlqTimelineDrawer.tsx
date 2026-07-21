@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { X, Clock, AlertCircle, CheckCircle, XCircle, ArrowRight, FileText } from 'lucide-react';
-import { useDlqTimeline, useDlqMessageDetail, useUpdateDlqNotes } from '@/hooks/useDlqHistory';
+import { useDlqTimeline, useDlqMessageDetail, useUpdateDlqNotes, useUpdateDlqStatus } from '@/hooks/useDlqHistory';
 import { StatusBadge, CategoryBadge } from './StatusBadge';
 
 interface DlqTimelineDrawerProps {
@@ -53,6 +53,7 @@ export function DlqTimelineDrawer({ messageId, onClose }: DlqTimelineDrawerProps
 
   const [notesText, setNotesText] = useState(detail?.userNotes ?? '');
   const updateNotes = useUpdateDlqNotes();
+  const updateStatus = useUpdateDlqStatus();
 
   // Sync local state when detail changes (different message opened)
   useEffect(() => {
@@ -112,6 +113,43 @@ export function DlqTimelineDrawer({ messageId, onClose }: DlqTimelineDrawerProps
                       confidence={detail.categoryConfidence}
                       size="md"
                     />
+                  </div>
+
+                  {/* Triage actions — turn the DLQ history into a triage inbox */}
+                  <div className="flex items-center gap-2 flex-wrap" role="group" aria-label="Triage actions">
+                    {detail.status === 'Active' || detail.status === 'ReplayFailed' ? (
+                      <>
+                        <button
+                          onClick={() => updateStatus.mutate({ id: detail.id, status: 'Resolved' })}
+                          disabled={updateStatus.isPending}
+                          className="px-2.5 py-1 text-xs font-medium rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50"
+                        >
+                          Resolve
+                        </button>
+                        <button
+                          onClick={() => updateStatus.mutate({ id: detail.id, status: 'Archived' })}
+                          disabled={updateStatus.isPending}
+                          className="px-2.5 py-1 text-xs font-medium rounded-md bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 disabled:opacity-50"
+                        >
+                          Archive
+                        </button>
+                        <button
+                          onClick={() => updateStatus.mutate({ id: detail.id, status: 'Discarded' })}
+                          disabled={updateStatus.isPending}
+                          className="px-2.5 py-1 text-xs font-medium rounded-md bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 disabled:opacity-50"
+                        >
+                          Ignore
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => updateStatus.mutate({ id: detail.id, status: 'Active' })}
+                        disabled={updateStatus.isPending}
+                        className="px-2.5 py-1 text-xs font-medium rounded-md bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 disabled:opacity-50"
+                      >
+                        Reopen
+                      </button>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 text-sm">

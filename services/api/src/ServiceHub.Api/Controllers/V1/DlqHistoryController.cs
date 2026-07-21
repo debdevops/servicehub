@@ -260,6 +260,63 @@ public sealed class DlqHistoryController : ApiControllerBase
     }
 
     /// <summary>
+    /// Triages a DLQ message by transitioning its lifecycle status (Active, Archived,
+    /// Discarded, Resolved) — the action that turns the DLQ history into a triage inbox.
+    /// </summary>
+    /// <param name="id">The DLQ message ID.</param>
+    /// <param name="request">The status transition request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Updated DLQ message.</returns>
+    [HttpPost("history/{id:long}/status")]
+    [RequireScope(ApiKeyScopes.DlqWrite)]
+    [ProducesResponseType(typeof(DlqHistoryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DlqHistoryResponse>> UpdateStatus(
+        long id,
+        [FromBody] UpdateDlqStatusRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _historyService.UpdateStatusAsync(
+            OwnerId, id, request.Status, request.Notes, cancellationToken);
+        if (result.IsFailure)
+            return ToActionResult<DlqHistoryResponse>(result.Error);
+
+        return Ok(MapToResponse(result.Value));
+    }
+
+    /// <summary>Maps a persisted DLQ message to its API response shape.</summary>
+    private static DlqHistoryResponse MapToResponse(Core.Entities.DlqMessage m) => new(
+        Id: m.Id,
+        MessageId: m.MessageId,
+        SequenceNumber: m.SequenceNumber,
+        BodyHash: m.BodyHash,
+        NamespaceId: m.NamespaceId,
+        EntityName: m.EntityName,
+        EntityType: m.EntityType.ToString(),
+        EnqueuedTimeUtc: m.EnqueuedTimeUtc,
+        DeadLetterTimeUtc: m.DeadLetterTimeUtc,
+        DetectedAtUtc: m.DetectedAtUtc,
+        DeadLetterReason: m.DeadLetterReason,
+        DeadLetterErrorDescription: m.DeadLetterErrorDescription,
+        DeliveryCount: m.DeliveryCount,
+        ContentType: m.ContentType,
+        MessageSize: m.MessageSize,
+        BodyPreview: m.BodyPreview,
+        FailureCategory: m.FailureCategory.ToString(),
+        CategoryConfidence: m.CategoryConfidence,
+        Status: m.Status.ToString(),
+        ReplayedAt: m.ReplayedAt,
+        ReplaySuccess: m.ReplaySuccess,
+        ArchivedAt: m.ArchivedAt,
+        UserNotes: m.UserNotes,
+        CorrelationId: m.CorrelationId,
+        TopicName: m.TopicName,
+        ForensicRootCause: m.ForensicRootCause,
+        ForensicConfidence: m.ForensicConfidence,
+        ReplaySafety: m.ReplaySafety);
+
+    /// <summary>
     /// Exports DLQ messages in the specified format (JSON or CSV).
     /// </summary>
     /// <param name="format">Export format: json or csv (default: json).</param>

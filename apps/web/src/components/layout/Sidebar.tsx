@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   Inbox,
+  Layers,
   LayoutDashboard,
   Plus,
   AlertCircle,
@@ -527,6 +528,22 @@ export function Sidebar() {
                 {totalDlqCount}
               </span>
             )}
+          </NavLink>
+
+          {/* Fleet operations — cross-namespace "what died overnight?" overview */}
+          <NavLink
+            to={`${navPrefix}/fleet`}
+            className={({ isActive }) =>
+              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                isActive
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-300 font-medium'
+                  : 'bg-white hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 border-gray-200 hover:border-indigo-300'
+              }`
+            }
+          >
+            <Layers className="w-4 h-4 text-indigo-500" />
+            <span className="flex-1 text-left">Fleet Operations</span>
+            <span className="text-xs text-indigo-600 font-medium">All NS</span>
           </NavLink>
 
           {/* Multi-cloud overviews: every namespace (Azure, AWS, GCP) with its
