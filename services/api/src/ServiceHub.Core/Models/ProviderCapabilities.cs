@@ -32,6 +32,15 @@ namespace ServiceHub.Core.Models;
 /// Whether the provider exposes a queryable, cancellable scheduled/delayed-delivery feature.
 /// AWS SQS only offers a 15-minute send-time delay; GCP Pub/Sub has none.
 /// </param>
+/// <param name="SupportsRepeatablePeek">
+/// Whether the provider's peek is safe to call on a short, repeating interval (auto-refresh,
+/// Live Tail) without side effects that accumulate toward the entity's own redelivery limits.
+/// Azure Service Bus peek is genuinely non-destructive. GCP Pub/Sub peek re-queues via
+/// <c>ModifyAckDeadline(0)</c> with no consumer left blocked, matching the existing DLQ
+/// background scan's polling cadence. AWS SQS has no non-destructive peek at all — every call
+/// is a real receive that increments the message's <c>ReceiveCount</c>, so repeated polling
+/// can push a message over its queue's <c>maxReceiveCount</c> and dead-letter it by accident.
+/// </param>
 /// <param name="Notes">
 /// A short, human-readable explanation of the provider's constraints, suitable for a UI
 /// tooltip or disabled-state message.
@@ -41,6 +50,7 @@ public sealed record ProviderCapabilities(
     bool SupportsManualDeadLetter,
     bool SupportsPurge,
     bool SupportsScheduledMessages,
+    bool SupportsRepeatablePeek,
     string Notes)
 {
     /// <summary>Capabilities of Microsoft Azure Service Bus.</summary>
@@ -49,6 +59,7 @@ public sealed record ProviderCapabilities(
         SupportsManualDeadLetter: true,
         SupportsPurge: false,
         SupportsScheduledMessages: true,
+        SupportsRepeatablePeek: true,
         Notes: "Purge is not supported — the SDK has no reliable single-message delete by sequence number.");
 
     /// <summary>Capabilities of Amazon SQS/SNS.</summary>
@@ -57,7 +68,8 @@ public sealed record ProviderCapabilities(
         SupportsManualDeadLetter: true,
         SupportsPurge: true,
         SupportsScheduledMessages: false,
-        Notes: "Scheduled messages are not supported — SQS only offers DelaySeconds (max 15 minutes) at send time.");
+        SupportsRepeatablePeek: false,
+        Notes: "Scheduled messages are not supported — SQS only offers DelaySeconds (max 15 minutes) at send time. Repeated/live polling is also not supported — SQS has no non-destructive peek, so every call is a receive that counts toward the queue's maxReceiveCount.");
 
     /// <summary>Capabilities of Google Cloud Pub/Sub.</summary>
     public static readonly ProviderCapabilities Gcp = new(
@@ -65,5 +77,6 @@ public sealed record ProviderCapabilities(
         SupportsManualDeadLetter: false,
         SupportsPurge: true,
         SupportsScheduledMessages: false,
+        SupportsRepeatablePeek: true,
         Notes: "Message counts and manual dead-lettering are not supported — Pub/Sub has no count API and dead-lettering is policy-driven via MaxDeliveryAttempts. Scheduled messages are not supported either.");
 }

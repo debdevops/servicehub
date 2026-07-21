@@ -8,10 +8,12 @@ namespace ServiceHub.Core.DTOs.Responses;
 /// <param name="SupportsManualDeadLetter">Whether a message can be dead-lettered on demand.</param>
 /// <param name="SupportsPurge">Whether a single message can be permanently deleted by identity.</param>
 /// <param name="SupportsScheduledMessages">Whether scheduled/delayed messages are queryable and cancellable.</param>
+/// <param name="SupportsRepeatablePeek">Whether peek is safe to call on a short, repeating interval (auto-refresh, Live Tail) without accumulating toward the entity's own redelivery limits.</param>
 /// <param name="Notes">Human-readable explanation of the provider's constraints.</param>
 public sealed record ProviderCapabilitiesResponse(
     bool SupportsMessageCounts,
     bool SupportsManualDeadLetter,
     bool SupportsPurge,
     bool SupportsScheduledMessages,
+    bool SupportsRepeatablePeek,
     string Notes);

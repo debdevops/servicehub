@@ -80,8 +80,17 @@ public static readonly ProviderCapabilities Kafka = new(
     SupportsManualDeadLetter: false,   // no broker-native DLQ concept — consumers build their own
     SupportsPurge: false,              // no single-message delete by offset
     SupportsScheduledMessages: false,  // no native delayed delivery
-    Notes: "Kafka has no dead-letter, purge, or scheduling primitives — these are consumer-side patterns, not broker features.");
+    SupportsRepeatablePeek: false,     // consumer group offsets move on every fetch — no true non-destructive peek
+    Notes: "Kafka has no dead-letter, purge, scheduling, or non-destructive peek primitives — these are consumer-side patterns, not broker features.");
 ```
+
+`SupportsRepeatablePeek` gates Live Tail and the Messages page's auto-refresh: `true` means peeking
+this provider on a short repeating interval (every few seconds, indefinitely) is safe with no side
+effects that accumulate. Get this wrong in the unsafe direction and repeated polling can silently
+push messages toward the entity's own redelivery limit and dead-letter them — this is exactly what
+happened conceptually with AWS SQS, whose peek is actually a receive that increments
+`ReceiveCount`, and it is why AWS declares `SupportsRepeatablePeek: false` while Azure and GCP (whose
+peek implementations are genuinely re-queuing/non-destructive) declare `true`.
 
 Then your provider's `Capabilities` getter is one line: `Capabilities => ProviderCapabilities.Kafka;`
 

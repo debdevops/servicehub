@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { getProviderCapabilities, type ProviderCapabilitiesMap } from '@/lib/api/cloudBridge';
 
 const map: ProviderCapabilitiesMap = {
-  Azure: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: false, supportsScheduledMessages: true, notes: 'azure-notes' },
-  Aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, notes: 'aws-notes' },
-  Gcp: { supportsMessageCounts: false, supportsManualDeadLetter: false, supportsPurge: true, supportsScheduledMessages: false, notes: 'gcp-notes' },
+  Azure: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: false, supportsScheduledMessages: true, supportsRepeatablePeek: true, notes: 'azure-notes' },
+  Aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, notes: 'aws-notes' },
+  Gcp: { supportsMessageCounts: false, supportsManualDeadLetter: false, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: true, notes: 'gcp-notes' },
 };
 
 describe('getProviderCapabilities', () => {

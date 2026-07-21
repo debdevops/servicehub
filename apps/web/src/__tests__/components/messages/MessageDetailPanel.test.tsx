@@ -56,6 +56,7 @@ const mockCapabilitiesMap = {
     supportsManualDeadLetter: true,
     supportsPurge: false,
     supportsScheduledMessages: true,
+    supportsRepeatablePeek: true,
     notes: 'Purge is not supported — the SDK has no reliable single-message delete by sequence number.',
   },
   Aws: {
@@ -63,6 +64,7 @@ const mockCapabilitiesMap = {
     supportsManualDeadLetter: true,
     supportsPurge: true,
     supportsScheduledMessages: false,
+    supportsRepeatablePeek: false,
     notes: 'Scheduled messages are not supported.',
   },
   Gcp: {
@@ -70,6 +72,7 @@ const mockCapabilitiesMap = {
     supportsManualDeadLetter: false,
     supportsPurge: true,
     supportsScheduledMessages: false,
+    supportsRepeatablePeek: true,
     notes: 'Message counts and manual dead-lettering are not supported.',
   },
 };

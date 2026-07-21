@@ -71,6 +71,8 @@ public static class DependencyInjection
         services.TryAddScoped<IMessageSender, MessageSender>();
         services.TryAddScoped<IMessageReceiver, MessageReceiver>();
         services.AddScoped<IMessageOperationsService, MessageOperationsService>();
+        services.AddScoped<Core.Interfaces.ILiveTailSessionFactory, LiveTail.LiveTailSessionFactory>();
+        services.AddSingleton<Core.Interfaces.ILiveTailConnectionLimiter, LiveTail.LiveTailConnectionLimiter>();
 
         // Router depends on all registered ICloudMessagingProvider implementations.
         // Scoped (not singleton) because live providers such as AzureMessagingProvider are
@@ -146,13 +148,12 @@ public static class DependencyInjection
     }
 
     /// <summary>
-    /// Adds background services for message polling and anomaly detection.
+    /// Adds background services for anomaly detection, DLQ monitoring, and bulk operations.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddBackgroundWorkers(this IServiceCollection services)
     {
-        services.AddHostedService<MessagePollingWorker>();
         services.AddHostedService<AnomalyDetectionWorker>();
         services.AddHostedService<DlqMonitorWorker>();
         services.AddHostedService<BulkOperationWorker>();

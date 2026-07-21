@@ -390,8 +390,8 @@ For deep backend developer guidelines, refer to the [API README](services/api/RE
 
 ServiceHub is built depth-first: make one workflow excellent before adding the next surface.
 
-- **Now (MVP)** — the forensic core across Azure (GA) and AWS/GCP (preview): explore, search, DLQ investigation, replay, purge, send, auto-replay rules, simulator, live updates. Also shipped: bulk replay/purge with dry-run preview, a fleet dashboard across namespaces, and Slack/Teams-native alerts (DLQ spikes, bulk operation completion).
-- **Next** — operational habit: DLQ triage inbox, live tail.
+- **Now (MVP)** — the forensic core across Azure (GA) and AWS/GCP (preview): explore, search, DLQ investigation, replay, purge, send, auto-replay rules, simulator, live updates. Also shipped: bulk replay/purge with dry-run preview, a fleet dashboard across namespaces, Slack/Teams-native alerts (DLQ spikes, bulk operation completion), and Live Tail (real-time "tail -f" for a queue/subscription, Azure and GCP).
+- **Next** — operational habit: DLQ triage inbox.
 - **Later** — team & governance: SSO, role-based access, approval workflows for destructive operations, audit export.
 
 Have a use-case that should shape this? [Open a feature request](https://github.com/debdevops/servicehub/issues/new) — describe the problem, not just the solution.

@@ -46,9 +46,9 @@ const mockUseSendMessage = useSendMessage as ReturnType<typeof vi.fn>;
 const mockUseProviderCapabilities = useProviderCapabilities as ReturnType<typeof vi.fn>;
 
 const mockCapabilitiesMap = {
-  Azure: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: false, supportsScheduledMessages: true, notes: '' },
-  Aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, notes: 'SQS only offers DelaySeconds (max 15 minutes) at send time.' },
-  Gcp: { supportsMessageCounts: false, supportsManualDeadLetter: false, supportsPurge: true, supportsScheduledMessages: false, notes: 'Pub/Sub has no per-message scheduling.' },
+  Azure: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: false, supportsScheduledMessages: true, supportsRepeatablePeek: true, notes: '' },
+  Aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, notes: 'SQS only offers DelaySeconds (max 15 minutes) at send time.' },
+  Gcp: { supportsMessageCounts: false, supportsManualDeadLetter: false, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: true, notes: 'Pub/Sub has no per-message scheduling.' },
 };
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────

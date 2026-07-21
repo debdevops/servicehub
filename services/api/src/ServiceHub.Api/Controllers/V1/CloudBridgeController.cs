@@ -99,6 +99,7 @@ public sealed class CloudBridgeController : ApiControllerBase
         SupportsManualDeadLetter: c.SupportsManualDeadLetter,
         SupportsPurge: c.SupportsPurge,
         SupportsScheduledMessages: c.SupportsScheduledMessages,
+        SupportsRepeatablePeek: c.SupportsRepeatablePeek,
         Notes: c.Notes);
 
     // -------------------------------------------------------------------------

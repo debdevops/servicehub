@@ -55,7 +55,7 @@ const mockNamespaces = [
 ];
 
 const mockCapabilitiesMap = {
-  Aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, notes: '' },
+  Aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, notes: '' },
 };
 
 const mockDlqData = {

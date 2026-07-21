@@ -1,6 +1,10 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Security;
+using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
@@ -20,8 +24,22 @@ namespace ServiceHub.Api.Controllers.V1;
 [Tags("Messages")]
 public sealed class MessagesController : ApiControllerBase
 {
+    private static readonly TimeSpan LiveTailPollInterval = TimeSpan.FromSeconds(3);
+
+    // Auto-closes an idle-forgotten browser tab's stream rather than polling a provider
+    // forever; the frontend shows a "reconnect" affordance when this fires.
+    private static readonly TimeSpan LiveTailMaxSessionDuration = TimeSpan.FromMinutes(30);
+
+    private static readonly JsonSerializerOptions LiveTailSerializerOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
+
     private readonly IMessageOperationsService _messageOperationsService;
     private readonly INamespaceRepository _namespaceRepository;
+    private readonly CloudProviderRouter _providerRouter;
+    private readonly ILiveTailSessionFactory _liveTailSessionFactory;
+    private readonly ILiveTailConnectionLimiter _liveTailConnectionLimiter;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<MessagesController> _logger;
 
@@ -30,16 +48,25 @@ public sealed class MessagesController : ApiControllerBase
     /// </summary>
     /// <param name="messageOperationsService">The provider-aware message operations service.</param>
     /// <param name="namespaceRepository">The namespace repository.</param>
+    /// <param name="providerRouter">Resolves a namespace's provider to check Live Tail eligibility.</param>
+    /// <param name="liveTailSessionFactory">Creates Live Tail polling sessions.</param>
+    /// <param name="liveTailConnectionLimiter">Caps concurrent Live Tail connections.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="auditLogger">The security audit logger.</param>
     public MessagesController(
         IMessageOperationsService messageOperationsService,
         INamespaceRepository namespaceRepository,
+        CloudProviderRouter providerRouter,
+        ILiveTailSessionFactory liveTailSessionFactory,
+        ILiveTailConnectionLimiter liveTailConnectionLimiter,
         ILogger<MessagesController> logger,
         IAuditLogger? auditLogger = null)
     {
         _messageOperationsService = messageOperationsService ?? throw new ArgumentNullException(nameof(messageOperationsService));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
+        _providerRouter = providerRouter ?? throw new ArgumentNullException(nameof(providerRouter));
+        _liveTailSessionFactory = liveTailSessionFactory ?? throw new ArgumentNullException(nameof(liveTailSessionFactory));
+        _liveTailConnectionLimiter = liveTailConnectionLimiter ?? throw new ArgumentNullException(nameof(liveTailConnectionLimiter));
         _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -560,5 +587,138 @@ public sealed class MessagesController : ApiControllerBase
 
         _logger.LogInformation("Message {SequenceNumber} purged successfully", sequenceNumber);
         return Accepted();
+    }
+
+    /// <summary>
+    /// Streams newly-arrived messages for one queue or subscription as Server-Sent Events —
+    /// "tail -f" for live incident debugging. Read-only: uses the same
+    /// <see cref="IMessageOperationsService.PeekMessagesAsync"/> every other message view
+    /// uses, just on a short repeating interval, so it is safe on Production namespaces.
+    /// </summary>
+    /// <remarks>
+    /// Not available for providers whose peek isn't safe to repeat (see
+    /// <see cref="Core.Models.ProviderCapabilities.SupportsRepeatablePeek"/>) — AWS SQS has no
+    /// non-destructive peek, so polling it on an interval would push messages toward their
+    /// queue's <c>maxReceiveCount</c> and risk accidental dead-lettering.
+    /// </remarks>
+    /// <param name="namespaceId">The namespace ID.</param>
+    /// <param name="entityName">The queue or topic name.</param>
+    /// <param name="subscriptionName">Optional subscription name for topic subscriptions.</param>
+    /// <param name="fromDeadLetter">Whether to tail the dead-letter queue instead of the active entity.</param>
+    /// <param name="cancellationToken">Bound to the request abort token.</param>
+    /// <response code="200">Stream opened.</response>
+    /// <response code="400">Missing entity name.</response>
+    /// <response code="404">Namespace not found, not owned by the caller, or its provider is not registered.</response>
+    /// <response code="409">The namespace's provider does not support repeatable peek (AWS).</response>
+    /// <response code="503">The concurrent Live Tail session cap has been reached.</response>
+    [RequireScope(ApiKeyScopes.MessagesPeek)]
+    [HttpGet("live-tail")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task LiveTail(
+        [FromQuery] Guid namespaceId,
+        [FromQuery] string entityName,
+        [FromQuery] string? subscriptionName,
+        [FromQuery] bool fromDeadLetter,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(entityName))
+        {
+            Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        var ns = namespaceResult.Value;
+        if (!_providerRouter.IsRegistered(ns.Provider))
+        {
+            Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        var provider = _providerRouter.Resolve(ns.Provider);
+        if (!provider.Capabilities.SupportsRepeatablePeek)
+        {
+            Response.StatusCode = StatusCodes.Status409Conflict;
+            return;
+        }
+
+        if (!_liveTailConnectionLimiter.TryAcquire())
+        {
+            Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            return;
+        }
+
+        try
+        {
+            var session = _liveTailSessionFactory.Create(namespaceId, entityName, subscriptionName, fromDeadLetter);
+
+            Response.Headers.ContentType = "text/event-stream; charset=utf-8";
+            Response.Headers.CacheControl = "no-cache, no-store";
+            Response.Headers["X-Accel-Buffering"] = "no";
+            HttpContext.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+
+            await WriteAndFlushAsync(": connected\n\n", cancellationToken);
+
+            var sessionStartUtc = DateTimeOffset.UtcNow;
+
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                if (DateTimeOffset.UtcNow - sessionStartUtc > LiveTailMaxSessionDuration)
+                {
+                    await WriteAndFlushAsync(": session-expired\n\n", cancellationToken);
+                    break;
+                }
+
+                var pollResult = await session.PollNextAsync(cancellationToken);
+
+                if (pollResult.IsFailure)
+                {
+                    _logger.LogWarning(
+                        "Live Tail poll failed for namespace {NamespaceId} entity {EntityName}: {Error}",
+                        namespaceId,
+                        LogRedactor.SanitiseForLog(entityName),
+                        pollResult.Error.Message);
+                    await WriteAndFlushAsync(": poll-error\n\n", cancellationToken);
+                }
+                else if (pollResult.Value.Count > 0)
+                {
+                    foreach (var message in pollResult.Value)
+                    {
+                        var payload = JsonSerializer.Serialize(MapToResponse(message), LiveTailSerializerOptions);
+                        await WriteAndFlushAsync($"data: {payload}\n\n", cancellationToken);
+                    }
+                }
+                else
+                {
+                    await WriteAndFlushAsync(": heartbeat\n\n", cancellationToken);
+                }
+
+                await Task.Delay(LiveTailPollInterval, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Client disconnected — normal SSE lifecycle, not an error.
+        }
+        finally
+        {
+            _liveTailConnectionLimiter.Release();
+        }
+    }
+
+    private async Task WriteAndFlushAsync(string frame, CancellationToken cancellationToken)
+    {
+        await Response.WriteAsync(frame, cancellationToken);
+        await Response.Body.FlushAsync(cancellationToken);
     }
 }

@@ -23,6 +23,7 @@ export interface ProviderCapabilities {
   supportsManualDeadLetter: boolean;
   supportsPurge: boolean;
   supportsScheduledMessages: boolean;
+  supportsRepeatablePeek: boolean;
   notes: string;
 }
 

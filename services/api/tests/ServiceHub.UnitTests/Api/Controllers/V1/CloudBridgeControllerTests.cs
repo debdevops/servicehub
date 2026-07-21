@@ -86,6 +86,10 @@ public sealed class CloudBridgeControllerTests
         capabilities["Aws"].SupportsPurge.Should().BeTrue();
         capabilities["Gcp"].SupportsMessageCounts.Should().BeFalse();
         capabilities["Gcp"].SupportsManualDeadLetter.Should().BeFalse();
+
+        capabilities["Azure"].SupportsRepeatablePeek.Should().BeTrue();
+        capabilities["Aws"].SupportsRepeatablePeek.Should().BeFalse();
+        capabilities["Gcp"].SupportsRepeatablePeek.Should().BeTrue();
     }
 
     [Theory]

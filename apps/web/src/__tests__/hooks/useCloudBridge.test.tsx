@@ -65,9 +65,9 @@ describe('useProviderCapabilities', () => {
 
   it('returns the capabilities map on success', async () => {
     const capabilitiesMap = {
-      Azure: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: false, supportsScheduledMessages: true, notes: '' },
-      Aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, notes: '' },
-      Gcp: { supportsMessageCounts: false, supportsManualDeadLetter: false, supportsPurge: true, supportsScheduledMessages: false, notes: '' },
+      Azure: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: false, supportsScheduledMessages: true, supportsRepeatablePeek: true, notes: '' },
+      Aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, notes: '' },
+      Gcp: { supportsMessageCounts: false, supportsManualDeadLetter: false, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: true, notes: '' },
     };
     mockGetCapabilities.mockResolvedValue(capabilitiesMap);
     const { result } = renderHook(() => useProviderCapabilities(), { wrapper: createWrapper() });

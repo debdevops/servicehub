@@ -264,6 +264,57 @@ with a persisted job row polled to completion instead of one long-lived request.
 
 ---
 
+## 8. Live Tail — an on-demand poll loop, not a background worker
+
+```mermaid
+%%{init: {'theme':'dark'}}%%
+graph LR
+    UI["LiveTailPanel<br/>(opens on demand)"] -->|"GET .../live-tail<br/>(SSE)"| C["MessagesController"]
+    C -->|"Capabilities.SupportsRepeatablePeek?"| CPR["CloudProviderRouter"]
+    CPR -->|"false → 409"| UI
+    C -->|"TryAcquire()"| LIM["ILiveTailConnectionLimiter<br/>(singleton, cap 20)"]
+    C -->|"Create session"| F["ILiveTailSessionFactory"]
+    F --> S["ILiveTailSession<br/>(per-connection state)"]
+    C -->|"poll every 3s"| S
+    S -->|"PeekMessagesAsync"| IMOS["IMessageOperationsService"]
+    S -->|"new messages only"| C
+    C -->|"data: frame"| UI
+```
+
+`MessagesPage` already had a 7-second auto-refresh poll, but it's a full re-fetch (resets
+pagination, no incremental "just arrived" feed) and — critically — is disabled outright for AWS
+namespaces, because SQS's peek is a real receive that increments `ReceiveCount`. Live Tail is a
+genuinely different capability: a `tail -f`-style incremental stream, scoped to one queue or
+subscription, that only runs while a user has explicitly opened it.
+
+- **On-demand and connection-scoped, not a background worker**: this replaced
+  `MessagePollingWorker`, a `BackgroundService` stub that had been registered and running on a 30s
+  timer since an earlier phase without doing anything (`services/api/src/ServiceHub.Infrastructure
+  /BackgroundServices/` — since removed). A global always-on scan of every namespace's every queue
+  was the wrong shape for this feature: expensive against real cloud APIs, and the previous
+  `DlqMonitorWorker` (§4) already owns the "continuously scan everything" background pattern for a
+  different purpose (DLQ detection). Live Tail's `ILiveTailSession` instead lives only for the
+  duration of one SSE connection — state (which messages have been seen) is held in memory per
+  session and discarded when the connection closes; nothing is persisted.
+- **Capability-gated, not provider-conditional**: `ProviderCapabilities.SupportsRepeatablePeek`
+  (`docs/EXTENDING-PROVIDERS.md`) is `true` for Azure and GCP (whose peek implementations are
+  genuinely non-destructive or re-queuing) and `false` for AWS — checked once via
+  `CloudProviderRouter.Resolve(...).Capabilities`, the same pattern §7 uses for `SupportsPurge`.
+  The endpoint returns `409` rather than silently starting a session that would risk dead-lettering
+  a customer's messages.
+- **Dedup by `MessageId`, not sequence number**: unlike the DLQ monitor (§4), which uses Azure's
+  stable sequence number as a dedup key and falls back to `MessageId` for AWS/GCP,
+  `LiveTailSession` always dedups on `MessageId` — simpler, and safe across all three providers
+  since sequence-number stability is provider-specific while `MessageId` is a peek-time constant
+  everywhere.
+- **No auto-reconnect on the client**: unlike the platform event stream (§4's SSE consumer,
+  `useEventStream`), `connectLiveTail` does not retry after a drop — Live Tail is an explicit,
+  opt-in viewing session, and silently reconnecting in the background after the user has moved on
+  would keep polling a cloud provider with no one watching. A session also self-expires after 30
+  minutes server-side as a backstop against a forgotten open browser tab.
+
+---
+
 ## Sources checked for this document
 
 `MessagesController.cs`, `QueuesController.cs`, `TopicsController.cs`, `CrossCloudTraceController.cs`,
@@ -286,3 +337,10 @@ than hardcoding Azure, contradicting the original 2026-07-07 text this doc shipp
 `IBulkOperationQueue.cs`, `RulesController.cs` (`ReplayAll`) — verified live end-to-end against
 Simulator-mode Azure/AWS/GCP namespaces in a running Docker container (preview, create, poll to
 completion, list, idempotent cancel).
+
+**§8 added 2026-07-21**: `MessagesController.cs` (`LiveTail` action), `LiveTailSession.cs`,
+`LiveTailSessionFactory.cs`, `LiveTailConnectionLimiter.cs`, `ILiveTailSession.cs`,
+`ILiveTailConnectionLimiter.cs`, `ProviderCapabilities.cs` — verified live against a running
+Docker container in Simulator mode: Azure and GCP streams open and emit heartbeats, AWS returns
+409, and a message sent mid-session via `POST .../queues/orders/messages` appeared as a `data:`
+frame within one poll cycle.

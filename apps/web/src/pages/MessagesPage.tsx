@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect, useRef, useDeferredValue } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause } from 'lucide-react';
-import { MessageList, MessageDetailPanel, type QueueTab } from '@/components/messages';
+import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause, Radio } from 'lucide-react';
+import { MessageList, MessageDetailPanel, LiveTailPanel, type QueueTab } from '@/components/messages';
 import { AwsTopicFanout } from '@/components/aws/AwsTopicFanout';
 import { AIFindingsDropdown } from '@/components/ai';
 import { MessageListSkeleton } from '@/components/messages/MessageListSkeleton';
@@ -13,6 +13,8 @@ import { useClientSideInsights, useInsightsSummary } from '@/hooks/useInsights';
 import { useQueues } from '@/hooks/useQueues';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useNamespaces } from '@/hooks/useNamespaces';
+import { useProviderCapabilities } from '@/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@/lib/api/cloudBridge';
 import type { Message, ContentType } from '@/lib/mockData';
 import type { Message as APIMessage, CloudProviderType } from '@/lib/api/types';
 import toast from 'react-hot-toast';
@@ -180,6 +182,13 @@ export function MessagesPage() {
       setAutoRefreshEnabled(false);
     }
   }, [isAwsNamespace, namespaceId]);
+
+  // Live Tail
+  const [liveTailOpen, setLiveTailOpen] = useState(false);
+  const currentProvider = namespaces?.find(ns => ns.id === namespaceId)?.cloudProvider;
+  const { data: capabilitiesMap } = useProviderCapabilities();
+  const supportsRepeatablePeek = getProviderCapabilities(capabilitiesMap, currentProvider)?.supportsRepeatablePeek ?? true;
+  const canLiveTail = supportsRepeatablePeek && !isAwsTopicFanout && !!entityName;
 
   // Pagination constants and state
   const BATCH_SIZE = 50; // Load 50 messages per batch for optimal performance
@@ -664,7 +673,7 @@ export function MessagesPage() {
         </button>
 
         {/* Refresh */}
-        <button 
+        <button
           onClick={handleRefresh}
           className="flex items-center gap-2 px-3 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors relative"
           aria-label="Refresh message list"
@@ -678,6 +687,19 @@ export function MessagesPage() {
             </span>
           )}
         </button>
+
+        {/* Live Tail */}
+        {canLiveTail && (
+          <button
+            onClick={() => setLiveTailOpen(true)}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium transition-colors"
+            aria-label="Open Live Tail"
+            title="Watch new messages arrive in real time"
+          >
+            <Radio className="w-4 h-4" />
+            <span className="hidden sm:inline">Live Tail</span>
+          </button>
+        )}
       </div>
 
       {/* Evidence Filter Banner */}
@@ -749,12 +771,21 @@ export function MessagesPage() {
         />
 
         {/* Right: Detail Panel */}
-        <MessageDetailPanel 
-          message={selectedMessage} 
+        <MessageDetailPanel
+          message={selectedMessage}
           onViewPattern={handleViewEvidence}
           insights={displayInsights}
         />
       </div>
+
+      <LiveTailPanel
+        isOpen={liveTailOpen}
+        onClose={() => setLiveTailOpen(false)}
+        namespaceId={namespaceId || ''}
+        entityName={entityType === 'topic' ? (topicName || '') : (queueName || '')}
+        subscriptionName={entityType === 'topic' ? subscriptionName || undefined : undefined}
+        fromDeadLetter={queueTab === 'deadletter'}
+      />
     </div>
   );
 }
