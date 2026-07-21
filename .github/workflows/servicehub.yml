@@ -370,7 +370,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Scan image for vulnerabilities (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: servicehub:ci
           format: table
@@ -380,7 +380,7 @@ jobs:
 
       - name: Generate CycloneDX SBOM from image
         if: always()
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: servicehub:ci
           scan-type: image
