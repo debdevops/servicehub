@@ -50,7 +50,7 @@ export function ConnectPage() {
         return;
       }
       if (parsed?.type !== 'service_account') {
-        toast.error('That JSON is not a service account key (expected "type": "service_account").');
+        toast.error('That JSON is not a service account key (the type field must be service_account).');
         if (gcpKeyFileInputRef.current) gcpKeyFileInputRef.current.value = '';
         return;
       }

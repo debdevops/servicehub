@@ -229,7 +229,15 @@ export default function FleetPage() {
                         <tr
                           key={n.namespaceId}
                           onClick={() => goToNamespace(n)}
-                          className="border-b border-gray-50 hover:bg-indigo-50/40 cursor-pointer"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              goToNamespace(n);
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          className="border-b border-gray-50 hover:bg-indigo-50/40 cursor-pointer focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
                         >
                           <td className="px-4 py-2.5">
                             <div className="flex items-center gap-2">

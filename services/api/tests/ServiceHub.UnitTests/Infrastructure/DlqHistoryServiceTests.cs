@@ -571,6 +571,37 @@ public class DlqHistoryServiceTests : IDisposable
         result.Value.UserNotes.Should().Be("fixed upstream");
     }
 
+    [Fact]
+    public async Task UpdateStatusAsync_AppendsNotes_ToExistingNotes()
+    {
+        var msg = CreateMessage(seq: 4, status: DlqMessageStatus.Active);
+        msg.UserNotes = "investigating";
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.UpdateStatusAsync(
+            TestConstants.TestOwnerId, msg.Id, DlqMessageStatus.Resolved, "fixed upstream");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.UserNotes.Should().Be($"investigating{Environment.NewLine}fixed upstream");
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_ArchivedToResolved_ClearsArchivedAt()
+    {
+        var msg = CreateMessage(seq: 5, status: DlqMessageStatus.Archived);
+        msg.ArchivedAt = DateTimeOffset.UtcNow.AddDays(-1);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.UpdateStatusAsync(
+            TestConstants.TestOwnerId, msg.Id, DlqMessageStatus.Resolved);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ArchivedAt.Should().BeNull();
+        result.Value.ResolvedAt.Should().NotBeNull();
+    }
+
     [Theory]
     [InlineData(DlqMessageStatus.Replayed)]
     [InlineData(DlqMessageStatus.ReplayFailed)]

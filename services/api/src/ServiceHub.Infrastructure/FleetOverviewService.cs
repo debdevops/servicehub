@@ -163,7 +163,7 @@ public sealed class FleetOverviewService : IFleetOverviewService
             var overview = new FleetOverview(
                 GeneratedAt: now,
                 WindowHours: windowHours,
-                NamespaceCount: namespaces.Count,
+                NamespaceCount: namespaceHealth.Count,
                 TotalActive: ordered.Sum(n => n.ActiveCount),
                 TotalNewInWindow: ordered.Sum(n => n.NewInWindow),
                 TotalResolvedInWindow: ordered.Sum(n => n.ResolvedInWindow),

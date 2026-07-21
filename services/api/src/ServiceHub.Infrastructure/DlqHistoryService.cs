@@ -275,14 +275,18 @@ public sealed class DlqHistoryService : IDlqHistoryService
             var now = DateTimeOffset.UtcNow;
             message.Status = newStatus;
 
+            // Each transition stamps its own timestamp and clears the other, so a message
+            // moving e.g. Archived -> Resolved doesn't retain a stale ArchivedAt.
             switch (newStatus)
             {
                 case DlqMessageStatus.Archived:
                     message.ArchivedAt = now;
+                    message.ResolvedAt = null;
                     break;
                 case DlqMessageStatus.Resolved:
                 case DlqMessageStatus.Discarded:
                     message.ResolvedAt = now;
+                    message.ArchivedAt = null;
                     break;
                 case DlqMessageStatus.Active:
                     // Re-opening a triaged message: clear the resolution stamps.
@@ -292,7 +296,11 @@ public sealed class DlqHistoryService : IDlqHistoryService
             }
 
             if (!string.IsNullOrWhiteSpace(notes))
-                message.UserNotes = notes;
+            {
+                message.UserNotes = string.IsNullOrWhiteSpace(message.UserNotes)
+                    ? notes
+                    : $"{message.UserNotes}{Environment.NewLine}{notes}";
+            }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
 

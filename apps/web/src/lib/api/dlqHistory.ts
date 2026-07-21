@@ -25,6 +25,7 @@ export interface DlqHistoryItem {
   replayedAt: string | null;
   replaySuccess: boolean | null;
   archivedAt: string | null;
+  resolvedAt: string | null;
   userNotes: string | null;
   correlationId: string | null;
   topicName: string | null;
