@@ -42,7 +42,13 @@ export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean 
             return await messagesApi.list({ ...params, queueOrTopicName: sanitizedName });
           } catch (error: unknown) {
             const status = (error as ApiError)?.response?.status;
-            if (status === 404 || status === 502 || status === 503) {
+            // Only 404 ("this queue/topic doesn't exist") is a legitimate empty state.
+            // 502/503 mean the provider call itself failed (e.g. an unsupported GCP
+            // Pub/Sub subscription type, or a disabled provider flag) — swallowing those
+            // into an empty list is indistinguishable from "no messages" and hides an
+            // actionable backend error from the user. Let them propagate so the page's
+            // error state (which reads the ProblemDetails "detail") can show it.
+            if (status === 404) {
               return {
                 items: [],
                 totalCount: 0,

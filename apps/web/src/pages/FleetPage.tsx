@@ -20,9 +20,9 @@ const WINDOW_OPTIONS = [
 ];
 
 const severityStyles: Record<FleetHealthSeverity, { dot: string; text: string; label: string }> = {
-  Critical: { dot: 'bg-red-500', text: 'text-red-700', label: 'Critical' },
-  Warning: { dot: 'bg-amber-500', text: 'text-amber-700', label: 'Warning' },
-  Healthy: { dot: 'bg-emerald-500', text: 'text-emerald-700', label: 'Healthy' },
+  critical: { dot: 'bg-red-500', text: 'text-red-700', label: 'Critical' },
+  warning: { dot: 'bg-amber-500', text: 'text-amber-700', label: 'Warning' },
+  healthy: { dot: 'bg-emerald-500', text: 'text-emerald-700', label: 'Healthy' },
 };
 
 function relativeAge(iso: string | null): string {
@@ -64,7 +64,7 @@ export default function FleetPage() {
   const { data, isLoading, isError, refetch, isFetching } = useFleetOverview(windowHours);
 
   const atRisk = useMemo(
-    () => (data?.namespaces ?? []).filter((n) => n.severity !== 'Healthy').length,
+    () => (data?.namespaces ?? []).filter((n) => n.severity !== 'healthy').length,
     [data]
   );
 

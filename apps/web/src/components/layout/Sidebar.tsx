@@ -510,7 +510,10 @@ export function Sidebar() {
         </button>
         {quickAccessOpen && (
         <nav className="space-y-1 px-3 pb-3">
-          {/* Dashboard - moved to top */}
+          {/* ── Overview: where a namespace-per-card overview and the
+              cross-namespace "what died overnight?" rollup live together,
+              since both answer "how's everything doing right now?" ── */}
+          <div className="pt-1 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Overview</div>
           <NavLink
             to={`${navPrefix}/dashboard`}
             className={({ isActive }) =>
@@ -522,15 +525,13 @@ export function Sidebar() {
             }
           >
             <LayoutDashboard className="w-4 h-4 text-indigo-500" />
-            <span className="flex-1 text-left">Dashboard</span>
+            <span className="flex-1 text-left">Namespace Overview</span>
             {totalDlqCount > 0 && (
               <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium">
                 {totalDlqCount}
               </span>
             )}
           </NavLink>
-
-          {/* Fleet operations — cross-namespace "what died overnight?" overview */}
           <NavLink
             to={`${navPrefix}/fleet`}
             className={({ isActive }) =>
@@ -542,12 +543,12 @@ export function Sidebar() {
             }
           >
             <Layers className="w-4 h-4 text-indigo-500" />
-            <span className="flex-1 text-left">Fleet Operations</span>
+            <span className="flex-1 text-left">Fleet Health</span>
             <span className="text-xs text-indigo-600 font-medium">All NS</span>
           </NavLink>
 
-          {/* Multi-cloud overviews: every namespace (Azure, AWS, GCP) with its
-              entities as clickable widgets — no provider is favoured. */}
+          {/* ── Browse: cross-cloud message inspection — the core workflow ── */}
+          <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Browse across clouds</div>
           <button
             onClick={() => navigate(`${navPrefix}/messages-overview?tab=active`)}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border border-gray-200 hover:border-sky-300 shadow-sm"
@@ -565,6 +566,35 @@ export function Sidebar() {
             <span className="text-xs text-red-600 font-medium">All Clouds</span>
           </button>
           <NavLink
+            to={`${navPrefix}/scheduled`}
+            className={({ isActive }) =>
+              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                isActive
+                  ? 'bg-sky-50 text-sky-700 border-sky-300 font-medium'
+                  : 'bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border-gray-200 hover:border-sky-300'
+              }`
+            }
+          >
+            <Clock className="w-4 h-4 text-sky-500" />
+            <span className="flex-1 text-left">Scheduled Messages</span>
+          </NavLink>
+          <NavLink
+            to={`${navPrefix}/cloud-bridge`}
+            className={({ isActive }) =>
+              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                isActive
+                  ? 'bg-blue-50 text-blue-700 border-blue-300'
+                  : 'bg-white hover:bg-blue-50 text-gray-700 hover:text-blue-700 border-gray-200 hover:border-blue-300'
+              }`
+            }
+          >
+            <Cloud className="w-4 h-4 text-blue-500" />
+            <span className="flex-1 text-left">Cloud Bridge</span>
+          </NavLink>
+
+          {/* ── Diagnose & automate: root-causing and acting on DLQ failures ── */}
+          <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Diagnose &amp; automate</div>
+          <NavLink
             to={activeNamespace ? `${navPrefix}/dlq-history?namespace=${activeNamespace.id}` : `${navPrefix}/dlq-history`}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-purple-50 text-gray-700 hover:text-purple-700 border border-gray-200 hover:border-purple-300 shadow-sm"
           >
@@ -577,30 +607,7 @@ export function Sidebar() {
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-amber-50 text-gray-700 hover:text-amber-700 border border-gray-200 hover:border-amber-300 shadow-sm"
           >
             <Zap className="w-4 h-4 text-amber-500" />
-            <span className="flex-1 text-left">Auto-Replay</span>
-            <span className="text-xs text-amber-600 font-medium">Rules</span>
-          </NavLink>
-          <NavLink
-            to={`${navPrefix}/health`}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border border-gray-200 hover:border-emerald-300 shadow-sm"
-          >
-            <Activity className="w-4 h-4 text-emerald-500" />
-            <span className="flex-1 text-left">System Health</span>
-            <span className="text-xs text-emerald-600 font-medium">Status</span>
-          </NavLink>
-          <NavLink
-            to={`${navPrefix}/scheduled`}
-            className={({ isActive }) =>
-              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-                isActive
-                  ? 'bg-sky-50 text-sky-700 border-sky-300 font-medium'
-                  : 'bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border-gray-200 hover:border-sky-300'
-              }`
-            }
-          >
-            <Clock className="w-4 h-4 text-sky-500" />
-            <span className="flex-1 text-left">Scheduled</span>
-            <span className="text-xs text-sky-600 font-medium">View</span>
+            <span className="flex-1 text-left">Auto-Replay Rules</span>
           </NavLink>
           <NavLink
             to={`${navPrefix}/cross-cloud-trace`}
@@ -615,26 +622,16 @@ export function Sidebar() {
             <Route className="w-4 h-4 text-violet-500" />
             <span className="flex-1 text-left">Multi-Cloud Trace</span>
           </NavLink>
+
+          {/* ── Platform: operator/governance concerns, not day-to-day debugging ── */}
+          <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Platform</div>
           <NavLink
-            to={`${navPrefix}/help`}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border border-gray-200 hover:border-primary-300 shadow-sm"
+            to={`${navPrefix}/health`}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border border-gray-200 hover:border-emerald-300 shadow-sm"
           >
-            <HelpCircle className="w-4 h-4 text-primary-500" />
-            <span className="flex-1 text-left">Help &amp; Guide</span>
-            <span className="text-xs text-primary-600 font-medium">?</span>
-          </NavLink>
-          <NavLink
-            to={`${navPrefix}/security`}
-            className={({ isActive }) =>
-              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-                isActive
-                  ? 'bg-green-50 text-green-700 border-green-300'
-                  : 'bg-white hover:bg-green-50 text-gray-700 hover:text-green-700 border-gray-200 hover:border-green-300'
-              }`
-            }
-          >
-            <Shield className="w-4 h-4 text-green-500" />
-            <span className="flex-1 text-left">Security &amp; Privacy</span>
+            <Activity className="w-4 h-4 text-emerald-500" />
+            <span className="flex-1 text-left">System Health</span>
+            <span className="text-xs text-emerald-600 font-medium">Status</span>
           </NavLink>
           <NavLink
             to={`${navPrefix}/audit`}
@@ -651,17 +648,28 @@ export function Sidebar() {
             <span className="text-xs text-violet-600 font-medium">Logs</span>
           </NavLink>
           <NavLink
-            to={`${navPrefix}/cloud-bridge`}
+            to={`${navPrefix}/security`}
             className={({ isActive }) =>
               `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
                 isActive
-                  ? 'bg-blue-50 text-blue-700 border-blue-300'
-                  : 'bg-white hover:bg-blue-50 text-gray-700 hover:text-blue-700 border-gray-200 hover:border-blue-300'
+                  ? 'bg-green-50 text-green-700 border-green-300'
+                  : 'bg-white hover:bg-green-50 text-gray-700 hover:text-green-700 border-gray-200 hover:border-green-300'
               }`
             }
           >
-            <Cloud className="w-4 h-4 text-blue-500" />
-            <span className="flex-1 text-left">Cloud Bridge</span>
+            <Shield className="w-4 h-4 text-green-500" />
+            <span className="flex-1 text-left">Security &amp; Privacy</span>
+          </NavLink>
+
+          {/* ── Support ── */}
+          <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Support</div>
+          <NavLink
+            to={`${navPrefix}/help`}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border border-gray-200 hover:border-primary-300 shadow-sm"
+          >
+            <HelpCircle className="w-4 h-4 text-primary-500" />
+            <span className="flex-1 text-left">Help &amp; Guide</span>
+            <span className="text-xs text-primary-600 font-medium">?</span>
           </NavLink>
           {isSimulator && (
             <NavLink

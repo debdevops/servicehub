@@ -43,7 +43,7 @@ const sampleOverview = {
       topEntityCount: 40,
       topCategory: 'PoisonMessage',
       oldestActiveDetectedAt: '2026-07-20T06:00:00Z',
-      severity: 'Critical' as const,
+      severity: 'critical' as const,
     },
     {
       namespaceId: 'ns-healthy',
@@ -58,7 +58,7 @@ const sampleOverview = {
       topEntityCount: 0,
       topCategory: null,
       oldestActiveDetectedAt: null,
-      severity: 'Healthy' as const,
+      severity: 'healthy' as const,
     },
   ],
 };

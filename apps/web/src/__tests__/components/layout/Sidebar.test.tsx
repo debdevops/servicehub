@@ -103,10 +103,10 @@ describe('Sidebar', () => {
     fireEvent.click(screen.getByText('Quick Access'));
     expect(screen.getByText('Active Messages')).toBeInTheDocument();
     expect(screen.getByText('Dead-Letter')).toBeInTheDocument();
-    expect(screen.getByText('Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Namespace Overview')).toBeInTheDocument();
     expect(screen.getByText('DLQ Intelligence')).toBeInTheDocument();
-    expect(screen.getByText('Auto-Replay')).toBeInTheDocument();
-    expect(screen.getByText('Scheduled')).toBeInTheDocument();
+    expect(screen.getByText('Auto-Replay Rules')).toBeInTheDocument();
+    expect(screen.getByText('Scheduled Messages')).toBeInTheDocument();
     expect(screen.getByText('Multi-Cloud Trace')).toBeInTheDocument();
   });
 

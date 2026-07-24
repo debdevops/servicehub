@@ -2,7 +2,9 @@ import { apiClient } from './client';
 
 // ─── Types ─────────────────────────────────────────────────────────
 
-export type FleetHealthSeverity = 'Healthy' | 'Warning' | 'Critical';
+// Matches the wire value: the API's JsonStringEnumConverter serializes enums camelCase,
+// so FleetHealthSeverity.Healthy arrives as "healthy", not "Healthy".
+export type FleetHealthSeverity = 'healthy' | 'warning' | 'critical';
 
 export interface FleetNamespaceHealth {
   namespaceId: string;

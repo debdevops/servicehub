@@ -16,7 +16,7 @@ import { useNamespaces } from '@/hooks/useNamespaces';
 import { useProviderCapabilities } from '@/hooks/useCloudBridge';
 import { getProviderCapabilities } from '@/lib/api/cloudBridge';
 import type { Message, ContentType } from '@/lib/mockData';
-import type { Message as APIMessage, CloudProviderType } from '@/lib/api/types';
+import type { Message as APIMessage, CloudProviderType, ApiError } from '@/lib/api/types';
 import toast from 'react-hot-toast';
 
 const PROVIDER_SERVICE_LABELS: Record<CloudProviderType, string> = {
@@ -503,7 +503,12 @@ export function MessagesPage() {
 
   // Error state
   if (error) {
-    const errorMessage = error instanceof Error ? error.message : 'An error occurred';
+    // Prefer the backend's ProblemDetails "detail" (e.g. the specific reason a GCP Pub/Sub
+    // subscription can't be browsed) over axios's generic "Request failed with status code..."
+    const errorMessage =
+      (error as ApiError)?.response?.data?.detail ||
+      (error as ApiError)?.response?.data?.message ||
+      (error instanceof Error ? error.message : 'An error occurred');
     const isConnectionError = errorMessage.toLowerCase().includes('network') ||
                               errorMessage.toLowerCase().includes('connection') ||
                               errorMessage.toLowerCase().includes('timeout');

@@ -734,6 +734,12 @@ export function ConnectPage() {
                         Tip: Grant these roles on the project or at the topic/subscription resource level for least privilege.
                         Generate a key at <strong>IAM &amp; Admin → Service Accounts → Keys → Add Key → JSON</strong>.
                       </p>
+                      <p className="mt-2 text-green-700">
+                        <strong>Only Pull subscriptions are browsable.</strong> Push, BigQuery, and Cloud Storage
+                        export subscriptions deliver messages directly to their target — Pub/Sub never makes those
+                        available to peek, so ServiceHub can&apos;t show their messages. If a topic&apos;s only
+                        subscription is one of those, add a Pull subscription to the same topic to inspect it here.
+                      </p>
                     </div>
                   </details>
                 </>

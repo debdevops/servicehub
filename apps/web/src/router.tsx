@@ -222,97 +222,15 @@ export const router = createBrowserRouter([
   },
 
   // ── Real application ─────────────────────────────────────────────────────────
-  // MainLayout with all feature routes — no DemoModeProvider, uses real API
+  // MainLayout with all feature routes — no DemoModeProvider, uses real API.
+  // Reuses sharedChildren (same route list the /demo/* trees use) rather than a
+  // hand-duplicated copy — a prior hand-duplicated copy had silently dropped the
+  // 'fleet' route, so the sidebar's Fleet Operations link 404'd to /welcome.
   {
     path: '/',
     element: <MainLayout />,
     errorElement: <Navigate to="/welcome" replace />,
-    children: [
-      {
-        path: 'dashboard',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <DashboardPageLazy />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'messages',
-        element: <MessagesPage />,
-      },
-      {
-        path: 'messages-overview',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <MessagesOverviewPageLazy />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'connect',
-        element: <ConnectPage />,
-      },
-      {
-        path: 'dlq-history',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <DlqHistoryPageLazy />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'rules',
-        element: <RulesPage />,
-      },
-      {
-        path: 'health',
-        element: <HealthPage />,
-      },
-      {
-        path: 'help',
-        element: <HelpPage />,
-      },
-      {
-        path: 'scheduled',
-        element: <ScheduledMessagesPage />,
-      },
-      {
-        path: 'security',
-        element: <SecurityPage />,
-      },
-      {
-        path: 'cloud-bridge',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <CloudBridgePageLazy />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'simulator',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <SimulatorPageLazy />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'cross-cloud-trace',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <CrossCloudTracePageLazy />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'audit',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <AuditPageLazy />
-          </Suspense>
-        ),
-      },
-    ],
+    children: sharedChildren,
   },
   // Fallback 404: redirect unknown paths to welcome
   {
