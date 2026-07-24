@@ -29,7 +29,7 @@ public class DtoRecordEqualityTests
 
         var a = new DlqMessageDetailResponse(
             Id: 42, MessageId: "m1", SequenceNumber: 99, BodyHash: "h",
-            NamespaceId: nsId, EntityName: "q1", EntityType: "Queue",
+            NamespaceId: nsId, CloudProvider: "azure", EntityName: "q1", EntityType: "Queue",
             EnqueuedTimeUtc: now, DeadLetterTimeUtc: now, DetectedAtUtc: now,
             DeadLetterReason: "MaxDelivery", DeadLetterErrorDescription: "desc",
             DeliveryCount: 10, ContentType: "application/json", MessageSize: 512,
@@ -385,7 +385,7 @@ public class DtoRecordEqualityTests
         var nsId = Guid.NewGuid();
         var r = new DlqHistoryResponse(
             Id: 1, MessageId: "m1", SequenceNumber: 1, BodyHash: "h",
-            NamespaceId: nsId, EntityName: "q1", EntityType: "Queue",
+            NamespaceId: nsId, CloudProvider: "azure", EntityName: "q1", EntityType: "Queue",
             EnqueuedTimeUtc: now, DeadLetterTimeUtc: now, DetectedAtUtc: now,
             DeadLetterReason: "R", DeadLetterErrorDescription: "D",
             DeliveryCount: 5, ContentType: "json", MessageSize: 100,
@@ -471,7 +471,7 @@ public class DtoRecordEqualityTests
     {
         return new DlqMessageDetailResponse(
             Id: 1, MessageId: messageId, SequenceNumber: 1, BodyHash: "h",
-            NamespaceId: Guid.NewGuid(), EntityName: "q1", EntityType: "Queue",
+            NamespaceId: Guid.NewGuid(), CloudProvider: "azure", EntityName: "q1", EntityType: "Queue",
             EnqueuedTimeUtc: now, DeadLetterTimeUtc: now, DetectedAtUtc: now,
             DeadLetterReason: null, DeadLetterErrorDescription: null,
             DeliveryCount: 1, ContentType: null, MessageSize: 100,

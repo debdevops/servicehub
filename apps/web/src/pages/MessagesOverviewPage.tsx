@@ -8,6 +8,8 @@ import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useDemoContext } from '@/lib/demo/DemoContext';
 import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
 import { setThemeProvider } from '@/lib/providerTheme';
+import { useProviderCapabilities } from '@/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@/lib/api/cloudBridge';
 import type { Namespace } from '@/lib/api/types';
 
 // ============================================================================
@@ -25,7 +27,19 @@ import type { Namespace } from '@/lib/api/types';
 
 type OverviewTab = 'active' | 'deadletter';
 
-function CountBadge({ value, tab }: { value: number; tab: OverviewTab }) {
+// unsupported = the provider has no message-count API (e.g. GCP Pub/Sub) — the raw value is
+// always 0 regardless of real backlog, so a dash is shown instead of a misleading "0".
+function CountBadge({ value, tab, unsupported }: { value: number; tab: OverviewTab; unsupported?: boolean }) {
+  if (unsupported) {
+    return (
+      <span
+        className="px-2 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-400"
+        title="This provider has no message-count API — open the subscription to see actual messages"
+      >
+        —
+      </span>
+    );
+  }
   if (tab === 'deadletter') {
     return (
       <span
@@ -62,6 +76,8 @@ function TopicSubscriptions({
   const navigate = useNavigate();
   const style = getProviderStyle(namespace.cloudProvider);
   const { data: subscriptions } = useSubscriptions(namespace.id, topicName, false);
+  const { data: capabilitiesMap } = useProviderCapabilities();
+  const supportsCounts = getProviderCapabilities(capabilitiesMap, namespace.cloudProvider)?.supportsMessageCounts ?? true;
 
   if (!subscriptions || subscriptions.length === 0) {
     return (
@@ -88,6 +104,7 @@ function TopicSubscriptions({
           <CountBadge
             value={tab === 'deadletter' ? sub.deadLetterMessageCount : sub.activeMessageCount}
             tab={tab}
+            unsupported={!supportsCounts}
           />
         </button>
       ))}

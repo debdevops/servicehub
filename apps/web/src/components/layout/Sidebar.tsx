@@ -32,6 +32,8 @@ import { apiClient } from '@/lib/api/client';
 import { ProviderBadge } from '@/components/ProviderBadge';
 import { AwsQueueList, AwsTopicList } from '@/components/layout/AwsEntityTree';
 import { setThemeProvider } from '@/lib/providerTheme';
+import { useProviderCapabilities } from '@/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@/lib/api/cloudBridge';
 import type { CloudProviderType } from '@/lib/api/types';
 import { useDemoContext } from '@/lib/demo/DemoContext';
 import { getMockStats } from '@/lib/demo/mockProviders';
@@ -63,6 +65,7 @@ interface TopicItemProps {
   };
   namespaceId: string;
   messagesBasePath: string;
+  cloudProvider?: CloudProviderType;
 }
 
 interface SubscriptionItemProps {
@@ -74,6 +77,7 @@ interface SubscriptionItemProps {
   namespaceId: string;
   topicName: string;
   messagesBasePath: string;
+  cloudProvider?: CloudProviderType;
 }
 
 function QueueItem({ queue, namespaceId, messagesBasePath }: QueueItemProps) {
@@ -146,7 +150,7 @@ function QueueItem({ queue, namespaceId, messagesBasePath }: QueueItemProps) {
   );
 }
 
-function TopicItem({ topic, namespaceId, messagesBasePath }: TopicItemProps) {
+function TopicItem({ topic, namespaceId, messagesBasePath, cloudProvider }: TopicItemProps) {
   const [showSubscriptions, setShowSubscriptions] = useState(false);
   const { data: subscriptions, isLoading: subsLoading } = useSubscriptions(
     namespaceId,
@@ -184,6 +188,7 @@ function TopicItem({ topic, namespaceId, messagesBasePath }: TopicItemProps) {
                 namespaceId={namespaceId}
                 topicName={topic.name}
                 messagesBasePath={messagesBasePath}
+                cloudProvider={cloudProvider}
               />
             ))
           ) : (
@@ -195,7 +200,12 @@ function TopicItem({ topic, namespaceId, messagesBasePath }: TopicItemProps) {
   );
 }
 
-function SubscriptionItem({ subscription, namespaceId, topicName, messagesBasePath }: SubscriptionItemProps) {
+function SubscriptionItem({ subscription, namespaceId, topicName, messagesBasePath, cloudProvider }: SubscriptionItemProps) {
+  const { data: capabilitiesMap } = useProviderCapabilities();
+  // GCP Pub/Sub has no message-count API (see ProviderCapabilities.Gcp) — counts are always 0
+  // regardless of real backlog. Showing a bare "0" there reads as "definitely empty" when it's
+  // really "unknown"; render a dash instead so it isn't mistaken for a live count.
+  const supportsCounts = getProviderCapabilities(capabilitiesMap, cloudProvider)?.supportsMessageCounts ?? true;
   return (
     <NavLink
       to={`${messagesBasePath}?namespace=${namespaceId}&topic=${topicName}&subscription=${subscription.name}`}
@@ -228,14 +238,19 @@ function SubscriptionItem({ subscription, namespaceId, topicName, messagesBasePa
               {subscription.name}
             </span>
             <div className="flex items-center gap-1 shrink-0">
-              <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${
-                isExactMatch 
-                  ? 'bg-white text-sky-700' 
-                  : 'bg-green-100 text-green-700'
-              }`}>
-                {subscription.activeMessageCount}
+              <span
+                className={`px-2 py-0.5 text-xs font-bold rounded-full ${
+                  isExactMatch
+                    ? 'bg-white text-sky-700'
+                    : supportsCounts
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-gray-100 text-gray-400'
+                }`}
+                title={supportsCounts ? undefined : 'This provider has no message-count API — open the subscription to see actual messages'}
+              >
+                {supportsCounts ? subscription.activeMessageCount : '—'}
               </span>
-              {subscription.deadLetterMessageCount > 0 && (
+              {supportsCounts && subscription.deadLetterMessageCount > 0 && (
                 <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${
                   isExactMatch 
                     ? 'bg-red-200 text-red-800' 
@@ -384,6 +399,7 @@ function NamespaceSection({ namespace }: NamespaceItemProps) {
                       topic={topic}
                       namespaceId={namespace.id}
                       messagesBasePath={messagesBasePath}
+                      cloudProvider={namespace.cloudProvider}
                     />
                   ))
                 )

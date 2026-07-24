@@ -396,7 +396,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
             CloudsInvolved: cloudProviders.Count,
             CloudProviders: allCloudProviders,
             IsMultiCloud: allCloudProviders.Count >= 2,
-            NamespacesSearched: azureSummaries.Count(s => s.WasSearched),
+            NamespacesSearched: allSummaries.Count(s => s.WasSearched),
             EntitiesSearched: entitiesSearched,
             IsPartialResult: isPartialResultFlag == 1,
             SearchDurationMs: stopwatch.ElapsedMilliseconds
