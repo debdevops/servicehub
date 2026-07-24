@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { CornerDownRight, Send, Skull } from 'lucide-react';
+import { CornerDownRight, Send, AlertTriangle, Inbox, Radio } from 'lucide-react';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import type { Queue, Topic } from '@/lib/api/types';
 
@@ -68,7 +68,8 @@ function AwsQueueNode({ queue, namespaceId, messagesBasePath }: {
             <>
               <span className="truncate flex items-center gap-1.5">
                 {selected && <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />}
-                📥 {queue.name}
+                <Inbox className={`w-3.5 h-3.5 shrink-0 ${selected ? 'text-white' : 'text-gray-400'}`} />
+                {queue.name}
               </span>
               <span className={`px-2 py-0.5 text-xs font-bold rounded-full shrink-0 ${
                 selected ? 'bg-white text-orange-700' : 'bg-green-100 text-green-700'
@@ -102,13 +103,14 @@ function AwsQueueNode({ queue, namespaceId, messagesBasePath }: {
             return (
               <>
                 <span className="truncate flex items-center gap-1">
-                  <Skull className="w-3 h-3 shrink-0" />
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
                   DLQ: {queue.deadLetterTargetQueue}
                 </span>
                 {queue.deadLetterMessageCount > 0 && (
-                  <span className={`px-1.5 py-0.5 text-[11px] font-bold rounded-full shrink-0 ${
+                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-bold rounded-full shrink-0 ${
                     selected ? 'bg-white text-red-700' : 'bg-red-200 text-red-800'
                   }`}>
+                    <AlertTriangle className="w-2.5 h-2.5" />
                     {queue.deadLetterMessageCount}
                   </span>
                 )}
@@ -172,7 +174,8 @@ function AwsTopicNode({ topic, namespaceId, messagesBasePath }: {
             <>
               <span className="truncate flex items-center gap-1.5">
                 {selected && <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />}
-                📢 {topic.name}
+                <Radio className={`w-3.5 h-3.5 shrink-0 ${selected ? 'text-white' : 'text-gray-400'}`} />
+                {topic.name}
               </span>
               <span className={`flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold rounded-full shrink-0 ${
                 selected ? 'bg-white text-orange-700' : 'bg-orange-100 text-orange-700'
