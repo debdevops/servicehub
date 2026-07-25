@@ -737,6 +737,13 @@ export function DashboardPage() {
                 <Zap className="w-3.5 h-3.5" />
                 Auto-Replay Rules
               </button>
+              <button
+                onClick={() => navigate('/fleet')}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors"
+              >
+                <Activity className="w-3.5 h-3.5" />
+                Fleet Health
+              </button>
             </div>
 
             {/* Prod vs Non-Prod Comparison — only when both exist */}

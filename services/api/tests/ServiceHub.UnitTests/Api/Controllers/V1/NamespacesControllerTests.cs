@@ -13,6 +13,7 @@ using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Events;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 
@@ -413,6 +414,174 @@ public class NamespacesControllerTests
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var response = okResult.Value.Should().BeOfType<ConnectionTestResponse>().Subject;
         response.IsConnected.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task TestConnection_AwsSuccess_ShouldRouteToProviderAndReturnConnected()
+    {
+        var ns = Namespace.Create("aws-ns", "AKIAFAKE:secretkey", "AWS Test", provider: CloudProviderType.Aws, awsRegion: "us-east-1").Value;
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+        _namespaceRepository.Setup(r => r.UpdateAsync(It.IsAny<Namespace>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var awsProvider = new Mock<ICloudMessagingProvider>();
+        awsProvider.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Aws);
+        awsProvider.Setup(p => p.ValidateConnectionAsync(ns, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var controller = CreateController(messagingProviders: [awsProvider.Object]);
+
+        var result = await controller.TestConnection(ns.Id);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<ConnectionTestResponse>().Subject;
+        response.IsConnected.Should().BeTrue();
+        awsProvider.Verify(p => p.ValidateConnectionAsync(ns, It.IsAny<CancellationToken>()), Times.Once);
+        _clientCache.Verify(c => c.GetOrCreate(It.IsAny<Guid>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task TestConnection_GcpFailure_ShouldReturnNotConnectedWithProviderError()
+    {
+        var ns = Namespace.Create("gcp-ns", "{\"type\":\"service_account\"}", "GCP Test", provider: CloudProviderType.Gcp, gcpProjectId: "my-project").Value;
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+        _namespaceRepository.Setup(r => r.UpdateAsync(It.IsAny<Namespace>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var gcpProvider = new Mock<ICloudMessagingProvider>();
+        gcpProvider.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Gcp);
+        gcpProvider.Setup(p => p.ValidateConnectionAsync(ns, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Validation("GCP.PubSub.AuthFailed", "Invalid service account")));
+
+        var controller = CreateController(messagingProviders: [gcpProvider.Object]);
+
+        var result = await controller.TestConnection(ns.Id);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<ConnectionTestResponse>().Subject;
+        response.IsConnected.Should().BeFalse();
+        response.Message.Should().Contain("Invalid service account");
+    }
+
+    [Fact]
+    public async Task TestConnection_AwsProviderNotRegistered_ShouldReturnServiceUnavailable()
+    {
+        var ns = Namespace.Create("aws-ns", "AKIAFAKE:secretkey", "AWS Test", provider: CloudProviderType.Aws, awsRegion: "us-east-1").Value;
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var controller = CreateController(messagingProviders: []);
+
+        var result = await controller.TestConnection(ns.Id);
+
+        result.Result.Should().BeOfType<ObjectResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        _namespaceRepository.Verify(r => r.UpdateAsync(It.IsAny<Namespace>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private NamespacesController CreateController(IEnumerable<ICloudMessagingProvider> messagingProviders)
+    {
+        var controller = new NamespacesController(
+            _namespaceRepository.Object,
+            _clientFactory.Object,
+            _clientCache.Object,
+            _connectionStringProtector.Object,
+            _logger.Object,
+            auditLogger: null,
+            eventBus: _eventBus.Object,
+            messagingProviders: messagingProviders)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    RequestServices = new ServiceCollection().BuildServiceProvider()
+                }
+            }
+        };
+
+        controller.ControllerContext.HttpContext.Items["ApiKeyConfig"] = new ApiKeyConfiguration
+        {
+            Key = "test-key-12345678",
+            Scopes = null
+        };
+
+        return controller;
+    }
+
+    #endregion
+
+    #region GetStats Tests (AWS/GCP)
+
+    [Fact]
+    public async Task GetStats_AwsSuccess_ShouldAggregateFromListEntities()
+    {
+        var ns = Namespace.Create("aws-ns", "AKIAFAKE:secretkey", "AWS Test", provider: CloudProviderType.Aws, awsRegion: "us-east-1").Value;
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var entities = new List<CloudEntity>
+        {
+            new() { Name = "orders", EntityType = "Queue", ActiveMessageCount = 5, DeadLetterCount = 1, Provider = CloudProviderType.Aws },
+            new() { Name = "orders-topic", EntityType = "Topic", ActiveMessageCount = 0, DeadLetterCount = 0, Provider = CloudProviderType.Aws },
+            new() { Name = "orders-topic/endpoint-queue", EntityType = "Subscription", ActiveMessageCount = 2, DeadLetterCount = 0, Provider = CloudProviderType.Aws },
+        };
+
+        var awsProvider = new Mock<ICloudMessagingProvider>();
+        awsProvider.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Aws);
+        awsProvider.Setup(p => p.ListEntitiesAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Success(entities));
+
+        var controller = CreateController(messagingProviders: [awsProvider.Object]);
+
+        var result = await controller.GetStats(ns.Id);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<NamespaceStatsResponse>().Subject;
+        response.TotalQueues.Should().Be(1);
+        response.TotalTopics.Should().Be(1);
+        response.TotalSubscriptions.Should().Be(1);
+        response.TotalActive.Should().Be(7);
+        response.TotalDlq.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetStats_GcpListEntitiesFails_ShouldReturnZeroedStats()
+    {
+        var ns = Namespace.Create("gcp-ns", "{\"type\":\"service_account\"}", "GCP Test", provider: CloudProviderType.Gcp, gcpProjectId: "my-project").Value;
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var gcpProvider = new Mock<ICloudMessagingProvider>();
+        gcpProvider.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Gcp);
+        gcpProvider.Setup(p => p.ListEntitiesAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Failure(Error.ExternalService("GCP.PubSub.ListFailed", "unreachable")));
+
+        var controller = CreateController(messagingProviders: [gcpProvider.Object]);
+
+        var result = await controller.GetStats(ns.Id);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<NamespaceStatsResponse>().Subject;
+        response.Should().Be(new NamespaceStatsResponse(0, 0, 0, 0, 0, 0));
+    }
+
+    [Fact]
+    public async Task GetStats_AwsProviderNotRegistered_ShouldReturnZeroedStats()
+    {
+        var ns = Namespace.Create("aws-ns", "AKIAFAKE:secretkey", "AWS Test", provider: CloudProviderType.Aws, awsRegion: "us-east-1").Value;
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var controller = CreateController(messagingProviders: []);
+
+        var result = await controller.GetStats(ns.Id);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<NamespaceStatsResponse>().Subject;
+        response.Should().Be(new NamespaceStatsResponse(0, 0, 0, 0, 0, 0));
     }
 
     #endregion

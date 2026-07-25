@@ -1,4 +1,6 @@
 import { useHealthVersion, useHealthStatus, useHealthReport } from '@/hooks/useHealth';
+import { ProviderIcon } from '@/components/ProviderIcon';
+import type { CloudProviderType } from '@/lib/api/types';
 import {
   Activity,
   Server,
@@ -7,6 +9,14 @@ import {
   Clock,
   RefreshCw,
 } from 'lucide-react';
+
+// Maps a health-check entry name (registered in Program.cs / AwsDependencyInjection /
+// GcpDependencyInjection) to the provider it reports connectivity for, if any.
+const CHECK_PROVIDER: Record<string, CloudProviderType> = {
+  servicebus: 'azure',
+  'aws-connectivity': 'aws',
+  'gcp-connectivity': 'gcp',
+};
 
 function formatUptime(isoDuration: string): string {
   // Parse .NET TimeSpan format: "d.hh:mm:ss.fffffff" or "hh:mm:ss.fffffff"
@@ -197,12 +207,14 @@ export function HealthPage() {
                 <div className="divide-y divide-gray-100">
                   {Object.entries(report.entries).map(([name, entry]) => {
                     const style = checkStatusStyle(entry.status);
+                    const provider = CHECK_PROVIDER[name];
                     return (
                       <div
                         key={name}
                         className="flex items-center px-5 py-2.5 text-sm gap-3"
                       >
-                        <span className="w-40 text-gray-900 font-medium shrink-0">
+                        <span className="w-40 flex items-center gap-1.5 text-gray-900 font-medium shrink-0">
+                          {provider && <ProviderIcon provider={provider} className="w-3.5 h-3.5 shrink-0" />}
                           {name}
                         </span>
                         <span

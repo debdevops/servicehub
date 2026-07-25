@@ -44,7 +44,7 @@ function TrendChart({ trend }: { trend: TrendPoint[] }) {
   const barWidth = 100 / trend.length;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 mb-3">
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-3">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-gray-700">
           30-Day DLQ Trend
@@ -218,6 +218,17 @@ export function DlqHistoryPage() {
   const isProdNamespace = currentNamespace?.environment === 'prod';
   const canBulkReplay = !!namespaceId && !isProdNamespace;
   const canBulkPurge = canBulkReplay && (providerCapabilities?.supportsPurge ?? false);
+
+  // Fleet page deep-links here with ?openBulk=true to jump straight into the bulk-replay
+  // preview for a namespace flagged as at-risk, instead of duplicating the bulk-ops UI there.
+  useEffect(() => {
+    if (searchParams.get('openBulk') === 'true' && canBulkReplay) {
+      setBulkModalType('Replay');
+      const next = new URLSearchParams(searchParams);
+      next.delete('openBulk');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, canBulkReplay, setSearchParams]);
 
   // Auto-trigger initial scan when summary shows all zeros (no data in DB yet)
   const [autoScanned, setAutoScanned] = useState(false);

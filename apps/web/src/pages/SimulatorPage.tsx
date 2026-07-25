@@ -17,6 +17,8 @@ import {
   useAdvanceTime,
   useInjectDlqFlood,
 } from '@/hooks/useSimulator';
+import { getProviderStyle } from '@/lib/providerStyles';
+import type { CloudProviderType } from '@/lib/api/types';
 import type { SimulatorNamespaceSummary, InjectFaultRequest, DlqFloodRequest } from '@/lib/api/simulator';
 
 // ── Fault type metadata ────────────────────────────────────────────────────
@@ -38,19 +40,6 @@ const DLQ_REASONS = [
   'nack',
 ];
 
-// ── Provider card colors ───────────────────────────────────────────────────
-
-function providerStyle(provider: string): { border: string; bg: string; badge: string; label: string } {
-  switch (provider.toLowerCase()) {
-    case 'aws':
-      return { border: 'border-orange-200', bg: 'bg-orange-50', badge: 'bg-orange-100 text-orange-700', label: 'AWS' };
-    case 'gcp':
-      return { border: 'border-green-200', bg: 'bg-green-50', badge: 'bg-green-100 text-green-700', label: 'GCP' };
-    default:
-      return { border: 'border-blue-200', bg: 'bg-blue-50', badge: 'bg-blue-100 text-blue-700', label: 'Azure' };
-  }
-}
-
 function formatUtc(iso: string): string {
   try {
     return new Date(iso).toUTCString().replace(' GMT', ' UTC');
@@ -62,10 +51,10 @@ function formatUtc(iso: string): string {
 // ── Provider Card ──────────────────────────────────────────────────────────
 
 function ProviderCard({ ns }: { ns: SimulatorNamespaceSummary }) {
-  const style = providerStyle(ns.provider);
+  const style = getProviderStyle(ns.provider.toLowerCase() as CloudProviderType);
   const hasData = ns.entityCount > 0 || ns.activeMessageCount > 0;
   return (
-    <div className={`rounded-xl border-2 ${style.border} ${style.bg} p-5 flex flex-col gap-3`}>
+    <div className={`rounded-xl border-2 ${style.headerBorder} ${style.headerBg} p-5 flex flex-col gap-3`}>
       <div className="flex items-center justify-between">
         <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${style.badge}`}>
           {style.label}

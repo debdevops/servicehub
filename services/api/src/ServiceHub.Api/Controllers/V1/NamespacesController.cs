@@ -391,6 +391,51 @@ public sealed class NamespacesController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+
+        // AWS/GCP have their own ICloudMessagingProvider.ValidateConnectionAsync implementation
+        // that resolves credentials (including the connection-string-less IAM-role/ADC auth
+        // types) internally and issues a cheap live probe (ListQueues/ListSubscriptions).
+        // Route to it instead of the Azure-only, connection-string-only path below.
+        if (ns.Provider is CloudProviderType.Aws or CloudProviderType.Gcp)
+        {
+            var provider = _messagingProviders.FirstOrDefault(p => p.ProviderType == ns.Provider);
+            if (provider is null)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+                {
+                    Status = StatusCodes.Status503ServiceUnavailable,
+                    Title = "Provider not enabled",
+                    Detail = $"The '{ns.Provider}' cloud provider is not enabled on this server. " +
+                             $"Set 'CloudProviders:{ns.Provider}:Enabled' to 'true' in appsettings and restart.",
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
+            var validateResult = await provider.ValidateConnectionAsync(ns, cancellationToken);
+            ns.RecordConnectionTest(validateResult.IsSuccess);
+            await _namespaceRepository.UpdateAsync(ns, cancellationToken);
+
+            if (validateResult.IsFailure)
+            {
+                _logger.LogWarning(
+                    "Connection test failed for namespace {NamespaceId}: {Error}",
+                    id,
+                    validateResult.Error.Message);
+
+                return Ok(new ConnectionTestResponse(
+                    IsConnected: false,
+                    Message: $"Connection test failed: {validateResult.Error.Message}",
+                    TestedAt: DateTimeOffset.UtcNow));
+            }
+
+            _logger.LogInformation("Connection test successful for namespace {NamespaceId}", id);
+
+            return Ok(new ConnectionTestResponse(
+                IsConnected: true,
+                Message: "Connection successful",
+                TestedAt: DateTimeOffset.UtcNow));
+        }
+
         if (ns.ConnectionString is null)
         {
             return Ok(new ConnectionTestResponse(
@@ -752,6 +797,32 @@ public sealed class NamespacesController : ApiControllerBase
             return ToActionResult<NamespaceStatsResponse>(nsResult.Error);
 
         var ns = nsResult.Value;
+
+        // AWS/GCP: aggregate from the provider's own entity listing (already includes
+        // active/dead-letter counts per entity) instead of the Azure-only client cache below.
+        if (ns.Provider is CloudProviderType.Aws or CloudProviderType.Gcp)
+        {
+            var provider = _messagingProviders.FirstOrDefault(p => p.ProviderType == ns.Provider);
+            if (provider is null)
+                return Ok(new NamespaceStatsResponse(0, 0, 0, 0, 0, 0));
+
+            var entitiesResult = await provider.ListEntitiesAsync(ns.Id, cancellationToken);
+            if (entitiesResult.IsFailure)
+                return Ok(new NamespaceStatsResponse(0, 0, 0, 0, 0, 0));
+
+            var entities = entitiesResult.Value;
+            var totalQueuesLive = entities.Count(e => string.Equals(e.EntityType, "Queue", StringComparison.OrdinalIgnoreCase));
+            var totalTopicsLive = entities.Count(e => string.Equals(e.EntityType, "Topic", StringComparison.OrdinalIgnoreCase));
+            var totalSubscriptionsLive = entities.Count(e => string.Equals(e.EntityType, "Subscription", StringComparison.OrdinalIgnoreCase));
+
+            return Ok(new NamespaceStatsResponse(
+                TotalQueues: totalQueuesLive,
+                TotalTopics: totalTopicsLive,
+                TotalSubscriptions: totalSubscriptionsLive,
+                TotalActive: entities.Sum(e => e.ActiveMessageCount),
+                TotalDlq: entities.Sum(e => e.DeadLetterCount),
+                TotalScheduled: 0));
+        }
 
         if (string.IsNullOrEmpty(ns.ConnectionString))
             return Ok(new NamespaceStatsResponse(0, 0, 0, 0, 0, 0));

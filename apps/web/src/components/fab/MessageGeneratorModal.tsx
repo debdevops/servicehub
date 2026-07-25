@@ -126,6 +126,17 @@ export function MessageGeneratorModal({
     }
   }, [selectedNamespace, defaultEntityName]);
 
+  // Handle Escape key to close modal
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const entities = targetType === 'queue' ? queues : topics;
@@ -267,10 +278,15 @@ export function MessageGeneratorModal({
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div
+        className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="message-generator-modal-title"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-primary-50 to-blue-50">
           <div className="flex items-center gap-3">
@@ -278,13 +294,14 @@ export function MessageGeneratorModal({
               <Wand2 className="w-5 h-5 text-primary-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Message Generator</h2>
+              <h2 id="message-generator-modal-title" className="text-lg font-semibold text-gray-900">Message Generator</h2>
               <p className="text-sm text-gray-500">Generate realistic test messages for demo & validation</p>
             </div>
           </div>
           <button
             onClick={onClose}
             className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+            aria-label="Close dialog"
           >
             <X className="w-5 h-5 text-gray-500" />
           </button>

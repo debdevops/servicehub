@@ -19,6 +19,8 @@ import {
 import { useAuditLogs, useAuditSummary } from '@/hooks/useAudit';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { auditApi, type AuditLogItem, type AuditParams } from '@/lib/api/audit';
+import { ProviderBadge } from '@/lib/providerStyles';
+import type { CloudProviderType } from '@/lib/api/types';
 import toast from 'react-hot-toast';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -41,20 +43,13 @@ const DATE_PRESETS = [
 
 // ─── Cloud / Environment Badges ──────────────────────────────────────────────
 
+const KNOWN_PROVIDERS: readonly CloudProviderType[] = ['azure', 'aws', 'gcp'];
+
 function CloudBadge({ provider }: { provider: string | null }) {
   if (!provider) return null;
-  const cfg: Record<string, { label: string; classes: string }> = {
-    azure: { label: 'AZ', classes: 'bg-blue-100 text-blue-700 border-blue-200' },
-    aws:   { label: 'AWS', classes: 'bg-orange-100 text-orange-700 border-orange-200' },
-    gcp:   { label: 'GCP', classes: 'bg-green-100 text-green-700 border-green-200' },
-  };
-  const c = cfg[provider.toLowerCase()];
-  if (!c) return null;
-  return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 text-xs font-semibold rounded border ${c.classes}`}>
-      {c.label}
-    </span>
-  );
+  const normalized = provider.toLowerCase() as CloudProviderType;
+  if (!KNOWN_PROVIDERS.includes(normalized)) return null;
+  return <ProviderBadge provider={normalized} />;
 }
 
 function EnvBadge({ env }: { env: string | null }) {

@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   Layers,
   AlertTriangle,
@@ -8,10 +8,18 @@ import {
   RefreshCw,
   Clock,
   ArrowRight,
+  Search,
+  ExternalLink,
+  PlayCircle,
 } from 'lucide-react';
 import { LineChart, Line, XAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useFleetOverview } from '@/hooks/useFleet';
+import { useHealthReport } from '@/hooks/useHealth';
+import { useAllNamespacesQueues } from '@/hooks/useQueues';
+import { ProviderIcon } from '@/components/ProviderIcon';
+import { ProviderBadge, PROVIDER_STYLES } from '@/lib/providerStyles';
 import type { FleetHealthSeverity, FleetNamespaceHealth } from '@/lib/api/fleet';
+import type { CloudProviderType } from '@/lib/api/types';
 
 const WINDOW_OPTIONS = [
   { label: '24h', hours: 24 },
@@ -24,6 +32,14 @@ const severityStyles: Record<FleetHealthSeverity, { dot: string; text: string; l
   warning: { dot: 'bg-amber-500', text: 'text-amber-700', label: 'Warning' },
   healthy: { dot: 'bg-emerald-500', text: 'text-emerald-700', label: 'Healthy' },
 };
+
+// Maps a provider connectivity health-check entry name (registered in Program.cs /
+// AwsDependencyInjection / GcpDependencyInjection) to the provider it reports on.
+const CONNECTIVITY_CHECKS: { name: string; provider: CloudProviderType }[] = [
+  { name: 'servicebus', provider: 'azure' },
+  { name: 'aws-connectivity', provider: 'aws' },
+  { name: 'gcp-connectivity', provider: 'gcp' },
+];
 
 function relativeAge(iso: string | null): string {
   if (!iso) return '—';
@@ -58,10 +74,74 @@ function StatTile({
   );
 }
 
+function ConnectivityStrip() {
+  const { data: report } = useHealthReport();
+  if (!report) return null;
+
+  const checks = CONNECTIVITY_CHECKS
+    .map(({ name, provider }) => ({ provider, entry: report.entries[name] }))
+    .filter((c): c is { provider: CloudProviderType; entry: NonNullable<typeof c.entry> } => !!c.entry);
+
+  if (checks.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Provider connectivity</span>
+      {checks.map(({ provider, entry }) => {
+        const healthy = entry.status === 'Healthy';
+        const degraded = entry.status === 'Degraded';
+        return (
+          <span
+            key={provider}
+            title={entry.description ?? entry.status}
+            className={`inline-flex items-center gap-1.5 pl-1.5 pr-2 py-1 rounded-full text-xs font-medium border ${
+              healthy
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : degraded
+                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                  : 'bg-red-50 text-red-700 border-red-200'
+            }`}
+          >
+            <ProviderIcon provider={provider} className="w-3.5 h-3.5" />
+            {PROVIDER_STYLES[provider].label}
+            <span className={`w-1.5 h-1.5 rounded-full ${healthy ? 'bg-emerald-500' : degraded ? 'bg-amber-500' : 'bg-red-500'}`} />
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function FleetPage() {
   const navigate = useNavigate();
   const [windowHours, setWindowHours] = useState(24);
+  const [providerFilter, setProviderFilter] = useState<CloudProviderType | 'all'>('all');
+  const [search, setSearch] = useState('');
   const { data, isLoading, isError, refetch, isFetching } = useFleetOverview(windowHours);
+
+  // Fleet's DLQ overview intentionally includes orphaned records for deleted namespaces
+  // (so historical DLQ activity isn't silently dropped) — skip live queue/topic lookups
+  // for those, since the namespace no longer exists and every such call would just 404.
+  const namespaceIds = useMemo(
+    () => (data?.namespaces ?? [])
+      .filter((n) => n.namespaceName !== '(deleted namespace)')
+      .map((n) => n.namespaceId),
+    [data]
+  );
+  const liveStats = useAllNamespacesQueues(namespaceIds, false);
+  const liveStatsByNamespace = useMemo(
+    () => new Map(liveStats.map((s) => [s.namespaceId, s])),
+    [liveStats]
+  );
+
+  const filteredNamespaces = useMemo(() => {
+    const all = data?.namespaces ?? [];
+    return all.filter((n) => {
+      if (providerFilter !== 'all' && n.provider.toLowerCase() !== providerFilter) return false;
+      if (search && !n.namespaceName.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    });
+  }, [data, providerFilter, search]);
 
   const atRisk = useMemo(
     () => (data?.namespaces ?? []).filter((n) => n.severity !== 'healthy').length,
@@ -75,6 +155,11 @@ export default function FleetPage() {
 
   const goToNamespace = (n: FleetNamespaceHealth) =>
     navigate(`/dlq-history?namespace=${n.namespaceId}`);
+
+  const goToBulkActions = (n: FleetNamespaceHealth, e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigate(`/dlq-history?namespace=${n.namespaceId}&openBulk=true`);
+  };
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -92,6 +177,13 @@ export default function FleetPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            to="/dashboard"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 border border-gray-200 rounded-lg transition-colors"
+          >
+            Per-namespace details
+            <ExternalLink className="w-3.5 h-3.5" />
+          </Link>
           <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
             {WINDOW_OPTIONS.map((opt) => (
               <button
@@ -118,6 +210,8 @@ export default function FleetPage() {
         </div>
       </div>
 
+      <ConnectivityStrip />
+
       {isError && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm">
           Failed to load the fleet overview. Please try again.
@@ -125,7 +219,10 @@ export default function FleetPage() {
       )}
 
       {isLoading && !data && (
-        <div className="text-center text-gray-500 py-16">Loading fleet overview…</div>
+        <div className="flex flex-col items-center justify-center gap-3 py-20 text-gray-400">
+          <RefreshCw className="w-6 h-6 animate-spin text-indigo-400" />
+          <p className="text-sm text-gray-500">Loading fleet overview…</p>
+        </div>
       )}
 
       {data && (
@@ -200,31 +297,76 @@ export default function FleetPage() {
             </div>
           </div>
 
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
+              {(['all', 'azure', 'aws', 'gcp'] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setProviderFilter(p)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    providerFilter === p ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                  aria-pressed={providerFilter === p}
+                >
+                  {p !== 'all' && <ProviderIcon provider={p} className="w-3.5 h-3.5" />}
+                  {p === 'all' ? 'All providers' : PROVIDER_STYLES[p].label}
+                </button>
+              ))}
+            </div>
+            <div className="relative flex-1 min-w-[200px] max-w-xs">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search namespaces…"
+                className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                aria-label="Search namespaces"
+              />
+            </div>
+          </div>
+
           {/* Per-namespace health */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-100">
-              <h2 className="text-sm font-medium text-gray-700">Namespaces (worst first)</h2>
+              <h2 className="text-sm font-medium text-gray-700">
+                Namespaces (worst first) — {filteredNamespaces.length} of {data.namespaces.length}
+              </h2>
             </div>
             {data.namespaces.length === 0 ? (
-              <div className="p-8 text-center text-gray-400 text-sm">No namespaces to report.</div>
+              <div className="flex flex-col items-center gap-2 py-16 text-center">
+                <Layers className="w-8 h-8 text-gray-300" />
+                <h3 className="text-sm font-medium text-gray-700">No namespaces to report</h3>
+                <p className="text-xs text-gray-400 max-w-xs">
+                  Connect a namespace to start tracking dead-letter health across your fleet.
+                </p>
+              </div>
+            ) : filteredNamespaces.length === 0 ? (
+              <div className="p-8 text-center text-gray-400 text-sm">No namespaces match the current filters.</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead>
+                  <thead className="sticky top-0 z-10 bg-gray-50">
                     <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
                       <th className="px-4 py-2 font-medium">Namespace</th>
                       <th className="px-4 py-2 font-medium">Env</th>
+                      <th className="px-4 py-2 font-medium text-right">Queues</th>
+                      <th className="px-4 py-2 font-medium text-right">Topics</th>
                       <th className="px-4 py-2 font-medium text-right">Active</th>
+                      <th className="px-4 py-2 font-medium text-right">DLQ Active</th>
                       <th className="px-4 py-2 font-medium text-right">New</th>
-                      <th className="px-4 py-2 font-medium">Top entity</th>
                       <th className="px-4 py-2 font-medium">Top category</th>
                       <th className="px-4 py-2 font-medium">Oldest</th>
+                      <th className="px-4 py-2"></th>
                       <th className="px-4 py-2"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.namespaces.map((n) => {
+                    {filteredNamespaces.map((n) => {
                       const sev = severityStyles[n.severity];
+                      const stats = liveStatsByNamespace.get(n.namespaceId);
+                      const isProd = n.environment.toLowerCase() === 'prod';
                       return (
                         <tr
                           key={n.namespaceId}
@@ -243,19 +385,22 @@ export default function FleetPage() {
                             <div className="flex items-center gap-2">
                               <span className={`w-2 h-2 rounded-full ${sev.dot}`} title={sev.label} />
                               <span className="font-medium text-gray-800">{n.namespaceName}</span>
-                              <span className="text-xs text-gray-400">{n.provider}</span>
+                              <ProviderBadge provider={n.provider.toLowerCase() as CloudProviderType} />
                             </div>
                           </td>
                           <td className="px-4 py-2.5 text-gray-500">{n.environment}</td>
+                          <td className="px-4 py-2.5 text-right text-gray-600">
+                            {stats && !stats.isLoading ? stats.totalQueues : '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-gray-600">
+                            {stats && !stats.isLoading ? stats.totalTopics : '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-gray-600">
+                            {stats && !stats.isLoading ? stats.totalActive : '—'}
+                          </td>
                           <td className="px-4 py-2.5 text-right font-medium text-gray-800">{n.activeCount}</td>
                           <td className={`px-4 py-2.5 text-right ${n.newInWindow > 0 ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
                             {n.newInWindow > 0 ? `+${n.newInWindow}` : '0'}
-                          </td>
-                          <td className="px-4 py-2.5 text-gray-600 truncate max-w-[10rem]">
-                            {n.topEntity ?? '—'}
-                            {n.topEntityCount > 0 && (
-                              <span className="text-xs text-gray-400"> ({n.topEntityCount})</span>
-                            )}
                           </td>
                           <td className="px-4 py-2.5 text-gray-600">{n.topCategory ?? '—'}</td>
                           <td className="px-4 py-2.5 text-gray-500">
@@ -263,6 +408,18 @@ export default function FleetPage() {
                               <Clock className="w-3 h-3" />
                               {relativeAge(n.oldestActiveDetectedAt)}
                             </span>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            {n.activeCount > 0 && !isProd && (
+                              <button
+                                onClick={(e) => goToBulkActions(n, e)}
+                                className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                                title="Open bulk replay/purge for this namespace"
+                              >
+                                <PlayCircle className="w-3.5 h-3.5" />
+                                Bulk actions
+                              </button>
+                            )}
                           </td>
                           <td className="px-4 py-2.5 text-right">
                             <ArrowRight className="w-4 h-4 text-gray-300" />

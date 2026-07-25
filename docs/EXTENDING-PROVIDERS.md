@@ -168,10 +168,12 @@ new arm for real business logic (not just registration bookkeeping):
 
 - `DlqMonitorService` — provider-specific DLQ-scan conventions (Azure's `DeadLetterCount`
   short-circuit, GCP's `-dlq` naming convention, sequence-key-vs-MessageId dedup).
-- `TopicsController` / `SubscriptionsController` / `QueuesController` — currently Azure-only
-  (`if (ns.Provider != CloudProviderType.Azure) return BadRequest(...)`); AWS/GCP entity access
-  goes through `CloudBridgeController` instead. A new provider needs the same choice made
-  explicitly, not silently inherited.
+- `TopicsController` / `SubscriptionsController` / `QueuesController` — their `GetAll` actions
+  already route non-Azure namespaces through `ICloudProviderRouter` to the registered
+  `ICloudMessagingProvider` (`GetAllViaProviderAsync`), so AWS/GCP entity listing works through
+  these controllers directly, not only via `CloudBridgeController`. Single-entity lookups
+  (`GetByName`) are still Azure-only, though — a new provider needs that same routing added
+  explicitly if any caller needs it (currently nothing in the frontend does).
 - `Namespace.Create`'s auth-type inference switch and `CreateNamespaceRequest.Validate()`'s
   provider-conditional validation blocks.
 - Frontend: `ConnectPage.tsx` is by far the most invasive file (three parallel onboarding form

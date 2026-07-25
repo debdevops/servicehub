@@ -7,6 +7,14 @@ vi.mock('@/hooks/useFleet', () => ({
   useFleetOverview: vi.fn(),
 }));
 
+vi.mock('@/hooks/useHealth', () => ({
+  useHealthReport: vi.fn(),
+}));
+
+vi.mock('@/hooks/useQueues', () => ({
+  useAllNamespacesQueues: vi.fn(),
+}));
+
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -14,12 +22,16 @@ vi.mock('react-router-dom', async () => {
 });
 
 import { useFleetOverview } from '@/hooks/useFleet';
+import { useHealthReport } from '@/hooks/useHealth';
+import { useAllNamespacesQueues } from '@/hooks/useQueues';
 const mockUseFleetOverview = useFleetOverview as ReturnType<typeof vi.fn>;
+const mockUseHealthReport = useHealthReport as ReturnType<typeof vi.fn>;
+const mockUseAllNamespacesQueues = useAllNamespacesQueues as ReturnType<typeof vi.fn>;
 
 const sampleOverview = {
   generatedAt: '2026-07-21T06:00:00Z',
   windowHours: 24,
-  namespaceCount: 2,
+  namespaceCount: 3,
   totalActive: 12,
   totalNewInWindow: 4,
   totalResolvedInWindow: 1,
@@ -60,6 +72,21 @@ const sampleOverview = {
       oldestActiveDetectedAt: null,
       severity: 'healthy' as const,
     },
+    {
+      namespaceId: 'ns-dev-active',
+      namespaceName: 'events-dev',
+      provider: 'Gcp',
+      environment: 'Dev',
+      activeCount: 5,
+      newInWindow: 2,
+      resolvedInWindow: 0,
+      totalCount: 5,
+      topEntity: 'events',
+      topEntityCount: 5,
+      topCategory: 'Transient',
+      oldestActiveDetectedAt: '2026-07-21T01:00:00Z',
+      severity: 'warning' as const,
+    },
   ],
 };
 
@@ -72,7 +99,11 @@ function renderPage() {
 }
 
 describe('FleetPage', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseHealthReport.mockReturnValue({ data: undefined });
+    mockUseAllNamespacesQueues.mockReturnValue([]);
+  });
 
   it('shows a loading state', () => {
     mockUseFleetOverview.mockReturnValue({ data: undefined, isLoading: true, isError: false, refetch: vi.fn(), isFetching: true });
@@ -88,7 +119,8 @@ describe('FleetPage', () => {
     expect(screen.getByText('12')).toBeInTheDocument(); // total active
     expect(screen.getByText('orders-prod')).toBeInTheDocument();
     expect(screen.getByText('reporting-dev')).toBeInTheDocument();
-    // "at risk" tile = 1 (only the critical namespace)
+    expect(screen.getByText('events-dev')).toBeInTheDocument();
+    // "at risk" tile = 2 (critical + warning namespaces)
     expect(screen.getByText(/Namespaces at risk/i)).toBeInTheDocument();
   });
 
@@ -104,5 +136,61 @@ describe('FleetPage', () => {
     mockUseFleetOverview.mockReturnValue({ data: undefined, isLoading: false, isError: true, refetch: vi.fn(), isFetching: false });
     renderPage();
     expect(screen.getByText(/failed to load the fleet overview/i)).toBeInTheDocument();
+  });
+
+  it('renders provider connectivity badges from the health report', () => {
+    mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    mockUseHealthReport.mockReturnValue({
+      data: {
+        entries: {
+          servicebus: { status: 'Healthy', description: 'OK' },
+          'aws-connectivity': { status: 'Degraded', description: 'Slow' },
+        },
+      },
+    });
+    renderPage();
+
+    expect(screen.getByText(/provider connectivity/i)).toBeInTheDocument();
+    expect(screen.getByTitle('OK')).toBeInTheDocument();
+    expect(screen.getByTitle('Slow')).toBeInTheDocument();
+  });
+
+  it('filters namespace rows by provider', () => {
+    mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'AWS' }));
+
+    expect(screen.getByText('reporting-dev')).toBeInTheDocument();
+    expect(screen.queryByText('orders-prod')).not.toBeInTheDocument();
+    expect(screen.queryByText('events-dev')).not.toBeInTheDocument();
+  });
+
+  it('filters namespace rows by search text', () => {
+    mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    renderPage();
+
+    fireEvent.change(screen.getByPlaceholderText(/search namespaces/i), { target: { value: 'events' } });
+
+    expect(screen.getByText('events-dev')).toBeInTheDocument();
+    expect(screen.queryByText('orders-prod')).not.toBeInTheDocument();
+  });
+
+  it('shows a bulk-actions deep link for at-risk, non-prod namespaces only', () => {
+    mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    renderPage();
+
+    const bulkLinks = screen.getAllByTitle('Open bulk replay/purge for this namespace');
+    expect(bulkLinks).toHaveLength(1); // only events-dev: non-prod with active DLQ messages
+
+    fireEvent.click(bulkLinks[0]);
+    expect(mockNavigate).toHaveBeenCalledWith('/dlq-history?namespace=ns-dev-active&openBulk=true');
+  });
+
+  it('links back to the per-namespace dashboard', () => {
+    mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    renderPage();
+
+    expect(screen.getByRole('link', { name: /per-namespace details/i })).toHaveAttribute('href', '/dashboard');
   });
 });
