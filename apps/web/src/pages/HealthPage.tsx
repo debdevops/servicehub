@@ -36,7 +36,7 @@ function formatUptime(isoDuration: string): string {
 function checkStatusStyle(status: string): { pill: string; dot: string } {
   switch (status) {
     case 'Healthy':
-      return { pill: 'bg-green-100 text-green-700', dot: 'bg-green-500' };
+      return { pill: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' };
     case 'Degraded':
       return { pill: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' };
     default:
@@ -138,13 +138,13 @@ export function HealthPage() {
               <span
                 className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${
                   status?.isHealthy
-                    ? 'bg-green-100 text-green-700'
+                    ? 'bg-emerald-100 text-emerald-700'
                     : 'bg-red-100 text-red-700'
                 }`}
               >
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    status?.isHealthy ? 'bg-green-500' : 'bg-red-500'
+                    status?.isHealthy ? 'bg-emerald-500' : 'bg-red-500'
                   }`}
                 />
                 {status?.isHealthy ? 'Healthy' : 'Unhealthy'}

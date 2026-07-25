@@ -1,16 +1,11 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { MainLayout } from '@/components/layout';
-import {
-  MessagesPage,
-  ConnectPage,
-  RulesPage,
-  HealthPage,
-  HelpPage,
-  ScheduledMessagesPage,
-  SecurityPage,
-  WelcomePage,
-} from '@/pages';
+// Imported directly from its own module, not the @/pages barrel — importing anything from
+// the barrel forces Rollup to evaluate every page it re-exports (including the ones lazily
+// imported below), defeating the lazy-loading entirely (Rollup's own
+// INEFFECTIVE_DYNAMIC_IMPORT warning surfaces this if the barrel is used here).
+import { WelcomePage } from './pages/WelcomePage';
 import { DemoModeProvider } from '@/lib/demo/DemoContext';
 import { DEMO_NAMESPACE_IDS } from '@/lib/demo/mockProviders';
 
@@ -23,6 +18,13 @@ const SimulatorPageLazy = lazy(() => import('./pages/SimulatorPage').then(m => (
 const CrossCloudTracePageLazy = lazy(() => import('./pages/CrossCloudTracePage').then(m => ({ default: m.CrossCloudTracePage })));
 const AuditPageLazy = lazy(() => import('./pages/AuditPage').then(m => ({ default: m.AuditPage })));
 const MessagesOverviewPageLazy = lazy(() => import('./pages/MessagesOverviewPage'));
+const MessagesPageLazy = lazy(() => import('./pages/MessagesPage').then(m => ({ default: m.MessagesPage })));
+const ConnectPageLazy = lazy(() => import('./pages/ConnectPage').then(m => ({ default: m.ConnectPage })));
+const RulesPageLazy = lazy(() => import('./pages/RulesPage').then(m => ({ default: m.RulesPage })));
+const HealthPageLazy = lazy(() => import('./pages/HealthPage').then(m => ({ default: m.HealthPage })));
+const HelpPageLazy = lazy(() => import('./pages/HelpPage').then(m => ({ default: m.HelpPage })));
+const ScheduledMessagesPageLazy = lazy(() => import('./pages/ScheduledMessagesPage').then(m => ({ default: m.ScheduledMessagesPage })));
+const SecurityPageLazy = lazy(() => import('./pages/SecurityPage').then(m => ({ default: m.SecurityPage })));
 
 // Loading fallback component (co-located here intentionally — used only by router)
 // eslint-disable-next-line react-refresh/only-export-components
@@ -77,7 +79,14 @@ function DemoGcpLayout() {
 
 // Shared page children — EXACT same pages as the real app
 const sharedChildren = [
-  { path: 'messages', element: <MessagesPage /> },
+  {
+    path: 'messages',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <MessagesPageLazy />
+      </Suspense>
+    ),
+  },
   {
     path: 'messages-overview',
     element: (
@@ -86,12 +95,54 @@ const sharedChildren = [
       </Suspense>
     ),
   },
-  { path: 'connect', element: <ConnectPage /> },
-  { path: 'rules', element: <RulesPage /> },
-  { path: 'health', element: <HealthPage /> },
-  { path: 'help', element: <HelpPage /> },
-  { path: 'scheduled', element: <ScheduledMessagesPage /> },
-  { path: 'security', element: <SecurityPage /> },
+  {
+    path: 'connect',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <ConnectPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'rules',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <RulesPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'health',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <HealthPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'help',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <HelpPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'scheduled',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <ScheduledMessagesPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'security',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <SecurityPageLazy />
+      </Suspense>
+    ),
+  },
   {
     path: 'dashboard',
     element: (

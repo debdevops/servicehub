@@ -251,7 +251,10 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         icon: <AlertCircle className="w-4 h-4 text-red-500" />,
         keywords: 'dead letter queue',
         action: () => {
-          navigate(`/messages?namespace=${ns.id}&tab=dlq`);
+          // MessagesOverviewPage lists dead-letter messages across every namespace (no
+          // per-namespace URL scoping) — the same destination the sidebar's own
+          // "Dead-Letter" quick-access link uses.
+          navigate('/messages-overview?tab=deadletter');
           onClose();
         },
       },

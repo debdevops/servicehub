@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Inbox, AlertTriangle, Globe, Plus, MessageSquare, Radio, Search, X, ChevronDown } from 'lucide-react';
+import { Inbox, AlertTriangle, Globe, Plus, MessageSquare, Radio, Search, X, ChevronDown, RefreshCw } from 'lucide-react';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues } from '@/hooks/useQueues';
 import { useTopics } from '@/hooks/useTopics';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useDemoContext } from '@/lib/demo/DemoContext';
 import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
+import { EmptyState } from '@/components/EmptyState';
 import { setThemeProvider } from '@/lib/providerTheme';
 import { useProviderCapabilities } from '@/hooks/useCloudBridge';
 import { getProviderCapabilities } from '@/lib/api/cloudBridge';
@@ -367,20 +368,17 @@ export function MessagesOverviewPage() {
       {/* Body */}
       <div className="flex-1 overflow-auto bg-gray-50 p-6">
         {isLoading ? (
-          <p className="text-sm text-gray-500">Loading namespaces…</p>
-        ) : !namespaces || namespaces.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center px-6">
-            <Globe className="w-14 h-14 text-gray-300 mb-4" />
-            <p className="text-gray-600 font-semibold text-lg mb-1">No namespaces connected</p>
-            <p className="text-gray-400 text-sm mb-5">Connect Azure, AWS, or GCP to browse messages.</p>
-            <button
-              onClick={() => navigate('/connect')}
-              className="flex items-center gap-2 px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Connect a namespace
-            </button>
+          <div className="flex items-center justify-center h-full text-gray-500 gap-2 text-sm">
+            <RefreshCw className="w-4 h-4 animate-spin" />
+            Loading namespaces…
           </div>
+        ) : !namespaces || namespaces.length === 0 ? (
+          <EmptyState
+            icon={Globe}
+            heading="No namespaces connected"
+            subtext="Connect Azure, AWS, or GCP to browse messages."
+            action={{ label: 'Connect a namespace', icon: Plus, onClick: () => navigate('/connect') }}
+          />
         ) : (
           <div className="space-y-5 max-w-5xl mx-auto">
             {namespaces.map((ns) => (

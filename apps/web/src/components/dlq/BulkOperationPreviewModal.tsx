@@ -33,11 +33,24 @@ export function BulkOperationPreviewModal({
 
   const isReplay = operationType === 'Replay';
   const data = preview.data;
+  const isBusy = createJob.isPending;
 
   const handleConfirm = async () => {
     const job = await createJob.mutateAsync({ operationType, filter });
     onJobCreated(job.id);
   };
+
+  // Escape-to-close — disarmed while a bulk operation is actually being created, mirroring
+  // the Cancel button's own disabled state (the in-flight request can't be aborted by closing).
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isBusy) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isBusy, onClose]);
 
   return createPortal(
     <div
@@ -46,7 +59,11 @@ export function BulkOperationPreviewModal({
       aria-modal="true"
       aria-label={`Bulk ${operationType.toLowerCase()} preview`}
     >
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={() => !isBusy && onClose()}
+        aria-hidden="true"
+      />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6 max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -82,6 +99,16 @@ export function BulkOperationPreviewModal({
                 message{data.totalMatched === 1 ? '' : 's'} matched
               </span>
             </div>
+
+            {!isReplay && (
+              <div className="flex items-start gap-2 px-3 py-2 mb-4 rounded-lg bg-red-50 border border-red-200 text-sm text-red-800">
+                <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>
+                  This permanently deletes every matched message. There is no undo and no recycle bin —
+                  purged messages cannot be recovered.
+                </span>
+              </div>
+            )}
 
             {data.warnings.length > 0 && (
               <div className="mb-4 space-y-2">
@@ -129,7 +156,8 @@ export function BulkOperationPreviewModal({
           <button
             onClick={onClose}
             disabled={createJob.isPending}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-lg transition-colors"
+            autoFocus={!isReplay}
+            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
           >
             Cancel
           </button>

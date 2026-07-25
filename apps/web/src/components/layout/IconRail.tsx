@@ -69,8 +69,8 @@ export function IconRail() {
       <div className="flex-1" />
       <NavLink
         to="/connect"
-        title="Settings"
-        aria-label="Settings"
+        title="Connect"
+        aria-label="Connect"
         className={({ isActive }) =>
           `w-10 h-10 shrink-0 flex items-center justify-center rounded-lg transition-colors ${
             isActive ? 'bg-primary-100 text-primary-600' : 'text-gray-400 hover:bg-gray-100 hover:text-primary-600'

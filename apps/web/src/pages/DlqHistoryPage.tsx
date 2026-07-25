@@ -210,7 +210,7 @@ export function DlqHistoryPage() {
     category: categoryFilter,
   }), [namespaceId, entityFilter, statusFilter, categoryFilter]);
 
-  const { data, isLoading, refetch, isFetching } = useDlqHistory(params, !!namespaceId);
+  const { data, isLoading, isError, refetch, isFetching } = useDlqHistory(params, !!namespaceId);
   const { data: summary, refetch: refetchSummary } = useDlqSummary(namespaceId);
 
   const { data: providerCapabilitiesMap } = useProviderCapabilities();
@@ -352,7 +352,7 @@ export function DlqHistoryPage() {
             </button>
             <button
               onClick={() => handleExport('csv')}
-              className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
               title="Export as CSV"
             >
               <Download className="w-4 h-4" />
@@ -360,7 +360,7 @@ export function DlqHistoryPage() {
             </button>
             <button
               onClick={() => handleExport('json')}
-              className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
               title="Export as JSON"
             >
               <Download className="w-4 h-4" />
@@ -546,6 +546,8 @@ export function DlqHistoryPage() {
           hasNextPage={data?.hasNextPage ?? false}
           hasPreviousPage={data?.hasPreviousPage ?? false}
           isLoading={isLoading}
+          isError={isError}
+          onRetry={() => refetch()}
           onPageChange={setPage}
           onViewTimeline={setSelectedTimelineId}
         />

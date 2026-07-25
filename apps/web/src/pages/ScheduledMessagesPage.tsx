@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
-import { Clock, RefreshCw, XCircle, Calendar, AlertCircle, Inbox, CalendarClock, Plus, Info } from 'lucide-react';
+import { Clock, RefreshCw, XCircle, Calendar, AlertCircle, Inbox, CalendarClock, Plus, Info, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useQueues } from '@/hooks/useQueues';
@@ -256,6 +256,14 @@ function ScheduleNewMessageModal({ namespaceId, queueName, onClose }: ScheduleNe
 
   const minValue = new Date(Date.now() + 30_000).toISOString().slice(0, 16);
 
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [busy, onClose]);
+
   const handleSchedule = async () => {
     if (!messageBody.trim()) {
       toast.error('Message body cannot be empty');
@@ -297,21 +305,26 @@ function ScheduleNewMessageModal({ namespaceId, queueName, onClose }: ScheduleNe
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-        <div className="bg-sky-600 text-white px-6 py-4 flex items-center justify-between">
+  return createPortal(
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="schedule-new-message-title"
+    >
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div className="flex items-center gap-2">
-            <Plus className="w-5 h-5" />
-            <span className="font-semibold">Schedule New Message</span>
+            <Plus className="w-5 h-5 text-sky-600" />
+            <h2 id="schedule-new-message-title" className="text-base font-semibold text-gray-900">Schedule New Message</h2>
           </div>
           <button
             onClick={onClose}
             disabled={busy}
-            className="hover:bg-white/20 p-1 rounded disabled:opacity-50"
+            className="p-1 text-gray-400 hover:text-gray-600 rounded-lg disabled:opacity-50"
             aria-label="Close"
           >
-            <XCircle className="w-5 h-5" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -416,7 +429,8 @@ function ScheduleNewMessageModal({ namespaceId, queueName, onClose }: ScheduleNe
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -732,25 +746,25 @@ export function ScheduledMessagesPage() {
         ) : (
           <div className="p-6">
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <table className="w-full text-left">
-                <thead>
+              <table className="w-full text-left" aria-label="Scheduled messages">
+                <thead className="sticky top-0 z-10 bg-gray-50">
                   <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Message ID
                     </th>
-                    <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Body Preview
                     </th>
-                    <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Scheduled For
                     </th>
-                    <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Delivers In
                     </th>
-                    <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Size
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Action
                     </th>
                   </tr>

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import {
   Globe,
   RefreshCw,
@@ -22,8 +22,10 @@ import { useQueues, useAllNamespacesQueues, NamespaceQueueStats } from '@/hooks/
 import { useTopics } from '@/hooks/useTopics';
 import { useEventStream } from '@/hooks/useEventStream';
 import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
+import { EnvironmentBadge } from '@/components/EnvironmentBadge';
+import { EmptyState } from '@/components/EmptyState';
 import { setThemeProvider } from '@/lib/providerTheme';
-import { Namespace, EnvironmentType } from '@/lib/api/types';
+import { Namespace } from '@/lib/api/types';
 import { apiClient } from '@/lib/api/client';
 import { getHealthGrade } from '@/lib/healthGrade';
 
@@ -55,7 +57,11 @@ function useSecondsSince(triggerAt: number | null): number {
 // Live Badge — pulsing dot + "last updated Xs ago"
 // ============================================================================
 
-function LiveBadge({ secondsAgo }: { secondsAgo: number }) {
+// Owns its own 1-second ticker so re-renders stay local to this small badge instead of
+// propagating up to DashboardPage, which would otherwise re-run every aggregation
+// (.sort()/.filter()/.reduce() over every namespace) once a second for no reason.
+function LiveBadge({ triggerAt }: { triggerAt: number | null }) {
+  const secondsAgo = useSecondsSince(triggerAt);
   const label =
     secondsAgo < 5 ? 'just now' : secondsAgo < 60 ? `${secondsAgo}s ago` : `${Math.floor(secondsAgo / 60)}m ago`;
   return (
@@ -65,39 +71,6 @@ function LiveBadge({ secondsAgo }: { secondsAgo: number }) {
         <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
       </span>
       Live · {label}
-    </span>
-  );
-}
-
-// ============================================================================
-// Environment Badge
-// ============================================================================
-
-function EnvironmentBadge({ env }: { env?: EnvironmentType }) {
-  if (env === 'prod') {
-    return (
-      <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-red-100 text-red-700 border border-red-200">
-        PROD
-      </span>
-    );
-  }
-  if (env === 'uat') {
-    return (
-      <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-amber-100 text-amber-700 border border-amber-200">
-        UAT
-      </span>
-    );
-  }
-  if (env === 'dev') {
-    return (
-      <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
-        DEV
-      </span>
-    );
-  }
-  return (
-    <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-gray-100 text-gray-500 border border-gray-200">
-      —
     </span>
   );
 }
@@ -576,65 +549,90 @@ export function DashboardPage() {
   } else if (dataUpdatedAt && lastUpdatedAt.current === null) {
     lastUpdatedAt.current = dataUpdatedAt;
   }
-  const secondsSinceLive = useSecondsSince(lastUpdatedAt.current);
 
-  // Build a lookup: namespaceId → stats
-  const statsById = new Map<string, NamespaceQueueStats>(
-    allStats.map((s) => [s.namespaceId, s]),
-  );
-
-  // Aggregate totals across all namespaces
-  const aggregateStats: AggregateStats = {
-    totalNamespaces: namespaces?.length ?? 0,
-    loadedNamespaces: allStats.filter((s) => !s.isLoading && !s.isError).length,
-    totalActive: allStats.reduce((sum, s) => sum + s.totalActive, 0),
-    totalDlq: allStats.reduce((sum, s) => sum + s.totalDlq, 0),
-    totalScheduled: allStats.reduce((sum, s) => sum + s.totalScheduled, 0),
-    spikeCount: allStats.filter((s) => s.totalDlq > DLQ_SPIKE_THRESHOLD).length,
-    isLoading: allStats.some((s) => s.isLoading),
-  };
-
-  // DLQ hot spots: namespaces with spikes, ranked by DLQ count descending
-  const hotspots: HotSpot[] = (namespaces ?? [])
-    .map((ns) => {
-      const s = statsById.get(ns.id);
-      return { namespace: ns, totalDlq: s?.totalDlq ?? 0, isError: s?.isError ?? false };
-    })
-    .filter((h) => h.totalDlq > DLQ_SPIKE_THRESHOLD)
-    .sort((a, b) => b.totalDlq - a.totalDlq);
-
-  const maxDlq = hotspots[0]?.totalDlq ?? 1;
-
-  // Sort namespace cards: highest DLQ first, then by name
-  const sortedNamespaces = [...(namespaces ?? [])].sort((a, b) => {
-    const dlqA = statsById.get(a.id)?.totalDlq ?? 0;
-    const dlqB = statsById.get(b.id)?.totalDlq ?? 0;
-    if (dlqB !== dlqA) return dlqB - dlqA;
-    const nameA = a.displayName || a.name;
-    const nameB = b.displayName || b.name;
-    return nameA.localeCompare(nameB);
-  });
-
-  // Prod vs Non-Prod comparison (only shown when both exist)
-  const prodNamespaces = (namespaces ?? []).filter((ns) => ns.environment === 'prod');
-  const nonProdNamespaces = (namespaces ?? []).filter((ns) => ns.environment !== 'prod');
-  const hasBothEnvs = prodNamespaces.length > 0 && nonProdNamespaces.length > 0;
-
-  function envTotals(nsList: Namespace[]) {
-    return nsList.reduce(
-      (acc, ns) => {
-        const s = statsById.get(ns.id);
-        return {
-          active: acc.active + (s?.totalActive ?? 0),
-          dlq: acc.dlq + (s?.totalDlq ?? 0),
-          scheduled: acc.scheduled + (s?.totalScheduled ?? 0),
-        };
-      },
-      { active: 0, dlq: 0, scheduled: 0 },
+  // All of this is derived purely from `namespaces` + `allStats` — memoized so it doesn't
+  // re-run on renders triggered by unrelated local state (search/filter toggles etc.).
+  const {
+    aggregateStats,
+    hotspots,
+    maxDlq,
+    sortedNamespaces,
+    prodNamespaces,
+    nonProdNamespaces,
+    hasBothEnvs,
+    prodTotals,
+    nonProdTotals,
+  } = useMemo(() => {
+    // Build a lookup: namespaceId → stats
+    const statsById = new Map<string, NamespaceQueueStats>(
+      allStats.map((s) => [s.namespaceId, s]),
     );
-  }
-  const prodTotals = hasBothEnvs ? envTotals(prodNamespaces) : null;
-  const nonProdTotals = hasBothEnvs ? envTotals(nonProdNamespaces) : null;
+
+    // Aggregate totals across all namespaces
+    const aggregateStats: AggregateStats = {
+      totalNamespaces: namespaces?.length ?? 0,
+      loadedNamespaces: allStats.filter((s) => !s.isLoading && !s.isError).length,
+      totalActive: allStats.reduce((sum, s) => sum + s.totalActive, 0),
+      totalDlq: allStats.reduce((sum, s) => sum + s.totalDlq, 0),
+      totalScheduled: allStats.reduce((sum, s) => sum + s.totalScheduled, 0),
+      spikeCount: allStats.filter((s) => s.totalDlq > DLQ_SPIKE_THRESHOLD).length,
+      isLoading: allStats.some((s) => s.isLoading),
+    };
+
+    // DLQ hot spots: namespaces with spikes, ranked by DLQ count descending
+    const hotspots: HotSpot[] = (namespaces ?? [])
+      .map((ns) => {
+        const s = statsById.get(ns.id);
+        return { namespace: ns, totalDlq: s?.totalDlq ?? 0, isError: s?.isError ?? false };
+      })
+      .filter((h) => h.totalDlq > DLQ_SPIKE_THRESHOLD)
+      .sort((a, b) => b.totalDlq - a.totalDlq);
+
+    const maxDlq = hotspots[0]?.totalDlq ?? 1;
+
+    // Sort namespace cards: highest DLQ first, then by name
+    const sortedNamespaces = [...(namespaces ?? [])].sort((a, b) => {
+      const dlqA = statsById.get(a.id)?.totalDlq ?? 0;
+      const dlqB = statsById.get(b.id)?.totalDlq ?? 0;
+      if (dlqB !== dlqA) return dlqB - dlqA;
+      const nameA = a.displayName || a.name;
+      const nameB = b.displayName || b.name;
+      return nameA.localeCompare(nameB);
+    });
+
+    // Prod vs Non-Prod comparison (only shown when both exist)
+    const prodNamespaces = (namespaces ?? []).filter((ns) => ns.environment === 'prod');
+    const nonProdNamespaces = (namespaces ?? []).filter((ns) => ns.environment !== 'prod');
+    const hasBothEnvs = prodNamespaces.length > 0 && nonProdNamespaces.length > 0;
+
+    function envTotals(nsList: Namespace[]) {
+      return nsList.reduce(
+        (acc, ns) => {
+          const s = statsById.get(ns.id);
+          return {
+            active: acc.active + (s?.totalActive ?? 0),
+            dlq: acc.dlq + (s?.totalDlq ?? 0),
+            scheduled: acc.scheduled + (s?.totalScheduled ?? 0),
+          };
+        },
+        { active: 0, dlq: 0, scheduled: 0 },
+      );
+    }
+    const prodTotals = hasBothEnvs ? envTotals(prodNamespaces) : null;
+    const nonProdTotals = hasBothEnvs ? envTotals(nonProdNamespaces) : null;
+
+    return {
+      aggregateStats,
+      hotspots,
+      maxDlq,
+      sortedNamespaces,
+      prodNamespaces,
+      nonProdNamespaces,
+      hasBothEnvs,
+      prodTotals,
+      nonProdTotals,
+    };
+  }, [namespaces, allStats]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -644,7 +642,7 @@ export function DashboardPage() {
           <div className="flex items-center gap-3">
             <Globe className="w-6 h-6 text-white/80" />
             <div>
-              <h1 className="text-xl font-semibold text-white">Multi-Namespace Dashboard</h1>
+              <h1 className="text-xl font-semibold text-white">Namespace Overview</h1>
               <div className="flex items-center gap-3 mt-0.5">
                 <p className="text-indigo-100 text-sm">
                   {namespaces && namespaces.length > 0
@@ -652,7 +650,7 @@ export function DashboardPage() {
                     : 'All connected namespaces at a glance'}
                 </p>
                 {lastUpdatedAt.current !== null && (
-                  <LiveBadge secondsAgo={secondsSinceLive} />
+                  <LiveBadge triggerAt={lastUpdatedAt.current} />
                 )}
               </div>
             </div>
@@ -685,20 +683,12 @@ export function DashboardPage() {
             ))}
           </div>
         ) : !namespaces || namespaces.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center px-6">
-            <Globe className="w-14 h-14 text-gray-300 mb-4" />
-            <p className="text-gray-600 font-semibold text-lg mb-1">No namespaces connected yet</p>
-            <p className="text-gray-400 text-sm mb-5">
-              Connect a Service Bus namespace to see it here.
-            </p>
-            <button
-              onClick={() => navigate('/connect')}
-              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Connect a namespace
-            </button>
-          </div>
+          <EmptyState
+            icon={Globe}
+            heading="No namespaces connected yet"
+            subtext="Connect a Service Bus namespace to see it here."
+            action={{ label: 'Connect a namespace', icon: Plus, onClick: () => navigate('/connect') }}
+          />
         ) : (
           <>
             {/* Aggregate Stats Bar */}

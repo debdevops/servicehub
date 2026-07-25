@@ -108,7 +108,7 @@ function ConfirmResetDialog({
           <button
             onClick={onCancel}
             disabled={isPending}
-            className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+            className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
           >
             Cancel
           </button>

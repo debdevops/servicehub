@@ -179,7 +179,7 @@ export default function FleetPage() {
         <div className="flex items-center gap-2">
           <Link
             to="/dashboard"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 border border-gray-200 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 border border-gray-200 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
           >
             Per-namespace details
             <ExternalLink className="w-3.5 h-3.5" />
@@ -202,7 +202,7 @@ export default function FleetPage() {
           </div>
           <button
             onClick={() => refetch()}
-            className="p-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+            className="p-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
             aria-label="Refresh fleet overview"
           >
             <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
@@ -321,7 +321,7 @@ export default function FleetPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search namespaces…"
-                className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                 aria-label="Search namespaces"
               />
             </div>

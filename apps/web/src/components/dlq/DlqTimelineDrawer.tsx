@@ -61,6 +61,16 @@ export function DlqTimelineDrawer({ messageId, onClose }: DlqTimelineDrawerProps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.id]);
 
+  // Escape-to-close
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
@@ -69,14 +79,20 @@ export function DlqTimelineDrawer({ messageId, onClose }: DlqTimelineDrawerProps
       <div
         className="fixed inset-0 bg-black/30 z-40"
         onClick={onClose}
+        aria-hidden="true"
       />
 
       {/* Drawer */}
-      <div className="fixed right-0 top-0 h-full w-[520px] max-w-[90vw] bg-white shadow-2xl z-50 flex flex-col">
+      <div
+        className="fixed right-0 top-0 h-full w-[520px] max-w-[90vw] bg-white shadow-2xl z-50 flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dlq-timeline-drawer-title"
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gradient-to-r from-red-50 to-white">
           <div>
-            <h2 className="font-semibold text-gray-900">Message Timeline</h2>
+            <h2 id="dlq-timeline-drawer-title" className="font-semibold text-gray-900">Message Timeline</h2>
             {detail && (
               <p className="text-xs text-gray-500 mt-0.5 truncate max-w-[300px]">
                 {detail.messageId}

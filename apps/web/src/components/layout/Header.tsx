@@ -1,8 +1,7 @@
 import { Link, useSearchParams } from 'react-router-dom';
 import { User, Cloud, HelpCircle, Search, Bell } from 'lucide-react';
-import { useQueries } from '@tanstack/react-query';
 import { useNamespaces } from '@/hooks/useNamespaces';
-import { apiClient } from '@/lib/api/client';
+import { useNamespaceStats } from '@/hooks/useQueues';
 import { getProviderStyle } from '@/lib/providerStyles';
 import { setThemeProvider } from '@/lib/providerTheme';
 import { ProviderIcon } from '@/components/ProviderIcon';
@@ -19,21 +18,7 @@ export function Header() {
   // Total active dead-letters across every connection — a genuinely useful notification
   // signal rather than a decorative badge.
   const namespaceIds = namespaces?.map(ns => ns.id) ?? [];
-  const statsResults = useQueries({
-    queries: namespaceIds.map(id => ({
-      queryKey: ['namespace-stats', id] as const,
-      queryFn: async () => {
-        const response = await apiClient.get<{ totalDlq: number }>(`/namespaces/${id}/stats`, {
-          _silent: true,
-        } as Record<string, unknown>);
-        return response.data;
-      },
-      enabled: !!id,
-      staleTime: 30_000,
-      refetchInterval: 60_000,
-      refetchIntervalInBackground: false,
-    })),
-  });
+  const statsResults = useNamespaceStats(namespaceIds);
   const totalDlqCount = statsResults.reduce((total, result) => total + (result.data?.totalDlq ?? 0), 0);
 
   return (

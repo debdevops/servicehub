@@ -153,6 +153,18 @@ describe('DlqTimelineDrawer', () => {
     }
   });
 
+  it('has dialog semantics and closes on Escape', () => {
+    const mockClose = vi.fn();
+    render(<DlqTimelineDrawer messageId={1} onClose={mockClose} />);
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAttribute('aria-labelledby', 'dlq-timeline-drawer-title');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(mockClose).toHaveBeenCalled();
+  });
+
   it('shows loading state when data is loading', () => {
     mockUseDlqTimeline.mockReturnValue({ data: undefined, isLoading: true });
     mockUseDlqMessageDetail.mockReturnValue({ data: undefined, isLoading: true });

@@ -14,7 +14,11 @@ const mockUseCreate = useCreateBulkOperation as ReturnType<typeof vi.fn>;
 
 const filter = { namespaceId: 'ns-1', status: 'Active' };
 
-function setup(previewOverrides: Record<string, unknown> = {}, createOverrides: Record<string, unknown> = {}) {
+function setup(
+  previewOverrides: Record<string, unknown> = {},
+  createOverrides: Record<string, unknown> = {},
+  operationType: 'Replay' | 'Purge' = 'Replay',
+) {
   const previewMutate = vi.fn();
   const createMutateAsync = vi.fn();
   mockUsePreview.mockReturnValue({
@@ -34,7 +38,7 @@ function setup(previewOverrides: Record<string, unknown> = {}, createOverrides: 
   const onJobCreated = vi.fn();
   render(
     <BulkOperationPreviewModal
-      operationType="Replay"
+      operationType={operationType}
       filter={filter}
       onClose={onClose}
       onJobCreated={onJobCreated}
@@ -99,5 +103,40 @@ describe('BulkOperationPreviewModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('closes on Escape', () => {
+    const { onClose } = setup({ data: { totalMatched: 1, sample: [], canExecute: true, warnings: [], unsafeReplayCount: 0 } });
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('ignores Escape while the bulk job is being created', () => {
+    const { onClose } = setup(
+      { data: { totalMatched: 1, sample: [], canExecute: true, warnings: [], unsafeReplayCount: 0 } },
+      { isPending: true },
+    );
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('shows an irreversibility banner for Purge but not Replay', () => {
+    setup(
+      { data: { totalMatched: 5, sample: [], canExecute: true, warnings: [], unsafeReplayCount: 0 } },
+      {},
+      'Purge',
+    );
+
+    expect(screen.getByText(/permanently deletes every matched message/i)).toBeInTheDocument();
+  });
+
+  it('does not show the irreversibility banner for Replay', () => {
+    setup({ data: { totalMatched: 5, sample: [], canExecute: true, warnings: [], unsafeReplayCount: 0 } });
+
+    expect(screen.queryByText(/permanently deletes every matched message/i)).not.toBeInTheDocument();
   });
 });

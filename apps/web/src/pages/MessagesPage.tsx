@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect, useRef, useDeferredValue } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause, Radio } from 'lucide-react';
+import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause, Radio, Inbox } from 'lucide-react';
 import { MessageList, MessageDetailPanel, LiveTailPanel, type QueueTab } from '@/components/messages';
+import { EmptyState } from '@/components/EmptyState';
 import { AwsTopicFanout } from '@/components/aws/AwsTopicFanout';
 import { AIFindingsDropdown } from '@/components/ai';
 import { MessageListSkeleton } from '@/components/messages/MessageListSkeleton';
@@ -541,13 +542,12 @@ export function MessagesPage() {
   if (!namespaceId || !entityName) {
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-50">
-        <div className="text-center max-w-md p-8">
-          <div className="text-6xl mb-4">📬</div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">No entity selected</h2>
-          <p className="text-gray-600">
-            Select a queue or topic subscription from the sidebar to view messages
-          </p>
-        </div>
+        <EmptyState
+          icon={Inbox}
+          heading="No entity selected"
+          subtext="Select a queue or topic subscription from the sidebar to view messages."
+          fillHeight={false}
+        />
       </div>
     );
   }
@@ -565,7 +565,7 @@ export function MessagesPage() {
             aria-label="Search messages"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-lg text-sm bg-white border border-gray-300 text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-all"
+            className="w-full pl-10 pr-4 py-2.5 rounded-lg text-sm bg-white border border-gray-300 text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all"
           />
           {searchInput && (
             <button

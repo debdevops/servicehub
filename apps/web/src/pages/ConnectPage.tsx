@@ -30,7 +30,6 @@ export function ConnectPage() {
   const [awsAccessKeyId, setAwsAccessKeyId] = useState('');
   const [awsSecretKey, setAwsSecretKey] = useState('');
   const [awsRegion, setAwsRegion] = useState('us-east-1');
-  const [awsQueuePrefix, setAwsQueuePrefix] = useState('');
 
   // GCP-specific fields
   const [gcpProjectId, setGcpProjectId] = useState('');
@@ -158,7 +157,6 @@ export function ConnectPage() {
         setDisplayName('');
         setAwsAccessKeyId('');
         setAwsSecretKey('');
-        setAwsQueuePrefix('');
       } catch {
         // Error handled by mutation hook
       }
@@ -594,24 +592,6 @@ export function ConnectPage() {
                       <option value="ap-northeast-1">ap-northeast-1 — Asia Pacific (Tokyo)</option>
                       <option value="sa-east-1">sa-east-1 — South America (São Paulo)</option>
                     </select>
-                  </div>
-
-                  <div className="mb-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Queue/Topic URL prefix
-                      <HelpTooltip
-                        text="Optional. Filter to queues matching this prefix, e.g. 'orders-' or leave blank to see all queues."
-                        position="right"
-                        className="ml-1"
-                      />
-                    </label>
-                    <input
-                      type="text"
-                      value={awsQueuePrefix}
-                      onChange={(e) => setAwsQueuePrefix(e.target.value)}
-                      placeholder="e.g., orders- (optional)"
-                      className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-300"
-                    />
                   </div>
 
                   {/* IAM permissions guidance */}

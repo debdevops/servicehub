@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Cloud, RefreshCw, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Inbox, Radio, GitBranch } from 'lucide-react';
-import { useQueries } from '@tanstack/react-query';
 import { useProviderStatus, useCloudEntities } from '@/hooks/useCloudBridge';
 import { useNamespaces } from '@/hooks/useNamespaces';
-import { apiClient } from '@/lib/api/client';
+import { useNamespaceStats } from '@/hooks/useQueues';
 import { getProviderStyle } from '@/lib/providerStyles';
 import { ProviderIcon } from '@/components/ProviderIcon';
 import type { CloudEntity } from '@/lib/api/cloudBridge';
@@ -151,13 +150,13 @@ function EntityTable({ namespaceId, provider }: { namespaceId: string; provider:
 
       {/* Table — sticky header, independently scrollable body filling remaining height */}
       <div className="flex-1 min-h-0 overflow-y-auto">
-        <table className="w-full text-left border-collapse">
+        <table className="w-full text-left border-collapse" aria-label="Cloud Bridge entities">
           <thead className="sticky top-0 z-10 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider shadow-sm">
             <tr>
-              <th className="px-4 py-2.5">Name</th>
-              <th className="px-4 py-2.5">Type</th>
-              <th className="px-4 py-2.5 text-right">Messages</th>
-              <th className="px-4 py-2.5 text-right">DLQ</th>
+              <th scope="col" className="px-4 py-2.5">Name</th>
+              <th scope="col" className="px-4 py-2.5">Type</th>
+              <th scope="col" className="px-4 py-2.5 text-right">Messages</th>
+              <th scope="col" className="px-4 py-2.5 text-right">DLQ</th>
             </tr>
           </thead>
           <tbody>
@@ -286,21 +285,7 @@ export function CloudBridgePage() {
   // DLQ rollup per namespace — same cached query the Header/Quick Access already warm,
   // so this adds no meaningful extra network cost.
   const namespaceIds = namespaces?.map((ns) => ns.id) ?? [];
-  const statsResults = useQueries({
-    queries: namespaceIds.map((id) => ({
-      queryKey: ['namespace-stats', id] as const,
-      queryFn: async () => {
-        const response = await apiClient.get<{ totalDlq: number }>(`/namespaces/${id}/stats`, {
-          _silent: true,
-        } as Record<string, unknown>);
-        return response.data;
-      },
-      enabled: !!id,
-      staleTime: 30_000,
-      refetchInterval: 60_000,
-      refetchIntervalInBackground: false,
-    })),
-  });
+  const statsResults = useNamespaceStats(namespaceIds);
   const dlqByNamespaceId = new Map(namespaceIds.map((id, i) => [id, statsResults[i]?.data?.totalDlq ?? 0]));
 
   return (

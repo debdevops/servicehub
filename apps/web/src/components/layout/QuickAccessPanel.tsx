@@ -15,10 +15,9 @@ import {
   Route,
   Pin,
 } from 'lucide-react';
-import { useQueries } from '@tanstack/react-query';
 import { useNamespaces } from '@/hooks/useNamespaces';
+import { useNamespaceStats } from '@/hooks/useQueues';
 import { useIsSimulatorMode } from '@/hooks/useSimulator';
-import { apiClient } from '@/lib/api/client';
 import { useDemoContext } from '@/lib/demo/DemoContext';
 import { getMockStats } from '@/lib/demo/mockProviders';
 import { ResizablePanel } from './ResizablePanel';
@@ -38,26 +37,7 @@ export function QuickAccessPanel() {
   const demoStats = isDemoMode && cloudProvider ? getMockStats(cloudProvider) : null;
 
   const allNamespaceIds = isDemoMode ? [] : (namespaces?.map((ns) => ns.id) ?? []);
-  const allStatsResults = useQueries({
-    queries: allNamespaceIds.map((id) => ({
-      queryKey: ['namespace-stats', id] as const,
-      queryFn: async () => {
-        const response = await apiClient.get<{
-          totalQueues: number;
-          totalTopics: number;
-          totalSubscriptions: number;
-          totalActive: number;
-          totalDlq: number;
-          totalScheduled: number;
-        }>(`/namespaces/${id}/stats`, { _silent: true } as Record<string, unknown>);
-        return response.data;
-      },
-      enabled: !!id,
-      staleTime: 30_000,
-      refetchInterval: 60_000,
-      refetchIntervalInBackground: false,
-    })),
-  });
+  const allStatsResults = useNamespaceStats(allNamespaceIds);
   const totalDlqCount = demoStats
     ? demoStats.totalDlq
     : allStatsResults.reduce((total, result) => {
