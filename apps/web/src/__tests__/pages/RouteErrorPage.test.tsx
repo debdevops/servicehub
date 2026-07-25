@@ -8,7 +8,6 @@ function ThrowError({ message }: { message: string }): never {
 }
 
 function ThrowNonError(): never {
-  // eslint-disable-next-line @typescript-eslint/no-throw-literal
   throw 'a plain string error';
 }
 

@@ -174,7 +174,15 @@ public static class WebApplicationExtensions
         // Sitemap for search engine indexing
         app.MapGet("/sitemap.xml", (IConfiguration config) =>
         {
-            var baseUrl = (config.GetValue<string>("SiteUrl") ?? string.Empty).TrimEnd('/');
+            // "SET_VIA_ENV_VAR" is appsettings.Production.json's own shipped placeholder — an
+            // operator who hasn't set SiteUrl yet is just as "unconfigured" as one where the key
+            // is absent entirely (Development/Simulator/Local never define it at all). Either way,
+            // falling through to an empty/placeholder baseUrl would emit an invalid <loc> (a bare
+            // path, or one prefixed with literal placeholder text) instead of an absolute URL.
+            var configuredUrl = config.GetValue<string>("SiteUrl");
+            var baseUrl = string.IsNullOrWhiteSpace(configuredUrl) || configuredUrl == "SET_VIA_ENV_VAR"
+                ? "https://github.com/debdevops/servicehub"
+                : configuredUrl.TrimEnd('/');
 
             var sitemap = $"""
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -198,6 +206,21 @@ public static class WebApplicationExtensions
                     <loc>{baseUrl}/help</loc>
                     <changefreq>monthly</changefreq>
                     <priority>0.7</priority>
+                  </url>
+                  <url>
+                    <loc>{baseUrl}/demo/azure</loc>
+                    <changefreq>monthly</changefreq>
+                    <priority>0.6</priority>
+                  </url>
+                  <url>
+                    <loc>{baseUrl}/demo/aws</loc>
+                    <changefreq>monthly</changefreq>
+                    <priority>0.6</priority>
+                  </url>
+                  <url>
+                    <loc>{baseUrl}/demo/gcp</loc>
+                    <changefreq>monthly</changefreq>
+                    <priority>0.6</priority>
                   </url>
                 </urlset>
                 """;

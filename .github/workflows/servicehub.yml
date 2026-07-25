@@ -140,6 +140,10 @@ jobs:
         working-directory: apps/web
         run: npm ci --include=optional
 
+      - name: Run ESLint
+        working-directory: apps/web
+        run: npm run lint
+
       - name: Audit npm packages for vulnerabilities
         working-directory: apps/web
         run: |
@@ -226,10 +230,64 @@ jobs:
         working-directory: apps/web
         run: npm run build
 
+  container-smoke-test:
+    name: Container Build & Health Check (Simulator)
+    runs-on: ubuntu-latest
+    # Gated on the existing build jobs so a failing unit test doesn't also pay for an
+    # image build — `needs:` already fails this job if either upstream job doesn't succeed.
+    needs: [build-and-test-backend, build-and-test-frontend]
+    # Validates the exact path the README quick-start advertises (`docker compose up
+    # --build`), not merely that the Dockerfile compiles: image build, container startup
+    # in Simulator mode, liveness, and that the SPA root is actually served.
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build and start container (docker compose up --build)
+        run: docker compose up --build -d
+
+      - name: Wait for container health check
+        run: |
+          # The image's own HEALTHCHECK start-period is 25s, but .NET cold start on a
+          # shared runner can exceed that — poll generously rather than trusting the
+          # first health window.
+          echo "Waiting for the container to become healthy (up to 180s)..."
+          for i in $(seq 1 60); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health/live 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Container is healthy after $((i * 3))s (HTTP $HTTP_CODE)"
+              exit 0
+            fi
+            echo "  ...$((i * 3))s — HTTP $HTTP_CODE"
+            sleep 3
+          done
+          echo "❌ Container did not become healthy within 180s"
+          echo "--- docker compose ps ---"
+          docker compose ps
+          echo "--- Container logs ---"
+          docker compose logs
+          exit 1
+
+      - name: Request SPA root and assert success
+        run: |
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/)
+          echo "GET / -> HTTP $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ SPA root did not return 200"
+            docker compose logs
+            exit 1
+          fi
+          echo "✅ SPA root served successfully"
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [build-and-test-backend, build-and-test-frontend]
+    needs: [build-and-test-backend, build-and-test-frontend, container-smoke-test]
     if: always()
 
     steps:
@@ -241,6 +299,10 @@ jobs:
           fi
           if [ "${{ needs.build-and-test-frontend.result }}" != "success" ]; then
             echo "❌ Frontend build/tests failed"
+            exit 1
+          fi
+          if [ "${{ needs.container-smoke-test.result }}" != "success" ]; then
+            echo "❌ Container build/health check failed"
             exit 1
           fi
           echo "✅ All builds and unit tests passed!"

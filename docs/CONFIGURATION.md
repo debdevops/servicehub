@@ -37,8 +37,11 @@ key `Security:EncryptionKey` becomes the environment variable `SECURITY__ENCRYPT
 |---|---|---|---|
 | `CloudProviders:Aws:Enabled` | `CLOUDPROVIDERS__AWS__ENABLED` | `false` | Registers the AWS (preview) provider. Inert until an AWS namespace exists. |
 | `CloudProviders:Gcp:Enabled` | `CLOUDPROVIDERS__GCP__ENABLED` | `false` | Registers the GCP (preview) provider. Inert until a GCP namespace exists. |
+| `DlqMonitor:AllowDestructivePeek:Aws` | `DLQMONITOR__ALLOWDESTRUCTIVEPEEK__AWS` | `false` | AWS SQS has no non-destructive peek — every DLQ scan is a real receive that increments a message's `ReceiveCount`. Background DLQ monitoring skips AWS namespaces unless this is set to `true`. See [docs/PROVIDER-SUPPORT.md](PROVIDER-SUPPORT.md). |
 
 Azure is always registered as the live provider outside Simulator mode. Simulator mode registers all three unconditionally.
+
+Both `CloudProviders:*:Enabled` flags default to `false` and are **absent from `appsettings.Production.json` entirely** — a production deployment only gets AWS/GCP by explicitly setting these via environment variable or `appsettings.Local.json`. See [docs/PROVIDER-SUPPORT.md](PROVIDER-SUPPORT.md) for what "preview" means concretely and the full capability matrix.
 
 ## Persistence (data directory)
 

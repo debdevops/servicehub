@@ -725,6 +725,94 @@ graph TB
 
 ---
 
+## 13. The CloudProviderRouter Extension Point
+
+`CloudProviderRouter` (`ServiceHub.Infrastructure/Routing/CloudProviderRouter.cs`) shows up as a
+single box in the diagrams above — that undersells it. It's the strongest piece of design in this
+codebase: it's the entire seam through which a fourth, fifth, or sixth messaging provider (Kafka,
+RabbitMQ, IBM MQ, ...) enters the system.
+
+The router's constructor takes `IEnumerable<ICloudMessagingProvider>`, groups the registered
+instances by `ProviderType`, and exposes `Resolve(providerType)` / `IsRegistered(providerType)`.
+Adding a provider requires **zero changes to the router itself** — a new provider implements
+`ICloudMessagingProvider`, registers itself via its own DI extension method (matching the existing
+`AddAzureProvider()` / `AddAwsProvider()` / `AddGcpProvider()` pattern), and the router picks it up
+automatically because it depends only on the interface, never a concrete list of clouds. Every
+consumer (`MessageOperationsService`, `CrossCloudTraceController`, `DlqMonitorService`, ...) codes
+against `ICloudProviderRouter`, not Azure/AWS/GCP-specific branches — enforced in CI by
+`ApiLayerBoundaryTests`.
+
+```mermaid
+%%{init: {'theme':'dark', 'themeVariables': { 'fontSize':'24px', 'primaryTextColor':'#ffffff'}}}%%
+graph LR
+    NEW["🆕 A new provider<br/>(Kafka? RabbitMQ?)"] -.->|"implements ICloudMessagingProvider<br/>+ its own AddXProvider() DI method"| ROUTER["CloudProviderRouter<br/>zero changes required"]
+    ROUTER --> AZ["Azure"]
+    ROUTER --> AWS["AWS"]
+    ROUTER --> GCP["GCP"]
+    ROUTER -.-> NEW
+
+    style ROUTER fill:#388e3c,stroke:#1b5e20,stroke-width:3px,color:#fff
+    style NEW fill:#f57f17,stroke:#f57f17,stroke-width:3px,color:#fff
+```
+
+See `docs/EXTENDING-PROVIDERS.md` for the practical how-to.
+
+---
+
+## 14. ProviderCapabilities: The Mechanism for Honest Asymmetry
+
+Azure, AWS, and GCP are not interchangeable — SQS has no non-destructive peek, Pub/Sub has no
+message-count API, Azure has no reliable single-message purge by sequence number. Rather than
+hide this behind provider-name checks scattered across the codebase (`if (provider == "aws")`),
+`ICloudMessagingProvider.Capabilities` (`ServiceHub.Core.Models.ProviderCapabilities`) declares it
+once, per provider, as data:
+
+| Operation | Azure | AWS | GCP |
+|---|:---:|:---:|:---:|
+| Real active-message counts | ✅ | ✅ | ❌ |
+| Manual dead-letter | ✅ | ✅ | ❌ |
+| Purge (single-message delete) | ❌ | ✅ | ✅ |
+| Scheduled messages | ✅ | ❌ | ❌ |
+| Repeatable, non-destructive peek | ✅ | ❌ | ✅ |
+
+Every `false` above is a genuine platform constraint, not a missing feature — see the `Notes`
+field on each preset for the specific reason. `GET /api/v1/cloud-bridge/capabilities` exposes the
+same record to the frontend's `useProviderCapabilities()` hook, so backend gating and UI copy can
+never drift apart. Full matrix and sourcing: `docs/PROVIDER-SUPPORT.md`.
+
+---
+
+## 15. Persistence: Two Stores, By Design (For Now)
+
+ServiceHub persists to two different places today, for historical reasons rather than an
+intentional split:
+
+- **Namespaces** (`servicehub-namespaces.json`) — a JSON file written by
+  `InMemoryNamespaceRepository` via a crash-safe temp-file-then-atomic-rename. This predates the
+  DLQ database and was never migrated into it.
+- **DLQ history, audit trail, and bulk-operation jobs** — SQLite via `DlqDbContext`
+  (`DlqMessages`, `ReplayHistories`, `AutoReplayRules`, `AuditLogs`, `BulkOperationJobs`).
+
+Unifying these into one store is the planned direction, not work done in this release — see
+`docs/KNOWN-LIMITATIONS.md` for the current state and why it hasn't happened yet.
+
+---
+
+## 16. Schema Evolution: Hand-Rolled at Startup, EF Core Migrations Next
+
+There is no EF Core Migrations pipeline in this repo today — no `Migrations/` folder, no
+`Microsoft.EntityFrameworkCore.Design` reference. Schema changes instead ship as hand-written,
+idempotent startup code: `Program.cs` calls `EnsureCreatedAsync()` (correct for brand-new
+databases) followed by `ApplySchemaUpgradesAsync()`, which checks `PRAGMA table_info` /
+`sqlite_master` and runs `ALTER TABLE ... ADD COLUMN` / `CREATE TABLE IF NOT EXISTS` against
+existing databases on every startup.
+
+This has worked so far because changes have been additive (new nullable columns, new tables), but
+it doesn't scale to renames, type changes, or data backfills. EF Core Migrations is the planned
+next step for schema evolution — not implemented in this release.
+
+---
+
 ## Key Architectural Principles
 
 ### 1. **Clean Architecture**
