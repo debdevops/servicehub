@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Middleware;
@@ -539,5 +540,108 @@ public class ApiKeyAuthenticationMiddlewareTests
         await middleware.InvokeAsync(context);
 
         nextCalled.Should().BeTrue();
+    }
+
+    // ── Auth Failure Throttle ─────────────────────────────────────────
+
+    private static AuthFailureThrottle CreateThrottle(int threshold, TimeSpan? window = null) =>
+        new(Options.Create(new AuthFailureThrottleOptions
+        {
+            Threshold = threshold,
+            Window = window ?? TimeSpan.FromMinutes(5)
+        }));
+
+    private static DefaultHttpContext CreateApiContext(string apiKey)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Request.Headers["X-API-KEY"] = apiKey;
+        context.Response.Body = new MemoryStream();
+        return context;
+    }
+
+    [Fact]
+    public async Task InvokeAsync_RepeatedInvalidApiKey_LocksOutAfterThreshold()
+    {
+        RequestDelegate next = _ => Task.CompletedTask;
+        var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
+        var throttle = CreateThrottle(threshold: 3);
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config, authFailureThrottle: throttle);
+
+        for (var i = 0; i < 3; i++)
+        {
+            var context = CreateApiContext("wrong-key");
+            await middleware.InvokeAsync(context);
+            context.Response.StatusCode.Should().Be(403, $"attempt {i + 1} is under the lockout threshold");
+        }
+
+        var lockedOutContext = CreateApiContext("wrong-key");
+        await middleware.InvokeAsync(lockedOutContext);
+
+        lockedOutContext.Response.StatusCode.Should().Be(429);
+        lockedOutContext.Response.Headers.RetryAfter.ToString().Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task InvokeAsync_LockedOut_RecoversAfterWindow()
+    {
+        RequestDelegate next = _ => Task.CompletedTask;
+        var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
+        var throttle = CreateThrottle(threshold: 2, window: TimeSpan.FromMilliseconds(50));
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config, authFailureThrottle: throttle);
+
+        await middleware.InvokeAsync(CreateApiContext("wrong-key"));
+        await middleware.InvokeAsync(CreateApiContext("wrong-key"));
+
+        var lockedOutContext = CreateApiContext("wrong-key");
+        await middleware.InvokeAsync(lockedOutContext);
+        lockedOutContext.Response.StatusCode.Should().Be(429);
+
+        await Task.Delay(100);
+
+        var recoveredContext = CreateApiContext("wrong-key");
+        await middleware.InvokeAsync(recoveredContext);
+        recoveredContext.Response.StatusCode.Should().Be(403, "the window has expired, so this is back to a plain invalid-key rejection, not a lockout");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_SuccessfulAuth_ResetsFailureCount()
+    {
+        RequestDelegate next = _ => Task.CompletedTask;
+        var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
+        var throttle = CreateThrottle(threshold: 2);
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config, authFailureThrottle: throttle);
+
+        await middleware.InvokeAsync(CreateApiContext("wrong-key"));
+
+        var successContext = CreateApiContext("test-key-12345");
+        await middleware.InvokeAsync(successContext);
+        successContext.Response.StatusCode.Should().Be(200, "the valid key request completes normally");
+
+        // Threshold is 2; without the reset this would be failure #2 and lock out.
+        var afterSuccessContext = CreateApiContext("wrong-key");
+        await middleware.InvokeAsync(afterSuccessContext);
+        afterSuccessContext.Response.StatusCode.Should().Be(403, "the successful auth cleared the prior failure, so this is only failure #1 again");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_AuthenticationDisabled_ThrottleNeverEngagesRegardlessOfFailureVolume()
+    {
+        var nextCallCount = 0;
+        RequestDelegate next = _ => { nextCallCount++; return Task.CompletedTask; };
+        var config = CreateConfig(enabled: false);
+        var throttle = CreateThrottle(threshold: 1);
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config, authFailureThrottle: throttle);
+
+        // With auth disabled, every request short-circuits before the throttle is ever consulted —
+        // Simulator mode and the local dev loop must never lock themselves out.
+        for (var i = 0; i < 20; i++)
+        {
+            var context = CreateApiContext("wrong-key");
+            await middleware.InvokeAsync(context);
+            context.Response.StatusCode.Should().Be(200);
+        }
+
+        nextCallCount.Should().Be(20);
     }
 }

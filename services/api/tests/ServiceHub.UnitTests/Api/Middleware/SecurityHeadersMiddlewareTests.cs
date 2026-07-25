@@ -23,10 +23,11 @@ public class SecurityHeadersMiddlewareTests
     private SecurityHeadersMiddleware CreateMiddleware(
         RequestDelegate next,
         SecurityHeadersOptions? options = null,
-        bool isProduction = false)
+        bool isProduction = false,
+        string? environmentName = null)
     {
         var env = new Mock<IHostEnvironment>();
-        env.Setup(e => e.EnvironmentName).Returns(isProduction ? "Production" : "Development");
+        env.Setup(e => e.EnvironmentName).Returns(environmentName ?? (isProduction ? "Production" : "Development"));
 
         var opts = Options.Create(options ?? new SecurityHeadersOptions());
         return new SecurityHeadersMiddleware(next, _logger.Object, env.Object, opts);
@@ -152,6 +153,24 @@ public class SecurityHeadersMiddlewareTests
 
         context.Response.Headers["Content-Security-Policy"].ToString()
             .Should().Contain("default-src 'none'");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_InNonDevelopmentNonProductionEnvironment_ShouldUseRestrictiveCsp()
+    {
+        // Regression guard: the predicate must key on IsDevelopment(), not IsProduction() —
+        // the inverse would silently serve the permissive dev CSP (unsafe-inline/unsafe-eval)
+        // to Staging, Simulator, or any other environment name that isn't literally "Production".
+        RequestDelegate next = _ => Task.CompletedTask;
+        var options = new SecurityHeadersOptions();
+        var middleware = CreateMiddleware(next, options, environmentName: "Staging");
+
+        var context = CreateTestContext();
+        await middleware.InvokeAsync(context);
+        await context.Response.StartAsync();
+
+        context.Response.Headers["Content-Security-Policy"].ToString()
+            .Should().Be(options.ContentSecurityPolicyProduction);
     }
 
     [Fact]

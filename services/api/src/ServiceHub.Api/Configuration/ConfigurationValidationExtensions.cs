@@ -1,4 +1,5 @@
 using ServiceHub.Api.Middleware;
+using ServiceHub.Api.Security;
 using ServiceHub.Core.Models;
 
 namespace ServiceHub.Api.Configuration;
@@ -17,8 +18,8 @@ namespace ServiceHub.Api.Configuration;
 public static class ConfigurationValidationExtensions
 {
     /// <summary>
-    /// Adds validated options for the ServiceBus, RateLimit, Webhooks, Oidc, and Audit
-    /// Retention sections.
+    /// Adds validated options for the ServiceBus, RateLimit, AuthFailureThrottle, Webhooks, Oidc,
+    /// and Audit Retention sections.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configuration">The application configuration.</param>
@@ -39,6 +40,12 @@ public static class ConfigurationValidationExtensions
             .Bind(configuration.GetSection("RateLimit"))
             .Validate(o => o.MaxRequests >= 1, "RateLimit:MaxRequests must be at least 1.")
             .Validate(o => o.WindowDuration > TimeSpan.Zero, "RateLimit:WindowDuration must be greater than zero.")
+            .ValidateOnStart();
+
+        services.AddOptions<AuthFailureThrottleOptions>()
+            .Bind(configuration.GetSection(AuthFailureThrottleOptions.SectionName))
+            .Validate(o => o.Threshold >= 1, "Security:Authentication:FailureThrottle:Threshold must be at least 1.")
+            .Validate(o => o.Window > TimeSpan.Zero, "Security:Authentication:FailureThrottle:Window must be greater than zero.")
             .ValidateOnStart();
 
         services.AddOptions<WebhookOptions>()

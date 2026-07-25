@@ -154,10 +154,30 @@ function isSilent404(url: string): boolean {
   return silentPatterns.some(pattern => url.includes(pattern));
 }
 
+// Tracks the X-Correlation-Id of the most recent API response so the route error page
+// can surface a real server-side identifier instead of a client-generated one when possible.
+let lastCorrelationId: string | null = null;
+
+export function getLastCorrelationId(): string | null {
+  return lastCorrelationId;
+}
+
+function captureCorrelationId(headers: unknown): void {
+  const id = (headers as Record<string, string> | undefined)?.['x-correlation-id'];
+  if (typeof id === 'string' && id.length > 0) {
+    lastCorrelationId = id;
+  }
+}
+
 // Response interceptor: Handle errors with recovery guidance
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    captureCorrelationId(response.headers);
+    return response;
+  },
   async (error: AxiosError<{ message?: string; errors?: Record<string, string[]> }>) => {
+    captureCorrelationId(error.response?.headers);
+
     // Silent mode: skip all toast notifications.
     // Used by background-polling hooks (useQueues, useTopics, useSubscriptions,
     // useMessages) so Service Bus connectivity failures don't spam the user.

@@ -106,6 +106,10 @@ public static class ServiceCollectionExtensions
         // Security audit trail for critical operations
         services.AddSingleton<IAuditLogger, SecurityAuditLogger>();
 
+        // Throttles repeated API key authentication failures (see ApiKeyAuthenticationMiddleware).
+        // Singleton so failure counts persist across requests for the process lifetime.
+        services.AddSingleton<AuthFailureThrottle>();
+
         // Domain metrics (fleet backlog, etc.). AddMetrics guarantees IMeterFactory is available;
         // the meter is only exported when OpenTelemetry is enabled.
         services.AddMetrics();

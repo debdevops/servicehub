@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
@@ -25,6 +26,8 @@ public sealed class DlqMonitorService : IDlqMonitorService
     private readonly INamespaceRepository _namespaceRepository;
     private readonly CloudProviderRouter _router;
     private readonly IForensicEngineRouter _forensicEngine;
+    private readonly IConfiguration _configuration;
+    private readonly DlqNotMonitoredLogGuard _notMonitoredLogGuard;
     private readonly ILogger<DlqMonitorService> _logger;
 
     private const int MaxBodyPreviewLength = 500;
@@ -39,12 +42,16 @@ public sealed class DlqMonitorService : IDlqMonitorService
         INamespaceRepository namespaceRepository,
         CloudProviderRouter router,
         IForensicEngineRouter forensicEngine,
+        IConfiguration configuration,
+        DlqNotMonitoredLogGuard notMonitoredLogGuard,
         ILogger<DlqMonitorService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _router = router ?? throw new ArgumentNullException(nameof(router));
         _forensicEngine = forensicEngine ?? throw new ArgumentNullException(nameof(forensicEngine));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _notMonitoredLogGuard = notMonitoredLogGuard ?? throw new ArgumentNullException(nameof(notMonitoredLogGuard));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -73,6 +80,28 @@ public sealed class DlqMonitorService : IDlqMonitorService
         }
 
         var provider = _router.Resolve(ns.Provider);
+
+        // Providers that declare SupportsRepeatablePeek: false have no non-destructive peek —
+        // every call is a real receive that increments the message's ReceiveCount (AWS SQS).
+        // Timer-driven and manual scans alike must not silently mutate customer delivery state,
+        // so this is checked before ListEntitiesAsync is ever called. An operator who accepts
+        // that consequence can opt back in via DlqMonitor:AllowDestructivePeek:{Provider}.
+        if (!provider.Capabilities.SupportsRepeatablePeek
+            && !_configuration.GetValue($"DlqMonitor:AllowDestructivePeek:{ns.Provider}", false))
+        {
+            if (_notMonitoredLogGuard.ShouldLog(ns.Provider))
+            {
+                _logger.LogWarning(
+                    "DLQ background scanning is disabled for provider {Provider}: {Notes} Set " +
+                    "DlqMonitor:AllowDestructivePeek:{Provider}=true to re-enable if the ReceiveCount " +
+                    "increment this causes on every scan is acceptable.",
+                    ns.Provider, provider.Capabilities.Notes, ns.Provider);
+            }
+
+            return Result<int>.Failure(Error.Validation(
+                "Dlq.NotMonitored",
+                $"DLQ monitoring is not available for namespace '{ns.Name}': {provider.Capabilities.Notes}"));
+        }
 
         var entitiesResult = await provider.ListEntitiesAsync(namespaceId, cancellationToken);
         if (entitiesResult.IsFailure)

@@ -51,9 +51,13 @@ public sealed class RateLimitingMiddleware
     /// <param name="context">The HTTP context.</param>
     public async Task InvokeAsync(HttpContext context)
     {
-        // Skip rate limiting for health checks
+        // Skip rate limiting for health checks. A bare substring match on "health" would also
+        // bypass any legitimate resource whose name happens to contain it (e.g. a queue named
+        // "health-events"), so this reuses ApiKeyAuthenticationMiddleware's exact health-path
+        // set as the authority, plus a "/health" prefix for any health subroute not yet enumerated there.
         var path = context.Request.Path.Value ?? string.Empty;
-        if (path.Contains("health", StringComparison.OrdinalIgnoreCase))
+        if (ApiKeyAuthenticationMiddleware.BypassPaths.Contains(path)
+            || path.StartsWith("/health", StringComparison.OrdinalIgnoreCase))
         {
             await _next(context);
             return;

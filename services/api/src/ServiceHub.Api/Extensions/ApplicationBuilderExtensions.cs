@@ -48,6 +48,15 @@ public static class ApplicationBuilderExtensions
         app.UseMiddleware<OidcBearerAuthenticationMiddleware>();
 
         // API Key authentication (legacy path for dev or external API clients)
+        //
+        // DELIBERATE ORDER — do not move RateLimitingMiddleware before this. RateLimitingMiddleware's
+        // GetClientIdentifier prefers the authenticated OwnerId over the raw IP; moving it earlier
+        // would degrade every authenticated request to IP-based keying, and since ForwardedHeaders
+        // is configured with KnownProxies cleared, all requests behind a reverse proxy would then
+        // collapse into one shared bucket. That trades an auth hole for a tenant-fairness
+        // regression. API key brute force is throttled separately, inside this middleware, via
+        // AuthFailureThrottle — which runs regardless of pipeline position because it keys on IP
+        // and acts before any credential is evaluated.
         app.UseMiddleware<ApiKeyAuthenticationMiddleware>();
 
         // Rate limiting (skip in development for easier testing)

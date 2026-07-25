@@ -185,7 +185,7 @@ static async Task ApplySchemaUpgradesAsync(DlqDbContext dbContext, ILogger logge
             logger.LogInformation("Schema upgrade applied: DlqMessages.CloudProvider added");
         }
 
-        // Migration: Create AuditLogs table (added in v4.0.0 Persistent Audit Trail)
+        // Migration: Create AuditLogs table (added in v3.3.0 Persistent Audit Trail)
         // EnsureCreatedAsync creates this table in new databases; existing databases need the DDL.
         if (!await TableExistsAsync(connection, "AuditLogs"))
         {

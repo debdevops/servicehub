@@ -329,6 +329,9 @@ public class TopicsControllerTests
         var ns = CreateTestNamespace();
         var nsId = ns.Id;
 
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
         _messageOperationsService.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Failure(Error.ExternalService("err", "timeout")));
 
@@ -338,24 +341,19 @@ public class TopicsControllerTests
     }
 
     [Fact]
-    public async Task GetSubscriptionMessages_NamespaceNotFound_StillReturnsPeekedCount()
+    public async Task GetSubscriptionMessages_NamespaceNotFound_ReturnsNotFound()
     {
         var nsId = Guid.NewGuid();
-
-        var messages = new List<Message>
-        {
-            new() { MessageId = "msg-1", SequenceNumber = 1, Body = "hello", EnqueuedTime = DateTimeOffset.UtcNow, DeliveryCount = 1 }
-        };
-
-        _messageOperationsService.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
 
         _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("ns", "not found")));
 
         var result = await _controller.GetSubscriptionMessages(nsId, "test-topic", "test-sub");
 
-        result.Result.Should().BeOfType<OkObjectResult>();
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+        _messageOperationsService.Verify(
+            r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     #endregion

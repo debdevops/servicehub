@@ -219,6 +219,11 @@ export function DlqHistoryPage() {
   const canBulkReplay = !!namespaceId && !isProdNamespace;
   const canBulkPurge = canBulkReplay && (providerCapabilities?.supportsPurge ?? false);
 
+  // The background monitor skips namespaces whose provider has no non-destructive peek (AWS SQS)
+  // unless an operator opts into the ReceiveCount consequence — an empty history for one of these
+  // namespaces means "never scanned," not "no dead letters," and must read differently.
+  const isNotMonitored = !!namespaceId && providerCapabilities !== undefined && !providerCapabilities.supportsRepeatablePeek;
+
   // Fleet page deep-links here with ?openBulk=true to jump straight into the bulk-replay
   // preview for a namespace flagged as at-risk, instead of duplicating the bulk-ops UI there.
   useEffect(() => {
@@ -550,6 +555,8 @@ export function DlqHistoryPage() {
           onRetry={() => refetch()}
           onPageChange={setPage}
           onViewTimeline={setSelectedTimelineId}
+          notMonitored={isNotMonitored}
+          notMonitoredReason={providerCapabilities?.notes}
         />
       </div>
 

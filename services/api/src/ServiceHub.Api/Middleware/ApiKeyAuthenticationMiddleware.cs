@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Options;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Security;
 using ServiceHub.Core.Entities;
@@ -21,8 +22,14 @@ public sealed class ApiKeyAuthenticationMiddleware
     private readonly Dictionary<string, ApiKeyConfiguration> _apiKeyLookup;
     private readonly bool _authenticationEnabled;
     private readonly SpaTokenProvider? _spaTokenProvider;
+    private readonly AuthFailureThrottle _authFailureThrottle;
 
-    private static readonly HashSet<string> BypassPaths = new(StringComparer.OrdinalIgnoreCase)
+    /// <summary>
+    /// Exact health-check paths that bypass authentication. Also reused by
+    /// <see cref="RateLimitingMiddleware"/> as the authority for its own bypass check, so the two
+    /// middlewares agree on what counts as a health route instead of each guessing independently.
+    /// </summary>
+    internal static readonly HashSet<string> BypassPaths = new(StringComparer.OrdinalIgnoreCase)
     {
         "/health",
         "/health/ready",
@@ -45,15 +52,18 @@ public sealed class ApiKeyAuthenticationMiddleware
     /// <param name="logger">The logger instance.</param>
     /// <param name="configuration">The configuration.</param>
     /// <param name="spaTokenProvider">Optional SPA token provider for co-hosted browser auth.</param>
+    /// <param name="authFailureThrottle">Optional auth-failure throttle; defaults to a standalone instance with default options when not supplied by DI.</param>
     public ApiKeyAuthenticationMiddleware(
         RequestDelegate next,
         ILogger<ApiKeyAuthenticationMiddleware> logger,
         IConfiguration configuration,
-        SpaTokenProvider? spaTokenProvider = null)
+        SpaTokenProvider? spaTokenProvider = null,
+        AuthFailureThrottle? authFailureThrottle = null)
     {
         _next = next;
         _logger = logger;
         _spaTokenProvider = spaTokenProvider;
+        _authFailureThrottle = authFailureThrottle ?? new AuthFailureThrottle(Options.Create(new AuthFailureThrottleOptions()));
         _apiKeyLookup = new Dictionary<string, ApiKeyConfiguration>(StringComparer.Ordinal);
 
         // Load authentication settings
@@ -189,6 +199,21 @@ public sealed class ApiKeyAuthenticationMiddleware
             return;
         }
 
+        // Throttle repeated authentication failures before evaluating any credential, so a bad
+        // key can't be brute-forced just because it also fails fast. Keyed on IP, not OwnerId —
+        // there is no authenticated owner yet at this point in the pipeline.
+        var clientIp = GetClientIp(context);
+        if (_authFailureThrottle.IsLockedOut(clientIp, out var retryAfter))
+        {
+            _logger.LogWarning(
+                "Authentication throttled for client due to repeated failures on {Method} {Path}",
+                LogRedactor.SanitiseForLog(context.Request.Method),
+                LogRedactor.SanitiseForLog(path));
+
+            await WriteTooManyRequestsResponse(context, retryAfter);
+            return;
+        }
+
         // Try SPA token first (co-hosted browser requests)
         if (_spaTokenProvider is { IsEnabled: true }
             && context.Request.Headers.TryGetValue(SpaTokenHeaderName, out var spaTokenHeader))
@@ -220,6 +245,8 @@ public sealed class ApiKeyAuthenticationMiddleware
         if (!context.Request.Headers.TryGetValue(ApiKeyHeaderName, out var apiKeyHeader)
             || string.IsNullOrWhiteSpace(apiKeyHeader.FirstOrDefault()))
         {
+            _authFailureThrottle.RecordFailure(clientIp);
+
             _logger.LogWarning(
                 "Authentication failed: No valid credential for {Method} {Path}",
                 LogRedactor.SanitiseForLog(context.Request.Method),
@@ -234,6 +261,8 @@ public sealed class ApiKeyAuthenticationMiddleware
         // Validate API key exists
         if (!_apiKeyLookup.TryGetValue(apiKey, out var keyConfig))
         {
+            _authFailureThrottle.RecordFailure(clientIp);
+
             _logger.LogWarning(
                 "Authentication failed: Invalid API key for {Method} {Path}",
             LogRedactor.SanitiseForLog(context.Request.Method),
@@ -242,6 +271,8 @@ public sealed class ApiKeyAuthenticationMiddleware
             await WriteForbiddenResponse(context, "Invalid API key.");
             return;
         }
+
+        _authFailureThrottle.RecordSuccess(clientIp);
 
         // API key is valid - store config for scope checking
         context.Items["Authenticated"] = true;
@@ -316,6 +347,31 @@ public sealed class ApiKeyAuthenticationMiddleware
 
         await context.Response.WriteAsJsonAsync(response);
     }
+
+    private static async Task WriteTooManyRequestsResponse(HttpContext context, TimeSpan retryAfter)
+    {
+        context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        context.Response.ContentType = "application/json";
+        context.Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
+
+        var correlationId = context.Items["CorrelationId"]?.ToString() ?? "unknown";
+
+        var response = new
+        {
+            type = "https://tools.ietf.org/html/rfc6585#section-4",
+            title = "Too Many Requests",
+            status = 429,
+            detail = "Too many failed authentication attempts. Try again later.",
+            correlationId
+        };
+
+        await context.Response.WriteAsJsonAsync(response);
+    }
+
+    // Not X-Forwarded-For: trivially spoofable by any client, which would let an attacker
+    // dodge the throttle by cycling through forged IP values on every request.
+    private static string GetClientIp(HttpContext context) =>
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
     /// <summary>
     /// Derives a stable, short owner ID from a scoped API key using SHA-256.

@@ -12,7 +12,10 @@ services:
       dockerfile: Dockerfile
     image: servicehub:local
     ports:
-      - "8080:8080"
+      # Loopback-bound: Simulator profile runs with auth/rate-limit/encryption
+      # disabled, so it must not be reachable from the network.
+      # For deliberate LAN exposure, change to: - "0.0.0.0:8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Simulator
     healthcheck:

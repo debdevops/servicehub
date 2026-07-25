@@ -2,6 +2,7 @@ using FluentAssertions;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Mock;
 
 namespace ServiceHub.UnitTests.Infrastructure.MockProvider;
@@ -25,6 +26,50 @@ public sealed class InMemoryMessagingProviderTests
     public void ProviderType_ReturnsAzure()
     {
         _sut.ProviderType.Should().Be(CloudProviderType.Azure);
+    }
+
+    [Fact]
+    public void ProviderType_DefaultConstruction_IsAzure()
+    {
+        var provider = new InMemoryMessagingProvider(_store);
+        provider.ProviderType.Should().Be(CloudProviderType.Azure);
+    }
+
+    [Fact]
+    public void ProviderType_ConstructedWithAws_IsAws()
+    {
+        var provider = new InMemoryMessagingProvider(_store, CloudProviderType.Aws);
+        provider.ProviderType.Should().Be(CloudProviderType.Aws);
+    }
+
+    [Fact]
+    public void ProviderType_ConstructedWithGcp_IsGcp()
+    {
+        var provider = new InMemoryMessagingProvider(_store, CloudProviderType.Gcp);
+        provider.ProviderType.Should().Be(CloudProviderType.Gcp);
+    }
+
+    // ── Capabilities ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Capabilities_DefaultConstruction_ReturnsAzurePreset()
+    {
+        var provider = new InMemoryMessagingProvider(_store);
+        provider.Capabilities.Should().Be(ProviderCapabilities.Azure);
+    }
+
+    [Fact]
+    public void Capabilities_ConstructedWithAws_ReturnsAwsPreset()
+    {
+        var provider = new InMemoryMessagingProvider(_store, CloudProviderType.Aws);
+        provider.Capabilities.Should().Be(ProviderCapabilities.Aws);
+    }
+
+    [Fact]
+    public void Capabilities_ConstructedWithGcp_ReturnsGcpPreset()
+    {
+        var provider = new InMemoryMessagingProvider(_store, CloudProviderType.Gcp);
+        provider.Capabilities.Should().Be(ProviderCapabilities.Gcp);
     }
 
     // ── ValidateConnectionAsync ───────────────────────────────────────────────

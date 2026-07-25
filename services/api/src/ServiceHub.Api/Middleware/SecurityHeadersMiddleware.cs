@@ -13,6 +13,7 @@ public sealed class SecurityHeadersMiddleware
     private readonly ILogger<SecurityHeadersMiddleware> _logger;
     private readonly SecurityHeadersOptions _options;
     private readonly bool _isProduction;
+    private readonly bool _isDevelopment;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SecurityHeadersMiddleware"/> class.
@@ -31,6 +32,7 @@ public sealed class SecurityHeadersMiddleware
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _options = options?.Value ?? new SecurityHeadersOptions();
         _isProduction = environment.IsProduction();
+        _isDevelopment = environment.IsDevelopment();
     }
 
     /// <summary>
@@ -64,10 +66,14 @@ public sealed class SecurityHeadersMiddleware
                 // Prevent XSS attacks (legacy header, but still useful)
                 headers.Append("X-XSS-Protection", _options.XssProtection);
 
-                // Content Security Policy - restrictive for production, permissive for dev
-                var csp = _isProduction
-                    ? _options.ContentSecurityPolicyProduction
-                    : _options.ContentSecurityPolicyDevelopment;
+                // Content Security Policy - permissive only in Development; every other
+                // environment (Production, Staging, Simulator, any custom name) gets the
+                // restrictive policy. Deliberately keyed on IsDevelopment(), not IsProduction() —
+                // the inverse would silently apply the permissive dev policy to any non-Production
+                // environment name, which is the defect this predicate exists to prevent.
+                var csp = _isDevelopment
+                    ? _options.ContentSecurityPolicyDevelopment
+                    : _options.ContentSecurityPolicyProduction;
                 headers.Append("Content-Security-Policy", csp);
 
                 // Permissions Policy - disable unnecessary features

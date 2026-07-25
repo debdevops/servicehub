@@ -6,6 +6,8 @@ import { MainLayout } from '@/components/layout';
 // imported below), defeating the lazy-loading entirely (Rollup's own
 // INEFFECTIVE_DYNAMIC_IMPORT warning surfaces this if the barrel is used here).
 import { WelcomePage } from './pages/WelcomePage';
+import { RouteErrorPage } from './pages/RouteErrorPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 import { DemoModeProvider } from '@/lib/demo/DemoContext';
 import { DEMO_NAMESPACE_IDS } from '@/lib/demo/mockProviders';
 
@@ -223,7 +225,7 @@ export const router = createBrowserRouter([
   {
     path: '/demo/azure',
     element: <DemoAzureLayout />,
-    errorElement: <Navigate to="/demo/azure" replace />,
+    errorElement: <RouteErrorPage />,
     children: [
       {
         index: true,
@@ -240,7 +242,7 @@ export const router = createBrowserRouter([
   {
     path: '/demo/aws',
     element: <DemoAwsLayout />,
-    errorElement: <Navigate to="/demo/aws" replace />,
+    errorElement: <RouteErrorPage />,
     children: [
       {
         index: true,
@@ -257,7 +259,7 @@ export const router = createBrowserRouter([
   {
     path: '/demo/gcp',
     element: <DemoGcpLayout />,
-    errorElement: <Navigate to="/demo/gcp" replace />,
+    errorElement: <RouteErrorPage />,
     children: [
       {
         index: true,
@@ -280,12 +282,23 @@ export const router = createBrowserRouter([
   {
     path: '/',
     element: <MainLayout />,
-    errorElement: <Navigate to="/welcome" replace />,
+    errorElement: <RouteErrorPage />,
     children: sharedChildren,
   },
-  // Fallback 404: redirect unknown paths to welcome
+  // Fallback 404: render a real not-found page inside the app chrome, at the
+  // URL the user actually requested — no teleporting to /welcome.
+  // Pathless layout route (no `path` key) so it matches regardless of segment count —
+  // a splat (path: '*') parent with an index child does NOT render the index child,
+  // since a splat consumes the whole remaining path and leaves nothing for an index
+  // match to key off. The wildcard must live on the child instead.
   {
-    path: '*',
-    element: <Navigate to="/welcome" replace />,
+    element: <MainLayout />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      {
+        path: '*',
+        element: <NotFoundPage />,
+      },
+    ],
   },
 ]);

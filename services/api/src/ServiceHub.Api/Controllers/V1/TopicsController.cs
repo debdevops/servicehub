@@ -387,6 +387,12 @@ public sealed class TopicsController : ApiControllerBase
             LogRedactor.SanitiseForLog(topicName),
             namespaceId);
 
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult<PaginatedResponse<MessageResponse>>(namespaceResult.Error);
+        }
+
         var fromDeadLetter = string.Equals(queueType, "deadletter", StringComparison.OrdinalIgnoreCase);
         var pageSize = Math.Clamp(take, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages);
         var request = new GetMessagesRequest(
@@ -407,7 +413,6 @@ public sealed class TopicsController : ApiControllerBase
         }
 
         // Get the actual total count from the provider's entity listing
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
         int totalCount = result.Value.Count; // Default to peeked count
 
         if (namespaceResult.IsSuccess && _providerRouter.IsRegistered(namespaceResult.Value.Provider))

@@ -6,6 +6,7 @@ import {
   Eye,
   Shield,
   AlertCircle,
+  Info,
 } from 'lucide-react';
 import type { DlqHistoryItem } from '@/lib/api/dlqHistory';
 import type { CloudProviderType } from '@/lib/api/types';
@@ -24,6 +25,15 @@ interface DlqHistoryTableProps {
   onRetry?: () => void;
   onPageChange: (page: number) => void;
   onViewTimeline: (id: number) => void;
+  /**
+   * True when the current namespace's provider declares SupportsRepeatablePeek: false (e.g. AWS
+   * SQS) and the operator has not opted into destructive polling — the background monitor never
+   * scans this namespace, so an empty list here means "not monitored," not "no dead letters."
+   * Must be shown distinctly from the genuine empty state or an operator could mistake a gap in
+   * coverage for a clean queue.
+   */
+  notMonitored?: boolean;
+  notMonitoredReason?: string;
 }
 
 function formatTime(ts: string | null): string {
@@ -65,6 +75,8 @@ export function DlqHistoryTable({
   onRetry,
   onPageChange,
   onViewTimeline,
+  notMonitored,
+  notMonitoredReason,
 }: DlqHistoryTableProps) {
   const [hoveredRow, setHoveredRow] = useState<number | null>(null);
 
@@ -123,6 +135,20 @@ export function DlqHistoryTable({
               Try Again
             </button>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  if (items.length === 0 && notMonitored) {
+    return (
+      <div className="bg-white rounded-xl border border-amber-200 overflow-hidden">
+        <div className="p-12 text-center">
+          <Info className="w-10 h-10 text-amber-400 mx-auto mb-3" />
+          <h3 className="text-lg font-semibold text-gray-900">DLQ monitoring not available for this provider</h3>
+          <p className="text-gray-500 mt-1 max-w-md mx-auto">
+            {notMonitoredReason ?? 'The background monitor does not scan this namespace automatically. An empty list here does not mean the queue is clean.'}
+          </p>
         </div>
       </div>
     );

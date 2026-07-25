@@ -225,6 +225,15 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
         // Also mask SharedAccessSignature if present
         masked = SharedAccessSignatureRegex().Replace(masked, "SharedAccessSignature=***MASKED***");
 
+        // Mask AWS access key IDs and labelled secret/session-token fields
+        masked = AwsAccessKeyIdRegex().Replace(masked, "***MASKED***");
+        masked = AwsCredentialFieldRegex().Replace(masked, "$1=***MASKED***");
+
+        // Mask GCP service-account private key material
+        masked = GcpPrivateKeyFieldRegex().Replace(masked, "\"private_key\": \"***MASKED***\"");
+        masked = GcpPrivateKeyIdFieldRegex().Replace(masked, "\"private_key_id\": \"***MASKED***\"");
+        masked = PemPrivateKeyBlockRegex().Replace(masked, "[PRIVATE KEY MASKED]");
+
         return masked;
     }
 
@@ -379,4 +388,19 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
 
     [GeneratedRegex(@"SharedAccessSignature=[^;]+", RegexOptions.IgnoreCase)]
     private static partial Regex SharedAccessSignatureRegex();
+
+    [GeneratedRegex(@"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b")]
+    private static partial Regex AwsAccessKeyIdRegex();
+
+    [GeneratedRegex(@"(aws_secret_access_key|aws_session_token)""?\s*[:=]\s*""?[^""\r\n,;}]+""?", RegexOptions.IgnoreCase)]
+    private static partial Regex AwsCredentialFieldRegex();
+
+    [GeneratedRegex(@"""private_key""\s*:\s*""[^""]*""")]
+    private static partial Regex GcpPrivateKeyFieldRegex();
+
+    [GeneratedRegex(@"""private_key_id""\s*:\s*""[^""]*""")]
+    private static partial Regex GcpPrivateKeyIdFieldRegex();
+
+    [GeneratedRegex(@"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----")]
+    private static partial Regex PemPrivateKeyBlockRegex();
 }

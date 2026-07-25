@@ -14,6 +14,7 @@ vi.mock('@/lib/api/cloudBridge', () => ({
 
 import { cloudBridgeApi } from '@/lib/api/cloudBridge';
 import { useProviderStatus, useProviderCapabilities, useCloudEntities, useVisibilityStatus } from '@/hooks/useCloudBridge';
+import { DemoModeProvider } from '@/lib/demo/DemoContext';
 
 const mockGetProviderStatus = cloudBridgeApi.getProviderStatus as ReturnType<typeof vi.fn>;
 const mockGetCapabilities = cloudBridgeApi.getCapabilities as ReturnType<typeof vi.fn>;
@@ -26,6 +27,19 @@ function createWrapper() {
   });
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return React.createElement(QueryClientProvider, { client: queryClient }, children);
+  };
+}
+
+function createDemoWrapper(cloudProvider: 'azure' | 'aws' | 'gcp') {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(DemoModeProvider, { cloudProvider, children })
+    );
   };
 }
 
@@ -73,6 +87,38 @@ describe('useProviderCapabilities', () => {
     const { result } = renderHook(() => useProviderCapabilities(), { wrapper: createWrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(capabilitiesMap);
+  });
+});
+
+describe('useProviderCapabilities in Demo Mode', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('returns the AWS mock preset without calling the real API', async () => {
+    const { result } = renderHook(() => useProviderCapabilities(), { wrapper: createDemoWrapper('aws') });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.Aws.supportsRepeatablePeek).toBe(false);
+    expect(result.current.data?.Aws.supportsScheduledMessages).toBe(false);
+    expect(mockGetCapabilities).not.toHaveBeenCalled();
+  });
+
+  it('returns the GCP mock preset without calling the real API', async () => {
+    const { result } = renderHook(() => useProviderCapabilities(), { wrapper: createDemoWrapper('gcp') });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.Gcp.supportsMessageCounts).toBe(false);
+    expect(result.current.data?.Gcp.supportsManualDeadLetter).toBe(false);
+    expect(result.current.data?.Gcp.supportsScheduledMessages).toBe(false);
+    expect(mockGetCapabilities).not.toHaveBeenCalled();
+  });
+
+  it('returns the Azure mock preset (unchanged) without calling the real API', async () => {
+    const { result } = renderHook(() => useProviderCapabilities(), { wrapper: createDemoWrapper('azure') });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.Azure.supportsRepeatablePeek).toBe(true);
+    expect(result.current.data?.Azure.supportsScheduledMessages).toBe(true);
+    expect(mockGetCapabilities).not.toHaveBeenCalled();
   });
 });
 

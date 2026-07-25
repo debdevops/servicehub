@@ -9,7 +9,7 @@
     <WarningLevel>7</WarningLevel>
     <AnalysisLevel>latest</AnalysisLevel>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>$(NoWarn);1591;NU1903</NoWarn>
+    <NoWarn>$(NoWarn);1591</NoWarn>
     <RootNamespace>ServiceHub.Infrastructure</RootNamespace>
     <AssemblyName>ServiceHub.Infrastructure</AssemblyName>
   </PropertyGroup>

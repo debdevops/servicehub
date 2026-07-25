@@ -208,6 +208,7 @@ public static class DependencyInjection
         });
 
         // Register DLQ services
+        services.TryAddSingleton<DlqNotMonitoredLogGuard>();
         services.TryAddScoped<IDlqMonitorService, DlqMonitorService>();
         services.TryAddScoped<IDlqHistoryService, DlqHistoryService>();
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();

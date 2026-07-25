@@ -44,11 +44,22 @@ jobs:
 
       - name: Audit NuGet packages for known vulnerabilities
         run: |
-          echo "=== dotnet list package --vulnerable (incl. transitive) ==="
-          # Capture the report; TreatWarningsAsErrors already blocks vulnerable *direct*
-          # packages at build time, this also surfaces transitive advisories in CI.
-          REPORT=$(dotnet list services/api/ServiceHub.sln package --vulnerable --include-transitive 2>&1 || true)
-          echo "$REPORT"
+          echo "=== dotnet list package --vulnerable (incl. transitive), per project ==="
+          # Every project under services/api/src is audited explicitly by path, not just
+          # whatever the .sln happens to reference — ServiceHub.Infrastructure.Aws and .Gcp
+          # were previously absent from the solution and went unaudited entirely, so solution
+          # membership alone isn't trusted here. NU1903 is no longer suppressed in any
+          # project's <NoWarn>, so TreatWarningsAsErrors now genuinely blocks vulnerable
+          # *direct* packages at build time; this step additionally surfaces transitive
+          # advisories in CI.
+          REPORT=""
+          for PROJECT in $(find services/api/src -name '*.csproj' | sort); do
+            echo "--- $PROJECT ---"
+            PROJECT_REPORT=$(dotnet list "$PROJECT" package --vulnerable --include-transitive 2>&1 || true)
+            echo "$PROJECT_REPORT"
+            REPORT="$REPORT
+          $PROJECT_REPORT"
+          done
           if echo "$REPORT" | grep -qiE '\b(High|Critical)\b'; then
             echo "❌ High/Critical severity vulnerabilities found in NuGet dependencies."
             exit 1

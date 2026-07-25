@@ -285,6 +285,72 @@ public sealed class InMemoryNamespaceRepositoryTests : IDisposable
         act.Should().NotThrow();
     }
 
+    [Fact]
+    public async Task ConcurrentAddAsync_ManySimultaneousWrites_StoreDeserialisesCleanlyWithAllEntries()
+    {
+        // Regression guard: SaveToDisk previously wrote through a FIXED temp filename shared
+        // by every caller with no lock, so concurrent writers could interleave on that shared
+        // file before either renamed, corrupting or truncating the one file every stored
+        // credential lives in. Repeated across several iterations with high concurrency so an
+        // absent lock would very likely surface as a deserialisation failure or a missing entry.
+        const int concurrency = 50;
+        const int iterations = 5;
+
+        for (var iteration = 0; iteration < iterations; iteration++)
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+            try
+            {
+                var config = new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["NamespaceRepository:DataDirectory"] = tempDir
+                    })
+                    .Build();
+
+                var repo = new InMemoryNamespaceRepository(NullLogger<InMemoryNamespaceRepository>.Instance, config);
+
+                var namespaces = Enumerable.Range(0, concurrency)
+                    .Select(i => MakeNamespace($"concurrent-ns-{iteration}-{i}"))
+                    .ToList();
+
+                // Task.Run is essential here, not Task.WhenAll(namespaces.Select(ns => repo.AddAsync(ns)))
+                // alone: AddAsync is synchronous under the hood (Task.FromResult), so without
+                // Task.Run every call would run to completion on the calling thread before the
+                // next one starts — no real concurrency, no race, a test that can never fail.
+                await Task.WhenAll(namespaces.Select(ns => Task.Run(() => repo.AddAsync(ns))));
+
+                // Load fresh from disk — this exercises the persisted file itself, not the
+                // in-memory dictionary, so a corrupted/truncated write would fail here.
+                var reloaded = new InMemoryNamespaceRepository(NullLogger<InMemoryNamespaceRepository>.Instance, config);
+                var all = await reloaded.GetAllAsync();
+
+                all.IsSuccess.Should().BeTrue();
+                all.Value.Should().HaveCount(concurrency);
+                foreach (var ns in namespaces)
+                {
+                    all.Value.Should().Contain(n => n.Id == ns.Id);
+                }
+            }
+            finally
+            {
+                if (Directory.Exists(tempDir))
+                {
+                    Directory.Delete(tempDir, recursive: true);
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public async Task AddAsync_AfterWriteCompletes_NoTempFilesRemainInDataDirectory()
+    {
+        var ns = MakeNamespace(ValidName);
+        await _sut.AddAsync(ns);
+
+        Directory.GetFiles(_tempDir, "*.tmp").Should().BeEmpty();
+    }
+
     // ── Sharing ──────────────────────────────────────────────────────
 
     [Fact]
