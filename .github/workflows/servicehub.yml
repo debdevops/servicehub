@@ -135,13 +135,34 @@ jobs:
           echo "=== npm audit — checking for known vulnerabilities ==="
           # --audit-level=high: fail only on HIGH or CRITICAL severity
           # --omit=dev: skip dev dependencies (they don't run in production)
-          npm audit --audit-level=high --omit=dev || {
-            echo ""
-            echo "❌ High/critical severity vulnerabilities found in production npm dependencies."
+          #
+          # ACCEPTED_ADVISORIES: advisories we've reviewed and judged not applicable to
+          # how this app uses the package. Each entry must have a reason; re-review on
+          # every dependency bump.
+          #   - GHSA-qwww-vcr4-c8h2 (react-router "RSC Mode" CSRF bypass): only reachable
+          #     via React Router's RSC/framework-mode server actions. This app is a
+          #     client-only Vite SPA using createBrowserRouter — no RSC, no server
+          #     actions — so the vulnerable code path is unreachable. Full fix requires
+          #     react-router-dom v8 (breaking change); tracked separately.
+          ACCEPTED_ADVISORIES="GHSA-qwww-vcr4-c8h2"
+
+          AUDIT_JSON=$(npm audit --audit-level=high --omit=dev --json || true)
+          UNACCEPTED=$(echo "$AUDIT_JSON" | jq -r --arg accepted "$ACCEPTED_ADVISORIES" '
+            ($accepted | split(",")) as $ignore
+            | [.vulnerabilities[]? | select(.severity == "high" or .severity == "critical")
+                | .via[]? | select(type == "object") | .url]
+            | unique
+            | map(select(. as $u | $ignore | any($u | contains(.)) | not))
+            | .[]
+          ')
+
+          if [ -n "$UNACCEPTED" ]; then
+            echo "❌ High/critical severity vulnerabilities found in production npm dependencies:"
+            echo "$UNACCEPTED"
             echo "   Run 'npm audit' locally to see details and 'npm audit fix' to fix automatically."
             exit 1
-          }
-          echo "✅ No high/critical npm vulnerabilities in production dependencies"
+          fi
+          echo "✅ No unaccepted high/critical npm vulnerabilities in production dependencies"
 
       - name: Run unit tests with coverage
         working-directory: apps/web
