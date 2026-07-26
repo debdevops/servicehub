@@ -110,7 +110,7 @@ Enter your connection string once and you're browsing messages instantly. Suppor
 
 Browse **Active** and **Dead-Letter** queue messages side by side. See full message previews, status badges, enqueue times, and metadata in a virtualized grid that handles thousands of records without breaking a sweat. Auto-refresh every 7 seconds keeps your view live during incidents.
 
-![Message Browser](docs/screenshots/02-ServiceHub-Home-Page-2.png)
+![Message Browser](docs/screenshots/07-ServiceHub-Home-Page-2.png)
 
 ---
 
@@ -122,7 +122,7 @@ Click any message for complete forensic analysis:
 - **Headers** — All custom application properties and correlation IDs
 - **AI Insights** — Pattern context and remediation hints, computed entirely in-browser
 
-![Message Detail - JSON Body Inspection](docs/screenshots/03-ServiceHub-Message-Detail-Expanded.png)
+![Message Detail - JSON Body Inspection](docs/screenshots/12-ServiceHub-Message-Detail-Expanded.png)
 
 ---
 
@@ -132,7 +132,7 @@ Click **AI Findings** to see error pattern clusters detected across your current
 
 > **Zero-trust privacy:** All analysis runs entirely in your browser. No message content ever leaves your environment.
 
-![AI Pattern Detection](docs/screenshots/09-ServiceHub-AI-Findings.png)
+![AI Pattern Detection](docs/screenshots/25-ServiceHub-AI-Findings.png)
 
 ---
 
@@ -144,7 +144,7 @@ Select the **Dead-Letter** tab to inspect failed messages in full. Each DLQ mess
 - **AI Assessment** — ServiceHub's categorization and interpretation
 - **One-click Replay** — Resend to the active queue after fixing the root cause
 
-![DLQ Forensic Investigation](docs/screenshots/05-ServiceHub-Home-DLQ-1.png)
+![DLQ Forensic Investigation](docs/screenshots/14-ServiceHub-Home-DLQ-1.png)
 
 ---
 
@@ -157,7 +157,7 @@ DLQ Intelligence automatically scans your dead-letter queues and stores every fi
 - **Replay Safety rating** — Know which messages are safe to replay automatically
 - **Export** — Download the full history as CSV or JSON for post-mortem analysis
 
-![DLQ Intelligence Dashboard](docs/screenshots/06-ServiceHub-DLQ-Intelligence.png)
+![DLQ Intelligence Dashboard](docs/screenshots/20-ServiceHub-DLQ-Intelligence.png)
 
 ---
 
@@ -171,7 +171,7 @@ Define rules that watch DLQ messages and automatically replay them when conditio
 - **Safety controls** — Rate limiting and circuit breaker prevent overwhelming downstream services
 - **Live stats** — Real-time Pending / Replayed / Success counters per rule
 
-![Auto-Replay Rules Engine](docs/screenshots/07-ServiceHub-Auto-Replay-1.png)
+![Auto-Replay Rules Engine](docs/screenshots/22-ServiceHub-Auto-Replay-1.png)
 
 ---
 
@@ -179,7 +179,7 @@ Define rules that watch DLQ messages and automatically replay them when conditio
 
 Search across message body, properties, and headers instantly. Filter 1,000+ messages down to exactly what you need in under a second — no waiting, no pagination round-trips.
 
-![Real-Time Message Search](docs/screenshots/08-ServiceHub-Search-Messages.png)
+![Real-Time Message Search](docs/screenshots/24-ServiceHub-Search-Messages.png)
 
 ---
 
@@ -187,7 +187,7 @@ Search across message body, properties, and headers instantly. Filter 1,000+ mes
 
 Paste any Correlation ID and instantly trace a message's full journey across all queues, topics, and namespaces. Invaluable during incident investigations — find where an order, payment, or event ended up and whether it's in the active queue or dead-letter.
 
-![Correlation ID Explorer](docs/screenshots/10-ServiceHub-CorrelationId-Explorer.png)
+![Correlation ID Explorer](docs/screenshots/27-ServiceHub-CorelationId-Explorer.png)
 
 ---
 
@@ -205,7 +205,7 @@ Route: `/cross-cloud-trace` — visible in the sidebar when two or more cloud pr
 
 Connect to multiple Azure Service Bus namespaces simultaneously. Switch between DEV, UAT, and PROD without disconnecting. All namespaces visible in the sidebar with live, color-coded message counts.
 
-![Multi-Namespace Dashboard](docs/screenshots/04-ServiceHub-Multi-Namespace-DashBoard.png)
+![Multi-Namespace Dashboard](docs/screenshots/13-5-ServiceHub-Multi-Namespace-DashBoard.png)
 
 ---
 
@@ -213,7 +213,7 @@ Connect to multiple Azure Service Bus namespaces simultaneously. Switch between 
 
 See every message queued for future delivery across your namespaces. Reschedule or cancel individual messages directly from the UI — no SDK, no scripts required.
 
-![Scheduled Messages Manager](docs/screenshots/11-ServiceHub-Schedule-Message.png)
+![Scheduled Messages Manager](docs/screenshots/28-ServiceHub-Schedule-Message.png)
 
 ---
 
@@ -221,7 +221,7 @@ See every message queued for future delivery across your namespaces. Reschedule 
 
 Real-time runtime metrics for the ServiceHub API itself: uptime, memory usage, thread count, GC generation counts, and full server information including .NET version and environment name.
 
-![System Health Dashboard](docs/screenshots/12-ServiceHub-System-Health-Status.png)
+![System Health Dashboard](docs/screenshots/29-ServiceHub-System-Health-Status.png)
 
 ---
 
@@ -230,15 +230,15 @@ Real-time runtime metrics for the ServiceHub API itself: uptime, memory usage, t
 | Feature | Preview |
 |---|---|
 | Connect Page | ![Connect](docs/screenshots/01-ServiceHub-Connect-Page-1.png) |
-| Message Browser | ![Browser](docs/screenshots/02-ServiceHub-Home-Page-2.png) |
-| Message Detail (JSON body) | ![Detail](docs/screenshots/03-ServiceHub-Message-Detail-Expanded.png) |
-| DLQ Investigation | ![DLQ](docs/screenshots/05-ServiceHub-Home-DLQ-1.png) |
-| AI Pattern Findings | ![AI](docs/screenshots/09-ServiceHub-AI-Findings.png) |
-| DLQ Intelligence | ![Intelligence](docs/screenshots/06-ServiceHub-DLQ-Intelligence.png) |
-| Auto-Replay Rules | ![Rules](docs/screenshots/07-ServiceHub-Auto-Replay-1.png) |
-| Correlation Explorer | ![Correlation](docs/screenshots/10-ServiceHub-CorrelationId-Explorer.png) |
-| Scheduled Messages | ![Scheduled](docs/screenshots/11-ServiceHub-Schedule-Message.png) |
-| System Health | ![Health](docs/screenshots/12-ServiceHub-System-Health-Status.png) |
+| Message Browser | ![Browser](docs/screenshots/07-ServiceHub-Home-Page-2.png) |
+| Message Detail (JSON body) | ![Detail](docs/screenshots/12-ServiceHub-Message-Detail-Expanded.png) |
+| DLQ Investigation | ![DLQ](docs/screenshots/14-ServiceHub-Home-DLQ-1.png) |
+| AI Pattern Findings | ![AI](docs/screenshots/25-ServiceHub-AI-Findings.png) |
+| DLQ Intelligence | ![Intelligence](docs/screenshots/20-ServiceHub-DLQ-Intelligence.png) |
+| Auto-Replay Rules | ![Rules](docs/screenshots/22-ServiceHub-Auto-Replay-1.png) |
+| Correlation Explorer | ![Correlation](docs/screenshots/27-ServiceHub-CorelationId-Explorer.png) |
+| Scheduled Messages | ![Scheduled](docs/screenshots/28-ServiceHub-Schedule-Message.png) |
+| System Health | ![Health](docs/screenshots/29-ServiceHub-System-Health-Status.png) |
 
 ---
 
