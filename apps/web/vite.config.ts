@@ -11,8 +11,10 @@ const appVersion = fs.readFileSync(path.resolve(__dirname, '../../.version'), 'u
  * Vite plugin that injects a SPA token <meta> tag into index.html during
  * development. Fetches a fresh HMAC token from the API's /internal/spa-token
  * endpoint on every page load, mirroring what SpaTokenInjectionMiddleware
- * does in production. This ensures local dev also requires auth — Postman
- * callers who copy URLs from DevTools will get 401.
+ * does in production. The token is a CSRF/automation mitigation, not
+ * authentication — anyone who fetches the page (curl included) can read
+ * and replay it. It does still stop the common case of copying a bare
+ * endpoint URL out of DevTools without also copying the header.
  */
 function spaTokenDevPlugin(): Plugin {
   return {

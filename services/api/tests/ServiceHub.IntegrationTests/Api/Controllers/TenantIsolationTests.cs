@@ -53,7 +53,7 @@ public sealed class TenantIsolationTests : IClassFixture<TenantIsolationWebAppli
 
         yield return new object[] { new RouteCase("Message purge", HttpMethod.Delete,
             id => $"/api/v1/messages/purge?namespaceId={id}&sequenceNumber=1&entityName={QueueName}",
-            RequiresIntentHeaders: true) };
+            Intent: IntentHeaders.IntentPurgeMessage) };
 
         yield return new object[] { new RouteCase("Queue listing", HttpMethod.Get,
             id => $"/api/v1/namespaces/{id}/queues") };
@@ -66,6 +66,55 @@ public sealed class TenantIsolationTests : IClassFixture<TenantIsolationWebAppli
 
         yield return new object[] { new RouteCase("Namespace detail", HttpMethod.Get,
             id => $"/api/v1/namespaces/{id}") };
+
+        // ── Routes added when closing the third cross-tenant exposure (GetScheduledMessages) ──
+
+        yield return new object[] { new RouteCase("Queue scheduled messages", HttpMethod.Get,
+            id => $"/api/v1/namespaces/{id}/queues/{QueueName}/scheduled") };
+
+        yield return new object[] { new RouteCase("Queue detail", HttpMethod.Get,
+            id => $"/api/v1/namespaces/{id}/queues/{QueueName}") };
+
+        yield return new object[] { new RouteCase("Queue send message", HttpMethod.Post,
+            id => $"/api/v1/namespaces/{id}/queues/{QueueName}/messages",
+            Intent: IntentHeaders.IntentSendMessage,
+            Body: new SendMessageRequest(EntityName: QueueName, Body: "test-body")) };
+
+        yield return new object[] { new RouteCase("Queue dead-letter", HttpMethod.Post,
+            id => $"/api/v1/namespaces/{id}/queues/{QueueName}/deadletter",
+            Intent: IntentHeaders.IntentDeadLetter) };
+
+        yield return new object[] { new RouteCase("Queue cancel scheduled message", HttpMethod.Delete,
+            id => $"/api/v1/namespaces/{id}/queues/{QueueName}/scheduled/1",
+            Intent: IntentHeaders.IntentCancelScheduled) };
+
+        yield return new object[] { new RouteCase("Topic detail", HttpMethod.Get,
+            id => $"/api/v1/namespaces/{id}/topics/{TopicName}") };
+
+        yield return new object[] { new RouteCase("Topic send message", HttpMethod.Post,
+            id => $"/api/v1/namespaces/{id}/topics/{TopicName}/messages",
+            Intent: IntentHeaders.IntentSendMessage,
+            Body: new SendMessageRequest(EntityName: TopicName, Body: "test-body")) };
+
+        yield return new object[] { new RouteCase("Topic subscription dead-letter", HttpMethod.Post,
+            id => $"/api/v1/namespaces/{id}/topics/{TopicName}/subscriptions/{SubscriptionName}/deadletter",
+            Intent: IntentHeaders.IntentDeadLetter) };
+
+        yield return new object[] { new RouteCase("Subscription detail", HttpMethod.Get,
+            id => $"/api/v1/namespaces/{id}/topics/{TopicName}/subscriptions/{SubscriptionName}") };
+
+        yield return new object[] { new RouteCase("Message subscription peek", HttpMethod.Get,
+            id => $"/api/v1/messages/topic/{TopicName}/subscription/{SubscriptionName}?namespaceId={id}") };
+
+        yield return new object[] { new RouteCase("Message queue dead-letter peek", HttpMethod.Get,
+            id => $"/api/v1/messages/queue/{QueueName}/deadletter?namespaceId={id}") };
+
+        yield return new object[] { new RouteCase("Message subscription dead-letter peek", HttpMethod.Get,
+            id => $"/api/v1/messages/topic/{TopicName}/subscription/{SubscriptionName}/deadletter?namespaceId={id}") };
+
+        yield return new object[] { new RouteCase("Message replay", HttpMethod.Post,
+            id => $"/api/v1/messages/replay?namespaceId={id}&sequenceNumber=1&entityName={QueueName}",
+            Intent: IntentHeaders.IntentReplayMessage) };
     }
 
     [Theory]
@@ -91,10 +140,15 @@ public sealed class TenantIsolationTests : IClassFixture<TenantIsolationWebAppli
     private static async Task<HttpResponseMessage> SendAsync(HttpClient client, RouteCase testCase, Guid namespaceId)
     {
         var request = new HttpRequestMessage(testCase.Method, testCase.BuildPath(namespaceId));
-        if (testCase.RequiresIntentHeaders)
+        if (testCase.Intent is not null)
         {
-            request.Headers.Add(IntentHeaders.IntentHeaderName, IntentHeaders.IntentPurgeMessage);
+            request.Headers.Add(IntentHeaders.IntentHeaderName, testCase.Intent);
             request.Headers.Add(IntentHeaders.ConfirmHeaderName, "true");
+        }
+
+        if (testCase.Body is not null)
+        {
+            request.Content = JsonContent.Create(testCase.Body);
         }
 
         return await client.SendAsync(request);
@@ -115,7 +169,7 @@ public sealed class TenantIsolationTests : IClassFixture<TenantIsolationWebAppli
         return created!.Id;
     }
 
-    public sealed record RouteCase(string Name, HttpMethod Method, Func<Guid, string> BuildPath, bool RequiresIntentHeaders = false)
+    public sealed record RouteCase(string Name, HttpMethod Method, Func<Guid, string> BuildPath, string? Intent = null, object? Body = null)
     {
         public override string ToString() => Name;
     }

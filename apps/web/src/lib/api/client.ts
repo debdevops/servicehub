@@ -20,9 +20,11 @@ declare module 'axios' {
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 // Read the SPA token injected into <meta name="spa-token"> by the server.
-// This token proves the request originates from the co-hosted SPA (loaded
-// from the same server) and cannot be obtained by Postman/curl since they
-// never load the HTML page.
+// This confirms the page was delivered same-origin, frustrating naive CSRF
+// and trivial scripted access — it does not identify or authenticate a
+// user. Anyone who can fetch the index page (curl included) can read this
+// token from the meta tag and replay it. Per-user identity requires
+// Security:Oidc or Azure Easy Auth.
 export function getSpaToken(): string | null {
   const meta = document.querySelector('meta[name="spa-token"]');
   return meta?.getAttribute('content') ?? null;

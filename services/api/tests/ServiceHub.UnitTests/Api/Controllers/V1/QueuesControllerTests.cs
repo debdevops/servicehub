@@ -544,6 +544,8 @@ public class QueuesControllerTests
     public async Task GetScheduledMessages_Success_ReturnsOkWithPaginatedMessages()
     {
         var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
         var scheduledMessages = new List<Message>
         {
             new()
@@ -574,6 +576,8 @@ public class QueuesControllerTests
         // The controller must use GetScheduledMessagesAsync (not PeekMessagesAsync) so that
         // scheduled messages beyond the active-message peek window are returned correctly.
         var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
         var scheduledMessages = new List<Message>
         {
             new()
@@ -601,6 +605,8 @@ public class QueuesControllerTests
     public async Task GetScheduledMessages_ReceiverFails_ReturnsError()
     {
         var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
 
         _messageOperationsService.Setup(r => r.GetScheduledMessagesAsync(
                 ns.Id, "test-queue", null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
@@ -615,6 +621,8 @@ public class QueuesControllerTests
     public async Task GetScheduledMessages_EmptyQueue_ReturnsOkWithEmptyPaginatedList()
     {
         var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
 
         _messageOperationsService.Setup(r => r.GetScheduledMessagesAsync(
                 ns.Id, "empty-queue", null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
@@ -632,6 +640,8 @@ public class QueuesControllerTests
     public async Task GetScheduledMessages_CallsGetScheduledMessagesOnReceiver()
     {
         var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
 
         _messageOperationsService.Setup(r => r.GetScheduledMessagesAsync(
                 ns.Id, "test-queue", null, It.IsAny<int>(), It.IsAny<CancellationToken>()))
@@ -642,6 +652,21 @@ public class QueuesControllerTests
         _messageOperationsService.Verify(r => r.GetScheduledMessagesAsync(
             ns.Id, "test-queue", null, It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
         _messageOperationsService.Verify(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetScheduledMessages_NamespaceNotFound_ReturnsNotFound()
+    {
+        var nsId = Guid.NewGuid();
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("ns", "not found")));
+
+        var result = await _controller.GetScheduledMessages(nsId, "test-queue");
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+        _messageOperationsService.Verify(r => r.GetScheduledMessagesAsync(
+            It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion

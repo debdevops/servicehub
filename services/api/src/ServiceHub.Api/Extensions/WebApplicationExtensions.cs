@@ -93,12 +93,16 @@ public static class WebApplicationExtensions
 
         {
             // Expose the SPA token refresh endpoint in ALL environments.
-            // The browser SPA calls this when its embedded token expires (30-min lifetime)
-            // or when a reverse proxy / multi-instance deployment routes the request to a
-            // different instance that has a different ephemeral key. The endpoint is intentionally
-            // NOT under /api/ so the ApiKeyAuthenticationMiddleware bypass rule lets it
-            // through without any credential, which is necessary to bootstrap auth.
-            // Security hardening: same-origin enforcement + tight rate limit.
+            // The browser SPA calls this when its embedded token expires (2-hour lifetime,
+            // matching SpaTokenProvider.TokenLifetime — the frontend proactively refreshes
+            // ~90 minutes in) or when a reverse proxy / multi-instance deployment routes the
+            // request to a different instance that has a different ephemeral key. This token
+            // only confirms same-origin HTML delivery (a CSRF/automation mitigation); it does
+            // not identify or authenticate a user — per-user identity requires Security:Oidc
+            // or Azure Easy Auth. The endpoint is intentionally NOT under /api/ so the
+            // ApiKeyAuthenticationMiddleware bypass rule lets it through without any
+            // credential, which is necessary to bootstrap auth. Security hardening:
+            // same-origin enforcement + tight rate limit.
             // Use GetService (returns null if not found) instead of GetRequiredService
             var spaTokenProvider = app.Services.GetService<SpaTokenProvider>();
             if (spaTokenProvider?.IsEnabled == true)

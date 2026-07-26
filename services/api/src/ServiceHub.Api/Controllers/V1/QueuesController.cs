@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Filters;
 using ServiceHub.Api.Security;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
@@ -16,6 +17,7 @@ namespace ServiceHub.Api.Controllers.V1;
 /// </summary>
 [Route(ApiRoutes.Queues.Base)]
 [Tags("Queues")]
+[RequireNamespaceOwnership]
 public sealed class QueuesController : ApiControllerBase
 {
     private readonly INamespaceRepository _namespaceRepository;
@@ -591,6 +593,14 @@ public sealed class QueuesController : ApiControllerBase
             LogRedactor.SanitiseForLog(queueName),
             namespaceId);
 
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult<PaginatedResponse<MessageResponse>>(namespaceResult.Error);
+        }
+
+        var ns = namespaceResult.Value;
+
         var pageSize = Math.Clamp(take, 1, 1000);
 
         // Use the dedicated scheduled-message retrieval so that we scan beyond the active-message
@@ -619,13 +629,12 @@ public sealed class QueuesController : ApiControllerBase
         {
             try
             {
-                var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
-                if (namespaceResult.IsSuccess && namespaceResult.Value.ConnectionString is not null)
+                if (ns.ConnectionString is not null)
                 {
-                    var unprotectResult = _connectionStringProtector.Unprotect(namespaceResult.Value.ConnectionString);
+                    var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
                     if (unprotectResult.IsSuccess)
                     {
-                        var wrapper = _clientCache.GetOrCreate(namespaceResult.Value.Id, unprotectResult.Value);
+                        var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
                         var queuesResult = await wrapper.GetQueuesAsync(cancellationToken);
                         if (queuesResult.IsSuccess)
                         {

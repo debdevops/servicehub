@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Filters;
 using ServiceHub.Api.Security;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
@@ -21,6 +22,7 @@ namespace ServiceHub.Api.Controllers.V1;
 /// </summary>
 [Route(ApiRoutes.Messages.Base)]
 [Tags("Messages")]
+[RequireNamespaceOwnership]
 public sealed class MessagesController : ApiControllerBase
 {
     private static readonly TimeSpan LiveTailPollInterval = TimeSpan.FromSeconds(3);

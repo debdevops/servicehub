@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Filters;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
@@ -14,6 +15,7 @@ namespace ServiceHub.Api.Controllers.V1;
 /// </summary>
 [Route(ApiRoutes.Subscriptions.Base)]
 [Tags("Subscriptions")]
+[RequireNamespaceOwnership]
 public sealed class SubscriptionsController : ApiControllerBase
 {
     private readonly INamespaceRepository _namespaceRepository;

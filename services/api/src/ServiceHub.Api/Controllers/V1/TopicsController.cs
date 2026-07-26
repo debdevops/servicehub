@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Filters;
 using ServiceHub.Api.Security;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
@@ -16,6 +17,7 @@ namespace ServiceHub.Api.Controllers.V1;
 /// </summary>
 [Route(ApiRoutes.Topics.Base)]
 [Tags("Topics")]
+[RequireNamespaceOwnership]
 public sealed class TopicsController : ApiControllerBase
 {
     private readonly INamespaceRepository _namespaceRepository;
