@@ -391,6 +391,51 @@ public sealed class NamespacesController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+
+        // AWS/GCP have their own ICloudMessagingProvider.ValidateConnectionAsync implementation
+        // that resolves credentials (including the connection-string-less IAM-role/ADC auth
+        // types) internally and issues a cheap live probe (ListQueues/ListSubscriptions).
+        // Route to it instead of the Azure-only, connection-string-only path below.
+        if (ns.Provider is CloudProviderType.Aws or CloudProviderType.Gcp)
+        {
+            var provider = _messagingProviders.FirstOrDefault(p => p.ProviderType == ns.Provider);
+            if (provider is null)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+                {
+                    Status = StatusCodes.Status503ServiceUnavailable,
+                    Title = "Provider not enabled",
+                    Detail = $"The '{ns.Provider}' cloud provider is not enabled on this server. " +
+                             $"Set 'CloudProviders:{ns.Provider}:Enabled' to 'true' in appsettings and restart.",
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
+            var validateResult = await provider.ValidateConnectionAsync(ns, cancellationToken);
+            ns.RecordConnectionTest(validateResult.IsSuccess);
+            await _namespaceRepository.UpdateAsync(ns, cancellationToken);
+
+            if (validateResult.IsFailure)
+            {
+                _logger.LogWarning(
+                    "Connection test failed for namespace {NamespaceId}: {Error}",
+                    id,
+                    validateResult.Error.Message);
+
+                return Ok(new ConnectionTestResponse(
+                    IsConnected: false,
+                    Message: $"Connection test failed: {validateResult.Error.Message}",
+                    TestedAt: DateTimeOffset.UtcNow));
+            }
+
+            _logger.LogInformation("Connection test successful for namespace {NamespaceId}", id);
+
+            return Ok(new ConnectionTestResponse(
+                IsConnected: true,
+                Message: "Connection successful",
+                TestedAt: DateTimeOffset.UtcNow));
+        }
+
         if (ns.ConnectionString is null)
         {
             return Ok(new ConnectionTestResponse(
@@ -503,9 +548,11 @@ public sealed class NamespacesController : ApiControllerBase
             return Forbid();
         }
 
-        // Verify the namespace exists and is owned by the caller first; subsequent
-        // operations use the repository-verified entity ID, not the raw route value.
-        var getResult = await GetOwnedNamespaceAsync(_namespaceRepository, id, cancellationToken);
+        // Verify the namespace exists and is owned (not merely shared) by the caller first —
+        // a shared collaborator must not be able to delete a namespace out from under its
+        // owner. Subsequent operations use the repository-verified entity ID, not the raw
+        // route value.
+        var getResult = await GetExclusivelyOwnedNamespaceAsync(_namespaceRepository, id, cancellationToken);
         if (getResult.IsFailure)
             return ToActionResult(Result.Failure(getResult.Error));
 
@@ -596,6 +643,142 @@ public sealed class NamespacesController : ApiControllerBase
     }
 
     /// <summary>
+    /// Grants another owner identity live operational access to this namespace — browse
+    /// entities, peek/replay/purge messages, Live Tail. Only the namespace's true owner may
+    /// share it; a shared collaborator cannot re-share.
+    /// </summary>
+    /// <remarks>
+    /// <b>Preview:</b> shared access covers live operations only. DLQ Intelligence history,
+    /// Bulk Operation job history, and the audit trail remain scoped to whichever owner
+    /// performed each action, and are not yet resolved through namespace sharing.
+    /// </remarks>
+    /// <param name="id">The namespace ID.</param>
+    /// <param name="request">The owner ID to grant access to.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <response code="200">Access granted; returns the updated namespace.</response>
+    /// <response code="400">Invalid owner ID (e.g. sharing with the namespace's own owner, or the shared-owner cap was reached).</response>
+    /// <response code="404">Namespace not found or not owned by the caller.</response>
+    /// <response code="428">Missing explicit-intent headers.</response>
+    [HttpPost("{id:guid}/share")]
+    [RequireScope(ApiKeyScopes.NamespacesWrite)]
+    [ProducesResponseType(typeof(NamespaceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<ActionResult<NamespaceResponse>> Share(
+        [FromRoute] Guid id,
+        [FromBody] ShareNamespaceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentShareNamespace))
+        {
+            _auditLogger.LogCriticalAction(
+                HttpContext, OwnerId, action: IntentHeaders.IntentShareNamespace, outcome: "Denied",
+                namespaceId: id, detail: "Missing explicit intent headers");
+
+            return Problem(
+                statusCode: StatusCodes.Status428PreconditionRequired,
+                title: "Explicit Intent Required",
+                detail: IntentHeaders.BuildIntentRequiredDetail("sharing a namespace"));
+        }
+
+        var getResult = await GetExclusivelyOwnedNamespaceAsync(_namespaceRepository, id, cancellationToken);
+        if (getResult.IsFailure)
+            return ToActionResult<NamespaceResponse>(getResult.Error);
+
+        var ns = getResult.Value;
+
+        var shareResult = ns.ShareWith(request.OwnerId);
+        if (shareResult.IsFailure)
+        {
+            _auditLogger.LogCriticalAction(
+                HttpContext, OwnerId, action: IntentHeaders.IntentShareNamespace, outcome: "Failed",
+                namespaceId: ns.Id, environment: ns.Environment, resourceName: ns.Name,
+                detail: shareResult.Error.Message);
+            return ToActionResult<NamespaceResponse>(shareResult.Error);
+        }
+
+        var updateResult = await _namespaceRepository.UpdateAsync(ns, cancellationToken);
+        if (updateResult.IsFailure)
+        {
+            _auditLogger.LogCriticalAction(
+                HttpContext, OwnerId, action: IntentHeaders.IntentShareNamespace, outcome: "Failed",
+                namespaceId: ns.Id, environment: ns.Environment, resourceName: ns.Name,
+                detail: updateResult.Error.Message);
+            return ToActionResult<NamespaceResponse>(updateResult.Error);
+        }
+
+        _auditLogger.LogCriticalAction(
+            HttpContext, OwnerId, action: IntentHeaders.IntentShareNamespace, outcome: "Succeeded",
+            namespaceId: ns.Id, environment: ns.Environment, resourceName: ns.Name,
+            detail: $"Shared with owner {request.OwnerId}");
+
+        _logger.LogInformation("Namespace {NamespaceId} shared with a new owner", ns.Id);
+
+        return Ok(MapToResponse(ns));
+    }
+
+    /// <summary>
+    /// Revokes a previously-granted owner's shared access to this namespace. Only the
+    /// namespace's true owner may revoke access. Idempotent — revoking access an owner never
+    /// had returns success.
+    /// </summary>
+    /// <param name="id">The namespace ID.</param>
+    /// <param name="ownerId">The owner ID to revoke access from.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <response code="204">Access revoked (or the owner never had access).</response>
+    /// <response code="404">Namespace not found or not owned by the caller.</response>
+    /// <response code="428">Missing explicit-intent headers.</response>
+    [HttpDelete("{id:guid}/share/{ownerId}")]
+    [RequireScope(ApiKeyScopes.NamespacesWrite)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> RevokeShare(
+        [FromRoute] Guid id,
+        [FromRoute] string ownerId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentShareNamespace))
+        {
+            _auditLogger.LogCriticalAction(
+                HttpContext, OwnerId, action: IntentHeaders.IntentShareNamespace, outcome: "Denied",
+                namespaceId: id, detail: "Missing explicit intent headers");
+
+            return Problem(
+                statusCode: StatusCodes.Status428PreconditionRequired,
+                title: "Explicit Intent Required",
+                detail: IntentHeaders.BuildIntentRequiredDetail("revoking namespace access"));
+        }
+
+        var getResult = await GetExclusivelyOwnedNamespaceAsync(_namespaceRepository, id, cancellationToken);
+        if (getResult.IsFailure)
+            return ToActionResult(Result.Failure(getResult.Error));
+
+        var ns = getResult.Value;
+        ns.RevokeShare(ownerId);
+
+        var updateResult = await _namespaceRepository.UpdateAsync(ns, cancellationToken);
+        if (updateResult.IsFailure)
+        {
+            _auditLogger.LogCriticalAction(
+                HttpContext, OwnerId, action: IntentHeaders.IntentShareNamespace, outcome: "Failed",
+                namespaceId: ns.Id, environment: ns.Environment, resourceName: ns.Name,
+                detail: updateResult.Error.Message);
+            return ToActionResult(updateResult);
+        }
+
+        _auditLogger.LogCriticalAction(
+            HttpContext, OwnerId, action: IntentHeaders.IntentShareNamespace, outcome: "Succeeded",
+            namespaceId: ns.Id, environment: ns.Environment, resourceName: ns.Name,
+            detail: $"Revoked access for owner {ownerId}");
+
+        _logger.LogInformation("Namespace {NamespaceId} access revoked for an owner", ns.Id);
+
+        return NoContent();
+    }
+
+    /// <summary>
     /// Gets aggregate statistics for a namespace, including both queue and subscription DLQ counts.
     /// </summary>
     /// <param name="id">The namespace ID.</param>
@@ -614,6 +797,32 @@ public sealed class NamespacesController : ApiControllerBase
             return ToActionResult<NamespaceStatsResponse>(nsResult.Error);
 
         var ns = nsResult.Value;
+
+        // AWS/GCP: aggregate from the provider's own entity listing (already includes
+        // active/dead-letter counts per entity) instead of the Azure-only client cache below.
+        if (ns.Provider is CloudProviderType.Aws or CloudProviderType.Gcp)
+        {
+            var provider = _messagingProviders.FirstOrDefault(p => p.ProviderType == ns.Provider);
+            if (provider is null)
+                return Ok(new NamespaceStatsResponse(0, 0, 0, 0, 0, 0));
+
+            var entitiesResult = await provider.ListEntitiesAsync(ns.Id, cancellationToken);
+            if (entitiesResult.IsFailure)
+                return Ok(new NamespaceStatsResponse(0, 0, 0, 0, 0, 0));
+
+            var entities = entitiesResult.Value;
+            var totalQueuesLive = entities.Count(e => string.Equals(e.EntityType, "Queue", StringComparison.OrdinalIgnoreCase));
+            var totalTopicsLive = entities.Count(e => string.Equals(e.EntityType, "Topic", StringComparison.OrdinalIgnoreCase));
+            var totalSubscriptionsLive = entities.Count(e => string.Equals(e.EntityType, "Subscription", StringComparison.OrdinalIgnoreCase));
+
+            return Ok(new NamespaceStatsResponse(
+                TotalQueues: totalQueuesLive,
+                TotalTopics: totalTopicsLive,
+                TotalSubscriptions: totalSubscriptionsLive,
+                TotalActive: entities.Sum(e => e.ActiveMessageCount),
+                TotalDlq: entities.Sum(e => e.DeadLetterCount),
+                TotalScheduled: 0));
+        }
 
         if (string.IsNullOrEmpty(ns.ConnectionString))
             return Ok(new NamespaceStatsResponse(0, 0, 0, 0, 0, 0));
@@ -678,12 +887,15 @@ public sealed class NamespacesController : ApiControllerBase
     }
 
     /// <summary>
-    /// Maps a Namespace entity to a NamespaceResponse DTO.
+    /// Maps a Namespace entity to a NamespaceResponse DTO, from the current caller's
+    /// perspective (instance method, not static, so it can populate <see cref="NamespaceResponse.IsSharedWithMe"/>).
     /// </summary>
     /// <param name="ns">The namespace entity.</param>
     /// <returns>The namespace response.</returns>
-    private static NamespaceResponse MapToResponse(Namespace ns)
+    private NamespaceResponse MapToResponse(Namespace ns)
     {
+        var isTrueOwner = string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal);
+
         return new NamespaceResponse(
             Id: ns.Id,
             Name: ns.Name,
@@ -703,6 +915,10 @@ public sealed class NamespacesController : ApiControllerBase
             Provider = ns.Provider,
             AwsRegion = ns.AwsRegion,
             GcpProjectId = ns.GcpProjectId,
+            // Only the true owner sees who else has access — a shared collaborator sees their
+            // own access to the namespace, not the owner's full sharing list.
+            SharedWithOwnerIds = isTrueOwner ? ns.SharedWithOwnerIds : [],
+            IsSharedWithMe = !isTrueOwner,
         };
     }
 }

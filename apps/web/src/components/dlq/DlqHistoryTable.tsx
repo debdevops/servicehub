@@ -5,10 +5,13 @@ import {
   Clock,
   Eye,
   Shield,
+  AlertCircle,
+  Info,
 } from 'lucide-react';
 import type { DlqHistoryItem } from '@/lib/api/dlqHistory';
+import type { CloudProviderType } from '@/lib/api/types';
 import { StatusBadge, CategoryBadge } from './StatusBadge';
-import { ProviderBadge } from '@/components/ProviderBadge';
+import { ProviderBadge } from '@/lib/providerStyles';
 
 interface DlqHistoryTableProps {
   items: DlqHistoryItem[];
@@ -18,8 +21,19 @@ interface DlqHistoryTableProps {
   hasNextPage: boolean;
   hasPreviousPage: boolean;
   isLoading: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
   onPageChange: (page: number) => void;
   onViewTimeline: (id: number) => void;
+  /**
+   * True when the current namespace's provider declares SupportsRepeatablePeek: false (e.g. AWS
+   * SQS) and the operator has not opted into destructive polling — the background monitor never
+   * scans this namespace, so an empty list here means "not monitored," not "no dead letters."
+   * Must be shown distinctly from the genuine empty state or an operator could mistake a gap in
+   * coverage for a clean queue.
+   */
+  notMonitored?: boolean;
+  notMonitoredReason?: string;
 }
 
 function formatTime(ts: string | null): string {
@@ -57,8 +71,12 @@ export function DlqHistoryTable({
   hasNextPage,
   hasPreviousPage,
   isLoading,
+  isError,
+  onRetry,
   onPageChange,
   onViewTimeline,
+  notMonitored,
+  notMonitoredReason,
 }: DlqHistoryTableProps) {
   const [hoveredRow, setHoveredRow] = useState<number | null>(null);
 
@@ -71,7 +89,7 @@ export function DlqHistoryTable({
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden animate-pulse">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-gray-50">
               <tr className="bg-gray-50 border-b border-gray-200">
                 {['w-10', 'flex-1', 'w-24', 'w-32', 'w-24', 'w-16', 'flex-1', 'w-20'].map((w, i) => (
                   <th key={i} className="px-4 py-3">
@@ -100,6 +118,42 @@ export function DlqHistoryTable({
     );
   }
 
+  if (isError) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="p-12 text-center">
+          <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+          <h3 className="text-lg font-semibold text-gray-900">Failed to load DLQ history</h3>
+          <p className="text-gray-500 mt-1 mb-4">
+            Something went wrong fetching dead-letter queue records.
+          </p>
+          {onRetry && (
+            <button
+              onClick={onRetry}
+              className="px-4 py-2 text-sm text-primary-600 hover:text-primary-700 border border-primary-300 rounded-lg hover:bg-primary-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
+            >
+              Try Again
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (items.length === 0 && notMonitored) {
+    return (
+      <div className="bg-white rounded-xl border border-amber-200 overflow-hidden">
+        <div className="p-12 text-center">
+          <Info className="w-10 h-10 text-amber-400 mx-auto mb-3" />
+          <h3 className="text-lg font-semibold text-gray-900">DLQ monitoring not available for this provider</h3>
+          <p className="text-gray-500 mt-1 max-w-md mx-auto">
+            {notMonitoredReason ?? 'The background monitor does not scan this namespace automatically. An empty list here does not mean the queue is clean.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (items.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -118,24 +172,24 @@ export function DlqHistoryTable({
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
+        <table className="w-full text-sm" aria-label="Dead-letter queue message history">
+          <thead className="sticky top-0 z-10 bg-gray-50">
             <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="text-left px-4 py-3 font-semibold text-gray-600 w-16">#</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-600 w-16">Provider</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-600">Entity</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-600 w-28">Status</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-600 w-36">Category</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-600 w-28">Replay Safety</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-600 w-20">
+              <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600 w-16">#</th>
+              <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600 w-16">Provider</th>
+              <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600">Entity</th>
+              <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600 w-28">Status</th>
+              <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600 w-36">Category</th>
+              <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600 w-28">Replay Safety</th>
+              <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600 w-20">
                 <span title="Forensic Confidence">Conf.</span>
               </th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-600">DLQ Reason</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-600 w-20">
+              <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600">DLQ Reason</th>
+              <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600 w-20">
                 <span title="Delivery Count">Del.</span>
               </th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-600 w-28">Detected</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-600 w-16">Actions</th>
+              <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600 w-28">Detected</th>
+              <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600 w-16">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -153,7 +207,7 @@ export function DlqHistoryTable({
                   {item.id}
                 </td>
                 <td className="px-4 py-3">
-                  <ProviderBadge provider={item.cloudProvider} />
+                  <ProviderBadge provider={item.cloudProvider as CloudProviderType | undefined} />
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex flex-col">

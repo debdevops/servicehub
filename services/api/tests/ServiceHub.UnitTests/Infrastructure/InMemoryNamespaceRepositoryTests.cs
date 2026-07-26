@@ -284,4 +284,148 @@ public sealed class InMemoryNamespaceRepositoryTests : IDisposable
         var act = CreateSut;
         act.Should().NotThrow();
     }
+
+    [Fact]
+    public async Task ConcurrentAddAsync_ManySimultaneousWrites_StoreDeserialisesCleanlyWithAllEntries()
+    {
+        // Regression guard: SaveToDisk previously wrote through a FIXED temp filename shared
+        // by every caller with no lock, so concurrent writers could interleave on that shared
+        // file before either renamed, corrupting or truncating the one file every stored
+        // credential lives in. Repeated across several iterations with high concurrency so an
+        // absent lock would very likely surface as a deserialisation failure or a missing entry.
+        const int concurrency = 50;
+        const int iterations = 5;
+
+        for (var iteration = 0; iteration < iterations; iteration++)
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+            try
+            {
+                var config = new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["NamespaceRepository:DataDirectory"] = tempDir
+                    })
+                    .Build();
+
+                var repo = new InMemoryNamespaceRepository(NullLogger<InMemoryNamespaceRepository>.Instance, config);
+
+                var namespaces = Enumerable.Range(0, concurrency)
+                    .Select(i => MakeNamespace($"concurrent-ns-{iteration}-{i}"))
+                    .ToList();
+
+                // Task.Run is essential here, not Task.WhenAll(namespaces.Select(ns => repo.AddAsync(ns)))
+                // alone: AddAsync is synchronous under the hood (Task.FromResult), so without
+                // Task.Run every call would run to completion on the calling thread before the
+                // next one starts — no real concurrency, no race, a test that can never fail.
+                await Task.WhenAll(namespaces.Select(ns => Task.Run(() => repo.AddAsync(ns))));
+
+                // Load fresh from disk — this exercises the persisted file itself, not the
+                // in-memory dictionary, so a corrupted/truncated write would fail here.
+                var reloaded = new InMemoryNamespaceRepository(NullLogger<InMemoryNamespaceRepository>.Instance, config);
+                var all = await reloaded.GetAllAsync();
+
+                all.IsSuccess.Should().BeTrue();
+                all.Value.Should().HaveCount(concurrency);
+                foreach (var ns in namespaces)
+                {
+                    all.Value.Should().Contain(n => n.Id == ns.Id);
+                }
+            }
+            finally
+            {
+                if (Directory.Exists(tempDir))
+                {
+                    Directory.Delete(tempDir, recursive: true);
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public async Task AddAsync_AfterWriteCompletes_NoTempFilesRemainInDataDirectory()
+    {
+        var ns = MakeNamespace(ValidName);
+        await _sut.AddAsync(ns);
+
+        Directory.GetFiles(_tempDir, "*.tmp").Should().BeEmpty();
+    }
+
+    // ── Sharing ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetByOwnerAsync_IncludesNamespacesSharedWithThatOwner()
+    {
+        var ns = Namespace.Create(ValidName, ValidConnectionString, ownerId: "owner-a").Value;
+        ns.ShareWith("owner-b");
+        await _sut.AddAsync(ns);
+
+        var result = await _sut.GetByOwnerAsync("owner-b");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle(n => n.Id == ns.Id);
+    }
+
+    [Fact]
+    public async Task GetByOwnerAsync_UnrelatedOwner_DoesNotSeeSharedNamespace()
+    {
+        var ns = Namespace.Create(ValidName, ValidConnectionString, ownerId: "owner-a").Value;
+        ns.ShareWith("owner-b");
+        await _sut.AddAsync(ns);
+
+        var result = await _sut.GetByOwnerAsync("owner-c");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UpdateAsync_PersistsSharedWithOwnerIds_NewInstanceLoadsThem()
+    {
+        var ns = Namespace.Create(ValidName, ValidConnectionString, ownerId: "owner-a").Value;
+        await _sut.AddAsync(ns);
+
+        ns.ShareWith("owner-b");
+        await _sut.UpdateAsync(ns);
+
+        // Create a second instance pointing at the same directory — proves SharedWithOwnerIds
+        // round-trips through the JSON snapshot file, not just the in-memory dictionary.
+        var sut2 = CreateSut();
+        var result = await sut2.GetByIdAsync(ns.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.SharedWithOwnerIds.Should().Contain("owner-b");
+    }
+
+    [Fact]
+    public async Task LoadFromDisk_LegacySnapshotWithoutSharedWithOwnerIdsField_RehydratesAsEmpty()
+    {
+        // Simulates a namespace file written before sharing existed — the sharedWithOwnerIds
+        // key is entirely absent from the JSON, not present-but-null.
+        Directory.CreateDirectory(_tempDir);
+        var storagePath = Path.Combine(_tempDir, "servicehub-namespaces.json");
+        var namespaceId = Guid.NewGuid();
+        var legacyJson = $$"""
+            [
+              {
+                "id": "{{namespaceId}}",
+                "name": "{{ValidName}}",
+                "connectionString": "{{ValidConnectionString}}",
+                "authType": 0,
+                "isActive": true,
+                "createdAt": "2026-01-01T00:00:00+00:00",
+                "environment": 0,
+                "ownerId": "__spa__",
+                "provider": 0
+              }
+            ]
+            """;
+        await File.WriteAllTextAsync(storagePath, legacyJson);
+
+        var sut2 = CreateSut();
+        var result = await sut2.GetByIdAsync(namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.SharedWithOwnerIds.Should().BeEmpty();
+    }
 }

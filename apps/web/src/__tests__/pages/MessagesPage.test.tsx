@@ -34,6 +34,7 @@ vi.mock('@/components/messages', () => ({
     </div>
   ),
   MessageDetailPanel: () => <div data-testid="message-detail-panel" />,
+  LiveTailPanel: () => <div data-testid="live-tail-panel" />,
 }));
 vi.mock('@/components/messages/MessageListSkeleton', () => ({
   MessageListSkeleton: () => <div data-testid="message-list-skeleton" />,

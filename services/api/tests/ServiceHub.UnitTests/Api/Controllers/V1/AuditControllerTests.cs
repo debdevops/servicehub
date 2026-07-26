@@ -4,8 +4,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
 using ServiceHub.Api.Controllers.V1;
+using ServiceHub.Api.Security;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Shared.Results;
 using System.Text;
@@ -30,6 +32,12 @@ public class AuditControllerTests
                 HttpContext = new DefaultHttpContext()
             }
         };
+    }
+
+    private void SetIntentHeaders(string intent)
+    {
+        _controller.ControllerContext.HttpContext.Request.Headers[IntentHeaders.IntentHeaderName] = intent;
+        _controller.ControllerContext.HttpContext.Request.Headers[IntentHeaders.ConfirmHeaderName] = "true";
     }
 
     [Fact]
@@ -196,4 +204,54 @@ public class AuditControllerTests
         var jsonContent = Encoding.UTF8.GetString(fileResult.FileContents);
         jsonContent.Should().Contain("Messages.Replay");
     }
+
+    #region Purge Tests
+
+    // Missing-intent-headers (428, via Problem()) is covered in the integration test suite —
+    // Problem() requires ProblemDetailsFactory, which this Moq-based harness doesn't register.
+
+    [Fact]
+    public async Task Purge_Success_ReturnsOkWithDeletedCount()
+    {
+        SetIntentHeaders(IntentHeaders.IntentPurgeAuditLogs);
+        _auditService
+            .Setup(s => s.PurgeExpiredAsync(It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<int>.Success(42));
+
+        var result = await _controller.Purge(new PurgeAuditLogsRequest(90));
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<PurgeAuditLogsResponse>().Subject;
+        response.DeletedCount.Should().Be(42);
+    }
+
+    [Fact]
+    public async Task Purge_PassesCorrectCutoffToService()
+    {
+        SetIntentHeaders(IntentHeaders.IntentPurgeAuditLogs);
+        DateTimeOffset? capturedCutoff = null;
+        _auditService
+            .Setup(s => s.PurgeExpiredAsync(It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .Callback<DateTimeOffset, CancellationToken>((cutoff, _) => capturedCutoff = cutoff)
+            .ReturnsAsync(Result<int>.Success(0));
+
+        await _controller.Purge(new PurgeAuditLogsRequest(30));
+
+        capturedCutoff.Should().NotBeNull();
+        capturedCutoff!.Value.Should().BeCloseTo(DateTimeOffset.UtcNow.AddDays(-30), TimeSpan.FromMinutes(1));
+    }
+
+    [Fact]
+    public async Task Purge_ServiceFailure_ReturnsErrorResult()
+    {
+        SetIntentHeaders(IntentHeaders.IntentPurgeAuditLogs);
+        _auditService
+            .Setup(s => s.PurgeExpiredAsync(It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<int>.Failure(Error.Internal("test.error", "db unavailable")));
+
+        var result = await _controller.Purge(new PurgeAuditLogsRequest(90));
+
+        result.Result.Should().NotBeOfType<OkObjectResult>();
+    }
+    #endregion
 }

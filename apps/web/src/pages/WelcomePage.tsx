@@ -513,7 +513,7 @@ export function WelcomePage() {
                 </ul>
                 {provider.status === 'preview' && (
                   <div className="mb-4 p-2.5 rounded-lg bg-white/70 border border-dashed border-gray-300 text-xs text-gray-500">
-                    <strong className={provider.accentColor}>Phase 2 provider.</strong> Demo mode available now. Full live browsing ships in Phase 2.
+                    <strong className={provider.accentColor}>Preview.</strong> Implemented and unit-tested, not validated against live {provider.shortName} services, capability-gated (see the Provider Support Matrix), no parity guarantee with Azure. Demo mode available now; live browsing requires an operator to enable it on the server.
                   </div>
                 )}
                 <button

@@ -1,12 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Filters;
 using ServiceHub.Api.Security;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
-using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.Api.Controllers.V1;
@@ -17,13 +17,14 @@ namespace ServiceHub.Api.Controllers.V1;
 /// </summary>
 [Route(ApiRoutes.Topics.Base)]
 [Tags("Topics")]
+[RequireNamespaceOwnership]
 public sealed class TopicsController : ApiControllerBase
 {
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IServiceBusClientCache _clientCache;
     private readonly IConnectionStringProtector _connectionStringProtector;
     private readonly IMessageOperationsService _messageOperationsService;
-    private readonly CloudProviderRouter _providerRouter;
+    private readonly ICloudProviderRouter _providerRouter;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<TopicsController> _logger;
 
@@ -42,7 +43,7 @@ public sealed class TopicsController : ApiControllerBase
         IServiceBusClientCache clientCache,
         IConnectionStringProtector connectionStringProtector,
         IMessageOperationsService messageOperationsService,
-        CloudProviderRouter providerRouter,
+        ICloudProviderRouter providerRouter,
         ILogger<TopicsController> logger,
         IAuditLogger? auditLogger = null)
     {
@@ -388,6 +389,12 @@ public sealed class TopicsController : ApiControllerBase
             LogRedactor.SanitiseForLog(topicName),
             namespaceId);
 
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult<PaginatedResponse<MessageResponse>>(namespaceResult.Error);
+        }
+
         var fromDeadLetter = string.Equals(queueType, "deadletter", StringComparison.OrdinalIgnoreCase);
         var pageSize = Math.Clamp(take, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages);
         var request = new GetMessagesRequest(
@@ -408,7 +415,6 @@ public sealed class TopicsController : ApiControllerBase
         }
 
         // Get the actual total count from the provider's entity listing
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
         int totalCount = result.Value.Count; // Default to peeked count
 
         if (namespaceResult.IsSuccess && _providerRouter.IsRegistered(namespaceResult.Value.Provider))

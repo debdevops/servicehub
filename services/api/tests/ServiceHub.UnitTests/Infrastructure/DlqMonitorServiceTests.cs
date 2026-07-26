@@ -1,5 +1,7 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Core.DTOs.Requests;
@@ -18,7 +20,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
 {
     private readonly DlqDbContext _dbContext;
     private readonly Mock<INamespaceRepository> _repoMock = new();
-    private readonly Mock<IForensicEngine> _forensicMock = new();
+    private readonly Mock<IForensicEngineRouter> _forensicMock = new();
     private readonly Mock<ICloudMessagingProvider> _providerMock = new();
     private readonly Mock<IMessageReceiver> _receiverMock = new();
 
@@ -42,14 +44,31 @@ public sealed class DlqMonitorServiceTests : IDisposable
 
     // ── Helpers ─────────────────────────────────────────────────────
 
-    private DlqMonitorService CreateSut(CloudProviderType registeredProvider)
+    private DlqMonitorService CreateSut(
+        CloudProviderType registeredProvider,
+        bool allowDestructivePeek = false,
+        DlqNotMonitoredLogGuard? logGuard = null,
+        ILogger<DlqMonitorService>? logger = null)
     {
         _providerMock.SetupGet(p => p.ProviderType).Returns(registeredProvider);
+        _providerMock.SetupGet(p => p.Capabilities).Returns(registeredProvider switch
+        {
+            CloudProviderType.Aws => ProviderCapabilities.Aws,
+            CloudProviderType.Gcp => ProviderCapabilities.Gcp,
+            _ => ProviderCapabilities.Azure,
+        });
         _providerMock.Setup(p => p.GetMessageReceiver()).Returns(_receiverMock.Object);
         var router = new CloudProviderRouter(new[] { _providerMock.Object });
+
+        var configData = allowDestructivePeek
+            ? new Dictionary<string, string?> { [$"DlqMonitor:AllowDestructivePeek:{registeredProvider}"] = "true" }
+            : new Dictionary<string, string?>();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(configData).Build();
+
         return new DlqMonitorService(
             _dbContext, _repoMock.Object, router, _forensicMock.Object,
-            NullLogger<DlqMonitorService>.Instance);
+            configuration, logGuard ?? new DlqNotMonitoredLogGuard(),
+            logger ?? NullLogger<DlqMonitorService>.Instance);
     }
 
     private Namespace SetupNamespace(CloudProviderType provider)
@@ -132,13 +151,15 @@ public sealed class DlqMonitorServiceTests : IDisposable
 
     // ── Constructor ─────────────────────────────────────────────────
 
+    private static IConfiguration EmptyConfig() => new ConfigurationBuilder().Build();
+
     [Fact]
     public void Constructor_NullDbContext_Throws()
     {
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
         var act = () => new DlqMonitorService(
             null!, _repoMock.Object, router, _forensicMock.Object,
-            NullLogger<DlqMonitorService>.Instance);
+            EmptyConfig(), new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("dbContext");
     }
 
@@ -148,7 +169,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
         var act = () => new DlqMonitorService(
             _dbContext, null!, router, _forensicMock.Object,
-            NullLogger<DlqMonitorService>.Instance);
+            EmptyConfig(), new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("namespaceRepository");
     }
 
@@ -157,7 +178,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
     {
         var act = () => new DlqMonitorService(
             _dbContext, _repoMock.Object, null!, _forensicMock.Object,
-            NullLogger<DlqMonitorService>.Instance);
+            EmptyConfig(), new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("router");
     }
 
@@ -167,8 +188,28 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
         var act = () => new DlqMonitorService(
             _dbContext, _repoMock.Object, router, null!,
-            NullLogger<DlqMonitorService>.Instance);
+            EmptyConfig(), new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("forensicEngine");
+    }
+
+    [Fact]
+    public void Constructor_NullConfiguration_Throws()
+    {
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var act = () => new DlqMonitorService(
+            _dbContext, _repoMock.Object, router, _forensicMock.Object,
+            null!, new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("configuration");
+    }
+
+    [Fact]
+    public void Constructor_NullNotMonitoredLogGuard_Throws()
+    {
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var act = () => new DlqMonitorService(
+            _dbContext, _repoMock.Object, router, _forensicMock.Object,
+            EmptyConfig(), null!, NullLogger<DlqMonitorService>.Instance);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("notMonitoredLogGuard");
     }
 
     [Fact]
@@ -177,7 +218,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
         var act = () => new DlqMonitorService(
             _dbContext, _repoMock.Object, router, _forensicMock.Object,
-            null!);
+            EmptyConfig(), new DlqNotMonitoredLogGuard(), null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -196,6 +237,89 @@ public sealed class DlqMonitorServiceTests : IDisposable
         _providerMock.Verify(
             p => p.ListEntitiesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    // ── SupportsRepeatablePeek guard (AWS) ──────────────────────────
+
+    [Fact]
+    public async Task ScanNamespaceAsync_Aws_NotOptedIn_SkipsEntirely_ReturnsNotMonitored()
+    {
+        var sut = CreateSut(CloudProviderType.Aws); // allowDestructivePeek defaults to false
+        SetupNamespace(CloudProviderType.Aws);
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Dlq.NotMonitored");
+        _providerMock.Verify(
+            p => p.ListEntitiesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _receiverMock.Verify(
+            r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ScanNamespaceAsync_Aws_OptedIn_ProceedsNormally()
+    {
+        var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
+        SetupNamespace(CloudProviderType.Aws);
+        SetupEntities(MakeEntity("orders", "Queue", 1, CloudProviderType.Aws));
+        SetupPeek(MakeMessage(111, "sqs-msg-1"));
+        SetupForensic();
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(1);
+        _receiverMock.Verify(
+            r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ScanNamespaceAsync_AzureAndGcp_IgnoreAwsOptInFlag_AlwaysScan()
+    {
+        // Azure and Gcp both declare SupportsRepeatablePeek: true, so the gate must never apply
+        // to them even though the config only ever carries an Aws-scoped key.
+        var azureSut = CreateSut(CloudProviderType.Azure);
+        SetupNamespace(CloudProviderType.Azure);
+        SetupEntities(MakeEntity("test-queue", "Queue", 1, CloudProviderType.Azure));
+        SetupPeek(MakeMessage(1));
+        SetupForensic();
+
+        var azureResult = await azureSut.ScanNamespaceAsync(_namespaceId);
+        azureResult.IsSuccess.Should().BeTrue();
+
+        var gcpSut = CreateSut(CloudProviderType.Gcp);
+        SetupNamespace(CloudProviderType.Gcp);
+        SetupEntities(MakeEntity("orders-sub", "Subscription", 0, CloudProviderType.Gcp));
+        SetupPeek(MakeMessage(2, "pubsub-msg"));
+        SetupForensic();
+
+        var gcpResult = await gcpSut.ScanNamespaceAsync(_namespaceId);
+        gcpResult.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ScanNamespaceAsync_Aws_NotOptedIn_LogsWarningOnlyOnce()
+    {
+        var loggerMock = new Mock<ILogger<DlqMonitorService>>();
+        var logGuard = new DlqNotMonitoredLogGuard();
+        var sut = CreateSut(CloudProviderType.Aws, logGuard: logGuard, logger: loggerMock.Object);
+        SetupNamespace(CloudProviderType.Aws);
+
+        await sut.ScanNamespaceAsync(_namespaceId);
+        await sut.ScanNamespaceAsync(_namespaceId);
+
+        loggerMock.Verify(
+            l => l.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.IsAny<It.IsAnyType>(),
+                It.IsAny<Exception?>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -426,13 +550,39 @@ public sealed class DlqMonitorServiceTests : IDisposable
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task ScanNamespace_AwsQueueWithZeroListedDlqCount_StillPeeked_StoresWithAwsProvider()
+    public async Task ScanNamespace_AwsQueueWithZeroDlqCount_NotPeeked_ReconcilesStaleMessages()
     {
-        var sut = CreateSut(CloudProviderType.Aws);
+        var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
         SetupNamespace(CloudProviderType.Aws);
 
-        // AWS ListEntitiesAsync never populates DeadLetterCount — the scan must peek anyway.
+        // AWS ListEntitiesAsync reliably populates DeadLetterCount (via the redrive-target
+        // queue's ApproximateNumberOfMessages — see AwsMessagingProvider.ListEntitiesAsync),
+        // same as Azure. A genuine 0 is trusted and skips the peek entirely.
+        _dbContext.DlqMessages.Add(MakeStoredMessage("stale-msg", 99, "orders", CloudProviderType.Aws));
+        await _dbContext.SaveChangesAsync();
+
         SetupEntities(MakeEntity("orders", "Queue", 0, CloudProviderType.Aws));
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+
+        _receiverMock.Verify(
+            r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        var msg = await _dbContext.DlqMessages.FirstAsync();
+        msg.Status.Should().Be(DlqMessageStatus.Replayed);
+        msg.ReplayedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ScanNamespace_AwsQueueWithPositiveDlqCount_Peeked_StoresWithAwsProvider()
+    {
+        var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
+        SetupNamespace(CloudProviderType.Aws);
+
+        SetupEntities(MakeEntity("orders", "Queue", 1, CloudProviderType.Aws));
         SetupPeek(MakeMessage(111, "sqs-msg-1"));
         SetupForensic();
 
@@ -451,14 +601,14 @@ public sealed class DlqMonitorServiceTests : IDisposable
     [Fact]
     public async Task ScanNamespace_AwsSameMessageIdDifferentSequenceNumber_NotDuplicated()
     {
-        var sut = CreateSut(CloudProviderType.Aws);
+        var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
         SetupNamespace(CloudProviderType.Aws);
 
         // AWS sequence numbers are hashes of per-delivery receipt handles and change every scan.
         _dbContext.DlqMessages.Add(MakeStoredMessage("sqs-msg-1", 111, "orders", CloudProviderType.Aws));
         await _dbContext.SaveChangesAsync();
 
-        SetupEntities(MakeEntity("orders", "Queue", 0, CloudProviderType.Aws));
+        SetupEntities(MakeEntity("orders", "Queue", 1, CloudProviderType.Aws));
         SetupPeek(MakeMessage(222, "sqs-msg-1")); // same MessageId, new sequence number
 
         var result = await sut.ScanNamespaceAsync(_namespaceId);
@@ -475,13 +625,13 @@ public sealed class DlqMonitorServiceTests : IDisposable
     [Fact]
     public async Task ScanNamespace_AwsMessageGone_ReconciledByMessageId()
     {
-        var sut = CreateSut(CloudProviderType.Aws);
+        var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
         SetupNamespace(CloudProviderType.Aws);
 
         _dbContext.DlqMessages.Add(MakeStoredMessage("gone-msg", 111, "orders", CloudProviderType.Aws));
         await _dbContext.SaveChangesAsync();
 
-        SetupEntities(MakeEntity("orders", "Queue", 0, CloudProviderType.Aws));
+        SetupEntities(MakeEntity("orders", "Queue", 1, CloudProviderType.Aws));
         SetupPeek(MakeMessage(222, "other-msg"));
         SetupForensic();
 
@@ -497,7 +647,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
     [Fact]
     public async Task ScanNamespace_AwsSnsTopicEntity_NotScanned()
     {
-        var sut = CreateSut(CloudProviderType.Aws);
+        var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
         SetupNamespace(CloudProviderType.Aws);
         SetupEntities(MakeEntity(
             "arn:aws:sns:us-east-1:123456789012:orders", "SNS Topic", 0, CloudProviderType.Aws));

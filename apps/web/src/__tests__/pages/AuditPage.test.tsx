@@ -149,13 +149,27 @@ describe('AuditPage', () => {
   it('opens details drawer when clicking on a row', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><AuditPage /></Wrapper>);
-    
+
     const row = screen.getByText('Messages.Replay');
     fireEvent.click(row);
-    
+
     // Details drawer title should be present
     expect(screen.getByText('Audit Entry Detail')).toBeInTheDocument();
     expect(screen.getByText('Chrome')).toBeInTheDocument();
     expect(screen.getByText('127.0.0.1')).toBeInTheDocument();
+  });
+
+  it('details drawer has dialog semantics and closes on Escape', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><AuditPage /></Wrapper>);
+
+    fireEvent.click(screen.getByText('Messages.Replay'));
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAttribute('aria-labelledby', 'audit-detail-drawer-title');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByText('Audit Entry Detail')).not.toBeInTheDocument();
   });
 });

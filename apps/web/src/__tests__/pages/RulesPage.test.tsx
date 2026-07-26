@@ -145,7 +145,7 @@ describe('RulesPage', () => {
     mockUseRules.mockReturnValue({ data: undefined, isLoading: true, refetch: vi.fn(), isFetching: false });
     const Wrapper = createWrapper();
     render(<Wrapper><RulesPage /></Wrapper>);
-    expect(screen.getByText('Loading rules...')).toBeInTheDocument();
+    expect(screen.getByText('Loading rules…')).toBeInTheDocument();
   });
 
   it('shows empty state when no rules', () => {
@@ -154,6 +154,17 @@ describe('RulesPage', () => {
     render(<Wrapper><RulesPage /></Wrapper>);
     // EmptyState renders - there will be multiple "Create Rule" buttons (header + EmptyState)
     expect(screen.getByText('No auto-replay rules yet')).toBeInTheDocument();
+  });
+
+  it('shows an error state with retry when rules fail to load', () => {
+    const refetch = vi.fn();
+    mockUseRules.mockReturnValue({ data: undefined, isLoading: false, isError: true, refetch, isFetching: false });
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    expect(screen.getByText('Failed to load rules')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Try Again'));
+    expect(refetch).toHaveBeenCalled();
   });
 
   it('opens RuleBuilderDialog when Create Rule is clicked', () => {
@@ -262,6 +273,19 @@ describe('RulesPage', () => {
     expect(screen.getByText('Replay All Matching Messages')).toBeInTheDocument();
     // Click Cancel text button
     fireEvent.click(screen.getByText('Cancel'));
+  });
+
+  it('ReplayAllConfirmDialog has alertdialog semantics and closes on Escape', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+    fireEvent.click(screen.getAllByText('Replay All')[0]);
+
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAttribute('aria-labelledby', 'replay-all-dialog-title');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByText('Replay All Matching Messages')).not.toBeInTheDocument();
   });
 
   it('ReplayAllConfirmDialog confirm calls replayAll mutate', () => {

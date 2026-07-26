@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Shield,
@@ -19,6 +19,9 @@ import {
 import { useAuditLogs, useAuditSummary } from '@/hooks/useAudit';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { auditApi, type AuditLogItem, type AuditParams } from '@/lib/api/audit';
+import { ProviderBadge } from '@/lib/providerStyles';
+import { EnvironmentBadge } from '@/components/EnvironmentBadge';
+import type { CloudProviderType } from '@/lib/api/types';
 import toast from 'react-hot-toast';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -41,34 +44,13 @@ const DATE_PRESETS = [
 
 // ─── Cloud / Environment Badges ──────────────────────────────────────────────
 
+const KNOWN_PROVIDERS: readonly CloudProviderType[] = ['azure', 'aws', 'gcp'];
+
 function CloudBadge({ provider }: { provider: string | null }) {
   if (!provider) return null;
-  const cfg: Record<string, { label: string; classes: string }> = {
-    azure: { label: 'AZ', classes: 'bg-blue-100 text-blue-700 border-blue-200' },
-    aws:   { label: 'AWS', classes: 'bg-orange-100 text-orange-700 border-orange-200' },
-    gcp:   { label: 'GCP', classes: 'bg-green-100 text-green-700 border-green-200' },
-  };
-  const c = cfg[provider.toLowerCase()];
-  if (!c) return null;
-  return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 text-xs font-semibold rounded border ${c.classes}`}>
-      {c.label}
-    </span>
-  );
-}
-
-function EnvBadge({ env }: { env: string | null }) {
-  if (!env) return null;
-  const cfg: Record<string, string> = {
-    Prod: 'bg-red-100 text-red-700',
-    Uat:  'bg-yellow-100 text-yellow-700',
-    Dev:  'bg-gray-100 text-gray-600',
-  };
-  return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 text-xs rounded ${cfg[env] ?? 'bg-gray-100 text-gray-600'}`}>
-      {env}
-    </span>
-  );
+  const normalized = provider.toLowerCase() as CloudProviderType;
+  if (!KNOWN_PROVIDERS.includes(normalized)) return null;
+  return <ProviderBadge provider={normalized} />;
 }
 
 function OutcomeBadge({ outcome }: { outcome: string }) {
@@ -117,6 +99,15 @@ function AuditDetailDrawer({
   entry: AuditLogItem | null;
   onClose: () => void;
 }) {
+  useEffect(() => {
+    if (!entry) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [entry, onClose]);
+
   if (!entry) return null;
 
   const detailsObj = (() => {
@@ -130,14 +121,20 @@ function AuditDetailDrawer({
       <div
         className="fixed inset-0 bg-black/20 z-40"
         onClick={onClose}
+        aria-hidden="true"
       />
       {/* Drawer */}
-      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white z-50 shadow-2xl flex flex-col overflow-hidden">
+      <div
+        className="fixed right-0 top-0 h-full w-full max-w-md bg-white z-50 shadow-2xl flex flex-col overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="audit-detail-drawer-title"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4 text-violet-600" />
-            <h2 className="font-semibold text-gray-900 text-sm">Audit Entry Detail</h2>
+            <h2 id="audit-detail-drawer-title" className="font-semibold text-gray-900 text-sm">Audit Entry Detail</h2>
           </div>
           <button
             onClick={onClose}
@@ -163,7 +160,7 @@ function AuditDetailDrawer({
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <CloudBadge provider={entry.cloudProvider} />
-              <EnvBadge env={entry.environment} />
+              <EnvironmentBadge env={entry.environment} />
               {entry.namespaceName && (
                 <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
                   {entry.namespaceName}
@@ -301,7 +298,7 @@ export function AuditPage() {
     pageSize,
   }), [namespaceId, debouncedSearch, actionType, outcome, from, to, page]);
 
-  const { data, isLoading, refetch, isFetching } = useAuditLogs(params, true);
+  const { data, isLoading, isError, refetch, isFetching } = useAuditLogs(params, true);
   const { data: summary } = useAuditSummary(namespaceId);
 
   const activeFilters = [actionType, outcome, selectedPreset !== null ? 'date' : ''].filter(Boolean).length;
@@ -353,7 +350,7 @@ export function AuditPage() {
             {/* Export dropdown */}
             <div className="relative group">
               <button
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-all"
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
               >
                 <Download className="w-4 h-4" />
                 Export
@@ -396,7 +393,7 @@ export function AuditPage() {
             <button
               onClick={handleRefresh}
               disabled={isFetching}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-all disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-all disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
             >
               <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
               Refresh
@@ -502,7 +499,7 @@ export function AuditPage() {
             value={search}
             onChange={e => handleSearchChange(e.target.value)}
             placeholder="Search by user, action, or resource…"
-            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:bg-white transition-all"
+            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white transition-all"
           />
           {search && (
             <button
@@ -520,8 +517,21 @@ export function AuditPage() {
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
             <div className="flex flex-col items-center gap-3">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-600" />
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
               <p className="text-sm text-gray-500">Loading audit logs…</p>
+            </div>
+          </div>
+        ) : isError ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+              <p className="text-gray-600 font-medium">Failed to load audit logs</p>
+              <button
+                onClick={() => refetch()}
+                className="mt-3 px-4 py-2 text-sm text-primary-600 hover:text-primary-700 border border-primary-300 rounded-lg hover:bg-primary-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
+              >
+                Try Again
+              </button>
             </div>
           </div>
         ) : !data || data.items.length === 0 ? (
@@ -535,15 +545,15 @@ export function AuditPage() {
             </div>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" aria-label="Audit trail events">
             <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-40">Timestamp</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">User</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Cloud / Env</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Action</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Resource</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-24">Outcome</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-40">Timestamp</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-500">User</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Cloud / Env</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Action</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Resource</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-24">Outcome</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -565,7 +575,7 @@ export function AuditPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1 flex-wrap">
                       <CloudBadge provider={entry.cloudProvider} />
-                      <EnvBadge env={entry.environment} />
+                      <EnvironmentBadge env={entry.environment} />
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -602,7 +612,9 @@ export function AuditPage() {
             >
               <ChevronLeft className="w-4 h-4 text-gray-600" />
             </button>
-            <span className="text-xs text-gray-600 px-2">Page {page}</span>
+            <span className="text-xs text-gray-600 px-2">
+              Page {page} of {Math.max(1, Math.ceil(data.totalCount / data.pageSize))}
+            </span>
             <button
               onClick={() => setPage(p => p + 1)}
               disabled={!data.hasNextPage}

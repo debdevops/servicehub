@@ -1,28 +1,32 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { MainLayout } from '@/components/layout';
-import {
-  MessagesPage,
-  ConnectPage,
-  RulesPage,
-  HealthPage,
-  HelpPage,
-  ScheduledMessagesPage,
-  SecurityPage,
-  WelcomePage,
-} from '@/pages';
+// Imported directly from its own module, not the @/pages barrel — importing anything from
+// the barrel forces Rollup to evaluate every page it re-exports (including the ones lazily
+// imported below), defeating the lazy-loading entirely (Rollup's own
+// INEFFECTIVE_DYNAMIC_IMPORT warning surfaces this if the barrel is used here).
+import { WelcomePage } from './pages/WelcomePage';
+import { RouteErrorPage } from './pages/RouteErrorPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 import { DemoModeProvider } from '@/lib/demo/DemoContext';
 import { DEMO_NAMESPACE_IDS } from '@/lib/demo/mockProviders';
 
 // Lazy-load heavy pages to improve initial bundle size and cold-start performance
 const DashboardPageLazy = lazy(() => import('./pages/DashboardPage'));
+const FleetPageLazy = lazy(() => import('./pages/FleetPage'));
 const DlqHistoryPageLazy = lazy(() => import('./pages/DlqHistoryPage'));
-const InsightsPageLazy = lazy(() => import('./pages/InsightsPage').then(m => ({ default: m.InsightsPage })));
 const CloudBridgePageLazy = lazy(() => import('./pages/CloudBridgePage').then(m => ({ default: m.CloudBridgePage })));
 const SimulatorPageLazy = lazy(() => import('./pages/SimulatorPage').then(m => ({ default: m.SimulatorPage })));
 const CrossCloudTracePageLazy = lazy(() => import('./pages/CrossCloudTracePage').then(m => ({ default: m.CrossCloudTracePage })));
 const AuditPageLazy = lazy(() => import('./pages/AuditPage').then(m => ({ default: m.AuditPage })));
 const MessagesOverviewPageLazy = lazy(() => import('./pages/MessagesOverviewPage'));
+const MessagesPageLazy = lazy(() => import('./pages/MessagesPage').then(m => ({ default: m.MessagesPage })));
+const ConnectPageLazy = lazy(() => import('./pages/ConnectPage').then(m => ({ default: m.ConnectPage })));
+const RulesPageLazy = lazy(() => import('./pages/RulesPage').then(m => ({ default: m.RulesPage })));
+const HealthPageLazy = lazy(() => import('./pages/HealthPage').then(m => ({ default: m.HealthPage })));
+const HelpPageLazy = lazy(() => import('./pages/HelpPage').then(m => ({ default: m.HelpPage })));
+const ScheduledMessagesPageLazy = lazy(() => import('./pages/ScheduledMessagesPage').then(m => ({ default: m.ScheduledMessagesPage })));
+const SecurityPageLazy = lazy(() => import('./pages/SecurityPage').then(m => ({ default: m.SecurityPage })));
 
 // Loading fallback component (co-located here intentionally — used only by router)
 // eslint-disable-next-line react-refresh/only-export-components
@@ -77,7 +81,14 @@ function DemoGcpLayout() {
 
 // Shared page children — EXACT same pages as the real app
 const sharedChildren = [
-  { path: 'messages', element: <MessagesPage /> },
+  {
+    path: 'messages',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <MessagesPageLazy />
+      </Suspense>
+    ),
+  },
   {
     path: 'messages-overview',
     element: (
@@ -86,12 +97,54 @@ const sharedChildren = [
       </Suspense>
     ),
   },
-  { path: 'connect', element: <ConnectPage /> },
-  { path: 'rules', element: <RulesPage /> },
-  { path: 'health', element: <HealthPage /> },
-  { path: 'help', element: <HelpPage /> },
-  { path: 'scheduled', element: <ScheduledMessagesPage /> },
-  { path: 'security', element: <SecurityPage /> },
+  {
+    path: 'connect',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <ConnectPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'rules',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <RulesPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'health',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <HealthPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'help',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <HelpPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'scheduled',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <ScheduledMessagesPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'security',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <SecurityPageLazy />
+      </Suspense>
+    ),
+  },
   {
     path: 'dashboard',
     element: (
@@ -101,18 +154,18 @@ const sharedChildren = [
     ),
   },
   {
-    path: 'dlq-history',
+    path: 'fleet',
     element: (
       <Suspense fallback={<PageLoading />}>
-        <DlqHistoryPageLazy />
+        <FleetPageLazy />
       </Suspense>
     ),
   },
   {
-    path: 'insights',
+    path: 'dlq-history',
     element: (
       <Suspense fallback={<PageLoading />}>
-        <InsightsPageLazy />
+        <DlqHistoryPageLazy />
       </Suspense>
     ),
   },
@@ -172,7 +225,7 @@ export const router = createBrowserRouter([
   {
     path: '/demo/azure',
     element: <DemoAzureLayout />,
-    errorElement: <Navigate to="/demo/azure" replace />,
+    errorElement: <RouteErrorPage />,
     children: [
       {
         index: true,
@@ -189,7 +242,7 @@ export const router = createBrowserRouter([
   {
     path: '/demo/aws',
     element: <DemoAwsLayout />,
-    errorElement: <Navigate to="/demo/aws" replace />,
+    errorElement: <RouteErrorPage />,
     children: [
       {
         index: true,
@@ -206,7 +259,7 @@ export const router = createBrowserRouter([
   {
     path: '/demo/gcp',
     element: <DemoGcpLayout />,
-    errorElement: <Navigate to="/demo/gcp" replace />,
+    errorElement: <RouteErrorPage />,
     children: [
       {
         index: true,
@@ -222,109 +275,30 @@ export const router = createBrowserRouter([
   },
 
   // ── Real application ─────────────────────────────────────────────────────────
-  // MainLayout with all feature routes — no DemoModeProvider, uses real API
+  // MainLayout with all feature routes — no DemoModeProvider, uses real API.
+  // Reuses sharedChildren (same route list the /demo/* trees use) rather than a
+  // hand-duplicated copy — a prior hand-duplicated copy had silently dropped the
+  // 'fleet' route, so the sidebar's Fleet Operations link 404'd to /welcome.
   {
     path: '/',
     element: <MainLayout />,
-    errorElement: <Navigate to="/welcome" replace />,
+    errorElement: <RouteErrorPage />,
+    children: sharedChildren,
+  },
+  // Fallback 404: render a real not-found page inside the app chrome, at the
+  // URL the user actually requested — no teleporting to /welcome.
+  // Pathless layout route (no `path` key) so it matches regardless of segment count —
+  // a splat (path: '*') parent with an index child does NOT render the index child,
+  // since a splat consumes the whole remaining path and leaves nothing for an index
+  // match to key off. The wildcard must live on the child instead.
+  {
+    element: <MainLayout />,
+    errorElement: <RouteErrorPage />,
     children: [
       {
-        path: 'dashboard',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <DashboardPageLazy />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'messages',
-        element: <MessagesPage />,
-      },
-      {
-        path: 'messages-overview',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <MessagesOverviewPageLazy />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'connect',
-        element: <ConnectPage />,
-      },
-      {
-        path: 'dlq-history',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <DlqHistoryPageLazy />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'rules',
-        element: <RulesPage />,
-      },
-      {
-        path: 'health',
-        element: <HealthPage />,
-      },
-      {
-        path: 'help',
-        element: <HelpPage />,
-      },
-      {
-        path: 'scheduled',
-        element: <ScheduledMessagesPage />,
-      },
-      {
-        path: 'security',
-        element: <SecurityPage />,
-      },
-      {
-        path: 'cloud-bridge',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <CloudBridgePageLazy />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'simulator',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <SimulatorPageLazy />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'insights',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <InsightsPageLazy />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'cross-cloud-trace',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <CrossCloudTracePageLazy />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'audit',
-        element: (
-          <Suspense fallback={<PageLoading />}>
-            <AuditPageLazy />
-          </Suspense>
-        ),
+        path: '*',
+        element: <NotFoundPage />,
       },
     ],
-  },
-  // Fallback 404: redirect unknown paths to welcome
-  {
-    path: '*',
-    element: <Navigate to="/welcome" replace />,
   },
 ]);

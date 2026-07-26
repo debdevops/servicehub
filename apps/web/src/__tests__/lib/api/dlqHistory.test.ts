@@ -64,6 +64,32 @@ describe('dlqHistoryApi', () => {
     });
   });
 
+  describe('updateStatus()', () => {
+    it('calls POST /dlq/history/:id/status with status and notes', async () => {
+      const updated = { id: 7, status: 'Resolved' };
+      mocked.post.mockResolvedValueOnce({ data: updated } as any);
+
+      const result = await dlqHistoryApi.updateStatus(7, 'Resolved', 'fixed upstream');
+
+      expect(mocked.post).toHaveBeenCalledWith('/dlq/history/7/status', {
+        status: 'Resolved',
+        notes: 'fixed upstream',
+      });
+      expect(result.status).toBe('Resolved');
+    });
+
+    it('omits notes when not provided', async () => {
+      mocked.post.mockResolvedValueOnce({ data: { id: 8, status: 'Archived' } } as any);
+
+      await dlqHistoryApi.updateStatus(8, 'Archived');
+
+      expect(mocked.post).toHaveBeenCalledWith('/dlq/history/8/status', {
+        status: 'Archived',
+        notes: undefined,
+      });
+    });
+  });
+
   describe('getSummary()', () => {
     it('calls GET /dlq/summary without namespaceId', async () => {
       const summary = { totalMessages: 10, activeMessages: 5 };

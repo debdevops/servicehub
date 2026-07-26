@@ -93,12 +93,16 @@ public static class WebApplicationExtensions
 
         {
             // Expose the SPA token refresh endpoint in ALL environments.
-            // The browser SPA calls this when its embedded token expires (30-min lifetime)
-            // or when a reverse proxy / multi-instance deployment routes the request to a
-            // different instance that has a different ephemeral key. The endpoint is intentionally
-            // NOT under /api/ so the ApiKeyAuthenticationMiddleware bypass rule lets it
-            // through without any credential, which is necessary to bootstrap auth.
-            // Security hardening: same-origin enforcement + tight rate limit.
+            // The browser SPA calls this when its embedded token expires (2-hour lifetime,
+            // matching SpaTokenProvider.TokenLifetime — the frontend proactively refreshes
+            // ~90 minutes in) or when a reverse proxy / multi-instance deployment routes the
+            // request to a different instance that has a different ephemeral key. This token
+            // only confirms same-origin HTML delivery (a CSRF/automation mitigation); it does
+            // not identify or authenticate a user — per-user identity requires Security:Oidc
+            // or Azure Easy Auth. The endpoint is intentionally NOT under /api/ so the
+            // ApiKeyAuthenticationMiddleware bypass rule lets it through without any
+            // credential, which is necessary to bootstrap auth. Security hardening:
+            // same-origin enforcement + tight rate limit.
             // Use GetService (returns null if not found) instead of GetRequiredService
             var spaTokenProvider = app.Services.GetService<SpaTokenProvider>();
             if (spaTokenProvider?.IsEnabled == true)
@@ -174,7 +178,15 @@ public static class WebApplicationExtensions
         // Sitemap for search engine indexing
         app.MapGet("/sitemap.xml", (IConfiguration config) =>
         {
-            var baseUrl = (config.GetValue<string>("SiteUrl") ?? string.Empty).TrimEnd('/');
+            // "SET_VIA_ENV_VAR" is appsettings.Production.json's own shipped placeholder — an
+            // operator who hasn't set SiteUrl yet is just as "unconfigured" as one where the key
+            // is absent entirely (Development/Simulator/Local never define it at all). Either way,
+            // falling through to an empty/placeholder baseUrl would emit an invalid <loc> (a bare
+            // path, or one prefixed with literal placeholder text) instead of an absolute URL.
+            var configuredUrl = config.GetValue<string>("SiteUrl");
+            var baseUrl = string.IsNullOrWhiteSpace(configuredUrl) || configuredUrl == "SET_VIA_ENV_VAR"
+                ? "https://github.com/debdevops/servicehub"
+                : configuredUrl.TrimEnd('/');
 
             var sitemap = $"""
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -198,6 +210,21 @@ public static class WebApplicationExtensions
                     <loc>{baseUrl}/help</loc>
                     <changefreq>monthly</changefreq>
                     <priority>0.7</priority>
+                  </url>
+                  <url>
+                    <loc>{baseUrl}/demo/azure</loc>
+                    <changefreq>monthly</changefreq>
+                    <priority>0.6</priority>
+                  </url>
+                  <url>
+                    <loc>{baseUrl}/demo/aws</loc>
+                    <changefreq>monthly</changefreq>
+                    <priority>0.6</priority>
+                  </url>
+                  <url>
+                    <loc>{baseUrl}/demo/gcp</loc>
+                    <changefreq>monthly</changefreq>
+                    <priority>0.6</priority>
                   </url>
                 </urlset>
                 """;

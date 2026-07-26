@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight, AlertTriangle, Upload, FileJson, X } from 'lucide-react';
 import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@/hooks/useNamespaces';
 import { useProviderStatus } from '@/hooks/useCloudBridge';
+import { ProviderIcon } from '@/components/ProviderIcon';
+import { ProviderBadge } from '@/lib/providerStyles';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { HelpTooltip } from '@/components/help';
 import { tooltips } from '@/lib/helpContent';
@@ -28,7 +30,6 @@ export function ConnectPage() {
   const [awsAccessKeyId, setAwsAccessKeyId] = useState('');
   const [awsSecretKey, setAwsSecretKey] = useState('');
   const [awsRegion, setAwsRegion] = useState('us-east-1');
-  const [awsQueuePrefix, setAwsQueuePrefix] = useState('');
 
   // GCP-specific fields
   const [gcpProjectId, setGcpProjectId] = useState('');
@@ -50,7 +51,7 @@ export function ConnectPage() {
         return;
       }
       if (parsed?.type !== 'service_account') {
-        toast.error('That JSON is not a service account key (expected "type": "service_account").');
+        toast.error('That JSON is not a service account key (the type field must be service_account).');
         if (gcpKeyFileInputRef.current) gcpKeyFileInputRef.current.value = '';
         return;
       }
@@ -156,7 +157,6 @@ export function ConnectPage() {
         setDisplayName('');
         setAwsAccessKeyId('');
         setAwsSecretKey('');
-        setAwsQueuePrefix('');
       } catch {
         // Error handled by mutation hook
       }
@@ -356,7 +356,7 @@ export function ConnectPage() {
                   }`}
                   title="Azure Service Bus"
                 >
-                  <span className="text-lg leading-none">𝓐</span>
+                  <ProviderIcon provider="azure" className="w-6 h-6" />
                   <span>Azure</span>
                   {cloudProvider === 'azure' && (
                     <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">Selected</span>
@@ -374,7 +374,7 @@ export function ConnectPage() {
                   }`}
                   title="Amazon Web Services SQS"
                 >
-                  <span className="text-lg leading-none">⬡</span>
+                  <ProviderIcon provider="aws" className="w-6 h-6" />
                   <span>AWS</span>
                   {cloudProvider === 'aws' && (
                     <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">Selected</span>
@@ -392,7 +392,7 @@ export function ConnectPage() {
                   }`}
                   title="Google Cloud Pub/Sub"
                 >
-                  <span className="text-lg leading-none">◈</span>
+                  <ProviderIcon provider="gcp" className="w-6 h-6" />
                   <span>GCP</span>
                   {cloudProvider === 'gcp' && (
                     <span className="text-[10px] bg-green-100 text-green-600 px-1.5 py-0.5 rounded-full">Selected</span>
@@ -594,24 +594,6 @@ export function ConnectPage() {
                     </select>
                   </div>
 
-                  <div className="mb-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Queue/Topic URL prefix
-                      <HelpTooltip
-                        text="Optional. Filter to queues matching this prefix, e.g. 'orders-' or leave blank to see all queues."
-                        position="right"
-                        className="ml-1"
-                      />
-                    </label>
-                    <input
-                      type="text"
-                      value={awsQueuePrefix}
-                      onChange={(e) => setAwsQueuePrefix(e.target.value)}
-                      placeholder="e.g., orders- (optional)"
-                      className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-300"
-                    />
-                  </div>
-
                   {/* IAM permissions guidance */}
                   <details className="mb-3 rounded-lg border border-orange-200 bg-orange-50 text-xs">
                     <summary className="cursor-pointer px-3 py-2 font-medium text-orange-800 select-none">
@@ -734,6 +716,12 @@ export function ConnectPage() {
                         Tip: Grant these roles on the project or at the topic/subscription resource level for least privilege.
                         Generate a key at <strong>IAM &amp; Admin → Service Accounts → Keys → Add Key → JSON</strong>.
                       </p>
+                      <p className="mt-2 text-green-700">
+                        <strong>Only Pull subscriptions are browsable.</strong> Push, BigQuery, and Cloud Storage
+                        export subscriptions deliver messages directly to their target — Pub/Sub never makes those
+                        available to peek, so ServiceHub can&apos;t show their messages. If a topic&apos;s only
+                        subscription is one of those, add a Pull subscription to the same topic to inspect it here.
+                      </p>
                     </div>
                   </details>
                 </>
@@ -846,13 +834,7 @@ export function ConnectPage() {
                             }`}>
                               {ns.environment || 'dev'}
                             </span>
-                            <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase ${
-                              ns.cloudProvider === 'aws' ? 'bg-orange-100 text-orange-700' :
-                              ns.cloudProvider === 'gcp' ? 'bg-emerald-100 text-emerald-700' :
-                              'bg-blue-100 text-blue-700'
-                            }`}>
-                              {ns.cloudProvider === 'aws' ? 'AWS' : ns.cloudProvider === 'gcp' ? 'GCP' : 'Azure'}
-                            </span>
+                            <ProviderBadge provider={ns.cloudProvider} />
                           </div>
                           <p className="text-xs text-gray-500">
                             {ns.name}

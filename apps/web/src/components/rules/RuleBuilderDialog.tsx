@@ -139,14 +139,30 @@ export function RuleBuilderDialog({
     : [];
   const hasWarnings = entityWarnings.length > 0;
 
+  // Handle Escape key to close dialog
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && open) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col mx-4">
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col mx-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rule-builder-dialog-title"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-bold text-gray-900">
+          <h2 id="rule-builder-dialog-title" className="text-lg font-bold text-gray-900">
             {editRule ? 'Edit Auto-Replay Rule' : 'Create Auto-Replay Rule'}
           </h2>
           <div className="flex items-center gap-2">

@@ -30,7 +30,8 @@ public sealed class ScopeAuthorizationFilterTests
     private static AuthorizationFilterContext CreateContext(
         ApiKeyConfiguration? keyConfig = null,
         List<object>? endpointMetadata = null,
-        string? authMethod = null)
+        string? authMethod = null,
+        string[]? oidcScopes = null)
     {
         var httpContext = new DefaultHttpContext();
         if (keyConfig != null)
@@ -40,6 +41,10 @@ public sealed class ScopeAuthorizationFilterTests
         if (authMethod != null)
         {
             httpContext.Items["AuthMethod"] = authMethod;
+        }
+        if (oidcScopes != null)
+        {
+            httpContext.Items["OidcScopes"] = oidcScopes;
         }
         httpContext.Items["CorrelationId"] = "test-123";
 
@@ -204,6 +209,67 @@ public sealed class ScopeAuthorizationFilterTests
             keyConfig: null,
             endpointMetadata: new List<object> { new RequireScopeAttribute("dlq:write") },
             authMethod: "SpaToken");
+
+        await filter.OnAuthorizationAsync(context);
+
+        context.Result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RequiredScope_OidcAuthWithNoScopeClaim_BypassesScopeCheck()
+    {
+        // OIDC Bearer auth without a 'scope' claim grants full access, same trust model as
+        // SpaToken/EasyAuth — no ApiKeyConfig needed. Isolation for OIDC identities comes from
+        // their own per-user OwnerId, not from scope restriction, unless the token opted into
+        // scoping by carrying a 'scope' claim (see the tests below).
+        var filter = CreateFilter();
+        var context = CreateContext(
+            keyConfig: null,
+            endpointMetadata: new List<object> { new RequireScopeAttribute("dlq:write") },
+            authMethod: "Oidc");
+
+        await filter.OnAuthorizationAsync(context);
+
+        context.Result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RequiredScope_OidcAuthWithSufficientScope_Allows()
+    {
+        var filter = CreateFilter();
+        var context = CreateContext(
+            endpointMetadata: new List<object> { new RequireScopeAttribute("dlq:read") },
+            authMethod: "Oidc",
+            oidcScopes: ["dlq:read", "namespaces:read"]);
+
+        await filter.OnAuthorizationAsync(context);
+
+        context.Result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RequiredScope_OidcAuthWithInsufficientScope_ReturnsForbidden()
+    {
+        var filter = CreateFilter();
+        var context = CreateContext(
+            endpointMetadata: new List<object> { new RequireScopeAttribute("dlq:write") },
+            authMethod: "Oidc",
+            oidcScopes: ["dlq:read"]);
+
+        await filter.OnAuthorizationAsync(context);
+
+        context.Result.Should().NotBeNull();
+        (context.Result as JsonResult)!.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task RequiredScope_OidcAuthWithAdminScope_Allows()
+    {
+        var filter = CreateFilter();
+        var context = CreateContext(
+            endpointMetadata: new List<object> { new RequireScopeAttribute("dlq:write") },
+            authMethod: "Oidc",
+            oidcScopes: ["admin"]);
 
         await filter.OnAuthorizationAsync(context);
 

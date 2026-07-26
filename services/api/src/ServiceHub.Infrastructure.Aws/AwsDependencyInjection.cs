@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 
 namespace ServiceHub.Infrastructure.Aws;
@@ -42,6 +43,25 @@ public static class AwsDependencyInjection
         services.AddHealthChecks()
             .AddCheck<AwsHealthCheck>("aws-connectivity", tags: ["aws", "ready"]);
 
+        return services;
+    }
+
+    /// <summary>
+    /// Registers <see cref="AwsForensicEngine"/> under the <see cref="CloudProviderType.Aws"/> key
+    /// so <c>ForensicEngineRouter</c> can dispatch AWS-tagged DLQ messages to it.
+    /// <para>
+    /// Unlike <see cref="AddAwsProvider"/>, this is called unconditionally by the API's
+    /// composition root, independent of the <c>CloudProviders:Aws:Enabled</c> flag — forensic
+    /// engines are pure, stateless classifiers with no AWS SDK dependency, so Simulator-seeded
+    /// AWS DLQ messages get AWS-aware classification even when the live SQS provider isn't
+    /// registered.
+    /// </para>
+    /// </summary>
+    /// <param name="services">The service collection to register into.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddAwsForensicIntelligence(this IServiceCollection services)
+    {
+        services.TryAddKeyedScoped<IForensicEngine, AwsForensicEngine>(CloudProviderType.Aws);
         return services;
     }
 }

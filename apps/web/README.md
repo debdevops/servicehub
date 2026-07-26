@@ -36,7 +36,6 @@ apps/web/
 │   │   ├── HelpPage.tsx            # /help
 │   │   ├── ScheduledMessagesPage.tsx  # /scheduled
 │   │   ├── CorrelationExplorerPage.tsx # /correlation
-│   │   ├── InsightsPage.tsx        # /insights — AI pattern insights
 │   │   ├── SecurityPage.tsx        # /security
 │   │   ├── CrossCloudTracePage.tsx # /cross-cloud-trace
 │   │   ├── SimulatorPage.tsx       # /simulator

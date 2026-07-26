@@ -5,8 +5,12 @@ namespace ServiceHub.Api.Security;
 /// <summary>
 /// Generates and validates HMAC-based tokens for the co-hosted SPA.
 /// The token is injected into index.html at serve time and sent back
-/// by the browser on every API request. External tools (Postman, curl)
-/// cannot obtain this token because they never load the HTML page.
+/// by the browser on every API request. It confirms a request followed
+/// same-origin HTML delivery, frustrating naive CSRF and trivial scripted
+/// access — it does not identify or authenticate a user, since anyone who
+/// can fetch the index page (curl included) can read the token from the
+/// meta tag and replay it. Per-user identity requires Security:Oidc or
+/// Azure Easy Auth.
 /// </summary>
 public sealed class SpaTokenProvider
 {

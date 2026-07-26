@@ -11,8 +11,10 @@ const appVersion = fs.readFileSync(path.resolve(__dirname, '../../.version'), 'u
  * Vite plugin that injects a SPA token <meta> tag into index.html during
  * development. Fetches a fresh HMAC token from the API's /internal/spa-token
  * endpoint on every page load, mirroring what SpaTokenInjectionMiddleware
- * does in production. This ensures local dev also requires auth — Postman
- * callers who copy URLs from DevTools will get 401.
+ * does in production. The token is a CSRF/automation mitigation, not
+ * authentication — anyone who fetches the page (curl included) can read
+ * and replay it. It does still stop the common case of copying a bare
+ * endpoint URL out of DevTools without also copying the header.
  */
 function spaTokenDevPlugin(): Plugin {
   return {
@@ -96,9 +98,20 @@ export default defineConfig({
         // Code splitting strategy: extract heavy dependencies and pages into separate chunks
         // This reduces initial bundle size and improves cold-start performance on Azure App Service
         manualChunks: (id: string) => {
-          // Vendor chunk for heavy UI libraries
-          if (id.includes('node_modules/recharts') || 
-              id.includes('node_modules/@tanstack/react-table') || 
+          // Vendor chunk for heavy UI libraries. recharts pulls in a sizeable transitive
+          // dependency graph (victory-vendor, redux, immer, the d3-* family) that Rollup
+          // would otherwise resolve into whichever lazy page chunk imports recharts first
+          // (observed: page-dashboard ballooning to 557kB while FleetPage's own recharts
+          // usage stayed at 13kB) — group them here so the weight is shared and cached once.
+          if (id.includes('node_modules/recharts') ||
+              id.includes('node_modules/victory-vendor') ||
+              id.includes('node_modules/d3-') ||
+              id.includes('node_modules/@reduxjs') ||
+              id.includes('node_modules/react-redux') ||
+              id.includes('node_modules/redux') ||
+              id.includes('node_modules/immer') ||
+              id.includes('node_modules/es-toolkit') ||
+              id.includes('node_modules/@tanstack/react-table') ||
               id.includes('node_modules/@tanstack/react-virtual')) {
             return 'vendor-ui';
           }

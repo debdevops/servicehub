@@ -42,6 +42,30 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore services/api/ServiceHub.sln
 
+      - name: Audit NuGet packages for known vulnerabilities
+        run: |
+          echo "=== dotnet list package --vulnerable (incl. transitive), per project ==="
+          # Every project under services/api/src is audited explicitly by path, not just
+          # whatever the .sln happens to reference — ServiceHub.Infrastructure.Aws and .Gcp
+          # were previously absent from the solution and went unaudited entirely, so solution
+          # membership alone isn't trusted here. NU1903 is no longer suppressed in any
+          # project's <NoWarn>, so TreatWarningsAsErrors now genuinely blocks vulnerable
+          # *direct* packages at build time; this step additionally surfaces transitive
+          # advisories in CI.
+          REPORT=""
+          for PROJECT in $(find services/api/src -name '*.csproj' | sort); do
+            echo "--- $PROJECT ---"
+            PROJECT_REPORT=$(dotnet list "$PROJECT" package --vulnerable --include-transitive 2>&1 || true)
+            echo "$PROJECT_REPORT"
+            REPORT="$REPORT
+          $PROJECT_REPORT"
+          done
+          if echo "$REPORT" | grep -qiE '\b(High|Critical)\b'; then
+            echo "❌ High/Critical severity vulnerabilities found in NuGet dependencies."
+            exit 1
+          fi
+          echo "✅ No high/critical NuGet vulnerabilities detected"
+
       - name: Build solution
         run: dotnet build services/api/ServiceHub.sln --no-restore --configuration Release
 
@@ -116,19 +140,44 @@ jobs:
         working-directory: apps/web
         run: npm ci --include=optional
 
+      - name: Run ESLint
+        working-directory: apps/web
+        run: npm run lint
+
       - name: Audit npm packages for vulnerabilities
         working-directory: apps/web
         run: |
           echo "=== npm audit — checking for known vulnerabilities ==="
           # --audit-level=high: fail only on HIGH or CRITICAL severity
           # --omit=dev: skip dev dependencies (they don't run in production)
-          npm audit --audit-level=high --omit=dev || {
-            echo ""
-            echo "❌ High/critical severity vulnerabilities found in production npm dependencies."
+          #
+          # ACCEPTED_ADVISORIES: advisories we've reviewed and judged not applicable to
+          # how this app uses the package. Each entry must have a reason; re-review on
+          # every dependency bump.
+          #   - GHSA-qwww-vcr4-c8h2 (react-router "RSC Mode" CSRF bypass): only reachable
+          #     via React Router's RSC/framework-mode server actions. This app is a
+          #     client-only Vite SPA using createBrowserRouter — no RSC, no server
+          #     actions — so the vulnerable code path is unreachable. Full fix requires
+          #     react-router-dom v8 (breaking change); tracked separately.
+          ACCEPTED_ADVISORIES="GHSA-qwww-vcr4-c8h2"
+
+          AUDIT_JSON=$(npm audit --audit-level=high --omit=dev --json || true)
+          UNACCEPTED=$(echo "$AUDIT_JSON" | jq -r --arg accepted "$ACCEPTED_ADVISORIES" '
+            ($accepted | split(",")) as $ignore
+            | [.vulnerabilities[]? | select(.severity == "high" or .severity == "critical")
+                | .via[]? | select(type == "object") | .url]
+            | unique
+            | map(select(. as $u | $ignore | any($u | contains(.)) | not))
+            | .[]
+          ')
+
+          if [ -n "$UNACCEPTED" ]; then
+            echo "❌ High/critical severity vulnerabilities found in production npm dependencies:"
+            echo "$UNACCEPTED"
             echo "   Run 'npm audit' locally to see details and 'npm audit fix' to fix automatically."
             exit 1
-          }
-          echo "✅ No high/critical npm vulnerabilities in production dependencies"
+          fi
+          echo "✅ No unaccepted high/critical npm vulnerabilities in production dependencies"
 
       - name: Run unit tests with coverage
         working-directory: apps/web
@@ -181,10 +230,64 @@ jobs:
         working-directory: apps/web
         run: npm run build
 
+  container-smoke-test:
+    name: Container Build & Health Check (Simulator)
+    runs-on: ubuntu-latest
+    # Gated on the existing build jobs so a failing unit test doesn't also pay for an
+    # image build — `needs:` already fails this job if either upstream job doesn't succeed.
+    needs: [build-and-test-backend, build-and-test-frontend]
+    # Validates the exact path the README quick-start advertises (`docker compose up
+    # --build`), not merely that the Dockerfile compiles: image build, container startup
+    # in Simulator mode, liveness, and that the SPA root is actually served.
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build and start container (docker compose up --build)
+        run: docker compose up --build -d
+
+      - name: Wait for container health check
+        run: |
+          # The image's own HEALTHCHECK start-period is 25s, but .NET cold start on a
+          # shared runner can exceed that — poll generously rather than trusting the
+          # first health window.
+          echo "Waiting for the container to become healthy (up to 180s)..."
+          for i in $(seq 1 60); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health/live 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Container is healthy after $((i * 3))s (HTTP $HTTP_CODE)"
+              exit 0
+            fi
+            echo "  ...$((i * 3))s — HTTP $HTTP_CODE"
+            sleep 3
+          done
+          echo "❌ Container did not become healthy within 180s"
+          echo "--- docker compose ps ---"
+          docker compose ps
+          echo "--- Container logs ---"
+          docker compose logs
+          exit 1
+
+      - name: Request SPA root and assert success
+        run: |
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/)
+          echo "GET / -> HTTP $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ SPA root did not return 200"
+            docker compose logs
+            exit 1
+          fi
+          echo "✅ SPA root served successfully"
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [build-and-test-backend, build-and-test-frontend]
+    needs: [build-and-test-backend, build-and-test-frontend, container-smoke-test]
     if: always()
 
     steps:
@@ -196,6 +299,10 @@ jobs:
           fi
           if [ "${{ needs.build-and-test-frontend.result }}" != "success" ]; then
             echo "❌ Frontend build/tests failed"
+            exit 1
+          fi
+          if [ "${{ needs.container-smoke-test.result }}" != "success" ]; then
+            echo "❌ Container build/health check failed"
             exit 1
           fi
           echo "✅ All builds and unit tests passed!"
@@ -333,3 +440,52 @@ jobs:
       - name: Stop API
         if: always()
         run: kill ${{ env.API_PID }} 2>/dev/null || true
+
+  container-security:
+    name: Container Build, Scan & SBOM
+    runs-on: ubuntu-latest
+    # Validates the Dockerfile actually builds, scans the image for known CVEs, and
+    # publishes a CycloneDX SBOM as a build artifact. Does not push the image.
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: servicehub:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: servicehub:ci
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Generate CycloneDX SBOM from image
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: servicehub:ci
+          scan-type: image
+          format: cyclonedx
+          output: servicehub-sbom.cdx.json
+
+      - name: Upload SBOM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.run_number }}
+          path: servicehub-sbom.cdx.json
+          retention-days: 30
+          if-no-files-found: ignore

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   dlqHistoryApi,
   type DlqHistoryParams,
+  type DlqTriageStatus,
 } from '@/lib/api/dlqHistory';
 import toast from 'react-hot-toast';
 
@@ -86,6 +87,35 @@ export function useUpdateDlqNotes() {
     onError: (error: unknown) => {
       const err = error as { response?: { data?: { message?: string } }; message?: string };
       const msg = err?.response?.data?.message || err?.message || 'Failed to update notes';
+      toast.error(msg);
+    },
+  });
+}
+
+/**
+ * Hook for triaging a DLQ message (status transition). Turns the DLQ history into a
+ * triage inbox: Resolve / Archive / Ignore (Discard) / Reopen.
+ */
+export function useUpdateDlqStatus() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, status, notes }: { id: number; status: DlqTriageStatus; notes?: string }) =>
+      dlqHistoryApi.updateStatus(id, status, notes),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['dlq-history'] });
+      queryClient.invalidateQueries({ queryKey: ['dlq-message', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['dlq-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['fleet-overview'] });
+      toast.success(`Message marked ${variables.status.toLowerCase()}`);
+    },
+    onError: (error: unknown) => {
+      const err = error as { response?: { data?: { message?: string; detail?: string } }; message?: string };
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to update status';
       toast.error(msg);
     },
   });

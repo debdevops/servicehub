@@ -60,6 +60,65 @@ export interface NamespaceQueueStats {
   isError: boolean;
 }
 
+export interface NamespaceStatsData {
+  totalQueues: number;
+  totalTopics: number;
+  totalSubscriptions: number;
+  totalActive: number;
+  totalDlq: number;
+  totalScheduled: number;
+}
+
+export interface NamespaceStatsResult {
+  namespaceId: string;
+  data: NamespaceStatsData | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}
+
+/**
+ * Fetches `/namespaces/{id}/stats` (queue/topic/subscription/message-count rollup) for many
+ * namespaces in parallel, sharing the `['namespace-stats', id]` query cache with every other
+ * consumer — the same cached query `Header`, `QuickAccessPanel`, `CloudBridgePage`, and
+ * `useAllNamespacesQueues` all warm, so calling this from multiple places adds no extra
+ * network cost. Centralizing it here (rather than each caller hand-rolling its own
+ * `useQueries` block) keeps the retry-suppression policy consistent everywhere.
+ */
+export function useNamespaceStats(
+  namespaceIds: string[],
+  autoRefresh: boolean = true,
+  refetchMs: number = 60_000,
+): NamespaceStatsResult[] {
+  const statsResults = useQueries({
+    queries: namespaceIds.map((id) => ({
+      queryKey: ['namespace-stats', id] as const,
+      queryFn: async (): Promise<NamespaceStatsData> => {
+        const response = await apiClient.get<NamespaceStatsData>(`/namespaces/${id}/stats`, {
+          _silent: true,
+        });
+        return response.data;
+      },
+      enabled: !!id,
+      staleTime: 30_000,
+      refetchInterval: autoRefresh ? refetchMs : (false as const),
+      refetchIntervalInBackground: false,
+      retry: (failureCount: number, error: ApiError) => {
+        if (error?.response?.status === 404) return false;
+        if (error?.response?.status === 429) return false;
+        if ((error?.response?.status ?? 0) >= 500) return false;
+        return failureCount < 2;
+      },
+    })),
+  });
+
+  return statsResults.map((result, i) => ({
+    namespaceId: namespaceIds[i],
+    data: result.data,
+    isLoading: result.isLoading,
+    isError: result.isError,
+  }));
+}
+
 /**
  * Fetches queue data for multiple namespaces in parallel using shared query cache.
  * Cards using useQueues() will hit the same cache — no duplicate requests.
@@ -74,32 +133,7 @@ export function useAllNamespacesQueues(
   });
 
   // Also fetch stats (with subscription DLQs) for each namespace
-  const statsResults = useQueries({
-    queries: namespaceIds.map((id) => ({
-      queryKey: ['namespace-stats', id] as const,
-      queryFn: async () => {
-        const response = await apiClient.get<{
-          totalQueues: number;
-          totalTopics: number;
-          totalSubscriptions: number;
-          totalActive: number;
-          totalDlq: number;
-          totalScheduled: number;
-        }>(`/namespaces/${id}/stats`, { _silent: true });
-        return response.data;
-      },
-      enabled: !!id,
-      staleTime: 30_000,
-      refetchInterval: autoRefresh ? (intervals?.statsMs ?? 60_000) : (false as const),
-      refetchIntervalInBackground: false,
-      retry: (failureCount: number, error: ApiError) => {
-        if (error?.response?.status === 404) return false;
-        if (error?.response?.status === 429) return false;
-        if ((error?.response?.status ?? 0) >= 500) return false;
-        return failureCount < 2;
-      },
-    })),
-  });
+  const statsResults = useNamespaceStats(namespaceIds, autoRefresh, intervals?.statsMs ?? 60_000);
 
   return results.map((result, i) => {
     const queues = result.data;

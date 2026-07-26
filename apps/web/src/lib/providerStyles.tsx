@@ -1,4 +1,5 @@
 import type { CloudProviderType } from '@/lib/api/types';
+import { ProviderIcon } from '@/components/ProviderIcon';
 
 // Shared per-provider visual identity used by the multi-cloud overview widgets:
 // Azure = sky blue, AWS = light orange, GCP = light green. Chrome-level theming
@@ -14,6 +15,8 @@ export interface ProviderStyle {
   cardHover: string;
   countBadge: string;
   dot: string;
+  /** Left-border accent for card-style rows — a subtle, scannable provider cue. */
+  accentBorder: string;
 }
 
 // eslint-disable-next-line react-refresh/only-export-components -- style map + badge belong together
@@ -26,7 +29,10 @@ export const PROVIDER_STYLES: Record<CloudProviderType, ProviderStyle> = {
     accentText: 'text-sky-700',
     cardHover: 'hover:border-sky-400 hover:bg-sky-50',
     countBadge: 'bg-sky-100 text-sky-700',
-    dot: 'bg-sky-500',
+    // Exact brand accent (#0078D4) — reserved for small, high-signal elements
+    // (status dots, border accents), not backgrounds, per the light-blue enterprise theme.
+    dot: 'bg-[#0078D4]',
+    accentBorder: 'border-l-[#0078D4]',
   },
   aws: {
     label: 'AWS',
@@ -36,7 +42,8 @@ export const PROVIDER_STYLES: Record<CloudProviderType, ProviderStyle> = {
     accentText: 'text-orange-700',
     cardHover: 'hover:border-orange-400 hover:bg-orange-50',
     countBadge: 'bg-orange-100 text-orange-700',
-    dot: 'bg-orange-500',
+    dot: 'bg-[#FF9900]',
+    accentBorder: 'border-l-[#FF9900]',
   },
   gcp: {
     label: 'GCP',
@@ -46,7 +53,8 @@ export const PROVIDER_STYLES: Record<CloudProviderType, ProviderStyle> = {
     accentText: 'text-green-700',
     cardHover: 'hover:border-green-400 hover:bg-green-50',
     countBadge: 'bg-green-100 text-green-700',
-    dot: 'bg-green-500',
+    dot: 'bg-[#34A853]',
+    accentBorder: 'border-l-[#34A853]',
   },
 };
 
@@ -58,7 +66,8 @@ export function getProviderStyle(provider?: CloudProviderType): ProviderStyle {
 export function ProviderBadge({ provider }: { provider?: CloudProviderType }) {
   const style = getProviderStyle(provider);
   return (
-    <span className={`px-2 py-0.5 text-xs font-bold rounded-full border ${style.badge}`}>
+    <span className={`inline-flex items-center gap-1 pl-1 pr-2 py-0.5 text-xs font-bold rounded-full border ${style.badge}`}>
+      <ProviderIcon provider={provider} className="w-3.5 h-3.5 shrink-0" />
       {style.label}
     </span>
   );

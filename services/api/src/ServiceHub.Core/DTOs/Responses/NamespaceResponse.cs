@@ -51,4 +51,18 @@ public sealed record NamespaceResponse(
     /// Null for non-GCP providers.
     /// </summary>
     public string? GcpProjectId { get; init; }
+
+    /// <summary>
+    /// Owner IDs this namespace has been explicitly shared with, in addition to its owner.
+    /// Only populated for the true owner's own view of a namespace they own — see
+    /// <c>NamespacesController</c>. Empty for a namespace the caller can see only because it
+    /// was shared with them.
+    /// </summary>
+    public IReadOnlyList<string> SharedWithOwnerIds { get; init; } = [];
+
+    /// <summary>
+    /// True if the caller can see this namespace only because its owner shared it with them,
+    /// not because they own it — lets the UI distinguish "mine" from "shared with me".
+    /// </summary>
+    public bool IsSharedWithMe { get; init; }
 }

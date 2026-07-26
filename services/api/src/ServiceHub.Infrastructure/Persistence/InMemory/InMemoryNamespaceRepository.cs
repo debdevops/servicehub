@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,7 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
     private readonly ConcurrentDictionary<Guid, Namespace> _namespaces = new();
     private readonly ILogger<InMemoryNamespaceRepository> _logger;
     private readonly string _storagePath;
+    private readonly object _saveLock = new();
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -131,8 +133,9 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
     {
         // SPA owner also owns legacy namespaces that pre-date the OwnerId field
         // (they were written without an OwnerId and deserialise to the default value).
+        // IsAccessibleBy also includes namespaces explicitly shared with this owner.
         var namespaces = _namespaces.Values
-            .Where(n => string.Equals(n.OwnerId, ownerId, StringComparison.Ordinal))
+            .Where(n => n.IsAccessibleBy(ownerId))
             .ToList();
 
         _logger.LogDebug(
@@ -340,22 +343,39 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
     {
         try
         {
-            var snapshots = _namespaces.Values
-                .Select(ToSnapshot)
-                .OrderBy(n => n.Name)
-                .ToList();
+            // Guards the whole serialise → write → rename sequence. Without this, two
+            // concurrent writers both targeting the same fixed temp filename could interleave
+            // their writes on that shared file before either renamed — corrupting or
+            // truncating the one file every stored credential lives in. The lock is safe here
+            // because the method is synchronous and the section below never awaits.
+            lock (_saveLock)
+            {
+                var snapshots = _namespaces.Values
+                    .Select(ToSnapshot)
+                    .OrderBy(n => n.Name)
+                    .ToList();
 
-            var json = JsonSerializer.Serialize(snapshots, JsonOptions);
+                var json = JsonSerializer.Serialize(snapshots, JsonOptions);
+                var bytes = Encoding.UTF8.GetBytes(json);
 
-            // CRITICAL FIX: Atomic write via temp file + rename.
-            // File.WriteAllText truncates then writes — a crash mid-write produces a
-            // zero-byte or partial file, losing ALL stored namespaces permanently.
-            // File.Move is atomic on the same volume (single directory rename syscall).
-            var tempPath = _storagePath + ".tmp";
-            File.WriteAllText(tempPath, json);
-            File.Move(tempPath, _storagePath, overwrite: true);
+                // Atomic write via a unique-per-call temp file + rename. The unique name is
+                // defence in depth (still correct if this method is ever made async and the
+                // lock no longer applies). The temp file is flushed to the physical device
+                // (flushToDisk: true — fsync on Linux, FlushFileBuffers on Windows) before the
+                // rename, so an unclean shutdown between write and rename cannot leave a
+                // valid-looking but empty or truncated file at the destination. File.Move is
+                // then a single atomic rename syscall on the same volume.
+                var tempPath = $"{_storagePath}.{Guid.NewGuid():N}.tmp";
+                using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    stream.Write(bytes, 0, bytes.Length);
+                    stream.Flush(flushToDisk: true);
+                }
 
-            _logger.LogDebug("Persisted {Count} namespace(s) to {Path}", snapshots.Count, _storagePath);
+                File.Move(tempPath, _storagePath, overwrite: true);
+
+                _logger.LogDebug("Persisted {Count} namespace(s) to {Path}", snapshots.Count, _storagePath);
+            }
         }
         catch (Exception ex)
         {
@@ -382,6 +402,7 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
             HasManagePermission = ns.HasManagePermission,
             Environment = ns.Environment,
             OwnerId = ns.OwnerId,
+            SharedWithOwnerIds = ns.SharedWithOwnerIds.Count > 0 ? [.. ns.SharedWithOwnerIds] : null,
             ConnectionStringHash = ns.ConnectionStringHash,
             Provider = ns.Provider,
             AwsRegion = ns.AwsRegion,
@@ -437,6 +458,7 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
             SetPrivateProperty(ns, nameof(Namespace.HasSendPermission), snapshot.HasSendPermission);
             SetPrivateProperty(ns, nameof(Namespace.HasManagePermission), snapshot.HasManagePermission);
             SetPrivateProperty(ns, nameof(Namespace.Environment), snapshot.Environment);
+            SetPrivateProperty(ns, nameof(Namespace.SharedWithOwnerIds), (IReadOnlyList<string>)(snapshot.SharedWithOwnerIds ?? []));
 
             if (!snapshot.IsActive)
             {
@@ -483,6 +505,12 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
         /// namespaces written before this field existed remain visible to the instance admin.
         /// </summary>
         public string OwnerId { get; init; } = Namespace.SpaOwnerId;
+        /// <summary>
+        /// Additional owner IDs this namespace is shared with. Null/absent on files written
+        /// before sharing existed — deserialises to null and is normalised to an empty list on
+        /// rehydration, so older snapshot files load unaffected.
+        /// </summary>
+        public List<string>? SharedWithOwnerIds { get; init; }
         /// <summary>SHA-256 hash of the plaintext connection string for fast deduplication.</summary>
         public string? ConnectionStringHash { get; init; }
         /// <summary>Cloud provider (Azure, AWS, GCP). Defaults to Azure for backward compatibility.</summary>

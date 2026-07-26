@@ -28,4 +28,9 @@ public static class EventCategories
     /// Events raised by the auto-replay rule engine when a rule matches or is modified.
     /// </summary>
     public const string Rule = "rule";
+
+    /// <summary>
+    /// Events raised by bulk replay/purge job lifecycle transitions.
+    /// </summary>
+    public const string BulkOperation = "bulk-operation";
 }

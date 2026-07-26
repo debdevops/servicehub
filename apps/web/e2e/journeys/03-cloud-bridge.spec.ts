@@ -30,11 +30,14 @@ test('cloud bridge shows AWS and GCP providers when simulator is running', async
   await page.goto('/cloud-bridge');
   if (simulatorRunning) {
     const mainContent = page.locator('main');
-    const providerCards = mainContent.locator('div.rounded-lg.px-4.py-2.text-sm.font-medium.border');
 
+    // Match on the provider card's label text rather than its Tailwind classes —
+    // exact text keeps this from also matching the descriptive paragraph above the
+    // cards ("...AWS SQS / SNS, and GCP Pub/Sub."), and stays valid across markup/
+    // styling changes to ProviderStatusCard.
     await expect(mainContent.getByRole('heading', { name: 'Provider Status' })).toBeVisible({ timeout: 10_000 });
-    await expect(providerCards.filter({ hasText: /AWS SQS \/ SNS/ }).first()).toBeVisible({ timeout: 10_000 });
-    await expect(providerCards.filter({ hasText: /GCP Pub\/Sub/ }).first()).toBeVisible({ timeout: 10_000 });
+    await expect(mainContent.getByText('AWS SQS / SNS', { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(mainContent.getByText('GCP Pub/Sub', { exact: true })).toBeVisible({ timeout: 10_000 });
   } else {
     // Without simulator, page should still render gracefully
     await expect(page.getByText(/Cloud Bridge/i)).toBeVisible();

@@ -1,3 +1,4 @@
+using ServiceHub.Api.Configuration;
 using ServiceHub.Api.Extensions;
 using ServiceHub.Api.Logging;
 using ServiceHub.Infrastructure;
@@ -48,6 +49,10 @@ builder.WebHost.ConfigureKestrel(options =>
 // Add Application Insights telemetry (cost-effective configuration)
 builder.Services.AddApplicationInsightsTelemetryConfiguration(builder.Configuration, builder.Environment);
 
+// Add vendor-neutral OpenTelemetry (traces + metrics). Inert unless explicitly enabled or an
+// OTLP endpoint is configured — see ObservabilityExtensions. Coexists with App Insights.
+builder.Services.AddOpenTelemetryObservability(builder.Configuration);
+
 // Add ServiceHub API services
 builder.Services.AddServiceHubApi(builder.Configuration);
 
@@ -87,6 +92,9 @@ else
 builder.Services.AddBackgroundWorkers();
 
 var app = builder.Build();
+
+// Emit a single, secret-free summary of the effective configuration for operability.
+app.LogStartupSummary();
 
 // Wire Platform Event subscribers before any hosted service starts.
 // This registers WebhookDlqSpikeHandler (and future handlers) with the
@@ -177,7 +185,7 @@ static async Task ApplySchemaUpgradesAsync(DlqDbContext dbContext, ILogger logge
             logger.LogInformation("Schema upgrade applied: DlqMessages.CloudProvider added");
         }
 
-        // Migration: Create AuditLogs table (added in v4.0.0 Persistent Audit Trail)
+        // Migration: Create AuditLogs table (added in v3.3.0 Persistent Audit Trail)
         // EnsureCreatedAsync creates this table in new databases; existing databases need the DDL.
         if (!await TableExistsAsync(connection, "AuditLogs"))
         {
@@ -215,6 +223,47 @@ static async Task ApplySchemaUpgradesAsync(DlqDbContext dbContext, ILogger logge
                     ON "AuditLogs" ("Action");
                 """);
             logger.LogInformation("Schema upgrade applied: AuditLogs table and indexes created");
+        }
+
+        // Migration: Create BulkOperationJobs table (added for Bulk Operations)
+        // EnsureCreatedAsync creates this table in new databases; existing databases need the DDL.
+        if (!await TableExistsAsync(connection, "BulkOperationJobs"))
+        {
+            logger.LogWarning("BulkOperationJobs table is missing — applying schema upgrade");
+            await ExecuteNonQueryAsync(connection, """
+                CREATE TABLE IF NOT EXISTS "BulkOperationJobs" (
+                    "Id"                      TEXT NOT NULL CONSTRAINT "PK_BulkOperationJobs" PRIMARY KEY,
+                    "OwnerId"                 TEXT NOT NULL,
+                    "OperationType"           TEXT NOT NULL,
+                    "Status"                  TEXT NOT NULL,
+                    "NamespaceId"             TEXT NOT NULL,
+                    "NamespaceDisplayName"    TEXT NOT NULL,
+                    "EntityNameFilter"        TEXT,
+                    "StatusFilter"            TEXT,
+                    "CategoryFilter"          TEXT,
+                    "FromFilter"              TEXT,
+                    "ToFilter"                TEXT,
+                    "TotalMatched"            INTEGER NOT NULL,
+                    "ProcessedCount"          INTEGER NOT NULL,
+                    "SuccessCount"            INTEGER NOT NULL,
+                    "FailureCount"            INTEGER NOT NULL,
+                    "SkippedCount"            INTEGER NOT NULL,
+                    "FailureSampleJson"       TEXT,
+                    "ErrorSummary"            TEXT,
+                    "CreatedAt"               TEXT NOT NULL,
+                    "StartedAt"               TEXT,
+                    "CompletedAt"             TEXT,
+                    "CancellationRequestedAt" TEXT,
+                    "CorrelationId"           TEXT
+                );
+                CREATE INDEX IF NOT EXISTS "IX_BulkOperationJobs_Owner_CreatedAt"
+                    ON "BulkOperationJobs" ("OwnerId", "CreatedAt");
+                CREATE INDEX IF NOT EXISTS "IX_BulkOperationJobs_Owner_Namespace_CreatedAt"
+                    ON "BulkOperationJobs" ("OwnerId", "NamespaceId", "CreatedAt");
+                CREATE INDEX IF NOT EXISTS "IX_BulkOperationJobs_Status"
+                    ON "BulkOperationJobs" ("Status");
+                """);
+            logger.LogInformation("Schema upgrade applied: BulkOperationJobs table and indexes created");
         }
     }
     finally

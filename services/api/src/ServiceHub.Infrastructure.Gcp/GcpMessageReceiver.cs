@@ -86,15 +86,16 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
 
         var ns = nsResult.Value;
 
+        // Topic/subscription-shaped requests (mirroring Azure/AWS addressing) carry the
+        // subscription in SubscriptionName and the topic in EntityName; GCP has no
+        // separate topic read path, so the subscription is what we actually pull from.
+        var subscriptionId = request.SubscriptionName ?? request.EntityName;
+
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(OperationTimeoutSeconds));
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
         try
         {
-            // Topic/subscription-shaped requests (mirroring Azure/AWS addressing) carry the
-            // subscription in SubscriptionName and the topic in EntityName; GCP has no
-            // separate topic read path, so the subscription is what we actually pull from.
-            var subscriptionId = request.SubscriptionName ?? request.EntityName;
             var mapped = await _resiliencePipeline.ExecuteAsync(async ct =>
             {
                 var subscriber = await _clientFactory.GetSubscriberClientAsync(
@@ -113,6 +114,11 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             _logger.LogWarning("GCP Pub/Sub peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, SanitizeForLog(request.EntityName));
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
                 "GCP.PubSub.Timeout", $"Pub/Sub operation timed out after {OperationTimeoutSeconds}s."));
+        }
+        catch (Grpc.Core.RpcException ex) when (ex.Status.StatusCode == Grpc.Core.StatusCode.FailedPrecondition)
+        {
+            _logger.LogWarning(ex, "Pub/Sub subscription {Subscription} does not support Pull", SanitizeForLog(subscriptionId));
+            return Result.Failure<IReadOnlyList<Message>>(UnsupportedSubscriptionTypeError(subscriptionId));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -163,12 +169,33 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
                 "GCP.PubSub.Timeout", $"Pub/Sub DLQ operation timed out after {OperationTimeoutSeconds}s."));
         }
+        catch (Grpc.Core.RpcException ex) when (ex.Status.StatusCode == Grpc.Core.StatusCode.FailedPrecondition)
+        {
+            _logger.LogWarning(ex, "Pub/Sub subscription {Subscription} does not support Pull", SanitizeForLog(subscriptionId));
+            return Result.Failure<IReadOnlyList<Message>>(UnsupportedSubscriptionTypeError(subscriptionId));
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error peeking Pub/Sub DLQ messages from {Subscription}", SanitizeForLog(subscriptionId));
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService("GCP.PubSub.DlqPeekFailed", ex.Message));
         }
     }
+
+    /// <summary>
+    /// Builds the actionable validation error for a subscription whose type doesn't support
+    /// Pub/Sub's Pull API. Google returns a bare <c>FailedPrecondition</c> for this — it means
+    /// the subscription has a <c>PushConfig</c>, <c>BigqueryConfig</c>, or <c>CloudStorageConfig</c>
+    /// (export subscriptions deliver directly to their target and were never pullable), not that
+    /// anything is misconfigured. Surfaced as <see cref="ErrorType.Validation"/> (400), not
+    /// <see cref="ErrorType.ExternalService"/> (502), since no retry or reconnect fixes it — the
+    /// caller must pick a different (Pull-type) subscription.
+    /// </summary>
+    private static Error UnsupportedSubscriptionTypeError(string subscriptionId) => Error.Validation(
+        "GCP.PubSub.UnsupportedSubscriptionType",
+        $"Subscription '{subscriptionId}' does not support message browsing. It is a Push, BigQuery, or " +
+        "Cloud Storage export subscription — Pub/Sub delivers those directly to their target and never " +
+        "makes messages available to Pull/peek. Create a separate Pull subscription on the same topic to " +
+        "inspect messages with ServiceHub.");
 
     // Hard limit per individual Pub/Sub API call.
     private const int OperationTimeoutSeconds = 15;

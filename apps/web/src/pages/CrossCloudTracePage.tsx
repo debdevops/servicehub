@@ -3,27 +3,13 @@ import { useSearchParams } from 'react-router-dom';
 import { Route, Cloud, AlertCircle, CheckCircle2, Clock, ChevronDown, ChevronRight, Info } from 'lucide-react';
 import { useCrossCloudTrace } from '@/hooks/useCrossCloudTrace';
 import { useNamespaces } from '@/hooks/useNamespaces';
+import { getProviderStyle } from '@/lib/providerStyles';
 import type { CrossCloudTraceHop, CrossCloudNamespaceSummary, CloudProviderType } from '@/lib/api/types';
 
 // ── Cloud provider visual identity ───────────────────────────────────────────
-
-const CLOUD_COLORS: Record<CloudProviderType, string> = {
-  azure: 'bg-sky-100 text-sky-700 border-sky-200',
-  aws: 'bg-orange-100 text-orange-700 border-orange-200',
-  gcp: 'bg-green-100 text-green-700 border-green-200',
-};
-
-const CLOUD_BADGE_DOT: Record<CloudProviderType, string> = {
-  azure: 'bg-sky-500',
-  aws: 'bg-orange-500',
-  gcp: 'bg-green-500',
-};
-
-const CLOUD_LABELS: Record<CloudProviderType, string> = {
-  azure: 'Azure',
-  aws: 'AWS',
-  gcp: 'GCP',
-};
+// Badge color/label/dot come from lib/providerStyles.tsx (single source of truth).
+// The flow-diagram node border below stays page-specific — it's a thicker,
+// lighter-shade accent than the badge's brand-hex dot/border, not a duplicate.
 
 const CLOUD_CONNECTOR_COLORS: Record<CloudProviderType, string> = {
   azure: 'border-sky-400',
@@ -32,10 +18,11 @@ const CLOUD_CONNECTOR_COLORS: Record<CloudProviderType, string> = {
 };
 
 function CloudBadge({ provider }: { provider: CloudProviderType }) {
+  const style = getProviderStyle(provider);
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold border ${CLOUD_COLORS[provider]}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${CLOUD_BADGE_DOT[provider]}`} />
-      {CLOUD_LABELS[provider]}
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold border ${style.badge}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+      {style.label}
     </span>
   );
 }
@@ -231,7 +218,7 @@ export function CrossCloudTracePage() {
               Traces search every connected namespace, including historical DLQ records.
               Connect namespaces from more cloud providers (Azure, AWS, GCP) on the
               <strong> Connect</strong> page to trace messages across clouds.
-              Currently connected: {connectedClouds.size === 0 ? 'none' : [...connectedClouds].map(c => CLOUD_LABELS[c as CloudProviderType]).join(', ')}.
+              Currently connected: {connectedClouds.size === 0 ? 'none' : [...connectedClouds].map(c => getProviderStyle(c as CloudProviderType).label).join(', ')}.
             </p>
           </div>
         </div>

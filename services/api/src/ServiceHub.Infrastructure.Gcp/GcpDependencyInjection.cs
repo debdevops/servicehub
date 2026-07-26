@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 
 namespace ServiceHub.Infrastructure.Gcp;
@@ -38,6 +39,25 @@ public static class GcpDependencyInjection
         services.AddHealthChecks()
             .AddCheck<GcpHealthCheck>("gcp-connectivity", tags: ["gcp", "ready"]);
 
+        return services;
+    }
+
+    /// <summary>
+    /// Registers <see cref="GcpForensicEngine"/> under the <see cref="CloudProviderType.Gcp"/> key
+    /// so <c>ForensicEngineRouter</c> can dispatch GCP-tagged DLQ messages to it.
+    /// <para>
+    /// Unlike <see cref="AddGcpProvider"/>, this is called unconditionally by the API's
+    /// composition root, independent of the <c>CloudProviders:Gcp:Enabled</c> flag — forensic
+    /// engines are pure, stateless classifiers with no GCP SDK dependency, so Simulator-seeded
+    /// GCP DLQ messages get GCP-aware classification even when the live Pub/Sub provider isn't
+    /// registered.
+    /// </para>
+    /// </summary>
+    /// <param name="services">The service collection to register into.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddGcpForensicIntelligence(this IServiceCollection services)
+    {
+        services.TryAddKeyedScoped<IForensicEngine, GcpForensicEngine>(CloudProviderType.Gcp);
         return services;
     }
 }

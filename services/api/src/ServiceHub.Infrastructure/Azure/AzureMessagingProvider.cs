@@ -54,6 +54,9 @@ public sealed class AzureMessagingProvider : ICloudMessagingProvider
     public CloudProviderType ProviderType => CloudProviderType.Azure;
 
     /// <inheritdoc/>
+    public ProviderCapabilities Capabilities => ProviderCapabilities.Azure;
+
+    /// <inheritdoc/>
     /// <remarks>
     /// Delegates to <see cref="IServiceBusClientFactory.CreateClientAsync"/> which validates
     /// the connection string format and attempts to establish an SDK client.

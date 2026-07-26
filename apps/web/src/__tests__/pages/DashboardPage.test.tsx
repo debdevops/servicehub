@@ -87,7 +87,7 @@ describe('DashboardPage', () => {
 
   it('renders page title', () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
-    expect(screen.getByText('Multi-Namespace Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Namespace Overview')).toBeInTheDocument();
   });
 
   it('shows empty state with Connect button when no namespaces', () => {

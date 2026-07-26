@@ -8,12 +8,21 @@ import {
   AlertCircle,
   Archive,
   BarChart3,
+  Trash2,
 } from 'lucide-react';
-import { DlqHistoryTable, DlqTimelineDrawer } from '@/components/dlq';
+import {
+  DlqHistoryTable,
+  DlqTimelineDrawer,
+  BulkOperationPreviewModal,
+  BulkOperationProgressPanel,
+} from '@/components/dlq';
 import { useDlqHistory, useDlqSummary } from '@/hooks/useDlqHistory';
 import { useNamespaces } from '@/hooks/useNamespaces';
+import { useProviderCapabilities } from '@/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@/lib/api/cloudBridge';
 import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
 import type { Namespace } from '@/lib/api/types';
+import type { BulkOperationType } from '@/lib/api/bulkOperations';
 import { dlqHistoryApi } from '@/lib/api/dlqHistory';
 import { HelpTooltip } from '@/components/help';
 import { tooltips } from '@/lib/helpContent';
@@ -35,7 +44,7 @@ function TrendChart({ trend }: { trend: TrendPoint[] }) {
   const barWidth = 100 / trend.length;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 mb-3">
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-3">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-gray-700">
           30-Day DLQ Trend
@@ -177,6 +186,8 @@ export function DlqHistoryPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTimelineId, setSelectedTimelineId] = useState<number | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [bulkModalType, setBulkModalType] = useState<BulkOperationType | null>(null);
+  const [activeBulkJobId, setActiveBulkJobId] = useState<string | null>(null);
 
   const pageSize = 50;
 
@@ -190,8 +201,39 @@ export function DlqHistoryPage() {
     pageSize,
   }), [namespaceId, entityFilter, statusFilter, categoryFilter, providerFilter, page]);
 
-  const { data, isLoading, refetch, isFetching } = useDlqHistory(params, !!namespaceId);
+  // Same filter shape the backend's bulk-operations preview/create endpoints expect — reusing
+  // the DLQ History page's own active filters means "Bulk Replay" needs no separate filter UI.
+  const bulkFilter = useMemo(() => ({
+    namespaceId: namespaceId ?? '',
+    entityName: entityFilter || undefined,
+    status: statusFilter,
+    category: categoryFilter,
+  }), [namespaceId, entityFilter, statusFilter, categoryFilter]);
+
+  const { data, isLoading, isError, refetch, isFetching } = useDlqHistory(params, !!namespaceId);
   const { data: summary, refetch: refetchSummary } = useDlqSummary(namespaceId);
+
+  const { data: providerCapabilitiesMap } = useProviderCapabilities();
+  const providerCapabilities = getProviderCapabilities(providerCapabilitiesMap, currentNamespace?.cloudProvider);
+  const isProdNamespace = currentNamespace?.environment === 'prod';
+  const canBulkReplay = !!namespaceId && !isProdNamespace;
+  const canBulkPurge = canBulkReplay && (providerCapabilities?.supportsPurge ?? false);
+
+  // The background monitor skips namespaces whose provider has no non-destructive peek (AWS SQS)
+  // unless an operator opts into the ReceiveCount consequence — an empty history for one of these
+  // namespaces means "never scanned," not "no dead letters," and must read differently.
+  const isNotMonitored = !!namespaceId && providerCapabilities !== undefined && !providerCapabilities.supportsRepeatablePeek;
+
+  // Fleet page deep-links here with ?openBulk=true to jump straight into the bulk-replay
+  // preview for a namespace flagged as at-risk, instead of duplicating the bulk-ops UI there.
+  useEffect(() => {
+    if (searchParams.get('openBulk') === 'true' && canBulkReplay) {
+      setBulkModalType('Replay');
+      const next = new URLSearchParams(searchParams);
+      next.delete('openBulk');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, canBulkReplay, setSearchParams]);
 
   // Auto-trigger initial scan when summary shows all zeros (no data in DB yet)
   const [autoScanned, setAutoScanned] = useState(false);
@@ -290,8 +332,32 @@ export function DlqHistoryPage() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setBulkModalType('Replay')}
+              disabled={!canBulkReplay}
+              className="flex items-center gap-1.5 px-3 py-2 border border-sky-200 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={isProdNamespace ? 'Bulk replay is blocked for production namespaces' : 'Replay every DLQ message matching the current filter'}
+            >
+              <RefreshCw className="w-4 h-4" />
+              Bulk Replay
+            </button>
+            <button
+              onClick={() => setBulkModalType('Purge')}
+              disabled={!canBulkPurge}
+              className="flex items-center gap-1.5 px-3 py-2 border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={
+                isProdNamespace
+                  ? 'Bulk purge is blocked for production namespaces'
+                  : !(providerCapabilities?.supportsPurge ?? false)
+                    ? (providerCapabilities?.notes ?? 'Purge is not supported for this provider')
+                    : 'Permanently delete every DLQ message matching the current filter'
+              }
+            >
+              <Trash2 className="w-4 h-4" />
+              Bulk Purge
+            </button>
+            <button
               onClick={() => handleExport('csv')}
-              className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
               title="Export as CSV"
             >
               <Download className="w-4 h-4" />
@@ -299,7 +365,7 @@ export function DlqHistoryPage() {
             </button>
             <button
               onClick={() => handleExport('json')}
-              className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
               title="Export as JSON"
             >
               <Download className="w-4 h-4" />
@@ -485,8 +551,12 @@ export function DlqHistoryPage() {
           hasNextPage={data?.hasNextPage ?? false}
           hasPreviousPage={data?.hasPreviousPage ?? false}
           isLoading={isLoading}
+          isError={isError}
+          onRetry={() => refetch()}
           onPageChange={setPage}
           onViewTimeline={setSelectedTimelineId}
+          notMonitored={isNotMonitored}
+          notMonitoredReason={providerCapabilities?.notes}
         />
       </div>
 
@@ -495,6 +565,25 @@ export function DlqHistoryPage() {
         messageId={selectedTimelineId}
         onClose={() => setSelectedTimelineId(null)}
       />
+
+      {/* Bulk Replay/Purge — dry-run preview, then a floating non-blocking progress panel */}
+      {bulkModalType && namespaceId && (
+        <BulkOperationPreviewModal
+          operationType={bulkModalType}
+          filter={bulkFilter}
+          onClose={() => setBulkModalType(null)}
+          onJobCreated={(jobId) => {
+            setBulkModalType(null);
+            setActiveBulkJobId(jobId);
+          }}
+        />
+      )}
+      {activeBulkJobId && (
+        <BulkOperationProgressPanel
+          jobId={activeBulkJobId}
+          onDismiss={() => setActiveBulkJobId(null)}
+        />
+      )}
     </div>
   );
 }

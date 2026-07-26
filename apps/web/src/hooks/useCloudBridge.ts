@@ -1,6 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
-import { cloudBridgeApi, type CloudEntity, type VisibilityStatus } from '@/lib/api/cloudBridge';
+import { useQuery, UseQueryOptions } from '@tanstack/react-query';
+import { cloudBridgeApi, type CloudEntity, type ProviderCapabilitiesMap, type VisibilityStatus } from '@/lib/api/cloudBridge';
 import type { ApiError } from '@/lib/api/types';
+import { useDemoContext } from '@/lib/demo/DemoContext';
+import { getMockCapabilitiesMap } from '@/lib/demo/mockProviders';
 
 /** Returns the registration status of every supported cloud provider. */
 export function useProviderStatus() {
@@ -10,6 +12,35 @@ export function useProviderStatus() {
     staleTime: 30_000,
     retry: 1,
   });
+}
+
+/**
+ * Returns what each cloud provider genuinely supports (message counts, manual dead-letter,
+ * purge, scheduled messages) — the single source of truth for provider-gated UI, replacing
+ * ad-hoc per-page capability checks. Capabilities are static platform facts, so this is
+ * cached generously and never depends on which provider flags are enabled.
+ *
+ * In Demo Mode this must NOT hit the real API — every other demo data hook (useNamespaces,
+ * useMessages, ...) already short-circuits to mock data, and capabilities is a platform fact
+ * about the demo's own active provider, not something a live backend round-trip should decide.
+ */
+export function useProviderCapabilities() {
+  const { isDemoMode } = useDemoContext();
+
+  const options: UseQueryOptions<ProviderCapabilitiesMap> = isDemoMode
+    ? {
+        queryKey: ['cloud-bridge', 'capabilities', 'demo'],
+        queryFn: (): Promise<ProviderCapabilitiesMap> => Promise.resolve(getMockCapabilitiesMap()),
+        staleTime: Infinity,
+      }
+    : {
+        queryKey: ['cloud-bridge', 'capabilities'],
+        queryFn: cloudBridgeApi.getCapabilities,
+        staleTime: 5 * 60_000,
+        retry: 1,
+      };
+
+  return useQuery(options);
 }
 
 export interface UseCloudEntitiesParams {

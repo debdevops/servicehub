@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { CloudBridgePage } from '@/pages/CloudBridgePage';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { CloudBridgePage } from '@/pages/CloudBridgePage';
 
 vi.mock('@/hooks/useCloudBridge', () => ({
   useProviderStatus: vi.fn(),
@@ -13,6 +14,14 @@ vi.mock('@/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
 
+// CloudBridgePage rolls up per-provider DLQ counts via the same namespace-stats
+// endpoint the Header/Quick Access already warm — mock it to an empty response.
+vi.mock('@/lib/api/client', () => ({
+  apiClient: {
+    get: vi.fn().mockResolvedValue({ data: { totalDlq: 0 } }),
+  },
+}));
+
 import { useProviderStatus } from '@/hooks/useCloudBridge';
 import { useNamespaces } from '@/hooks/useNamespaces';
 
@@ -20,9 +29,14 @@ const mockUseProviderStatus = useProviderStatus as ReturnType<typeof vi.fn>;
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 
 function renderPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   return render(
     <MemoryRouter>
-      <CloudBridgePage />
+      <QueryClientProvider client={queryClient}>
+        <CloudBridgePage />
+      </QueryClientProvider>
     </MemoryRouter>
   );
 }

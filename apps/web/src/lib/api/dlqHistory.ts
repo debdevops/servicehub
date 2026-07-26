@@ -25,6 +25,7 @@ export interface DlqHistoryItem {
   replayedAt: string | null;
   replaySuccess: boolean | null;
   archivedAt: string | null;
+  resolvedAt: string | null;
   userNotes: string | null;
   correlationId: string | null;
   topicName: string | null;
@@ -91,6 +92,9 @@ export interface PaginatedResponse<T> {
   hasPreviousPage: boolean;
 }
 
+/** Valid manual triage target statuses (must match the backend's ManualTriageTargets). */
+export type DlqTriageStatus = 'Active' | 'Archived' | 'Discarded' | 'Resolved';
+
 export interface DlqHistoryParams {
   namespaceId?: string;
   entityName?: string;
@@ -150,6 +154,22 @@ export const dlqHistoryApi = {
    */
   updateNotes: async (id: number, notes: string): Promise<DlqHistoryItem> => {
     const response = await apiClient.post<DlqHistoryItem>(`/dlq/history/${id}/notes`, { notes });
+    return response.data;
+  },
+
+  /**
+   * Triage a DLQ message by transitioning its status
+   * (Active, Archived, Discarded, Resolved).
+   */
+  updateStatus: async (
+    id: number,
+    status: DlqTriageStatus,
+    notes?: string
+  ): Promise<DlqHistoryItem> => {
+    const response = await apiClient.post<DlqHistoryItem>(`/dlq/history/${id}/status`, {
+      status,
+      notes,
+    });
     return response.data;
   },
 

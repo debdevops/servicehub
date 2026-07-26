@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useQueries } from '@tanstack/react-query';
 import { Plus, Zap, RefreshCw, ToggleLeft, ToggleRight, Pencil, Trash2, FlaskConical, Play, AlertTriangle, X, Shield, Brain } from 'lucide-react';
 import { RuleBuilderDialog, TemplateGalleryDialog, RuleTestDialog } from '@/components/rules';
@@ -28,7 +29,7 @@ import type {
 } from '@/lib/api/rules';
 
 export function RulesPage() {
-  const { data: rules, isLoading, refetch, isFetching } = useRules();
+  const { data: rules, isLoading, isError, refetch, isFetching } = useRules();
 
   // Entities across every connected namespace (all providers) — used to flag
   // rules whose entity references no longer exist anywhere.
@@ -162,7 +163,7 @@ export function RulesPage() {
             </button>
             <button
               onClick={() => setShowTemplates(true)}
-              className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
             >
               <Zap className="w-4 h-4 text-amber-500" />
               Browse Templates
@@ -177,7 +178,7 @@ export function RulesPage() {
             <button
               onClick={() => refetch()}
               disabled={isFetching}
-              className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+              className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
               title="Refresh"
             >
               <RefreshCw className={`w-4 h-4 text-gray-500 ${isFetching ? 'animate-spin' : ''}`} />
@@ -189,7 +190,21 @@ export function RulesPage() {
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-6">
         {isLoading ? (
-          <div className="py-12 text-center text-sm text-gray-500">Loading rules...</div>
+          <div className="flex items-center justify-center gap-2 py-12 text-sm text-gray-500">
+            <RefreshCw className="w-4 h-4 animate-spin" />
+            Loading rules…
+          </div>
+        ) : isError ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <AlertTriangle className="w-10 h-10 text-red-400" />
+            <p className="text-gray-600 font-medium">Failed to load rules</p>
+            <button
+              onClick={() => refetch()}
+              className="px-4 py-2 text-sm text-primary-600 hover:text-primary-700 border border-primary-300 rounded-lg hover:bg-primary-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
+            >
+              Try Again
+            </button>
+          </div>
         ) : rules && rules.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {rules.map((rule) => (
@@ -423,7 +438,7 @@ function RuleCard({
       <div className="flex items-center gap-1.5 border-t border-gray-100 pt-3">
         <button
           onClick={onTest}
-          className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
         >
           <FlaskConical className="w-3.5 h-3.5" />
           Test
@@ -445,14 +460,14 @@ function RuleCard({
         </button>
         <button
           onClick={onEdit}
-          className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
         >
           <Pencil className="w-3.5 h-3.5" />
           Edit
         </button>
         <button
           onClick={onDelete}
-          className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-red-500 border border-gray-200 rounded-lg hover:bg-red-50 hover:border-red-200 transition-colors ml-auto"
+          className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-red-500 border border-gray-200 rounded-lg hover:bg-red-50 hover:border-red-200 transition-colors ml-auto focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
@@ -491,14 +506,14 @@ function EmptyState({
         </button>
         <button
           onClick={onBrowseTemplates}
-          className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+          className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
         >
           <Zap className="w-4 h-4 text-amber-500" />
           Browse Templates
         </button>
         <button
           onClick={onCreate}
-          className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+          className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
         >
           <Plus className="w-4 h-4" />
           Create Rule
@@ -521,15 +536,34 @@ function ReplayAllConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  // Escape-to-close — disarmed while the replay is actually executing, mirroring the
+  // backdrop-click and Cancel button's own disabled state.
+  useEffect(() => {
+    if (!rule) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isExecuting) {
+        onCancel();
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [rule, isExecuting, onCancel]);
+
   if (!rule) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60" onClick={isExecuting ? undefined : onCancel} />
+      <div className="absolute inset-0 bg-black/60" onClick={isExecuting ? undefined : onCancel} aria-hidden="true" />
 
       {/* Dialog */}
-      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+      <div
+        className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="replay-all-dialog-title"
+        aria-describedby="replay-all-dialog-description"
+      >
         {/* Header — Danger style */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-red-100 bg-red-50">
           <div className="flex items-center gap-3">
@@ -537,7 +571,7 @@ function ReplayAllConfirmDialog({
               <AlertTriangle className="w-5 h-5 text-red-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Replay All Matching Messages</h2>
+              <h2 id="replay-all-dialog-title" className="text-lg font-semibold text-gray-900">Replay All Matching Messages</h2>
               <p className="text-xs text-red-600 font-medium mt-0.5">Destructive Operation</p>
             </div>
           </div>
@@ -549,7 +583,7 @@ function ReplayAllConfirmDialog({
         </div>
 
         {/* Body */}
-        <div className="px-6 py-5 space-y-4">
+        <div id="replay-all-dialog-description" className="px-6 py-5 space-y-4">
           {/* Rule info */}
           <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
             <div className="text-sm font-semibold text-gray-900 mb-1">
@@ -636,7 +670,8 @@ function ReplayAllConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

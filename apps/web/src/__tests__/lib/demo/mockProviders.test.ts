@@ -6,6 +6,8 @@ import {
   getMockSubscriptions,
   getMockMessages,
   getMockStats,
+  getMockCapabilities,
+  getMockCapabilitiesMap,
   DEMO_NAMESPACE_IDS,
 } from '@/lib/demo/mockProviders';
 
@@ -156,6 +158,56 @@ describe('mockProviders', () => {
     it('hasPreviousPage=true for second page', () => {
       const result = getMockMessages('azure', 'test', 'active', 10, 10);
       expect(result.hasPreviousPage).toBe(true);
+    });
+  });
+
+  describe('getMockCapabilities', () => {
+    // Field-for-field mirror of services/api/src/ServiceHub.Core/Models/ProviderCapabilities.cs.
+    // These are literal expected values, not derived from the same source as the implementation,
+    // so a change to either side that silently drifts from the other is caught here.
+
+    it('azure matches ProviderCapabilities.Azure', () => {
+      expect(getMockCapabilities('azure')).toEqual({
+        supportsMessageCounts: true,
+        supportsManualDeadLetter: true,
+        supportsPurge: false,
+        supportsScheduledMessages: true,
+        supportsRepeatablePeek: true,
+        notes: 'Purge is not supported — the SDK has no reliable single-message delete by sequence number.',
+      });
+    });
+
+    it('aws matches ProviderCapabilities.Aws', () => {
+      expect(getMockCapabilities('aws')).toEqual({
+        supportsMessageCounts: true,
+        supportsManualDeadLetter: true,
+        supportsPurge: true,
+        supportsScheduledMessages: false,
+        supportsRepeatablePeek: false,
+        notes:
+          "Scheduled messages are not supported — SQS only offers DelaySeconds (max 15 minutes) at send time. Repeated/live polling is also not supported — SQS has no non-destructive peek, so every call is a receive that counts toward the queue's maxReceiveCount.",
+      });
+    });
+
+    it('gcp matches ProviderCapabilities.Gcp', () => {
+      expect(getMockCapabilities('gcp')).toEqual({
+        supportsMessageCounts: false,
+        supportsManualDeadLetter: false,
+        supportsPurge: true,
+        supportsScheduledMessages: false,
+        supportsRepeatablePeek: true,
+        notes:
+          'Message counts and manual dead-lettering are not supported — Pub/Sub has no count API and dead-lettering is policy-driven via MaxDeliveryAttempts. Scheduled messages are not supported either.',
+      });
+    });
+  });
+
+  describe('getMockCapabilitiesMap', () => {
+    it('returns all three providers keyed PascalCase, matching the real API shape', () => {
+      const map = getMockCapabilitiesMap();
+      expect(map.Azure).toEqual(getMockCapabilities('azure'));
+      expect(map.Aws).toEqual(getMockCapabilities('aws'));
+      expect(map.Gcp).toEqual(getMockCapabilities('gcp'));
     });
   });
 

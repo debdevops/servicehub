@@ -15,6 +15,7 @@ import { generateAzureMockMessages, AZURE_QUEUES, AZURE_TOPICS } from '@/lib/azu
 import { generateAwsMockMessages } from '@/lib/awsMockData';
 import { generateGcpMockMessages } from '@/lib/gcpMockData';
 import type { Message as MockMessage } from '@/lib/mockData';
+import type { ProviderCapabilities, ProviderCapabilitiesMap } from '@/lib/api/cloudBridge';
 
 // ─── Namespace IDs ──────────────────────────────────────────────────────────
 // Stable IDs used in URL query params and as namespace identifiers in demo mode
@@ -74,6 +75,63 @@ export function getMockNamespaces(provider: CloudProviderType): Namespace[] {
   };
 
   return [definitions[provider]];
+}
+
+// ─── Provider Capabilities ───────────────────────────────────────────────────
+// Mirrors services/api/src/ServiceHub.Core/Models/ProviderCapabilities.cs field-for-field.
+// Demo Mode is a prospect's only hands-on experience of the product — presenting AWS/GCP
+// with Azure's capabilities here would set expectations the real app then violates (e.g.
+// showing repeatable Live Tail on a demo SQS queue when real SQS has no non-destructive peek).
+// A shared generated contract is the right long-term fix; this literal mirror is deliberate
+// duplication until that exists (see the C# file above for the authoritative source and the
+// full rationale behind each flag).
+
+const DEMO_CAPABILITIES: Record<CloudProviderType, ProviderCapabilities> = {
+  azure: {
+    supportsMessageCounts: true,
+    supportsManualDeadLetter: true,
+    supportsPurge: false,
+    supportsScheduledMessages: true,
+    supportsRepeatablePeek: true,
+    notes: 'Purge is not supported — the SDK has no reliable single-message delete by sequence number.',
+  },
+  aws: {
+    supportsMessageCounts: true,
+    supportsManualDeadLetter: true,
+    supportsPurge: true,
+    supportsScheduledMessages: false,
+    supportsRepeatablePeek: false,
+    notes:
+      'Scheduled messages are not supported — SQS only offers DelaySeconds (max 15 minutes) at send time. ' +
+      "Repeated/live polling is also not supported — SQS has no non-destructive peek, so every call is a receive that counts toward the queue's maxReceiveCount.",
+  },
+  gcp: {
+    supportsMessageCounts: false,
+    supportsManualDeadLetter: false,
+    supportsPurge: true,
+    supportsScheduledMessages: false,
+    supportsRepeatablePeek: true,
+    notes:
+      'Message counts and manual dead-lettering are not supported — Pub/Sub has no count API and dead-lettering is policy-driven via MaxDeliveryAttempts. ' +
+      'Scheduled messages are not supported either.',
+  },
+};
+
+/** Capabilities for a single demo provider, keyed on the provider DemoModeProvider already carries. */
+export function getMockCapabilities(provider: CloudProviderType): ProviderCapabilities {
+  return DEMO_CAPABILITIES[provider];
+}
+
+/**
+ * The full capabilities map in the same shape `GET /api/v1/cloud-bridge/capabilities` returns,
+ * so demo mode can feed `useProviderCapabilities` without a real network round-trip.
+ */
+export function getMockCapabilitiesMap(): ProviderCapabilitiesMap {
+  return {
+    Azure: DEMO_CAPABILITIES.azure,
+    Aws: DEMO_CAPABILITIES.aws,
+    Gcp: DEMO_CAPABILITIES.gcp,
+  };
 }
 
 // ─── Queues ─────────────────────────────────────────────────────────────────

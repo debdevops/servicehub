@@ -30,6 +30,9 @@ public sealed class SimulatedAzureMessagingProvider : ICloudMessagingProvider
     public CloudProviderType ProviderType => CloudProviderType.Azure;
 
     /// <inheritdoc/>
+    public ProviderCapabilities Capabilities => ProviderCapabilities.Azure;
+
+    /// <inheritdoc/>
     public Task<Result> ValidateConnectionAsync(Namespace ns, CancellationToken ct) =>
         Task.FromResult(Result.Success());
 

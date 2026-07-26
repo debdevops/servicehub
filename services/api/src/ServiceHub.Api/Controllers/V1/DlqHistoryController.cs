@@ -69,36 +69,7 @@ public sealed class DlqHistoryController : ApiControllerBase
             return ToActionResult<PaginatedResponse<DlqHistoryResponse>>(result.Error);
 
         var data = result.Value;
-        var items = data.Items.Select(m => new DlqHistoryResponse(
-            Id: m.Id,
-            MessageId: m.MessageId,
-            SequenceNumber: m.SequenceNumber,
-            BodyHash: m.BodyHash,
-            NamespaceId: m.NamespaceId,
-            EntityName: m.EntityName,
-            EntityType: m.EntityType.ToString(),
-            EnqueuedTimeUtc: m.EnqueuedTimeUtc,
-            DeadLetterTimeUtc: m.DeadLetterTimeUtc,
-            DetectedAtUtc: m.DetectedAtUtc,
-            DeadLetterReason: m.DeadLetterReason,
-            DeadLetterErrorDescription: m.DeadLetterErrorDescription,
-            DeliveryCount: m.DeliveryCount,
-            ContentType: m.ContentType,
-            MessageSize: m.MessageSize,
-            BodyPreview: m.BodyPreview,
-            FailureCategory: m.FailureCategory.ToString(),
-            CategoryConfidence: m.CategoryConfidence,
-            Status: m.Status.ToString(),
-            ReplayedAt: m.ReplayedAt,
-            ReplaySuccess: m.ReplaySuccess,
-            ArchivedAt: m.ArchivedAt,
-            UserNotes: m.UserNotes,
-            CorrelationId: m.CorrelationId,
-            TopicName: m.TopicName,
-            ForensicRootCause: m.ForensicRootCause,
-            ForensicConfidence: m.ForensicConfidence,
-            ReplaySafety: m.ReplaySafety
-        )).ToList();
+        var items = data.Items.Select(MapToResponse).ToList();
 
         var response = new PaginatedResponse<DlqHistoryResponse>(
             Items: items,
@@ -136,6 +107,7 @@ public sealed class DlqHistoryController : ApiControllerBase
             SequenceNumber: m.SequenceNumber,
             BodyHash: m.BodyHash,
             NamespaceId: m.NamespaceId,
+            CloudProvider: m.CloudProvider.ToString().ToLowerInvariant(),
             EntityName: m.EntityName,
             EntityType: m.EntityType.ToString(),
             EnqueuedTimeUtc: m.EnqueuedTimeUtc,
@@ -154,6 +126,7 @@ public sealed class DlqHistoryController : ApiControllerBase
             ReplayedAt: m.ReplayedAt,
             ReplaySuccess: m.ReplaySuccess,
             ArchivedAt: m.ArchivedAt,
+            ResolvedAt: m.ResolvedAt,
             UserNotes: m.UserNotes,
             CorrelationId: m.CorrelationId,
             SessionId: m.SessionId,
@@ -225,39 +198,67 @@ public sealed class DlqHistoryController : ApiControllerBase
         if (result.IsFailure)
             return ToActionResult<DlqHistoryResponse>(result.Error);
 
-        var m = result.Value;
-        var response = new DlqHistoryResponse(
-            Id: m.Id,
-            MessageId: m.MessageId,
-            SequenceNumber: m.SequenceNumber,
-            BodyHash: m.BodyHash,
-            NamespaceId: m.NamespaceId,
-            EntityName: m.EntityName,
-            EntityType: m.EntityType.ToString(),
-            EnqueuedTimeUtc: m.EnqueuedTimeUtc,
-            DeadLetterTimeUtc: m.DeadLetterTimeUtc,
-            DetectedAtUtc: m.DetectedAtUtc,
-            DeadLetterReason: m.DeadLetterReason,
-            DeadLetterErrorDescription: m.DeadLetterErrorDescription,
-            DeliveryCount: m.DeliveryCount,
-            ContentType: m.ContentType,
-            MessageSize: m.MessageSize,
-            BodyPreview: m.BodyPreview,
-            FailureCategory: m.FailureCategory.ToString(),
-            CategoryConfidence: m.CategoryConfidence,
-            Status: m.Status.ToString(),
-            ReplayedAt: m.ReplayedAt,
-            ReplaySuccess: m.ReplaySuccess,
-            ArchivedAt: m.ArchivedAt,
-            UserNotes: m.UserNotes,
-            CorrelationId: m.CorrelationId,
-            TopicName: m.TopicName,
-            ForensicRootCause: m.ForensicRootCause,
-            ForensicConfidence: m.ForensicConfidence,
-            ReplaySafety: m.ReplaySafety);
-
-        return Ok(response);
+        return Ok(MapToResponse(result.Value));
     }
+
+    /// <summary>
+    /// Triages a DLQ message by transitioning its lifecycle status (Active, Archived,
+    /// Discarded, Resolved) — the action that turns the DLQ history into a triage inbox.
+    /// </summary>
+    /// <param name="id">The DLQ message ID.</param>
+    /// <param name="request">The status transition request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Updated DLQ message.</returns>
+    [HttpPost("history/{id:long}/status")]
+    [RequireScope(ApiKeyScopes.DlqWrite)]
+    [ProducesResponseType(typeof(DlqHistoryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DlqHistoryResponse>> UpdateStatus(
+        long id,
+        [FromBody] UpdateDlqStatusRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _historyService.UpdateStatusAsync(
+            OwnerId, id, request.Status, request.Notes, cancellationToken);
+        if (result.IsFailure)
+            return ToActionResult<DlqHistoryResponse>(result.Error);
+
+        return Ok(MapToResponse(result.Value));
+    }
+
+    /// <summary>Maps a persisted DLQ message to its API response shape.</summary>
+    private static DlqHistoryResponse MapToResponse(Core.Entities.DlqMessage m) => new(
+        Id: m.Id,
+        MessageId: m.MessageId,
+        SequenceNumber: m.SequenceNumber,
+        BodyHash: m.BodyHash,
+        NamespaceId: m.NamespaceId,
+        CloudProvider: m.CloudProvider.ToString().ToLowerInvariant(),
+        EntityName: m.EntityName,
+        EntityType: m.EntityType.ToString(),
+        EnqueuedTimeUtc: m.EnqueuedTimeUtc,
+        DeadLetterTimeUtc: m.DeadLetterTimeUtc,
+        DetectedAtUtc: m.DetectedAtUtc,
+        DeadLetterReason: m.DeadLetterReason,
+        DeadLetterErrorDescription: m.DeadLetterErrorDescription,
+        DeliveryCount: m.DeliveryCount,
+        ContentType: m.ContentType,
+        MessageSize: m.MessageSize,
+        BodyPreview: m.BodyPreview,
+        FailureCategory: m.FailureCategory.ToString(),
+        CategoryConfidence: m.CategoryConfidence,
+        Status: m.Status.ToString(),
+        ReplayedAt: m.ReplayedAt,
+        ReplaySuccess: m.ReplaySuccess,
+        ArchivedAt: m.ArchivedAt,
+        ResolvedAt: m.ResolvedAt,
+        UserNotes: m.UserNotes,
+        CorrelationId: m.CorrelationId,
+        TopicName: m.TopicName,
+        ForensicRootCause: m.ForensicRootCause,
+        ForensicConfidence: m.ForensicConfidence,
+        ReplaySafety: m.ReplaySafety);
 
     /// <summary>
     /// Exports DLQ messages in the specified format (JSON or CSV).
@@ -296,36 +297,7 @@ public sealed class DlqHistoryController : ApiControllerBase
             return File(Encoding.UTF8.GetBytes(csv), "text/csv", "dlq-export.csv");
         }
 
-        var jsonItems = messages.Select(m => new DlqHistoryResponse(
-            Id: m.Id,
-            MessageId: m.MessageId,
-            SequenceNumber: m.SequenceNumber,
-            BodyHash: m.BodyHash,
-            NamespaceId: m.NamespaceId,
-            EntityName: m.EntityName,
-            EntityType: m.EntityType.ToString(),
-            EnqueuedTimeUtc: m.EnqueuedTimeUtc,
-            DeadLetterTimeUtc: m.DeadLetterTimeUtc,
-            DetectedAtUtc: m.DetectedAtUtc,
-            DeadLetterReason: m.DeadLetterReason,
-            DeadLetterErrorDescription: m.DeadLetterErrorDescription,
-            DeliveryCount: m.DeliveryCount,
-            ContentType: m.ContentType,
-            MessageSize: m.MessageSize,
-            BodyPreview: m.BodyPreview,
-            FailureCategory: m.FailureCategory.ToString(),
-            CategoryConfidence: m.CategoryConfidence,
-            Status: m.Status.ToString(),
-            ReplayedAt: m.ReplayedAt,
-            ReplaySuccess: m.ReplaySuccess,
-            ArchivedAt: m.ArchivedAt,
-            UserNotes: m.UserNotes,
-            CorrelationId: m.CorrelationId,
-            TopicName: m.TopicName,
-            ForensicRootCause: m.ForensicRootCause,
-            ForensicConfidence: m.ForensicConfidence,
-            ReplaySafety: m.ReplaySafety
-        )).ToList();
+        var jsonItems = messages.Select(MapToResponse).ToList();
 
         var json = JsonSerializer.Serialize(jsonItems, new JsonSerializerOptions
         {
@@ -407,7 +379,7 @@ public sealed class DlqHistoryController : ApiControllerBase
     private static string GenerateCsv(IReadOnlyList<Core.Entities.DlqMessage> messages)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Id,MessageId,SequenceNumber,EntityName,EntityType,EnqueuedTimeUtc,DeadLetterTimeUtc,DetectedAtUtc,DeadLetterReason,DeliveryCount,FailureCategory,Status,BodyPreview");
+        sb.AppendLine("Id,MessageId,SequenceNumber,CloudProvider,EntityName,EntityType,EnqueuedTimeUtc,DeadLetterTimeUtc,DetectedAtUtc,DeadLetterReason,DeliveryCount,FailureCategory,Status,BodyPreview");
 
         foreach (var m in messages)
         {
@@ -415,6 +387,7 @@ public sealed class DlqHistoryController : ApiControllerBase
                 m.Id,
                 EscapeCsv(m.MessageId),
                 m.SequenceNumber,
+                m.CloudProvider,
                 EscapeCsv(m.EntityName),
                 m.EntityType,
                 m.EnqueuedTimeUtc.ToString("o"),
