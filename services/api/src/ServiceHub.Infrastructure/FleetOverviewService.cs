@@ -93,12 +93,13 @@ public sealed class FleetOverviewService : IFleetOverviewService
 
             var namespaceHealth = new List<FleetNamespaceHealth>();
 
-            // Include every owned namespace (so healthy ones show as green), plus any namespace
-            // that has DLQ rows but is no longer in the repository (deleted namespace, orphan data).
-            var namespaceIds = namespaces.Select(n => n.Id)
-                .Union(rowsByNamespace.Keys)
-                .Union(totalsByNamespace.Keys)
-                .Distinct();
+            // Only currently-registered namespaces are surfaced in the live fleet rollup.
+            // DLQ rows for a namespace that no longer exists are preserved as-is in SQLite
+            // (DlqMonitorWorker archives rather than deletes orphaned rows) so no forensic
+            // history is lost, but they must never appear as a namespace row here or inflate
+            // NamespaceCount/"at risk of N" — those numbers must always equal the namespaces
+            // that actually exist right now.
+            var namespaceIds = namespaces.Select(n => n.Id);
 
             foreach (var namespaceId in namespaceIds)
             {

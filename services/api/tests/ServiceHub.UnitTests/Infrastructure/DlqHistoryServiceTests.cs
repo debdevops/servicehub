@@ -395,6 +395,56 @@ public class DlqHistoryServiceTests : IDisposable
         result365.Value.DailyTrend.Sum(t => t.NewMessages).Should().Be(2);
     }
 
+    [Fact]
+    public async Task GetSummary_TrendIsZeroFilledForEveryDayInWindow()
+    {
+        var nsId = Guid.NewGuid();
+
+        // Only two days have activity within the 7-day window, several days apart —
+        // the trend must still be a continuous daily series, not just the days with data.
+        var today = new DlqMessage
+        {
+            MessageId = "msg-today",
+            SequenceNumber = 1,
+            BodyHash = "hash-today",
+            NamespaceId = nsId,
+            OwnerId = TestConstants.TestOwnerId,
+            EntityName = "test-queue",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddHours(-2),
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            DeliveryCount = 10,
+            MessageSize = 256,
+            FailureCategory = FailureCategory.Transient,
+            Status = DlqMessageStatus.Active
+        };
+        var fourDaysAgo = new DlqMessage
+        {
+            MessageId = "msg-old",
+            SequenceNumber = 2,
+            BodyHash = "hash-old",
+            NamespaceId = nsId,
+            OwnerId = TestConstants.TestOwnerId,
+            EntityName = "test-queue",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddDays(-4),
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddDays(-4),
+            DeliveryCount = 10,
+            MessageSize = 256,
+            FailureCategory = FailureCategory.Transient,
+            Status = DlqMessageStatus.Active
+        };
+        _dbContext.DlqMessages.AddRange(today, fourDaysAgo);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetSummaryAsync(TestConstants.TestOwnerId, namespaceId: nsId, days: 7);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.DailyTrend.Should().HaveCount(7);
+        result.Value.DailyTrend.Sum(t => t.NewMessages).Should().Be(2);
+        result.Value.DailyTrend.Count(t => t.NewMessages == 0).Should().Be(5);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-5)]

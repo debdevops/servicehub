@@ -377,28 +377,26 @@ public sealed class DlqHistoryService : IDlqHistoryService
                 .Select(m => m.ReplayedAt!.Value)
                 .ToListAsync(cancellationToken);
 
-            var dailyNew = detectedTimestamps
+            var dailyNewByDate = detectedTimestamps
                 .GroupBy(d => d.UtcDateTime.Date)
-                .Select(g => new { Date = g.Key, Count = g.Count() })
-                .OrderBy(x => x.Date)
-                .ToList();
+                .ToDictionary(g => g.Key, g => g.Count());
 
-            var dailyResolved = replayedTimestamps
+            var dailyResolvedByDate = replayedTimestamps
                 .GroupBy(d => d.UtcDateTime.Date)
-                .Select(g => new { Date = g.Key, Count = g.Count() })
-                .OrderBy(x => x.Date)
-                .ToList();
+                .ToDictionary(g => g.Key, g => g.Count());
 
-            var allDates = dailyNew.Select(d => d.Date)
-                .Union(dailyResolved.Select(d => d.Date))
-                .OrderBy(d => d)
-                .ToList();
-
-            var trend = allDates.Select(date => new DlqTrendPoint(
-                Date: new DateTimeOffset(date, TimeSpan.Zero),
-                NewMessages: dailyNew.FirstOrDefault(d => d.Date == date)?.Count ?? 0,
-                ResolvedMessages: dailyResolved.FirstOrDefault(d => d.Date == date)?.Count ?? 0
-            )).ToList();
+            // Zero-fill every day in the window — mirrors FleetOverviewService.BuildTrend —
+            // so the trend is a continuous daily series instead of only the days that had activity.
+            var trendStartDate = DateTimeOffset.UtcNow.UtcDateTime.Date.AddDays(-(days - 1));
+            var trend = new List<DlqTrendPoint>(days);
+            for (var i = 0; i < days; i++)
+            {
+                var day = trendStartDate.AddDays(i);
+                trend.Add(new DlqTrendPoint(
+                    Date: new DateTimeOffset(day, TimeSpan.Zero),
+                    NewMessages: dailyNewByDate.GetValueOrDefault(day, 0),
+                    ResolvedMessages: dailyResolvedByDate.GetValueOrDefault(day, 0)));
+            }
 
             var summary = new DlqSummary(
                 TotalMessages: total,

@@ -21,6 +21,7 @@ public static class DependencyInjection
     ///   <item><see cref="ISimulatorStore"/> → <see cref="InMemorySimulatorStore"/></item>
     ///   <item><see cref="SimulatorClock"/></item>
     ///   <item><see cref="SimulatorDataSeeder"/></item>
+    ///   <item><see cref="INamespaceRepository"/> → <see cref="EphemeralNamespaceRepository"/> (replaces disk-backed impl)</item>
     ///   <item>All three simulated messaging providers (Azure, AWS, GCP)</item>
     ///   <item><see cref="IMessageReceiver"/> → <see cref="SimulatorMessageReceiver"/> (replaces real impl)</item>
     ///   <item><see cref="IMessageSender"/> → <see cref="SimulatorMessageSender"/> (replaces real impl)</item>
@@ -36,6 +37,12 @@ public static class DependencyInjection
         services.AddSingleton<ISimulatorStore, InMemorySimulatorStore>();
         services.AddSingleton<SimulatorClock>();
         services.AddSingleton<SimulatorDataSeeder>();
+
+        // Replace the disk-backed namespace repository with a purely in-memory one, so
+        // Simulator mode never reads or writes the real servicehub-namespaces.json file.
+        // SimulatorDataSeeder still talks to it through the same INamespaceRepository
+        // contract — only the backing implementation differs.
+        services.Replace(ServiceDescriptor.Singleton<INamespaceRepository, EphemeralNamespaceRepository>());
 
         // Azure simulated provider
         services.AddSingleton<SimulatedAzureReceiver>();

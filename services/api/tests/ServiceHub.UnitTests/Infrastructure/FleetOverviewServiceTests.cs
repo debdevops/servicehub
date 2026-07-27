@@ -154,8 +154,11 @@ public class FleetOverviewServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task GetOverviewAsync_OrphanNamespaceData_IsStillReported()
+    public async Task GetOverviewAsync_OrphanNamespaceData_IsExcludedFromRollup()
     {
+        // A namespace that no longer exists must never surface as a "(deleted namespace)"
+        // row or inflate NamespaceCount — its DLQ rows stay intact in SQLite (nothing here
+        // deletes them), they simply aren't part of the live fleet rollup anymore.
         SetOwnedNamespaces(); // owner currently has no namespaces registered
         var deletedNsId = Guid.NewGuid();
         _dbContext.DlqMessages.Add(Msg(deletedNsId, 1));
@@ -164,6 +167,10 @@ public class FleetOverviewServiceTests : IDisposable
         var result = await _service.GetOverviewAsync(TestConstants.TestOwnerId);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Namespaces.Should().ContainSingle(n => n.NamespaceId == deletedNsId);
+        result.Value.Namespaces.Should().BeEmpty();
+        result.Value.NamespaceCount.Should().Be(0);
+
+        // The underlying row is untouched — still queryable directly, proving nothing was deleted.
+        (await _dbContext.DlqMessages.CountAsync(m => m.NamespaceId == deletedNsId)).Should().Be(1);
     }
 }
