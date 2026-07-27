@@ -274,6 +274,13 @@ public static class ApiRoutes
         public const string Summary = $"{Base}/summary";
 
         /// <summary>
+        /// Route for a namespace's DLQ error-cluster signatures. Namespace-scoped (route
+        /// parameter named <c>namespaceId</c>, not <c>id</c>) so the ownership-enforcement
+        /// action filter picks it up.
+        /// </summary>
+        public const string Signatures = $"{VersionedBase}/namespaces/{{namespaceId:guid}}/dlq/signatures";
+
+        /// <summary>
         /// Routes for auto-replay rule operations.
         /// </summary>
         public static class Rules

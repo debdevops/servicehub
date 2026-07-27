@@ -88,6 +88,9 @@ public static class ServiceCollectionExtensions
         // Response caching
         services.AddResponseCaching();
 
+        // In-memory cache (e.g. short-lived per-namespace DLQ signature analysis caching)
+        services.AddMemoryCache();
+
         // Response compression
         services.AddResponseCompression(options =>
         {

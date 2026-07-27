@@ -1,10 +1,13 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Filters;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.Api.Controllers.V1;
@@ -17,18 +20,29 @@ namespace ServiceHub.Api.Controllers.V1;
 [Tags("DLQ Intelligence")]
 public sealed class DlqHistoryController : ApiControllerBase
 {
+    private static readonly TimeSpan SignatureCacheDuration = TimeSpan.FromSeconds(60);
+
     private readonly IDlqHistoryService _historyService;
     private readonly ILogger<DlqHistoryController> _logger;
+    private readonly IDlqSignatureAnalysisService _signatureAnalysisService;
+    private readonly INamespaceRepository _namespaceRepository;
+    private readonly IMemoryCache _cache;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DlqHistoryController"/> class.
     /// </summary>
     public DlqHistoryController(
         IDlqHistoryService historyService,
-        ILogger<DlqHistoryController> logger)
+        ILogger<DlqHistoryController> logger,
+        IDlqSignatureAnalysisService signatureAnalysisService,
+        INamespaceRepository namespaceRepository,
+        IMemoryCache cache)
     {
         _historyService = historyService ?? throw new ArgumentNullException(nameof(historyService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _signatureAnalysisService = signatureAnalysisService ?? throw new ArgumentNullException(nameof(signatureAnalysisService));
+        _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
+        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
     }
 
     /// <summary>
@@ -375,6 +389,66 @@ public sealed class DlqHistoryController : ApiControllerBase
 
         return Ok(trend);
     }
+
+    /// <summary>
+    /// Gets a namespace's DLQ error-cluster signatures: identity, new-vs-recurring history, and
+    /// a human-readable explanation per cluster. When the AI service is unavailable, returns 200
+    /// with <c>available: false</c> so the frontend renders its unavailable state rather than an
+    /// error page. Cached per namespace for 60 seconds so repeated page loads do not re-run
+    /// clustering.
+    /// </summary>
+    /// <param name="namespaceId">The namespace to analyze.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The namespace's DLQ signature analysis.</returns>
+    [HttpGet("~/" + ApiRoutes.Dlq.Signatures)]
+    [RequireNamespaceOwnership]
+    [RequireScope(ApiKeyScopes.DlqRead)]
+    [ProducesResponseType(typeof(DlqSignaturesResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DlqSignaturesResponse>> GetSignatures(
+        Guid namespaceId,
+        CancellationToken cancellationToken = default)
+    {
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+            return ToActionResult<DlqSignaturesResponse>(namespaceResult.Error);
+
+        var cacheKey = $"dlq-signatures:{OwnerId}:{namespaceId}";
+        if (_cache.TryGetValue(cacheKey, out DlqSignaturesResponse? cached) && cached is not null)
+            return Ok(cached);
+
+        var result = await _signatureAnalysisService.AnalyzeAsync(OwnerId, namespaceId, cancellationToken);
+        if (result.IsFailure)
+            return ToActionResult<DlqSignaturesResponse>(result.Error);
+
+        var response = MapToSignaturesResponse(result.Value);
+        _cache.Set(cacheKey, response, SignatureCacheDuration);
+
+        return Ok(response);
+    }
+
+    /// <summary>Maps a composed signature analysis to its API response shape.</summary>
+    private static DlqSignaturesResponse MapToSignaturesResponse(DlqSignatureAnalysisResult analysis) => new(
+        Available: analysis.Available,
+        Method: analysis.Method,
+        BatchSize: analysis.BatchSize,
+        Clusters: analysis.Clusters.Select(c => new DlqClusterSignatureResponse(
+            Size: c.Size,
+            MessageIds: c.MessageIds,
+            DominantEntity: c.DominantEntity,
+            DominantDeadletterReason: c.DominantDeadletterReason,
+            DominantDeadletterReasonCount: c.DominantDeadletterReasonCount,
+            TopTerms: c.TopTerms,
+            IsNew: c.IsNew,
+            FirstSeenAt: c.FirstSeenAt,
+            OccurrenceCount: c.OccurrenceCount,
+            WindowStart: c.WindowStart,
+            WindowEnd: c.WindowEnd,
+            Explanation: c.Explanation)).ToList(),
+        Singletons: analysis.Singletons.Select(s => new DlqSingletonSignatureResponse(
+            MessageId: s.MessageId,
+            DominantEntity: s.DominantEntity,
+            DominantDeadletterReason: s.DominantDeadletterReason)).ToList());
 
     private static string GenerateCsv(IReadOnlyList<Core.Entities.DlqMessage> messages)
     {

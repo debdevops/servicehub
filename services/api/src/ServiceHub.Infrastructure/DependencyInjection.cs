@@ -228,6 +228,7 @@ public static class DependencyInjection
         services.TryAddScoped<IDlqMonitorService, DlqMonitorService>();
         services.TryAddScoped<IDlqHistoryService, DlqHistoryService>();
         services.TryAddScoped<INamespaceSignatureLookupService, NamespaceSignatureLookupService>();
+        services.TryAddScoped<IDlqSignatureAnalysisService, AI.DlqSignatureAnalysisService>();
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();

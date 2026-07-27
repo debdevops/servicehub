@@ -115,6 +115,9 @@ public sealed class TenantIsolationTests : IClassFixture<TenantIsolationWebAppli
         yield return new object[] { new RouteCase("Message replay", HttpMethod.Post,
             id => $"/api/v1/messages/replay?namespaceId={id}&sequenceNumber=1&entityName={QueueName}",
             Intent: IntentHeaders.IntentReplayMessage) };
+
+        yield return new object[] { new RouteCase("DLQ signatures", HttpMethod.Get,
+            id => $"/api/v1/namespaces/{id}/dlq/signatures") };
     }
 
     [Theory]
