@@ -170,7 +170,7 @@ export default function FleetPage() {
             <Layers className="w-5 h-5 text-indigo-600" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-gray-900">Fleet Operations</h1>
+            <h1 className="text-xl font-bold text-gray-900">Fleet Operations</h1>
             <p className="text-sm text-gray-500">
               Dead-letter health across every namespace — what died overnight, at a glance.
             </p>

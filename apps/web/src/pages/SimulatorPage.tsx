@@ -219,7 +219,7 @@ export function SimulatorPage() {
         <div className="flex items-center gap-3">
           <FlaskConical className="w-5 h-5 text-amber-600 shrink-0" />
           <span className="text-sm font-semibold text-amber-800">
-            ⚗️ Simulator Mode — All data is synthetic. No real cloud credentials required.
+            Simulator Mode — All data is synthetic. No real cloud credentials required.
           </span>
         </div>
         <div className="flex items-center gap-3 shrink-0">
@@ -374,7 +374,7 @@ export function SimulatorPage() {
               {injectFaultMutation.isPending
                 ? <RefreshCw className="w-4 h-4 animate-spin" />
                 : <Zap className="w-4 h-4" />}
-              ⚡ Inject Fault
+              Inject Fault
             </button>
           </div>
         </div>
@@ -543,7 +543,7 @@ export function SimulatorPage() {
               {dlqFloodMutation.isPending
                 ? <RefreshCw className="w-4 h-4 animate-spin" />
                 : <AlertCircle className="w-4 h-4" />}
-              💥 Inject DLQ Flood
+              Inject DLQ Flood
             </button>
             {floodResult && (
               <span className="text-sm text-green-700 font-medium">{floodResult}</span>
@@ -569,7 +569,7 @@ export function SimulatorPage() {
             className="flex items-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold transition-colors"
           >
             <RotateCcw className="w-4 h-4" />
-            🔄 Reset &amp; Reseed
+            Reset &amp; Reseed
           </button>
           {resetResult && (
             <span className="text-sm text-green-700 font-medium">{resetResult}</span>

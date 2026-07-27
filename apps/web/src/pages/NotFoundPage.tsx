@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, ArrowLeft } from 'lucide-react';
+import { Home, ArrowLeft, Search } from 'lucide-react';
 
 /**
  * Rendered inside MainLayout for any unmatched path. A normal route element, not a
@@ -12,7 +12,7 @@ export function NotFoundPage() {
   return (
     <div className="flex flex-col items-center justify-center h-full px-4 py-16">
       <div className="text-center max-w-md">
-        <div className="text-6xl mb-4">🔍</div>
+        <Search className="w-14 h-14 text-gray-300 mx-auto mb-4" />
         <h1 className="text-2xl font-bold text-gray-800 mb-2">Page not found</h1>
         <p className="text-gray-600 mb-2">
           There&apos;s nothing at{' '}

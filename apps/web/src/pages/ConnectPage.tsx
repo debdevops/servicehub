@@ -882,7 +882,7 @@ export function ConnectPage() {
             <div className="rounded-xl border border-slate-700 bg-gradient-to-r from-slate-800 to-primary-900 p-4">
               <p className="text-xs font-semibold text-white mb-3 flex items-center gap-2">
                 <Play className="w-3.5 h-3.5 text-amber-300 fill-current" />
-                No credentials? Try a live demo first
+                No credentials? Try Demo Mode first
               </p>
               <div className="grid grid-cols-3 gap-2">
                 {[

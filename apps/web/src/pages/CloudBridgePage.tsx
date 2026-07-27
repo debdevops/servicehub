@@ -298,7 +298,7 @@ export function CloudBridgePage() {
             <Cloud className="w-6 h-6 text-primary-600" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Cloud Bridge</h1>
+            <h1 className="text-xl font-bold text-gray-900">Cloud Bridge</h1>
             <p className="text-sm text-gray-500">
               Browse queues, topics and subscriptions across Azure Service Bus, AWS SQS / SNS, and GCP Pub/Sub.
             </p>

@@ -519,7 +519,7 @@ export function MessagesPage() {
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md p-8">
-          <div className="text-6xl mb-4">⚠️</div>
+          <AlertCircle className="w-14 h-14 text-red-400 mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Failed to load messages</h2>
           <p className="text-gray-600 mb-2">{errorMessage}</p>
           {isConnectionError && (

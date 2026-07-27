@@ -219,20 +219,22 @@ export function QuickAccessPanel() {
           <span className="text-xs text-primary-600 font-medium">?</span>
         </NavLink>
         {isSimulator && (
-          <NavLink
-            to={`${navPrefix}/simulator`}
-            className={({ isActive }) =>
-              `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-                isActive
-                  ? 'bg-amber-50 text-amber-700 border-amber-300'
-                  : 'bg-white hover:bg-amber-50 text-gray-700 hover:text-amber-700 border-gray-200 hover:border-amber-300'
-              }`
-            }
-          >
-            <FlaskConical className="w-4 h-4 text-amber-500" />
-            <span className="flex-1 text-left">Simulator</span>
-            <span className="text-xs text-amber-600 font-medium">⚗️</span>
-          </NavLink>
+          <>
+            <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Developer Tools</div>
+            <NavLink
+              to={`${navPrefix}/simulator`}
+              className={({ isActive }) =>
+                `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                  isActive
+                    ? 'bg-amber-50 text-amber-700 border-amber-300'
+                    : 'bg-white hover:bg-amber-50 text-gray-700 hover:text-amber-700 border-gray-200 hover:border-amber-300'
+                }`
+              }
+            >
+              <FlaskConical className="w-4 h-4 text-amber-500" />
+              <span className="flex-1 text-left">Simulator</span>
+            </NavLink>
+          </>
         )}
       </nav>
     </ResizablePanel>

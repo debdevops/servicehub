@@ -494,12 +494,12 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
         ) : isDlqSpike ? (
           <div className="flex items-center gap-2 px-3 py-2 bg-red-100 border border-red-200 rounded-lg text-red-700 text-sm">
             <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>⚠️ DLQ: {totalDlq} messages need attention</span>
+            <span>DLQ: {totalDlq} messages need attention</span>
           </div>
         ) : (
           <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-700 text-sm">
             <CheckCircle className="w-4 h-4 shrink-0" />
-            <span>✅ Healthy</span>
+            <span>Healthy</span>
           </div>
         )}
       </div>

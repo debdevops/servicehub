@@ -150,7 +150,7 @@ describe('DashboardPage', () => {
 
   it('shows Healthy status when DLQ count is within threshold', async () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
-    expect(await screen.findByText('✅ Healthy')).toBeInTheDocument();
+    expect(await screen.findByText('Healthy')).toBeInTheDocument();
   });
 
   it('shows DLQ spike banner when DLQ count exceeds threshold', async () => {
