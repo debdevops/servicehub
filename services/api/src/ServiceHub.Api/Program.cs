@@ -8,6 +8,8 @@ using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Simulator;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -110,18 +112,23 @@ app.Services.GetRequiredService<ServiceHub.Core.Interfaces.IPlatformEventBus>()
 // Forwarded headers must be first in pipeline (before any middleware that reads client IP)
 app.UseForwardedHeaders();
 
-// Ensure DLQ Intelligence database schema exists before serving requests
+// Ensure DLQ Intelligence database schema is up to date before serving requests
 using (var scope = app.Services.CreateScope())
 {
     try
     {
         var dlqDbContext = scope.ServiceProvider.GetRequiredService<DlqDbContext>();
-        await dlqDbContext.Database.EnsureCreatedAsync();
 
-        // Apply incremental schema migrations for databases created before OwnerId support.
-        // EnsureCreatedAsync() creates new databases correctly but does NOT alter existing ones.
-        // This runs every startup and is idempotent — safe to run on already-migrated databases.
-        await ApplySchemaUpgradesAsync(dlqDbContext, app.Logger);
+        // Databases created before EF Core Migrations were introduced (via EnsureCreatedAsync)
+        // already have every table the InitialCreate migration would create, but no
+        // __EFMigrationsHistory row recording that. Without this, MigrateAsync() would treat
+        // the database as empty and fail trying to re-create existing tables. Record
+        // InitialCreate as already applied first — idempotent, no-ops on fresh or
+        // already-migrated databases.
+        await BootstrapMigrationsHistoryForExistingDatabaseAsync(dlqDbContext, app.Logger);
+
+        await dlqDbContext.Database.MigrateAsync();
+        app.Logger.LogInformation("DLQ Intelligence database schema is up to date");
     }
     catch (Exception ex)
     {
@@ -142,10 +149,16 @@ app.MapServiceHubEndpoints();
 
 app.Run();
 
-// Applies incremental SQLite schema upgrades that EnsureCreatedAsync() cannot handle.
-// Checks for missing columns and adds them with safe defaults. Idempotent.
-static async Task ApplySchemaUpgradesAsync(DlqDbContext dbContext, ILogger logger)
+// Records the InitialCreate migration as already applied when a pre-Migrations database
+// (created via the old EnsureCreatedAsync path) is detected — i.e. its tables already exist
+// but it has no __EFMigrationsHistory table yet. No-ops on a fresh database (no tables to
+// find) and on an already-migrated one (history table already exists).
+static async Task BootstrapMigrationsHistoryForExistingDatabaseAsync(DlqDbContext dbContext, ILogger logger)
 {
+    var historyRepository = dbContext.GetService<IHistoryRepository>();
+    if (await historyRepository.ExistsAsync())
+        return;
+
     var connection = dbContext.Database.GetDbConnection();
     var wasOpen = connection.State == System.Data.ConnectionState.Open;
     if (!wasOpen)
@@ -153,139 +166,30 @@ static async Task ApplySchemaUpgradesAsync(DlqDbContext dbContext, ILogger logge
 
     try
     {
-        // Migration: Add OwnerId to DlqMessages (added in v3.1.0 multi-tenant support)
-        if (!await ColumnExistsAsync(connection, "DlqMessages", "OwnerId"))
-        {
-            logger.LogWarning(
-                "DlqMessages table is missing the OwnerId column — applying schema upgrade");
-            await ExecuteNonQueryAsync(connection,
-                "ALTER TABLE \"DlqMessages\" ADD COLUMN \"OwnerId\" TEXT NOT NULL DEFAULT '__spa__'");
-            logger.LogInformation("Schema upgrade applied: DlqMessages.OwnerId added");
-        }
+        var appTablesExist = await TableExistsAsync(connection, "DlqMessages");
+        if (!appTablesExist)
+            return;
 
-        // Migration: Add OwnerId to AutoReplayRules (added in v3.1.0 multi-tenant support)
-        if (!await ColumnExistsAsync(connection, "AutoReplayRules", "OwnerId"))
-        {
-            logger.LogWarning(
-                "AutoReplayRules table is missing the OwnerId column — applying schema upgrade");
-            await ExecuteNonQueryAsync(connection,
-                "ALTER TABLE \"AutoReplayRules\" ADD COLUMN \"OwnerId\" TEXT NOT NULL DEFAULT '__spa__'");
-            logger.LogInformation("Schema upgrade applied: AutoReplayRules.OwnerId added");
-        }
+        logger.LogWarning(
+            "Existing database predates EF Core Migrations — recording InitialCreate as already applied");
 
-        // Migration: Add CloudProvider to DlqMessages (multicloud attribution).
-        // Existing rows predate multicloud DLQ monitoring, which was Azure-only, so
-        // the column defaults to 'Azure' — matching CloudProviderType.Azure.ToString().
-        if (!await ColumnExistsAsync(connection, "DlqMessages", "CloudProvider"))
-        {
-            logger.LogWarning(
-                "DlqMessages table is missing the CloudProvider column — applying schema upgrade");
-            await ExecuteNonQueryAsync(connection,
-                "ALTER TABLE \"DlqMessages\" ADD COLUMN \"CloudProvider\" TEXT NOT NULL DEFAULT 'Azure'");
-            logger.LogInformation("Schema upgrade applied: DlqMessages.CloudProvider added");
-        }
+        await ExecuteNonQueryAsync(connection, historyRepository.GetCreateIfNotExistsScript());
 
-        // Migration: Create AuditLogs table (added in v3.3.0 Persistent Audit Trail)
-        // EnsureCreatedAsync creates this table in new databases; existing databases need the DDL.
-        if (!await TableExistsAsync(connection, "AuditLogs"))
-        {
-            logger.LogWarning("AuditLogs table is missing — applying schema upgrade");
-            await ExecuteNonQueryAsync(connection, """
-                CREATE TABLE IF NOT EXISTS "AuditLogs" (
-                    "Id"            TEXT NOT NULL CONSTRAINT "PK_AuditLogs" PRIMARY KEY,
-                    "Timestamp"     TEXT NOT NULL,
-                    "OwnerId"       TEXT NOT NULL,
-                    "UserIdentity"  TEXT NOT NULL,
-                    "Action"        TEXT NOT NULL,
-                    "Outcome"       TEXT NOT NULL,
-                    "NamespaceId"   TEXT,
-                    "NamespaceName" TEXT,
-                    "EntityName"    TEXT,
-                    "CloudProvider" TEXT,
-                    "Environment"   TEXT,
-                    "ResourceName"  TEXT,
-                    "SequenceNumber" INTEGER,
-                    "DetailsJson"   TEXT,
-                    "ErrorDetails"  TEXT,
-                    "ClientIp"      TEXT,
-                    "UserAgent"     TEXT,
-                    "CorrelationId" TEXT,
-                    "HttpMethod"    TEXT,
-                    "HttpPath"      TEXT
-                );
-                CREATE INDEX IF NOT EXISTS "IX_AuditLogs_Timestamp"
-                    ON "AuditLogs" ("Timestamp");
-                CREATE INDEX IF NOT EXISTS "IX_AuditLogs_Owner_Timestamp"
-                    ON "AuditLogs" ("OwnerId", "Timestamp");
-                CREATE INDEX IF NOT EXISTS "IX_AuditLogs_Owner_Namespace_Timestamp"
-                    ON "AuditLogs" ("OwnerId", "NamespaceId", "Timestamp");
-                CREATE INDEX IF NOT EXISTS "IX_AuditLogs_Action"
-                    ON "AuditLogs" ("Action");
-                """);
-            logger.LogInformation("Schema upgrade applied: AuditLogs table and indexes created");
-        }
+        // Always bootstrap against InitialCreate specifically, not "whichever migration
+        // exists" — once later migrations are added, GetMigrations() returns more than one
+        // and a positional Single() would throw for every pre-Migrations database out there.
+        var migrationId = dbContext.Database.GetMigrations()
+            .Single(id => id.EndsWith("_InitialCreate", StringComparison.Ordinal));
+        var productVersion = ProductInfo.GetVersion();
+        await ExecuteNonQueryAsync(connection, historyRepository.GetInsertScript(new HistoryRow(migrationId, productVersion)));
 
-        // Migration: Create BulkOperationJobs table (added for Bulk Operations)
-        // EnsureCreatedAsync creates this table in new databases; existing databases need the DDL.
-        if (!await TableExistsAsync(connection, "BulkOperationJobs"))
-        {
-            logger.LogWarning("BulkOperationJobs table is missing — applying schema upgrade");
-            await ExecuteNonQueryAsync(connection, """
-                CREATE TABLE IF NOT EXISTS "BulkOperationJobs" (
-                    "Id"                      TEXT NOT NULL CONSTRAINT "PK_BulkOperationJobs" PRIMARY KEY,
-                    "OwnerId"                 TEXT NOT NULL,
-                    "OperationType"           TEXT NOT NULL,
-                    "Status"                  TEXT NOT NULL,
-                    "NamespaceId"             TEXT NOT NULL,
-                    "NamespaceDisplayName"    TEXT NOT NULL,
-                    "EntityNameFilter"        TEXT,
-                    "StatusFilter"            TEXT,
-                    "CategoryFilter"          TEXT,
-                    "FromFilter"              TEXT,
-                    "ToFilter"                TEXT,
-                    "TotalMatched"            INTEGER NOT NULL,
-                    "ProcessedCount"          INTEGER NOT NULL,
-                    "SuccessCount"            INTEGER NOT NULL,
-                    "FailureCount"            INTEGER NOT NULL,
-                    "SkippedCount"            INTEGER NOT NULL,
-                    "FailureSampleJson"       TEXT,
-                    "ErrorSummary"            TEXT,
-                    "CreatedAt"               TEXT NOT NULL,
-                    "StartedAt"               TEXT,
-                    "CompletedAt"             TEXT,
-                    "CancellationRequestedAt" TEXT,
-                    "CorrelationId"           TEXT
-                );
-                CREATE INDEX IF NOT EXISTS "IX_BulkOperationJobs_Owner_CreatedAt"
-                    ON "BulkOperationJobs" ("OwnerId", "CreatedAt");
-                CREATE INDEX IF NOT EXISTS "IX_BulkOperationJobs_Owner_Namespace_CreatedAt"
-                    ON "BulkOperationJobs" ("OwnerId", "NamespaceId", "CreatedAt");
-                CREATE INDEX IF NOT EXISTS "IX_BulkOperationJobs_Status"
-                    ON "BulkOperationJobs" ("Status");
-                """);
-            logger.LogInformation("Schema upgrade applied: BulkOperationJobs table and indexes created");
-        }
+        logger.LogInformation("Schema upgrade applied: InitialCreate recorded for pre-existing database");
     }
     finally
     {
         if (!wasOpen)
             connection.Close();
     }
-}
-
-static async Task<bool> ColumnExistsAsync(
-    System.Data.Common.DbConnection connection, string tableName, string columnName)
-{
-    using var cmd = connection.CreateCommand();
-    cmd.CommandText = $"PRAGMA table_info(\"{tableName}\")";
-    using var reader = await cmd.ExecuteReaderAsync();
-    while (await reader.ReadAsync())
-    {
-        // Column 1 is the column name in PRAGMA table_info output
-        if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
-            return true;
-    }
-    return false;
 }
 
 static async Task<bool> TableExistsAsync(
@@ -300,7 +204,6 @@ static async Task<bool> TableExistsAsync(
     var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
     return count > 0;
 }
-
 
 static async Task ExecuteNonQueryAsync(System.Data.Common.DbConnection connection, string sql)
 {
