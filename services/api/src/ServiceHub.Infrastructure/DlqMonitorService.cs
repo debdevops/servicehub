@@ -8,6 +8,7 @@ using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.AI;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
@@ -344,6 +345,32 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 dlqMessage.ReplaySafety = forensic.ReplaySafety;
 
                 _dbContext.DlqMessages.Add(dlqMessage);
+
+                var features = SignalExtractor.ExtractFeatures(dlqMessage);
+                _dbContext.MessageFeatureRecords.Add(new MessageFeatureRecord
+                {
+                    DlqMessage = dlqMessage,
+                    NamespaceId = namespaceId,
+                    OwnerId = ownerId,
+                    CapturedAt = detectedAt,
+                    DeliveryCount = features.DeliveryCount,
+                    BodySizeBytes = features.BodySizeBytes,
+                    TimeToDeadletterSeconds = features.TimeToDeadletterSeconds,
+                    SecondsSinceEnqueued = features.SecondsSinceEnqueued,
+                    HourOfDay = features.HourOfDay,
+                    DayOfWeek = features.DayOfWeek,
+                    PropertyCount = features.PropertyCount,
+                    Provider = features.Provider,
+                    EntityName = features.EntityName,
+                    DeadletterReason = features.DeadletterReason,
+                    ExceptionType = features.ExceptionType,
+                    ContentType = features.ContentType,
+                    PayloadShape = features.PayloadShape,
+                    ErrorTextNormalised = features.ErrorTextNormalised,
+                    SchemaFingerprint = features.SchemaFingerprint,
+                    FeatureVersion = features.FeatureVersion,
+                });
+
                 newCount++;
             }
 

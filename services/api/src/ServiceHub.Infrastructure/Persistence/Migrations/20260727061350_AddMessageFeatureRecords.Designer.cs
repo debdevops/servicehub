@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ServiceHub.Infrastructure.Persistence;
 
@@ -10,9 +11,11 @@ using ServiceHub.Infrastructure.Persistence;
 namespace ServiceHub.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(DlqDbContext))]
-    partial class DlqDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260727061350_AddMessageFeatureRecords")]
+    partial class AddMessageFeatureRecords
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");

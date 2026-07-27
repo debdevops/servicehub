@@ -32,6 +32,9 @@ public sealed class DlqDbContext : DbContext
     /// <summary>Bulk replay/purge operation jobs.</summary>
     public DbSet<BulkOperationJob> BulkOperationJobs => Set<BulkOperationJob>();
 
+    /// <summary>Structured feature snapshots captured per DLQ message at scan time.</summary>
+    public DbSet<MessageFeatureRecord> MessageFeatureRecords => Set<MessageFeatureRecord>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,6 +47,7 @@ public sealed class DlqDbContext : DbContext
         ConfigureAutoReplayRule(modelBuilder);
         ConfigureAuditLog(modelBuilder);
         ConfigureBulkOperationJob(modelBuilder);
+        ConfigureMessageFeatureRecord(modelBuilder);
     }
 
     private static void ApplyUtcDateTimeConverters(ModelBuilder modelBuilder)
@@ -385,5 +389,71 @@ public sealed class DlqDbContext : DbContext
         // Worker startup scan for jobs left Pending/Running across a restart.
         entity.HasIndex(e => e.Status)
             .HasDatabaseName("IX_BulkOperationJobs_Status");
+    }
+
+    private static void ConfigureMessageFeatureRecord(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<MessageFeatureRecord>();
+
+        entity.ToTable("MessageFeatureRecords");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.Id)
+            .ValueGeneratedOnAdd();
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.Provider)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.EntityName)
+            .HasMaxLength(512)
+            .IsRequired();
+
+        entity.Property(e => e.DeadletterReason)
+            .HasMaxLength(1024)
+            .IsRequired();
+
+        entity.Property(e => e.ExceptionType)
+            .HasMaxLength(512)
+            .IsRequired();
+
+        entity.Property(e => e.ContentType)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.PayloadShape)
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.ErrorTextNormalised)
+            .HasMaxLength(8192)
+            .IsRequired();
+
+        entity.Property(e => e.SchemaFingerprint)
+            .HasMaxLength(32)
+            .IsRequired();
+
+        // Cascade so feature rows can never outlive their parent message — the same
+        // mechanism ReplayHistories relies on for its own cleanup (ConfigureReplayHistory).
+        entity.HasOne(e => e.DlqMessage)
+            .WithOne(m => m.FeatureRecord)
+            .HasForeignKey<MessageFeatureRecord>(e => e.DlqMessageId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        entity.HasIndex(e => e.DlqMessageId)
+            .IsUnique()
+            .HasDatabaseName("IX_MessageFeatureRecords_DlqMessageId");
+
+        // Query shapes clustering/baselining will use.
+        entity.HasIndex(e => new { e.NamespaceId, e.CapturedAt })
+            .HasDatabaseName("IX_MessageFeatureRecords_Namespace_CapturedAt");
+
+        entity.HasIndex(e => new { e.NamespaceId, e.EntityName })
+            .HasDatabaseName("IX_MessageFeatureRecords_Namespace_EntityName");
     }
 }
