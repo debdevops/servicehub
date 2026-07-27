@@ -1,10 +1,12 @@
 using System.Net;
+using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.AI;
 
@@ -30,6 +32,27 @@ public sealed class AIServiceClientTests
             logger ?? NullLogger<AIServiceClient>.Instance);
     }
 
+    private static DlqMessage CreateDlqMessage(long id, string deadLetterReason = "MaxDeliveryCountExceeded")
+    {
+        var message = new DlqMessage
+        {
+            MessageId = $"msg-{id}",
+            SequenceNumber = id,
+            BodyHash = "deadbeef",
+            NamespaceId = Guid.NewGuid(),
+            OwnerId = "entra:test-owner",
+            EntityName = "orders-queue",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            DeadLetterReason = deadLetterReason,
+            DeadLetterErrorDescription = "System.TimeoutException: the operation timed out",
+        };
+
+        typeof(DlqMessage).GetProperty(nameof(DlqMessage.Id))!.SetValue(message, id);
+        return message;
+    }
+
     [Fact]
     public void Constructor_NullHttpClientFactory_Throws()
     {
@@ -52,14 +75,126 @@ public sealed class AIServiceClientTests
     }
 
     [Fact]
-    public async Task AnalyzeMessagesAsync_ReturnsFailure()
+    public async Task AnalyzeMessagesAsync_Success_ReturnsClustersWithCorrectRefToMessageIdMap()
     {
-        var sut = CreateSut();
+        var handler = new StubHttpMessageHandler((request, _) =>
+        {
+            request.RequestUri!.AbsolutePath.Should().Be("/analyze");
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new
+                {
+                    clusters = new[]
+                    {
+                        new
+                        {
+                            size = 2,
+                            representative_ref = "0",
+                            top_terms = new[] { "timeout" },
+                            first_occurrence_ref = "0",
+                            last_occurrence_ref = "1",
+                            dominant_entity = "orders-queue",
+                            dominant_deadletter_reason = "MaxDeliveryCountExceeded",
+                        },
+                    },
+                    singletons = Array.Empty<object>(),
+                    method = "clustered",
+                }),
+            };
+        });
+        var sut = CreateSut(handler: handler);
+        var messages = new[] { CreateDlqMessage(101), CreateDlqMessage(102) };
 
-        var result = await sut.AnalyzeMessagesAsync(Array.Empty<Message>());
+        var result = await sut.AnalyzeMessagesAsync(messages);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Method.Should().Be("clustered");
+        result.Value.Clusters.Should().ContainSingle();
+        result.Value.Clusters[0].Size.Should().Be(2);
+        result.Value.Clusters[0].RepresentativeRef.Should().Be("0");
+        result.Value.Singletons.Should().BeEmpty();
+        result.Value.RefToMessageId.Should().BeEquivalentTo(new Dictionary<string, long>
+        {
+            ["0"] = 101,
+            ["1"] = 102,
+        });
+    }
+
+    [Fact]
+    public async Task AnalyzeMessagesAsync_ServiceUnreachable_ReturnsFailureWithoutThrowing()
+    {
+        var handler = new StubHttpMessageHandler((Func<HttpRequestMessage, CancellationToken, HttpResponseMessage>)((_, _) =>
+            throw new HttpRequestException("connection refused")));
+        var sut = CreateSut(handler: handler);
+
+        var result = await sut.AnalyzeMessagesAsync(new[] { CreateDlqMessage(1) });
 
         result.IsFailure.Should().BeTrue();
-        result.Error.Message.Should().Contain("not yet implemented");
+    }
+
+    [Fact]
+    public async Task AnalyzeMessagesAsync_Timeout_ReturnsFailure()
+    {
+        var options = new AIServiceOptions { Enabled = true, ServiceUrl = "http://ai.internal:8000", TimeoutSeconds = 1 };
+        var handler = new StubHttpMessageHandler((Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>)(async (_, ct) =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(10), ct);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        }));
+        var sut = CreateSut(options, handler);
+
+        var result = await sut.AnalyzeMessagesAsync(new[] { CreateDlqMessage(1) });
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AnalyzeMessagesAsync_MalformedJson_ReturnsFailure()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("not json", System.Text.Encoding.UTF8, "application/json"),
+        });
+        var sut = CreateSut(handler: handler);
+
+        var result = await sut.AnalyzeMessagesAsync(new[] { CreateDlqMessage(1) });
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AnalyzeMessagesAsync_UnprocessableEntity_ReturnsFailureAndLogsReason()
+    {
+        const string reason = """{"detail":"records[].ref must be unique within a request"}""";
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage((HttpStatusCode)422)
+        {
+            Content = new StringContent(reason, System.Text.Encoding.UTF8, "application/json"),
+        });
+        var logger = new Mock<ILogger<AIServiceClient>>();
+        var sut = CreateSut(handler: handler, logger: logger.Object);
+
+        var result = await sut.AnalyzeMessagesAsync(new[] { CreateDlqMessage(1) });
+
+        result.IsFailure.Should().BeTrue();
+        logger.Invocations
+            .Where(i => i.Method.Name == "Log" && i.Arguments[0]!.Equals(LogLevel.Warning))
+            .Should().ContainSingle(i => i.Arguments[2]!.ToString()!.Contains("records[].ref must be unique"));
+    }
+
+    [Fact]
+    public async Task AnalyzeMessagesAsync_RepeatedUnavailability_LogsOnce()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        var logger = new Mock<ILogger<AIServiceClient>>();
+        var sut = CreateSut(handler: handler, logger: logger.Object);
+        var messages = new[] { CreateDlqMessage(1) };
+
+        await sut.AnalyzeMessagesAsync(messages);
+        await sut.AnalyzeMessagesAsync(messages);
+        await sut.AnalyzeMessagesAsync(messages);
+
+        logger.Invocations.Count(i => i.Method.Name == "Log" && i.Arguments[0]!.Equals(LogLevel.Warning))
+            .Should().Be(1);
     }
 
     [Fact]
