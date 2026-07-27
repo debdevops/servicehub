@@ -1,7 +1,10 @@
+import itertools
 import re
 
 from app.clustering import analyze_records
 from app.models import FeatureRecord
+
+_ref_counter = itertools.count()
 
 BASE_KWARGS = {
     "delivery_count": 3,
@@ -24,6 +27,7 @@ def make_record(error_text_normalised, entity_name="orders-queue",
                  exception_type="System.TimeoutException") -> FeatureRecord:
     return FeatureRecord(
         **BASE_KWARGS,
+        ref=f"msg-{next(_ref_counter)}",
         entity_name=entity_name,
         deadletter_reason=deadletter_reason,
         exception_type=exception_type,
@@ -156,7 +160,7 @@ def test_single_message_handled():
     assert result["singletons"] == []
     assert len(result["clusters"]) == 1
     assert result["clusters"][0]["size"] == 1
-    assert result["clusters"][0]["representative_index"] == 0
+    assert result["clusters"][0]["representative_ref"] == records[0].ref
 
 
 _PATHOLOGICAL_TEXTS = [

@@ -227,6 +227,7 @@ public static class DependencyInjection
         services.TryAddSingleton<DlqNotMonitoredLogGuard>();
         services.TryAddScoped<IDlqMonitorService, DlqMonitorService>();
         services.TryAddScoped<IDlqHistoryService, DlqHistoryService>();
+        services.TryAddScoped<INamespaceSignatureLookupService, NamespaceSignatureLookupService>();
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();

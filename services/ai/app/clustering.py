@@ -4,12 +4,12 @@ Groups messages by error signature so an operator can tell whether a DLQ full
 of messages is one root cause or several, using only TF-IDF + DBSCAN over
 error_text_normalised — no embeddings, no training data, no cold start.
 
-Positions in the caller's `records` list stand in for message identity and
-occurrence order: FeatureRecord (the P0-4 contract) carries neither a message
-id nor an absolute timestamp, only derived fields like hour_of_day. The caller
-already knows which real message sits at each list position, so
-representative_index/first_occurrence_index/last_occurrence_index are indices
-into that list, not wall-clock timestamps.
+Each FeatureRecord carries a caller-supplied `ref` (opaque string, the P0-8b
+contract) standing in for message identity. Internally, clustering still
+operates over positions in the caller's `records` list (DBSCAN labels, medoid
+selection, first/last-occurrence ordering — FeatureRecord carries no absolute
+timestamp), but every position is translated back to its `ref` before it
+leaves this module: the response never exposes a raw index.
 """
 
 from collections import Counter
@@ -79,7 +79,7 @@ def _clustered_result(records: list[FeatureRecord], texts: list[str], labels: np
         clusters.append(_build_summary(records, texts, member_indices, top_terms_by_index))
 
     clusters.sort(key=lambda c: c["size"], reverse=True)
-    singletons = [_singleton_entry(i, records[i]) for i, lbl in enumerate(labels) if lbl < 0]
+    singletons = [_singleton_entry(records[i]) for i, lbl in enumerate(labels) if lbl < 0]
 
     return {"clusters": clusters, "singletons": singletons, "method": "clustered"}
 
@@ -140,10 +140,10 @@ def _build_summary(
 
     return {
         "size": len(member_indices),
-        "representative_index": representative_index,
+        "representative_ref": records[representative_index].ref,
         "top_terms": top_terms_lookup(member_indices),
-        "first_occurrence_index": min(member_indices),
-        "last_occurrence_index": max(member_indices),
+        "first_occurrence_ref": records[min(member_indices)].ref,
+        "last_occurrence_ref": records[max(member_indices)].ref,
         "dominant_entity": entities.most_common(1)[0][0],
         "dominant_deadletter_reason": reasons.most_common(1)[0][0],
     }
@@ -161,9 +161,9 @@ def _find_medoid(texts: list[str], member_indices: list[int]) -> int:
     return member_indices[medoid_position]
 
 
-def _singleton_entry(index: int, record: FeatureRecord) -> dict:
+def _singleton_entry(record: FeatureRecord) -> dict:
     return {
-        "index": index,
+        "ref": record.ref,
         "dominant_entity": record.entity_name,
         "dominant_deadletter_reason": record.deadletter_reason,
     }

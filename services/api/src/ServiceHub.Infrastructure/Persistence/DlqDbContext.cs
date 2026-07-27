@@ -35,6 +35,9 @@ public sealed class DlqDbContext : DbContext
     /// <summary>Structured feature snapshots captured per DLQ message at scan time.</summary>
     public DbSet<MessageFeatureRecord> MessageFeatureRecords => Set<MessageFeatureRecord>();
 
+    /// <summary>Tracks whether a DLQ error cluster's signature has been seen before in a namespace.</summary>
+    public DbSet<NamespaceSignature> NamespaceSignatures => Set<NamespaceSignature>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -48,6 +51,7 @@ public sealed class DlqDbContext : DbContext
         ConfigureAuditLog(modelBuilder);
         ConfigureBulkOperationJob(modelBuilder);
         ConfigureMessageFeatureRecord(modelBuilder);
+        ConfigureNamespaceSignature(modelBuilder);
     }
 
     private static void ApplyUtcDateTimeConverters(ModelBuilder modelBuilder)
@@ -455,5 +459,44 @@ public sealed class DlqDbContext : DbContext
 
         entity.HasIndex(e => new { e.NamespaceId, e.EntityName })
             .HasDatabaseName("IX_MessageFeatureRecords_Namespace_EntityName");
+    }
+
+    private static void ConfigureNamespaceSignature(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<NamespaceSignature>();
+
+        entity.ToTable("NamespaceSignatures");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.Id)
+            .ValueGeneratedOnAdd();
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.SignatureHash)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        entity.Property(e => e.DominantDeadletterReason)
+            .HasMaxLength(1024)
+            .IsRequired();
+
+        entity.Property(e => e.TopTermsJson)
+            .HasMaxLength(2048)
+            .IsRequired();
+
+        // One row per distinct signature per namespace per owner — the upsert key. Includes
+        // OwnerId (unlike the task's literal (NamespaceId, SignatureHash) spec) because
+        // Namespace.SharedWithOwnerIds means two owners can legitimately observe the same
+        // hash in the same namespace and must get independent, isolated rows.
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.SignatureHash })
+            .IsUnique()
+            .HasDatabaseName("IX_NamespaceSignatures_Owner_Namespace_SignatureHash");
+
+        // Owner-scoped queries.
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId })
+            .HasDatabaseName("IX_NamespaceSignatures_Owner_Namespace");
     }
 }

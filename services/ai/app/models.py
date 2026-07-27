@@ -6,10 +6,14 @@ labels) before sending anything here. See MessageFeatures.cs /
 MessageFeatureRecord.cs on the .NET side for the source-of-truth shape.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 
 class FeatureRecord(BaseModel):
+    # Caller-supplied opaque identity, round-tripped in the response in place
+    # of a positional index. This service never interprets it.
+    ref: str = Field(min_length=1)
+
     # Numeric
     delivery_count: int
     body_size_bytes: int
@@ -36,8 +40,20 @@ class FeatureRecord(BaseModel):
 class AnalyzeRequest(BaseModel):
     records: list[FeatureRecord]
 
+    @model_validator(mode="after")
+    def _refs_must_be_unique(self) -> "AnalyzeRequest":
+        refs = [r.ref for r in self.records]
+        if len(refs) != len(set(refs)):
+            raise ValueError("records[].ref must be unique within a request")
+        return self
+
 
 class AnalyzeResponse(BaseModel):
+    # clusters/singletons entries carry *_ref fields (caller-supplied, opaque)
+    # rather than positional indices into the request's records list. Indices
+    # broke silently whenever the caller filtered, deduplicated, or reordered
+    # records before or after calling this service — refs don't, because they
+    # travel with the record itself. Do not reintroduce positional fields here.
     clusters: list[dict] = []
     singletons: list[dict] = []
     method: str = "clustered"

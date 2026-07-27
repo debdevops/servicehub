@@ -5,6 +5,7 @@ from app.main import app
 client = TestClient(app)
 
 VALID_RECORD = {
+    "ref": "msg-1",
     "delivery_count": 3,
     "body_size_bytes": 1024,
     "time_to_deadletter_seconds": 12.5,
@@ -72,3 +73,48 @@ def test_feature_record_has_no_body_field():
     field_names = set(FeatureRecord.model_fields.keys())
     forbidden = {"body", "message_body", "payload", "payload_body", "content"}
     assert field_names.isdisjoint(forbidden)
+
+
+def test_analyze_round_trips_ref_for_single_record():
+    record = {**VALID_RECORD, "ref": "ref-a"}
+
+    response = client.post("/analyze", json={"records": [record]})
+
+    assert response.status_code == 200
+    cluster = response.json()["clusters"][0]
+    assert cluster["representative_ref"] == "ref-a"
+    assert cluster["first_occurrence_ref"] == "ref-a"
+    assert cluster["last_occurrence_ref"] == "ref-a"
+
+
+def test_analyze_refs_correct_when_refs_do_not_match_position_order():
+    # Regression test: refs are opaque strings unrelated to list position.
+    # If the response ever leaked a raw positional index instead of a ref,
+    # this would fail because none of these refs equal their position.
+    records = [
+        {**VALID_RECORD, "ref": "zzz-third"},
+        {**VALID_RECORD, "ref": "aaa-first"},
+        {**VALID_RECORD, "ref": "mmm-second"},
+    ]
+
+    response = client.post("/analyze", json={"records": records})
+
+    assert response.status_code == 200
+    cluster = response.json()["clusters"][0]
+    assert cluster["first_occurrence_ref"] == "zzz-third"
+    assert cluster["last_occurrence_ref"] == "mmm-second"
+    assert cluster["representative_ref"] in {"zzz-third", "aaa-first", "mmm-second"}
+
+
+def test_analyze_rejects_missing_ref():
+    incomplete_record = {k: v for k, v in VALID_RECORD.items() if k != "ref"}
+
+    response = client.post("/analyze", json={"records": [incomplete_record]})
+
+    assert response.status_code == 422
+
+
+def test_analyze_rejects_duplicate_refs():
+    response = client.post("/analyze", json={"records": [VALID_RECORD, VALID_RECORD]})
+
+    assert response.status_code == 422

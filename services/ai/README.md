@@ -12,6 +12,13 @@ No algorithm lives here yet.
   implemented against this same contract.
 - Designed to run as an internal-only sidecar in Docker Compose, alongside the
   main ServiceHub API container (see the repo-root `docker-compose.yml`).
+- Each `FeatureRecord` in a request carries a caller-supplied `ref` (opaque
+  string) that is round-tripped in the response (`representative_ref`,
+  `first_occurrence_ref`, `last_occurrence_ref`, and each cluster/singleton
+  member's `ref`) instead of a positional list index. This service treats
+  `ref` as opaque — it never interprets, dereferences, or persists it. Refs
+  must be present and unique within a request; missing or duplicate refs are
+  rejected with `422`.
 
 ## How to run it
 
