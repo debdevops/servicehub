@@ -343,6 +343,13 @@ jobs:
         env:
           ASPNETCORE_ENVIRONMENT: Simulator
           ASPNETCORE_URLS: http://localhost:5200
+          # AI degradation gate: AI is enabled but ServiceUrl points at a port nothing binds
+          # in this job (no AI container is started here), standing in for "AI container
+          # stopped". This proves the full E2E suite — every page, every existing feature —
+          # still works cleanly when the AI service is unreachable, per the RC1 single-container
+          # install story. See AIServiceClient for the degrade-to-"not available" contract.
+          AI__Enabled: "true"
+          AI__ServiceUrl: "http://127.0.0.1:18081"
         run: |
           # Use --no-build since we already built the full solution above.
           # The Simulator project output is available as a transitive dep of ServiceHub.Api.
@@ -418,6 +425,29 @@ jobs:
         env:
           CI: true
           VITE_PROXY_TARGET: http://localhost:5200
+
+      - name: Verify AI unavailability is logged once, not spammed
+        run: |
+          # AnomalyDetectionWorker polls IsAvailableAsync every 5 minutes (first cycle after a
+          # 30s startup delay); by the time the E2E suite has finished, at least one health
+          # check against the unreachable AI__ServiceUrl must have happened and been logged —
+          # but only once per process, however many times it was actually checked.
+          # Match only the timestamped-bracket formatter's single-line output, not the stock
+          # console formatter's two-line "warn: Category[0]\n      message" form — both write
+          # the same single log event, and matching both would double-count every occurrence.
+          COUNT=$(grep -c "\[WARNING\].*AIServiceClient.*AI service is unavailable" /tmp/servicehub_sim_api.log || true)
+          echo "AI unavailability log occurrences: $COUNT"
+          if [ "$COUNT" -eq 0 ]; then
+            echo "❌ Expected at least one AI unavailability log line — degradation path was not exercised"
+            tail -100 /tmp/servicehub_sim_api.log
+            exit 1
+          fi
+          if [ "$COUNT" -gt 1 ]; then
+            echo "❌ AI unavailability was logged $COUNT times — expected exactly once per process (log spam)"
+            grep -n "AI service is unavailable" /tmp/servicehub_sim_api.log
+            exit 1
+          fi
+          echo "✅ AI unavailability logged exactly once, no spam"
 
       - name: Upload Playwright report
         if: always()

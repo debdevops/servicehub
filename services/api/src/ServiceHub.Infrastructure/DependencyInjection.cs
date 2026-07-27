@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
@@ -45,7 +46,7 @@ public static class DependencyInjection
         services.AddSecurity(configuration);
 
         // AI
-        services.AddAI();
+        services.AddAI(configuration);
 
         // Webhooks
         services.AddWebhooks(configuration);
@@ -148,9 +149,24 @@ public static class DependencyInjection
     /// </para>
     /// </summary>
     /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration (optional).</param>
     /// <returns>The service collection for chaining.</returns>
-    public static IServiceCollection AddAI(this IServiceCollection services)
+    public static IServiceCollection AddAI(this IServiceCollection services, IConfiguration? configuration = null)
     {
+        services.Configure<Core.Models.AIServiceOptions>(opts =>
+            configuration?.GetSection(Core.Models.AIServiceOptions.SectionName).Bind(opts));
+
+        services.AddHttpClient(AI.AIServiceClient.HttpClientName, (sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptions<Core.Models.AIServiceOptions>>().Value;
+            if (Uri.TryCreate(options.ServiceUrl, UriKind.Absolute, out var baseUri))
+            {
+                client.BaseAddress = baseUri;
+            }
+
+            client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+        });
+
         services.TryAddSingleton<IAIServiceClient, AIServiceClient>();
 
         return services;

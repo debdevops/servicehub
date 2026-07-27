@@ -1,32 +1,62 @@
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Infrastructure.AI;
 
 /// <summary>
-/// Intentionally-inert stub for the AI service client contract.
+/// HTTP client for the ServiceHub AI service.
 /// <para>
-/// ServiceHub makes <b>no external AI API calls of any kind</b>. Its DLQ/message pattern
-/// detection is heuristic and runs locally (client-side in the SPA and in local backend
-/// heuristics). This stub exists only to satisfy the <see cref="IAIServiceClient"/> seam;
-/// every method reports "not available" so callers degrade gracefully. It deliberately does
-/// not — and must not — reach out to any hosted model or remote endpoint.
+/// Only <see cref="IsAvailableAsync"/> makes a real call (<c>GET /health</c>) — the AI service
+/// does not yet expose endpoints matching the other methods' contracts, so they continue to
+/// report "not yet implemented" exactly as the previous stub did. ServiceHub makes no external
+/// AI API calls of any kind: the AI service is a local, self-hosted container the operator
+/// controls, reached only when <see cref="AIServiceOptions.Enabled"/> is explicitly set.
+/// </para>
+/// <para>
+/// Every failure path — unreachable host, timeout, malformed response, non-2xx status —
+/// degrades to the same "not available" result. This type never throws into a caller.
 /// </para>
 /// </summary>
 public sealed class AIServiceClient : IAIServiceClient
 {
+    /// <summary>Name of the named <see cref="HttpClient"/> registered for this client.</summary>
+    public const string HttpClientName = "AIService";
+
+    private static readonly TimeSpan HealthCheckTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(30);
+    private static readonly JsonSerializerOptions HealthResponseSerializerOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly AIServiceOptions _options;
     private readonly ILogger<AIServiceClient> _logger;
+
+    private readonly SemaphoreSlim _refreshLock = new(1, 1);
+    private DateTimeOffset _cacheExpiresAt = DateTimeOffset.MinValue;
+    private bool _cachedAvailable;
+    private int _unavailabilityLogged;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AIServiceClient"/> class.
     /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    public AIServiceClient(ILogger<AIServiceClient> logger)
+    public AIServiceClient(
+        IHttpClientFactory httpClientFactory,
+        IOptions<AIServiceOptions> options,
+        ILogger<AIServiceClient> logger)
     {
+        _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
+        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -55,13 +85,43 @@ public sealed class AIServiceClient : IAIServiceClient
     }
 
     /// <inheritdoc/>
-    public Task<Result<bool>> IsAvailableAsync(CancellationToken cancellationToken = default)
+    public async Task<Result<bool>> IsAvailableAsync(CancellationToken cancellationToken = default)
     {
-        _logger.LogDebug("AI service availability check - service is not yet implemented");
+        if (!_options.Enabled)
+        {
+            return Result.Success(false);
+        }
 
-        // Return success with false to indicate the service is not available
-        // This allows callers to gracefully handle the unavailability
-        return Task.FromResult(Result.Success(false));
+        if (DateTimeOffset.UtcNow < _cacheExpiresAt)
+        {
+            return Result.Success(_cachedAvailable);
+        }
+
+        await _refreshLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (DateTimeOffset.UtcNow < _cacheExpiresAt)
+            {
+                return Result.Success(_cachedAvailable);
+            }
+
+            var available = await CheckHealthAsync(cancellationToken).ConfigureAwait(false);
+
+            _cachedAvailable = available;
+            _cacheExpiresAt = DateTimeOffset.UtcNow.Add(CacheDuration);
+
+            if (!available && Interlocked.Exchange(ref _unavailabilityLogged, 1) == 0)
+            {
+                _logger.LogWarning(
+                    "AI service is unavailable — ServiceHub will continue operating without AI-powered features until it recovers.");
+            }
+
+            return Result.Success(available);
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
     }
 
     /// <inheritdoc/>
@@ -93,4 +153,50 @@ public sealed class AIServiceClient : IAIServiceClient
             ErrorCodes.General.ServiceUnavailable,
             "AI anomaly detection service is not yet implemented. This feature will be available in a future release.")));
     }
+
+    private async Task<bool> CheckHealthAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_options.ServiceUrl))
+        {
+            return false;
+        }
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(HealthCheckTimeout);
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient(HttpClientName);
+            using var response = await client.GetAsync("health", timeoutCts.Token).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return false;
+            }
+
+            var health = await response.Content
+                .ReadFromJsonAsync<HealthResponse>(HealthResponseSerializerOptions, timeoutCts.Token)
+                .ConfigureAwait(false);
+
+            return health?.Ready == true;
+        }
+        catch (OperationCanceledException)
+        {
+            // Covers both caller cancellation and the 2s health-check timeout.
+            return false;
+        }
+        catch (HttpRequestException)
+        {
+            return false;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private sealed record HealthResponse(
+        [property: JsonPropertyName("status")] string Status,
+        [property: JsonPropertyName("version")] string Version,
+        [property: JsonPropertyName("ready")] bool Ready);
 }
