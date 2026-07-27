@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { dlqSignaturesApi } from '@/lib/api/dlqSignatures';
+import { useDemoContext } from '@/lib/demo/DemoContext';
 
 /**
  * Hook for fetching a namespace's DLQ error-cluster signatures. Treats the AI-unavailable
@@ -7,10 +8,12 @@ import { dlqSignaturesApi } from '@/lib/api/dlqSignatures';
  * a well-formed body.
  */
 export function useDlqSignatures(namespaceId?: string) {
+  const { isDemoMode } = useDemoContext();
+
   const query = useQuery({
     queryKey: ['dlq-signatures', namespaceId],
     queryFn: () => dlqSignaturesApi.getSignatures(namespaceId!),
-    enabled: !!namespaceId,
+    enabled: !isDemoMode && !!namespaceId,
     staleTime: 60_000,
     retry: (failureCount, error: unknown) => {
       const err = error as { response?: { status?: number } };

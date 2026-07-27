@@ -9,6 +9,7 @@ import { tooltips } from '@/lib/helpContent';
 import { useNamespaces } from '@/hooks/useNamespaces';
 import { useAllNamespacesQueues } from '@/hooks/useQueues';
 import { apiClient } from '@/lib/api/client';
+import { useDemoContext } from '@/lib/demo/DemoContext';
 import { findRuleEntityWarnings, type KnownEntities } from '@/lib/ruleValidation';
 import type { Topic } from '@/lib/api/types';
 import {
@@ -30,6 +31,7 @@ import type {
 
 export function RulesPage() {
   const { data: rules, isLoading, isError, refetch, isFetching } = useRules();
+  const { isDemoMode } = useDemoContext();
 
   // Entities across every connected namespace (all providers) — used to flag
   // rules whose entity references no longer exist anywhere.
@@ -43,7 +45,7 @@ export function RulesPage() {
         const response = await apiClient.get<Topic[]>(`/namespaces/${id}/topics`, { _silent: true });
         return response.data;
       },
-      enabled: !!id,
+      enabled: !isDemoMode && !!id,
       staleTime: 60_000,
       refetchIntervalInBackground: false,
       retry: 1,

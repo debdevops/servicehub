@@ -4,16 +4,19 @@ import {
   type DlqHistoryParams,
   type DlqTriageStatus,
 } from '@/lib/api/dlqHistory';
+import { useDemoContext, rejectDemoModeMutation } from '@/lib/demo/DemoContext';
 import toast from 'react-hot-toast';
 
 /**
  * Hook for fetching paginated DLQ history.
  */
 export function useDlqHistory(params: DlqHistoryParams, enabled = true) {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery({
     queryKey: ['dlq-history', params],
     queryFn: () => dlqHistoryApi.getHistory(params),
-    enabled,
+    enabled: !isDemoMode && enabled,
     staleTime: 15_000,
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
@@ -30,10 +33,12 @@ export function useDlqHistory(params: DlqHistoryParams, enabled = true) {
  * Hook for fetching a single DLQ message detail.
  */
 export function useDlqMessageDetail(id: number | null) {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery({
     queryKey: ['dlq-message', id],
     queryFn: () => dlqHistoryApi.getById(id!),
-    enabled: id !== null,
+    enabled: !isDemoMode && id !== null,
     staleTime: 30_000,
   });
 }
@@ -42,10 +47,12 @@ export function useDlqMessageDetail(id: number | null) {
  * Hook for fetching the timeline of a DLQ message.
  */
 export function useDlqTimeline(id: number | null) {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery({
     queryKey: ['dlq-timeline', id],
     queryFn: () => dlqHistoryApi.getTimeline(id!),
-    enabled: id !== null,
+    enabled: !isDemoMode && id !== null,
     staleTime: 30_000,
   });
 }
@@ -54,10 +61,12 @@ export function useDlqTimeline(id: number | null) {
  * Hook for fetching DLQ summary statistics.
  */
 export function useDlqSummary(namespaceId?: string) {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery({
     queryKey: ['dlq-summary', namespaceId],
     queryFn: () => dlqHistoryApi.getSummary(namespaceId),
-    enabled: !!namespaceId,
+    enabled: !isDemoMode && !!namespaceId,
     staleTime: 15_000,
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
@@ -75,10 +84,11 @@ export function useDlqSummary(namespaceId?: string) {
  */
 export function useUpdateDlqNotes() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
 
   return useMutation({
     mutationFn: ({ id, notes }: { id: number; notes: string }) =>
-      dlqHistoryApi.updateNotes(id, notes),
+      isDemoMode ? rejectDemoModeMutation() : dlqHistoryApi.updateNotes(id, notes),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['dlq-history'] });
       queryClient.invalidateQueries({ queryKey: ['dlq-message', variables.id] });
@@ -98,10 +108,11 @@ export function useUpdateDlqNotes() {
  */
 export function useUpdateDlqStatus() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
 
   return useMutation({
     mutationFn: ({ id, status, notes }: { id: number; status: DlqTriageStatus; notes?: string }) =>
-      dlqHistoryApi.updateStatus(id, status, notes),
+      isDemoMode ? rejectDemoModeMutation() : dlqHistoryApi.updateStatus(id, status, notes),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['dlq-history'] });
       queryClient.invalidateQueries({ queryKey: ['dlq-message', variables.id] });

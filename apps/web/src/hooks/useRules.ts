@@ -5,6 +5,7 @@ import {
   type TestRuleRequest,
 } from '@/lib/api/rules';
 import { type ApiError } from '@/lib/api/types';
+import { useDemoContext, rejectDemoModeMutation } from '@/lib/demo/DemoContext';
 import toast from 'react-hot-toast';
 
 const RULES_KEY = ['rules'] as const;
@@ -15,9 +16,12 @@ const DLQ_KEYS = ['dlq-history', 'dlq-summary'] as const;
  * Auto-refreshes every 10s to show live pendingMatchCount updates.
  */
 export function useRules(enabledOnly?: boolean) {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery({
     queryKey: [...RULES_KEY, { enabledOnly }],
     queryFn: () => rulesApi.getAll(enabledOnly),
+    enabled: !isDemoMode,
     staleTime: 30_000,
     refetchInterval: (query) => (query.state.status === 'error' ? false : 30_000),
     refetchIntervalInBackground: false,
@@ -34,10 +38,12 @@ export function useRules(enabledOnly?: boolean) {
  * Hook for fetching a single rule by ID.
  */
 export function useRule(id: number | null) {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery({
     queryKey: [...RULES_KEY, id],
     queryFn: () => rulesApi.getById(id!),
-    enabled: id != null,
+    enabled: !isDemoMode && id != null,
     staleTime: 10_000,
   });
 }
@@ -46,9 +52,12 @@ export function useRule(id: number | null) {
  * Hook for fetching rule templates.
  */
 export function useRuleTemplates() {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery({
     queryKey: ['rule-templates'],
     queryFn: () => rulesApi.getTemplates(),
+    enabled: !isDemoMode,
     staleTime: 60_000 * 5, // templates rarely change
   });
 }
@@ -58,8 +67,10 @@ export function useRuleTemplates() {
  */
 export function useCreateRule() {
   const qc = useQueryClient();
+  const { isDemoMode } = useDemoContext();
   return useMutation({
-    mutationFn: (request: CreateRuleRequest) => rulesApi.create(request),
+    mutationFn: (request: CreateRuleRequest) =>
+      isDemoMode ? rejectDemoModeMutation() : rulesApi.create(request),
     onSuccess: (rule) => {
       qc.invalidateQueries({ queryKey: RULES_KEY });
       toast.success(`Rule "${rule.name}" created`);
@@ -73,9 +84,10 @@ export function useCreateRule() {
  */
 export function useUpdateRule() {
   const qc = useQueryClient();
+  const { isDemoMode } = useDemoContext();
   return useMutation({
     mutationFn: ({ id, request }: { id: number; request: CreateRuleRequest }) =>
-      rulesApi.update(id, request),
+      isDemoMode ? rejectDemoModeMutation() : rulesApi.update(id, request),
     onSuccess: (rule) => {
       qc.invalidateQueries({ queryKey: RULES_KEY });
       toast.success(`Rule "${rule.name}" updated`);
@@ -89,8 +101,9 @@ export function useUpdateRule() {
  */
 export function useDeleteRule() {
   const qc = useQueryClient();
+  const { isDemoMode } = useDemoContext();
   return useMutation({
-    mutationFn: (id: number) => rulesApi.delete(id),
+    mutationFn: (id: number) => (isDemoMode ? rejectDemoModeMutation() : rulesApi.delete(id)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: RULES_KEY });
       toast.success('Rule deleted');
@@ -104,8 +117,9 @@ export function useDeleteRule() {
  */
 export function useToggleRule() {
   const qc = useQueryClient();
+  const { isDemoMode } = useDemoContext();
   return useMutation({
-    mutationFn: (id: number) => rulesApi.toggle(id),
+    mutationFn: (id: number) => (isDemoMode ? rejectDemoModeMutation() : rulesApi.toggle(id)),
     onSuccess: (rule) => {
       qc.invalidateQueries({ queryKey: RULES_KEY });
       toast.success(`Rule "${rule.name}" ${rule.enabled ? 'enabled' : 'disabled'}`);
@@ -118,8 +132,10 @@ export function useToggleRule() {
  * Hook for testing a rule against live DLQ messages.
  */
 export function useTestRule() {
+  const { isDemoMode } = useDemoContext();
   return useMutation({
-    mutationFn: (request: TestRuleRequest) => rulesApi.test(request),
+    mutationFn: (request: TestRuleRequest) =>
+      isDemoMode ? rejectDemoModeMutation() : rulesApi.test(request),
     onError: () => toast.error('Failed to test rule'),
   });
 }
@@ -130,8 +146,10 @@ export function useTestRule() {
  */
 export function useReplayAll() {
   const qc = useQueryClient();
+  const { isDemoMode } = useDemoContext();
   return useMutation({
-    mutationFn: (ruleId: number) => rulesApi.replayAll(ruleId),
+    mutationFn: (ruleId: number) =>
+      isDemoMode ? rejectDemoModeMutation() : rulesApi.replayAll(ruleId),
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: RULES_KEY });
       // Also invalidate DLQ data since messages have been replayed
@@ -162,8 +180,10 @@ export function useReplayAll() {
  */
 export function useGenerateRules() {
   const qc = useQueryClient();
+  const { isDemoMode } = useDemoContext();
   return useMutation({
-    mutationFn: (namespaceId?: string) => rulesApi.generateRules(namespaceId),
+    mutationFn: (namespaceId?: string) =>
+      isDemoMode ? rejectDemoModeMutation() : rulesApi.generateRules(namespaceId),
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: RULES_KEY });
       if (result.rulesCreated > 0) {

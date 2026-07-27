@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
 import { namespacesApi } from '@/lib/api/namespaces';
 import { Namespace, CreateNamespaceRequest, ApiError } from '@/lib/api/types';
-import { useDemoContext } from '@/lib/demo/DemoContext';
+import { useDemoContext, rejectDemoModeMutation } from '@/lib/demo/DemoContext';
 import { getMockNamespaces } from '@/lib/demo/mockProviders';
 import toast from 'react-hot-toast';
 
@@ -43,9 +43,11 @@ export function useNamespace(id: string) {
 
 export function useCreateNamespace() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
 
   return useMutation({
-    mutationFn: (data: CreateNamespaceRequest) => namespacesApi.create(data),
+    mutationFn: (data: CreateNamespaceRequest) =>
+      isDemoMode ? rejectDemoModeMutation() : namespacesApi.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['namespaces'] });
       toast.success('Namespace connected successfully');
@@ -71,9 +73,10 @@ export function useCreateNamespace() {
 
 export function useDeleteNamespace() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
 
   return useMutation({
-    mutationFn: (id: string) => namespacesApi.delete(id),
+    mutationFn: (id: string) => (isDemoMode ? rejectDemoModeMutation() : namespacesApi.delete(id)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['namespaces'] });
       toast.success('Namespace deleted');
@@ -87,8 +90,11 @@ export function useDeleteNamespace() {
 }
 
 export function useTestConnection() {
+  const { isDemoMode } = useDemoContext();
+
   return useMutation({
-    mutationFn: (id: string) => namespacesApi.testConnection(id),
+    mutationFn: (id: string) =>
+      isDemoMode ? rejectDemoModeMutation() : namespacesApi.testConnection(id),
     onSuccess: (data) => {
       if (data.isConnected) {
         toast.success(data.message || 'Connection successful');

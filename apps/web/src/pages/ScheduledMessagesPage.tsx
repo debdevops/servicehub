@@ -14,6 +14,7 @@ import { CopyButton } from '@/components/CopyButton';
 import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
 import { apiClient } from '@/lib/api/client';
 import { Message, Namespace } from '@/lib/api/types';
+import { useDemoContext } from '@/lib/demo/DemoContext';
 import toast from 'react-hot-toast';
 
 /**
@@ -44,6 +45,7 @@ function NamespaceScheduleWidget({
 }) {
   const style = getProviderStyle(namespace.cloudProvider);
   const unsupported = useSchedulingUnsupported(namespace);
+  const { isDemoMode } = useDemoContext();
   const { data: stats } = useQuery({
     queryKey: ['namespace-stats', namespace.id] as const,
     queryFn: async () => {
@@ -53,7 +55,7 @@ function NamespaceScheduleWidget({
       );
       return response.data;
     },
-    enabled: !unsupported,
+    enabled: !isDemoMode && !unsupported,
     staleTime: 30_000,
     refetchIntervalInBackground: false,
   });

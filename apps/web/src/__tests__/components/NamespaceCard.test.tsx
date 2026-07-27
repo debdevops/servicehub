@@ -6,6 +6,7 @@ import { NamespaceCard } from '@/pages/DashboardPage';
 
 vi.mock('@/hooks/useQueues', () => ({
   useQueues: vi.fn(),
+  useNamespaceStats: vi.fn(),
 }));
 
 const mockNavigate = vi.fn();
@@ -14,9 +15,10 @@ vi.mock('react-router-dom', async () => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
-import { useQueues } from '@/hooks/useQueues';
+import { useQueues, useNamespaceStats } from '@/hooks/useQueues';
 
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;
+const mockUseNamespaceStats = useNamespaceStats as ReturnType<typeof vi.fn>;
 
 const mockNamespace = {
   id: 'ns1',
@@ -66,6 +68,7 @@ describe('NamespaceCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseQueues.mockReturnValue({ data: mockQueues, isLoading: false, isError: false });
+    mockUseNamespaceStats.mockReturnValue([{ data: undefined, isLoading: false, isError: false }]);
   });
 
   it('renders namespace display name', async () => {

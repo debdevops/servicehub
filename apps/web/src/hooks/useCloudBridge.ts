@@ -6,9 +6,12 @@ import { getMockCapabilitiesMap } from '@/lib/demo/mockProviders';
 
 /** Returns the registration status of every supported cloud provider. */
 export function useProviderStatus() {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery({
     queryKey: ['cloud-bridge', 'provider-status'],
     queryFn: cloudBridgeApi.getProviderStatus,
+    enabled: !isDemoMode,
     staleTime: 30_000,
     retry: 1,
   });
@@ -50,10 +53,12 @@ export interface UseCloudEntitiesParams {
 
 /** Lists all cloud messaging entities for the given namespace and provider. */
 export function useCloudEntities({ namespaceId, provider }: UseCloudEntitiesParams) {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery<CloudEntity[], ApiError>({
     queryKey: ['cloud-bridge', 'entities', namespaceId, provider],
     queryFn: () => cloudBridgeApi.listEntities(namespaceId!, provider!),
-    enabled: !!namespaceId && !!provider,
+    enabled: !isDemoMode && !!namespaceId && !!provider,
     staleTime: 10_000,
     retry: (failureCount, error) => {
       if (error?.response?.status === 404) return false;
@@ -71,10 +76,12 @@ export interface UseVisibilityStatusParams {
 
 /** Returns the visibility-window (SQS) or ack-deadline (Pub/Sub) status. */
 export function useVisibilityStatus({ namespaceId, queueName, provider }: UseVisibilityStatusParams) {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery<VisibilityStatus, ApiError>({
     queryKey: ['cloud-bridge', 'visibility', namespaceId, queueName, provider],
     queryFn: () => cloudBridgeApi.getVisibilityStatus(namespaceId!, queueName!, provider!),
-    enabled: !!namespaceId && !!queueName && !!provider,
+    enabled: !isDemoMode && !!namespaceId && !!queueName && !!provider,
     staleTime: 5_000,
     retry: (failureCount, error) => {
       if (error?.response?.status === 404) return false;

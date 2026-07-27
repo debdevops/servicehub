@@ -90,6 +90,16 @@ describe('useProviderCapabilities', () => {
   });
 });
 
+describe('useProviderStatus in Demo Mode', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('does not call the real API', async () => {
+    const { result } = renderHook(() => useProviderStatus(), { wrapper: createDemoWrapper('azure') });
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(mockGetProviderStatus).not.toHaveBeenCalled();
+  });
+});
+
 describe('useProviderCapabilities in Demo Mode', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
@@ -165,6 +175,19 @@ describe('useCloudEntities', () => {
   });
 });
 
+describe('useCloudEntities in Demo Mode', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('does not call the real API even with valid params', async () => {
+    const { result } = renderHook(
+      () => useCloudEntities({ namespaceId: 'demo-azure-contoso-prod', provider: 'Azure' }),
+      { wrapper: createDemoWrapper('azure') }
+    );
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(mockListEntities).not.toHaveBeenCalled();
+  });
+});
+
 describe('useVisibilityStatus', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
@@ -186,5 +209,18 @@ describe('useVisibilityStatus', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(visStatus);
     expect(mockGetVisibilityStatus).toHaveBeenCalledWith('ns-1', 'my-queue', 'Aws');
+  });
+});
+
+describe('useVisibilityStatus in Demo Mode', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('does not call the real API even with valid params', async () => {
+    const { result } = renderHook(
+      () => useVisibilityStatus({ namespaceId: 'demo-azure-contoso-prod', queueName: 'orders-queue', provider: 'Azure' }),
+      { wrapper: createDemoWrapper('azure') }
+    );
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(mockGetVisibilityStatus).not.toHaveBeenCalled();
   });
 });

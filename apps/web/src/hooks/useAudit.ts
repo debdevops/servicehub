@@ -1,14 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
 import { auditApi, type AuditParams } from '@/lib/api/audit';
+import { useDemoContext } from '@/lib/demo/DemoContext';
 
 /**
  * Hook for fetching paginated audit log entries.
  */
 export function useAuditLogs(params: AuditParams, enabled = true) {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery({
     queryKey: ['audit-logs', params],
     queryFn: () => auditApi.getLogs(params),
-    enabled,
+    enabled: !isDemoMode && enabled,
     staleTime: 30_000,
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
@@ -25,10 +28,12 @@ export function useAuditLogs(params: AuditParams, enabled = true) {
  * Hook for fetching audit trail summary statistics.
  */
 export function useAuditSummary(namespaceId?: string, enabled = true) {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery({
     queryKey: ['audit-summary', namespaceId],
     queryFn: () => auditApi.getSummary(namespaceId),
-    enabled,
+    enabled: !isDemoMode && enabled,
     staleTime: 60_000,
     refetchInterval: 120_000,
     refetchIntervalInBackground: false,

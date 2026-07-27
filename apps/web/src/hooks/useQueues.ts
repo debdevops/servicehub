@@ -2,7 +2,7 @@ import { useQuery, useQueries, UseQueryOptions } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import { Queue, ApiError } from '@/lib/api/types';
 import { useDemoContext } from '@/lib/demo/DemoContext';
-import { getMockQueues } from '@/lib/demo/mockProviders';
+import { getMockQueues, getMockStats } from '@/lib/demo/mockProviders';
 
 const queuesQueryOptions = (
   namespaceId: string,
@@ -89,26 +89,36 @@ export function useNamespaceStats(
   autoRefresh: boolean = true,
   refetchMs: number = 60_000,
 ): NamespaceStatsResult[] {
+  const { isDemoMode, cloudProvider } = useDemoContext();
+
   const statsResults = useQueries({
-    queries: namespaceIds.map((id) => ({
-      queryKey: ['namespace-stats', id] as const,
-      queryFn: async (): Promise<NamespaceStatsData> => {
-        const response = await apiClient.get<NamespaceStatsData>(`/namespaces/${id}/stats`, {
-          _silent: true,
-        });
-        return response.data;
-      },
-      enabled: !!id,
-      staleTime: 30_000,
-      refetchInterval: autoRefresh ? refetchMs : (false as const),
-      refetchIntervalInBackground: false,
-      retry: (failureCount: number, error: ApiError) => {
-        if (error?.response?.status === 404) return false;
-        if (error?.response?.status === 429) return false;
-        if ((error?.response?.status ?? 0) >= 500) return false;
-        return failureCount < 2;
-      },
-    })),
+    queries: namespaceIds.map((id) =>
+      isDemoMode && cloudProvider
+        ? {
+            queryKey: ['namespace-stats', 'demo', cloudProvider, id] as const,
+            queryFn: (): Promise<NamespaceStatsData> => Promise.resolve(getMockStats(cloudProvider)),
+            staleTime: Infinity,
+          }
+        : {
+            queryKey: ['namespace-stats', id] as const,
+            queryFn: async (): Promise<NamespaceStatsData> => {
+              const response = await apiClient.get<NamespaceStatsData>(`/namespaces/${id}/stats`, {
+                _silent: true,
+              });
+              return response.data;
+            },
+            enabled: !!id,
+            staleTime: 30_000,
+            refetchInterval: autoRefresh ? refetchMs : (false as const),
+            refetchIntervalInBackground: false,
+            retry: (failureCount: number, error: ApiError) => {
+              if (error?.response?.status === 404) return false;
+              if (error?.response?.status === 429) return false;
+              if ((error?.response?.status ?? 0) >= 500) return false;
+              return failureCount < 2;
+            },
+          },
+    ),
   });
 
   return statsResults.map((result, i) => ({
@@ -128,8 +138,18 @@ export function useAllNamespacesQueues(
   autoRefresh: boolean = true,
   intervals?: { queuesMs?: number; statsMs?: number },
 ): NamespaceQueueStats[] {
+  const { isDemoMode, cloudProvider } = useDemoContext();
+
   const results = useQueries({
-    queries: namespaceIds.map((id) => queuesQueryOptions(id, autoRefresh, intervals?.queuesMs)),
+    queries: namespaceIds.map((id) =>
+      isDemoMode && cloudProvider
+        ? {
+            queryKey: ['queues', 'demo', cloudProvider, id] as const,
+            queryFn: (): Promise<Queue[]> => Promise.resolve(getMockQueues(cloudProvider)),
+            staleTime: Infinity,
+          }
+        : queuesQueryOptions(id, autoRefresh, intervals?.queuesMs),
+    ),
   });
 
   // Also fetch stats (with subscription DLQs) for each namespace

@@ -12,12 +12,16 @@ import {
   type DlqFloodRequest,
 } from '@/lib/api/simulator';
 import type { ApiError } from '@/lib/api/types';
+import { useDemoContext, rejectDemoModeMutation } from '@/lib/demo/DemoContext';
 
 /** Polls simulator status every 5 seconds while the page is in focus. */
 export function useSimulatorStatus() {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery<SimulatorStatus, ApiError>({
     queryKey: ['simulator', 'status'],
     queryFn: getSimulatorStatus,
+    enabled: !isDemoMode,
     refetchInterval: 5000,
     refetchIntervalInBackground: false,
     retry: 1,
@@ -31,9 +35,12 @@ export function useSimulatorStatus() {
  * show the Simulator link.
  */
 export function useIsSimulatorMode() {
+  const { isDemoMode } = useDemoContext();
+
   const { data, isLoading } = useQuery<SimulatorStatus, ApiError>({
     queryKey: ['simulator', 'mode-check'],
     queryFn: getSimulatorStatus,
+    enabled: !isDemoMode,
     staleTime: Infinity,
     retry: false,
     refetchOnWindowFocus: false,
@@ -48,8 +55,9 @@ export function useIsSimulatorMode() {
 /** Injects a fault — invalidates simulator status on success. */
 export function useInjectFault() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
   return useMutation<void, ApiError, InjectFaultRequest>({
-    mutationFn: injectFault,
+    mutationFn: (request) => (isDemoMode ? rejectDemoModeMutation() : injectFault(request)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['simulator', 'status'] });
       toast.success('Fault injected');
@@ -69,8 +77,9 @@ export function useInjectFault() {
 /** Clears all active faults — invalidates simulator status on success. */
 export function useClearFaults() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
   return useMutation<void, ApiError, void>({
-    mutationFn: clearFaults,
+    mutationFn: () => (isDemoMode ? rejectDemoModeMutation() : clearFaults()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['simulator', 'status'] });
       toast.success('All faults cleared');
@@ -89,8 +98,9 @@ export function useClearFaults() {
 /** Resets and reseeds the simulator — invalidates all relevant queries. */
 export function useResetSimulator() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
   return useMutation<void, ApiError, void>({
-    mutationFn: resetSimulator,
+    mutationFn: () => (isDemoMode ? rejectDemoModeMutation() : resetSimulator()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['simulator'] });
       queryClient.invalidateQueries({ queryKey: ['namespaces'] });
@@ -111,8 +121,9 @@ export function useResetSimulator() {
 /** Advances simulated time — invalidates simulator status on success. */
 export function useAdvanceTime() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
   return useMutation<void, ApiError, number>({
-    mutationFn: (seconds: number) => advanceTime(seconds),
+    mutationFn: (seconds: number) => (isDemoMode ? rejectDemoModeMutation() : advanceTime(seconds)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['simulator', 'status'] });
       toast.success('Time advanced');
@@ -131,8 +142,9 @@ export function useAdvanceTime() {
 /** Injects DLQ flood — invalidates simulator status on success. */
 export function useInjectDlqFlood() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
   return useMutation<void, ApiError, DlqFloodRequest>({
-    mutationFn: injectDlqFlood,
+    mutationFn: (request) => (isDemoMode ? rejectDemoModeMutation() : injectDlqFlood(request)),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['simulator', 'status'] });
       toast.success(`Injected ${variables.count} messages into ${variables.entityName} DLQ`);

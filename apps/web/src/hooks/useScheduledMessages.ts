@@ -1,13 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { scheduledApi } from '@/lib/api/scheduled';
 import { ApiError } from '@/lib/api/types';
+import { useDemoContext, rejectDemoModeMutation } from '@/lib/demo/DemoContext';
 import toast from 'react-hot-toast';
 
 export function useScheduledMessages(namespaceId: string, queueName: string) {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery({
     queryKey: ['scheduled-messages', namespaceId, queueName],
     queryFn: () => scheduledApi.listScheduled(namespaceId, queueName),
-    enabled: !!namespaceId && !!queueName,
+    enabled: !isDemoMode && !!namespaceId && !!queueName,
     staleTime: 15_000,
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
@@ -23,6 +26,7 @@ export function useScheduledMessages(namespaceId: string, queueName: string) {
 
 export function useCancelScheduledMessage() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
 
   return useMutation({
     mutationFn: ({
@@ -33,7 +37,10 @@ export function useCancelScheduledMessage() {
       namespaceId: string;
       queueName: string;
       sequenceNumber: number;
-    }) => scheduledApi.cancelScheduled(namespaceId, queueName, sequenceNumber),
+    }) =>
+      isDemoMode
+        ? rejectDemoModeMutation()
+        : scheduledApi.cancelScheduled(namespaceId, queueName, sequenceNumber),
 
     onSuccess: (_data, variables) => {
       toast.success('Scheduled message cancelled');

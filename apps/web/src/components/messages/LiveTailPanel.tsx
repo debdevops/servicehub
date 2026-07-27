@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { X, Radio, Trash2, Play, Pause } from 'lucide-react';
 import { useLiveTail } from '@/hooks/useLiveTail';
 import type { LiveTailStatus } from '@/hooks/useLiveTail';
+import { useDemoContext } from '@/lib/demo/DemoContext';
 
 interface LiveTailPanelProps {
   isOpen: boolean;
@@ -47,6 +48,7 @@ export function LiveTailPanel({
   subscriptionName,
   fromDeadLetter,
 }: LiveTailPanelProps) {
+  const { isDemoMode } = useDemoContext();
   const { status, messages, start, stop, clear } = useLiveTail({
     namespaceId,
     entityName,
@@ -126,9 +128,11 @@ export function LiveTailPanel({
         <div className="flex-1 overflow-y-auto">
           {status === 'unsupported' && (
             <div className="p-4 m-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
-              Live Tail isn't available for this namespace's provider. AWS SQS has no
-              non-destructive peek — repeated polling would risk pushing messages over the
-              queue's redelivery limit and accidentally dead-lettering them.
+              {isDemoMode
+                ? "Live Tail isn't available in Demo Mode — this is a read-only preview with pre-seeded data, not a live provider connection."
+                : "Live Tail isn't available for this namespace's provider. AWS SQS has no " +
+                  "non-destructive peek — repeated polling would risk pushing messages over the " +
+                  "queue's redelivery limit and accidentally dead-lettering them."}
             </div>
           )}
 

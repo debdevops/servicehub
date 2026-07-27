@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { insightsApi } from '@/lib/api/insights';
 import { GetInsightsParams, Message as APIMessage } from '@/lib/api/types';
 import { analyzeMessages, isAIAvailable } from '@/lib/ai/analyzer';
+import { useDemoContext, rejectDemoModeMutation } from '@/lib/demo/DemoContext';
 import toast from 'react-hot-toast';
 
 /**
@@ -17,10 +18,12 @@ import toast from 'react-hot-toast';
  * - Evidence always cited
  */
 export function useInsights(params: GetInsightsParams) {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery({
     queryKey: ['insights', params],
     queryFn: () => insightsApi.list(params),
-    enabled: !!params.namespaceId,
+    enabled: !isDemoMode && !!params.namespaceId,
     retry: false, // Don't retry 404 errors for missing endpoint
     staleTime: 30000, // Consider insights stale after 30 seconds
     meta: {
@@ -33,10 +36,12 @@ export function useInsights(params: GetInsightsParams) {
  * Hook to get a single insight by ID
  */
 export function useInsight(namespaceId: string, insightId: string) {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery({
     queryKey: ['insights', namespaceId, insightId],
     queryFn: () => insightsApi.get(namespaceId, insightId),
-    enabled: !!namespaceId && !!insightId,
+    enabled: !isDemoMode && !!namespaceId && !!insightId,
     retry: false,
     meta: {
       errorMessage: false,
@@ -49,10 +54,12 @@ export function useInsight(namespaceId: string, insightId: string) {
  * Uses backend API first, falls back to empty if unavailable
  */
 export function useInsightsSummary(namespaceId: string, queueOrTopicName: string) {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery({
     queryKey: ['insights', 'summary', namespaceId, queueOrTopicName],
     queryFn: () => insightsApi.getSummary(namespaceId, queueOrTopicName),
-    enabled: !!namespaceId && !!queueOrTopicName,
+    enabled: !isDemoMode && !!namespaceId && !!queueOrTopicName,
     retry: false,
     staleTime: 30000,
     meta: {
@@ -104,10 +111,11 @@ export function useClientSideInsights(
  */
 export function useDismissInsight() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
 
   return useMutation({
     mutationFn: ({ namespaceId, insightId }: { namespaceId: string; insightId: string }) =>
-      insightsApi.dismiss(namespaceId, insightId),
+      isDemoMode ? rejectDemoModeMutation() : insightsApi.dismiss(namespaceId, insightId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['insights'] });
       toast.success('Insight dismissed');
@@ -125,10 +133,11 @@ export function useDismissInsight() {
  */
 export function useResolveInsight() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
 
   return useMutation({
     mutationFn: ({ namespaceId, insightId }: { namespaceId: string; insightId: string }) =>
-      insightsApi.resolve(namespaceId, insightId),
+      isDemoMode ? rejectDemoModeMutation() : insightsApi.resolve(namespaceId, insightId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['insights'] });
       toast.success('Insight marked as resolved');
@@ -145,9 +154,12 @@ export function useResolveInsight() {
  * Hook to check if AI is available
  */
 export function useAIAvailability() {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery({
     queryKey: ['ai', 'availability'],
     queryFn: () => insightsApi.isAvailable(),
+    enabled: !isDemoMode,
     staleTime: 60000, // Check availability every minute
   });
 }

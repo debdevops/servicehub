@@ -7,15 +7,17 @@ import {
   type BulkOperationType,
 } from '@/lib/api/bulkOperations';
 import type { ApiError } from '@/lib/api/types';
+import { useDemoContext, rejectDemoModeMutation } from '@/lib/demo/DemoContext';
 import toast from 'react-hot-toast';
 
 const POLL_INTERVAL_MS = 1_500;
 
 /** Dry-runs a bulk replay/purge — no intent headers, no mutation on the backend. */
 export function useBulkOperationPreview() {
+  const { isDemoMode } = useDemoContext();
   return useMutation({
     mutationFn: ({ operationType, filter }: { operationType: BulkOperationType; filter: BulkOperationFilter }) =>
-      bulkOperationsApi.preview(operationType, filter),
+      isDemoMode ? rejectDemoModeMutation() : bulkOperationsApi.preview(operationType, filter),
     onError: (error: ApiError) => {
       const message = error?.response?.data?.detail || error?.message || 'Failed to preview the bulk operation';
       toast.error(message, { duration: 6000 });
@@ -26,10 +28,11 @@ export function useBulkOperationPreview() {
 /** Creates and enqueues a bulk replay/purge job. Returns the job in Pending status. */
 export function useCreateBulkOperation() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
 
   return useMutation({
     mutationFn: ({ operationType, filter }: { operationType: BulkOperationType; filter: BulkOperationFilter }) =>
-      bulkOperationsApi.create(operationType, filter),
+      isDemoMode ? rejectDemoModeMutation() : bulkOperationsApi.create(operationType, filter),
     onSuccess: (job) => {
       void queryClient.invalidateQueries({ queryKey: ['bulk-operations', 'list'] });
       toast.success(`Bulk ${job.operationType.toLowerCase()} started — ${job.totalMatched} message(s) queued`);
@@ -49,11 +52,12 @@ export function useCreateBulkOperation() {
 export function useBulkOperationJob(jobId: string | null) {
   const queryClient = useQueryClient();
   const notifiedRef = useRef<string | null>(null);
+  const { isDemoMode } = useDemoContext();
 
   const query = useQuery({
     queryKey: ['bulk-operations', 'job', jobId],
     queryFn: () => bulkOperationsApi.get(jobId!),
-    enabled: !!jobId,
+    enabled: !isDemoMode && !!jobId,
     refetchInterval: (q) => {
       const status = q.state.data?.status;
       return status && isTerminalBulkOperationStatus(status) ? false : POLL_INTERVAL_MS;
@@ -88,9 +92,12 @@ export function useBulkOperationJob(jobId: string | null) {
 
 /** Lists past bulk operation jobs for the owner, optionally scoped to a namespace. */
 export function useBulkOperationJobs(namespaceId?: string) {
+  const { isDemoMode } = useDemoContext();
+
   return useQuery({
     queryKey: ['bulk-operations', 'list', namespaceId],
     queryFn: () => bulkOperationsApi.list(namespaceId),
+    enabled: !isDemoMode,
     staleTime: 10_000,
   });
 }
@@ -98,9 +105,10 @@ export function useBulkOperationJobs(namespaceId?: string) {
 /** Requests cancellation of a pending/running job. */
 export function useCancelBulkOperation() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
 
   return useMutation({
-    mutationFn: (jobId: string) => bulkOperationsApi.cancel(jobId),
+    mutationFn: (jobId: string) => (isDemoMode ? rejectDemoModeMutation() : bulkOperationsApi.cancel(jobId)),
     onSuccess: (job) => {
       queryClient.setQueryData(['bulk-operations', 'job', job.id], job);
     },

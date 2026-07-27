@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { connectLiveTail, type LiveTailParams } from '@/lib/api/liveTail';
 import type { Message } from '@/lib/api/types';
+import { useDemoContext } from '@/lib/demo/DemoContext';
 
 const MAX_BUFFERED_MESSAGES = 200;
 
@@ -18,6 +19,7 @@ export function useLiveTail(params: LiveTailParams) {
   const disconnectRef = useRef<(() => void) | null>(null);
   const paramsRef = useRef(params);
   paramsRef.current = params;
+  const { isDemoMode } = useDemoContext();
 
   const stop = useCallback(() => {
     disconnectRef.current?.();
@@ -25,8 +27,14 @@ export function useLiveTail(params: LiveTailParams) {
     setStatus('idle');
   }, []);
 
+  // Demo namespaces have no real provider connection behind them — never open an SSE
+  // stream against the backend while in Demo Mode.
   const start = useCallback(() => {
     if (disconnectRef.current) return; // already running
+    if (isDemoMode) {
+      setStatus('unsupported');
+      return;
+    }
     setStatus('connecting');
     setMessages([]);
 
@@ -45,7 +53,7 @@ export function useLiveTail(params: LiveTailParams) {
         setStatus('unsupported');
       },
     });
-  }, [stop]);
+  }, [stop, isDemoMode]);
 
   const clear = useCallback(() => setMessages([]), []);
 

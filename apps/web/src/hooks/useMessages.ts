@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
 import { messagesApi } from '@/lib/api/messages';
 import { GetMessagesParams, PaginatedResponse, Message, ApiError } from '@/lib/api/types';
-import { useDemoContext } from '@/lib/demo/DemoContext';
+import { useDemoContext, rejectDemoModeMutation } from '@/lib/demo/DemoContext';
 import { getMockMessages } from '@/lib/demo/mockProviders';
 import toast from 'react-hot-toast';
 
@@ -91,16 +91,17 @@ export function useMessage(namespaceId: string, messageId: string) {
 
 export function useSendMessage() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
 
   return useMutation({
-    mutationFn: ({ 
-      namespaceId, 
-      queueOrTopicName, 
+    mutationFn: ({
+      namespaceId,
+      queueOrTopicName,
       message,
       entityType = 'queue'
-    }: { 
-      namespaceId: string; 
-      queueOrTopicName: string; 
+    }: {
+      namespaceId: string;
+      queueOrTopicName: string;
       message: {
         body: string;
         contentType?: string;
@@ -111,7 +112,10 @@ export function useSendMessage() {
         scheduledEnqueueTime?: string;
       };
       entityType?: 'queue' | 'topic';
-    }) => messagesApi.send(namespaceId, queueOrTopicName, message, entityType),
+    }) =>
+      isDemoMode
+        ? rejectDemoModeMutation()
+        : messagesApi.send(namespaceId, queueOrTopicName, message, entityType),
     onSuccess: async (_, variables) => {
       await Promise.all([
         queryClient.invalidateQueries({
@@ -134,20 +138,23 @@ export function useSendMessage() {
 
 export function useReplayMessage() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
 
   return useMutation({
-    mutationFn: ({ 
-      namespaceId, 
-      sequenceNumber, 
-      entityName, 
-      subscriptionName 
-    }: { 
-      namespaceId: string; 
-      sequenceNumber: number; 
+    mutationFn: ({
+      namespaceId,
+      sequenceNumber,
+      entityName,
+      subscriptionName
+    }: {
+      namespaceId: string;
+      sequenceNumber: number;
       entityName: string;
       subscriptionName?: string;
-    }) => 
-      messagesApi.replay(namespaceId, sequenceNumber, entityName, subscriptionName),
+    }) =>
+      isDemoMode
+        ? rejectDemoModeMutation()
+        : messagesApi.replay(namespaceId, sequenceNumber, entityName, subscriptionName),
     onSuccess: async (_, variables) => {
       await Promise.all([
         queryClient.invalidateQueries({
@@ -177,6 +184,7 @@ export function useReplayMessage() {
 
 export function usePurgeMessage() {
   const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoContext();
 
   return useMutation({
     mutationFn: ({
@@ -192,7 +200,9 @@ export function usePurgeMessage() {
       subscriptionName?: string;
       fromDeadLetter?: boolean;
     }) =>
-      messagesApi.purge(namespaceId, sequenceNumber, entityName, subscriptionName, fromDeadLetter),
+      isDemoMode
+        ? rejectDemoModeMutation()
+        : messagesApi.purge(namespaceId, sequenceNumber, entityName, subscriptionName, fromDeadLetter),
     onSuccess: async (_, variables) => {
       await Promise.all([
         queryClient.invalidateQueries({

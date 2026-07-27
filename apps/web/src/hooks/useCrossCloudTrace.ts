@@ -3,10 +3,14 @@ import toast from 'react-hot-toast';
 import { crossCloudTraceApi } from '@/lib/api/crossCloudTrace';
 import type { CrossCloudTraceResponse } from '@/lib/api/types';
 import type { ApiError } from '@/lib/api/types';
+import { useDemoContext, rejectDemoModeMutation } from '@/lib/demo/DemoContext';
 
 export function useCrossCloudTrace() {
+  const { isDemoMode } = useDemoContext();
+
   return useMutation<CrossCloudTraceResponse, ApiError, string>({
-    mutationFn: (traceId: string) => crossCloudTraceApi.trace(traceId),
+    mutationFn: (traceId: string) =>
+      isDemoMode ? rejectDemoModeMutation() : crossCloudTraceApi.trace(traceId),
     onError: (error: ApiError) => {
       const errorMessage =
         error?.response?.data?.detail ||

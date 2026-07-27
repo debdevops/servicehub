@@ -84,3 +84,12 @@ export function DemoModeProvider({ cloudProvider, children }: DemoModeProviderPr
 export function useDemoContext(): DemoContextValue {
   return useContext(DemoContext);
 }
+
+/** Message shown when a mutation is attempted against a demo namespace. */
+export const DEMO_MODE_MUTATION_MESSAGE =
+  'Not available in Demo Mode — this is a read-only preview with pre-seeded data.';
+
+/** Rejects without any network call — used as a mutationFn guard so demo mutations never reach the backend. */
+export function rejectDemoModeMutation(): Promise<never> {
+  return Promise.reject(new Error(DEMO_MODE_MUTATION_MESSAGE));
+}

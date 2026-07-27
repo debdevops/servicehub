@@ -18,7 +18,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues, useAllNamespacesQueues, NamespaceQueueStats } from '@/hooks/useQueues';
+import { useQueues, useAllNamespacesQueues, useNamespaceStats, NamespaceQueueStats } from '@/hooks/useQueues';
 import { useTopics } from '@/hooks/useTopics';
 import { useEventStream } from '@/hooks/useEventStream';
 import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
@@ -27,6 +27,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { setThemeProvider } from '@/lib/providerTheme';
 import { Namespace } from '@/lib/api/types';
 import { apiClient } from '@/lib/api/client';
+import { useDemoContext } from '@/lib/demo/DemoContext';
 import { getHealthGrade } from '@/lib/healthGrade';
 
 const DLQ_SPIKE_THRESHOLD = 10;
@@ -308,6 +309,7 @@ interface TrendPoint {
 }
 
 function DlqTrendSparkline({ namespaceId, sseConnected = false }: { namespaceId: string; sseConnected?: boolean }) {
+  const { isDemoMode } = useDemoContext();
   const { data: trendData } = useQuery<TrendPoint[]>({
     queryKey: ['dlq-trend', namespaceId],
     queryFn: async () => {
@@ -320,6 +322,7 @@ function DlqTrendSparkline({ namespaceId, sseConnected = false }: { namespaceId:
         resolvedCount: d.resolvedMessages,
       }));
     },
+    enabled: !isDemoMode,
     refetchInterval: sseConnected ? TREND_POLL_MS.relaxed : TREND_POLL_MS.normal,
   });
 
@@ -388,25 +391,13 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
     navigate(`/dlq-history?namespace=${namespace.id}`);
   };
 
-  // Use the stats endpoint for accurate totals (includes subscription DLQs)
-  const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ['namespace-stats', namespace.id],
-    queryFn: async () => {
-      const response = await apiClient.get<{
-        totalQueues: number;
-        totalTopics: number;
-        totalSubscriptions: number;
-        totalActive: number;
-        totalDlq: number;
-        totalScheduled: number;
-      }>(`/namespaces/${namespace.id}/stats`, { _silent: true } as Record<string, unknown>);
-      return response.data;
-    },
-    enabled: !!namespace.id,
-    staleTime: 30_000,
-    refetchInterval: sseConnected ? STATS_POLL_MS.relaxed : STATS_POLL_MS.normal,
-    refetchIntervalInBackground: false,
-  });
+  // Use the stats endpoint for accurate totals (includes subscription DLQs) — shared
+  // useNamespaceStats hook also carries the Demo Mode guard.
+  const [{ data: stats, isLoading: statsLoading }] = useNamespaceStats(
+    [namespace.id],
+    true,
+    sseConnected ? STATS_POLL_MS.relaxed : STATS_POLL_MS.normal,
+  );
 
   const isLoading = queuesLoading || statsLoading;
   const totalQueues = stats?.totalQueues ?? queues?.length ?? 0;

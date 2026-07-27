@@ -11,6 +11,7 @@ vi.mock('@/hooks/useNamespaces', () => ({
 vi.mock('@/hooks/useQueues', () => ({
   useQueues: vi.fn(),
   useAllNamespacesQueues: vi.fn(),
+  useNamespaceStats: vi.fn(),
 }));
 
 const mockNavigate = vi.fn();
@@ -20,11 +21,12 @@ vi.mock('react-router-dom', async () => {
 });
 
 import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues, useAllNamespacesQueues } from '@/hooks/useQueues';
+import { useQueues, useAllNamespacesQueues, useNamespaceStats } from '@/hooks/useQueues';
 
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;
 const mockUseAllNamespacesQueues = useAllNamespacesQueues as ReturnType<typeof vi.fn>;
+const mockUseNamespaceStats = useNamespaceStats as ReturnType<typeof vi.fn>;
 
 const mockNamespace = {
   id: 'ns1',
@@ -71,6 +73,7 @@ describe('DashboardPage', () => {
       refetch: vi.fn(),
     });
     mockUseQueues.mockReturnValue({ data: mockQueues, isLoading: false, isError: false });
+    mockUseNamespaceStats.mockReturnValue([{ data: undefined, isLoading: false, isError: false }]);
     mockUseAllNamespacesQueues.mockReturnValue([
       {
         namespaceId: 'ns1',
