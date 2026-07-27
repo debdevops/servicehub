@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight, AlertTriangle, Upload, FileJson, X } from 'lucide-react';
+import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight, AlertTriangle, Upload, FileJson, X, Inbox } from 'lucide-react';
 import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@/hooks/useNamespaces';
 import { useProviderStatus } from '@/hooks/useCloudBridge';
 import { ProviderIcon } from '@/components/ProviderIcon';
 import { ProviderBadge } from '@/lib/providerStyles';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { EmptyState } from '@/components/EmptyState';
 import { HelpTooltip } from '@/components/help';
 import { tooltips } from '@/lib/helpContent';
 import type { EnvironmentType, CloudProviderType } from '@/lib/api/types';
@@ -816,17 +817,22 @@ export function ConnectPage() {
                   namespaces.map((ns) => (
                     <div
                       key={ns.id}
-                      className="flex items-center justify-between p-4 rounded-lg transition-colors cursor-pointer bg-gray-50 border border-gray-200 hover:bg-gray-100 hover:border-gray-300"
+                      className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg transition-colors bg-gray-50 border border-gray-200 hover:bg-gray-100 hover:border-gray-300"
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
                         <div
-                          className={`w-2.5 h-2.5 rounded-full ${
+                          className={`w-2.5 h-2.5 rounded-full shrink-0 ${
                             ns.isActive ? 'bg-green-500' : 'bg-gray-300'
                           }`}
                         />
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-medium text-gray-900">{ns.displayName || ns.name}</h3>
+                        <div className="min-w-0 flex-1">
+                          <h3
+                            className="font-medium text-gray-900 truncate"
+                            title={ns.displayName || ns.name}
+                          >
+                            {ns.displayName || ns.name}
+                          </h3>
+                          <div className="flex flex-wrap items-center gap-2 mt-0.5">
                             <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase ${
                               ns.environment === 'prod' ? 'bg-red-100 text-red-700' :
                               ns.environment === 'uat' ? 'bg-amber-100 text-amber-700' :
@@ -836,14 +842,14 @@ export function ConnectPage() {
                             </span>
                             <ProviderBadge provider={ns.cloudProvider} />
                           </div>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-gray-500 truncate mt-0.5">
                             {ns.name}
                             {ns.lastUsedAt && ` • Last used: ${new Date(ns.lastUsedAt).toLocaleDateString()}`}
                           </p>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 shrink-0">
                         <button
                           onClick={() => navigate(`/messages?namespace=${ns.id}`)}
                           className="px-3 py-1.5 text-white text-sm font-medium rounded-lg transition-colors bg-primary-500 hover:bg-primary-600"
@@ -863,13 +869,11 @@ export function ConnectPage() {
                     </div>
                   ))
                 ) : (
-                  <div className="text-center py-8">
-                    <div className="w-12 h-12 bg-gray-100 border border-gray-200 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <span className="text-2xl">📭</span>
-                    </div>
-                    <h3 className="font-medium text-gray-900 mb-1">No saved connections yet</h3>
-                    <p className="text-sm text-gray-500">Connect your first namespace to get started</p>
-                  </div>
+                  <EmptyState
+                    icon={Inbox}
+                    heading="No saved connections yet"
+                    subtext="Connect your first namespace to get started"
+                  />
                 )}
               </div>
             </div>

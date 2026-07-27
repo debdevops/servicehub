@@ -12,6 +12,9 @@ interface ResizablePanelProps {
   minWidth?: number;
   maxWidth?: number;
   collapsedByDefault?: boolean;
+  /** Below this viewport width, the panel auto-collapses to its icon rail. Persisted
+   * collapsed/expanded preference is untouched — this only affects narrow windows. */
+  narrowBreakpoint?: number;
   children: ReactNode;
   dataTour?: string;
 }
@@ -43,6 +46,7 @@ export function ResizablePanel({
   minWidth = 220,
   maxWidth = 480,
   collapsedByDefault = false,
+  narrowBreakpoint,
   children,
   dataTour,
 }: ResizablePanelProps) {
@@ -50,6 +54,36 @@ export function ResizablePanel({
   const [collapsed, setCollapsed] = useState(() => readStoredCollapsed(panelId, collapsedByDefault));
   const [isDragging, setIsDragging] = useState(false);
   const dragState = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  // Auto-collapse below narrowBreakpoint without touching the persisted preference —
+  // a temporarily narrow window shouldn't overwrite the user's desktop layout choice.
+  const [viewportNarrow, setViewportNarrow] = useState(
+    () => narrowBreakpoint !== undefined && window.innerWidth < narrowBreakpoint,
+  );
+  const [narrowExpanded, setNarrowExpanded] = useState(false);
+
+  useEffect(() => {
+    if (narrowBreakpoint === undefined) return;
+    const onResize = () => {
+      const narrow = window.innerWidth < narrowBreakpoint;
+      setViewportNarrow(narrow);
+      if (!narrow) setNarrowExpanded(false);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [narrowBreakpoint]);
+
+  // While the viewport is narrow, the panel is collapsed by default regardless of the
+  // persisted desktop preference, but a manual expand click (narrowExpanded) wins until
+  // the window widens back past the breakpoint.
+  const effectiveCollapsed = viewportNarrow ? !narrowExpanded : collapsed;
+  const toggleCollapsed = () => {
+    if (viewportNarrow) {
+      setNarrowExpanded(e => !e);
+    } else {
+      setCollapsed(c => !c);
+    }
+  };
 
   useEffect(() => {
     localStorage.setItem(`${STORAGE_PREFIX}${panelId}_width`, String(width));
@@ -94,14 +128,14 @@ export function ResizablePanel({
     };
   }, [handleDragMove, handleDragEnd]);
 
-  if (collapsed) {
+  if (effectiveCollapsed) {
     return (
       <div
         className="w-10 shrink-0 bg-white border-r border-gray-200 flex flex-col items-center py-3 gap-3"
         data-tour={dataTour}
       >
         <button
-          onClick={() => setCollapsed(false)}
+          onClick={toggleCollapsed}
           className="p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 transition-colors"
           title={`Expand ${title}`}
           aria-label={`Expand ${title}`}
@@ -130,7 +164,7 @@ export function ResizablePanel({
         <div className="flex items-center gap-0.5 shrink-0">
           {headerActions}
           <button
-            onClick={() => setCollapsed(true)}
+            onClick={toggleCollapsed}
             className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
             title={`Collapse ${title}`}
             aria-label={`Collapse ${title}`}

@@ -35,3 +35,8 @@ for (const key of ['localStorage', 'sessionStorage'] as const) {
     });
   }
 }
+
+// jsdom defaults to a 1024px viewport, which is narrower than this app's own
+// responsive side-panel breakpoints — set a normal desktop width so components
+// that read window.innerWidth render their default (non-narrow) state in tests.
+Object.defineProperty(window, 'innerWidth', { value: 1440, configurable: true, writable: true });

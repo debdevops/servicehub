@@ -55,6 +55,7 @@ export function QuickAccessPanel() {
       defaultWidth={280}
       minWidth={220}
       maxWidth={420}
+      narrowBreakpoint={1024}
       dataTour="quick-access"
     >
       <nav className="space-y-1 px-3 py-3">

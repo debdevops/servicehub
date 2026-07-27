@@ -402,6 +402,7 @@ export function NamespacesPanel() {
       defaultWidth={320}
       minWidth={260}
       maxWidth={520}
+      narrowBreakpoint={1280}
       dataTour="sidebar"
       headerActions={
         <>
