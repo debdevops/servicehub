@@ -34,19 +34,28 @@ def test_health_returns_ready():
     assert "version" in body
 
 
-def test_analyze_returns_stub_shape_for_records():
+def test_analyze_single_record_falls_back_to_grouped():
     response = client.post("/analyze", json={"records": [VALID_RECORD]})
 
     assert response.status_code == 200
     body = response.json()
-    assert body == {"clusters": [], "explanation": None}
+    assert body["method"] == "grouped"
+    assert body["singletons"] == []
+    assert len(body["clusters"]) == 1
+    assert body["clusters"][0]["size"] == 1
+    assert body["explanation"] is None
 
 
-def test_analyze_returns_stub_shape_for_empty_records():
+def test_analyze_returns_empty_shape_for_empty_records():
     response = client.post("/analyze", json={"records": []})
 
     assert response.status_code == 200
-    assert response.json() == {"clusters": [], "explanation": None}
+    assert response.json() == {
+        "clusters": [],
+        "singletons": [],
+        "method": "clustered",
+        "explanation": None,
+    }
 
 
 def test_analyze_rejects_missing_required_field():

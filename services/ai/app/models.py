@@ -39,6 +39,8 @@ class AnalyzeRequest(BaseModel):
 
 class AnalyzeResponse(BaseModel):
     clusters: list[dict] = []
+    singletons: list[dict] = []
+    method: str = "clustered"
     explanation: str | None = None
 
 

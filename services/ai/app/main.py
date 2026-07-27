@@ -1,11 +1,12 @@
 """FastAPI skeleton for the ServiceHub AI service.
 
-No algorithm yet — /analyze returns a correctly shaped stub response. The
-real clustering/anomaly logic lands in P0-5 against this same contract.
+/analyze clusters a batch of FeatureRecords by error signature; see
+app/clustering.py for the algorithm.
 """
 
 from fastapi import FastAPI
 
+from app.clustering import analyze_records
 from app.models import AnalyzeRequest, AnalyzeResponse, HealthResponse
 
 VERSION = "0.1.0"
@@ -20,4 +21,10 @@ def health() -> HealthResponse:
 
 @app.post("/analyze", response_model=AnalyzeResponse)
 def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
-    return AnalyzeResponse(clusters=[], explanation=None)
+    result = analyze_records(request.records)
+    return AnalyzeResponse(
+        clusters=result["clusters"],
+        singletons=result["singletons"],
+        method=result["method"],
+        explanation=None,
+    )
