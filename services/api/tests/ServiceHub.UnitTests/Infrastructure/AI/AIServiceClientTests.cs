@@ -95,6 +95,8 @@ public sealed class AIServiceClientTests
                             last_occurrence_ref = "1",
                             dominant_entity = "orders-queue",
                             dominant_deadletter_reason = "MaxDeliveryCountExceeded",
+                            member_refs = new[] { "0", "1" },
+                            dominant_deadletter_reason_count = 2,
                         },
                     },
                     singletons = Array.Empty<object>(),
@@ -112,12 +114,80 @@ public sealed class AIServiceClientTests
         result.Value.Clusters.Should().ContainSingle();
         result.Value.Clusters[0].Size.Should().Be(2);
         result.Value.Clusters[0].RepresentativeRef.Should().Be("0");
+        result.Value.Clusters[0].MemberRefs.Should().BeEquivalentTo(new[] { "0", "1" });
+        result.Value.Clusters[0].DominantDeadletterReasonCount.Should().Be(2);
         result.Value.Singletons.Should().BeEmpty();
         result.Value.RefToMessageId.Should().BeEquivalentTo(new Dictionary<string, long>
         {
             ["0"] = 101,
             ["1"] = 102,
         });
+    }
+
+    [Fact]
+    public async Task AnalyzeMessagesAsync_ClusterWithMissingMemberRefs_ReturnsFailure()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new
+            {
+                clusters = new[]
+                {
+                    new
+                    {
+                        size = 2,
+                        representative_ref = "0",
+                        top_terms = new[] { "timeout" },
+                        first_occurrence_ref = "0",
+                        last_occurrence_ref = "1",
+                        dominant_entity = "orders-queue",
+                        dominant_deadletter_reason = "MaxDeliveryCountExceeded",
+                        member_refs = (string[]?)null,
+                        dominant_deadletter_reason_count = 2,
+                    },
+                },
+                singletons = Array.Empty<object>(),
+                method = "clustered",
+            }),
+        });
+        var sut = CreateSut(handler: handler);
+
+        var result = await sut.AnalyzeMessagesAsync(new[] { CreateDlqMessage(101), CreateDlqMessage(102) });
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AnalyzeMessagesAsync_ClusterWithEmptyMemberRefs_ReturnsFailure()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new
+            {
+                clusters = new[]
+                {
+                    new
+                    {
+                        size = 2,
+                        representative_ref = "0",
+                        top_terms = new[] { "timeout" },
+                        first_occurrence_ref = "0",
+                        last_occurrence_ref = "1",
+                        dominant_entity = "orders-queue",
+                        dominant_deadletter_reason = "MaxDeliveryCountExceeded",
+                        member_refs = Array.Empty<string>(),
+                        dominant_deadletter_reason_count = 2,
+                    },
+                },
+                singletons = Array.Empty<object>(),
+                method = "clustered",
+            }),
+        });
+        var sut = CreateSut(handler: handler);
+
+        var result = await sut.AnalyzeMessagesAsync(new[] { CreateDlqMessage(101), CreateDlqMessage(102) });
+
+        result.IsFailure.Should().BeTrue();
     }
 
     [Fact]

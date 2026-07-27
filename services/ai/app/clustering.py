@@ -146,6 +146,8 @@ def _build_summary(
         "last_occurrence_ref": records[max(member_indices)].ref,
         "dominant_entity": entities.most_common(1)[0][0],
         "dominant_deadletter_reason": reasons.most_common(1)[0][0],
+        "member_refs": [records[i].ref for i in member_indices],
+        "dominant_deadletter_reason_count": reasons.most_common(1)[0][1],
     }
 
 

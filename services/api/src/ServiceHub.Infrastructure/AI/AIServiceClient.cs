@@ -121,6 +121,12 @@ public sealed class AIServiceClient : IAIServiceClient
                 return Result.Failure<ClusterAnalysisResult>(NotAvailableError());
             }
 
+            if (analyzeResponse.Clusters.Any(c => c.MemberRefs is null or []))
+            {
+                LogUnavailabilityOnce();
+                return Result.Failure<ClusterAnalysisResult>(NotAvailableError());
+            }
+
             var result = new ClusterAnalysisResult(
                 analyzeResponse.Clusters.Select(ToClusterSummary).ToList(),
                 analyzeResponse.Singletons.Select(ToClusterSingleton).ToList(),
@@ -313,7 +319,9 @@ public sealed class AIServiceClient : IAIServiceClient
         dto.FirstOccurrenceRef,
         dto.LastOccurrenceRef,
         dto.DominantEntity,
-        dto.DominantDeadletterReason);
+        dto.DominantDeadletterReason,
+        dto.MemberRefs ?? [],
+        dto.DominantDeadletterReasonCount);
 
     private static ClusterSingleton ToClusterSingleton(SingletonDto dto) => new(
         dto.Ref,
@@ -359,7 +367,9 @@ public sealed class AIServiceClient : IAIServiceClient
         [property: JsonPropertyName("first_occurrence_ref")] string FirstOccurrenceRef,
         [property: JsonPropertyName("last_occurrence_ref")] string LastOccurrenceRef,
         [property: JsonPropertyName("dominant_entity")] string DominantEntity,
-        [property: JsonPropertyName("dominant_deadletter_reason")] string DominantDeadletterReason);
+        [property: JsonPropertyName("dominant_deadletter_reason")] string DominantDeadletterReason,
+        [property: JsonPropertyName("member_refs")] List<string>? MemberRefs,
+        [property: JsonPropertyName("dominant_deadletter_reason_count")] int DominantDeadletterReasonCount);
 
     private sealed record SingletonDto(
         [property: JsonPropertyName("ref")] string Ref,

@@ -20,7 +20,9 @@ public sealed record ClusterSummary(
     string FirstOccurrenceRef,
     string LastOccurrenceRef,
     string DominantEntity,
-    string DominantDeadletterReason);
+    string DominantDeadletterReason,
+    IReadOnlyList<string> MemberRefs,
+    int DominantDeadletterReasonCount);
 
 /// <summary>A message the AI service could not group into any cluster.</summary>
 public sealed record ClusterSingleton(

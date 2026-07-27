@@ -92,6 +92,65 @@ def test_three_known_failure_modes_cluster_into_three_groups():
     assert sizes == [34, 34, 34]
 
 
+def _assert_partitions_input(result: dict, records: list[FeatureRecord]) -> None:
+    """member_refs across all clusters, plus singleton refs, must exactly
+    partition the input: every input ref appears exactly once."""
+    all_refs = [ref for c in result["clusters"] for ref in c["member_refs"]]
+    all_refs += [s["ref"] for s in result["singletons"]]
+
+    assert sorted(all_refs) == sorted(r.ref for r in records)
+    assert len(all_refs) == len(set(all_refs))
+
+
+def test_clustered_result_member_refs_and_reason_count_are_consistent():
+    records = []
+    for reason, exc, entity, text in FAILURE_MODES:
+        for _ in range(34):
+            records.append(make_record(text, entity_name=entity, deadletter_reason=reason,
+                                        exception_type=exc))
+
+    result = analyze_records(records)
+
+    assert result["method"] == "clustered"
+    input_refs = {r.ref for r in records}
+    for cluster in result["clusters"]:
+        assert len(cluster["member_refs"]) == cluster["size"]
+        assert set(cluster["member_refs"]) <= input_refs
+        assert len(cluster["member_refs"]) == len(set(cluster["member_refs"]))
+
+        count = cluster["dominant_deadletter_reason_count"]
+        assert count <= cluster["size"]
+        expected_count = sum(
+            1 for ref in cluster["member_refs"]
+            if next(r for r in records if r.ref == ref).deadletter_reason
+            == cluster["dominant_deadletter_reason"]
+        )
+        assert count == expected_count
+
+    _assert_partitions_input(result, records)
+
+    # Each failure mode above uses a single deadletter_reason per cluster, so
+    # every cluster here is uniform: count == size.
+    for cluster in result["clusters"]:
+        assert cluster["dominant_deadletter_reason_count"] == cluster["size"]
+
+
+def test_mixed_reason_cluster_reports_count_less_than_size():
+    # Same error text (so it clusters together), but the deadletter_reason
+    # differs across members -> a mixed-reason cluster.
+    text = FAILURE_MODES[0][3]
+    records = [make_record(text, deadletter_reason="MaxDeliveryCountExceeded") for _ in range(15)]
+    records += [make_record(text, deadletter_reason="UserAbandoned") for _ in range(5)]
+
+    result = analyze_records(records)
+
+    cluster = next(c for c in result["clusters"] if c["size"] == 20)
+    assert cluster["dominant_deadletter_reason"] == "MaxDeliveryCountExceeded"
+    assert cluster["dominant_deadletter_reason_count"] == 15
+    assert cluster["dominant_deadletter_reason_count"] < cluster["size"]
+    assert len(cluster["member_refs"]) == 20
+
+
 def test_identical_errors_differing_only_by_guid_or_timestamp_cluster_together():
     variants = [
         normalise("MaxDeliveryCountExceeded",
@@ -143,6 +202,9 @@ def test_genuinely_unrelated_errors_do_not_cluster_together():
     unrelated_singleton_indices = {i for i, s in enumerate(result["singletons"])}
     assert len(unrelated_singleton_indices) == len(unrelated_texts)
     assert dense_cluster["size"] == 20
+    assert len(dense_cluster["member_refs"]) == 20
+
+    _assert_partitions_input(result, records)
 
 
 def test_empty_input_handled():
@@ -161,6 +223,8 @@ def test_single_message_handled():
     assert len(result["clusters"]) == 1
     assert result["clusters"][0]["size"] == 1
     assert result["clusters"][0]["representative_ref"] == records[0].ref
+    assert result["clusters"][0]["member_refs"] == [records[0].ref]
+    assert result["clusters"][0]["dominant_deadletter_reason_count"] == 1
 
 
 _PATHOLOGICAL_TEXTS = [
@@ -208,3 +272,8 @@ def test_fallback_triggers_on_pathological_input():
     assert result["method"] == "grouped"
     assert result["singletons"] == []
     assert sum(c["size"] for c in result["clusters"]) == 30
+
+    _assert_partitions_input(result, records)
+    for cluster in result["clusters"]:
+        assert len(cluster["member_refs"]) == cluster["size"]
+        assert cluster["dominant_deadletter_reason_count"] == cluster["size"]  # one record per group here

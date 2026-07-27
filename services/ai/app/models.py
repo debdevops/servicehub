@@ -54,6 +54,13 @@ class AnalyzeResponse(BaseModel):
     # broke silently whenever the caller filtered, deduplicated, or reordered
     # records before or after calling this service — refs don't, because they
     # travel with the record itself. Do not reintroduce positional fields here.
+    #
+    # Each clusters[] entry additionally carries:
+    #   - member_refs: the ref of every member of the cluster, in input order —
+    #     lets a caller drill down from a cluster to the messages it represents.
+    #   - dominant_deadletter_reason_count: how many members share
+    #     dominant_deadletter_reason; less than size means the cluster's
+    #     failure reasons are mixed.
     clusters: list[dict] = []
     singletons: list[dict] = []
     method: str = "clustered"
