@@ -1,4 +1,5 @@
-import { CheckCircle2, Loader2, StopCircle, X, XCircle } from 'lucide-react';
+import { useState } from 'react';
+import { CheckCircle2, ChevronDown, ChevronUp, Loader2, StopCircle, X, XCircle } from 'lucide-react';
 import { useBulkOperationJob, useCancelBulkOperation } from '@servicehub/ui-shared/hooks/useBulkOperations';
 import { isTerminalBulkOperationStatus } from '@servicehub/ui-shared/lib/api/bulkOperations';
 
@@ -24,6 +25,7 @@ const STATUS_LABEL: Record<string, string> = {
 export function BulkOperationProgressPanel({ jobId, onDismiss }: BulkOperationProgressPanelProps) {
   const { data: job } = useBulkOperationJob(jobId);
   const cancelJob = useCancelBulkOperation();
+  const [showFailures, setShowFailures] = useState(false);
 
   if (!job) return null;
 
@@ -90,6 +92,30 @@ export function BulkOperationProgressPanel({ jobId, onDismiss }: BulkOperationPr
 
       {job.errorSummary && (
         <p className="text-xs text-red-600 mb-3 break-words">{job.errorSummary}</p>
+      )}
+
+      {job.failureSample && job.failureSample.length > 0 && (
+        <div className="mb-3">
+          <button
+            onClick={() => setShowFailures((prev) => !prev)}
+            className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700"
+          >
+            {showFailures ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {showFailures ? 'Hide' : 'View'} failure details ({job.failureSample.length})
+          </button>
+          {showFailures && (
+            <ul className="mt-2 max-h-32 overflow-y-auto space-y-1.5 border-t border-gray-100 pt-2">
+              {job.failureSample.map((failure, index) => (
+                <li key={`${failure.messageId}-${index}`} className="text-xs">
+                  <p className="font-medium text-gray-700 truncate">
+                    {failure.entityName} · {failure.messageId}
+                  </p>
+                  <p className="text-red-600 break-words">{failure.reason}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       {!terminal && job.isCancellable && (
