@@ -450,7 +450,7 @@ describe('useCreateRule', () => {
     });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith('Failed to create rule');
+    expect(toast.error).toHaveBeenCalledWith('fail', expect.any(Object));
   });
 });
 
@@ -483,7 +483,7 @@ describe('useUpdateRule', () => {
     });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith('Failed to update rule');
+    expect(toast.error).toHaveBeenCalledWith('fail', expect.any(Object));
   });
 });
 
@@ -515,7 +515,7 @@ describe('useDeleteRule', () => {
     });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith('Failed to delete rule');
+    expect(toast.error).toHaveBeenCalledWith('fail', expect.any(Object));
   });
 });
 
@@ -562,7 +562,7 @@ describe('useToggleRule', () => {
     });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith('Failed to toggle rule');
+    expect(toast.error).toHaveBeenCalledWith('fail', expect.any(Object));
   });
 });
 
@@ -595,7 +595,7 @@ describe('useTestRule', () => {
     });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith('Failed to test rule');
+    expect(toast.error).toHaveBeenCalledWith('fail', expect.any(Object));
   });
 });
 
@@ -663,7 +663,7 @@ describe('useReplayAll', () => {
     });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith('Failed to execute replay-all');
+    expect(toast.error).toHaveBeenCalledWith('fail', expect.any(Object));
   });
 });
 

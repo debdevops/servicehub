@@ -217,7 +217,7 @@ export function DlqHistoryPage() {
   const { data: providerCapabilitiesMap } = useProviderCapabilities();
   const providerCapabilities = getProviderCapabilities(providerCapabilitiesMap, currentNamespace?.cloudProvider);
   const isProdNamespace = currentNamespace?.environment === 'prod';
-  const canBulkReplay = !!namespaceId && !isProdNamespace;
+  const canBulkReplay = !!namespaceId && !isProdNamespace && !activeBulkJobId;
   const canBulkPurge = canBulkReplay && (providerCapabilities?.supportsPurge ?? false);
 
   // The background monitor skips namespaces whose provider has no non-destructive peek (AWS SQS)
@@ -336,7 +336,13 @@ export function DlqHistoryPage() {
               onClick={() => setBulkModalType('Replay')}
               disabled={!canBulkReplay}
               className="flex items-center gap-1.5 px-3 py-2 border border-sky-200 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              title={isProdNamespace ? 'Bulk replay is blocked for production namespaces' : 'Replay every DLQ message matching the current filter'}
+              title={
+                activeBulkJobId
+                  ? 'Finish or dismiss the current bulk operation before starting another'
+                  : isProdNamespace
+                    ? 'Bulk replay is blocked for production namespaces'
+                    : 'Replay every DLQ message matching the current filter'
+              }
             >
               <RefreshCw className="w-4 h-4" />
               Bulk Replay
@@ -346,11 +352,13 @@ export function DlqHistoryPage() {
               disabled={!canBulkPurge}
               className="flex items-center gap-1.5 px-3 py-2 border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               title={
-                isProdNamespace
-                  ? 'Bulk purge is blocked for production namespaces'
-                  : !(providerCapabilities?.supportsPurge ?? false)
-                    ? (providerCapabilities?.notes ?? 'Purge is not supported for this provider')
-                    : 'Permanently delete every DLQ message matching the current filter'
+                activeBulkJobId
+                  ? 'Finish or dismiss the current bulk operation before starting another'
+                  : isProdNamespace
+                    ? 'Bulk purge is blocked for production namespaces'
+                    : !(providerCapabilities?.supportsPurge ?? false)
+                      ? (providerCapabilities?.notes ?? 'Purge is not supported for this provider')
+                      : 'Permanently delete every DLQ message matching the current filter'
               }
             >
               <Trash2 className="w-4 h-4" />

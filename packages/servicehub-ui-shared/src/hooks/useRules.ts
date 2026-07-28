@@ -75,7 +75,14 @@ export function useCreateRule() {
       qc.invalidateQueries({ queryKey: RULES_KEY });
       toast.success(`Rule "${rule.name}" created`);
     },
-    onError: () => toast.error('Failed to create rule'),
+    onError: (error: ApiError) => {
+      const errorMessage =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to create rule';
+      toast.error(errorMessage, { duration: 6000 });
+    },
   });
 }
 
@@ -92,7 +99,14 @@ export function useUpdateRule() {
       qc.invalidateQueries({ queryKey: RULES_KEY });
       toast.success(`Rule "${rule.name}" updated`);
     },
-    onError: () => toast.error('Failed to update rule'),
+    onError: (error: ApiError) => {
+      const errorMessage =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to update rule';
+      toast.error(errorMessage, { duration: 6000 });
+    },
   });
 }
 
@@ -108,7 +122,14 @@ export function useDeleteRule() {
       qc.invalidateQueries({ queryKey: RULES_KEY });
       toast.success('Rule deleted');
     },
-    onError: () => toast.error('Failed to delete rule'),
+    onError: (error: ApiError) => {
+      const errorMessage =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to delete rule';
+      toast.error(errorMessage, { duration: 6000 });
+    },
   });
 }
 
@@ -124,7 +145,14 @@ export function useToggleRule() {
       qc.invalidateQueries({ queryKey: RULES_KEY });
       toast.success(`Rule "${rule.name}" ${rule.enabled ? 'enabled' : 'disabled'}`);
     },
-    onError: () => toast.error('Failed to toggle rule'),
+    onError: (error: ApiError) => {
+      const errorMessage =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to toggle rule';
+      toast.error(errorMessage, { duration: 6000 });
+    },
   });
 }
 
@@ -136,7 +164,14 @@ export function useTestRule() {
   return useMutation({
     mutationFn: (request: TestRuleRequest) =>
       isDemoMode ? rejectDemoModeMutation() : rulesApi.test(request),
-    onError: () => toast.error('Failed to test rule'),
+    onError: (error: ApiError) => {
+      const errorMessage =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to test rule';
+      toast.error(errorMessage, { duration: 6000 });
+    },
   });
 }
 
@@ -171,7 +206,14 @@ export function useReplayAll() {
         toast.error(`All ${result.totalMatched} matched messages failed to replay`);
       }
     },
-    onError: () => toast.error('Failed to execute replay-all'),
+    onError: (error: ApiError) => {
+      const errorMessage =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to execute replay-all';
+      toast.error(errorMessage, { duration: 6000 });
+    },
   });
 }
 
@@ -196,6 +238,13 @@ export function useGenerateRules() {
         toast('All detected patterns already have rules', { icon: 'ℹ️' });
       }
     },
-    onError: () => toast.error('Failed to generate intelligent rules'),
+    onError: (error: ApiError) => {
+      const errorMessage =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to generate intelligent rules';
+      toast.error(errorMessage, { duration: 6000 });
+    },
   });
 }

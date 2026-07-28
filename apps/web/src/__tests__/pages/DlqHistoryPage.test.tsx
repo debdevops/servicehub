@@ -24,8 +24,11 @@ vi.mock('@/components/dlq', () => ({
     messageId ? <div data-testid="timeline-drawer">Timeline {messageId}</div> : null,
   StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,
   CategoryBadge: ({ category }: { category: string }) => <span>{category}</span>,
-  BulkOperationPreviewModal: ({ operationType }: { operationType: string }) => (
-    <div data-testid="bulk-preview-modal">Preview: {operationType}</div>
+  BulkOperationPreviewModal: ({ operationType, onJobCreated }: { operationType: string; onJobCreated: (jobId: string) => void }) => (
+    <div data-testid="bulk-preview-modal">
+      Preview: {operationType}
+      <button onClick={() => onJobCreated('job-1')}>Confirm</button>
+    </div>
   ),
   BulkOperationProgressPanel: () => <div data-testid="bulk-progress-panel">Progress</div>,
   DlqSignaturesPanel: () => <div data-testid="dlq-signatures-panel" />,
@@ -278,6 +281,18 @@ describe('DlqHistoryPage', () => {
       await user.click(screen.getByRole('button', { name: /Bulk Replay/ }));
 
       expect(screen.getByTestId('bulk-preview-modal')).toHaveTextContent('Preview: Replay');
+    });
+
+    it('disables both bulk actions once a job is created, until dismissed', async () => {
+      const user = userEvent.setup();
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      await user.click(screen.getByRole('button', { name: /Bulk Replay/ }));
+      await user.click(screen.getByRole('button', { name: /Confirm/ }));
+
+      expect(screen.getByRole('button', { name: /Bulk Replay/ })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Bulk Purge/ })).toBeDisabled();
     });
   });
 });

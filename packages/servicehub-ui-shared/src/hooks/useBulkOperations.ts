@@ -72,6 +72,7 @@ export function useBulkOperationJob(jobId: string | null) {
     void queryClient.invalidateQueries({ queryKey: ['dlq-history'] });
     void queryClient.invalidateQueries({ queryKey: ['dlq-summary'] });
     void queryClient.invalidateQueries({ queryKey: ['bulk-operations', 'list'] });
+    void queryClient.invalidateQueries({ queryKey: ['fleet-overview'] });
 
     if (job.status === 'Completed') {
       toast.success(`Bulk ${job.operationType.toLowerCase()} completed — ${job.successCount}/${job.totalMatched} succeeded`);
