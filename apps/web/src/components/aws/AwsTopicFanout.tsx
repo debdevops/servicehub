@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, CheckCircle2, Megaphone, Radio, Send } from 'lucide-react';
-import { useSubscriptions } from '@/hooks/useSubscriptions';
-import { useQueues } from '@/hooks/useQueues';
+import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
+import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
 import { SendMessageModal } from '@/components/fab/SendMessageModal';
 
 // ============================================================================

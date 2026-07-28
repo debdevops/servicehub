@@ -1,6 +1,6 @@
 import { X, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
-import { useTestRule } from '@/hooks/useRules';
-import type { RuleCondition, RuleResponse, RuleTestResponse } from '@/lib/api/rules';
+import { useTestRule } from '@servicehub/ui-shared/hooks/useRules';
+import type { RuleCondition, RuleResponse, RuleTestResponse } from '@servicehub/ui-shared/lib/api/rules';
 import { useState } from 'react';
 
 interface RuleTestDialogProps {

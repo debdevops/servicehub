@@ -7,7 +7,7 @@
  */
 
 import { FlaskConical } from 'lucide-react';
-import { useHealthVersion } from '@/hooks/useHealth';
+import { useHealthVersion } from '@servicehub/ui-shared/hooks/useHealth';
 
 export function SimulatorModeBanner() {
   const { data } = useHealthVersion();

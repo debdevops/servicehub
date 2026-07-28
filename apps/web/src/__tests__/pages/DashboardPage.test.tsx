@@ -4,11 +4,11 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DashboardPage } from '@/pages/DashboardPage';
 
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
 
-vi.mock('@/hooks/useQueues', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({
   useQueues: vi.fn(),
   useAllNamespacesQueues: vi.fn(),
   useNamespaceStats: vi.fn(),
@@ -20,8 +20,8 @@ vi.mock('react-router-dom', async () => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues, useAllNamespacesQueues, useNamespaceStats } from '@/hooks/useQueues';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useQueues, useAllNamespacesQueues, useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
 
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;

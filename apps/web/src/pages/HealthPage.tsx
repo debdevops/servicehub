@@ -1,6 +1,6 @@
-import { useHealthVersion, useHealthStatus, useHealthReport } from '@/hooks/useHealth';
-import { ProviderIcon } from '@/components/ProviderIcon';
-import type { CloudProviderType } from '@/lib/api/types';
+import { useHealthVersion, useHealthStatus, useHealthReport } from '@servicehub/ui-shared/hooks/useHealth';
+import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
+import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import {
   Activity,
   Server,

@@ -1,10 +1,10 @@
 import { Link, useSearchParams } from 'react-router-dom';
 import { User, Cloud, HelpCircle, Search, Bell } from 'lucide-react';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useNamespaceStats } from '@/hooks/useQueues';
-import { getProviderStyle } from '@/lib/providerStyles';
-import { setThemeProvider } from '@/lib/providerTheme';
-import { ProviderIcon } from '@/components/ProviderIcon';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
+import { getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
+import { setThemeProvider } from '@servicehub/ui-shared/lib/providerTheme';
+import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
 
 export function Header() {
   const [searchParams] = useSearchParams();

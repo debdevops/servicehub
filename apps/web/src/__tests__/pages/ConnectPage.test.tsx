@@ -11,7 +11,7 @@ const { mockCreateNs, mockProviderStatus } = vi.hoisted(() => ({
 }));
 
 // Mock hooks used by ConnectPage
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: () => ({ data: [], isLoading: false }),
   useNamespace: () => ({ data: undefined, isLoading: false }),
   useCreateNamespace: () => ({
@@ -24,7 +24,7 @@ vi.mock('@/hooks/useNamespaces', () => ({
   }),
 }));
 
-vi.mock('@/hooks/useCloudBridge', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useCloudBridge', () => ({
   useProviderStatus: () => mockProviderStatus(),
 }));
 

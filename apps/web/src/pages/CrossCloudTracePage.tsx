@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Route, Cloud, AlertCircle, CheckCircle2, Clock, ChevronDown, ChevronRight, Info } from 'lucide-react';
-import { useCrossCloudTrace } from '@/hooks/useCrossCloudTrace';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { getProviderStyle } from '@/lib/providerStyles';
-import type { CrossCloudTraceHop, CrossCloudNamespaceSummary, CloudProviderType } from '@/lib/api/types';
+import { useCrossCloudTrace } from '@servicehub/ui-shared/hooks/useCrossCloudTrace';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
+import type { CrossCloudTraceHop, CrossCloudNamespaceSummary, CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 
 // ── Cloud provider visual identity ───────────────────────────────────────────
 // Badge color/label/dot come from lib/providerStyles.tsx (single source of truth).

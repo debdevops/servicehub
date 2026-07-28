@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { X, Radio, Trash2, Play, Pause } from 'lucide-react';
-import { useLiveTail } from '@/hooks/useLiveTail';
-import type { LiveTailStatus } from '@/hooks/useLiveTail';
-import { useDemoContext } from '@/lib/demo/DemoContext';
+import { useLiveTail } from '@servicehub/ui-shared/hooks/useLiveTail';
+import type { LiveTailStatus } from '@servicehub/ui-shared/hooks/useLiveTail';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 
 interface LiveTailPanelProps {
   isOpen: boolean;

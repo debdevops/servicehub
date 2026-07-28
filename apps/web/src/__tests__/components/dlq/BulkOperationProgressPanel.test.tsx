@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { BulkOperationProgressPanel } from '@/components/dlq/BulkOperationProgressPanel';
-import type { BulkOperationJob } from '@/lib/api/bulkOperations';
+import type { BulkOperationJob } from '@servicehub/ui-shared/lib/api/bulkOperations';
 
-vi.mock('@/hooks/useBulkOperations', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useBulkOperations', () => ({
   useBulkOperationJob: vi.fn(),
   useCancelBulkOperation: vi.fn(),
 }));
 
-import { useBulkOperationJob, useCancelBulkOperation } from '@/hooks/useBulkOperations';
+import { useBulkOperationJob, useCancelBulkOperation } from '@servicehub/ui-shared/hooks/useBulkOperations';
 
 const mockUseJob = useBulkOperationJob as ReturnType<typeof vi.fn>;
 const mockUseCancel = useCancelBulkOperation as ReturnType<typeof vi.fn>;

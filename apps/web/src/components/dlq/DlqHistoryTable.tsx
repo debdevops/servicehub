@@ -8,10 +8,10 @@ import {
   AlertCircle,
   Info,
 } from 'lucide-react';
-import type { DlqHistoryItem } from '@/lib/api/dlqHistory';
-import type { CloudProviderType } from '@/lib/api/types';
+import type { DlqHistoryItem } from '@servicehub/ui-shared/lib/api/dlqHistory';
+import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import { StatusBadge, CategoryBadge } from './StatusBadge';
-import { ProviderBadge } from '@/lib/providerStyles';
+import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 
 interface DlqHistoryTableProps {
   items: DlqHistoryItem[];

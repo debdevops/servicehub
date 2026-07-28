@@ -4,14 +4,14 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DlqHistoryPage } from '@/pages/DlqHistoryPage';
 
-vi.mock('@/hooks/useDlqHistory', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useDlqHistory', () => ({
   useDlqHistory: vi.fn(),
   useDlqSummary: vi.fn(),
 }));
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
-vi.mock('@/hooks/useCloudBridge', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useCloudBridge', () => ({
   useProviderCapabilities: vi.fn(),
 }));
 vi.mock('@/components/dlq', () => ({
@@ -29,7 +29,7 @@ vi.mock('@/components/dlq', () => ({
   ),
   BulkOperationProgressPanel: () => <div data-testid="bulk-progress-panel">Progress</div>,
 }));
-vi.mock('@/lib/api/dlqHistory', () => ({
+vi.mock('@servicehub/ui-shared/lib/api/dlqHistory', () => ({
   dlqHistoryApi: {
     downloadExport: vi.fn(() => Promise.resolve()),
     triggerScan: vi.fn(),
@@ -39,11 +39,11 @@ vi.mock('react-hot-toast', () => ({
   default: { success: vi.fn(), error: vi.fn() },
 }));
 
-import { useDlqHistory, useDlqSummary } from '@/hooks/useDlqHistory';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useProviderCapabilities } from '@/hooks/useCloudBridge';
+import { useDlqHistory, useDlqSummary } from '@servicehub/ui-shared/hooks/useDlqHistory';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 import userEvent from '@testing-library/user-event';
-import { dlqHistoryApi } from '@/lib/api/dlqHistory';
+import { dlqHistoryApi } from '@servicehub/ui-shared/lib/api/dlqHistory';
 
 const mockUseDlqHistory = useDlqHistory as ReturnType<typeof vi.fn>;
 const mockUseDlqSummary = useDlqSummary as ReturnType<typeof vi.fn>;

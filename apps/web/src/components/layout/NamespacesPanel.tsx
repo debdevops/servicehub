@@ -1,19 +1,19 @@
 import { NavLink } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Inbox, Radio, GitBranch, RefreshCw, AlertCircle, AlertTriangle, Plus } from 'lucide-react';
 import { useState } from 'react';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues } from '@/hooks/useQueues';
-import { useTopics } from '@/hooks/useTopics';
-import { useSubscriptions } from '@/hooks/useSubscriptions';
-import { useInsightsSummary } from '@/hooks/useInsights';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
+import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
+import { useInsightsSummary } from '@servicehub/ui-shared/hooks/useInsights';
 import { AwsQueueList, AwsTopicList } from '@/components/layout/AwsEntityTree';
-import { setThemeProvider } from '@/lib/providerTheme';
-import { useProviderCapabilities } from '@/hooks/useCloudBridge';
-import { getProviderCapabilities } from '@/lib/api/cloudBridge';
-import { getProviderStyle } from '@/lib/providerStyles';
-import { ProviderIcon } from '@/components/ProviderIcon';
-import type { CloudProviderType } from '@/lib/api/types';
-import { useDemoContext } from '@/lib/demo/DemoContext';
+import { setThemeProvider } from '@servicehub/ui-shared/lib/providerTheme';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
+import { getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
+import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
+import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { ResizablePanel } from './ResizablePanel';
 
 interface NamespaceItemProps {

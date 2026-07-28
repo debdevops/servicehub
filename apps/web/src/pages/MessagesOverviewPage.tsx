@@ -1,17 +1,17 @@
 import { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Inbox, AlertTriangle, Globe, Plus, MessageSquare, Radio, Search, X, ChevronDown, RefreshCw } from 'lucide-react';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues } from '@/hooks/useQueues';
-import { useTopics } from '@/hooks/useTopics';
-import { useSubscriptions } from '@/hooks/useSubscriptions';
-import { useDemoContext } from '@/lib/demo/DemoContext';
-import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
+import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
+import { ProviderBadge, getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
 import { EmptyState } from '@/components/EmptyState';
-import { setThemeProvider } from '@/lib/providerTheme';
-import { useProviderCapabilities } from '@/hooks/useCloudBridge';
-import { getProviderCapabilities } from '@/lib/api/cloudBridge';
-import type { Namespace } from '@/lib/api/types';
+import { setThemeProvider } from '@servicehub/ui-shared/lib/providerTheme';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
+import type { Namespace } from '@servicehub/ui-shared/lib/api/types';
 
 // ============================================================================
 // MessagesOverviewPage — multi-cloud entry point for Active / Dead-Letter

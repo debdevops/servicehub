@@ -15,11 +15,11 @@ import {
   Route,
   Pin,
 } from 'lucide-react';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useNamespaceStats } from '@/hooks/useQueues';
-import { useIsSimulatorMode } from '@/hooks/useSimulator';
-import { useDemoContext } from '@/lib/demo/DemoContext';
-import { getMockStats } from '@/lib/demo/mockProviders';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
+import { useIsSimulatorMode } from '@servicehub/ui-shared/hooks/useSimulator';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
+import { getMockStats } from '@servicehub/ui-shared/lib/demo/mockProviders';
 import { ResizablePanel } from './ResizablePanel';
 
 /**

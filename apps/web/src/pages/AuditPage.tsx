@@ -16,12 +16,12 @@ import {
   Search,
   Clock,
 } from 'lucide-react';
-import { useAuditLogs, useAuditSummary } from '@/hooks/useAudit';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { auditApi, type AuditLogItem, type AuditParams } from '@/lib/api/audit';
-import { ProviderBadge } from '@/lib/providerStyles';
+import { useAuditLogs, useAuditSummary } from '@servicehub/ui-shared/hooks/useAudit';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { auditApi, type AuditLogItem, type AuditParams } from '@servicehub/ui-shared/lib/api/audit';
+import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import { EnvironmentBadge } from '@/components/EnvironmentBadge';
-import type { CloudProviderType } from '@/lib/api/types';
+import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import toast from 'react-hot-toast';
 
 // ─── Constants ────────────────────────────────────────────────────────────────

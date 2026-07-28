@@ -23,7 +23,8 @@
 
     /* Path aliases */
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@servicehub/ui-shared/*": ["../../packages/servicehub-ui-shared/src/*"]
     },
     "types": ["vitest/globals", "@testing-library/jest-dom"]
   },

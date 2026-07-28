@@ -4,13 +4,13 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HealthPage } from '@/pages/HealthPage';
 
-vi.mock('@/hooks/useHealth', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useHealth', () => ({
   useHealthVersion: vi.fn(),
   useHealthStatus: vi.fn(),
   useHealthReport: vi.fn(),
 }));
 
-import { useHealthVersion, useHealthStatus, useHealthReport } from '@/hooks/useHealth';
+import { useHealthVersion, useHealthStatus, useHealthReport } from '@servicehub/ui-shared/hooks/useHealth';
 
 const mockUseHealthVersion = useHealthVersion as ReturnType<typeof vi.fn>;
 const mockUseHealthStatus = useHealthStatus as ReturnType<typeof vi.fn>;

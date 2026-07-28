@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RulesPage } from '@/pages/RulesPage';
 
-vi.mock('@/hooks/useRules', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useRules', () => ({
   useRules: vi.fn(),
   useCreateRule: vi.fn(),
   useUpdateRule: vi.fn(),
@@ -31,7 +31,7 @@ import {
   useToggleRule,
   useReplayAll,
   useGenerateRules,
-} from '@/hooks/useRules';
+} from '@servicehub/ui-shared/hooks/useRules';
 
 const mockUseRules = useRules as ReturnType<typeof vi.fn>;
 const mockUseCreateRule = useCreateRule as ReturnType<typeof vi.fn>;

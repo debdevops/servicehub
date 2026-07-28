@@ -1,15 +1,15 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight, AlertTriangle, Upload, FileJson, X, Inbox } from 'lucide-react';
-import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@/hooks/useNamespaces';
-import { useProviderStatus } from '@/hooks/useCloudBridge';
-import { ProviderIcon } from '@/components/ProviderIcon';
-import { ProviderBadge } from '@/lib/providerStyles';
+import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useProviderStatus } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
+import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { EmptyState } from '@/components/EmptyState';
 import { HelpTooltip } from '@/components/help';
-import { tooltips } from '@/lib/helpContent';
-import type { EnvironmentType, CloudProviderType } from '@/lib/api/types';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
+import type { EnvironmentType, CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import toast from 'react-hot-toast';
 
 /**

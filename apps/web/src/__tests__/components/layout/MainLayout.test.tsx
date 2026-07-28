@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { useNamespaces } from '@/hooks/useNamespaces';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 
 vi.mock('@/components/layout/Header', () => ({
   Header: () => <header data-testid="header">Header</header>,
@@ -20,7 +20,7 @@ vi.mock('@/components/layout/NamespacesPanel', () => ({
 vi.mock('@/components/fab', () => ({
   MessageFAB: (_props: any) => <div data-testid="message-fab">FAB</div>,
 }));
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
 

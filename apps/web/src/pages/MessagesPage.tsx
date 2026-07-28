@@ -8,16 +8,16 @@ import { AwsTopicFanout } from '@/components/aws/AwsTopicFanout';
 import { AIFindingsDropdown } from '@/components/ai';
 import { MessageListSkeleton } from '@/components/messages/MessageListSkeleton';
 import { HelpTooltip } from '@/components/help';
-import { tooltips } from '@/lib/helpContent';
-import { useMessages } from '@/hooks/useMessages';
-import { useClientSideInsights, useInsightsSummary } from '@/hooks/useInsights';
-import { useQueues } from '@/hooks/useQueues';
-import { useSubscriptions } from '@/hooks/useSubscriptions';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useProviderCapabilities } from '@/hooks/useCloudBridge';
-import { getProviderCapabilities } from '@/lib/api/cloudBridge';
-import type { Message, ContentType } from '@/lib/mockData';
-import type { Message as APIMessage, CloudProviderType, ApiError } from '@/lib/api/types';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
+import { useMessages } from '@servicehub/ui-shared/hooks/useMessages';
+import { useClientSideInsights, useInsightsSummary } from '@servicehub/ui-shared/hooks/useInsights';
+import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
+import type { Message, ContentType } from '@servicehub/ui-shared/lib/mockData';
+import type { Message as APIMessage, CloudProviderType, ApiError } from '@servicehub/ui-shared/lib/api/types';
 import toast from 'react-hot-toast';
 
 const PROVIDER_SERVICE_LABELS: Record<CloudProviderType, string> = {

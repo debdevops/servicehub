@@ -8,8 +8,8 @@ import { MainLayout } from '@/components/layout';
 import { WelcomePage } from './pages/WelcomePage';
 import { RouteErrorPage } from './pages/RouteErrorPage';
 import { NotFoundPage } from './pages/NotFoundPage';
-import { DemoModeProvider } from '@/lib/demo/DemoContext';
-import { DEMO_NAMESPACE_IDS } from '@/lib/demo/mockProviders';
+import { DemoModeProvider } from '@servicehub/ui-shared/lib/demo/DemoContext';
+import { DEMO_NAMESPACE_IDS } from '@servicehub/ui-shared/lib/demo/mockProviders';
 
 // Lazy-load heavy pages to improve initial bundle size and cold-start performance
 const DashboardPageLazy = lazy(() => import('./pages/DashboardPage'));

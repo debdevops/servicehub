@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { DlqTimelineDrawer } from '@/components/dlq/DlqTimelineDrawer';
 
-vi.mock('@/hooks/useDlqHistory', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useDlqHistory', () => ({
   useDlqTimeline: vi.fn(),
   useDlqMessageDetail: vi.fn(),
   useUpdateDlqNotes: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useUpdateDlqStatus: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
-import { useDlqTimeline, useDlqMessageDetail, useUpdateDlqStatus } from '@/hooks/useDlqHistory';
+import { useDlqTimeline, useDlqMessageDetail, useUpdateDlqStatus } from '@servicehub/ui-shared/hooks/useDlqHistory';
 
 const mockUseDlqTimeline = useDlqTimeline as ReturnType<typeof vi.fn>;
 const mockUseDlqMessageDetail = useDlqMessageDetail as ReturnType<typeof vi.fn>;

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { X, Clock, AlertCircle, CheckCircle, XCircle, ArrowRight, FileText } from 'lucide-react';
-import { useDlqTimeline, useDlqMessageDetail, useUpdateDlqNotes, useUpdateDlqStatus } from '@/hooks/useDlqHistory';
+import { useDlqTimeline, useDlqMessageDetail, useUpdateDlqNotes, useUpdateDlqStatus } from '@servicehub/ui-shared/hooks/useDlqHistory';
 import { StatusBadge, CategoryBadge } from './StatusBadge';
 
 interface DlqTimelineDrawerProps {

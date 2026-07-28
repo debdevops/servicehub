@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { LiveTailPanel } from '@/components/messages/LiveTailPanel';
 
-vi.mock('@/hooks/useLiveTail', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useLiveTail', () => ({
   useLiveTail: vi.fn(),
 }));
 
-import { useLiveTail } from '@/hooks/useLiveTail';
+import { useLiveTail } from '@servicehub/ui-shared/hooks/useLiveTail';
 
 const mockUseLiveTail = useLiveTail as ReturnType<typeof vi.fn>;
 

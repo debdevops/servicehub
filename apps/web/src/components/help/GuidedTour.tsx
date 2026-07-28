@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
-import { tourSteps, type TourStep } from '@/lib/helpContent';
+import { tourSteps, type TourStep } from '@servicehub/ui-shared/lib/helpContent';
 
 const TOUR_COMPLETED_KEY = 'servicehub_tour_completed';
 

@@ -1,8 +1,8 @@
 import { useEffect, useMemo } from 'react';
 import { Link, useRouteError } from 'react-router-dom';
 import { RefreshCw, Github, Home } from 'lucide-react';
-import { appInsights } from '@/lib/telemetry';
-import { getLastCorrelationId } from '@/lib/api/client';
+import { appInsights } from '@servicehub/ui-shared/lib/telemetry';
+import { getLastCorrelationId } from '@servicehub/ui-shared/lib/api/client';
 
 const GITHUB_ISSUES_URL = 'https://github.com/debdevops/servicehub/issues/new';
 

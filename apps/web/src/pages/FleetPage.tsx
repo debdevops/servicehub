@@ -13,13 +13,13 @@ import {
   PlayCircle,
 } from 'lucide-react';
 import { LineChart, Line, XAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { useFleetOverview } from '@/hooks/useFleet';
-import { useHealthReport } from '@/hooks/useHealth';
-import { useAllNamespacesQueues } from '@/hooks/useQueues';
-import { ProviderIcon } from '@/components/ProviderIcon';
-import { ProviderBadge, PROVIDER_STYLES } from '@/lib/providerStyles';
-import type { FleetHealthSeverity, FleetNamespaceHealth } from '@/lib/api/fleet';
-import type { CloudProviderType } from '@/lib/api/types';
+import { useFleetOverview } from '@servicehub/ui-shared/hooks/useFleet';
+import { useHealthReport } from '@servicehub/ui-shared/hooks/useHealth';
+import { useAllNamespacesQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
+import { ProviderBadge, PROVIDER_STYLES } from '@servicehub/ui-shared/lib/providerStyles';
+import type { FleetHealthSeverity, FleetNamespaceHealth } from '@servicehub/ui-shared/lib/api/fleet';
+import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 
 const WINDOW_OPTIONS = [
   { label: '24h', hours: 24 },

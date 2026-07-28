@@ -16,16 +16,16 @@ import {
   BulkOperationPreviewModal,
   BulkOperationProgressPanel,
 } from '@/components/dlq';
-import { useDlqHistory, useDlqSummary } from '@/hooks/useDlqHistory';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useProviderCapabilities } from '@/hooks/useCloudBridge';
-import { getProviderCapabilities } from '@/lib/api/cloudBridge';
-import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
-import type { Namespace } from '@/lib/api/types';
-import type { BulkOperationType } from '@/lib/api/bulkOperations';
-import { dlqHistoryApi } from '@/lib/api/dlqHistory';
+import { useDlqHistory, useDlqSummary } from '@servicehub/ui-shared/hooks/useDlqHistory';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
+import { ProviderBadge, getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
+import type { Namespace } from '@servicehub/ui-shared/lib/api/types';
+import type { BulkOperationType } from '@servicehub/ui-shared/lib/api/bulkOperations';
+import { dlqHistoryApi } from '@servicehub/ui-shared/lib/api/dlqHistory';
 import { HelpTooltip } from '@/components/help';
-import { tooltips } from '@/lib/helpContent';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 import toast from 'react-hot-toast';
 import { Zap } from 'lucide-react';
 

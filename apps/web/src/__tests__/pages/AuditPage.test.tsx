@@ -3,20 +3,20 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuditPage } from '@/pages/AuditPage';
-import { useAuditLogs, useAuditSummary } from '@/hooks/useAudit';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { auditApi } from '@/lib/api/audit';
+import { useAuditLogs, useAuditSummary } from '@servicehub/ui-shared/hooks/useAudit';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { auditApi } from '@servicehub/ui-shared/lib/api/audit';
 
-vi.mock('@/hooks/useAudit', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useAudit', () => ({
   useAuditLogs: vi.fn(),
   useAuditSummary: vi.fn(),
 }));
 
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
 
-vi.mock('@/lib/api/audit', () => ({
+vi.mock('@servicehub/ui-shared/lib/api/audit', () => ({
   auditApi: {
     downloadExport: vi.fn(() => Promise.resolve()),
     getLogs: vi.fn(),

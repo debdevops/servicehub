@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { CornerDownRight, Send, AlertTriangle, Inbox, Radio } from 'lucide-react';
-import { useSubscriptions } from '@/hooks/useSubscriptions';
-import type { Queue, Topic } from '@/lib/api/types';
+import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
+import type { Queue, Topic } from '@servicehub/ui-shared/lib/api/types';
 
 // ============================================================================
 // AWS-specific sidebar entity tree.

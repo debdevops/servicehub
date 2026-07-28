@@ -12,9 +12,9 @@ import { MessageFAB } from '@/components/fab';
 import { GuidedTour, isTourCompleted } from '@/components/help/GuidedTour';
 import { CommandPalette } from '@/components/CommandPalette';
 import { KeyboardShortcutsOverlay } from '@/components/KeyboardShortcutsOverlay';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { getThemeProvider, setThemeProvider, subscribeThemeProvider } from '@/lib/providerTheme';
-import { useDemoContext } from '@/lib/demo/DemoContext';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { getThemeProvider, setThemeProvider, subscribeThemeProvider } from '@servicehub/ui-shared/lib/providerTheme';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 
 export function MainLayout() {
   const { isDemoMode } = useDemoContext();

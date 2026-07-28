@@ -3,12 +3,12 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RuleTestDialog } from '@/components/rules/RuleTestDialog';
 
-vi.mock('@/hooks/useRules', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useRules', () => ({
   useTestRule: vi.fn(),
 }));
 
-import { useTestRule } from '@/hooks/useRules';
-import type { RuleResponse } from '@/lib/api/rules';
+import { useTestRule } from '@servicehub/ui-shared/hooks/useRules';
+import type { RuleResponse } from '@servicehub/ui-shared/lib/api/rules';
 
 const mockUseTestRule = useTestRule as ReturnType<typeof vi.fn>;
 

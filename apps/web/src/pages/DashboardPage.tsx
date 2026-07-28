@@ -17,18 +17,18 @@ import {
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues, useAllNamespacesQueues, useNamespaceStats, NamespaceQueueStats } from '@/hooks/useQueues';
-import { useTopics } from '@/hooks/useTopics';
-import { useEventStream } from '@/hooks/useEventStream';
-import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useQueues, useAllNamespacesQueues, useNamespaceStats, NamespaceQueueStats } from '@servicehub/ui-shared/hooks/useQueues';
+import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
+import { useEventStream } from '@servicehub/ui-shared/hooks/useEventStream';
+import { ProviderBadge, getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
 import { EnvironmentBadge } from '@/components/EnvironmentBadge';
 import { EmptyState } from '@/components/EmptyState';
-import { setThemeProvider } from '@/lib/providerTheme';
-import { Namespace } from '@/lib/api/types';
-import { apiClient } from '@/lib/api/client';
-import { useDemoContext } from '@/lib/demo/DemoContext';
-import { getHealthGrade } from '@/lib/healthGrade';
+import { setThemeProvider } from '@servicehub/ui-shared/lib/providerTheme';
+import { Namespace } from '@servicehub/ui-shared/lib/api/types';
+import { apiClient } from '@servicehub/ui-shared/lib/api/client';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
+import { getHealthGrade } from '@servicehub/ui-shared/lib/healthGrade';
 
 const DLQ_SPIKE_THRESHOLD = 10;
 

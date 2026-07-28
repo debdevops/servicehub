@@ -2,12 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { BulkOperationPreviewModal } from '@/components/dlq/BulkOperationPreviewModal';
 
-vi.mock('@/hooks/useBulkOperations', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useBulkOperations', () => ({
   useBulkOperationPreview: vi.fn(),
   useCreateBulkOperation: vi.fn(),
 }));
 
-import { useBulkOperationPreview, useCreateBulkOperation } from '@/hooks/useBulkOperations';
+import { useBulkOperationPreview, useCreateBulkOperation } from '@servicehub/ui-shared/hooks/useBulkOperations';
 
 const mockUsePreview = useBulkOperationPreview as ReturnType<typeof vi.fn>;
 const mockUseCreate = useCreateBulkOperation as ReturnType<typeof vi.fn>;

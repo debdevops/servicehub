@@ -16,10 +16,10 @@ import {
   Info,
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues } from '@/hooks/useQueues';
-import { useTopics } from '@/hooks/useTopics';
-import { messagesApi } from '@/lib/api/messages';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
+import { messagesApi } from '@servicehub/ui-shared/lib/api/messages';
 import toast from 'react-hot-toast';
 import {
   generateMessages,
@@ -29,7 +29,7 @@ import {
   type GenerationConfig,
   type VolumePreset,
   GENERATOR_PROPERTY_KEY,
-} from '@/lib/messageGenerator';
+} from '@servicehub/ui-shared/lib/messageGenerator';
 
 // ============================================================================
 // Types

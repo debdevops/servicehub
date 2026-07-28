@@ -4,25 +4,25 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NamespacesPanel } from '@/components/layout/NamespacesPanel';
 
-vi.mock('@/lib/api/client', () => ({
+vi.mock('@servicehub/ui-shared/lib/api/client', () => ({
   apiClient: {
     get: vi.fn().mockResolvedValue({ data: [] }),
   },
 }));
 
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
-vi.mock('@/hooks/useQueues', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({
   useQueues: vi.fn(),
 }));
-vi.mock('@/hooks/useTopics', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useTopics', () => ({
   useTopics: vi.fn(),
 }));
-vi.mock('@/hooks/useSubscriptions', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useSubscriptions', () => ({
   useSubscriptions: vi.fn(),
 }));
-vi.mock('@/hooks/useInsights', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useInsights', () => ({
   useInsightsSummary: vi.fn(),
 }));
 vi.mock('react-hot-toast', () => ({
@@ -30,11 +30,11 @@ vi.mock('react-hot-toast', () => ({
   toast: vi.fn(),
 }));
 
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues } from '@/hooks/useQueues';
-import { useTopics } from '@/hooks/useTopics';
-import { useSubscriptions } from '@/hooks/useSubscriptions';
-import { useInsightsSummary } from '@/hooks/useInsights';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
+import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
+import { useInsightsSummary } from '@servicehub/ui-shared/hooks/useInsights';
 
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;

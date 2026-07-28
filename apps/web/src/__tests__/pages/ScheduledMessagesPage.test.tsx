@@ -6,21 +6,21 @@ import { ScheduledMessagesPage } from '@/pages/ScheduledMessagesPage';
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
-vi.mock('@/hooks/useQueues', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({
   useQueues: vi.fn(),
   useAllNamespacesQueues: vi.fn(),
 }));
-vi.mock('@/hooks/useScheduledMessages', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useScheduledMessages', () => ({
   useScheduledMessages: vi.fn(),
   useCancelScheduledMessage: vi.fn(),
 }));
-vi.mock('@/hooks/useMessages', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useMessages', () => ({
   useSendMessage: vi.fn(),
 }));
-vi.mock('@/hooks/useCloudBridge', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useCloudBridge', () => ({
   useProviderCapabilities: vi.fn(),
 }));
 vi.mock('@/components/CopyButton', () => ({
@@ -32,11 +32,11 @@ vi.mock('react-hot-toast', () => ({
   default: { success: vi.fn(), error: vi.fn() },
 }));
 
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues } from '@/hooks/useQueues';
-import { useScheduledMessages, useCancelScheduledMessage } from '@/hooks/useScheduledMessages';
-import { useSendMessage } from '@/hooks/useMessages';
-import { useProviderCapabilities } from '@/hooks/useCloudBridge';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useScheduledMessages, useCancelScheduledMessage } from '@servicehub/ui-shared/hooks/useScheduledMessages';
+import { useSendMessage } from '@servicehub/ui-shared/hooks/useMessages';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;

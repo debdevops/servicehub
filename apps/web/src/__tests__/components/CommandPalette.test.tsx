@@ -15,7 +15,7 @@ vi.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: () => ({
     data: [
       { id: 'ns-1', name: 'prod-bus', displayName: 'Production Bus', environment: 'Production' },

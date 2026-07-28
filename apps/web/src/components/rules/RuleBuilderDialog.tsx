@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Info, AlertTriangle } from 'lucide-react';
-import type { RuleCondition, RuleAction, RuleResponse, CreateRuleRequest } from '@/lib/api/rules';
-import { findRuleEntityWarnings, type KnownEntities } from '@/lib/ruleValidation';
+import type { RuleCondition, RuleAction, RuleResponse, CreateRuleRequest } from '@servicehub/ui-shared/lib/api/rules';
+import { findRuleEntityWarnings, type KnownEntities } from '@servicehub/ui-shared/lib/ruleValidation';
 
 const FIELD_OPTIONS = [
   { value: 'DeadLetterReason', label: 'Dead Letter Reason' },

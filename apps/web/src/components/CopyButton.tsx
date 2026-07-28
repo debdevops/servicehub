@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Copy, Check } from 'lucide-react';
-import { copyToClipboard } from '@/lib/clipboard';
+import { copyToClipboard } from '@servicehub/ui-shared/lib/clipboard';
 
 interface CopyButtonProps {
   text: string;

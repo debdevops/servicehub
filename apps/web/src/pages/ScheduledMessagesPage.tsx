@@ -3,18 +3,18 @@ import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { Clock, RefreshCw, XCircle, Calendar, AlertCircle, Inbox, CalendarClock, Plus, Info, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues } from '@/hooks/useQueues';
-import { useScheduledMessages, useCancelScheduledMessage } from '@/hooks/useScheduledMessages';
-import { useSendMessage } from '@/hooks/useMessages';
-import { useProviderCapabilities } from '@/hooks/useCloudBridge';
-import { getProviderCapabilities } from '@/lib/api/cloudBridge';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useScheduledMessages, useCancelScheduledMessage } from '@servicehub/ui-shared/hooks/useScheduledMessages';
+import { useSendMessage } from '@servicehub/ui-shared/hooks/useMessages';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CopyButton } from '@/components/CopyButton';
-import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
-import { apiClient } from '@/lib/api/client';
-import { Message, Namespace } from '@/lib/api/types';
-import { useDemoContext } from '@/lib/demo/DemoContext';
+import { ProviderBadge, getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
+import { apiClient } from '@servicehub/ui-shared/lib/api/client';
+import { Message, Namespace } from '@servicehub/ui-shared/lib/api/types';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import toast from 'react-hot-toast';
 
 /**

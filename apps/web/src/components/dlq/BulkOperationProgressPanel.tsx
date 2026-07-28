@@ -1,6 +1,6 @@
 import { CheckCircle2, Loader2, StopCircle, X, XCircle } from 'lucide-react';
-import { useBulkOperationJob, useCancelBulkOperation } from '@/hooks/useBulkOperations';
-import { isTerminalBulkOperationStatus } from '@/lib/api/bulkOperations';
+import { useBulkOperationJob, useCancelBulkOperation } from '@servicehub/ui-shared/hooks/useBulkOperations';
+import { isTerminalBulkOperationStatus } from '@servicehub/ui-shared/lib/api/bulkOperations';
 
 interface BulkOperationProgressPanelProps {
   jobId: string;

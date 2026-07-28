@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Send, X, Plus, Trash2, Clock, Zap } from 'lucide-react';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues } from '@/hooks/useQueues';
-import { useTopics } from '@/hooks/useTopics';
-import { useSendMessage } from '@/hooks/useMessages';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
+import { useSendMessage } from '@servicehub/ui-shared/hooks/useMessages';
 
 // ============================================================================
 // SendMessageModal - Modal for composing and sending messages

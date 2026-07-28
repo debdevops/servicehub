@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Cloud, RefreshCw, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Inbox, Radio, GitBranch } from 'lucide-react';
-import { useProviderStatus, useCloudEntities } from '@/hooks/useCloudBridge';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useNamespaceStats } from '@/hooks/useQueues';
-import { getProviderStyle } from '@/lib/providerStyles';
-import { ProviderIcon } from '@/components/ProviderIcon';
-import type { CloudEntity } from '@/lib/api/cloudBridge';
-import type { CloudProviderType } from '@/lib/api/types';
+import { useProviderStatus, useCloudEntities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
+import { getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
+import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
+import type { CloudEntity } from '@servicehub/ui-shared/lib/api/cloudBridge';
+import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 
 const PROVIDER_LABELS: Record<string, string> = {
   Azure: 'Azure Service Bus',

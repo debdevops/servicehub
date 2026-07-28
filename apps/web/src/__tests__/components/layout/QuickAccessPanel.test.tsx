@@ -4,16 +4,16 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { QuickAccessPanel } from '@/components/layout/QuickAccessPanel';
 
-vi.mock('@/lib/api/client', () => ({
+vi.mock('@servicehub/ui-shared/lib/api/client', () => ({
   apiClient: {
     get: vi.fn().mockResolvedValue({ data: [] }),
   },
 }));
 
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
-vi.mock('@/hooks/useSimulator', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useSimulator', () => ({
   useIsSimulatorMode: vi.fn(),
 }));
 vi.mock('react-hot-toast', () => ({
@@ -21,8 +21,8 @@ vi.mock('react-hot-toast', () => ({
   toast: vi.fn(),
 }));
 
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useIsSimulatorMode } from '@/hooks/useSimulator';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useIsSimulatorMode } from '@servicehub/ui-shared/hooks/useSimulator';
 
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 const mockUseIsSimulatorMode = useIsSimulatorMode as ReturnType<typeof vi.fn>;

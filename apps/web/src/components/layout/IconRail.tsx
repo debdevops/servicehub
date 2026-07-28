@@ -14,7 +14,7 @@ import {
   HelpCircle,
   Settings,
 } from 'lucide-react';
-import { useDemoContext } from '@/lib/demo/DemoContext';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 
 interface RailItem {
   to: string;

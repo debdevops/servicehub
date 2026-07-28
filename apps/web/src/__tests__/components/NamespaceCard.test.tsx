@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NamespaceCard } from '@/pages/DashboardPage';
 
-vi.mock('@/hooks/useQueues', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({
   useQueues: vi.fn(),
   useNamespaceStats: vi.fn(),
 }));
@@ -15,7 +15,7 @@ vi.mock('react-router-dom', async () => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
-import { useQueues, useNamespaceStats } from '@/hooks/useQueues';
+import { useQueues, useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
 
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;
 const mockUseNamespaceStats = useNamespaceStats as ReturnType<typeof vi.fn>;

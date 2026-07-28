@@ -16,10 +16,10 @@ import {
   useResetSimulator,
   useAdvanceTime,
   useInjectDlqFlood,
-} from '@/hooks/useSimulator';
-import { getProviderStyle } from '@/lib/providerStyles';
-import type { CloudProviderType } from '@/lib/api/types';
-import type { SimulatorNamespaceSummary, InjectFaultRequest, DlqFloodRequest } from '@/lib/api/simulator';
+} from '@servicehub/ui-shared/hooks/useSimulator';
+import { getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
+import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
+import type { SimulatorNamespaceSummary, InjectFaultRequest, DlqFloodRequest } from '@servicehub/ui-shared/lib/api/simulator';
 
 // ── Fault type metadata ────────────────────────────────────────────────────
 

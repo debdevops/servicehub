@@ -5,7 +5,7 @@ import {
   AlertCircle, RefreshCw, BarChart2, HelpCircle, Plug,
   Database, ChevronRight, X, Layers, Cloud, Shield
 } from 'lucide-react';
-import { useNamespaces } from '@/hooks/useNamespaces';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

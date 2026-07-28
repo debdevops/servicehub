@@ -54,6 +54,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
+      '@servicehub/ui-shared': resolve(__dirname, '../../packages/servicehub-ui-shared/src'),
     },
   },
   server: {
@@ -132,7 +133,10 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
-    alias: { '@': resolve(__dirname, './src') },
+    alias: {
+      '@': resolve(__dirname, './src'),
+      '@servicehub/ui-shared': resolve(__dirname, '../../packages/servicehub-ui-shared/src'),
+    },
     // Exclude Playwright E2E specs — they are run by `npm run test:e2e`, not Vitest
     exclude: ['e2e/**', 'node_modules/**'],
     coverage: {
@@ -149,25 +153,7 @@ export default defineConfig({
         'src/assets/**',
         // barrel re-export files have no testable logic
         'src/**/index.ts',
-        // pure mock/fixture data — not application logic
-        'src/lib/mockData.ts',
-        'src/lib/aiMockData.ts',
-        'src/lib/insightsMockData.ts',
-        'src/lib/awsMockData.ts',
-        'src/lib/gcpMockData.ts',
-        'src/lib/azureMockData.ts',
-        // test/demo message generator — not application logic
-        'src/lib/messageGenerator.ts',
-        // TypeScript type definitions only — no runtime code
-        'src/lib/api/types.ts',
-        // single-line QueryClient instantiation
-        'src/lib/queryClient.ts',
-        // thin API wrapper — no testable logic beyond axios delegation
-        'src/lib/api/crossCloudTrace.ts',
         // demo / showcase pages — pure UI display with hardcoded data, no business logic
-        'src/pages/AwsDemoPage.tsx',
-        'src/pages/GcpDemoPage.tsx',
-        'src/pages/AzureDemoPage.tsx',
         'src/pages/SimulatorPage.tsx',
       ],
       // ── Code Coverage Thresholds ────────────────────────────────────────

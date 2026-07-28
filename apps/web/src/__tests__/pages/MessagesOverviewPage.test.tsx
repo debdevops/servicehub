@@ -4,10 +4,10 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MessagesOverviewPage } from '@/pages/MessagesOverviewPage';
 
-vi.mock('@/hooks/useNamespaces', () => ({ useNamespaces: vi.fn() }));
-vi.mock('@/hooks/useQueues', () => ({ useQueues: vi.fn() }));
-vi.mock('@/hooks/useTopics', () => ({ useTopics: vi.fn() }));
-vi.mock('@/hooks/useSubscriptions', () => ({ useSubscriptions: vi.fn() }));
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({ useNamespaces: vi.fn() }));
+vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({ useQueues: vi.fn() }));
+vi.mock('@servicehub/ui-shared/hooks/useTopics', () => ({ useTopics: vi.fn() }));
+vi.mock('@servicehub/ui-shared/hooks/useSubscriptions', () => ({ useSubscriptions: vi.fn() }));
 
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async () => {
@@ -15,10 +15,10 @@ vi.mock('react-router-dom', async () => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues } from '@/hooks/useQueues';
-import { useTopics } from '@/hooks/useTopics';
-import { useSubscriptions } from '@/hooks/useSubscriptions';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
+import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
 
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;

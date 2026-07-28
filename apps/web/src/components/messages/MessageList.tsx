@@ -1,8 +1,8 @@
 import { useRef, useMemo, useEffect, useCallback, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Bot, AlertTriangle, CheckCircle, XCircle, Clock } from 'lucide-react';
-import { formatRelativeTime } from '@/lib/utils';
-import type { Message } from '@/lib/mockData';
+import { formatRelativeTime } from '@servicehub/ui-shared/lib/utils';
+import type { Message } from '@servicehub/ui-shared/lib/mockData';
 
 // ============================================================================
 // Types

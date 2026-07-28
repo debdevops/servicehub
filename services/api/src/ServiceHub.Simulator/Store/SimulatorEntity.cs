@@ -38,6 +38,30 @@ public sealed class SimulatorEntity
     /// <summary>Gets or sets whether message ordering is enabled (GCP only).</summary>
     public bool MessageOrderingEnabled { get; set; }
 
+    /// <summary>
+    /// Gets or sets the parent topic name for a GCP Pub/Sub subscription entity (GCP only, null otherwise).
+    /// <para>
+    /// <see cref="Name"/> remains this entity's storage identity — it is the key
+    /// <see cref="ISimulatorStore"/> uses for direct lookups, and several single-segment routes
+    /// (e.g. <c>MessagesController</c>'s <c>queue/{queueName}</c>, <c>CloudBridgeController</c>'s
+    /// <c>visibility/{queueName}</c>) address an entity by that bare name with no separate topic
+    /// parameter to pair it with. <see cref="TopicName"/> is projection metadata only: it exists
+    /// so <c>SimulatedGcpMessagingProvider.ListEntitiesAsync</c> can compose the
+    /// <c>"{TopicName}/{Name}"</c> form that <c>TopicsController</c>, <c>SubscriptionsController</c>,
+    /// and <c>DlqMonitorService</c> already expect (matching the real, non-simulator
+    /// <c>GcpMessagingProvider</c>/<c>AwsMessagingProvider</c> naming convention) — it is never
+    /// written back onto <see cref="Name"/> itself.
+    /// </para>
+    /// <para>
+    /// Do not replace <see cref="Name"/> with a composite <c>"topic/subscription"</c> value to
+    /// avoid this field — that breaks every single-segment route above, since ASP.NET Core decodes
+    /// <c>%2F</c> to a literal <c>/</c> before route matching, so a composite name can never survive
+    /// as one path segment. Doing so would require redesigning those routes to catch-all segments
+    /// first (a separate, cross-provider change affecting AWS too, not a simulator-only fix).
+    /// </para>
+    /// </summary>
+    public string? TopicName { get; set; }
+
     // ── Read ──────────────────────────────────────────────────────────────────
 
     /// <summary>

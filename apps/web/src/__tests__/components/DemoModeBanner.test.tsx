@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { DemoModeBanner } from '@/components/layout/DemoModeBanner';
-import { DemoModeProvider } from '@/lib/demo/DemoContext';
+import { DemoModeProvider } from '@servicehub/ui-shared/lib/demo/DemoContext';
 
 function renderBanner(cloudProvider: 'azure' | 'aws' | 'gcp') {
   return render(

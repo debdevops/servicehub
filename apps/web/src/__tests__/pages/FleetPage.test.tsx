@@ -3,15 +3,15 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import FleetPage from '@/pages/FleetPage';
 
-vi.mock('@/hooks/useFleet', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useFleet', () => ({
   useFleetOverview: vi.fn(),
 }));
 
-vi.mock('@/hooks/useHealth', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useHealth', () => ({
   useHealthReport: vi.fn(),
 }));
 
-vi.mock('@/hooks/useQueues', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({
   useAllNamespacesQueues: vi.fn(),
 }));
 
@@ -21,9 +21,9 @@ vi.mock('react-router-dom', async () => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
-import { useFleetOverview } from '@/hooks/useFleet';
-import { useHealthReport } from '@/hooks/useHealth';
-import { useAllNamespacesQueues } from '@/hooks/useQueues';
+import { useFleetOverview } from '@servicehub/ui-shared/hooks/useFleet';
+import { useHealthReport } from '@servicehub/ui-shared/hooks/useHealth';
+import { useAllNamespacesQueues } from '@servicehub/ui-shared/hooks/useQueues';
 const mockUseFleetOverview = useFleetOverview as ReturnType<typeof vi.fn>;
 const mockUseHealthReport = useHealthReport as ReturnType<typeof vi.fn>;
 const mockUseAllNamespacesQueues = useAllNamespacesQueues as ReturnType<typeof vi.fn>;

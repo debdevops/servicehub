@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, RefreshCw, Trash2, X, ShieldAlert } from 'lucide-react';
-import { useBulkOperationPreview, useCreateBulkOperation } from '@/hooks/useBulkOperations';
-import type { BulkOperationFilter, BulkOperationType } from '@/lib/api/bulkOperations';
+import { useBulkOperationPreview, useCreateBulkOperation } from '@servicehub/ui-shared/hooks/useBulkOperations';
+import type { BulkOperationFilter, BulkOperationType } from '@servicehub/ui-shared/lib/api/bulkOperations';
 
 interface BulkOperationPreviewModalProps {
   operationType: BulkOperationType;

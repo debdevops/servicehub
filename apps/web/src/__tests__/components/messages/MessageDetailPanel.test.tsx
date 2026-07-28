@@ -4,17 +4,17 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MessageDetailPanel } from '@/components/messages/MessageDetailPanel';
 
-vi.mock('@/hooks/useTabPersistence', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useTabPersistence', () => ({
   useTabPersistence: vi.fn(() => ['properties', vi.fn()]),
 }));
-vi.mock('@/hooks/useMessages', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useMessages', () => ({
   useReplayMessage: vi.fn(),
   usePurgeMessage: vi.fn(),
 }));
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
-vi.mock('@/hooks/useCloudBridge', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useCloudBridge', () => ({
   useProviderCapabilities: vi.fn(),
 }));
 vi.mock('@/components/messages/tabs', () => ({
@@ -39,10 +39,10 @@ vi.mock('react-hot-toast', () => ({
   default: { success: vi.fn(), error: vi.fn() },
 }));
 
-import { useTabPersistence } from '@/hooks/useTabPersistence';
-import { useReplayMessage, usePurgeMessage } from '@/hooks/useMessages';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useProviderCapabilities } from '@/hooks/useCloudBridge';
+import { useTabPersistence } from '@servicehub/ui-shared/hooks/useTabPersistence';
+import { useReplayMessage, usePurgeMessage } from '@servicehub/ui-shared/hooks/useMessages';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 
 const mockUseTabPersistence = useTabPersistence as ReturnType<typeof vi.fn>;
 const mockUseReplayMessage = useReplayMessage as ReturnType<typeof vi.fn>;

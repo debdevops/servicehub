@@ -5,13 +5,13 @@ import { Plus, Zap, RefreshCw, ToggleLeft, ToggleRight, Pencil, Trash2, FlaskCon
 import { RuleBuilderDialog, TemplateGalleryDialog, RuleTestDialog } from '@/components/rules';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { HelpTooltip } from '@/components/help';
-import { tooltips } from '@/lib/helpContent';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useAllNamespacesQueues } from '@/hooks/useQueues';
-import { apiClient } from '@/lib/api/client';
-import { useDemoContext } from '@/lib/demo/DemoContext';
-import { findRuleEntityWarnings, type KnownEntities } from '@/lib/ruleValidation';
-import type { Topic } from '@/lib/api/types';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useAllNamespacesQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { apiClient } from '@servicehub/ui-shared/lib/api/client';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
+import { findRuleEntityWarnings, type KnownEntities } from '@servicehub/ui-shared/lib/ruleValidation';
+import type { Topic } from '@servicehub/ui-shared/lib/api/types';
 import {
   useRules,
   useCreateRule,
@@ -20,14 +20,14 @@ import {
   useToggleRule,
   useReplayAll,
   useGenerateRules,
-} from '@/hooks/useRules';
+} from '@servicehub/ui-shared/hooks/useRules';
 import type {
   RuleResponse,
   RuleCondition,
   RuleAction,
   RuleTemplateResponse,
   CreateRuleRequest,
-} from '@/lib/api/rules';
+} from '@servicehub/ui-shared/lib/api/rules';
 
 export function RulesPage() {
   const { data: rules, isLoading, isError, refetch, isFetching } = useRules();

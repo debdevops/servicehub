@@ -2,16 +2,16 @@ import { useState } from 'react';
 import { FileText, Code, Bot, List, Inbox, AlertTriangle } from 'lucide-react';
 import { Play, Clipboard, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import { useTabPersistence, type DetailTab } from '@/hooks/useTabPersistence';
+import { useTabPersistence, type DetailTab } from '@servicehub/ui-shared/hooks/useTabPersistence';
 import { PropertiesTab, BodyTab, AIInsightsTab, HeadersTab } from './tabs';
-import { useReplayMessage, usePurgeMessage } from '@/hooks/useMessages';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useProviderCapabilities } from '@/hooks/useCloudBridge';
-import { getProviderCapabilities } from '@/lib/api/cloudBridge';
+import { useReplayMessage, usePurgeMessage } from '@servicehub/ui-shared/hooks/useMessages';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CopyButton } from '@/components/CopyButton';
-import type { Message } from '@/lib/mockData';
-import type { AIInsight } from '@/lib/api/types';
+import type { Message } from '@servicehub/ui-shared/lib/mockData';
+import type { AIInsight } from '@servicehub/ui-shared/lib/api/types';
 import toast from 'react-hot-toast';
 
 // ============================================================================
