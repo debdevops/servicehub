@@ -219,6 +219,7 @@ export function MessagesPage() {
       return;
     }
     setSelectedMessageId(null);
+    setEvidenceFilter(null);
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
       next.delete('message');
@@ -426,6 +427,7 @@ export function MessagesPage() {
   const handleQueueTabChange = (tab: QueueTab) => {
     setQueueTab(tab);
     setSelectedMessageId(null); // Clear selection when switching tabs
+    setEvidenceFilter(null); // AI pattern message IDs don't carry over across tabs
 
     // Update URL to keep it in sync with tab state (and drop the stale message link)
     const newParams = new URLSearchParams(searchParams);
