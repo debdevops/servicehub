@@ -132,4 +132,30 @@ describe('LiveTailPanel', () => {
 
     expect(stop).toHaveBeenCalledTimes(1);
   });
+
+  it('restarts the session when the watched entity changes while still open', () => {
+    const { rerender } = render(
+      <LiveTailPanel isOpen={true} onClose={vi.fn()} namespaceId="ns-1" entityName="orders" />,
+    );
+    expect(start).toHaveBeenCalledTimes(1);
+
+    rerender(<LiveTailPanel isOpen={true} onClose={vi.fn()} namespaceId="ns-1" entityName="checkout" />);
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(start).toHaveBeenCalledTimes(2);
+  });
+
+  it('restarts the session when the dead-letter tab toggles while still open', () => {
+    const { rerender } = render(
+      <LiveTailPanel isOpen={true} onClose={vi.fn()} namespaceId="ns-1" entityName="orders" fromDeadLetter={false} />,
+    );
+    expect(start).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <LiveTailPanel isOpen={true} onClose={vi.fn()} namespaceId="ns-1" entityName="orders" fromDeadLetter={true} />,
+    );
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(start).toHaveBeenCalledTimes(2);
+  });
 });

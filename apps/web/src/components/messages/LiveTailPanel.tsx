@@ -56,17 +56,15 @@ export function LiveTailPanel({
     fromDeadLetter,
   });
 
-  // Start watching the moment the panel opens; always stop when it closes so a
-  // background poll never keeps running against a panel the user can't see.
+  // Start watching the moment the panel opens, and restart whenever the watched entity
+  // changes while it stays open — otherwise switching queues/tabs mid-session would keep
+  // streaming the old entity under the newly-displayed name. Always stop on close/unmount.
   useEffect(() => {
-    if (isOpen) {
-      start();
-    } else {
-      stop();
-    }
-    // start/stop are stable (useCallback with no changing deps) — only isOpen should retrigger this.
+    if (!isOpen) return;
+    start();
+    return () => stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+  }, [isOpen, namespaceId, entityName, subscriptionName, fromDeadLetter]);
 
   if (!isOpen) return null;
 
