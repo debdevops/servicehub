@@ -520,7 +520,7 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { data: namespaces, isLoading, isFetching, refetch, dataUpdatedAt } = useNamespaces();
+  const { data: namespaces, isLoading, isFetching, isError: namespacesError, refetch, dataUpdatedAt } = useNamespaces();
 
   // Push updates via SSE; while connected, polling relaxes to a safety net.
   const { connected: sseConnected } = useEventStream();
@@ -673,6 +673,11 @@ export function DashboardPage() {
               <SkeletonCard key={i} />
             ))}
           </div>
+        ) : namespacesError && (!namespaces || namespaces.length === 0) ? (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+            <p className="text-red-700 font-medium">Unable to reach the API server</p>
+            <p className="text-red-500 text-sm mt-1">Ensure the backend is running and try again.</p>
+          </div>
         ) : !namespaces || namespaces.length === 0 ? (
           <EmptyState
             icon={Globe}
@@ -682,6 +687,13 @@ export function DashboardPage() {
           />
         ) : (
           <>
+            {namespacesError && (
+              <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 mb-4 text-sm text-amber-700">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                Unable to refresh namespaces — showing last known data.
+              </div>
+            )}
+
             {/* Aggregate Stats Bar */}
             <AggregateSummaryBar stats={aggregateStats} />
 

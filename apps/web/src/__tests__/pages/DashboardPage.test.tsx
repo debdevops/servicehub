@@ -117,6 +117,32 @@ describe('DashboardPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/connect');
   });
 
+  it('shows full-page error (not the empty state) when namespaces fetch fails with no cached data', () => {
+    mockUseNamespaces.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetching: false,
+      isError: true,
+      refetch: vi.fn(),
+    });
+    render(<DashboardPage />, { wrapper: createWrapper() });
+    expect(screen.getByText('Unable to reach the API server')).toBeInTheDocument();
+    expect(screen.queryByText('No namespaces connected yet')).not.toBeInTheDocument();
+  });
+
+  it('shows stale-data warning but keeps dashboard visible when a refresh fails with cached data', async () => {
+    mockUseNamespaces.mockReturnValue({
+      data: [mockNamespace],
+      isLoading: false,
+      isFetching: false,
+      isError: true,
+      refetch: vi.fn(),
+    });
+    render(<DashboardPage />, { wrapper: createWrapper() });
+    expect(screen.getByText(/unable to refresh namespaces/i)).toBeInTheDocument();
+    expect(await screen.findByText('My Namespace')).toBeInTheDocument();
+  });
+
   it('renders one NamespaceCard per namespace (displayName visible)', async () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(await screen.findByText('My Namespace')).toBeInTheDocument();
