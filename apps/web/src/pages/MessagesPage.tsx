@@ -404,6 +404,9 @@ export function MessagesPage() {
     return result;
   }, [messages, evidenceFilter, searchQuery, statusFilter]);
 
+  // Whether the empty result set below is due to an active filter rather than a truly empty queue
+  const hasActiveFilter = !!evidenceFilter || !!searchQuery.trim() || statusFilter !== 'all';
+
   // Active AI insights count - prefer client-side analysis, fallback to backend summary
   const activeInsightsCount = displayInsights?.length || insightsSummary?.activeCount || 0;
 
@@ -794,6 +797,7 @@ export function MessagesPage() {
           isLoadingMore={isLoadingMore}
           onLoadMore={handleLoadMore}
           isSyncing={isTabSyncing}
+          isFiltered={hasActiveFilter}
           tabLabels={isAwsNamespace ? {
             active: 'Queue',
             deadletter: 'DLQ',

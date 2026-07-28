@@ -22,6 +22,8 @@ interface MessageListProps {
   onLoadMore?: () => void;
   /** True while a tab switch is waiting for fresh messages from the API. */
   isSyncing?: boolean;
+  /** True when search/status/AI-evidence filters are active, so an empty result set isn't misreported as an empty queue. */
+  isFiltered?: boolean;
   /**
    * Provider-specific tab wording. Defaults to Azure's "Active" / "Dead-Letter";
    * AWS passes "Queue" / "DLQ" plus a tooltip naming the separate DLQ queue.
@@ -182,6 +184,7 @@ export function MessageList({
   isLoadingMore = false,
   onLoadMore,
   isSyncing = false,
+  isFiltered = false,
   tabLabels = { active: 'Active', deadletter: 'Dead-Letter' },
 }: MessageListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -327,6 +330,14 @@ export function MessageList({
               </p>
               <p className="text-sm text-gray-400 text-center max-w-xs">
                 Fetching the latest messages from the queue
+              </p>
+            </div>
+          ) : isFiltered ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8">
+              <CheckCircle size={48} className="text-gray-300 mb-4" />
+              <p className="text-lg font-medium">No matching messages</p>
+              <p className="text-sm text-gray-400 text-center max-w-xs">
+                No messages match the current search or filter. Try clearing it to see the full queue.
               </p>
             </div>
           ) : (
