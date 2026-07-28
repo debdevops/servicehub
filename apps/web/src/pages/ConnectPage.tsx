@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight, AlertTriangle, Upload, FileJson, X, Inbox } from 'lucide-react';
-import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight, AlertTriangle, Upload, FileJson, X, Inbox, PlugZap, RefreshCw } from 'lucide-react';
+import { useNamespaces, useCreateNamespace, useDeleteNamespace, useTestConnection } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useProviderStatus } from '@servicehub/ui-shared/hooks/useCloudBridge';
 import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
 import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
@@ -95,6 +95,7 @@ export function ConnectPage() {
   const { data: namespaces, isLoading } = useNamespaces();
   const createNamespace = useCreateNamespace();
   const deleteNamespace = useDeleteNamespace();
+  const testConnection = useTestConnection();
 
   // Whether the AWS/GCP providers are actually enabled on this server
   // (CloudProviders:{provider}:Enabled). Treated as disabled until known.
@@ -850,6 +851,20 @@ export function ConnectPage() {
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => testConnection.mutate(ns.id)}
+                          disabled={testConnection.isPending && testConnection.variables === ns.id}
+                          className="p-1.5 hover:bg-primary-100 text-primary-600 rounded-lg transition-colors disabled:opacity-50"
+                          type="button"
+                          aria-label={`Test connection to ${ns.displayName || ns.name}`}
+                          title="Test connection"
+                        >
+                          {testConnection.isPending && testConnection.variables === ns.id ? (
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <PlugZap className="w-4 h-4" />
+                          )}
+                        </button>
                         <button
                           onClick={() => navigate(`/messages?namespace=${ns.id}`)}
                           className="px-3 py-1.5 text-white text-sm font-medium rounded-lg transition-colors bg-primary-500 hover:bg-primary-600"

@@ -181,7 +181,7 @@ export function DlqHistoryPage() {
   // Filters
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>();
-  const [entityFilter, setEntityFilter] = useState('');
+  const [entityFilter, setEntityFilter] = useState(searchParams.get('entity') ?? '');
   const [providerFilter, setProviderFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);

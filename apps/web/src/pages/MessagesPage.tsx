@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useDeferredValue } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause, Radio, Inbox } from 'lucide-react';
+import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause, Radio, Inbox, Clock, Archive } from 'lucide-react';
 import { MessageList, MessageDetailPanel, LiveTailPanel, type QueueTab } from '@/components/messages';
 import { EmptyState } from '@/components/EmptyState';
 import { AwsTopicFanout } from '@/components/aws/AwsTopicFanout';
@@ -190,6 +190,9 @@ export function MessagesPage() {
   const { data: capabilitiesMap } = useProviderCapabilities();
   const supportsRepeatablePeek = getProviderCapabilities(capabilitiesMap, currentProvider)?.supportsRepeatablePeek ?? true;
   const canLiveTail = supportsRepeatablePeek && !isAwsTopicFanout && !!entityName;
+  const supportsScheduledMessages = getProviderCapabilities(capabilitiesMap, currentProvider)?.supportsScheduledMessages ?? true;
+  const canViewScheduled = entityType === 'queue' && !!namespaceId && !!queueName && supportsScheduledMessages;
+  const canViewDlqHistory = queueTab === 'deadletter' && !!namespaceId && !!entityName;
 
   // Pagination constants and state
   const BATCH_SIZE = 50; // Load 50 messages per batch for optimal performance
@@ -703,6 +706,32 @@ export function MessagesPage() {
           >
             <Radio className="w-4 h-4" />
             <span className="hidden sm:inline">Live Tail</span>
+          </button>
+        )}
+
+        {/* Scheduled Messages */}
+        {canViewScheduled && (
+          <button
+            onClick={() => navigate(`/scheduled?namespace=${namespaceId}&queue=${encodeURIComponent(queueName)}`)}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium transition-colors"
+            aria-label="View scheduled messages for this queue"
+            title="View messages scheduled for future delivery in this queue"
+          >
+            <Clock className="w-4 h-4" />
+            <span className="hidden sm:inline">Scheduled</span>
+          </button>
+        )}
+
+        {/* DLQ History */}
+        {canViewDlqHistory && (
+          <button
+            onClick={() => navigate(`/dlq-history?namespace=${namespaceId}&entity=${encodeURIComponent(entityName)}`)}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium transition-colors"
+            aria-label="View DLQ history for this entity"
+            title="View dead-letter history and replay tools for this entity"
+          >
+            <Archive className="w-4 h-4" />
+            <span className="hidden sm:inline">DLQ History</span>
           </button>
         )}
       </div>

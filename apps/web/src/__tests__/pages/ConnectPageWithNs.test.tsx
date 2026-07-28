@@ -45,6 +45,11 @@ vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
     mutateAsync: mockDeleteNs,
     isPending: false,
   }),
+  useTestConnection: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+    variables: undefined,
+  }),
 }));
 
 vi.mock('react-hot-toast', () => ({

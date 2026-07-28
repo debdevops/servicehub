@@ -22,6 +22,11 @@ vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
     mutateAsync: vi.fn().mockResolvedValue(undefined),
     isPending: false,
   }),
+  useTestConnection: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+    variables: undefined,
+  }),
 }));
 
 vi.mock('@servicehub/ui-shared/hooks/useCloudBridge', () => ({
