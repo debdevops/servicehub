@@ -252,8 +252,13 @@ export function ConnectPage() {
   };
 
   const handleDeleteConfirm = async () => {
-    await deleteNamespace.mutateAsync(deleteConfirm.id);
-    setDeleteConfirm({ isOpen: false, id: '', name: '' });
+    try {
+      await deleteNamespace.mutateAsync(deleteConfirm.id);
+    } catch {
+      // Error handled by mutation hook
+    } finally {
+      setDeleteConfirm({ isOpen: false, id: '', name: '' });
+    }
   };
 
   const handleDeleteCancel = () => {
