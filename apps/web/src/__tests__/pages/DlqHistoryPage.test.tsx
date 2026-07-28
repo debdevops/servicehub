@@ -87,6 +87,7 @@ const mockSummary = {
   replayedMessages: 10,
   archivedMessages: 3,
   totalMessages: 18,
+  byCategory: { MaxDelivery: 7, Transient: 3 },
 };
 
 function createWrapper(initialPath = '/dlq-history?namespace=ns1') {
@@ -240,6 +241,48 @@ describe('DlqHistoryPage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><DlqHistoryPage /></Wrapper>);
     expect(screen.queryByText('Replayed')).not.toBeInTheDocument();
+  });
+
+  describe('Failure category breakdown', () => {
+    it('renders a chip per non-zero category, sorted by count descending', () => {
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      expect(screen.getByText('By Failure Category')).toBeInTheDocument();
+      const maxDelivery = screen.getByRole('button', { name: /MaxDelivery · 7/ });
+      const transient = screen.getByRole('button', { name: /Transient · 3/ });
+      expect(maxDelivery).toBeInTheDocument();
+      expect(transient).toBeInTheDocument();
+    });
+
+    it('does not render when byCategory is empty or missing', () => {
+      mockUseDlqSummary.mockReturnValue({ data: { ...mockSummary, byCategory: {} } });
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+      expect(screen.queryByText('By Failure Category')).not.toBeInTheDocument();
+    });
+
+    it('sets the category filter chip when a category is clicked', async () => {
+      const user = userEvent.setup();
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      await user.click(screen.getByRole('button', { name: /MaxDelivery · 7/ }));
+
+      expect(screen.getByText('Category: MaxDelivery')).toBeInTheDocument();
+    });
+
+    it('toggles the category filter off when the active category is clicked again', async () => {
+      const user = userEvent.setup();
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      await user.click(screen.getByRole('button', { name: /MaxDelivery · 7/ }));
+      expect(screen.getByText('Category: MaxDelivery')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /MaxDelivery · 7/ }));
+      expect(screen.queryByText('Category: MaxDelivery')).not.toBeInTheDocument();
+    });
   });
 
   describe('Bulk operations', () => {

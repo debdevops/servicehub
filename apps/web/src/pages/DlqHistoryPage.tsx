@@ -112,6 +112,46 @@ function TrendChart({ trend }: { trend: TrendPoint[] }) {
   );
 }
 
+// ─── Failure Category Breakdown — clickable chips backed by summary.byCategory ─
+
+function CategoryBreakdown({
+  byCategory,
+  activeCategory,
+  onSelectCategory,
+}: {
+  byCategory: Record<string, number>;
+  activeCategory?: string;
+  onSelectCategory: (category: string) => void;
+}) {
+  const entries = Object.entries(byCategory)
+    .filter(([, count]) => count > 0)
+    .sort(([, a], [, b]) => b - a);
+
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-3">
+      <h3 className="text-sm font-semibold text-gray-700 mb-2.5">By Failure Category</h3>
+      <div className="flex flex-wrap gap-1.5">
+        {entries.map(([category, count]) => (
+          <button
+            key={category}
+            onClick={() => onSelectCategory(category)}
+            className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors ${
+              activeCategory === category
+                ? 'bg-primary-600 text-white border-primary-600'
+                : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-primary-300'
+            }`}
+            title={`Filter table to ${category}`}
+          >
+            {category} · {count.toLocaleString()}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Namespace widget strip — one card per connected cloud namespace ─
 
 function NamespaceDlqWidget({
@@ -451,6 +491,20 @@ export function DlqHistoryPage() {
         {/* DLQ Trend Chart */}
         {summary?.dailyTrend && summary.dailyTrend.length > 0 && (
           <TrendChart trend={summary.dailyTrend} />
+        )}
+
+        {/* Failure Category Breakdown — summary.byCategory was already returned by
+            GET /dlq/summary but never rendered; surfacing it here gives an at-a-glance
+            "what's actually failing" view without leaving the page. */}
+        {summary?.byCategory && Object.keys(summary.byCategory).length > 0 && (
+          <CategoryBreakdown
+            byCategory={summary.byCategory}
+            activeCategory={categoryFilter}
+            onSelectCategory={(category) => {
+              setCategoryFilter(category === categoryFilter ? undefined : category);
+              setPage(1);
+            }}
+          />
         )}
 
         {/* Recurring Failure Signatures */}
