@@ -134,6 +134,39 @@ describe('connectLiveTail', () => {
     await vi.waitFor(() => expect(refreshSpaToken).toHaveBeenCalled());
   });
 
+  it('retries once with the refreshed token and connects on success', async () => {
+    fetchMock
+      .mockResolvedValueOnce({ ok: false, status: 401, body: null } as unknown as Response)
+      .mockResolvedValueOnce(sseResponse([': connected\n\n']));
+    const onConnectionChange = vi.fn();
+
+    disconnect = connectLiveTail({
+      namespaceId: 'ns-1',
+      entityName: 'orders',
+      onMessage: vi.fn(),
+      onConnectionChange,
+    });
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(onConnectionChange).toHaveBeenCalledWith(true));
+  });
+
+  it('flips to disconnected instead of hanging when the retried request also 401s', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 401, body: null } as unknown as Response);
+    const onConnectionChange = vi.fn();
+
+    disconnect = connectLiveTail({
+      namespaceId: 'ns-1',
+      entityName: 'orders',
+      onMessage: vi.fn(),
+      onConnectionChange,
+    });
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(onConnectionChange).toHaveBeenCalledWith(false);
+    expect(onConnectionChange).not.toHaveBeenCalledWith(true);
+  });
+
   it('disconnect aborts the in-flight request', async () => {
     let capturedSignal: AbortSignal | undefined;
     fetchMock.mockImplementation((_url: string, init: RequestInit) => {

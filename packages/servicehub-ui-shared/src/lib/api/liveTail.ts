@@ -29,7 +29,9 @@ export interface LiveTailOptions extends LiveTailParams {
  * explicit, opt-in viewing session tied to one entity; leaving a background reconnect loop
  * running against a cloud provider after the user has moved on would be wasted API cost with
  * no one watching. A drop simply flips `connected` to false; the caller re-invokes
- * `connectLiveTail` to resume watching.
+ * `connectLiveTail` to resume watching. The one exception is a 401 on the initial connect:
+ * that's a stale token, not an abandoned session, so it gets a single retry with a refreshed
+ * token before falling back to the same "flip to disconnected" behavior as any other drop.
  *
  * Returns a disconnect function.
  */
@@ -37,6 +39,7 @@ export function connectLiveTail(options: LiveTailOptions): () => void {
   const { namespaceId, entityName, subscriptionName, fromDeadLetter, onMessage, onConnectionChange, onSessionExpired, onUnsupported } = options;
   let active = true;
   let controller: AbortController | null = null;
+  let retriedAfterAuthRefresh = false;
 
   const params = new URLSearchParams({ namespaceId, entityName });
   if (subscriptionName) params.set('subscriptionName', subscriptionName);
@@ -60,7 +63,17 @@ export function connectLiveTail(options: LiveTailOptions): () => void {
       });
 
       if (response.status === 401) {
-        await refreshSpaToken();
+        if (!retriedAfterAuthRefresh) {
+          retriedAfterAuthRefresh = true;
+          const refreshed = await refreshSpaToken();
+          if (active && refreshed) {
+            await run();
+            return;
+          }
+        }
+        if (active) {
+          onConnectionChange?.(false);
+        }
         return;
       }
 
