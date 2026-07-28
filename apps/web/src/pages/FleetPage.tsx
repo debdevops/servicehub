@@ -356,7 +356,9 @@ export default function FleetPage() {
                       <th className="px-4 py-2 font-medium text-right">Active</th>
                       <th className="px-4 py-2 font-medium text-right">DLQ Active</th>
                       <th className="px-4 py-2 font-medium text-right">New</th>
+                      <th className="px-4 py-2 font-medium text-right">Resolved</th>
                       <th className="px-4 py-2 font-medium">Top category</th>
+                      <th className="px-4 py-2 font-medium">Top entity</th>
                       <th className="px-4 py-2 font-medium">Oldest</th>
                       <th className="px-4 py-2"></th>
                       <th className="px-4 py-2"></th>
@@ -402,7 +404,13 @@ export default function FleetPage() {
                           <td className={`px-4 py-2.5 text-right ${n.newInWindow > 0 ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
                             {n.newInWindow > 0 ? `+${n.newInWindow}` : '0'}
                           </td>
+                          <td className="px-4 py-2.5 text-right text-gray-600">
+                            {n.resolvedInWindow > 0 ? n.resolvedInWindow : '—'}
+                          </td>
                           <td className="px-4 py-2.5 text-gray-600">{n.topCategory ?? '—'}</td>
+                          <td className="px-4 py-2.5 text-gray-600">
+                            {n.topEntity ? `${n.topEntity} (${n.topEntityCount})` : '—'}
+                          </td>
                           <td className="px-4 py-2.5 text-gray-500">
                             <span className="inline-flex items-center gap-1">
                               <Clock className="w-3 h-3" />

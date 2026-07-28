@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import FleetPage from '@/pages/FleetPage';
 
@@ -185,6 +185,23 @@ describe('FleetPage', () => {
 
     fireEvent.click(bulkLinks[0]);
     expect(mockNavigate).toHaveBeenCalledWith('/dlq-history?namespace=ns-dev-active&openBulk=true');
+  });
+
+  it('shows per-namespace resolved count and top entity', () => {
+    mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    renderPage();
+
+    expect(screen.getByText('orders (40)')).toBeInTheDocument();
+    expect(screen.getByText('events (5)')).toBeInTheDocument();
+
+    const ordersRow = screen.getByText('orders-prod').closest('tr');
+    expect(ordersRow).not.toBeNull();
+    expect(within(ordersRow as HTMLElement).getByText('1')).toBeInTheDocument(); // resolvedInWindow
+
+    const healthyRow = screen.getByText('reporting-dev').closest('tr');
+    expect(healthyRow).not.toBeNull();
+    // resolvedInWindow (0) and topEntity (null) both render as '—' for this namespace
+    expect(within(healthyRow as HTMLElement).getAllByText('—').length).toBeGreaterThanOrEqual(2);
   });
 
   it('links back to the per-namespace dashboard', () => {
