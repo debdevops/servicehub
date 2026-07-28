@@ -8,6 +8,7 @@ import {
   HardDrive,
   Clock,
   RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 
 // Maps a health-check entry name (registered in Program.cs / AwsDependencyInjection /
@@ -88,7 +89,12 @@ export function HealthPage() {
   const { data: report, refetch: refetchReport } = useHealthReport();
 
   const isLoading = versionLoading || statusLoading;
-  const hasError = versionError || statusError;
+  const hasError = Boolean(versionError || statusError);
+  const hasData = Boolean(version || status);
+  // A transient poll failure shouldn't blank out a dashboard that's already showing
+  // good cached data — only fall back to the full-page error when there's nothing to show.
+  const showFullPageError = hasError && !isLoading && !hasData;
+  const showStaleWarning = hasError && !isLoading && hasData;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -120,7 +126,7 @@ export function HealthPage() {
           </div>
         )}
 
-        {hasError && !isLoading && (
+        {showFullPageError && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
             <p className="text-red-700 font-medium">
               Unable to reach the API server
@@ -131,8 +137,15 @@ export function HealthPage() {
           </div>
         )}
 
-        {!isLoading && !hasError && (
+        {!isLoading && !showFullPageError && (
           <>
+            {showStaleWarning && (
+              <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 mb-4 text-sm text-amber-700">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                Unable to refresh from the API — showing last known data.
+              </div>
+            )}
+
             {/* Health badge */}
             <div className="flex items-center gap-3 mb-6">
               <span
