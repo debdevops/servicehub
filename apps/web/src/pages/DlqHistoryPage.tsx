@@ -15,6 +15,7 @@ import {
   DlqTimelineDrawer,
   BulkOperationPreviewModal,
   BulkOperationProgressPanel,
+  DlqSignaturesPanel,
 } from '@/components/dlq';
 import { useDlqHistory, useDlqSummary } from '@servicehub/ui-shared/hooks/useDlqHistory';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
@@ -443,6 +444,12 @@ export function DlqHistoryPage() {
         {summary?.dailyTrend && summary.dailyTrend.length > 0 && (
           <TrendChart trend={summary.dailyTrend} />
         )}
+
+        {/* Recurring Failure Signatures */}
+        <DlqSignaturesPanel
+          namespaceId={namespaceId}
+          onFilterEntity={(entityName) => { setEntityFilter(entityName); setPage(1); }}
+        />
 
         {/* Filter Bar */}
         <div className="flex items-center gap-2 flex-wrap">

@@ -28,6 +28,7 @@ vi.mock('@/components/dlq', () => ({
     <div data-testid="bulk-preview-modal">Preview: {operationType}</div>
   ),
   BulkOperationProgressPanel: () => <div data-testid="bulk-progress-panel">Progress</div>,
+  DlqSignaturesPanel: () => <div data-testid="dlq-signatures-panel" />,
 }));
 vi.mock('@servicehub/ui-shared/lib/api/dlqHistory', () => ({
   dlqHistoryApi: {
