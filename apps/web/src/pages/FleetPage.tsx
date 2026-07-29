@@ -357,6 +357,7 @@ export default function FleetPage() {
                       <th className="px-4 py-2 font-medium text-right">DLQ Active</th>
                       <th className="px-4 py-2 font-medium text-right">New</th>
                       <th className="px-4 py-2 font-medium text-right">Resolved</th>
+                      <th className="px-4 py-2 font-medium text-right">Total</th>
                       <th className="px-4 py-2 font-medium">Top category</th>
                       <th className="px-4 py-2 font-medium">Top entity</th>
                       <th className="px-4 py-2 font-medium">Oldest</th>
@@ -407,6 +408,7 @@ export default function FleetPage() {
                           <td className="px-4 py-2.5 text-right text-gray-600">
                             {n.resolvedInWindow > 0 ? n.resolvedInWindow : '—'}
                           </td>
+                          <td className="px-4 py-2.5 text-right text-gray-500">{n.totalCount}</td>
                           <td className="px-4 py-2.5 text-gray-600">{n.topCategory ?? '—'}</td>
                           <td className="px-4 py-2.5 text-gray-600">
                             {n.topEntity ? `${n.topEntity} (${n.topEntityCount})` : '—'}

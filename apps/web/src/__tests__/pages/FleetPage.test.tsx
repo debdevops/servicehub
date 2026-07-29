@@ -204,6 +204,21 @@ describe('FleetPage', () => {
     expect(within(healthyRow as HTMLElement).getAllByText('—').length).toBeGreaterThanOrEqual(2);
   });
 
+  it('shows the all-time total DLQ count per namespace', () => {
+    mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    renderPage();
+
+    const headers = screen.getAllByRole('columnheader');
+    const totalColumnIndex = headers.findIndex((h) => h.textContent === 'Total');
+    expect(totalColumnIndex).toBeGreaterThan(-1);
+
+    const ordersRow = screen.getByText('orders-prod').closest('tr') as HTMLElement;
+    expect(within(ordersRow).getAllByRole('cell')[totalColumnIndex]).toHaveTextContent('100');
+
+    const healthyRow = screen.getByText('reporting-dev').closest('tr') as HTMLElement;
+    expect(within(healthyRow).getAllByRole('cell')[totalColumnIndex]).toHaveTextContent('0');
+  });
+
   it('links back to the per-namespace dashboard', () => {
     mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
     renderPage();
