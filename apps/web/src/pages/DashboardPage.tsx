@@ -281,8 +281,8 @@ function SkeletonCard() {
         <div className="h-5 w-32 bg-gray-200 rounded" />
       </div>
       <div className="h-3 w-48 bg-gray-100 rounded mb-4" />
-      <div className="grid grid-cols-5 gap-2 mb-4">
-        {[0, 1, 2, 3, 4].map((i) => (
+      <div className="grid grid-cols-6 gap-2 mb-4">
+        {[0, 1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="bg-gray-100 rounded-lg p-3">
             <div className="h-3 w-8 bg-gray-200 rounded mb-2 mx-auto" />
             <div className="h-6 w-6 bg-gray-200 rounded mx-auto" />
@@ -402,6 +402,7 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
   const isLoading = queuesLoading || statsLoading;
   const totalQueues = stats?.totalQueues ?? queues?.length ?? 0;
   const totalTopics = stats?.totalTopics ?? 0;
+  const totalSubscriptions = stats?.totalSubscriptions ?? 0;
   const totalActive = stats?.totalActive ?? queues?.reduce((s, q) => s + q.activeMessageCount, 0) ?? 0;
   const totalDlq = stats?.totalDlq ?? queues?.reduce((s, q) => s + q.deadLetterMessageCount, 0) ?? 0;
   const totalScheduled = stats?.totalScheduled ?? queues?.reduce((s, q) => s + q.scheduledMessageCount, 0) ?? 0;
@@ -452,9 +453,10 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-5 gap-2 px-5 pb-3">
+      <div className="grid grid-cols-6 gap-2 px-5 pb-3">
         <StatCell label="Queues" value={isError ? '—' : totalQueues} />
         <StatCell label="Topics" value={isError ? '—' : totalTopics} colorClass="text-indigo-700" />
+        <StatCell label="Subs" value={isError ? '—' : totalSubscriptions} colorClass="text-indigo-700" />
         <StatCell
           label="Active"
           value={isError ? '—' : totalActive}

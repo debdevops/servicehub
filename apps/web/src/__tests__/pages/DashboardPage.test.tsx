@@ -249,6 +249,26 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('UAT')).toBeInTheDocument();
   });
 
+  it('shows subscription count from namespace stats', async () => {
+    mockUseNamespaceStats.mockReturnValue([
+      {
+        data: {
+          totalQueues: 1,
+          totalTopics: 2,
+          totalSubscriptions: 4,
+          totalActive: 5,
+          totalDlq: 2,
+          totalScheduled: 1,
+        },
+        isLoading: false,
+        isError: false,
+      },
+    ]);
+    render(<DashboardPage />, { wrapper: createWrapper() });
+    expect(await screen.findByText('Subs')).toBeInTheDocument();
+    expect(await screen.findByText('4')).toBeInTheDocument();
+  });
+
   it('shows fallback badge when environment is undefined', async () => {
     const { environment: _env, ...nsNoEnv } = mockNamespace;
     mockUseNamespaces.mockReturnValue({
