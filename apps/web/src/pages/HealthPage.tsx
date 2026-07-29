@@ -236,10 +236,19 @@ export function HealthPage() {
                           <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
                           {entry.status}
                         </span>
-                        {entry.description && (
-                          <span className="text-gray-500 truncate">
-                            {entry.description}
-                          </span>
+                        {(entry.description || entry.exception) && (
+                          <div className="min-w-0 flex flex-col gap-0.5">
+                            {entry.description && (
+                              <span className="text-gray-500 truncate">
+                                {entry.description}
+                              </span>
+                            )}
+                            {entry.exception && (
+                              <span className="text-red-500 text-xs truncate">
+                                {entry.exception}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
                     );
