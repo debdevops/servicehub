@@ -127,8 +127,27 @@ public sealed class Namespace
     /// Used to enforce tenant isolation — each caller identity maps to a stable owner ID.
     /// SPA token sessions and admin keys share "__spa__"; scoped API keys get a key-derived ID.
     /// Defaults to "__spa__" for backward compatibility with data created before isolation was added.
+    /// Immutable after creation — the repository explicitly rejects any attempt to change it.
     /// </summary>
     public string OwnerId { get; init; } = SpaOwnerId;
+
+    /// <summary>
+    /// Gets the additional owner IDs this namespace has been explicitly shared with, granting
+    /// live operational access (browse entities, peek/replay/purge messages, Live Tail) —
+    /// see <see cref="ShareWith"/>/<see cref="RevokeShare"/>/<see cref="IsAccessibleBy"/>.
+    /// Empty by default; unlike <see cref="OwnerId"/>, this is mutable after creation.
+    /// <para>
+    /// <b>Known limitation (Preview):</b> DLQ Intelligence history, Bulk Operation job history,
+    /// audit trail entries, and AutoReplay rules are stamped with the original <see cref="OwnerId"/>
+    /// at write time and do not yet resolve through namespace sharing — a shared owner gets live
+    /// operational access to the namespace itself, not retroactive visibility into records another
+    /// owner already created. See <c>docs/FLOW.md</c> and the CHANGELOG for the full scope.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<string> SharedWithOwnerIds { get; private set; } = [];
+
+    /// <summary>Maximum number of owners a single namespace can be shared with.</summary>
+    public const int MaxSharedOwners = 20;
 
     /// <summary>
     /// Gets the SHA-256 hash of the plaintext connection string.
@@ -414,6 +433,77 @@ public sealed class Namespace
             ModifiedAt = DateTimeOffset.UtcNow;
         }
     }
+
+    /// <summary>
+    /// Grants another owner identity live operational access to this namespace (browse, peek,
+    /// replay/purge, Live Tail) — see the "Known limitation" note on <see cref="SharedWithOwnerIds"/>
+    /// for what sharing does <b>not</b> yet cover. Idempotent: sharing with an owner who already
+    /// has access is a no-op success, not an error. Only the namespace's true owner should call
+    /// this — callers are responsible for that authorization check (see
+    /// <c>NamespacesController.ShareAsync</c>), not this method, which only enforces the
+    /// structural invariants (can't share with yourself, can't exceed the cap).
+    /// </summary>
+    /// <param name="ownerId">The owner identity to grant access to.</param>
+    /// <returns>A result indicating success or a validation error.</returns>
+    public Result ShareWith(string ownerId)
+    {
+        if (string.IsNullOrWhiteSpace(ownerId))
+        {
+            return Result.Failure(Error.Validation(
+                ErrorCodes.Namespace.NotFound,
+                "Owner ID is required."));
+        }
+
+        if (string.Equals(ownerId, OwnerId, StringComparison.Ordinal))
+        {
+            return Result.Failure(Error.Validation(
+                ErrorCodes.Namespace.NotFound,
+                "A namespace cannot be shared with its own owner."));
+        }
+
+        if (SharedWithOwnerIds.Contains(ownerId, StringComparer.Ordinal))
+        {
+            return Result.Success();
+        }
+
+        if (SharedWithOwnerIds.Count >= MaxSharedOwners)
+        {
+            return Result.Failure(Error.Validation(
+                ErrorCodes.Namespace.NotFound,
+                $"A namespace cannot be shared with more than {MaxSharedOwners} owners."));
+        }
+
+        SharedWithOwnerIds = [.. SharedWithOwnerIds, ownerId];
+        ModifiedAt = DateTimeOffset.UtcNow;
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Revokes a previously-granted owner's access to this namespace. Idempotent: revoking
+    /// access an owner never had is a no-op success, not an error.
+    /// </summary>
+    /// <param name="ownerId">The owner identity to revoke access from.</param>
+    public void RevokeShare(string ownerId)
+    {
+        if (!SharedWithOwnerIds.Contains(ownerId, StringComparer.Ordinal))
+        {
+            return;
+        }
+
+        SharedWithOwnerIds = SharedWithOwnerIds.Where(o => !string.Equals(o, ownerId, StringComparison.Ordinal)).ToArray();
+        ModifiedAt = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>
+    /// Returns true if <paramref name="callerOwnerId"/> is the namespace's owner or has been
+    /// explicitly granted shared access — the single check every "is this caller allowed to
+    /// operate on this namespace" call site should use, so owner-vs-shared logic lives in one
+    /// place rather than being re-derived at each call site.
+    /// </summary>
+    /// <param name="callerOwnerId">The caller's owner ID.</param>
+    public bool IsAccessibleBy(string callerOwnerId) =>
+        string.Equals(OwnerId, callerOwnerId, StringComparison.Ordinal)
+        || SharedWithOwnerIds.Contains(callerOwnerId, StringComparer.Ordinal);
 
     /// <summary>
     /// Validates parameters for connection string authentication.

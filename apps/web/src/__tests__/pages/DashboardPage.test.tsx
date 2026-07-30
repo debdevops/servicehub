@@ -4,13 +4,14 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DashboardPage } from '@/pages/DashboardPage';
 
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
 
-vi.mock('@/hooks/useQueues', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({
   useQueues: vi.fn(),
   useAllNamespacesQueues: vi.fn(),
+  useNamespaceStats: vi.fn(),
 }));
 
 const mockNavigate = vi.fn();
@@ -19,12 +20,13 @@ vi.mock('react-router-dom', async () => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues, useAllNamespacesQueues } from '@/hooks/useQueues';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useQueues, useAllNamespacesQueues, useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
 
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;
 const mockUseAllNamespacesQueues = useAllNamespacesQueues as ReturnType<typeof vi.fn>;
+const mockUseNamespaceStats = useNamespaceStats as ReturnType<typeof vi.fn>;
 
 const mockNamespace = {
   id: 'ns1',
@@ -71,6 +73,7 @@ describe('DashboardPage', () => {
       refetch: vi.fn(),
     });
     mockUseQueues.mockReturnValue({ data: mockQueues, isLoading: false, isError: false });
+    mockUseNamespaceStats.mockReturnValue([{ data: undefined, isLoading: false, isError: false }]);
     mockUseAllNamespacesQueues.mockReturnValue([
       {
         namespaceId: 'ns1',
@@ -87,7 +90,7 @@ describe('DashboardPage', () => {
 
   it('renders page title', () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
-    expect(screen.getByText('Multi-Namespace Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Namespace Overview')).toBeInTheDocument();
   });
 
   it('shows empty state with Connect button when no namespaces', () => {
@@ -112,6 +115,32 @@ describe('DashboardPage', () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
     fireEvent.click(screen.getByRole('button', { name: /connect a namespace/i }));
     expect(mockNavigate).toHaveBeenCalledWith('/connect');
+  });
+
+  it('shows full-page error (not the empty state) when namespaces fetch fails with no cached data', () => {
+    mockUseNamespaces.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetching: false,
+      isError: true,
+      refetch: vi.fn(),
+    });
+    render(<DashboardPage />, { wrapper: createWrapper() });
+    expect(screen.getByText('Unable to reach the API server')).toBeInTheDocument();
+    expect(screen.queryByText('No namespaces connected yet')).not.toBeInTheDocument();
+  });
+
+  it('shows stale-data warning but keeps dashboard visible when a refresh fails with cached data', async () => {
+    mockUseNamespaces.mockReturnValue({
+      data: [mockNamespace],
+      isLoading: false,
+      isFetching: false,
+      isError: true,
+      refetch: vi.fn(),
+    });
+    render(<DashboardPage />, { wrapper: createWrapper() });
+    expect(screen.getByText(/unable to refresh namespaces/i)).toBeInTheDocument();
+    expect(await screen.findByText('My Namespace')).toBeInTheDocument();
   });
 
   it('renders one NamespaceCard per namespace (displayName visible)', async () => {
@@ -150,7 +179,7 @@ describe('DashboardPage', () => {
 
   it('shows Healthy status when DLQ count is within threshold', async () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
-    expect(await screen.findByText('✅ Healthy')).toBeInTheDocument();
+    expect(await screen.findByText('Healthy')).toBeInTheDocument();
   });
 
   it('shows DLQ spike banner when DLQ count exceeds threshold', async () => {
@@ -218,6 +247,26 @@ describe('DashboardPage', () => {
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(await screen.findByText('UAT')).toBeInTheDocument();
+  });
+
+  it('shows subscription count from namespace stats', async () => {
+    mockUseNamespaceStats.mockReturnValue([
+      {
+        data: {
+          totalQueues: 1,
+          totalTopics: 2,
+          totalSubscriptions: 4,
+          totalActive: 5,
+          totalDlq: 2,
+          totalScheduled: 1,
+        },
+        isLoading: false,
+        isError: false,
+      },
+    ]);
+    render(<DashboardPage />, { wrapper: createWrapper() });
+    expect(await screen.findByText('Subs')).toBeInTheDocument();
+    expect(await screen.findByText('4')).toBeInTheDocument();
   });
 
   it('shows fallback badge when environment is undefined', async () => {

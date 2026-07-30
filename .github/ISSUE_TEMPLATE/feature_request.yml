@@ -32,7 +32,6 @@ body:
         - Azure Service Bus
         - AWS SQS/SNS
         - GCP Pub/Sub
-        - Simulator mode
         - All / not provider-specific
   - type: textarea
     id: alternatives

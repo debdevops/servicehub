@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import {
   Search, LayoutDashboard, MessageSquare, Clock, GitMerge,
   AlertCircle, RefreshCw, BarChart2, HelpCircle, Plug,
-  Database, ChevronRight, X
+  Database, ChevronRight, X, Layers, Cloud, Shield
 } from 'lucide-react';
-import { useNamespaces } from '@/hooks/useNamespaces';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -24,11 +24,19 @@ interface PaletteItem {
 const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
   {
     id: 'page-dashboard',
-    label: 'Dashboard',
+    label: 'Namespace Overview',
     description: 'Multi-namespace overview',
     group: 'Pages',
     icon: <LayoutDashboard className="w-4 h-4" />,
-    keywords: 'home overview',
+    keywords: 'home overview dashboard',
+  },
+  {
+    id: 'page-fleet',
+    label: 'Fleet Health',
+    description: 'Dead-letter health across every namespace',
+    group: 'Pages',
+    icon: <Layers className="w-4 h-4" />,
+    keywords: 'fleet operations overnight',
   },
   {
     id: 'page-messages',
@@ -48,11 +56,19 @@ const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
   },
   {
     id: 'page-trace',
-    label: 'Cross-Cloud Trace',
+    label: 'Multi-Cloud Trace',
     description: 'Trace messages by correlation ID',
     group: 'Pages',
     icon: <GitMerge className="w-4 h-4" />,
     keywords: 'trace journey timeline correlation cross cloud',
+  },
+  {
+    id: 'page-cloud-bridge',
+    label: 'Cloud Bridge',
+    description: 'Browse queues, topics and subscriptions across clouds',
+    group: 'Pages',
+    icon: <Cloud className="w-4 h-4" />,
+    keywords: 'provider status multi cloud',
   },
   {
     id: 'page-dlq',
@@ -72,11 +88,27 @@ const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
   },
   {
     id: 'page-health',
-    label: 'Health',
+    label: 'System Health',
     description: 'API and service health status',
     group: 'Pages',
     icon: <BarChart2 className="w-4 h-4" />,
     keywords: 'status ping uptime',
+  },
+  {
+    id: 'page-audit',
+    label: 'Audit Trail',
+    description: 'Persistent record of critical operations and access events',
+    group: 'Pages',
+    icon: <Shield className="w-4 h-4" />,
+    keywords: 'logs history compliance',
+  },
+  {
+    id: 'page-security',
+    label: 'Security & Privacy',
+    description: 'Encryption and data-handling overview',
+    group: 'Pages',
+    icon: <Shield className="w-4 h-4" />,
+    keywords: 'encryption privacy compliance',
   },
   {
     id: 'page-connect',
@@ -88,7 +120,7 @@ const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
   },
   {
     id: 'page-help',
-    label: 'Help',
+    label: 'Help & Guide',
     description: 'Quick reference and shortcuts',
     group: 'Pages',
     icon: <HelpCircle className="w-4 h-4" />,
@@ -98,12 +130,16 @@ const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
 
 const PAGE_ROUTES: Record<string, string> = {
   'page-dashboard': '/dashboard',
+  'page-fleet': '/fleet',
   'page-messages': '/messages',
   'page-scheduled': '/scheduled',
   'page-trace': '/cross-cloud-trace',
+  'page-cloud-bridge': '/cloud-bridge',
   'page-dlq': '/dlq-history',
   'page-rules': '/rules',
   'page-health': '/health',
+  'page-audit': '/audit',
+  'page-security': '/security',
   'page-connect': '/connect',
   'page-help': '/help',
 };
@@ -215,7 +251,10 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         icon: <AlertCircle className="w-4 h-4 text-red-500" />,
         keywords: 'dead letter queue',
         action: () => {
-          navigate(`/messages?namespace=${ns.id}&tab=dlq`);
+          // MessagesOverviewPage lists dead-letter messages across every namespace (no
+          // per-namespace URL scoping) — the same destination the sidebar's own
+          // "Dead-Letter" quick-access link uses.
+          navigate('/messages-overview?tab=deadletter');
           onClose();
         },
       },

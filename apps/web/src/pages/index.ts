@@ -6,5 +6,5 @@ export { HelpPage } from './HelpPage';
 export { ScheduledMessagesPage } from './ScheduledMessagesPage';
 export { SecurityPage } from './SecurityPage';
 export { WelcomePage } from './WelcomePage';
-// Dashboard, DlqHistory, InsightsPage, CloudBridgePage, SimulatorPage, CrossCloudTracePage
+// Dashboard, DlqHistory, CloudBridgePage, CrossCloudTracePage
 // are lazy-loaded in router.tsx

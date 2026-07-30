@@ -8,7 +8,10 @@ using ServiceHub.Api.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
+using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Api.Controllers.V1;
@@ -17,6 +20,10 @@ public class MessagesControllerTests
 {
     private readonly Mock<IMessageOperationsService> _messageOperationsService;
     private readonly Mock<INamespaceRepository> _namespaceRepository;
+    private readonly Mock<ICloudMessagingProvider> _cloudProvider;
+    private readonly CloudProviderRouter _providerRouter;
+    private readonly Mock<ILiveTailSessionFactory> _liveTailSessionFactory;
+    private readonly Mock<ILiveTailConnectionLimiter> _liveTailConnectionLimiter;
     private readonly Mock<ILogger<MessagesController>> _logger;
     private readonly MessagesController _controller;
 
@@ -24,11 +31,20 @@ public class MessagesControllerTests
     {
         _messageOperationsService = new Mock<IMessageOperationsService>();
         _namespaceRepository = new Mock<INamespaceRepository>();
+        _cloudProvider = new Mock<ICloudMessagingProvider>();
+        _cloudProvider.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Azure);
+        _cloudProvider.SetupGet(p => p.Capabilities).Returns(ProviderCapabilities.Azure);
+        _providerRouter = new CloudProviderRouter([_cloudProvider.Object]);
+        _liveTailSessionFactory = new Mock<ILiveTailSessionFactory>();
+        _liveTailConnectionLimiter = new Mock<ILiveTailConnectionLimiter>();
         _logger = new Mock<ILogger<MessagesController>>();
 
         _controller = new MessagesController(
             _messageOperationsService.Object,
             _namespaceRepository.Object,
+            _providerRouter,
+            _liveTailSessionFactory.Object,
+            _liveTailConnectionLimiter.Object,
             _logger.Object)
         {
             ControllerContext = new ControllerContext
@@ -61,14 +77,18 @@ public class MessagesControllerTests
     [Fact]
     public void Constructor_NullMessageOperationsService_ShouldThrow()
     {
-        var act = () => new MessagesController(null!, _namespaceRepository.Object, _logger.Object);
+        var act = () => new MessagesController(
+            null!, _namespaceRepository.Object, _providerRouter,
+            _liveTailSessionFactory.Object, _liveTailConnectionLimiter.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
     public void Constructor_NullLogger_ShouldThrow()
     {
-        var act = () => new MessagesController(_messageOperationsService.Object, _namespaceRepository.Object, null!);
+        var act = () => new MessagesController(
+            _messageOperationsService.Object, _namespaceRepository.Object, _providerRouter,
+            _liveTailSessionFactory.Object, _liveTailConnectionLimiter.Object, null!);
         act.Should().Throw<ArgumentNullException>();
     }
 

@@ -284,4 +284,126 @@ public sealed class NamespaceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Environment.Should().Be(env);
     }
+
+    // ── Sharing ──────────────────────────────────────────────────────────────
+
+    private Namespace CreateTestNamespace(string ownerId = "owner-a") =>
+        Namespace.Create(ValidName, ValidConnectionString, ownerId: ownerId).Value;
+
+    [Fact]
+    public void ShareWith_NewOwner_Succeeds()
+    {
+        var ns = CreateTestNamespace();
+
+        var result = ns.ShareWith("owner-b");
+
+        result.IsSuccess.Should().BeTrue();
+        ns.SharedWithOwnerIds.Should().Contain("owner-b");
+    }
+
+    [Fact]
+    public void ShareWith_OwnersOwnId_Fails()
+    {
+        var ns = CreateTestNamespace(ownerId: "owner-a");
+
+        var result = ns.ShareWith("owner-a");
+
+        result.IsFailure.Should().BeTrue();
+        ns.SharedWithOwnerIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ShareWith_EmptyOwnerId_Fails()
+    {
+        var ns = CreateTestNamespace();
+
+        var result = ns.ShareWith("");
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ShareWith_AlreadyShared_IsIdempotentSuccess()
+    {
+        var ns = CreateTestNamespace();
+        ns.ShareWith("owner-b");
+
+        var result = ns.ShareWith("owner-b");
+
+        result.IsSuccess.Should().BeTrue();
+        ns.SharedWithOwnerIds.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void ShareWith_ExceedsMaxSharedOwners_Fails()
+    {
+        var ns = CreateTestNamespace();
+        for (var i = 0; i < Namespace.MaxSharedOwners; i++)
+        {
+            ns.ShareWith($"owner-{i}").IsSuccess.Should().BeTrue();
+        }
+
+        var result = ns.ShareWith("one-too-many");
+
+        result.IsFailure.Should().BeTrue();
+        ns.SharedWithOwnerIds.Should().HaveCount(Namespace.MaxSharedOwners);
+    }
+
+    [Fact]
+    public void RevokeShare_SharedOwner_RemovesAccess()
+    {
+        var ns = CreateTestNamespace();
+        ns.ShareWith("owner-b");
+
+        ns.RevokeShare("owner-b");
+
+        ns.SharedWithOwnerIds.Should().NotContain("owner-b");
+    }
+
+    [Fact]
+    public void RevokeShare_OwnerNeverShared_IsIdempotentNoOp()
+    {
+        var ns = CreateTestNamespace();
+
+        var act = () => ns.RevokeShare("never-shared");
+
+        act.Should().NotThrow();
+        ns.SharedWithOwnerIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void IsAccessibleBy_TrueOwner_ReturnsTrue()
+    {
+        var ns = CreateTestNamespace(ownerId: "owner-a");
+
+        ns.IsAccessibleBy("owner-a").Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsAccessibleBy_SharedOwner_ReturnsTrue()
+    {
+        var ns = CreateTestNamespace(ownerId: "owner-a");
+        ns.ShareWith("owner-b");
+
+        ns.IsAccessibleBy("owner-b").Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsAccessibleBy_UnrelatedOwner_ReturnsFalse()
+    {
+        var ns = CreateTestNamespace(ownerId: "owner-a");
+        ns.ShareWith("owner-b");
+
+        ns.IsAccessibleBy("owner-c").Should().BeFalse();
+    }
+
+    [Fact]
+    public void ShareWith_UpdatesModifiedAt()
+    {
+        var ns = CreateTestNamespace();
+
+        ns.ShareWith("owner-b");
+
+        ns.ModifiedAt.Should().NotBeNull();
+    }
 }

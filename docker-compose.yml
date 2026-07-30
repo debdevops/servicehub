@@ -1,0 +1,70 @@
+# ServiceHub — build and run via Docker Compose.
+#
+#   docker compose up --build
+#   → open http://localhost:8080, then connect a namespace with your own cloud credentials
+#
+# For a zero-credential exploration of the UI without any backend, see Demo Mode
+# (apps/web — no container required). For a real deployment with persisted data see
+# the "production" service below and self-hosting/README.md.
+services:
+  servicehub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: servicehub:local
+    ports:
+      # Loopback-bound by default; for deliberate LAN exposure, change to: - "0.0.0.0:8080:8080"
+      - "127.0.0.1:8080:8080"
+    environment:
+      # Production, not Development: this is the single self-contained image the README
+      # quick-start advertises (SPA served at / from wwwroot) — Development mode skips
+      # UseStaticFiles/MapFallbackToFile and redirects / to /scalar/v1 instead, since it
+      # assumes a separate `npm run dev` frontend on :3000, which this container doesn't run.
+      ASPNETCORE_ENVIRONMENT: Production
+      # Override for anything you'd treat as sensitive: SECURITY__ENCRYPTIONKEY=$(openssl rand -hex 32) docker compose up --build
+      SECURITY__ENCRYPTIONKEY: ${SECURITY__ENCRYPTIONKEY:-0a1715d2edbbbef62384ee797ed6bf7ce01ef56ee7da55dcc04fb7f297e53a4d}
+      # appsettings.Production.json's AllowedHosts placeholder rejects every Host header
+      # until overridden; this container is only reachable via localhost per the ports mapping.
+      AllowedHosts: localhost
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+    restart: unless-stopped
+    depends_on:
+      - servicehub-ai
+
+  # Skeleton only (no algorithm yet) — internal network only, never publish this
+  # port to the host. servicehub must start/serve normally if this is absent or
+  # unhealthy, hence no `condition: service_healthy` on the depends_on above.
+  servicehub-ai:
+    build:
+      context: ./services/ai
+      dockerfile: Dockerfile
+    image: servicehub-ai:local
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------------------
+  # Production example — connect to real cloud messaging. Uncomment, then supply a random key:
+  #   SECURITY__ENCRYPTIONKEY=$(openssl rand -hex 32) docker compose up -d servicehub-prod
+  # Data (namespace store + SQLite DLQ/audit DB) is persisted to the named volume.
+  # ---------------------------------------------------------------------------------------
+  # servicehub-prod:
+  #   build: { context: ., dockerfile: Dockerfile }
+  #   image: servicehub:local
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     ASPNETCORE_ENVIRONMENT: Production
+  #     SECURITY__ENCRYPTIONKEY: ${SECURITY__ENCRYPTIONKEY:?set a 32-byte random hex key}
+  #     # Enable preview providers if needed:
+  #     # CloudProviders__Aws__Enabled: "true"
+  #     # CloudProviders__Gcp__Enabled: "true"
+  #   volumes:
+  #     - servicehub-data:/var/servicehub/data
+  #   restart: unless-stopped
+
+volumes:
+  servicehub-data:

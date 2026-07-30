@@ -279,7 +279,7 @@ cp .env.example .env
 ```
 
 Key settings:
-- `ASPNETCORE_ENVIRONMENT`: Development, Staging, Production, or Simulator (gates Simulator-only endpoints and DI registrations)
+- `ASPNETCORE_ENVIRONMENT`: Development, Staging, or Production
 - `ENCRYPTION_KEY`: For connection string encryption (32+ characters)
 - `CORS_ORIGINS`: Allowed frontend origins
 

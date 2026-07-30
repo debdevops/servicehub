@@ -6,19 +6,22 @@ import { ScheduledMessagesPage } from '@/pages/ScheduledMessagesPage';
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
-vi.mock('@/hooks/useQueues', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({
   useQueues: vi.fn(),
   useAllNamespacesQueues: vi.fn(),
 }));
-vi.mock('@/hooks/useScheduledMessages', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useScheduledMessages', () => ({
   useScheduledMessages: vi.fn(),
   useCancelScheduledMessage: vi.fn(),
 }));
-vi.mock('@/hooks/useMessages', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useMessages', () => ({
   useSendMessage: vi.fn(),
+}));
+vi.mock('@servicehub/ui-shared/hooks/useCloudBridge', () => ({
+  useProviderCapabilities: vi.fn(),
 }));
 vi.mock('@/components/CopyButton', () => ({
   CopyButton: ({ text }: { text: string }) => (
@@ -29,22 +32,31 @@ vi.mock('react-hot-toast', () => ({
   default: { success: vi.fn(), error: vi.fn() },
 }));
 
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues } from '@/hooks/useQueues';
-import { useScheduledMessages, useCancelScheduledMessage } from '@/hooks/useScheduledMessages';
-import { useSendMessage } from '@/hooks/useMessages';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useScheduledMessages, useCancelScheduledMessage } from '@servicehub/ui-shared/hooks/useScheduledMessages';
+import { useSendMessage } from '@servicehub/ui-shared/hooks/useMessages';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;
 const mockUseScheduledMessages = useScheduledMessages as ReturnType<typeof vi.fn>;
 const mockUseCancelScheduledMessage = useCancelScheduledMessage as ReturnType<typeof vi.fn>;
 const mockUseSendMessage = useSendMessage as ReturnType<typeof vi.fn>;
+const mockUseProviderCapabilities = useProviderCapabilities as ReturnType<typeof vi.fn>;
+
+const mockCapabilitiesMap = {
+  Azure: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: false, supportsScheduledMessages: true, supportsRepeatablePeek: true, notes: '' },
+  Aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, notes: 'SQS only offers DelaySeconds (max 15 minutes) at send time.' },
+  Gcp: { supportsMessageCounts: false, supportsManualDeadLetter: false, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: true, notes: 'Pub/Sub has no per-message scheduling.' },
+};
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
 
 const mockNamespaces = [
   { id: 'ns-1', name: 'prod-namespace', displayName: 'Prod Namespace', environment: 'Prod' },
   { id: 'ns-2', name: 'dev-namespace', displayName: 'Dev Namespace', environment: 'Dev' },
+  { id: 'ns-3', name: 'aws-namespace', displayName: 'AWS Namespace', environment: 'Dev', cloudProvider: 'aws' as const },
 ];
 
 const mockQueues = [
@@ -109,6 +121,7 @@ describe('ScheduledMessagesPage', () => {
       mutateAsync: vi.fn(),
       isPending: false,
     });
+    mockUseProviderCapabilities.mockReturnValue({ data: mockCapabilitiesMap });
   });
 
   // ── Initial / no-selection state ───────────────────────────────────────────
@@ -148,6 +161,20 @@ describe('ScheduledMessagesPage', () => {
     renderPage();
     const queueSelect = screen.getAllByRole('combobox')[1];
     expect(queueSelect).toBeDisabled();
+  });
+
+  // ── Capability-driven "unsupported" panel ────────────────────────────────────
+
+  it('shows the unsupported panel for a provider whose capabilities say scheduling is unsupported', () => {
+    renderPage('?namespace=ns-3');
+    expect(screen.getByText('AWS does not support scheduled messages')).toBeInTheDocument();
+    expect(screen.getByText(mockCapabilitiesMap.Aws.notes)).toBeInTheDocument();
+  });
+
+  it('does not show the unsupported panel while capabilities are still loading', () => {
+    mockUseProviderCapabilities.mockReturnValue({ data: undefined });
+    renderPage('?namespace=ns-3');
+    expect(screen.queryByText(/does not support scheduled messages/)).not.toBeInTheDocument();
   });
 
   // ── Loading state ──────────────────────────────────────────────────────────

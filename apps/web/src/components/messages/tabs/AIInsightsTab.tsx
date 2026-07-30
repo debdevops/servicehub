@@ -1,9 +1,9 @@
 import { Sparkles, AlertCircle, Info } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import type { Message } from '@/lib/mockData';
-import { useClientSideInsights } from '@/hooks/useInsights';
-import { useMessages } from '@/hooks/useMessages';
-import type { AIInsight } from '@/lib/api/types';
+import type { Message } from '@servicehub/ui-shared/lib/mockData';
+import { useClientSideInsights } from '@servicehub/ui-shared/hooks/useInsights';
+import { useMessages } from '@servicehub/ui-shared/hooks/useMessages';
+import type { AIInsight } from '@servicehub/ui-shared/lib/api/types';
 
 // ============================================================================
 // AIInsightsTab - Shows AI pattern membership for selected message

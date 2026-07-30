@@ -10,7 +10,7 @@ namespace ServiceHub.Infrastructure.Routing;
 /// registration methods) during DI setup.  If a requested provider has not been registered
 /// an <see cref="InvalidOperationException"/> is thrown with a clear diagnostic message.
 /// </summary>
-public sealed class CloudProviderRouter
+public sealed class CloudProviderRouter : ICloudProviderRouter
 {
     private readonly IReadOnlyDictionary<CloudProviderType, ICloudMessagingProvider> _providers;
 

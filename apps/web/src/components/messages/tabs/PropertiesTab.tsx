@@ -1,7 +1,7 @@
 import { AlertTriangle, Info, ChevronRight, HelpCircle, GitMerge, ClipboardList } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { copyToClipboard } from '@/lib/clipboard';
-import type { Message } from '@/lib/mockData';
+import { copyToClipboard } from '@servicehub/ui-shared/lib/clipboard';
+import type { Message } from '@servicehub/ui-shared/lib/mockData';
 import toast from 'react-hot-toast';
 
 // ============================================================================

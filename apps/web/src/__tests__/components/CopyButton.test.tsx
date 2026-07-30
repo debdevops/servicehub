@@ -3,11 +3,11 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { CopyButton } from '@/components/CopyButton';
 
 // Mock clipboard lib
-vi.mock('@/lib/clipboard', () => ({
+vi.mock('@servicehub/ui-shared/lib/clipboard', () => ({
   copyToClipboard: vi.fn(),
 }));
 
-import { copyToClipboard } from '@/lib/clipboard';
+import { copyToClipboard } from '@servicehub/ui-shared/lib/clipboard';
 const mockCopy = copyToClipboard as ReturnType<typeof vi.fn>;
 
 describe('CopyButton', () => {

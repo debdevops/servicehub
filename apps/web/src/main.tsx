@@ -5,8 +5,8 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 import { AppInsightsContext } from '@microsoft/applicationinsights-react-js';
 import { router } from './router';
-import { queryClient } from './lib/queryClient';
-import { reactPlugin } from './lib/telemetry';
+import { queryClient } from '@servicehub/ui-shared/lib/queryClient';
+import { reactPlugin } from '@servicehub/ui-shared/lib/telemetry';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './styles/index.css';
 

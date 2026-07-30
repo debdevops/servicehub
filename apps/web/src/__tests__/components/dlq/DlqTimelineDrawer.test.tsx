@@ -2,16 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { DlqTimelineDrawer } from '@/components/dlq/DlqTimelineDrawer';
 
-vi.mock('@/hooks/useDlqHistory', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useDlqHistory', () => ({
   useDlqTimeline: vi.fn(),
   useDlqMessageDetail: vi.fn(),
   useUpdateDlqNotes: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useUpdateDlqStatus: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
-import { useDlqTimeline, useDlqMessageDetail } from '@/hooks/useDlqHistory';
+import { useDlqTimeline, useDlqMessageDetail, useUpdateDlqStatus } from '@servicehub/ui-shared/hooks/useDlqHistory';
 
 const mockUseDlqTimeline = useDlqTimeline as ReturnType<typeof vi.fn>;
 const mockUseDlqMessageDetail = useDlqMessageDetail as ReturnType<typeof vi.fn>;
+const mockUseUpdateDlqStatus = useUpdateDlqStatus as ReturnType<typeof vi.fn>;
 
 const mockTimeline = {
   events: [
@@ -151,6 +153,18 @@ describe('DlqTimelineDrawer', () => {
     }
   });
 
+  it('has dialog semantics and closes on Escape', () => {
+    const mockClose = vi.fn();
+    render(<DlqTimelineDrawer messageId={1} onClose={mockClose} />);
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAttribute('aria-labelledby', 'dlq-timeline-drawer-title');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(mockClose).toHaveBeenCalled();
+  });
+
   it('shows loading state when data is loading', () => {
     mockUseDlqTimeline.mockReturnValue({ data: undefined, isLoading: true });
     mockUseDlqMessageDetail.mockReturnValue({ data: undefined, isLoading: true });
@@ -162,5 +176,28 @@ describe('DlqTimelineDrawer', () => {
     mockUseDlqTimeline.mockReturnValue({ data: { events: [] }, isLoading: false });
     render(<DlqTimelineDrawer messageId={1} onClose={vi.fn()} />);
     expect(screen.getByText('No timeline events available.')).toBeInTheDocument();
+  });
+
+  it('shows triage actions for an active message and triggers a status transition', () => {
+    const mutate = vi.fn();
+    mockUseUpdateDlqStatus.mockReturnValue({ mutate, isPending: false });
+    render(<DlqTimelineDrawer messageId={1} onClose={vi.fn()} />);
+
+    const resolve = screen.getByRole('button', { name: 'Resolve' });
+    expect(resolve).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ignore' })).toBeInTheDocument();
+
+    fireEvent.click(resolve);
+    expect(mutate).toHaveBeenCalledWith({ id: 1, status: 'Resolved' });
+  });
+
+  it('shows a Reopen action for a resolved message', () => {
+    mockUseDlqMessageDetail.mockReturnValue({
+      data: { ...mockDetail, status: 'Resolved' },
+      isLoading: false,
+    });
+    render(<DlqTimelineDrawer messageId={1} onClose={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Reopen' })).toBeInTheDocument();
   });
 });

@@ -284,4 +284,28 @@ public sealed class AuditService : BackgroundService, IAuditService
 
         return Result<IReadOnlyList<AuditLog>>.Success(results);
     }
+
+    // ─── IAuditService.PurgeExpiredAsync ─────────────────────────────────────
+
+    /// <inheritdoc />
+    public async Task<Result<int>> PurgeExpiredAsync(DateTimeOffset olderThan, CancellationToken cancellationToken = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<DlqDbContext>();
+
+        // Set-based delete — never loads matching rows into memory, so this scales to however
+        // many entries have aged out regardless of table size.
+        var deletedCount = await db.AuditLogs
+            .Where(l => l.Timestamp < olderThan)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        if (deletedCount > 0)
+        {
+            _logger.LogInformation(
+                "Audit retention purge: deleted {Count} entries older than {Cutoff:O}",
+                deletedCount, olderThan);
+        }
+
+        return Result<int>.Success(deletedCount);
+    }
 }

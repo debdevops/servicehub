@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import {
   Globe,
   RefreshCw,
@@ -17,15 +17,18 @@ import {
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues, useAllNamespacesQueues, NamespaceQueueStats } from '@/hooks/useQueues';
-import { useTopics } from '@/hooks/useTopics';
-import { useEventStream } from '@/hooks/useEventStream';
-import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
-import { setThemeProvider } from '@/lib/providerTheme';
-import { Namespace, EnvironmentType } from '@/lib/api/types';
-import { apiClient } from '@/lib/api/client';
-import { getHealthGrade } from '@/lib/healthGrade';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useQueues, useAllNamespacesQueues, useNamespaceStats, NamespaceQueueStats } from '@servicehub/ui-shared/hooks/useQueues';
+import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
+import { useEventStream } from '@servicehub/ui-shared/hooks/useEventStream';
+import { ProviderBadge, getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
+import { EnvironmentBadge } from '@/components/EnvironmentBadge';
+import { EmptyState } from '@/components/EmptyState';
+import { setThemeProvider } from '@servicehub/ui-shared/lib/providerTheme';
+import { Namespace } from '@servicehub/ui-shared/lib/api/types';
+import { apiClient } from '@servicehub/ui-shared/lib/api/client';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
+import { getHealthGrade } from '@servicehub/ui-shared/lib/healthGrade';
 
 const DLQ_SPIKE_THRESHOLD = 10;
 
@@ -55,7 +58,11 @@ function useSecondsSince(triggerAt: number | null): number {
 // Live Badge — pulsing dot + "last updated Xs ago"
 // ============================================================================
 
-function LiveBadge({ secondsAgo }: { secondsAgo: number }) {
+// Owns its own 1-second ticker so re-renders stay local to this small badge instead of
+// propagating up to DashboardPage, which would otherwise re-run every aggregation
+// (.sort()/.filter()/.reduce() over every namespace) once a second for no reason.
+function LiveBadge({ triggerAt }: { triggerAt: number | null }) {
+  const secondsAgo = useSecondsSince(triggerAt);
   const label =
     secondsAgo < 5 ? 'just now' : secondsAgo < 60 ? `${secondsAgo}s ago` : `${Math.floor(secondsAgo / 60)}m ago`;
   return (
@@ -65,39 +72,6 @@ function LiveBadge({ secondsAgo }: { secondsAgo: number }) {
         <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
       </span>
       Live · {label}
-    </span>
-  );
-}
-
-// ============================================================================
-// Environment Badge
-// ============================================================================
-
-function EnvironmentBadge({ env }: { env?: EnvironmentType }) {
-  if (env === 'prod') {
-    return (
-      <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-red-100 text-red-700 border border-red-200">
-        PROD
-      </span>
-    );
-  }
-  if (env === 'uat') {
-    return (
-      <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-amber-100 text-amber-700 border border-amber-200">
-        UAT
-      </span>
-    );
-  }
-  if (env === 'dev') {
-    return (
-      <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
-        DEV
-      </span>
-    );
-  }
-  return (
-    <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-gray-100 text-gray-500 border border-gray-200">
-      —
     </span>
   );
 }
@@ -307,8 +281,8 @@ function SkeletonCard() {
         <div className="h-5 w-32 bg-gray-200 rounded" />
       </div>
       <div className="h-3 w-48 bg-gray-100 rounded mb-4" />
-      <div className="grid grid-cols-5 gap-2 mb-4">
-        {[0, 1, 2, 3, 4].map((i) => (
+      <div className="grid grid-cols-6 gap-2 mb-4">
+        {[0, 1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="bg-gray-100 rounded-lg p-3">
             <div className="h-3 w-8 bg-gray-200 rounded mb-2 mx-auto" />
             <div className="h-6 w-6 bg-gray-200 rounded mx-auto" />
@@ -335,6 +309,7 @@ interface TrendPoint {
 }
 
 function DlqTrendSparkline({ namespaceId, sseConnected = false }: { namespaceId: string; sseConnected?: boolean }) {
+  const { isDemoMode } = useDemoContext();
   const { data: trendData } = useQuery<TrendPoint[]>({
     queryKey: ['dlq-trend', namespaceId],
     queryFn: async () => {
@@ -347,6 +322,7 @@ function DlqTrendSparkline({ namespaceId, sseConnected = false }: { namespaceId:
         resolvedCount: d.resolvedMessages,
       }));
     },
+    enabled: !isDemoMode,
     refetchInterval: sseConnected ? TREND_POLL_MS.relaxed : TREND_POLL_MS.normal,
   });
 
@@ -415,29 +391,18 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
     navigate(`/dlq-history?namespace=${namespace.id}`);
   };
 
-  // Use the stats endpoint for accurate totals (includes subscription DLQs)
-  const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ['namespace-stats', namespace.id],
-    queryFn: async () => {
-      const response = await apiClient.get<{
-        totalQueues: number;
-        totalTopics: number;
-        totalSubscriptions: number;
-        totalActive: number;
-        totalDlq: number;
-        totalScheduled: number;
-      }>(`/namespaces/${namespace.id}/stats`, { _silent: true } as Record<string, unknown>);
-      return response.data;
-    },
-    enabled: !!namespace.id,
-    staleTime: 30_000,
-    refetchInterval: sseConnected ? STATS_POLL_MS.relaxed : STATS_POLL_MS.normal,
-    refetchIntervalInBackground: false,
-  });
+  // Use the stats endpoint for accurate totals (includes subscription DLQs) — shared
+  // useNamespaceStats hook also carries the Demo Mode guard.
+  const [{ data: stats, isLoading: statsLoading }] = useNamespaceStats(
+    [namespace.id],
+    true,
+    sseConnected ? STATS_POLL_MS.relaxed : STATS_POLL_MS.normal,
+  );
 
   const isLoading = queuesLoading || statsLoading;
   const totalQueues = stats?.totalQueues ?? queues?.length ?? 0;
   const totalTopics = stats?.totalTopics ?? 0;
+  const totalSubscriptions = stats?.totalSubscriptions ?? 0;
   const totalActive = stats?.totalActive ?? queues?.reduce((s, q) => s + q.activeMessageCount, 0) ?? 0;
   const totalDlq = stats?.totalDlq ?? queues?.reduce((s, q) => s + q.deadLetterMessageCount, 0) ?? 0;
   const totalScheduled = stats?.totalScheduled ?? queues?.reduce((s, q) => s + q.scheduledMessageCount, 0) ?? 0;
@@ -488,9 +453,10 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-5 gap-2 px-5 pb-3">
+      <div className="grid grid-cols-6 gap-2 px-5 pb-3">
         <StatCell label="Queues" value={isError ? '—' : totalQueues} />
         <StatCell label="Topics" value={isError ? '—' : totalTopics} colorClass="text-indigo-700" />
+        <StatCell label="Subs" value={isError ? '—' : totalSubscriptions} colorClass="text-indigo-700" />
         <StatCell
           label="Active"
           value={isError ? '—' : totalActive}
@@ -521,12 +487,12 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
         ) : isDlqSpike ? (
           <div className="flex items-center gap-2 px-3 py-2 bg-red-100 border border-red-200 rounded-lg text-red-700 text-sm">
             <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>⚠️ DLQ: {totalDlq} messages need attention</span>
+            <span>DLQ: {totalDlq} messages need attention</span>
           </div>
         ) : (
           <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-700 text-sm">
             <CheckCircle className="w-4 h-4 shrink-0" />
-            <span>✅ Healthy</span>
+            <span>Healthy</span>
           </div>
         )}
       </div>
@@ -556,7 +522,7 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { data: namespaces, isLoading, isFetching, refetch, dataUpdatedAt } = useNamespaces();
+  const { data: namespaces, isLoading, isFetching, isError: namespacesError, refetch, dataUpdatedAt } = useNamespaces();
 
   // Push updates via SSE; while connected, polling relaxes to a safety net.
   const { connected: sseConnected } = useEventStream();
@@ -576,65 +542,90 @@ export function DashboardPage() {
   } else if (dataUpdatedAt && lastUpdatedAt.current === null) {
     lastUpdatedAt.current = dataUpdatedAt;
   }
-  const secondsSinceLive = useSecondsSince(lastUpdatedAt.current);
 
-  // Build a lookup: namespaceId → stats
-  const statsById = new Map<string, NamespaceQueueStats>(
-    allStats.map((s) => [s.namespaceId, s]),
-  );
-
-  // Aggregate totals across all namespaces
-  const aggregateStats: AggregateStats = {
-    totalNamespaces: namespaces?.length ?? 0,
-    loadedNamespaces: allStats.filter((s) => !s.isLoading && !s.isError).length,
-    totalActive: allStats.reduce((sum, s) => sum + s.totalActive, 0),
-    totalDlq: allStats.reduce((sum, s) => sum + s.totalDlq, 0),
-    totalScheduled: allStats.reduce((sum, s) => sum + s.totalScheduled, 0),
-    spikeCount: allStats.filter((s) => s.totalDlq > DLQ_SPIKE_THRESHOLD).length,
-    isLoading: allStats.some((s) => s.isLoading),
-  };
-
-  // DLQ hot spots: namespaces with spikes, ranked by DLQ count descending
-  const hotspots: HotSpot[] = (namespaces ?? [])
-    .map((ns) => {
-      const s = statsById.get(ns.id);
-      return { namespace: ns, totalDlq: s?.totalDlq ?? 0, isError: s?.isError ?? false };
-    })
-    .filter((h) => h.totalDlq > DLQ_SPIKE_THRESHOLD)
-    .sort((a, b) => b.totalDlq - a.totalDlq);
-
-  const maxDlq = hotspots[0]?.totalDlq ?? 1;
-
-  // Sort namespace cards: highest DLQ first, then by name
-  const sortedNamespaces = [...(namespaces ?? [])].sort((a, b) => {
-    const dlqA = statsById.get(a.id)?.totalDlq ?? 0;
-    const dlqB = statsById.get(b.id)?.totalDlq ?? 0;
-    if (dlqB !== dlqA) return dlqB - dlqA;
-    const nameA = a.displayName || a.name;
-    const nameB = b.displayName || b.name;
-    return nameA.localeCompare(nameB);
-  });
-
-  // Prod vs Non-Prod comparison (only shown when both exist)
-  const prodNamespaces = (namespaces ?? []).filter((ns) => ns.environment === 'prod');
-  const nonProdNamespaces = (namespaces ?? []).filter((ns) => ns.environment !== 'prod');
-  const hasBothEnvs = prodNamespaces.length > 0 && nonProdNamespaces.length > 0;
-
-  function envTotals(nsList: Namespace[]) {
-    return nsList.reduce(
-      (acc, ns) => {
-        const s = statsById.get(ns.id);
-        return {
-          active: acc.active + (s?.totalActive ?? 0),
-          dlq: acc.dlq + (s?.totalDlq ?? 0),
-          scheduled: acc.scheduled + (s?.totalScheduled ?? 0),
-        };
-      },
-      { active: 0, dlq: 0, scheduled: 0 },
+  // All of this is derived purely from `namespaces` + `allStats` — memoized so it doesn't
+  // re-run on renders triggered by unrelated local state (search/filter toggles etc.).
+  const {
+    aggregateStats,
+    hotspots,
+    maxDlq,
+    sortedNamespaces,
+    prodNamespaces,
+    nonProdNamespaces,
+    hasBothEnvs,
+    prodTotals,
+    nonProdTotals,
+  } = useMemo(() => {
+    // Build a lookup: namespaceId → stats
+    const statsById = new Map<string, NamespaceQueueStats>(
+      allStats.map((s) => [s.namespaceId, s]),
     );
-  }
-  const prodTotals = hasBothEnvs ? envTotals(prodNamespaces) : null;
-  const nonProdTotals = hasBothEnvs ? envTotals(nonProdNamespaces) : null;
+
+    // Aggregate totals across all namespaces
+    const aggregateStats: AggregateStats = {
+      totalNamespaces: namespaces?.length ?? 0,
+      loadedNamespaces: allStats.filter((s) => !s.isLoading && !s.isError).length,
+      totalActive: allStats.reduce((sum, s) => sum + s.totalActive, 0),
+      totalDlq: allStats.reduce((sum, s) => sum + s.totalDlq, 0),
+      totalScheduled: allStats.reduce((sum, s) => sum + s.totalScheduled, 0),
+      spikeCount: allStats.filter((s) => s.totalDlq > DLQ_SPIKE_THRESHOLD).length,
+      isLoading: allStats.some((s) => s.isLoading),
+    };
+
+    // DLQ hot spots: namespaces with spikes, ranked by DLQ count descending
+    const hotspots: HotSpot[] = (namespaces ?? [])
+      .map((ns) => {
+        const s = statsById.get(ns.id);
+        return { namespace: ns, totalDlq: s?.totalDlq ?? 0, isError: s?.isError ?? false };
+      })
+      .filter((h) => h.totalDlq > DLQ_SPIKE_THRESHOLD)
+      .sort((a, b) => b.totalDlq - a.totalDlq);
+
+    const maxDlq = hotspots[0]?.totalDlq ?? 1;
+
+    // Sort namespace cards: highest DLQ first, then by name
+    const sortedNamespaces = [...(namespaces ?? [])].sort((a, b) => {
+      const dlqA = statsById.get(a.id)?.totalDlq ?? 0;
+      const dlqB = statsById.get(b.id)?.totalDlq ?? 0;
+      if (dlqB !== dlqA) return dlqB - dlqA;
+      const nameA = a.displayName || a.name;
+      const nameB = b.displayName || b.name;
+      return nameA.localeCompare(nameB);
+    });
+
+    // Prod vs Non-Prod comparison (only shown when both exist)
+    const prodNamespaces = (namespaces ?? []).filter((ns) => ns.environment === 'prod');
+    const nonProdNamespaces = (namespaces ?? []).filter((ns) => ns.environment !== 'prod');
+    const hasBothEnvs = prodNamespaces.length > 0 && nonProdNamespaces.length > 0;
+
+    function envTotals(nsList: Namespace[]) {
+      return nsList.reduce(
+        (acc, ns) => {
+          const s = statsById.get(ns.id);
+          return {
+            active: acc.active + (s?.totalActive ?? 0),
+            dlq: acc.dlq + (s?.totalDlq ?? 0),
+            scheduled: acc.scheduled + (s?.totalScheduled ?? 0),
+          };
+        },
+        { active: 0, dlq: 0, scheduled: 0 },
+      );
+    }
+    const prodTotals = hasBothEnvs ? envTotals(prodNamespaces) : null;
+    const nonProdTotals = hasBothEnvs ? envTotals(nonProdNamespaces) : null;
+
+    return {
+      aggregateStats,
+      hotspots,
+      maxDlq,
+      sortedNamespaces,
+      prodNamespaces,
+      nonProdNamespaces,
+      hasBothEnvs,
+      prodTotals,
+      nonProdTotals,
+    };
+  }, [namespaces, allStats]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -644,7 +635,7 @@ export function DashboardPage() {
           <div className="flex items-center gap-3">
             <Globe className="w-6 h-6 text-white/80" />
             <div>
-              <h1 className="text-xl font-semibold text-white">Multi-Namespace Dashboard</h1>
+              <h1 className="text-xl font-semibold text-white">Namespace Overview</h1>
               <div className="flex items-center gap-3 mt-0.5">
                 <p className="text-indigo-100 text-sm">
                   {namespaces && namespaces.length > 0
@@ -652,7 +643,7 @@ export function DashboardPage() {
                     : 'All connected namespaces at a glance'}
                 </p>
                 {lastUpdatedAt.current !== null && (
-                  <LiveBadge secondsAgo={secondsSinceLive} />
+                  <LiveBadge triggerAt={lastUpdatedAt.current} />
                 )}
               </div>
             </div>
@@ -684,23 +675,27 @@ export function DashboardPage() {
               <SkeletonCard key={i} />
             ))}
           </div>
-        ) : !namespaces || namespaces.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center px-6">
-            <Globe className="w-14 h-14 text-gray-300 mb-4" />
-            <p className="text-gray-600 font-semibold text-lg mb-1">No namespaces connected yet</p>
-            <p className="text-gray-400 text-sm mb-5">
-              Connect a Service Bus namespace to see it here.
-            </p>
-            <button
-              onClick={() => navigate('/connect')}
-              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Connect a namespace
-            </button>
+        ) : namespacesError && (!namespaces || namespaces.length === 0) ? (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+            <p className="text-red-700 font-medium">Unable to reach the API server</p>
+            <p className="text-red-500 text-sm mt-1">Ensure the backend is running and try again.</p>
           </div>
+        ) : !namespaces || namespaces.length === 0 ? (
+          <EmptyState
+            icon={Globe}
+            heading="No namespaces connected yet"
+            subtext="Connect a Service Bus namespace to see it here."
+            action={{ label: 'Connect a namespace', icon: Plus, onClick: () => navigate('/connect') }}
+          />
         ) : (
           <>
+            {namespacesError && (
+              <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 mb-4 text-sm text-amber-700">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                Unable to refresh namespaces — showing last known data.
+              </div>
+            )}
+
             {/* Aggregate Stats Bar */}
             <AggregateSummaryBar stats={aggregateStats} />
 
@@ -736,6 +731,13 @@ export function DashboardPage() {
               >
                 <Zap className="w-3.5 h-3.5" />
                 Auto-Replay Rules
+              </button>
+              <button
+                onClick={() => navigate('/fleet')}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors"
+              >
+                <Activity className="w-3.5 h-3.5" />
+                Fleet Health
               </button>
             </div>
 

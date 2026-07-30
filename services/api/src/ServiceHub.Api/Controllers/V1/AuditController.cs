@@ -2,6 +2,8 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Security;
+using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Shared.Constants;
@@ -10,22 +12,28 @@ namespace ServiceHub.Api.Controllers.V1;
 
 /// <summary>
 /// Controller for the Persistent Audit Trail.
-/// Exposes paginated queries, summary statistics, and CSV/JSON exports.
-/// All endpoints are tenant-scoped — users can only see their own audit logs.
+/// Exposes paginated queries, summary statistics, CSV/JSON exports, and on-demand retention
+/// purge. Read endpoints are tenant-scoped — users can only see their own audit logs. Purge is
+/// instance-wide (see <see cref="Purge"/>), not tenant-scoped — retention is an operator policy.
 /// </summary>
 [Route(ApiRoutes.Audit.Base)]
 [Tags("Audit Trail")]
 public sealed class AuditController : ApiControllerBase
 {
     private readonly IAuditService _auditService;
+    private readonly IAuditLogger _auditLogger;
     private readonly ILogger<AuditController> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AuditController"/> class.
     /// </summary>
-    public AuditController(IAuditService auditService, ILogger<AuditController> logger)
+    public AuditController(
+        IAuditService auditService,
+        ILogger<AuditController> logger,
+        IAuditLogger? auditLogger = null)
     {
         _auditService = auditService ?? throw new ArgumentNullException(nameof(auditService));
+        _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -157,6 +165,60 @@ public sealed class AuditController : ApiControllerBase
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         });
         return File(Encoding.UTF8.GetBytes(json), "application/json", $"audit-export-{dateStamp}.json");
+    }
+
+    // ─── POST /api/v1/audit/purge ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Permanently deletes audit log entries older than the given number of days —
+    /// instance-wide, across all owners, not just the caller's own logs. Complements the
+    /// automatic <c>Audit:Retention</c> sweep for operators who want to enforce a tightened
+    /// retention policy immediately rather than waiting for the next scheduled sweep.
+    /// </summary>
+    /// <param name="request">The retention cutoff, in days.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="200">Purge completed; returns the number of entries deleted.</response>
+    /// <response code="428">Missing explicit-intent headers.</response>
+    [HttpPost("purge")]
+    [RequireScope(ApiKeyScopes.Admin)]
+    [ProducesResponseType(typeof(PurgeAuditLogsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<ActionResult<PurgeAuditLogsResponse>> Purge(
+        [FromBody] PurgeAuditLogsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentPurgeAuditLogs))
+        {
+            _auditLogger.LogCriticalAction(
+                HttpContext, OwnerId, action: IntentHeaders.IntentPurgeAuditLogs, outcome: "Denied",
+                detail: "Missing explicit intent headers");
+
+            return Problem(
+                statusCode: StatusCodes.Status428PreconditionRequired,
+                title: "Explicit Intent Required",
+                detail: IntentHeaders.BuildIntentRequiredDetail("purging audit logs"));
+        }
+
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-request.OlderThanDays);
+        var result = await _auditService.PurgeExpiredAsync(cutoff, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            _auditLogger.LogCriticalAction(
+                HttpContext, OwnerId, action: IntentHeaders.IntentPurgeAuditLogs, outcome: "Failed",
+                detail: result.Error.Message);
+            return ToActionResult<PurgeAuditLogsResponse>(result.Error);
+        }
+
+        _auditLogger.LogCriticalAction(
+            HttpContext, OwnerId, action: IntentHeaders.IntentPurgeAuditLogs, outcome: "Succeeded",
+            detail: $"Purged {result.Value} entries older than {request.OlderThanDays} days");
+
+        _logger.LogInformation(
+            "Manual audit retention purge: deleted {Count} entries older than {Days} days",
+            result.Value, request.OlderThanDays);
+
+        return Ok(new PurgeAuditLogsResponse(DeletedCount: result.Value, CutoffUtc: cutoff));
     }
 
     // ─── Private helpers ──────────────────────────────────────────────────────

@@ -26,9 +26,10 @@ updates:
         patterns:
           - "Azure.*"
 
-  # npm packages (React frontend)
+  # npm packages (React frontend + monorepo workspaces)
+  # Watches root package.json and all workspace packages (apps/web, packages/*, etc.)
   - package-ecosystem: "npm"
-    directory: "/apps/web"
+    directory: "/"
     schedule:
       interval: "daily"
       time: "06:00"

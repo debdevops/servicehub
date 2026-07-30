@@ -4,7 +4,7 @@
  * These tests verify the WelcomePage cloud provider cards render correctly
  * and that each demo URL loads mock messages without real credentials.
  */
-import { test, expect } from '../fixtures/simulator';
+import { test, expect } from '../fixtures/base';
 
 test('welcome page renders three cloud provider cards', async ({ page }) => {
   await page.goto('/welcome');
@@ -20,11 +20,13 @@ test('azure demo loads 50 messages without credentials', async ({ page }) => {
   await expect(
     page.getByText(/Azure Service Bus Demo/i).or(page.getByText(/Contoso/i)).first()
   ).toBeVisible({ timeout: 10_000 });
-  // DLQ tab/button should be visible — use role selectors only to avoid matching
-  // subtitle text that also contains "Dead-Letter"
+  // DLQ tab/button should be visible — scope to <main> and use role selectors to
+  // avoid matching both the message list's own "Dead-Letter (N)" tab and the
+  // sidebar's unrelated "Dead-Letter · All Clouds" quick-access shortcut (nav),
+  // which also matches /dead.?letter/i and previously made this locator ambiguous.
   await expect(
-    page.getByRole('tab', { name: /dead.?letter/i })
-      .or(page.getByRole('button', { name: /dead.?letter/i }))
+    page.locator('main').getByRole('tab', { name: /dead.?letter/i })
+      .or(page.locator('main').getByRole('button', { name: /dead.?letter/i }))
   ).toBeVisible();
 });
 

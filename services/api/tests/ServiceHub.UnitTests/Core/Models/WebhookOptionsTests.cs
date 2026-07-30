@@ -14,6 +14,8 @@ public sealed class WebhookOptionsTests
         opts.Url.Should().BeEmpty();
         opts.DlqSpikeThreshold.Should().Be(10);
         opts.CooldownSeconds.Should().Be(300);
+        opts.Format.Should().Be(WebhookFormat.Generic);
+        opts.PublicUrl.Should().BeNull();
     }
 
     [Fact]
@@ -30,12 +32,16 @@ public sealed class WebhookOptionsTests
             Enabled = true,
             Url = "https://hooks.example.com/dlq",
             DlqSpikeThreshold = 25,
-            CooldownSeconds = 120
+            CooldownSeconds = 120,
+            Format = WebhookFormat.Slack,
+            PublicUrl = "https://servicehub.mycompany.com",
         };
 
         opts.Enabled.Should().BeTrue();
         opts.Url.Should().Be("https://hooks.example.com/dlq");
         opts.DlqSpikeThreshold.Should().Be(25);
         opts.CooldownSeconds.Should().Be(120);
+        opts.Format.Should().Be(WebhookFormat.Slack);
+        opts.PublicUrl.Should().Be("https://servicehub.mycompany.com");
     }
 }

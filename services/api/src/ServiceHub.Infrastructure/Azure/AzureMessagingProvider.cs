@@ -54,6 +54,9 @@ public sealed class AzureMessagingProvider : ICloudMessagingProvider
     public CloudProviderType ProviderType => CloudProviderType.Azure;
 
     /// <inheritdoc/>
+    public ProviderCapabilities Capabilities => ProviderCapabilities.Azure;
+
+    /// <inheritdoc/>
     /// <remarks>
     /// Delegates to <see cref="IServiceBusClientFactory.CreateClientAsync"/> which validates
     /// the connection string format and attempts to establish an SDK client.
@@ -69,8 +72,7 @@ public sealed class AzureMessagingProvider : ICloudMessagingProvider
     /// <remarks>
     /// Enumerates queues, topics, and subscriptions via the cached
     /// <see cref="IServiceBusClientWrapper"/> for the namespace. Subscription entities are
-    /// named with their full path (<c>topic/subscriptions/subscription</c>), matching the
-    /// convention used by the simulator providers.
+    /// named with their full path (<c>topic/subscriptions/subscription</c>).
     /// </remarks>
     public async Task<Result<IReadOnlyList<CloudEntity>>> ListEntitiesAsync(Guid namespaceId, CancellationToken ct)
     {

@@ -1,6 +1,6 @@
 import { X, Star, Zap } from 'lucide-react';
-import { useRuleTemplates } from '@/hooks/useRules';
-import type { RuleTemplateResponse } from '@/lib/api/rules';
+import { useRuleTemplates } from '@servicehub/ui-shared/hooks/useRules';
+import type { RuleTemplateResponse } from '@servicehub/ui-shared/lib/api/rules';
 
 interface TemplateGalleryDialogProps {
   open: boolean;

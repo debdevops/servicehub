@@ -11,7 +11,7 @@
 
 import { Link } from 'react-router-dom';
 import { FlaskConical, ArrowRight } from 'lucide-react';
-import { useDemoContext } from '@/lib/demo/DemoContext';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 
 const ACCENT_CLASSES = {
   blue: {

@@ -88,7 +88,7 @@ export function SecurityPage() {
               <Shield className="w-5 h-5 text-green-600" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 leading-tight">
+              <h1 className="text-xl font-bold text-gray-900 leading-tight">
                 Security &amp; privacy
               </h1>
               <p className="text-sm text-gray-500">

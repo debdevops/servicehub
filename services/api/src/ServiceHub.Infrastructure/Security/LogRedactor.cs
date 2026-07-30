@@ -70,6 +70,23 @@ public static partial class LogRedactor
         // Redact X-API-Key headers
         result = ApiKeyHeaderRegex().Replace(result, "X-API-Key: [REDACTED]");
 
+        // Redact AWS access key IDs (AKIA long-term, ASIA temporary/STS-issued)
+        result = AwsAccessKeyIdRegex().Replace(result, MaskedValue);
+
+        // Redact AWS secret access keys / session tokens — key=value and JSON "key": "value" forms
+        result = AwsCredentialFieldRegex().Replace(result, $"$1={MaskedValue}");
+
+        // Redact GCP service-account JSON private key fields
+        result = GcpPrivateKeyFieldRegex().Replace(result, $"\"private_key\": \"{MaskedValue}\"");
+        result = GcpPrivateKeyIdFieldRegex().Replace(result, $"\"private_key_id\": \"{MaskedValue}\"");
+
+        // Redact raw PEM private-key blocks outside JSON (defense in depth)
+        result = PemPrivateKeyBlockRegex().Replace(result, "[PRIVATE KEY REDACTED]");
+
+        // Redact Slack/Teams incoming-webhook URLs — the URL itself is a bearer secret
+        result = SlackWebhookRegex().Replace(result, "[SLACK_WEBHOOK_REDACTED]");
+        result = TeamsWebhookRegex().Replace(result, "[TEAMS_WEBHOOK_REDACTED]");
+
         return result;
     }
 
@@ -210,6 +227,33 @@ public static partial class LogRedactor
 
     [GeneratedRegex(@"X-API-Key:\s*[^\r\n]+", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex ApiKeyHeaderRegex();
+
+    // ── AWS credential patterns ──────────────────────────────────────
+
+    [GeneratedRegex(@"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b", RegexOptions.Compiled)]
+    private static partial Regex AwsAccessKeyIdRegex();
+
+    [GeneratedRegex(@"(aws_secret_access_key|aws_session_token)""?\s*[:=]\s*""?[^""\r\n,;}]+""?", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex AwsCredentialFieldRegex();
+
+    // ── GCP service-account credential patterns ──────────────────────
+
+    [GeneratedRegex(@"""private_key""\s*:\s*""[^""]*""", RegexOptions.Compiled)]
+    private static partial Regex GcpPrivateKeyFieldRegex();
+
+    [GeneratedRegex(@"""private_key_id""\s*:\s*""[^""]*""", RegexOptions.Compiled)]
+    private static partial Regex GcpPrivateKeyIdFieldRegex();
+
+    [GeneratedRegex(@"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----", RegexOptions.Compiled)]
+    private static partial Regex PemPrivateKeyBlockRegex();
+
+    // ── Webhook URL patterns (the URL itself is a bearer secret) ─────
+
+    [GeneratedRegex(@"https://hooks\.slack\.com/services/\S+", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex SlackWebhookRegex();
+
+    [GeneratedRegex(@"https://(?:outlook\.office\.com/webhook|[a-z0-9-]+\.webhook\.office\.com/webhookb2)/\S+", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex TeamsWebhookRegex();
 
     [GeneratedRegex(@"[\x00-\x1F\x7F]", RegexOptions.Compiled)]
     private static partial Regex ControlCharRegex();

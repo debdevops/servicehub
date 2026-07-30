@@ -16,6 +16,9 @@ import {
   Brain,
   ExternalLink,
   Play,
+  Eye,
+  Key,
+  Home,
 } from 'lucide-react';
 
 const GITHUB_URL = 'https://github.com/debdevops/servicehub';
@@ -241,7 +244,7 @@ export function WelcomePage() {
           </h1>
           <p className="text-xl md:text-2xl text-gray-600 mb-4 max-w-3xl mx-auto leading-relaxed font-light">
             The forensic debugger for message queues — Azure Service Bus, AWS SQS, and GCP Pub/Sub.
-            Full message bodies, DLQ patterns, AI insights, and automated replay in one tab.
+            Full message bodies, DLQ patterns, AI insights that never leave your browser, and automated replay in one tab.
           </p>
           <p className="text-base text-gray-400 mb-12 max-w-2xl mx-auto">
             Built for DevOps, Platform, and SRE engineers who need real answers during production incidents.
@@ -506,14 +509,14 @@ export function WelcomePage() {
                 <ul className="space-y-2 mb-6 flex-1">
                   {provider.features.map((f) => (
                     <li key={f} className="flex items-start gap-2 text-sm text-gray-700">
-                      <span className={`mt-0.5 shrink-0 ${provider.accentColor}`}>\u2713</span>
+                      <span className={`mt-0.5 shrink-0 ${provider.accentColor}`}>{'\u2713'}</span>
                       {f}
                     </li>
                   ))}
                 </ul>
                 {provider.status === 'preview' && (
                   <div className="mb-4 p-2.5 rounded-lg bg-white/70 border border-dashed border-gray-300 text-xs text-gray-500">
-                    <strong className={provider.accentColor}>Phase 2 provider.</strong> Demo mode available now. Full live browsing ships in Phase 2.
+                    <strong className={provider.accentColor}>Preview.</strong> Implemented and unit-tested, not validated against live {provider.shortName} services, capability-gated (see the Provider Support Matrix), no parity guarantee with Azure. Demo mode available now; live browsing requires an operator to enable it on the server.
                   </div>
                 )}
                 <button
@@ -666,15 +669,15 @@ export function WelcomePage() {
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {[
-              { icon: '\uD83D\uDD10', title: 'AES-GCM Encryption', body: 'Connection strings, access keys, and service account JSONs are encrypted at rest using AES-256-GCM. The key lives only in your server config.' },
-              { icon: '\uD83D\uDC41\uFE0F', title: 'Read-Only by Default', body: 'All message reading uses PeekMessagesAsync / GetMessages. ServiceHub never consumes, removes, or alters any messages.' },
-              { icon: '\uD83E\uDDE0', title: 'Zero-Data-Exfiltration AI', body: 'AI pattern analysis is pure TypeScript running in your browser tab. Message content never leaves your environment.' },
-              { icon: '\uD83D\uDEE1\uFE0F', title: 'OWASP Compliant', body: 'Built against OWASP Top 10 guidelines. Input validation, secure headers, EF Core parameterised queries.' },
-              { icon: '\uD83D\uDD11', title: 'Minimum-Privilege Design', body: 'Azure: Listen-only SAS. AWS: sqs:ReceiveMessage + GetQueueAttributes. GCP: roles/pubsub.subscriber.' },
-              { icon: '\uD83C\uDFE0', title: 'Self-Host for Sovereignty', body: 'Deploy on Azure, AWS VPC, GCP project, on-premises VM, Docker, or Kubernetes. You own the infrastructure.' },
-            ].map(({ icon, title, body }) => (
+              { icon: Lock, title: 'AES-GCM Encryption', body: 'Connection strings, access keys, and service account JSONs are encrypted at rest using AES-256-GCM. The key lives only in your server config.' },
+              { icon: Eye, title: 'Read-Only by Default', body: 'All message reading uses PeekMessagesAsync / GetMessages. ServiceHub never consumes, removes, or alters any messages.' },
+              { icon: Brain, title: 'Zero-Data-Exfiltration AI', body: 'AI pattern analysis is pure TypeScript running in your browser tab. Message content never leaves your environment.' },
+              { icon: Shield, title: 'OWASP Compliant', body: 'Built against OWASP Top 10 guidelines. Input validation, secure headers, EF Core parameterised queries.' },
+              { icon: Key, title: 'Minimum-Privilege Design', body: 'Azure: Listen-only SAS. AWS: sqs:ReceiveMessage + GetQueueAttributes. GCP: roles/pubsub.subscriber.' },
+              { icon: Home, title: 'Self-Host for Sovereignty', body: 'Deploy on Azure, AWS VPC, GCP project, on-premises VM, Docker, or Kubernetes. You own the infrastructure.' },
+            ].map(({ icon: Icon, title, body }) => (
               <div key={title} className="p-5 bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all">
-                <div className="text-2xl mb-3">{icon}</div>
+                <Icon className="w-6 h-6 text-gray-700 mb-3" />
                 <h4 className="font-bold text-gray-900 mb-2">{title}</h4>
                 <p className="text-sm text-gray-600 leading-relaxed">{body}</p>
               </div>

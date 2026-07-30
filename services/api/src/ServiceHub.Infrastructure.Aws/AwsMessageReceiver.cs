@@ -119,7 +119,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             }, linkedCts.Token).ConfigureAwait(false);
 
             _logger.LogDebug("Peeked {Count} messages from SQS queue {QueueName} (namespace {NamespaceId})",
-                mapped.Count, request.EntityName, request.NamespaceId);
+                mapped.Count, SanitizeForLog(request.EntityName), request.NamespaceId);
             return Result.Success<IReadOnlyList<CoreMessage>>(mapped);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
@@ -182,7 +182,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             }
 
             _logger.LogDebug("Peeked {Count} DLQ messages from {QueueName} (namespace {NamespaceId})",
-                mapped.Count, request.EntityName, request.NamespaceId);
+                mapped.Count, SanitizeForLog(request.EntityName), request.NamespaceId);
             return Result.Success<IReadOnlyList<CoreMessage>>(mapped);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)

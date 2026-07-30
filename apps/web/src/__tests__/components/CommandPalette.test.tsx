@@ -15,7 +15,7 @@ vi.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: () => ({
     data: [
       { id: 'ns-1', name: 'prod-bus', displayName: 'Production Bus', environment: 'Production' },
@@ -63,11 +63,11 @@ describe('CommandPalette', () => {
     expect(screen.getByPlaceholderText('Search pages, namespaces, actions…')).toBeInTheDocument();
   });
 
-  it('shows page items including Dashboard and Messages', () => {
+  it('shows page items including Namespace Overview and Messages', () => {
     renderOpen();
-    expect(screen.getByText('Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Namespace Overview')).toBeInTheDocument();
     expect(screen.getByText('Messages')).toBeInTheDocument();
-    expect(screen.getByText('Health')).toBeInTheDocument();
+    expect(screen.getByText('System Health')).toBeInTheDocument();
   });
 
   it('shows namespace items from useNamespaces', () => {
@@ -86,8 +86,8 @@ describe('CommandPalette', () => {
     const options = screen.getAllByRole('option');
     // Only Health-related item should remain (1 option)
     expect(options.length).toBeGreaterThanOrEqual(1);
-    // Dashboard item should be gone
-    expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
+    // Namespace Overview item should be gone
+    expect(screen.queryByText('Namespace Overview')).not.toBeInTheDocument();
   });
 
   it('shows no-results message when query matches nothing', async () => {
@@ -106,9 +106,9 @@ describe('CommandPalette', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('navigates to dashboard and calls onClose when Dashboard item is clicked', async () => {
+  it('navigates to dashboard and calls onClose when Namespace Overview item is clicked', async () => {
     const { onClose } = renderOpen();
-    await userEvent.click(screen.getByText('Dashboard'));
+    await userEvent.click(screen.getByText('Namespace Overview'));
     expect(mockNavigate).toHaveBeenCalledWith('/dashboard');
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -116,7 +116,7 @@ describe('CommandPalette', () => {
   it('navigates down with ArrowDown key', async () => {
     renderOpen();
     const input = screen.getByPlaceholderText('Search pages, namespaces, actions…');
-    // First item (Dashboard) should be active initially — pressing ArrowDown moves to next
+    // First item (Namespace Overview) should be active initially — pressing ArrowDown moves to next
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     // Second item should now be active (aria-selected="true")
     const options = screen.getAllByRole('option');
@@ -127,7 +127,7 @@ describe('CommandPalette', () => {
     const { onClose } = renderOpen();
     const input = screen.getByPlaceholderText('Search pages, namespaces, actions…');
     fireEvent.keyDown(input, { key: 'Enter' });
-    // First item is Dashboard → navigate to '/dashboard'
+    // First item is Namespace Overview → navigate to '/dashboard'
     expect(mockNavigate).toHaveBeenCalledWith('/dashboard');
     expect(onClose).toHaveBeenCalledTimes(1);
   });

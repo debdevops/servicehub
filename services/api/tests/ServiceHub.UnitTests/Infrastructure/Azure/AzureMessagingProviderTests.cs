@@ -176,6 +176,17 @@ public sealed class AzureMessagingProviderTests
     }
 
     [Fact]
+    public void Capabilities_ReflectsAzureConstraints()
+    {
+        var capabilities = BuildProvider().Capabilities;
+
+        capabilities.SupportsMessageCounts.Should().BeTrue();
+        capabilities.SupportsManualDeadLetter.Should().BeTrue();
+        capabilities.SupportsPurge.Should().BeFalse();
+        capabilities.SupportsScheduledMessages.Should().BeTrue();
+    }
+
+    [Fact]
     public void GetMessageReceiver_ReturnsReceiverInstance()
     {
         var receiver = new Mock<IMessageReceiver>().Object;

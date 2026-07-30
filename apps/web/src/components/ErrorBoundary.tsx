@@ -1,5 +1,5 @@
 import { Component, ReactNode } from 'react';
-import { appInsights } from '../lib/telemetry';
+import { appInsights } from '@servicehub/ui-shared/lib/telemetry';
 
 interface Props {
   children: ReactNode;

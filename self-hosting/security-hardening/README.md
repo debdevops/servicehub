@@ -6,15 +6,53 @@ Complete this guide **before** exposing your ServiceHub instance to users or con
 
 ## Table of contents
 
-1. [Generate all secrets](#1-generate-all-secrets)
-2. [Pre-production security checklist](#2-pre-production-security-checklist)
-3. [What ServiceHub stores and what it never touches](#3-what-servicehub-stores-and-what-it-never-touches)
-4. [Rotate secrets after go-live](#4-rotate-secrets-after-go-live)
-5. [Recommended Service Bus policy](#5-recommended-service-bus-policy)
+1. [Threat model and non-goals](#1-threat-model-and-non-goals)
+2. [Generate all secrets](#2-generate-all-secrets)
+3. [Pre-production security checklist](#3-pre-production-security-checklist)
+4. [What ServiceHub stores and what it never touches](#4-what-servicehub-stores-and-what-it-never-touches)
+5. [Rotate secrets after go-live](#5-rotate-secrets-after-go-live)
+6. [Recommended Service Bus policy](#6-recommended-service-bus-policy)
 
 ---
 
-## 1. Generate all secrets
+## 1. Threat model and non-goals
+
+Read this before deciding whether ServiceHub's defaults are appropriate for your environment.
+
+### What ServiceHub defends against by default
+- **Accidental data modification** — read-only (`Peek`) access by default; replay/send/purge are
+  explicit, gated actions, blocked entirely on production namespaces.
+- **Casual/automated abuse of an exposed endpoint** — the SPA token (above) stops zero-effort
+  scanners and cross-site requests from hitting the API without first fetching the page.
+- **Secrets at rest** — connection strings are AES-256-GCM encrypted; the plaintext never touches
+  disk or logs.
+- **Accidental secret leakage in logs** — `LogRedactor` strips known secret patterns from log
+  output (see [T6 redaction coverage](#redaction-coverage-and-its-limits) below — best-effort, not
+  a guarantee).
+- **Cross-tenant data leakage between distinct owner identities** — API keys, OIDC subjects, and
+  Easy Auth users are isolated from each other's namespaces, DLQ history, and audit trail (subject
+  to the namespace-sharing feature, which is opt-in and explicit).
+
+### What ServiceHub explicitly does NOT defend against
+- **A hostile network peer.** ServiceHub assumes TLS termination and network transport security
+  are handled by your infrastructure (a reverse proxy, load balancer, or platform TLS). It does not
+  encrypt traffic itself.
+- **A malicious operator.** Whoever controls the encryption key, the host filesystem, or the
+  process's environment variables can read everything ServiceHub can read. There is no
+  operator-proof secret storage — this is the same trust model as any self-hosted application
+  holding its own encryption key.
+- **Multi-tenant SaaS isolation.** ServiceHub isolates data *between owner identities* (API keys,
+  OIDC subjects), but it is not hardened as a platform for hosting mutually-distrusting tenants who
+  each need protection from a compromised or misbehaving co-tenant, a noisy-neighbor resource
+  exhaustion attacker, or side-channel attacks. If you need that isolation model, run separate
+  ServiceHub instances per tenant rather than relying on owner-ID scoping alone.
+- **A user who can already reach the URL and is willing to act as the instance administrator.**
+  With no OIDC/Easy Auth configured, anyone who reaches the instance is the admin — see the SPA
+  token explanation below.
+
+---
+
+## 2. Generate all secrets
 
 Run this from the repository root. It produces all four keys at once:
 
@@ -56,7 +94,7 @@ echo "sh_ro_$(openssl rand -hex 32)"
 
 ---
 
-## 2. Pre-production security checklist
+## 3. Pre-production security checklist
 
 Check every item before allowing users to access your instance.
 
@@ -69,21 +107,183 @@ Check every item before allowing users to access your instance.
 - [ ] `Security__Authentication__ScopedApiKeys__0__Key` (admin key) is generated with `openssl rand` — not a guessable short string
 - [ ] `Security__Authentication__ScopedApiKeys__1__Key` (read-only key) is a separate randomly generated value
 
+> ⚠️ **Key rotation is NOT SUPPORTED, plainly.** There is no rotate-and-re-encrypt tool.
+> `Security__EncryptionKey` derives the AES-GCM key for every stored connection string via
+> HKDF/PBKDF2; if you change it after connections have been saved, **every previously stored
+> connection string becomes permanently unreadable** — there is no way to recover them with the
+> old key discarded. Treat this key as fixed for the lifetime of your deployment's stored data.
+> This is the first question most enterprise reviewers ask, and the honest answer is: back up the
+> key itself (in your secret manager) rather than planning to rotate it. ServiceHub also refuses
+> to start outside Development if `Security__EncryptionKey` is left at the shipped placeholder
+> value — a fail-fast check, not a silent fallback to an insecure default.
+
 ### Authentication and access control
 
 - [ ] `Security__SpaToken__Enabled` is `true`
-  - **Why**: When false, any HTTP client (curl, Postman, automated scanner) can call the API without loading the UI. When true, the browser receives a short-lived HMAC-signed token that the API validates on every request.
+  - **Why**: this is a CSRF and casual-automation mitigation, not an authentication boundary — see below for exactly what it does and doesn't protect against.
 
-> ⚠️ **The SPA token is anti-replay, not per-user authentication.** When `Security__SpaToken__Enabled` is `true` and there is no platform identity layer (Azure Easy Auth or equivalent) in front of ServiceHub, **any user who can load the web UI receives a full-scope admin session.** The SPA token — a short-lived HMAC-signed token embedded in the served HTML — only proves a request came from a browser that loaded the page. It does **not** identify or authorize an individual user: all SPA sessions share the single built-in admin owner (`__spa__`) and bypass API-key scope checks entirely.
+> ⚠️ **What the SPA token actually is: a CSRF and casual-automation mitigation, not an
+> authentication boundary.** `Security__SpaToken__Enabled=true` makes the API require a
+> short-lived HMAC-signed token on every request, which the server embeds directly in the HTML it
+> serves at `/`. This raises the bar above zero-effort automation — a browser extension, a
+> cross-site request, or a scanner that blindly fires requests at the API without first fetching
+> the page will not have a valid token — but it is **not** proof that a human is driving a real
+> browser, and it is **not per-user identity**. The token is obtainable by anyone who can fetch the
+> index page: `curl https://your-instance/ | grep spaToken` (or equivalent) retrieves it exactly
+> as a browser would, because the token is static content in the response, not something that
+> requires executing JavaScript or passing a challenge. Every request carrying a valid SPA token —
+> from a real user's browser or from that `curl` command — is treated as the same single built-in
+> admin owner (`__spa__`), with every scope, on every namespace.
 >
-> **This is by design for single-operator self-hosting** — the SPA-token path assumes one trust boundary, where everyone who can reach the UI is trusted as the instance administrator.
+> **This is by design for single-operator self-hosting**, not an oversight: the SPA-token path
+> assumes one trust boundary, where everyone who can reach the URL is already trusted as the
+> instance administrator (the same trust assumption as, say, a database admin console bound to
+> localhost). It stops accidental/automated abuse of an exposed instance; it does not stop a
+> deliberate visitor from acting as admin.
+>
+> **The supported path to real per-user identity is OIDC** (any standards-compliant identity
+> provider — Entra ID, Okta, Auth0, Ping, Google Workspace, ...), documented in full below. On
+> Azure App Service specifically, Easy Auth is also available as a platform-native alternative.
+> Neither is required to run ServiceHub; both are required before more than one trust level needs
+> isolating.
 >
 > **If more than one trust level must be isolated, or you expose ServiceHub beyond a single operator:**
-> - Enable **Azure App Service Easy Auth** (or an equivalent reverse-proxy authenticator). ServiceHub's `EasyAuthMiddleware` reads the injected `X-MS-CLIENT-PRINCIPAL-ID` and assigns each user a distinct owner ID (`entra:{oid}`) for per-user tenant isolation; Easy Auth requests bypass the shared SPA-owner path.
-> - Restrict who can reach the URL at the network layer (App Service Access Restrictions, private endpoints, or VPN).
-> - For headless/API automation, issue a **scoped API key** rather than relying on the SPA token — scoped keys get their own isolated owner ID and least-privilege scopes.
+> - Enable **OIDC Bearer authentication** (`Security:Oidc:*`, below) — works on any host: AWS, GCP,
+>   Docker Compose, on-prem, or Azure App Service itself.
+> - **On Azure App Service specifically**: Easy Auth is also available. ServiceHub's
+>   `EasyAuthMiddleware` reads the injected `X-MS-CLIENT-PRINCIPAL-ID` and assigns each user a
+>   distinct owner ID (`entra:{oid}`); Easy Auth requests bypass the shared SPA-owner path. Easy
+>   Auth only works behind Azure's own auth proxy, unlike OIDC above.
+> - Restrict who can reach the URL at the network layer (firewall rules, private endpoints, VPN).
+> - For headless/API automation, issue a **scoped API key** rather than relying on the SPA token —
+>   scoped keys get their own isolated owner ID and least-privilege scopes.
 
-- [ ] If more than one person or role must be isolated from one another, **Azure Easy Auth (or an equivalent identity layer) is enabled** — the SPA token alone grants a shared, full-scope admin session to anyone who can load the UI.
+- [ ] If more than one person or role must be isolated from one another, **OIDC Bearer authentication (or, on Azure App Service, Easy Auth)** is enabled — the SPA token alone grants a shared, full-scope admin session to anyone who reaches the URL, not just anyone who "loads the UI" in a literal browser.
+
+### Failed-authentication throttling and its shared-IP-behind-proxy caveat
+
+`AuthFailureThrottle` locks out a client after repeated invalid API-key attempts within a sliding
+window, closing the gap left by `RateLimitingMiddleware` (which only sees requests that already
+authenticated successfully). It keys on `HttpContext.Connection.RemoteIpAddress` specifically to
+avoid trusting an easily-spoofed header.
+
+**Caveat**: `Program.cs` clears `ForwardedHeadersOptions.KnownProxies`/`KnownIPNetworks` so
+`X-Forwarded-For` is accepted from any immediate connection (needed for hosts like Azure App
+Service, whose front-end IPs aren't fixed in advance). That means `RemoteIpAddress` has already
+been overwritten by whatever the client's `X-Forwarded-For` claims before the throttle ever runs.
+Behind most reverse proxies, load balancers, or NATs, this means:
+- Every user sharing that proxy/NAT shares one lockout bucket — one user's failed attempts can
+  lock out everyone else behind the same address.
+- An attacker can rotate the header value to dodge the throttle entirely.
+
+**Fix for your deployment**: restrict `ForwardedHeadersOptions.KnownProxies`/`KnownIPNetworks` (in
+`Program.cs`) to your actual front-end proxy's address(es) so only headers from a trusted hop are
+honored. Not restricted by default because the correct value is deployment-specific. See
+[docs/KNOWN-LIMITATIONS.md](../../docs/KNOWN-LIMITATIONS.md) for the same caveat as it affects
+audit log `ClientIp`.
+
+### OIDC Bearer authentication (any host, any standards-compliant IdP)
+
+> ⚠️ Same trust-model caveat as Easy Auth by default: a validated OIDC identity gets a
+> **full-scope session**, isolated from other identities only by its own `oidc:{sub}` owner ID.
+> If your IdP's app registration is configured to emit an OAuth2 `scope` claim on the token
+> (literal scopes like `dlq:read`, or role names — see [Roles](#roles-scope-bundles-for-api-keys-and-oidc)
+> below), ServiceHub enforces it exactly like a scoped API key instead. Without that claim,
+> every validated OIDC identity is unrestricted (but still isolated by owner ID) — use scoped API
+> keys if you need least-privilege enforcement without configuring your IdP's claim mapping.
+
+Unlike Easy Auth, which only works behind Azure App Service's built-in authentication proxy, OIDC
+Bearer authentication works identically regardless of where ServiceHub runs — AWS ECS, GCP Cloud
+Run, Docker Compose, bare metal, or Azure App Service itself. It validates `Authorization: Bearer
+<JWT>` tokens against your identity provider's own signing keys (fetched from
+`{Authority}/.well-known/openid-configuration` and auto-rotated), so there is no upstream-header
+trust assumption to get wrong — the token's signature is the proof.
+
+**When to use it**: your organization's own reverse proxy or API gateway already performs the
+interactive OIDC login and forwards a validated Bearer token to ServiceHub, or your CLI/automation
+obtains a token from your IdP via `client_credentials` and passes it directly. ServiceHub does not
+implement an interactive login UI itself — exactly like Easy Auth, where Azure's own infrastructure
+handles the login redirect and ServiceHub only trusts the resulting identity signal.
+
+**Setup**:
+
+1. Register ServiceHub as an application/client with your identity provider (Entra ID, Okta,
+   Auth0, Ping, Google Workspace, or any other OIDC-compliant IdP) and note its **Authority**
+   (issuer URL) and the **Audience** (your app's client ID).
+2. Set:
+   ```bash
+   Security__Oidc__Enabled=true
+   Security__Oidc__Authority=https://your-idp.example.com   # must be HTTPS
+   Security__Oidc__Audience=your-servicehub-client-id
+   ```
+3. Restart. ServiceHub fails fast at startup if `Enabled=true` with a non-HTTPS or missing
+   `Authority`, or a missing `Audience` — see `docs/CONFIGURATION.md`.
+4. Callers present `Authorization: Bearer <token>` on every request. A validated token is
+   isolated under owner ID `oidc:{sub}` — that identity's namespaces, DLQ history, and audit
+   trail are separate from every other identity (SPA, other OIDC subjects, API keys).
+5. **Optional** — to enforce least-privilege instead of full access, configure your IdP's app
+   registration to emit an OAuth2 `scope` claim on the token (a space-delimited string, e.g.
+   `"dlq:read dlq:write"` or a role name like `"Viewer"` — see Roles below). Most IdPs don't do
+   this without deliberate configuration, so existing OIDC deployments are unaffected until you
+   opt in.
+
+A missing, expired, or invalid Bearer token is never a hard rejection by itself — the request
+simply falls through to the SPA token or API key path, same as an untrusted Easy Auth header.
+
+### Roles (scope bundles for API keys and OIDC)
+
+A role is a named bundle of scopes, so an operator doesn't have to enumerate individual scopes by
+hand for every key (or every IdP group-to-scope mapping). Use a role name anywhere a scope is
+accepted — a scoped API key's `Scopes` array, or an OIDC token's `scope` claim:
+
+| Role | Grants |
+|---|---|
+| `Viewer` | Browse namespaces, entities, and messages — read-only |
+| `Operator` | Viewer + send messages, replay/purge DLQ messages |
+| `Auditor` | Viewer + audit trail access, for compliance review without operational access |
+
+```json
+"ScopedApiKeys": [
+  { "Key": "...", "Scopes": ["Viewer"], "Description": "Read-only key" },
+  { "Key": "...", "Scopes": ["Operator"], "Description": "On-call ops key" }
+]
+```
+
+There's no separate `Admin` role — an API key or OIDC token with no scopes at all (or the literal
+`admin` scope) already has full access. Role names and literal scopes can be mixed freely in the
+same list.
+
+### Namespace sharing (Preview)
+
+A namespace's owner can grant another owner identity live operational access — browse, peek,
+replay/purge, Live Tail — via `POST /api/v1/namespaces/{id}/share` (both this and the revoke
+endpoint require `X-ServiceHub-Intent: namespaces:share`). Use `GET /api/v1/me` to discover the
+exact owner ID string a colleague needs to share with them (e.g. `oidc:{sub}` for an OIDC
+identity, `key_{hash}` for a scoped API key).
+
+> ⚠️ Sharing grants the same full live-access trust the namespace's own owner has — it is not
+> scope-restricted. Only the true owner can share or revoke (a shared collaborator cannot
+> re-share or delete the namespace), but once shared, the collaborator can do anything the owner
+> could do operationally on that namespace.
+>
+> **Known limitation**: shared access covers live operations only. DLQ Intelligence history, Bulk
+> Operation job history, and audit trail entries remain visible only to whichever owner performed
+> each action — a shared collaborator does not retroactively see another owner's past
+> investigation history for that namespace.
+
+### Audit log retention
+
+- [ ] If your organization has a defined audit-log retention policy (a common SOC2/ISO 27001/GDPR
+      data-minimization requirement), **`Audit__Retention__Enabled` is `true`** and
+      `Audit__Retention__RetentionDays` matches your policy.
+  - **Why**: Off by default — audit logs are kept forever unless you opt in, so upgrading never
+    silently deletes existing compliance records. If your policy requires bounded retention (e.g.
+    "delete audit records after 2 years"), this must be explicitly enabled; nothing purges on its
+    own otherwise.
+  - A background sweep (`Audit__Retention__SweepIntervalHours`, default every 24h) enforces this
+    automatically. `POST /api/v1/audit/purge` (requires `admin` scope and
+    `X-ServiceHub-Intent: audit:purge`) enforces a tightened policy immediately instead of waiting
+    for the next scheduled sweep.
 
 - [ ] `Security__Authentication__Enabled` is `true`
   - **Why**: When false, the API accepts requests from anyone who can reach the URL. When true, every non-health endpoint requires a valid API key.
@@ -120,7 +320,7 @@ Check every item before allowing users to access your instance.
 
 ---
 
-## 3. What ServiceHub stores and what it never touches
+## 4. What ServiceHub stores and what it never touches
 
 Understand this before connecting any real namespace.
 
@@ -131,10 +331,35 @@ Understand this before connecting any real namespace.
 | **Message content** | Read transiently from Azure Service Bus to display in your browser. Never written to disk, never logged, never stored in the DLQ database. The DLQ intelligence database stores only aggregated metadata (queue names, error counts, timestamps) — not message bodies. |
 | **API requests and response times** | Sent to **your** Application Insights resource only, if you configure one. Zero telemetry if you leave the connection string empty. |
 | **API keys and SPA tokens** | Stripped from all log lines by `LogRedactor.cs` before any write operation. They appear as `[REDACTED]` in any log output. |
+| **OIDC Bearer tokens** | Never logged, in full or in part — only the HTTP method, path, and (on failure) the validation exception type are logged. Signing keys are fetched from your IdP's own discovery document and cached in memory; the raw token itself is never persisted anywhere. |
+
+### Redaction coverage and its limits
+
+`LogRedactor` (`services/api/src/ServiceHub.Infrastructure/Security/LogRedactor.cs`) is
+**pattern-matching against known secret shapes, not a content-aware secret scanner** — it is
+best-effort, not a guarantee that no sensitive value can ever reach a log line. It currently
+recognizes and masks:
+- Azure Service Bus connection-string fields (`SharedAccessKey`, `SharedAccessSignature`,
+  `AccountKey`, the `Endpoint=` host)
+- Generic `password`/`pwd`/`passwd` fields, generic API-key patterns, and `Authorization`/
+  `X-API-Key` header values
+- Bearer JWTs (by structural shape — three dot-separated segments)
+- ServiceHub's own encrypted-value markers (`ENC[v1]:`, legacy `ENC:V2:`/`PROTECTED:`) — so an
+  already-encrypted connection string can't be logged as ciphertext either
+- AWS access key IDs (`AKIA`/`ASIA` prefix) and `aws_secret_access_key`/`aws_session_token` fields
+- GCP service-account JSON `private_key`/`private_key_id` fields and raw PEM private-key blocks
+- Slack/Teams incoming-webhook URLs (the URL itself is a bearer secret for those)
+
+Because this is regex-based, a secret in a shape the patterns above don't recognize — a
+custom-format token, an unusual field name, a secret embedded mid-sentence in free text — can
+still reach a log line. Treat redaction as a defense-in-depth safety net, not a substitute for
+not logging sensitive values in the first place. This pattern-matching runs on every log line
+carrying user-controlled content, which is a deliberate, accepted CPU cost — see
+[docs/KNOWN-LIMITATIONS.md](../../docs/KNOWN-LIMITATIONS.md).
 
 ---
 
-## 4. Rotate secrets after go-live
+## 5. Rotate secrets after go-live
 
 ### Rotate the encryption key
 
@@ -191,7 +416,7 @@ az webapp config appsettings set \
 
 ---
 
-## 5. Recommended Service Bus policy
+## 6. Recommended Service Bus policy
 
 When connecting ServiceHub to a production Azure Service Bus namespace, **do not use `RootManageSharedAccessKey`**. Create a dedicated policy with the minimum permissions.
 

@@ -164,4 +164,28 @@ public sealed class CloudProviderRouterUnitTests
         var act = () => router.IsRegistered(CloudProviderType.Gcp);
         act.Should().NotThrow();
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ICloudProviderRouter conformance
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void CloudProviderRouter_IsAssignableToICloudProviderRouter()
+    {
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+
+        router.Should().BeAssignableTo<ICloudProviderRouter>();
+    }
+
+    [Fact]
+    public void Resolve_ThroughInterfaceReference_BehavesIdenticallyToConcreteType()
+    {
+        var awsProvider = new Mock<ICloudMessagingProvider>();
+        awsProvider.Setup(p => p.ProviderType).Returns(CloudProviderType.Aws);
+
+        ICloudProviderRouter router = new CloudProviderRouter(new[] { awsProvider.Object });
+
+        router.IsRegistered(CloudProviderType.Aws).Should().BeTrue();
+        router.Resolve(CloudProviderType.Aws).Should().Be(awsProvider.Object);
+    }
 }

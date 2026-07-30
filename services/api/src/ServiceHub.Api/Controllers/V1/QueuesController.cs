@@ -1,12 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Filters;
 using ServiceHub.Api.Security;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
-using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.Api.Controllers.V1;
@@ -17,13 +17,14 @@ namespace ServiceHub.Api.Controllers.V1;
 /// </summary>
 [Route(ApiRoutes.Queues.Base)]
 [Tags("Queues")]
+[RequireNamespaceOwnership]
 public sealed class QueuesController : ApiControllerBase
 {
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IServiceBusClientCache _clientCache;
     private readonly IConnectionStringProtector _connectionStringProtector;
     private readonly IMessageOperationsService _messageOperationsService;
-    private readonly CloudProviderRouter _providerRouter;
+    private readonly ICloudProviderRouter _providerRouter;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<QueuesController> _logger;
 
@@ -42,7 +43,7 @@ public sealed class QueuesController : ApiControllerBase
         IServiceBusClientCache clientCache,
         IConnectionStringProtector connectionStringProtector,
         IMessageOperationsService messageOperationsService,
-        CloudProviderRouter providerRouter,
+        ICloudProviderRouter providerRouter,
         ILogger<QueuesController> logger,
         IAuditLogger? auditLogger = null)
     {
@@ -386,6 +387,12 @@ public sealed class QueuesController : ApiControllerBase
             LogRedactor.SanitiseForLog(queueName),
             namespaceId);
 
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult<PaginatedResponse<MessageResponse>>(namespaceResult.Error);
+        }
+
         var fromDeadLetter = string.Equals(queueType, "deadletter", StringComparison.OrdinalIgnoreCase);
         var pageSize = Math.Clamp(take, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages);
         var request = new GetMessagesRequest(
@@ -406,7 +413,6 @@ public sealed class QueuesController : ApiControllerBase
         }
 
         // Get the actual total count from the provider's entity listing
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
         int totalCount = result.Value.Count; // Default to peeked count
 
         if (namespaceResult.IsSuccess && _providerRouter.IsRegistered(namespaceResult.Value.Provider))
@@ -587,6 +593,14 @@ public sealed class QueuesController : ApiControllerBase
             LogRedactor.SanitiseForLog(queueName),
             namespaceId);
 
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult<PaginatedResponse<MessageResponse>>(namespaceResult.Error);
+        }
+
+        var ns = namespaceResult.Value;
+
         var pageSize = Math.Clamp(take, 1, 1000);
 
         // Use the dedicated scheduled-message retrieval so that we scan beyond the active-message
@@ -615,13 +629,12 @@ public sealed class QueuesController : ApiControllerBase
         {
             try
             {
-                var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
-                if (namespaceResult.IsSuccess && namespaceResult.Value.ConnectionString is not null)
+                if (ns.ConnectionString is not null)
                 {
-                    var unprotectResult = _connectionStringProtector.Unprotect(namespaceResult.Value.ConnectionString);
+                    var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
                     if (unprotectResult.IsSuccess)
                     {
-                        var wrapper = _clientCache.GetOrCreate(namespaceResult.Value.Id, unprotectResult.Value);
+                        var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
                         var queuesResult = await wrapper.GetQueuesAsync(cancellationToken);
                         if (queuesResult.IsSuccess)
                         {

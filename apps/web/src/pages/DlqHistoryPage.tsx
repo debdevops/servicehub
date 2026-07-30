@@ -8,15 +8,25 @@ import {
   AlertCircle,
   Archive,
   BarChart3,
+  Trash2,
 } from 'lucide-react';
-import { DlqHistoryTable, DlqTimelineDrawer } from '@/components/dlq';
-import { useDlqHistory, useDlqSummary } from '@/hooks/useDlqHistory';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
-import type { Namespace } from '@/lib/api/types';
-import { dlqHistoryApi } from '@/lib/api/dlqHistory';
+import {
+  DlqHistoryTable,
+  DlqTimelineDrawer,
+  BulkOperationPreviewModal,
+  BulkOperationProgressPanel,
+  DlqSignaturesPanel,
+} from '@/components/dlq';
+import { useDlqHistory, useDlqSummary } from '@servicehub/ui-shared/hooks/useDlqHistory';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
+import { ProviderBadge, getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
+import type { Namespace } from '@servicehub/ui-shared/lib/api/types';
+import type { BulkOperationType } from '@servicehub/ui-shared/lib/api/bulkOperations';
+import { dlqHistoryApi } from '@servicehub/ui-shared/lib/api/dlqHistory';
 import { HelpTooltip } from '@/components/help';
-import { tooltips } from '@/lib/helpContent';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 import toast from 'react-hot-toast';
 import { Zap } from 'lucide-react';
 
@@ -35,7 +45,7 @@ function TrendChart({ trend }: { trend: TrendPoint[] }) {
   const barWidth = 100 / trend.length;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 mb-3">
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-3">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-gray-700">
           30-Day DLQ Trend
@@ -97,6 +107,46 @@ function TrendChart({ trend }: { trend: TrendPoint[] }) {
             </span>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Failure Category Breakdown — clickable chips backed by summary.byCategory ─
+
+function CategoryBreakdown({
+  byCategory,
+  activeCategory,
+  onSelectCategory,
+}: {
+  byCategory: Record<string, number>;
+  activeCategory?: string;
+  onSelectCategory: (category: string) => void;
+}) {
+  const entries = Object.entries(byCategory)
+    .filter(([, count]) => count > 0)
+    .sort(([, a], [, b]) => b - a);
+
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-3">
+      <h3 className="text-sm font-semibold text-gray-700 mb-2.5">By Failure Category</h3>
+      <div className="flex flex-wrap gap-1.5">
+        {entries.map(([category, count]) => (
+          <button
+            key={category}
+            onClick={() => onSelectCategory(category)}
+            className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors ${
+              activeCategory === category
+                ? 'bg-primary-600 text-white border-primary-600'
+                : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-primary-300'
+            }`}
+            title={`Filter table to ${category}`}
+          >
+            {category} · {count.toLocaleString()}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -171,12 +221,14 @@ export function DlqHistoryPage() {
   // Filters
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>();
-  const [entityFilter, setEntityFilter] = useState('');
+  const [entityFilter, setEntityFilter] = useState(searchParams.get('entity') ?? '');
   const [providerFilter, setProviderFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTimelineId, setSelectedTimelineId] = useState<number | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [bulkModalType, setBulkModalType] = useState<BulkOperationType | null>(null);
+  const [activeBulkJobId, setActiveBulkJobId] = useState<string | null>(null);
 
   const pageSize = 50;
 
@@ -190,8 +242,39 @@ export function DlqHistoryPage() {
     pageSize,
   }), [namespaceId, entityFilter, statusFilter, categoryFilter, providerFilter, page]);
 
-  const { data, isLoading, refetch, isFetching } = useDlqHistory(params, !!namespaceId);
+  // Same filter shape the backend's bulk-operations preview/create endpoints expect — reusing
+  // the DLQ History page's own active filters means "Bulk Replay" needs no separate filter UI.
+  const bulkFilter = useMemo(() => ({
+    namespaceId: namespaceId ?? '',
+    entityName: entityFilter || undefined,
+    status: statusFilter,
+    category: categoryFilter,
+  }), [namespaceId, entityFilter, statusFilter, categoryFilter]);
+
+  const { data, isLoading, isError, refetch, isFetching } = useDlqHistory(params, !!namespaceId);
   const { data: summary, refetch: refetchSummary } = useDlqSummary(namespaceId);
+
+  const { data: providerCapabilitiesMap } = useProviderCapabilities();
+  const providerCapabilities = getProviderCapabilities(providerCapabilitiesMap, currentNamespace?.cloudProvider);
+  const isProdNamespace = currentNamespace?.environment === 'prod';
+  const canBulkReplay = !!namespaceId && !isProdNamespace && !activeBulkJobId;
+  const canBulkPurge = canBulkReplay && (providerCapabilities?.supportsPurge ?? false);
+
+  // The background monitor skips namespaces whose provider has no non-destructive peek (AWS SQS)
+  // unless an operator opts into the ReceiveCount consequence — an empty history for one of these
+  // namespaces means "never scanned," not "no dead letters," and must read differently.
+  const isNotMonitored = !!namespaceId && providerCapabilities !== undefined && !providerCapabilities.supportsRepeatablePeek;
+
+  // Fleet page deep-links here with ?openBulk=true to jump straight into the bulk-replay
+  // preview for a namespace flagged as at-risk, instead of duplicating the bulk-ops UI there.
+  useEffect(() => {
+    if (searchParams.get('openBulk') === 'true' && canBulkReplay) {
+      setBulkModalType('Replay');
+      const next = new URLSearchParams(searchParams);
+      next.delete('openBulk');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, canBulkReplay, setSearchParams]);
 
   // Auto-trigger initial scan when summary shows all zeros (no data in DB yet)
   const [autoScanned, setAutoScanned] = useState(false);
@@ -290,8 +373,40 @@ export function DlqHistoryPage() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setBulkModalType('Replay')}
+              disabled={!canBulkReplay}
+              className="flex items-center gap-1.5 px-3 py-2 border border-sky-200 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={
+                activeBulkJobId
+                  ? 'Finish or dismiss the current bulk operation before starting another'
+                  : isProdNamespace
+                    ? 'Bulk replay is blocked for production namespaces'
+                    : 'Replay every DLQ message matching the current filter'
+              }
+            >
+              <RefreshCw className="w-4 h-4" />
+              Bulk Replay
+            </button>
+            <button
+              onClick={() => setBulkModalType('Purge')}
+              disabled={!canBulkPurge}
+              className="flex items-center gap-1.5 px-3 py-2 border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={
+                activeBulkJobId
+                  ? 'Finish or dismiss the current bulk operation before starting another'
+                  : isProdNamespace
+                    ? 'Bulk purge is blocked for production namespaces'
+                    : !(providerCapabilities?.supportsPurge ?? false)
+                      ? (providerCapabilities?.notes ?? 'Purge is not supported for this provider')
+                      : 'Permanently delete every DLQ message matching the current filter'
+              }
+            >
+              <Trash2 className="w-4 h-4" />
+              Bulk Purge
+            </button>
+            <button
               onClick={() => handleExport('csv')}
-              className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
               title="Export as CSV"
             >
               <Download className="w-4 h-4" />
@@ -299,7 +414,7 @@ export function DlqHistoryPage() {
             </button>
             <button
               onClick={() => handleExport('json')}
-              className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
               title="Export as JSON"
             >
               <Download className="w-4 h-4" />
@@ -377,6 +492,26 @@ export function DlqHistoryPage() {
         {summary?.dailyTrend && summary.dailyTrend.length > 0 && (
           <TrendChart trend={summary.dailyTrend} />
         )}
+
+        {/* Failure Category Breakdown — summary.byCategory was already returned by
+            GET /dlq/summary but never rendered; surfacing it here gives an at-a-glance
+            "what's actually failing" view without leaving the page. */}
+        {summary?.byCategory && Object.keys(summary.byCategory).length > 0 && (
+          <CategoryBreakdown
+            byCategory={summary.byCategory}
+            activeCategory={categoryFilter}
+            onSelectCategory={(category) => {
+              setCategoryFilter(category === categoryFilter ? undefined : category);
+              setPage(1);
+            }}
+          />
+        )}
+
+        {/* Recurring Failure Signatures */}
+        <DlqSignaturesPanel
+          namespaceId={namespaceId}
+          onFilterEntity={(entityName) => { setEntityFilter(entityName); setPage(1); }}
+        />
 
         {/* Filter Bar */}
         <div className="flex items-center gap-2 flex-wrap">
@@ -485,8 +620,12 @@ export function DlqHistoryPage() {
           hasNextPage={data?.hasNextPage ?? false}
           hasPreviousPage={data?.hasPreviousPage ?? false}
           isLoading={isLoading}
+          isError={isError}
+          onRetry={() => refetch()}
           onPageChange={setPage}
           onViewTimeline={setSelectedTimelineId}
+          notMonitored={isNotMonitored}
+          notMonitoredReason={providerCapabilities?.notes}
         />
       </div>
 
@@ -495,6 +634,25 @@ export function DlqHistoryPage() {
         messageId={selectedTimelineId}
         onClose={() => setSelectedTimelineId(null)}
       />
+
+      {/* Bulk Replay/Purge — dry-run preview, then a floating non-blocking progress panel */}
+      {bulkModalType && namespaceId && (
+        <BulkOperationPreviewModal
+          operationType={bulkModalType}
+          filter={bulkFilter}
+          onClose={() => setBulkModalType(null)}
+          onJobCreated={(jobId) => {
+            setBulkModalType(null);
+            setActiveBulkJobId(jobId);
+          }}
+        />
+      )}
+      {activeBulkJobId && (
+        <BulkOperationProgressPanel
+          jobId={activeBulkJobId}
+          onDismiss={() => setActiveBulkJobId(null)}
+        />
+      )}
     </div>
   );
 }

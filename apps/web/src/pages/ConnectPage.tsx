@@ -1,12 +1,15 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight, AlertTriangle, Upload, FileJson, X } from 'lucide-react';
-import { useNamespaces, useCreateNamespace, useDeleteNamespace } from '@/hooks/useNamespaces';
-import { useProviderStatus } from '@/hooks/useCloudBridge';
+import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight, AlertTriangle, Upload, FileJson, X, Inbox, PlugZap, RefreshCw } from 'lucide-react';
+import { useNamespaces, useCreateNamespace, useDeleteNamespace, useTestConnection } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useProviderStatus } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
+import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { EmptyState } from '@/components/EmptyState';
 import { HelpTooltip } from '@/components/help';
-import { tooltips } from '@/lib/helpContent';
-import type { EnvironmentType, CloudProviderType } from '@/lib/api/types';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
+import type { EnvironmentType, CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import toast from 'react-hot-toast';
 
 /**
@@ -28,7 +31,6 @@ export function ConnectPage() {
   const [awsAccessKeyId, setAwsAccessKeyId] = useState('');
   const [awsSecretKey, setAwsSecretKey] = useState('');
   const [awsRegion, setAwsRegion] = useState('us-east-1');
-  const [awsQueuePrefix, setAwsQueuePrefix] = useState('');
 
   // GCP-specific fields
   const [gcpProjectId, setGcpProjectId] = useState('');
@@ -50,7 +52,7 @@ export function ConnectPage() {
         return;
       }
       if (parsed?.type !== 'service_account') {
-        toast.error('That JSON is not a service account key (expected "type": "service_account").');
+        toast.error('That JSON is not a service account key (the type field must be service_account).');
         if (gcpKeyFileInputRef.current) gcpKeyFileInputRef.current.value = '';
         return;
       }
@@ -93,6 +95,7 @@ export function ConnectPage() {
   const { data: namespaces, isLoading } = useNamespaces();
   const createNamespace = useCreateNamespace();
   const deleteNamespace = useDeleteNamespace();
+  const testConnection = useTestConnection();
 
   // Whether the AWS/GCP providers are actually enabled on this server
   // (CloudProviders:{provider}:Enabled). Treated as disabled until known.
@@ -156,7 +159,6 @@ export function ConnectPage() {
         setDisplayName('');
         setAwsAccessKeyId('');
         setAwsSecretKey('');
-        setAwsQueuePrefix('');
       } catch {
         // Error handled by mutation hook
       }
@@ -250,8 +252,13 @@ export function ConnectPage() {
   };
 
   const handleDeleteConfirm = async () => {
-    await deleteNamespace.mutateAsync(deleteConfirm.id);
-    setDeleteConfirm({ isOpen: false, id: '', name: '' });
+    try {
+      await deleteNamespace.mutateAsync(deleteConfirm.id);
+    } catch {
+      // Error handled by mutation hook
+    } finally {
+      setDeleteConfirm({ isOpen: false, id: '', name: '' });
+    }
   };
 
   const handleDeleteCancel = () => {
@@ -356,7 +363,7 @@ export function ConnectPage() {
                   }`}
                   title="Azure Service Bus"
                 >
-                  <span className="text-lg leading-none">𝓐</span>
+                  <ProviderIcon provider="azure" className="w-6 h-6" />
                   <span>Azure</span>
                   {cloudProvider === 'azure' && (
                     <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">Selected</span>
@@ -374,7 +381,7 @@ export function ConnectPage() {
                   }`}
                   title="Amazon Web Services SQS"
                 >
-                  <span className="text-lg leading-none">⬡</span>
+                  <ProviderIcon provider="aws" className="w-6 h-6" />
                   <span>AWS</span>
                   {cloudProvider === 'aws' && (
                     <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">Selected</span>
@@ -392,7 +399,7 @@ export function ConnectPage() {
                   }`}
                   title="Google Cloud Pub/Sub"
                 >
-                  <span className="text-lg leading-none">◈</span>
+                  <ProviderIcon provider="gcp" className="w-6 h-6" />
                   <span>GCP</span>
                   {cloudProvider === 'gcp' && (
                     <span className="text-[10px] bg-green-100 text-green-600 px-1.5 py-0.5 rounded-full">Selected</span>
@@ -409,7 +416,7 @@ export function ConnectPage() {
                     </>
                   ) : (
                     <>
-                      <strong>AWS SQS/SNS is disabled on this server.</strong> An operator must set <code>CloudProviders:Aws:Enabled</code> to <code>true</code> in the API configuration and restart — or use Simulator mode to explore without credentials.
+                      <strong>AWS SQS/SNS is disabled on this server.</strong> An operator must set <code>CloudProviders:Aws:Enabled</code> to <code>true</code> in the API configuration and restart.
                     </>
                   )}
                 </div>
@@ -422,7 +429,7 @@ export function ConnectPage() {
                     </>
                   ) : (
                     <>
-                      <strong>GCP Pub/Sub is disabled on this server.</strong> An operator must set <code>CloudProviders:Gcp:Enabled</code> to <code>true</code> in the API configuration and restart — or use Simulator mode to explore without credentials.
+                      <strong>GCP Pub/Sub is disabled on this server.</strong> An operator must set <code>CloudProviders:Gcp:Enabled</code> to <code>true</code> in the API configuration and restart.
                     </>
                   )}
                 </div>
@@ -594,24 +601,6 @@ export function ConnectPage() {
                     </select>
                   </div>
 
-                  <div className="mb-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Queue/Topic URL prefix
-                      <HelpTooltip
-                        text="Optional. Filter to queues matching this prefix, e.g. 'orders-' or leave blank to see all queues."
-                        position="right"
-                        className="ml-1"
-                      />
-                    </label>
-                    <input
-                      type="text"
-                      value={awsQueuePrefix}
-                      onChange={(e) => setAwsQueuePrefix(e.target.value)}
-                      placeholder="e.g., orders- (optional)"
-                      className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-300"
-                    />
-                  </div>
-
                   {/* IAM permissions guidance */}
                   <details className="mb-3 rounded-lg border border-orange-200 bg-orange-50 text-xs">
                     <summary className="cursor-pointer px-3 py-2 font-medium text-orange-800 select-none">
@@ -734,6 +723,12 @@ export function ConnectPage() {
                         Tip: Grant these roles on the project or at the topic/subscription resource level for least privilege.
                         Generate a key at <strong>IAM &amp; Admin → Service Accounts → Keys → Add Key → JSON</strong>.
                       </p>
+                      <p className="mt-2 text-green-700">
+                        <strong>Only Pull subscriptions are browsable.</strong> Push, BigQuery, and Cloud Storage
+                        export subscriptions deliver messages directly to their target — Pub/Sub never makes those
+                        available to peek, so ServiceHub can&apos;t show their messages. If a topic&apos;s only
+                        subscription is one of those, add a Pull subscription to the same topic to inspect it here.
+                      </p>
                     </div>
                   </details>
                 </>
@@ -828,17 +823,22 @@ export function ConnectPage() {
                   namespaces.map((ns) => (
                     <div
                       key={ns.id}
-                      className="flex items-center justify-between p-4 rounded-lg transition-colors cursor-pointer bg-gray-50 border border-gray-200 hover:bg-gray-100 hover:border-gray-300"
+                      className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg transition-colors bg-gray-50 border border-gray-200 hover:bg-gray-100 hover:border-gray-300"
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
                         <div
-                          className={`w-2.5 h-2.5 rounded-full ${
+                          className={`w-2.5 h-2.5 rounded-full shrink-0 ${
                             ns.isActive ? 'bg-green-500' : 'bg-gray-300'
                           }`}
                         />
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-medium text-gray-900">{ns.displayName || ns.name}</h3>
+                        <div className="min-w-0 flex-1">
+                          <h3
+                            className="font-medium text-gray-900 truncate"
+                            title={ns.displayName || ns.name}
+                          >
+                            {ns.displayName || ns.name}
+                          </h3>
+                          <div className="flex flex-wrap items-center gap-2 mt-0.5">
                             <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase ${
                               ns.environment === 'prod' ? 'bg-red-100 text-red-700' :
                               ns.environment === 'uat' ? 'bg-amber-100 text-amber-700' :
@@ -846,22 +846,30 @@ export function ConnectPage() {
                             }`}>
                               {ns.environment || 'dev'}
                             </span>
-                            <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase ${
-                              ns.cloudProvider === 'aws' ? 'bg-orange-100 text-orange-700' :
-                              ns.cloudProvider === 'gcp' ? 'bg-emerald-100 text-emerald-700' :
-                              'bg-blue-100 text-blue-700'
-                            }`}>
-                              {ns.cloudProvider === 'aws' ? 'AWS' : ns.cloudProvider === 'gcp' ? 'GCP' : 'Azure'}
-                            </span>
+                            <ProviderBadge provider={ns.cloudProvider} />
                           </div>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-gray-500 truncate mt-0.5">
                             {ns.name}
                             {ns.lastUsedAt && ` • Last used: ${new Date(ns.lastUsedAt).toLocaleDateString()}`}
                           </p>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => testConnection.mutate(ns.id)}
+                          disabled={testConnection.isPending && testConnection.variables === ns.id}
+                          className="p-1.5 hover:bg-primary-100 text-primary-600 rounded-lg transition-colors disabled:opacity-50"
+                          type="button"
+                          aria-label={`Test connection to ${ns.displayName || ns.name}`}
+                          title="Test connection"
+                        >
+                          {testConnection.isPending && testConnection.variables === ns.id ? (
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <PlugZap className="w-4 h-4" />
+                          )}
+                        </button>
                         <button
                           onClick={() => navigate(`/messages?namespace=${ns.id}`)}
                           className="px-3 py-1.5 text-white text-sm font-medium rounded-lg transition-colors bg-primary-500 hover:bg-primary-600"
@@ -881,13 +889,11 @@ export function ConnectPage() {
                     </div>
                   ))
                 ) : (
-                  <div className="text-center py-8">
-                    <div className="w-12 h-12 bg-gray-100 border border-gray-200 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <span className="text-2xl">📭</span>
-                    </div>
-                    <h3 className="font-medium text-gray-900 mb-1">No saved connections yet</h3>
-                    <p className="text-sm text-gray-500">Connect your first namespace to get started</p>
-                  </div>
+                  <EmptyState
+                    icon={Inbox}
+                    heading="No saved connections yet"
+                    subtext="Connect your first namespace to get started"
+                  />
                 )}
               </div>
             </div>
@@ -896,7 +902,7 @@ export function ConnectPage() {
             <div className="rounded-xl border border-slate-700 bg-gradient-to-r from-slate-800 to-primary-900 p-4">
               <p className="text-xs font-semibold text-white mb-3 flex items-center gap-2">
                 <Play className="w-3.5 h-3.5 text-amber-300 fill-current" />
-                No credentials? Try a live demo first
+                No credentials? Try Demo Mode first
               </p>
               <div className="grid grid-cols-3 gap-2">
                 {[

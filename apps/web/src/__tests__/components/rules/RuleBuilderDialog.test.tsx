@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { RuleBuilderDialog } from '@/components/rules/RuleBuilderDialog';
-import type { CreateRuleRequest, RuleResponse } from '@/lib/api/rules';
+import type { CreateRuleRequest, RuleResponse } from '@servicehub/ui-shared/lib/api/rules';
 
 const defaultProps = {
   open: true,

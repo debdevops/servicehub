@@ -4,15 +4,15 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AIInsightsTab } from '@/components/messages/tabs/AIInsightsTab';
 
-vi.mock('@/hooks/useMessages', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useMessages', () => ({
   useMessages: vi.fn(),
 }));
-vi.mock('@/hooks/useInsights', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useInsights', () => ({
   useClientSideInsights: vi.fn(),
 }));
 
-import { useMessages } from '@/hooks/useMessages';
-import { useClientSideInsights } from '@/hooks/useInsights';
+import { useMessages } from '@servicehub/ui-shared/hooks/useMessages';
+import { useClientSideInsights } from '@servicehub/ui-shared/hooks/useInsights';
 
 const mockUseMessages = useMessages as ReturnType<typeof vi.fn>;
 const mockUseClientSideInsights = useClientSideInsights as ReturnType<typeof vi.fn>;

@@ -407,6 +407,7 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
 
         var providerMock = new Mock<ICloudMessagingProvider>();
         providerMock.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Aws);
+        providerMock.SetupGet(p => p.Capabilities).Returns(ProviderCapabilities.Aws);
         _cloudProviders.Add(providerMock.Object);
 
         // List entities
@@ -453,6 +454,68 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
         response.NamespaceSummaries[0].HopsFound.Should().Be(1);
     }
 
+    [Fact]
+    public async Task TraceMessage_NonAzureNamespace_MatchOnlyInDeadLetterQueue_StillFindsHop()
+    {
+        // Arrange — GCP: SupportsMessageCounts is false, so the dead-letter search must run
+        // unconditionally rather than being gated on entity.DeadLetterCount (which GCP never
+        // populates). This is the parity fix: Azure's IAzureTraceSearcher always checks the
+        // DLQ too; before the fix, this controller's non-Azure path only peeked active messages.
+        var ns = Namespace.Create("gcp-topic", "{\"type\":\"service_account\"}", provider: CloudProviderType.Gcp).Value;
+        _namespaceRepositoryMock
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
+
+        var providerMock = new Mock<ICloudMessagingProvider>();
+        providerMock.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Gcp);
+        providerMock.SetupGet(p => p.Capabilities).Returns(ProviderCapabilities.Gcp);
+        _cloudProviders.Add(providerMock.Object);
+
+        var entities = new List<CloudEntity>
+        {
+            // DeadLetterCount defaults to 0 — exactly what GCP's real provider always reports.
+            new CloudEntity { Name = "gcp-sub", EntityType = "Subscription", Provider = CloudProviderType.Gcp }
+        };
+        providerMock
+            .Setup(x => x.ListEntitiesAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Success(entities));
+
+        var receiverMock = new Mock<IMessageReceiver>();
+        providerMock.Setup(x => x.GetMessageReceiver()).Returns(receiverMock.Object);
+
+        // Active peek: no match.
+        receiverMock
+            .Setup(x => x.PeekMessagesAsync(
+                It.Is<GetMessagesRequest>(r => !r.FromDeadLetter), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(new List<Message>()));
+
+        // Dead-letter peek: the traced message.
+        var dlqMsg = new Message
+        {
+            MessageId = "m-gcp-dlq",
+            SequenceNumber = 200,
+            State = MessageState.DeadLettered,
+            EnqueuedTime = DateTimeOffset.UtcNow,
+            SizeInBytes = 150,
+            CorrelationId = "trace-456"
+        };
+        receiverMock
+            .Setup(x => x.PeekMessagesAsync(
+                It.Is<GetMessagesRequest>(r => r.FromDeadLetter), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(new List<Message> { dlqMsg }));
+
+        // Act
+        var result = await _controller.TraceMessage("trace-456");
+
+        // Assert
+        result.Result.Should().BeOfType<OkObjectResult>();
+        var okResult = (OkObjectResult)result.Result!;
+        var response = (CrossCloudTraceResponse)okResult.Value!;
+        response.Hops.Should().ContainSingle(h => h.MessageId == "m-gcp-dlq");
+        response.Hops[0].EntityPath.Should().Be("gcp-sub/$DeadLetterQueue");
+        response.NamespaceSummaries[0].HopsFound.Should().Be(1);
+    }
+
     // ── Historical DLQ merge ──────────────────────────────────────────────
 
     [Fact]
@@ -493,6 +556,7 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
 
         var providerMock = new Mock<ICloudMessagingProvider>();
         providerMock.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Aws);
+        providerMock.SetupGet(p => p.Capabilities).Returns(ProviderCapabilities.Aws);
         _cloudProviders.Add(providerMock.Object);
 
         providerMock
@@ -543,6 +607,7 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
 
         var providerMock = new Mock<ICloudMessagingProvider>();
         providerMock.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Aws);
+        providerMock.SetupGet(p => p.Capabilities).Returns(ProviderCapabilities.Aws);
         _cloudProviders.Add(providerMock.Object);
 
         providerMock

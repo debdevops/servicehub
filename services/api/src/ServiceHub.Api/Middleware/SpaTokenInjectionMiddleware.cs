@@ -5,8 +5,11 @@ using ServiceHub.Api.Security;
 /// <summary>
 /// Intercepts responses that serve index.html (the SPA entry point) and injects a
 /// meta tag containing a short-lived SPA token. The React app reads this token and
-/// sends it as X-SPA-Token on every API request. This prevents out-of-browser replay
-/// attacks (Postman, curl) because those tools never load the HTML page.
+/// sends it as X-SPA-Token on every API request. This confirms the request followed
+/// same-origin HTML delivery, frustrating naive CSRF and trivial scripted access — it
+/// does not identify or authenticate a user, since anyone who can fetch the index page
+/// (curl included) can read the token and reuse it. Per-user identity requires
+/// Security:Oidc or Azure Easy Auth.
 /// </summary>
 public sealed class SpaTokenInjectionMiddleware
 {

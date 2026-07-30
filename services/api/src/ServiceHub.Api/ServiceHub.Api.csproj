@@ -16,7 +16,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.22.0" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.19.2" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.16.10" />
     <!-- Swashbuckle for Swagger UI -->
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
@@ -24,7 +25,20 @@
     <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
     <!-- AspNetCore.HealthChecks.UI.Client: no .NET 10 release yet; 9.0.0 is the latest compatible version -->
     <PackageReference Include="AspNetCore.HealthChecks.UI.Client" Version="9.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.10" />
+    <!-- OpenTelemetry: vendor-neutral traces + metrics. Inert unless OpenTelemetry:Enabled
+         (or the OTEL_EXPORTER_OTLP_ENDPOINT env var) is set — see ObservabilityExtensions. -->
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.17.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.19.2" />
+    <!-- Design-time only: powers `dotnet ef migrations add` against DlqDbContext in ServiceHub.Infrastructure -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
@@ -33,7 +47,10 @@
     <ProjectReference Include="..\ServiceHub.Infrastructure.Aws\ServiceHub.Infrastructure.Aws.csproj" />
     <ProjectReference Include="..\ServiceHub.Infrastructure.Gcp\ServiceHub.Infrastructure.Gcp.csproj" />
     <ProjectReference Include="..\ServiceHub.Shared\ServiceHub.Shared.csproj" />
-    <ProjectReference Include="..\ServiceHub.Simulator\ServiceHub.Simulator.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ServiceHub.UnitTests" />
   </ItemGroup>
 
 </Project>

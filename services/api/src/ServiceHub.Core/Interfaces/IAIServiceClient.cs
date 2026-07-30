@@ -1,5 +1,6 @@
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Models;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Core.Interfaces;
@@ -10,13 +11,17 @@ namespace ServiceHub.Core.Interfaces;
 public interface IAIServiceClient
 {
     /// <summary>
-    /// Analyzes messages for anomalies.
+    /// Clusters DLQ messages by error signature via the AI service's <c>/analyze</c> endpoint.
     /// </summary>
-    /// <param name="messages">The messages to analyze.</param>
+    /// <param name="messages">The DLQ messages to analyze.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A result containing detected anomaly types.</returns>
-    Task<Result<IReadOnlyList<AnomalyType>>> AnalyzeMessagesAsync(
-        IReadOnlyList<Message> messages,
+    /// <returns>
+    /// A result containing the raw cluster/singleton grouping and a ref → message ID map.
+    /// Every failure path (unreachable, timeout, malformed response, non-2xx) degrades to the
+    /// same failure result rather than throwing.
+    /// </returns>
+    Task<Result<ClusterAnalysisResult>> AnalyzeMessagesAsync(
+        IReadOnlyList<DlqMessage> messages,
         CancellationToken cancellationToken = default);
 
     /// <summary>

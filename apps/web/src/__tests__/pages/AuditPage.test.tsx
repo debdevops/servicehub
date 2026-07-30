@@ -3,20 +3,20 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuditPage } from '@/pages/AuditPage';
-import { useAuditLogs, useAuditSummary } from '@/hooks/useAudit';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { auditApi } from '@/lib/api/audit';
+import { useAuditLogs, useAuditSummary } from '@servicehub/ui-shared/hooks/useAudit';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { auditApi } from '@servicehub/ui-shared/lib/api/audit';
 
-vi.mock('@/hooks/useAudit', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useAudit', () => ({
   useAuditLogs: vi.fn(),
   useAuditSummary: vi.fn(),
 }));
 
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
 
-vi.mock('@/lib/api/audit', () => ({
+vi.mock('@servicehub/ui-shared/lib/api/audit', () => ({
   auditApi: {
     downloadExport: vi.fn(() => Promise.resolve()),
     getLogs: vi.fn(),
@@ -149,13 +149,27 @@ describe('AuditPage', () => {
   it('opens details drawer when clicking on a row', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><AuditPage /></Wrapper>);
-    
+
     const row = screen.getByText('Messages.Replay');
     fireEvent.click(row);
-    
+
     // Details drawer title should be present
     expect(screen.getByText('Audit Entry Detail')).toBeInTheDocument();
     expect(screen.getByText('Chrome')).toBeInTheDocument();
     expect(screen.getByText('127.0.0.1')).toBeInTheDocument();
+  });
+
+  it('details drawer has dialog semantics and closes on Escape', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><AuditPage /></Wrapper>);
+
+    fireEvent.click(screen.getByText('Messages.Replay'));
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAttribute('aria-labelledby', 'audit-detail-drawer-title');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByText('Audit Entry Detail')).not.toBeInTheDocument();
   });
 });

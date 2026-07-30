@@ -1,7 +1,10 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Moq;
 using ServiceHub.Api.Controllers;
+using ServiceHub.Core.Entities;
+using ServiceHub.Core.Interfaces;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Api.Controllers;
@@ -18,18 +21,113 @@ public class ApiControllerBaseTests
         public ActionResult<T> TestToActionResultError<T>(Error error) => ToActionResult<T>(error);
         public ActionResult<T> TestToCreatedResult<T>(Result<T> result, string actionName, object? routeValues = null) => ToCreatedResult(result, actionName, routeValues);
         public ActionResult<T> TestToAcceptedResult<T>(Result<T> result) => ToAcceptedResult(result);
+
+        public Task<Result<Namespace>> TestGetOwnedNamespaceAsync(
+            INamespaceRepository repository, Guid namespaceId, CancellationToken cancellationToken = default) =>
+            GetOwnedNamespaceAsync(repository, namespaceId, cancellationToken);
+
+        public Task<Result<Namespace>> TestGetExclusivelyOwnedNamespaceAsync(
+            INamespaceRepository repository, Guid namespaceId, CancellationToken cancellationToken = default) =>
+            GetExclusivelyOwnedNamespaceAsync(repository, namespaceId, cancellationToken);
     }
 
-    private static TestController CreateController()
+    private static TestController CreateController(string? ownerId = null)
     {
+        var httpContext = new DefaultHttpContext();
+        if (ownerId is not null)
+        {
+            httpContext.Items["OwnerId"] = ownerId;
+        }
+
         var controller = new TestController
         {
             ControllerContext = new ControllerContext
             {
-                HttpContext = new DefaultHttpContext()
+                HttpContext = httpContext
             }
         };
         return controller;
+    }
+
+    private static Namespace CreateTestNamespace(string ownerId) =>
+        Namespace.Create(
+            "test-ns.servicebus.windows.net",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
+            ownerId: ownerId).Value;
+
+    // ── GetOwnedNamespaceAsync (owner OR shared) ────────────────────────────
+
+    [Fact]
+    public async Task GetOwnedNamespaceAsync_TrueOwner_ReturnsSuccess()
+    {
+        var ns = CreateTestNamespace("owner-a");
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>())).ReturnsAsync(Result.Success(ns));
+        var controller = CreateController("owner-a");
+
+        var result = await controller.TestGetOwnedNamespaceAsync(repo.Object, ns.Id);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetOwnedNamespaceAsync_SharedOwner_ReturnsSuccess()
+    {
+        var ns = CreateTestNamespace("owner-a");
+        ns.ShareWith("owner-b");
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>())).ReturnsAsync(Result.Success(ns));
+        var controller = CreateController("owner-b");
+
+        var result = await controller.TestGetOwnedNamespaceAsync(repo.Object, ns.Id);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetOwnedNamespaceAsync_UnrelatedOwner_ReturnsNotFound()
+    {
+        var ns = CreateTestNamespace("owner-a");
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>())).ReturnsAsync(Result.Success(ns));
+        var controller = CreateController("owner-c");
+
+        var result = await controller.TestGetOwnedNamespaceAsync(repo.Object, ns.Id);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.NotFound);
+    }
+
+    // ── GetExclusivelyOwnedNamespaceAsync (true owner only) ─────────────────
+
+    [Fact]
+    public async Task GetExclusivelyOwnedNamespaceAsync_TrueOwner_ReturnsSuccess()
+    {
+        var ns = CreateTestNamespace("owner-a");
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>())).ReturnsAsync(Result.Success(ns));
+        var controller = CreateController("owner-a");
+
+        var result = await controller.TestGetExclusivelyOwnedNamespaceAsync(repo.Object, ns.Id);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetExclusivelyOwnedNamespaceAsync_SharedOwner_ReturnsNotFound()
+    {
+        // The critical guarantee this method exists for: shared access is NOT enough for
+        // privilege-sensitive actions (delete, share, revoke).
+        var ns = CreateTestNamespace("owner-a");
+        ns.ShareWith("owner-b");
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>())).ReturnsAsync(Result.Success(ns));
+        var controller = CreateController("owner-b");
+
+        var result = await controller.TestGetExclusivelyOwnedNamespaceAsync(repo.Object, ns.Id);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.NotFound);
     }
 
     [Fact]

@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Filters;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
-using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.Api.Controllers.V1;
@@ -15,12 +15,13 @@ namespace ServiceHub.Api.Controllers.V1;
 /// </summary>
 [Route(ApiRoutes.Subscriptions.Base)]
 [Tags("Subscriptions")]
+[RequireNamespaceOwnership]
 public sealed class SubscriptionsController : ApiControllerBase
 {
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IServiceBusClientCache _clientCache;
     private readonly IConnectionStringProtector _connectionStringProtector;
-    private readonly CloudProviderRouter _providerRouter;
+    private readonly ICloudProviderRouter _providerRouter;
     private readonly ILogger<SubscriptionsController> _logger;
 
     /// <summary>
@@ -35,7 +36,7 @@ public sealed class SubscriptionsController : ApiControllerBase
         INamespaceRepository namespaceRepository,
         IServiceBusClientCache clientCache,
         IConnectionStringProtector connectionStringProtector,
-        CloudProviderRouter providerRouter,
+        ICloudProviderRouter providerRouter,
         ILogger<SubscriptionsController> logger)
     {
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));

@@ -306,6 +306,54 @@ public class MessageOperationsServiceTests
         res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
     }
 
+    [Fact]
+    public async Task SendBatchAsync_SingleEntry_ReturnsSuccess()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        var requests = new[] { new SendMessageRequest(ns.Id, "queue", "b1") };
+        var res = await svc.SendBatchAsync(requests);
+
+        res.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SendBatchAsync_UniformNamespace_MultipleEntries_ReturnsSuccess()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        var requests = new[]
+        {
+            new SendMessageRequest(ns.Id, "queue", "b1"),
+            new SendMessageRequest(ns.Id, "queue", "b2"),
+            new SendMessageRequest(ns.Id, "queue", "b3"),
+        };
+        var res = await svc.SendBatchAsync(requests);
+
+        res.IsSuccess.Should().BeTrue();
+        senderMock.Verify(s => s.SendBatchAsync(It.IsAny<IEnumerable<SendMessageRequest>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SendBatchAsync_MixedNamespaces_ReturnsValidationFailureNamingIndex()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+        var otherNamespaceId = Guid.NewGuid();
+
+        var requests = new[]
+        {
+            new SendMessageRequest(ns.Id, "queue", "b1"),
+            new SendMessageRequest(ns.Id, "queue", "b2"),
+            new SendMessageRequest(otherNamespaceId, "queue", "b3"),
+        };
+        var res = await svc.SendBatchAsync(requests);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound);
+        res.Error.Message.Should().Contain("index 2");
+        senderMock.Verify(s => s.SendBatchAsync(It.IsAny<IEnumerable<SendMessageRequest>>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Theory]
     [InlineData(CloudProviderType.Azure)]
     [InlineData(CloudProviderType.Aws)]

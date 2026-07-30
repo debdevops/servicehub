@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Moq;
 using ServiceHub.Api.Controllers.V1;
+using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
@@ -63,6 +64,32 @@ public sealed class CloudBridgeControllerTests
         status.Should().ContainKey("Azure");
         status.Should().ContainKey("Aws").WhoseValue.Should().BeTrue();
         status.Should().ContainKey("Gcp").WhoseValue.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetCapabilities_ReturnsAllThreeProviders_RegardlessOfRegistration()
+    {
+        // Act — no providers registered in _providers at all.
+        var result = _controller.GetCapabilities();
+
+        // Assert — capabilities are provider-type-inherent facts, not tied to a live
+        // registration, so all three known providers are returned unconditionally.
+        result.Should().BeOfType<OkObjectResult>();
+        var okResult = (OkObjectResult)result;
+        var capabilities = (Dictionary<string, ProviderCapabilitiesResponse>)okResult.Value!;
+
+        capabilities.Should().ContainKey("Azure");
+        capabilities.Should().ContainKey("Aws");
+        capabilities.Should().ContainKey("Gcp");
+
+        capabilities["Azure"].SupportsPurge.Should().BeFalse();
+        capabilities["Aws"].SupportsPurge.Should().BeTrue();
+        capabilities["Gcp"].SupportsMessageCounts.Should().BeFalse();
+        capabilities["Gcp"].SupportsManualDeadLetter.Should().BeFalse();
+
+        capabilities["Azure"].SupportsRepeatablePeek.Should().BeTrue();
+        capabilities["Aws"].SupportsRepeatablePeek.Should().BeFalse();
+        capabilities["Gcp"].SupportsRepeatablePeek.Should().BeTrue();
     }
 
     [Theory]
