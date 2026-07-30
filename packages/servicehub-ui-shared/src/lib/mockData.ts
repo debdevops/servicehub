@@ -1,3 +1,5 @@
+import { secureRandom } from './secureRandom';
+
 // ============================================================================
 // Message Types
 // ============================================================================
@@ -266,11 +268,11 @@ const DEAD_LETTER_REASONS = [
 // ============================================================================
 
 function randomItem<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
+  return arr[Math.floor(secureRandom() * arr.length)];
 }
 
 function randomInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  return Math.floor(secureRandom() * (max - min + 1)) + min;
 }
 
 function seqId(): string {
@@ -294,11 +296,8 @@ function generateOrderBody(): { body: string; contentType: ContentType; eventTyp
     customerRef,
     customer: {
       company,
-      // codeql[js/insecure-randomness]: synthetic demo message fields, not real security identifiers
       accountId: `ACC-${randomInt(10000, 99999)}`,
-      // codeql[js/insecure-randomness]: synthetic demo message fields, not real security identifiers
       billingRegion: randomItem(['EMEA', 'AMER', 'APAC']),
-      // codeql[js/insecure-randomness]: synthetic demo message fields, not real security identifiers
       accountManager: randomItem(['Sarah Chen', 'James Okafor', 'Priya Nair', 'Tom Bergström', 'Maria Santos']),
     },
     lineItems: [
@@ -320,7 +319,7 @@ function generateOrderBody(): { body: string; contentType: ContentType; eventTyp
       lastUpdated: new Date().toISOString(),
     },
     sourceService: 'OrderManagementService',
-    correlationId: `corr-${Math.random().toString(36).substring(2, 11)}`,
+    correlationId: `corr-${secureRandom().toString(36).substring(2, 11)}`,
   };
   return { body: JSON.stringify(body, null, 2), contentType: 'application/json', eventType: 'OrderCreated' };
 }
@@ -338,7 +337,6 @@ function generatePaymentBody(): { body: string; contentType: ContentType; eventT
     schemaVersion: '2.4',
     transactionId: txnId,
     externalRef: `${gwInfo.code}-${String(randomInt(100000000, 999999999))}`,
-    // codeql[js/insecure-randomness]: synthetic demo message field, not a real security identifier
     payer: { company, accountId: `ACC-${randomInt(10000, 99999)}` },
     amount: { value: amount, currency },
     gateway: {
@@ -347,7 +345,7 @@ function generatePaymentBody(): { body: string; contentType: ContentType; eventT
       processingTimeMs: randomInt(120, 8500),
     },
     status: randomItem(['authorized', 'captured', 'declined', 'pending_3ds', 'refunded']),
-    failureDetail: Math.random() < 0.4 ? {
+    failureDetail: secureRandom() < 0.4 ? {
       errorCode,
       message: PAYMENT_ERROR_CODES[errorCode],
       retryCount: randomInt(1, 5),
@@ -428,7 +426,6 @@ function generateFraudBody(): { body: string; contentType: ContentType; eventTyp
     schemaVersion: '1.3',
     alertId: `FRD-${String(randomInt(100000, 999999))}`,
     orderId: `ORD-2026-${String(randomInt(100000, 999999))}`,
-    // codeql[js/insecure-randomness]: synthetic demo message field, not a real security identifier
     customer: { company, accountId: `ACC-${randomInt(10000, 99999)}` },
     transaction: { amount, currency: 'GBP', gatewayRef: `STR-${randomInt(100000000, 999999999)}` },
     riskAssessment: {
@@ -465,7 +462,7 @@ function generateInvoiceBody(): { body: string; contentType: ContentType; eventT
       submittedAt: new Date(Date.now() - randomInt(3600000, 86400000 * 3)).toISOString(),
       slaHours: randomInt(8, 48),
       hoursElapsed: randomInt(1, 50),
-      escalated: Math.random() < 0.3,
+      escalated: secureRandom() < 0.3,
     },
     lineItems: randomInt(1, 12),
     attachmentCount: randomInt(1, 4),
@@ -490,7 +487,6 @@ function generateShippingBody(): { body: string; contentType: ContentType; event
     origin: { warehouseId: warehouse.id, name: warehouse.location, region: warehouse.region },
     destination: {
       country: randomItem(['GB', 'US', 'DE', 'FR', 'NL', 'SG', 'AU']),
-      // codeql[js/insecure-randomness]: synthetic demo message field, not a real security identifier
       postcode: randomItem(['EC2A 4NE', 'W1D 3QZ', '10001', '75001', '60311', '048624', '2000']),
     },
     estimatedDelivery: new Date(Date.now() + randomInt(86400000, 86400000 * 5)).toISOString().split('T')[0],
@@ -502,7 +498,7 @@ function generateShippingBody(): { body: string; contentType: ContentType; event
 }
 
 function generateMessageBody(): { body: string; contentType: ContentType; eventType?: string } {
-  const roll = Math.random();
+  const roll = secureRandom();
   if (roll < 0.30) return generateOrderBody();
   if (roll < 0.50) return generatePaymentBody();
   if (roll < 0.62) return generateInventoryBody();
@@ -525,16 +521,15 @@ function generateHeaders(eventType: string): Record<string, string> {
   }[eventType] || 'ContosoCommerceBackend';
 
   headers['Content-Type'] = 'application/json; charset=utf-8';
-  headers['Message-Id'] = crypto.randomUUID?.() || `msg-${Math.random().toString(36).substring(2, 15)}`;
-  headers['Correlation-Id'] = `corr-${Math.random().toString(36).substring(2, 11)}`;
+  headers['Message-Id'] = crypto.randomUUID?.() || `msg-${secureRandom().toString(36).substring(2, 15)}`;
+  headers['Correlation-Id'] = `corr-${secureRandom().toString(36).substring(2, 11)}`;
   headers['x-contoso-source-service'] = service;
   headers['x-contoso-schema-version'] = randomItem(['1.0', '2.0', '2.4', '3.0', '3.1']);
   headers['x-contoso-event-version'] = '1';
   headers['Label'] = eventType;
   headers['Partition-Key'] = `partition-${randomInt(0, 15)}`;
-  // codeql[js/insecure-randomness]: synthetic demo message field (fake queue SessionId), not a real security identifier
-  if (Math.random() < 0.6) headers['Session-Id'] = `session-${randomInt(10000, 99999)}`;
-  if (Math.random() < 0.4) headers['Reply-To'] = 'response-processed-queue';
+  if (secureRandom() < 0.6) headers['Session-Id'] = `session-${randomInt(10000, 99999)}`;
+  if (secureRandom() < 0.4) headers['Reply-To'] = 'response-processed-queue';
 
   return headers;
 }
@@ -566,7 +561,7 @@ export function generateMockMessages(count: number): Message[] {
   const now = new Date();
 
   for (let i = 0; i < count; i++) {
-    const statusRoll = Math.random();
+    const statusRoll = secureRandom();
     let status: MessageStatus;
     if (statusRoll < statusWeights[0]) {
       status = 'success';
@@ -576,7 +571,7 @@ export function generateMockMessages(count: number): Message[] {
       status = 'error';
     }
 
-    const isDeadLetter = status === 'error' ? Math.random() < 0.5 : Math.random() < 0.08;
+    const isDeadLetter = status === 'error' ? secureRandom() < 0.5 : secureRandom() < 0.08;
     const queueType: QueueType = isDeadLetter ? 'deadletter' : 'active';
 
     // Ensure status is always semantically consistent with queue location.
@@ -586,7 +581,7 @@ export function generateMockMessages(count: number): Message[] {
     const effectiveStatus: MessageStatus = queueType === 'active' && status === 'error' ? 'warning' : status;
 
     // Spread across last 72 hours — concentrated in last 4h (more realistic peak traffic)
-    const recentBias = Math.random() < 0.6;
+    const recentBias = secureRandom() < 0.6;
     const minutesAgo = recentBias ? randomInt(0, 240) : randomInt(240, 4320);
     const enqueuedTime = new Date(now.getTime() - minutesAgo * 60 * 1000);
 
@@ -598,13 +593,13 @@ export function generateMockMessages(count: number): Message[] {
     else deliveryCount = randomInt(0, 1);
 
     const hasAIInsight = effectiveStatus === 'error'
-      ? Math.random() < 0.75
+      ? secureRandom() < 0.75
       : effectiveStatus === 'warning'
-        ? Math.random() < 0.45
-        : Math.random() < 0.08;
+        ? secureRandom() < 0.45
+        : secureRandom() < 0.08;
 
     const message: Message = {
-      id: `msg-${Math.random().toString(36).substring(2, 6)}-${String(i + 1).padStart(6, '0')}`,
+      id: `msg-${secureRandom().toString(36).substring(2, 6)}-${String(i + 1).padStart(6, '0')}`,
       enqueuedTime,
       status: effectiveStatus,
       preview: getPreview(effectiveStatus),
@@ -613,7 +608,7 @@ export function generateMockMessages(count: number): Message[] {
       hasAIInsight,
       sequenceNumber: 10000000 + i,
       properties: {
-        correlationId: `corr-${Math.random().toString(36).substring(2, 11)}`,
+        correlationId: `corr-${secureRandom().toString(36).substring(2, 11)}`,
         sourceService: randomItem([
           'OrderManagementService', 'PaymentProcessingService', 'InventoryManagementService',
           'CustomerEngagementService', 'FraudDetectionService', 'InvoiceProcessingService', 'LogisticsService',
@@ -627,7 +622,7 @@ export function generateMockMessages(count: number): Message[] {
       body,
       headers: generateHeaders(eventType || 'GenericEvent'),
       timeToLive: generateTimeToLive(),
-      lockToken: `lock-${Math.random().toString(36).substring(2, 15)}-${Math.random().toString(36).substring(2, 15)}`,
+      lockToken: `lock-${secureRandom().toString(36).substring(2, 15)}-${secureRandom().toString(36).substring(2, 15)}`,
       eventType,
     };
 

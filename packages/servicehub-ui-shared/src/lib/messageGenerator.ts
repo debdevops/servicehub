@@ -4,6 +4,8 @@
 // This module generates production-like messages for demo, testing, and AI validation.
 // All generated messages are tagged with metadata for identification and cleanup.
 
+import { secureRandom } from './secureRandom';
+
 // UUID v4 generator using crypto API
 function generateUUID(): string {
   return crypto.randomUUID();
@@ -70,16 +72,16 @@ const ENVIRONMENTS = ['production', 'staging', 'development'];
 // ============================================================================
 
 function generateOrderProcessingMessage(isAnomaly: boolean, anomalyType: AnomalyType): GeneratedMessage {
-  const orderId = `ORD-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-  const customerId = `CUST-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
-  const company = COMPANIES[Math.floor(Math.random() * COMPANIES.length)];
+  const orderId = `ORD-${Date.now().toString(36).toUpperCase()}-${secureRandom().toString(36).substring(2, 6).toUpperCase()}`;
+  const customerId = `CUST-${secureRandom().toString(36).substring(2, 10).toUpperCase()}`;
+  const company = COMPANIES[Math.floor(secureRandom() * COMPANIES.length)];
   const correlationId = generateUUID();
   
-  const items = Array.from({ length: Math.floor(Math.random() * 5) + 1 }, () => ({
-    sku: `SKU-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-    name: ['Wireless Mouse', 'USB-C Hub', 'Mechanical Keyboard', 'Monitor Stand', '4K Webcam', 'Desk Lamp', 'Ergonomic Chair'][Math.floor(Math.random() * 7)],
-    quantity: Math.floor(Math.random() * 5) + 1,
-    unitPrice: parseFloat((Math.random() * 200 + 10).toFixed(2)),
+  const items = Array.from({ length: Math.floor(secureRandom() * 5) + 1 }, () => ({
+    sku: `SKU-${secureRandom().toString(36).substring(2, 8).toUpperCase()}`,
+    name: ['Wireless Mouse', 'USB-C Hub', 'Mechanical Keyboard', 'Monitor Stand', '4K Webcam', 'Desk Lamp', 'Ergonomic Chair'][Math.floor(secureRandom() * 7)],
+    quantity: Math.floor(secureRandom() * 5) + 1,
+    unitPrice: parseFloat((secureRandom() * 200 + 10).toFixed(2)),
   }));
 
   const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
@@ -103,7 +105,7 @@ function generateOrderProcessingMessage(isAnomaly: boolean, anomalyType: Anomaly
         break;
       case 'retry-loop':
         status = 'processing';
-        deliveryCount = Math.floor(Math.random() * 8) + 3; // 3-10 retries
+        deliveryCount = Math.floor(secureRandom() * 8) + 3; // 3-10 retries
         errorDetails = {
           code: 'INVENTORY_LOCK_TIMEOUT',
           message: `Failed to acquire inventory lock for SKU ${items[0].sku}. Concurrent update detected.`,
@@ -127,7 +129,7 @@ function generateOrderProcessingMessage(isAnomaly: boolean, anomalyType: Anomaly
           code: 'DOWNSTREAM_LATENCY',
           message: 'Payment gateway response time exceeded 30s threshold. Circuit breaker triggered.',
           timestamp: new Date().toISOString(),
-          latencyMs: Math.floor(Math.random() * 45000) + 30000,
+          latencyMs: Math.floor(secureRandom() * 45000) + 30000,
         };
         break;
     }
@@ -151,20 +153,19 @@ function generateOrderProcessingMessage(isAnomaly: boolean, anomalyType: Anomaly
         currency: 'USD',
       },
       shipping: {
-        method: ['standard', 'express', 'overnight'][Math.floor(Math.random() * 3)],
+        method: ['standard', 'express', 'overnight'][Math.floor(secureRandom() * 3)],
         address: {
-          street: `${Math.floor(Math.random() * 9999) + 1} ${['Main', 'Oak', 'Pine', 'Maple', 'Cedar'][Math.floor(Math.random() * 5)]} Street`,
-          city: ['Seattle', 'Portland', 'San Francisco', 'Los Angeles', 'Denver'][Math.floor(Math.random() * 5)],
-          state: ['WA', 'OR', 'CA', 'CA', 'CO'][Math.floor(Math.random() * 5)],
-          // codeql[js/insecure-randomness]: synthetic demo message field, not a real security identifier
-          zipCode: String(Math.floor(Math.random() * 90000) + 10000),
+          street: `${Math.floor(secureRandom() * 9999) + 1} ${['Main', 'Oak', 'Pine', 'Maple', 'Cedar'][Math.floor(secureRandom() * 5)]} Street`,
+          city: ['Seattle', 'Portland', 'San Francisco', 'Los Angeles', 'Denver'][Math.floor(secureRandom() * 5)],
+          state: ['WA', 'OR', 'CA', 'CA', 'CO'][Math.floor(secureRandom() * 5)],
+          zipCode: String(Math.floor(secureRandom() * 90000) + 10000),
           country: 'US',
         },
-        estimatedDelivery: new Date(Date.now() + (Math.random() * 7 + 3) * 24 * 60 * 60 * 1000).toISOString(),
+        estimatedDelivery: new Date(Date.now() + (secureRandom() * 7 + 3) * 24 * 60 * 60 * 1000).toISOString(),
       },
       metadata: {
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        ipAddress: `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+        ipAddress: `${Math.floor(secureRandom() * 255)}.${Math.floor(secureRandom() * 255)}.${Math.floor(secureRandom() * 255)}.${Math.floor(secureRandom() * 255)}`,
         sessionId: generateUUID(),
       },
       ...(errorDetails && { error: errorDetails }),
@@ -182,14 +183,13 @@ function generateOrderProcessingMessage(isAnomaly: boolean, anomalyType: Anomaly
       anomalyType,
       messageType: 'OrderCreated',
       source: `${company.toLowerCase()}-order-service`,
-      environment: ENVIRONMENTS[Math.floor(Math.random() * ENVIRONMENTS.length)],
-      region: REGIONS[Math.floor(Math.random() * REGIONS.length)],
+      environment: ENVIRONMENTS[Math.floor(secureRandom() * ENVIRONMENTS.length)],
+      region: REGIONS[Math.floor(secureRandom() * REGIONS.length)],
       priority: items.some(i => i.unitPrice > 100) ? 'high' : 'normal',
       customerId,
       orderId,
     },
     correlationId,
-    // codeql[js/insecure-randomness]: synthetic demo message field, not a real security identifier
     sessionId: customerId,
     scenario: 'order-processing',
     anomalyType,
@@ -197,13 +197,13 @@ function generateOrderProcessingMessage(isAnomaly: boolean, anomalyType: Anomaly
 }
 
 function generatePaymentMessage(isAnomaly: boolean, anomalyType: AnomalyType): GeneratedMessage {
-  const transactionId = `TXN-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-  const orderId = `ORD-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+  const transactionId = `TXN-${Date.now().toString(36).toUpperCase()}-${secureRandom().toString(36).substring(2, 6).toUpperCase()}`;
+  const orderId = `ORD-${secureRandom().toString(36).substring(2, 10).toUpperCase()}`;
   const correlationId = generateUUID();
-  const company = COMPANIES[Math.floor(Math.random() * COMPANIES.length)];
+  const company = COMPANIES[Math.floor(secureRandom() * COMPANIES.length)];
   
-  const amount = parseFloat((Math.random() * 2000 + 10).toFixed(2));
-  const paymentMethod = ['credit_card', 'debit_card', 'paypal', 'bank_transfer', 'apple_pay'][Math.floor(Math.random() * 5)];
+  const amount = parseFloat((secureRandom() * 2000 + 10).toFixed(2));
+  const paymentMethod = ['credit_card', 'debit_card', 'paypal', 'bank_transfer', 'apple_pay'][Math.floor(secureRandom() * 5)];
   
   let status = 'completed';
   let errorDetails = null;
@@ -225,7 +225,7 @@ function generatePaymentMessage(isAnomaly: boolean, anomalyType: AnomalyType): G
           code: 'GATEWAY_TIMEOUT',
           message: 'Payment gateway did not respond within timeout period. Request will be retried.',
           timestamp: new Date().toISOString(),
-          retryCount: Math.floor(Math.random() * 5) + 2,
+          retryCount: Math.floor(secureRandom() * 5) + 2,
         };
         break;
       case 'poison-message':
@@ -242,7 +242,7 @@ function generatePaymentMessage(isAnomaly: boolean, anomalyType: AnomalyType): G
           code: 'FRAUD_CHECK_DELAY',
           message: 'Extended fraud analysis required for high-value transaction.',
           timestamp: new Date().toISOString(),
-          analysisTimeMs: Math.floor(Math.random() * 60000) + 30000,
+          analysisTimeMs: Math.floor(secureRandom() * 60000) + 30000,
         };
         break;
     }
@@ -263,16 +263,16 @@ function generatePaymentMessage(isAnomaly: boolean, anomalyType: AnomalyType): G
       processorResponse: {
         code: status === 'completed' ? 'APPROVED' : 'DECLINED',
         message: status === 'completed' ? 'Transaction approved' : errorDetails?.message,
-        authorizationCode: status === 'completed' ? Math.random().toString(36).substring(2, 8).toUpperCase() : null,
+        authorizationCode: status === 'completed' ? secureRandom().toString(36).substring(2, 8).toUpperCase() : null,
         avsResult: 'Y',
         cvvResult: 'M',
       },
       billing: {
-        name: `${['John', 'Jane', 'Michael', 'Sarah', 'David'][Math.floor(Math.random() * 5)]} ${['Smith', 'Johnson', 'Williams', 'Brown', 'Jones'][Math.floor(Math.random() * 5)]}`,
+        name: `${['John', 'Jane', 'Michael', 'Sarah', 'David'][Math.floor(secureRandom() * 5)]} ${['Smith', 'Johnson', 'Williams', 'Brown', 'Jones'][Math.floor(secureRandom() * 5)]}`,
         email: `billing@${company.toLowerCase()}.com`,
-        phone: `+1-${Math.floor(Math.random() * 900) + 100}-${Math.floor(Math.random() * 900) + 100}-${Math.floor(Math.random() * 9000) + 1000}`,
+        phone: `+1-${Math.floor(secureRandom() * 900) + 100}-${Math.floor(secureRandom() * 900) + 100}-${Math.floor(secureRandom() * 9000) + 1000}`,
       },
-      riskScore: Math.floor(Math.random() * 100),
+      riskScore: Math.floor(secureRandom() * 100),
       ...(errorDetails && { error: errorDetails }),
     },
   }, null, 2);
@@ -288,8 +288,8 @@ function generatePaymentMessage(isAnomaly: boolean, anomalyType: AnomalyType): G
       anomalyType,
       messageType: 'PaymentProcessed',
       source: `${company.toLowerCase()}-payment-gateway`,
-      environment: ENVIRONMENTS[Math.floor(Math.random() * ENVIRONMENTS.length)],
-      region: REGIONS[Math.floor(Math.random() * REGIONS.length)],
+      environment: ENVIRONMENTS[Math.floor(secureRandom() * ENVIRONMENTS.length)],
+      region: REGIONS[Math.floor(secureRandom() * REGIONS.length)],
       transactionId,
       orderId,
       paymentStatus: status,
@@ -302,12 +302,12 @@ function generatePaymentMessage(isAnomaly: boolean, anomalyType: AnomalyType): G
 }
 
 function generateNotificationMessage(isAnomaly: boolean, anomalyType: AnomalyType): GeneratedMessage {
-  const notificationId = `NOTIF-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+  const notificationId = `NOTIF-${Date.now().toString(36).toUpperCase()}-${secureRandom().toString(36).substring(2, 6).toUpperCase()}`;
   const correlationId = generateUUID();
-  const company = COMPANIES[Math.floor(Math.random() * COMPANIES.length)];
+  const company = COMPANIES[Math.floor(secureRandom() * COMPANIES.length)];
   
   const notificationTypes = ['email', 'sms', 'push', 'webhook'];
-  const notificationType = notificationTypes[Math.floor(Math.random() * notificationTypes.length)];
+  const notificationType = notificationTypes[Math.floor(secureRandom() * notificationTypes.length)];
   
   const templates = {
     email: ['order-confirmation', 'shipping-update', 'password-reset', 'welcome', 'invoice'],
@@ -317,7 +317,7 @@ function generateNotificationMessage(isAnomaly: boolean, anomalyType: AnomalyTyp
   };
 
   const template = templates[notificationType as keyof typeof templates][
-    Math.floor(Math.random() * templates[notificationType as keyof typeof templates].length)
+    Math.floor(secureRandom() * templates[notificationType as keyof typeof templates].length)
   ];
 
   let status = 'delivered';
@@ -340,7 +340,7 @@ function generateNotificationMessage(isAnomaly: boolean, anomalyType: AnomalyTyp
           code: 'SMTP_TEMPORARY_FAILURE',
           message: 'Recipient server temporarily unavailable. Will retry.',
           timestamp: new Date().toISOString(),
-          retryCount: Math.floor(Math.random() * 6) + 2,
+          retryCount: Math.floor(secureRandom() * 6) + 2,
         };
         break;
       case 'poison-message':
@@ -357,15 +357,15 @@ function generateNotificationMessage(isAnomaly: boolean, anomalyType: AnomalyTyp
           code: 'RATE_LIMITED',
           message: 'Notification rate limit exceeded. Message queued for delayed delivery.',
           timestamp: new Date().toISOString(),
-          estimatedDeliveryMs: Math.floor(Math.random() * 300000) + 60000,
+          estimatedDeliveryMs: Math.floor(secureRandom() * 300000) + 60000,
         };
         break;
     }
   }
 
   const recipients = Array.from(
-    { length: Math.floor(Math.random() * 3) + 1 },
-    () => `user${Math.floor(Math.random() * 10000)}@${company.toLowerCase()}.com`
+    { length: Math.floor(secureRandom() * 3) + 1 },
+    () => `user${Math.floor(secureRandom() * 10000)}@${company.toLowerCase()}.com`
   );
 
   const body = JSON.stringify({
@@ -391,8 +391,8 @@ function generateNotificationMessage(isAnomaly: boolean, anomalyType: AnomalyTyp
         },
       },
       delivery: {
-        attempts: status === 'delivered' ? 1 : Math.floor(Math.random() * 5) + 1,
-        provider: ['sendgrid', 'mailgun', 'twilio', 'firebase'][Math.floor(Math.random() * 4)],
+        attempts: status === 'delivered' ? 1 : Math.floor(secureRandom() * 5) + 1,
+        provider: ['sendgrid', 'mailgun', 'twilio', 'firebase'][Math.floor(secureRandom() * 4)],
         sentAt: new Date().toISOString(),
         deliveredAt: status === 'delivered' ? new Date().toISOString() : null,
       },
@@ -411,8 +411,8 @@ function generateNotificationMessage(isAnomaly: boolean, anomalyType: AnomalyTyp
       anomalyType,
       messageType: 'NotificationSent',
       source: `${company.toLowerCase()}-notification-service`,
-      environment: ENVIRONMENTS[Math.floor(Math.random() * ENVIRONMENTS.length)],
-      region: REGIONS[Math.floor(Math.random() * REGIONS.length)],
+      environment: ENVIRONMENTS[Math.floor(secureRandom() * ENVIRONMENTS.length)],
+      region: REGIONS[Math.floor(secureRandom() * REGIONS.length)],
       notificationType,
       template,
       notificationStatus: status,
@@ -424,17 +424,17 @@ function generateNotificationMessage(isAnomaly: boolean, anomalyType: AnomalyTyp
 }
 
 function generateInventoryMessage(isAnomaly: boolean, anomalyType: AnomalyType): GeneratedMessage {
-  const eventId = `INV-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+  const eventId = `INV-${Date.now().toString(36).toUpperCase()}-${secureRandom().toString(36).substring(2, 6).toUpperCase()}`;
   const correlationId = generateUUID();
-  const company = COMPANIES[Math.floor(Math.random() * COMPANIES.length)];
+  const company = COMPANIES[Math.floor(secureRandom() * COMPANIES.length)];
   
-  const skus = Array.from({ length: Math.floor(Math.random() * 3) + 1 }, () => ({
-    sku: `SKU-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-    productName: ['Laptop', 'Tablet', 'Headphones', 'Smartwatch', 'Camera', 'Speaker'][Math.floor(Math.random() * 6)],
-    warehouse: ['WH-EAST', 'WH-WEST', 'WH-CENTRAL', 'WH-SOUTH'][Math.floor(Math.random() * 4)],
-    previousQuantity: Math.floor(Math.random() * 100),
-    newQuantity: Math.floor(Math.random() * 100),
-    changeType: ['receipt', 'shipment', 'adjustment', 'transfer'][Math.floor(Math.random() * 4)],
+  const skus = Array.from({ length: Math.floor(secureRandom() * 3) + 1 }, () => ({
+    sku: `SKU-${secureRandom().toString(36).substring(2, 8).toUpperCase()}`,
+    productName: ['Laptop', 'Tablet', 'Headphones', 'Smartwatch', 'Camera', 'Speaker'][Math.floor(secureRandom() * 6)],
+    warehouse: ['WH-EAST', 'WH-WEST', 'WH-CENTRAL', 'WH-SOUTH'][Math.floor(secureRandom() * 4)],
+    previousQuantity: Math.floor(secureRandom() * 100),
+    newQuantity: Math.floor(secureRandom() * 100),
+    changeType: ['receipt', 'shipment', 'adjustment', 'transfer'][Math.floor(secureRandom() * 4)],
   }));
 
   let status = 'committed';
@@ -456,7 +456,7 @@ function generateInventoryMessage(isAnomaly: boolean, anomalyType: AnomalyType):
           code: 'WAREHOUSE_SYNC_CONFLICT',
           message: 'Optimistic locking failure. Inventory was modified by another process.',
           timestamp: new Date().toISOString(),
-          retryCount: Math.floor(Math.random() * 7) + 3,
+          retryCount: Math.floor(secureRandom() * 7) + 3,
         };
         break;
       case 'poison-message':
@@ -473,7 +473,7 @@ function generateInventoryMessage(isAnomaly: boolean, anomalyType: AnomalyType):
           code: 'CROSS_REGION_SYNC',
           message: 'Multi-region inventory synchronization in progress.',
           timestamp: new Date().toISOString(),
-          syncDurationMs: Math.floor(Math.random() * 120000) + 60000,
+          syncDurationMs: Math.floor(secureRandom() * 120000) + 60000,
         };
         break;
     }
@@ -498,8 +498,8 @@ function generateInventoryMessage(isAnomaly: boolean, anomalyType: AnomalyType):
       },
       audit: {
         initiatedBy: `system@${company.toLowerCase()}.com`,
-        reason: ['customer-order', 'supplier-delivery', 'inventory-count', 'damaged-goods'][Math.floor(Math.random() * 4)],
-        referenceNumber: `REF-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
+        reason: ['customer-order', 'supplier-delivery', 'inventory-count', 'damaged-goods'][Math.floor(secureRandom() * 4)],
+        referenceNumber: `REF-${secureRandom().toString(36).substring(2, 10).toUpperCase()}`,
       },
       ...(errorDetails && { error: errorDetails }),
     },
@@ -516,8 +516,8 @@ function generateInventoryMessage(isAnomaly: boolean, anomalyType: AnomalyType):
       anomalyType,
       messageType: 'InventoryUpdated',
       source: `${company.toLowerCase()}-inventory-service`,
-      environment: ENVIRONMENTS[Math.floor(Math.random() * ENVIRONMENTS.length)],
-      region: REGIONS[Math.floor(Math.random() * REGIONS.length)],
+      environment: ENVIRONMENTS[Math.floor(secureRandom() * ENVIRONMENTS.length)],
+      region: REGIONS[Math.floor(secureRandom() * REGIONS.length)],
       inventoryStatus: status,
       warehouseId: skus[0].warehouse,
     },
@@ -528,14 +528,13 @@ function generateInventoryMessage(isAnomaly: boolean, anomalyType: AnomalyType):
 }
 
 function generateUserActivityMessage(isAnomaly: boolean, anomalyType: AnomalyType): GeneratedMessage {
-  const eventId = `UA-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-  // codeql[js/insecure-randomness]: synthetic demo message field, not a real security identifier
-  const userId = `USER-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+  const eventId = `UA-${Date.now().toString(36).toUpperCase()}-${secureRandom().toString(36).substring(2, 6).toUpperCase()}`;
+  const userId = `USER-${secureRandom().toString(36).substring(2, 10).toUpperCase()}`;
   const correlationId = generateUUID();
-  const company = COMPANIES[Math.floor(Math.random() * COMPANIES.length)];
+  const company = COMPANIES[Math.floor(secureRandom() * COMPANIES.length)];
   
   const activityTypes = ['login', 'logout', 'page_view', 'button_click', 'form_submit', 'search', 'purchase'];
-  const activityType = activityTypes[Math.floor(Math.random() * activityTypes.length)];
+  const activityType = activityTypes[Math.floor(secureRandom() * activityTypes.length)];
 
   let status = 'recorded';
   let errorDetails = null;
@@ -556,7 +555,7 @@ function generateUserActivityMessage(isAnomaly: boolean, anomalyType: AnomalyTyp
           code: 'ANALYTICS_UNAVAILABLE',
           message: 'Analytics ingestion service temporarily unavailable.',
           timestamp: new Date().toISOString(),
-          retryCount: Math.floor(Math.random() * 4) + 2,
+          retryCount: Math.floor(secureRandom() * 4) + 2,
         };
         break;
       case 'poison-message':
@@ -573,7 +572,7 @@ function generateUserActivityMessage(isAnomaly: boolean, anomalyType: AnomalyTyp
           code: 'HIGH_VOLUME_PERIOD',
           message: 'Event buffered due to high ingestion volume.',
           timestamp: new Date().toISOString(),
-          bufferTimeMs: Math.floor(Math.random() * 30000) + 10000,
+          bufferTimeMs: Math.floor(secureRandom() * 30000) + 10000,
         };
         break;
     }
@@ -591,23 +590,23 @@ function generateUserActivityMessage(isAnomaly: boolean, anomalyType: AnomalyTyp
       activityType,
       status,
       context: {
-        page: `/${['home', 'products', 'cart', 'checkout', 'account', 'orders'][Math.floor(Math.random() * 6)]}`,
-        referrer: ['google.com', 'facebook.com', 'direct', 'email-campaign', 'partner-site'][Math.floor(Math.random() * 5)],
+        page: `/${['home', 'products', 'cart', 'checkout', 'account', 'orders'][Math.floor(secureRandom() * 6)]}`,
+        referrer: ['google.com', 'facebook.com', 'direct', 'email-campaign', 'partner-site'][Math.floor(secureRandom() * 5)],
         device: {
-          type: ['desktop', 'mobile', 'tablet'][Math.floor(Math.random() * 3)],
-          os: ['Windows', 'macOS', 'iOS', 'Android'][Math.floor(Math.random() * 4)],
-          browser: ['Chrome', 'Firefox', 'Safari', 'Edge'][Math.floor(Math.random() * 4)],
+          type: ['desktop', 'mobile', 'tablet'][Math.floor(secureRandom() * 3)],
+          os: ['Windows', 'macOS', 'iOS', 'Android'][Math.floor(secureRandom() * 4)],
+          browser: ['Chrome', 'Firefox', 'Safari', 'Edge'][Math.floor(secureRandom() * 4)],
         },
         geo: {
           country: 'US',
-          region: ['California', 'Texas', 'New York', 'Florida', 'Washington'][Math.floor(Math.random() * 5)],
-          city: ['Los Angeles', 'Houston', 'New York', 'Miami', 'Seattle'][Math.floor(Math.random() * 5)],
+          region: ['California', 'Texas', 'New York', 'Florida', 'Washington'][Math.floor(secureRandom() * 5)],
+          city: ['Los Angeles', 'Houston', 'New York', 'Miami', 'Seattle'][Math.floor(secureRandom() * 5)],
         },
       },
       metrics: {
-        timeOnPage: Math.floor(Math.random() * 300),
-        scrollDepth: Math.floor(Math.random() * 100),
-        interactionCount: Math.floor(Math.random() * 20),
+        timeOnPage: Math.floor(secureRandom() * 300),
+        scrollDepth: Math.floor(secureRandom() * 100),
+        interactionCount: Math.floor(secureRandom() * 20),
       },
       ...(errorDetails && { error: errorDetails }),
     },
@@ -624,8 +623,8 @@ function generateUserActivityMessage(isAnomaly: boolean, anomalyType: AnomalyTyp
       anomalyType,
       messageType: 'UserActivityTracked',
       source: `${company.toLowerCase()}-analytics-service`,
-      environment: ENVIRONMENTS[Math.floor(Math.random() * ENVIRONMENTS.length)],
-      region: REGIONS[Math.floor(Math.random() * REGIONS.length)],
+      environment: ENVIRONMENTS[Math.floor(secureRandom() * ENVIRONMENTS.length)],
+      region: REGIONS[Math.floor(secureRandom() * REGIONS.length)],
       activityType,
       userId,
     },
@@ -636,9 +635,9 @@ function generateUserActivityMessage(isAnomaly: boolean, anomalyType: AnomalyTyp
 }
 
 function generateErrorHandlingMessage(isAnomaly: boolean, anomalyType: AnomalyType): GeneratedMessage {
-  const errorId = `ERR-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+  const errorId = `ERR-${Date.now().toString(36).toUpperCase()}-${secureRandom().toString(36).substring(2, 6).toUpperCase()}`;
   const correlationId = generateUUID();
-  const company = COMPANIES[Math.floor(Math.random() * COMPANIES.length)];
+  const company = COMPANIES[Math.floor(secureRandom() * COMPANIES.length)];
   
   const errorTypes = [
     { code: 'DATABASE_CONNECTION_FAILED', severity: 'critical', service: 'database-proxy' },
@@ -649,7 +648,7 @@ function generateErrorHandlingMessage(isAnomaly: boolean, anomalyType: AnomalyTy
     { code: 'RESOURCE_EXHAUSTED', severity: 'critical', service: 'compute-service' },
   ];
 
-  const errorType = errorTypes[Math.floor(Math.random() * errorTypes.length)];
+  const errorType = errorTypes[Math.floor(secureRandom() * errorTypes.length)];
 
   // Error messages are inherently "anomalies" in a sense, but we can make them worse
   let status = 'logged';
@@ -668,8 +667,8 @@ function generateErrorHandlingMessage(isAnomaly: boolean, anomalyType: AnomalyTy
       case 'retry-loop':
         status = 'recurring';
         escalationDetails = {
-          occurrenceCount: Math.floor(Math.random() * 50) + 10,
-          firstSeen: new Date(Date.now() - Math.random() * 3600000).toISOString(),
+          occurrenceCount: Math.floor(secureRandom() * 50) + 10,
+          firstSeen: new Date(Date.now() - secureRandom() * 3600000).toISOString(),
           lastSeen: new Date().toISOString(),
         };
         break;
@@ -679,15 +678,15 @@ function generateErrorHandlingMessage(isAnomaly: boolean, anomalyType: AnomalyTy
           circuitBreakerId: `CB-${errorType.service}`,
           openedAt: new Date().toISOString(),
           failureThreshold: 5,
-          currentFailures: Math.floor(Math.random() * 10) + 5,
+          currentFailures: Math.floor(secureRandom() * 10) + 5,
         };
         break;
       case 'latency-spike':
         status = 'degraded';
         escalationDetails = {
-          p99Latency: Math.floor(Math.random() * 10000) + 5000,
+          p99Latency: Math.floor(secureRandom() * 10000) + 5000,
           normalP99: 200,
-          degradationFactor: Math.floor(Math.random() * 50) + 10,
+          degradationFactor: Math.floor(secureRandom() * 50) + 10,
         };
         break;
     }
@@ -709,14 +708,13 @@ function generateErrorHandlingMessage(isAnomaly: boolean, anomalyType: AnomalyTy
       context: {
         requestId: generateUUID(),
         traceId: generateUUID().replace(/-/g, ''),
-        spanId: Math.random().toString(16).substring(2, 18),
-        // codeql[js/insecure-randomness]: synthetic demo message field, not a real security identifier
-        userId: Math.random() > 0.5 ? `USER-${Math.random().toString(36).substring(2, 10).toUpperCase()}` : null,
+        spanId: secureRandom().toString(16).substring(2, 18),
+        userId: secureRandom() > 0.5 ? `USER-${secureRandom().toString(36).substring(2, 10).toUpperCase()}` : null,
       },
       metadata: {
-        hostname: `${errorType.service}-${Math.floor(Math.random() * 10)}.${company.toLowerCase()}.internal`,
-        podId: `${errorType.service}-${Math.random().toString(36).substring(2, 10)}`,
-        containerId: Math.random().toString(16).substring(2, 14),
+        hostname: `${errorType.service}-${Math.floor(secureRandom() * 10)}.${company.toLowerCase()}.internal`,
+        podId: `${errorType.service}-${secureRandom().toString(36).substring(2, 10)}`,
+        containerId: secureRandom().toString(16).substring(2, 14),
         kubernetesNamespace: 'production',
       },
       ...(escalationDetails && { escalation: escalationDetails }),
@@ -734,8 +732,8 @@ function generateErrorHandlingMessage(isAnomaly: boolean, anomalyType: AnomalyTy
       anomalyType,
       messageType: 'ErrorOccurred',
       source: `${company.toLowerCase()}-${errorType.service}`,
-      environment: ENVIRONMENTS[Math.floor(Math.random() * ENVIRONMENTS.length)],
-      region: REGIONS[Math.floor(Math.random() * REGIONS.length)],
+      environment: ENVIRONMENTS[Math.floor(secureRandom() * ENVIRONMENTS.length)],
+      region: REGIONS[Math.floor(secureRandom() * REGIONS.length)],
       errorCode: errorType.code,
       severity: errorType.severity,
       errorStatus: status,
@@ -767,13 +765,13 @@ export function generateMessages(config: GenerationConfig): GeneratedMessage[] {
 
   for (let i = 0; i < volume; i++) {
     // Pick a random scenario from the selected ones
-    const scenario = scenarios[Math.floor(Math.random() * scenarios.length)];
+    const scenario = scenarios[Math.floor(secureRandom() * scenarios.length)];
     const generator = scenarioGenerators[scenario];
 
     // Determine if this message should be an anomaly
-    const isAnomaly = Math.random() * 100 < anomalyRate;
+    const isAnomaly = secureRandom() * 100 < anomalyRate;
     const anomalyType: AnomalyType = isAnomaly 
-      ? anomalyTypes[Math.floor(Math.random() * anomalyTypes.length)]
+      ? anomalyTypes[Math.floor(secureRandom() * anomalyTypes.length)]
       : 'none';
 
     const message = generator(isAnomaly, anomalyType);
