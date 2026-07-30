@@ -15,8 +15,9 @@ WORKDIR /repo
 # Copy root package files for monorepo workspace setup
 COPY package.json package-lock.json ./
 
-# Copy workspace package.json for apps/web
+# Copy workspace package.json for apps/web and its ui-shared workspace dependency
 COPY apps/web/package.json ./apps/web/
+COPY packages/servicehub-ui-shared/package.json ./packages/servicehub-ui-shared/
 
 # Install dependencies via npm workspaces (installs all workspace dependencies)
 RUN npm ci --include=optional
@@ -24,6 +25,9 @@ RUN npm ci --include=optional
 # The .version file (read by vite.config.ts) must sit at the repo root relative to apps/web.
 COPY .version ./.version
 COPY apps/web/ ./apps/web/
+# apps/web resolves @servicehub/ui-shared/* via tsconfig paths / vite alias, not node_modules —
+# the workspace source must be physically present at build time.
+COPY packages/servicehub-ui-shared/ ./packages/servicehub-ui-shared/
 
 # Build the SPA. Vite's configured outDir points into the API's wwwroot; override it to a
 # local dist so this stage is self-contained and the output is easy to copy forward.

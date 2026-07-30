@@ -156,6 +156,7 @@ function generateOrderProcessingMessage(isAnomaly: boolean, anomalyType: Anomaly
           street: `${Math.floor(Math.random() * 9999) + 1} ${['Main', 'Oak', 'Pine', 'Maple', 'Cedar'][Math.floor(Math.random() * 5)]} Street`,
           city: ['Seattle', 'Portland', 'San Francisco', 'Los Angeles', 'Denver'][Math.floor(Math.random() * 5)],
           state: ['WA', 'OR', 'CA', 'CA', 'CO'][Math.floor(Math.random() * 5)],
+          // codeql[js/insecure-randomness]: synthetic demo message field, not a real security identifier
           zipCode: String(Math.floor(Math.random() * 90000) + 10000),
           country: 'US',
         },
@@ -188,6 +189,7 @@ function generateOrderProcessingMessage(isAnomaly: boolean, anomalyType: Anomaly
       orderId,
     },
     correlationId,
+    // codeql[js/insecure-randomness]: synthetic demo message field, not a real security identifier
     sessionId: customerId,
     scenario: 'order-processing',
     anomalyType,
@@ -527,6 +529,7 @@ function generateInventoryMessage(isAnomaly: boolean, anomalyType: AnomalyType):
 
 function generateUserActivityMessage(isAnomaly: boolean, anomalyType: AnomalyType): GeneratedMessage {
   const eventId = `UA-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+  // codeql[js/insecure-randomness]: synthetic demo message field, not a real security identifier
   const userId = `USER-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
   const correlationId = generateUUID();
   const company = COMPANIES[Math.floor(Math.random() * COMPANIES.length)];
@@ -707,6 +710,7 @@ function generateErrorHandlingMessage(isAnomaly: boolean, anomalyType: AnomalyTy
         requestId: generateUUID(),
         traceId: generateUUID().replace(/-/g, ''),
         spanId: Math.random().toString(16).substring(2, 18),
+        // codeql[js/insecure-randomness]: synthetic demo message field, not a real security identifier
         userId: Math.random() > 0.5 ? `USER-${Math.random().toString(36).substring(2, 10).toUpperCase()}` : null,
       },
       metadata: {

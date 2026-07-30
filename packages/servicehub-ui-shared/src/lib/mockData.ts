@@ -294,8 +294,11 @@ function generateOrderBody(): { body: string; contentType: ContentType; eventTyp
     customerRef,
     customer: {
       company,
+      // codeql[js/insecure-randomness]: synthetic demo message fields, not real security identifiers
       accountId: `ACC-${randomInt(10000, 99999)}`,
+      // codeql[js/insecure-randomness]: synthetic demo message fields, not real security identifiers
       billingRegion: randomItem(['EMEA', 'AMER', 'APAC']),
+      // codeql[js/insecure-randomness]: synthetic demo message fields, not real security identifiers
       accountManager: randomItem(['Sarah Chen', 'James Okafor', 'Priya Nair', 'Tom Bergström', 'Maria Santos']),
     },
     lineItems: [
@@ -335,6 +338,7 @@ function generatePaymentBody(): { body: string; contentType: ContentType; eventT
     schemaVersion: '2.4',
     transactionId: txnId,
     externalRef: `${gwInfo.code}-${String(randomInt(100000000, 999999999))}`,
+    // codeql[js/insecure-randomness]: synthetic demo message field, not a real security identifier
     payer: { company, accountId: `ACC-${randomInt(10000, 99999)}` },
     amount: { value: amount, currency },
     gateway: {
@@ -424,6 +428,7 @@ function generateFraudBody(): { body: string; contentType: ContentType; eventTyp
     schemaVersion: '1.3',
     alertId: `FRD-${String(randomInt(100000, 999999))}`,
     orderId: `ORD-2026-${String(randomInt(100000, 999999))}`,
+    // codeql[js/insecure-randomness]: synthetic demo message field, not a real security identifier
     customer: { company, accountId: `ACC-${randomInt(10000, 99999)}` },
     transaction: { amount, currency: 'GBP', gatewayRef: `STR-${randomInt(100000000, 999999999)}` },
     riskAssessment: {
@@ -485,6 +490,7 @@ function generateShippingBody(): { body: string; contentType: ContentType; event
     origin: { warehouseId: warehouse.id, name: warehouse.location, region: warehouse.region },
     destination: {
       country: randomItem(['GB', 'US', 'DE', 'FR', 'NL', 'SG', 'AU']),
+      // codeql[js/insecure-randomness]: synthetic demo message field, not a real security identifier
       postcode: randomItem(['EC2A 4NE', 'W1D 3QZ', '10001', '75001', '60311', '048624', '2000']),
     },
     estimatedDelivery: new Date(Date.now() + randomInt(86400000, 86400000 * 5)).toISOString().split('T')[0],
@@ -526,6 +532,7 @@ function generateHeaders(eventType: string): Record<string, string> {
   headers['x-contoso-event-version'] = '1';
   headers['Label'] = eventType;
   headers['Partition-Key'] = `partition-${randomInt(0, 15)}`;
+  // codeql[js/insecure-randomness]: synthetic demo message field (fake queue SessionId), not a real security identifier
   if (Math.random() < 0.6) headers['Session-Id'] = `session-${randomInt(10000, 99999)}`;
   if (Math.random() < 0.4) headers['Reply-To'] = 'response-processed-queue';
 

@@ -106,7 +106,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 return MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: false);
             }, linkedCts.Token).ConfigureAwait(false);
 
-            _logger.LogDebug("Peeked {Count} messages from Pub/Sub subscription {Subscription}", mapped.Count, request.EntityName);
+            _logger.LogDebug("Peeked {Count} messages from Pub/Sub subscription {Subscription}", mapped.Count, SanitizeForLog(request.EntityName));
             return Result.Success<IReadOnlyList<Message>>(mapped);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)

@@ -16,7 +16,16 @@ services:
       # Loopback-bound by default; for deliberate LAN exposure, change to: - "0.0.0.0:8080:8080"
       - "127.0.0.1:8080:8080"
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
+      # Production, not Development: this is the single self-contained image the README
+      # quick-start advertises (SPA served at / from wwwroot) — Development mode skips
+      # UseStaticFiles/MapFallbackToFile and redirects / to /scalar/v1 instead, since it
+      # assumes a separate `npm run dev` frontend on :3000, which this container doesn't run.
+      ASPNETCORE_ENVIRONMENT: Production
+      # Override for anything you'd treat as sensitive: SECURITY__ENCRYPTIONKEY=$(openssl rand -hex 32) docker compose up --build
+      SECURITY__ENCRYPTIONKEY: ${SECURITY__ENCRYPTIONKEY:-0a1715d2edbbbef62384ee797ed6bf7ce01ef56ee7da55dcc04fb7f297e53a4d}
+      # appsettings.Production.json's AllowedHosts placeholder rejects every Host header
+      # until overridden; this container is only reachable via localhost per the ports mapping.
+      AllowedHosts: localhost
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/live"]
       interval: 30s
