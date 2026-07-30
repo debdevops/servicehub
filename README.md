@@ -421,13 +421,14 @@ Bug fixes, features, and documentation improvements are welcome!
 
 ```bash
 # Unit tests (Vitest — 1,100+ tests, ≥60% coverage required)
-cd apps/web && npm run test:coverage
+npm run -w apps/web test:coverage
 
 # Backend tests (xUnit — 1,500+ unit + integration tests)
-cd services/api && dotnet test
+dotnet test services/api/tests/ServiceHub.UnitTests
+dotnet test services/api/tests/ServiceHub.IntegrationTests
 
-# E2E tests (Playwright)
-cd apps/web && npm run test:e2e
+# E2E tests (Playwright — requires simulator running)
+npm run -w apps/web test:e2e
 ```
 For deep backend developer guidelines, refer to the [API README](services/api/README.md).
 

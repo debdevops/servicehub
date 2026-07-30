@@ -12,9 +12,14 @@ FROM node:22-bookworm-slim AS web
 # Mirror the repo layout so vite.config.ts can resolve ../../.version (repo root) at build time.
 WORKDIR /repo
 
-# Install dependencies first for better layer caching.
-COPY apps/web/package.json apps/web/package-lock.json ./apps/web/
-RUN cd apps/web && npm ci --include=optional
+# Copy root package files for monorepo workspace setup
+COPY package.json package-lock.json ./
+
+# Copy workspace package.json for apps/web
+COPY apps/web/package.json ./apps/web/
+
+# Install dependencies via npm workspaces (installs all workspace dependencies)
+RUN npm ci --include=optional
 
 # The .version file (read by vite.config.ts) must sit at the repo root relative to apps/web.
 COPY .version ./.version
@@ -22,7 +27,7 @@ COPY apps/web/ ./apps/web/
 
 # Build the SPA. Vite's configured outDir points into the API's wwwroot; override it to a
 # local dist so this stage is self-contained and the output is easy to copy forward.
-RUN cd apps/web && npm run build -- --outDir dist --emptyOutDir
+RUN npm run -w apps/web build -- --outDir dist --emptyOutDir
 
 # ---- Stage 2: publish the .NET API -----------------------------------------------------
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS api

@@ -39,15 +39,13 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: package-lock.json
 
-      - name: Install frontend dependencies
-        working-directory: apps/web
+      - name: Install dependencies (monorepo workspace)
         run: npm ci
 
       - name: Build React SPA (outputs to API wwwroot)
-        working-directory: apps/web
-        run: npm run build
+        run: npm run -w apps/web build
         # vite.config.ts build.outDir points to:
         # ../../services/api/src/ServiceHub.Api/wwwroot
         # So the React build is already inside the API project after this step.

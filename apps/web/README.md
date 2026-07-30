@@ -108,39 +108,43 @@ apps/web/
 
 ### Installation
 
-```bash
-# Navigate to frontend directory
-cd apps/web
+> **Note**: ServiceHub uses npm workspaces. Always run `npm install` from the **repository root**, not from `apps/web/`.
 
-# Install dependencies
+```bash
+# From repository root, install all workspace dependencies
 npm install
 
-# Start development server
-npm run dev
+# Start development server for the web app
+npm run -w apps/web dev
 ```
 
 The application will be available at **http://localhost:3000**
 
 ### Development Commands
 
+All commands assume you're in the **repository root**:
+
 ```bash
 # Start dev server with HMR
-npm run dev
+npm run -w apps/web dev
 
-# Build for production
-npm run build
+# Build for production (outputs to services/api/src/ServiceHub.Api/wwwroot)
+npm run -w apps/web build
 
 # Preview production build
-npm run preview
+npm run -w apps/web preview
 
 # Run linter
-npm run lint
+npm run -w apps/web lint
 
 # Type-check without building
-npm run type-check
+npm run -w apps/web exec -- tsc -b
 
 # Run unit tests with coverage
-npm run test:coverage
+npm run -w apps/web test:coverage
+
+# Run E2E tests (Playwright)
+npm run -w apps/web test:e2e
 ```
 
 ---
@@ -483,12 +487,14 @@ VITE_ENABLE_MOCK_DATA=false
 
 ### Unit Tests
 
-```bash
-# Install testing dependencies
-npm install -D vitest @testing-library/react @testing-library/jest-dom
+Testing dependencies are already included in the monorepo `package.json`. From the repository root:
 
-# Run tests
-npm run test
+```bash
+# Run tests for the web app
+npm run -w apps/web test
+
+# Run tests with coverage
+npm run -w apps/web test:coverage
 ```
 
 ### Component Testing Pattern
@@ -552,37 +558,41 @@ export default defineConfig({
 
 ```bash
 # Development
-npm run build -- --mode development
+npm run -w apps/web build -- --mode development
 
 # Staging
-npm run build -- --mode staging
+npm run -w apps/web build -- --mode staging
 
 # Production
-npm run build -- --mode production
+npm run -w apps/web build -- --mode production
 ```
 
 ### Deployment Options
 
-1. **Static Hosting** (Vercel, Netlify, Azure Static Web Apps)
-   ```bash
-   # Build and deploy
-   npm run build
-   # Upload dist/ to hosting provider
+> **Note**: ServiceHub is deployed as a monolithic application with the API and frontend built together. See the repository `Dockerfile` for the complete build process.
+
+1. **Docker** (recommended — see repository root `Dockerfile`)
+   ```dockerfile
+   # Stage 1: Build React SPA (monorepo workspace)
+   FROM node:22-bookworm-slim AS web
+   WORKDIR /repo
+   COPY package.json package-lock.json ./
+   COPY apps/web/package.json ./apps/web/
+   RUN npm ci --include=optional
+   COPY apps/web/ ./apps/web/
+   RUN npm run -w apps/web build -- --outDir dist --emptyOutDir
    ```
 
-2. **Docker**
-   ```dockerfile
-   FROM node:20-alpine
-   WORKDIR /app
-   COPY package*.json ./
-   RUN npm ci --production
-   COPY . .
-   RUN npm run build
-   CMD ["npm", "run", "preview"]
+2. **Local Testing**
+   ```bash
+   # From repository root
+   npm run -w apps/web build
+   # Output: apps/web/dist/
    ```
 
 3. **Azure App Service**
    - See [Deployment Guide](../../services/api/DEPLOYMENT_OPERATIONS.md)
+   - Uses the repository `Dockerfile` with the complete monorepo build
 
 ---
 

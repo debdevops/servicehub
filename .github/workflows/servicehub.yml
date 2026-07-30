@@ -200,20 +200,17 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: package-lock.json
 
-      - name: Install dependencies
-        working-directory: apps/web
+      - name: Install dependencies (monorepo workspace)
         run: npm ci --include=optional
 
       - name: Run ESLint
-        working-directory: apps/web
-        run: npm run lint
+        run: npm run -w apps/web lint
 
       - name: Audit npm packages for vulnerabilities
-        working-directory: apps/web
         run: |
-          echo "=== npm audit — checking for known vulnerabilities ==="
+          echo "=== npm audit — checking for known vulnerabilities (monorepo workspace) ==="
           # --audit-level=high: fail only on HIGH or CRITICAL severity
           # --omit=dev: skip dev dependencies (they don't run in production)
           #
@@ -227,7 +224,7 @@ jobs:
           #     react-router-dom v8 (breaking change); tracked separately.
           ACCEPTED_ADVISORIES="GHSA-qwww-vcr4-c8h2"
 
-          AUDIT_JSON=$(npm audit --audit-level=high --omit=dev --json || true)
+          AUDIT_JSON=$(npm audit --audit-level=high --omit=dev --workspace=apps/web --json || true)
           UNACCEPTED=$(echo "$AUDIT_JSON" | jq -r --arg accepted "$ACCEPTED_ADVISORIES" '
             ($accepted | split(",")) as $ignore
             | [.vulnerabilities[]? | select(.severity == "high" or .severity == "critical")
@@ -246,20 +243,18 @@ jobs:
           echo "✅ No unaccepted high/critical npm vulnerabilities in production dependencies"
 
       - name: Run unit tests with coverage
-        working-directory: apps/web
-        run: npm run test:coverage
+        run: npm run -w apps/web test:coverage
 
       - name: Check frontend coverage threshold (60%)
-        working-directory: apps/web
         run: |
-          if [ ! -f "coverage/coverage-summary.json" ]; then
+          if [ ! -f "apps/web/coverage/coverage-summary.json" ]; then
             echo "⚠ Coverage file not found — skipping threshold check"
             exit 0
           fi
 
           # Extract total line coverage from vitest coverage JSON
           COVERAGE=$(node -e "
-            const c = require('./coverage/coverage-summary.json');
+            const c = require('./apps/web/coverage/coverage-summary.json');
             const total = c.total || c;
             const pct = total.lines?.pct ?? total.lines?.percent ?? 0;
             console.log(pct);
@@ -282,8 +277,7 @@ jobs:
           retention-days: 14
 
       - name: Type check with TypeScript
-        working-directory: apps/web
-        run: npx tsc -b
+        run: npm exec -w apps/web -- tsc -b
 
       - name: Verify production env file exists
         run: |
@@ -293,8 +287,7 @@ jobs:
           fi
 
       - name: Build application
-        working-directory: apps/web
-        run: npm run build
+        run: npm run -w apps/web build
 
   container-smoke-test:
     name: Container Build & Health Check

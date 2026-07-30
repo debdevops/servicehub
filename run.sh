@@ -569,12 +569,12 @@ restore_dotnet_packages() {
     echo -e "${GREEN}✓ .NET packages restored${NC}"
 }
 
-# Install npm packages
+# Install npm packages (monorepo workspaces)
 install_npm_packages() {
-    if [ ! -d "$WEB_DIR/node_modules" ] || [ ! -f "$WEB_DIR/node_modules/.package-lock.json" ]; then
-        echo -e "${YELLOW}Installing npm packages...${NC}"
-        cd "$WEB_DIR"
-        
+    if [ ! -d "$SCRIPT_DIR/node_modules" ] || [ ! -f "$SCRIPT_DIR/node_modules/.package-lock.json" ]; then
+        echo -e "${YELLOW}Installing npm packages (monorepo workspaces)...${NC}"
+        cd "$SCRIPT_DIR"
+
         # Use npm ci (clean install) if package-lock.json exists for reproducible builds
         if [ -f "package-lock.json" ]; then
             npm ci --legacy-peer-deps 2>&1 | tail -5
@@ -591,7 +591,7 @@ install_npm_packages() {
                 exit 1
             }
         fi
-        echo -e "${GREEN}✓ npm packages installed${NC}"
+        echo -e "${GREEN}✓ npm packages installed (all workspaces)${NC}"
     else
         echo -e "${GREEN}✓ npm packages already installed${NC}"
     fi
@@ -951,7 +951,7 @@ fi
 # Start Web UI if requested
 if [ "$START_WEB" = true ]; then
     start_service "Web UI" "3000" "" \
-        "cd $WEB_DIR && export VITE_PROXY_TARGET=$API_HTTP_URL && npm run dev -- --port 3000 --host 0.0.0.0 --strictPort" \
+        "cd $SCRIPT_DIR && export VITE_PROXY_TARGET=$API_HTTP_URL && npm run -w apps/web dev -- --port 3000 --host 0.0.0.0 --strictPort" \
         "/tmp/servicehub_ui_startup.log"
 fi
 
@@ -961,7 +961,7 @@ if [ "$START_DEMO" = true ]; then
         echo -e "${YELLOW}⚠ Demo directory not found at $DEMO_DIR${NC}"
     else
         start_service "Demo" "5174" "" \
-            "cd $DEMO_DIR && npm run dev -- --port 5174 --host 0.0.0.0 --strictPort" \
+            "cd $SCRIPT_DIR && npm run -w apps/demo dev -- --port 5174 --host 0.0.0.0 --strictPort" \
             "/tmp/servicehub_demo_startup.log"
     fi
 fi
@@ -972,7 +972,7 @@ if [ "$START_SANDBOX" = true ]; then
         echo -e "${YELLOW}⚠ Sandbox directory not found at $SANDBOX_DIR${NC}"
     else
         start_service "Sandbox" "5175" "" \
-            "cd $SANDBOX_DIR && npm run dev -- --port 5175 --host 0.0.0.0 --strictPort" \
+            "cd $SCRIPT_DIR && npm run -w apps/sandbox dev -- --port 5175 --host 0.0.0.0 --strictPort" \
             "/tmp/servicehub_sandbox_startup.log"
     fi
 fi
