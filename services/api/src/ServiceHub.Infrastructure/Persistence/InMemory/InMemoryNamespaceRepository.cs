@@ -24,6 +24,16 @@ public sealed class InMemoryNamespaceRepository : InMemoryNamespaceRepositoryBas
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
+    // Fixed GUIDs the removed ServiceHub.Simulator project's SimulatorDataSeeder used to
+    // register its simulated namespaces directly in this shared repository. That project is
+    // gone, but namespaces it already persisted to disk remain until cleaned up below.
+    private static readonly HashSet<Guid> LegacySimulatorNamespaceIds =
+    [
+        new Guid("a1b2c3d4-0001-0001-0001-000000000001"),
+        new Guid("b2c3d4e5-0002-0002-0002-000000000002"),
+        new Guid("c3d4e5f6-0003-0003-0003-000000000003"),
+    ];
+
     /// <summary>
     /// Initializes a new instance of the <see cref="InMemoryNamespaceRepository"/> class.
     /// </summary>
@@ -96,12 +106,49 @@ public sealed class InMemoryNamespaceRepository : InMemoryNamespaceRepositoryBas
             }
 
             _logger.LogInformation("Loaded {Count} namespace(s) from {Path}", loaded, _storagePath);
+
+            RemoveLegacySimulatorNamespaces();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to load namespaces from {Path}", _storagePath);
         }
     }
+
+    /// <summary>
+    /// One-time startup migration: purges namespaces left behind by the removed
+    /// ServiceHub.Simulator feature and, if any were found, immediately re-persists the
+    /// cleaned store. Runs only against what was just loaded from disk, so it never touches
+    /// namespaces created afterward even if their name happens to start with "sim-".
+    /// </summary>
+    private void RemoveLegacySimulatorNamespaces()
+    {
+        var legacyIds = _namespaces.Values
+            .Where(IsLegacySimulatorNamespace)
+            .Select(ns => ns.Id)
+            .ToList();
+
+        if (legacyIds.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var id in legacyIds)
+        {
+            _namespaces.TryRemove(id, out _);
+        }
+
+        _logger.LogInformation(
+            "Removed {Count} legacy simulator namespace(s) left over from the removed Simulator feature",
+            legacyIds.Count);
+
+        SaveToDisk();
+    }
+
+    private static bool IsLegacySimulatorNamespace(Namespace ns) =>
+        LegacySimulatorNamespaceIds.Contains(ns.Id)
+        || (ns.DisplayName?.StartsWith("Simulated", StringComparison.Ordinal) ?? false)
+        || ns.Name.StartsWith("sim-", StringComparison.Ordinal);
 
     private void SaveToDisk()
     {

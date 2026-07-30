@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -427,5 +428,157 @@ public sealed class InMemoryNamespaceRepositoryTests : IDisposable
 
         result.IsSuccess.Should().BeTrue();
         result.Value.SharedWithOwnerIds.Should().BeEmpty();
+    }
+
+    // ── Legacy simulator namespace cleanup ──────────────────────────
+
+    private const string LegacyFixedGuidId = "a1b2c3d4-0001-0001-0001-000000000001";
+
+    private async Task<(Guid ByFixedGuid, Guid ByNamePrefix, Guid ByDisplayNamePrefix, Guid Normal)> WriteMixedLegacyFixtureAsync()
+    {
+        Directory.CreateDirectory(_tempDir);
+        var storagePath = Path.Combine(_tempDir, "servicehub-namespaces.json");
+
+        var byNamePrefixId = Guid.NewGuid();
+        var byDisplayNamePrefixId = Guid.NewGuid();
+        var normalId = Guid.NewGuid();
+
+        var json = $$"""
+            [
+              {
+                "id": "{{LegacyFixedGuidId}}",
+                "name": "legacy-fixed-guid-ns",
+                "displayName": "Ordinary Name",
+                "connectionString": "{{ValidConnectionString}}",
+                "authType": 0,
+                "isActive": true,
+                "createdAt": "2026-01-01T00:00:00+00:00",
+                "environment": 0,
+                "ownerId": "__spa__",
+                "provider": 0
+              },
+              {
+                "id": "{{byNamePrefixId}}",
+                "name": "sim-custom-thing",
+                "displayName": "Not Simulated At All",
+                "connectionString": "aws://AKIASIMULATORTEST00001/us-east-1",
+                "authType": 10,
+                "isActive": true,
+                "createdAt": "2026-01-01T00:00:00+00:00",
+                "environment": 0,
+                "ownerId": "__spa__",
+                "provider": 1,
+                "awsRegion": "us-east-1"
+              },
+              {
+                "id": "{{byDisplayNamePrefixId}}",
+                "name": "totally-normal-name",
+                "displayName": "Simulated Something Else",
+                "connectionString": "gcp://simulator-project/topic",
+                "authType": 20,
+                "isActive": true,
+                "createdAt": "2026-01-01T00:00:00+00:00",
+                "environment": 0,
+                "ownerId": "__spa__",
+                "provider": 2,
+                "gcpProjectId": "simulator-project"
+              },
+              {
+                "id": "{{normalId}}",
+                "name": "{{ValidName}}",
+                "displayName": "RealNamespace",
+                "connectionString": "{{ValidConnectionString}}",
+                "authType": 0,
+                "isActive": true,
+                "createdAt": "2026-01-01T00:00:00+00:00",
+                "environment": 0,
+                "ownerId": "__spa__",
+                "provider": 0
+              }
+            ]
+            """;
+
+        await File.WriteAllTextAsync(storagePath, json);
+
+        return (new Guid(LegacyFixedGuidId), byNamePrefixId, byDisplayNamePrefixId, normalId);
+    }
+
+    [Fact]
+    public async Task LoadFromDisk_RemovesLegacySimulatorNamespaces_MatchedByFixedGuidNamePrefixOrDisplayNamePrefix()
+    {
+        var (byFixedGuid, byNamePrefix, byDisplayNamePrefix, normal) = await WriteMixedLegacyFixtureAsync();
+
+        var sut2 = CreateSut();
+        var all = await sut2.GetAllAsync();
+
+        all.IsSuccess.Should().BeTrue();
+        all.Value.Should().NotContain(n => n.Id == byFixedGuid);
+        all.Value.Should().NotContain(n => n.Id == byNamePrefix);
+        all.Value.Should().NotContain(n => n.Id == byDisplayNamePrefix);
+        all.Value.Should().ContainSingle(n => n.Id == normal);
+    }
+
+    [Fact]
+    public async Task LoadFromDisk_RemovesLegacySimulatorNamespaces_NormalNamespaceUntouched()
+    {
+        var (_, _, _, normal) = await WriteMixedLegacyFixtureAsync();
+
+        var sut2 = CreateSut();
+        var result = await sut2.GetByIdAsync(normal);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Name.Should().Be(ValidName.ToLowerInvariant());
+        result.Value.DisplayName.Should().Be("RealNamespace");
+    }
+
+    [Fact]
+    public async Task LoadFromDisk_RemovesLegacySimulatorNamespaces_PersistsCleanedStoreToDisk()
+    {
+        var (byFixedGuid, byNamePrefix, byDisplayNamePrefix, normal) = await WriteMixedLegacyFixtureAsync();
+        var storagePath = Path.Combine(_tempDir, "servicehub-namespaces.json");
+
+        _ = CreateSut();
+
+        var persistedJson = await File.ReadAllTextAsync(storagePath);
+        using var doc = JsonDocument.Parse(persistedJson);
+        var ids = doc.RootElement.EnumerateArray()
+            .Select(e => Guid.Parse(e.GetProperty("id").GetString()!))
+            .ToList();
+
+        ids.Should().NotContain(byFixedGuid);
+        ids.Should().NotContain(byNamePrefix);
+        ids.Should().NotContain(byDisplayNamePrefix);
+        ids.Should().ContainSingle(id => id == normal);
+    }
+
+    [Fact]
+    public async Task LoadFromDisk_NoLegacySimulatorNamespaces_DoesNotRewriteFile()
+    {
+        Directory.CreateDirectory(_tempDir);
+        var storagePath = Path.Combine(_tempDir, "servicehub-namespaces.json");
+        var normalId = Guid.NewGuid();
+        var json = $$"""
+            [
+              {
+                "id": "{{normalId}}",
+                "name": "{{ValidName}}",
+                "displayName": "RealNamespace",
+                "connectionString": "{{ValidConnectionString}}",
+                "authType": 0,
+                "isActive": true,
+                "createdAt": "2026-01-01T00:00:00+00:00",
+                "environment": 0,
+                "ownerId": "__spa__",
+                "provider": 0
+              }
+            ]
+            """;
+        await File.WriteAllTextAsync(storagePath, json);
+        var lastWriteBefore = File.GetLastWriteTimeUtc(storagePath);
+
+        _ = CreateSut();
+
+        var lastWriteAfter = File.GetLastWriteTimeUtc(storagePath);
+        lastWriteAfter.Should().Be(lastWriteBefore);
     }
 }
