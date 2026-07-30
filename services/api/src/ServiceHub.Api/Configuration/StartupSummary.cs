@@ -16,15 +16,8 @@ public static class StartupSummary
         var logger = app.Logger;
 
         var providers = new List<string> { "Azure" };
-        if (app.Environment.IsEnvironment("Simulator"))
-        {
-            providers = ["Azure(sim)", "AWS(sim)", "GCP(sim)"];
-        }
-        else
-        {
-            if (cfg.GetValue("CloudProviders:Aws:Enabled", false)) providers.Add("AWS");
-            if (cfg.GetValue("CloudProviders:Gcp:Enabled", false)) providers.Add("GCP");
-        }
+        if (cfg.GetValue("CloudProviders:Aws:Enabled", false)) providers.Add("AWS");
+        if (cfg.GetValue("CloudProviders:Gcp:Enabled", false)) providers.Add("GCP");
 
         var otlpConfigured = !string.IsNullOrWhiteSpace(cfg["OpenTelemetry:Otlp:Endpoint"])
                              || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT"));

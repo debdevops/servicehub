@@ -52,9 +52,8 @@ public static class AwsDependencyInjection
     /// <para>
     /// Unlike <see cref="AddAwsProvider"/>, this is called unconditionally by the API's
     /// composition root, independent of the <c>CloudProviders:Aws:Enabled</c> flag — forensic
-    /// engines are pure, stateless classifiers with no AWS SDK dependency, so Simulator-seeded
-    /// AWS DLQ messages get AWS-aware classification even when the live SQS provider isn't
-    /// registered.
+    /// engines are pure, stateless classifiers with no AWS SDK dependency, so AWS DLQ messages
+    /// get AWS-aware classification even when the live SQS provider isn't registered.
     /// </para>
     /// </summary>
     /// <param name="services">The service collection to register into.</param>

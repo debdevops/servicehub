@@ -67,7 +67,7 @@ public sealed class SecurityHeadersMiddleware
                 headers.Append("X-XSS-Protection", _options.XssProtection);
 
                 // Content Security Policy - permissive only in Development; every other
-                // environment (Production, Staging, Simulator, any custom name) gets the
+                // environment (Production, Staging, any custom name) gets the
                 // restrictive policy. Deliberately keyed on IsDevelopment(), not IsProduction() —
                 // the inverse would silently apply the permissive dev policy to any non-Production
                 // environment name, which is the defect this predicate exists to prevent.

@@ -9,7 +9,7 @@ namespace ServiceHub.Api.Configuration;
 /// <para>
 /// Validation is intentionally conservative: it only rejects values that are structurally
 /// invalid (out-of-range, or a webhook enabled without a usable URL). Every configuration
-/// ServiceHub ships — Development, Simulator, Production and test hosts — satisfies these
+/// ServiceHub ships — Development, Production and test hosts — satisfies these
 /// rules, so this adds a safety net for operator mistakes without changing any existing
 /// behaviour. <c>ValidateOnStart()</c> surfaces failures during host startup rather than on
 /// first use.

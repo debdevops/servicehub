@@ -19,7 +19,6 @@ provider, or that this doc's callers (CHANGELOG.md, docs/COMPREHENSIVE-GUIDE.md)
 | `CrossCloudTraceController` | → **its own dispatch**: Azure via `IAzureTraceSearcher`, non-Azure via a directly-injected `IEnumerable<ICloudMessagingProvider>` — **not** through `CloudProviderRouter` |
 | `DlqHistoryController` | → `IDlqHistoryService` → SQLite (`DlqDbContext`) — **no cloud SDK call at all**, it only reads/writes locally persisted DLQ Intelligence history |
 | `DlqMonitorWorker` (background) | → `DlqMonitorService.ScanNamespaceAsync` → `CloudProviderRouter.Resolve(namespace.Provider)` — provider-aware; a namespace is skipped (with a log line) only if its provider has no `ICloudMessagingProvider` registered on this server at all |
-| `SimulatorController` | → in-memory simulator store, reachable only when `ASPNETCORE_ENVIRONMENT=Simulator` |
 
 The rest of this doc walks through each row.
 
@@ -57,9 +56,7 @@ graph LR
   `AddAwsProvider()` / `AddGcpProvider()` are called when `CloudProviders:Aws:Enabled` /
   `CloudProviders:Gcp:Enabled` is set (both default `false` in `appsettings.json`); enabling a
   flag registers that provider's `ICloudMessagingProvider`, client factory, and connectivity
-  health check. Simulator mode (`ASPNETCORE_ENVIRONMENT=Simulator`) registers all three via
-  `AddSimulatorProviders()` regardless of the flags — still the recommended way to exercise the
-  AWS/GCP code paths end-to-end without live credentials.
+  health check.
 
 ### Provider-specific behavior worth knowing
 
@@ -114,8 +111,7 @@ It resolves namespaces by provider itself and dispatches to two different code p
 
 This means AWS/GCP node search in Cross-Cloud Trace is **fully implemented**, not a "coming later"
 feature — it's gated purely on whether `AddAwsProvider()`/`AddGcpProvider()` are called for the
-running instance (see §1). Enable Simulator mode, or register a provider, to see it work
-end-to-end.
+running instance (see §1). Register a provider to see it work end-to-end.
 
 **Why this hasn't been unified with §1's router**: no functional reason found in source — it
 predates the `IMessageOperationsService`/`CloudProviderRouter` introduction and was carried forward
@@ -175,32 +171,7 @@ uses in §1 — rather than hardcoding Azure:
 
 ---
 
-## 5. Simulator mode — environment-gated, not just hidden
-
-```mermaid
-%%{init: {'theme':'dark'}}%%
-graph LR
-    ENV{"ASPNETCORE_ENVIRONMENT<br/>== Simulator ?"}
-    ENV -->|"yes"| DI["AddSimulatorProviders()<br/>registers in-memory Azure+AWS+GCP providers<br/>+ simulator store/clock/seeder"]
-    ENV -->|"yes"| ROUTE["SimulatorOnlyAttribute<br/>(IActionConstraint) allows the route to match"]
-    ENV -->|"no"| BLOCKED["SimulatorController actions don't match routing → 404<br/>(SimulatorOnlyAttribute fails closed)"]
-```
-
-Two independent layers both have to agree for Simulator endpoints to work, which is why this is
-described as defense-in-depth rather than a single check:
-
-1. **DI registration** (`Program.cs`): `AddSimulatorProviders()` is only called when
-   `builder.Environment.IsEnvironment("Simulator")`. Outside that environment, the services
-   `SimulatorController` depends on aren't registered at all.
-2. **Routing** (`SimulatorOnlyAttribute`): an `IActionConstraint` on `SimulatorController` that
-   only accepts the action when `IWebHostEnvironment.IsEnvironment("Simulator")` — if the check
-   fails, or the environment service can't be resolved, the action doesn't match and ASP.NET Core
-   returns a plain 404, not a 403 (so the existence of Simulator-only routes isn't even
-   distinguishable from "route doesn't exist" in Production).
-
----
-
-## 6. Rate limiting — owner-scoped, not IP-scoped
+## 5. Rate limiting — owner-scoped, not IP-scoped
 
 `RateLimitingMiddleware` keys its bucket on the authenticated `OwnerId` (from `HttpContext.Items`,
 populated by the auth middleware earlier in the pipeline) when one is present — `"owner:{id}"` —
@@ -212,7 +183,7 @@ present the same proxy IP and all tenants would share one bucket. Default limit:
 
 ---
 
-## 7. Bulk Operations — a durable job, not a request/response cycle
+## 6. Bulk Operations — a durable job, not a request/response cycle
 
 ```mermaid
 %%{init: {'theme':'dark'}}%%
@@ -264,7 +235,7 @@ with a persisted job row polled to completion instead of one long-lived request.
 
 ---
 
-## 8. Live Tail — an on-demand poll loop, not a background worker
+## 7. Live Tail — an on-demand poll loop, not a background worker
 
 ```mermaid
 %%{init: {'theme':'dark'}}%%
@@ -299,7 +270,7 @@ subscription, that only runs while a user has explicitly opened it.
 - **Capability-gated, not provider-conditional**: `ProviderCapabilities.SupportsRepeatablePeek`
   (`docs/EXTENDING-PROVIDERS.md`) is `true` for Azure and GCP (whose peek implementations are
   genuinely non-destructive or re-queuing) and `false` for AWS — checked once via
-  `CloudProviderRouter.Resolve(...).Capabilities`, the same pattern §7 uses for `SupportsPurge`.
+  `CloudProviderRouter.Resolve(...).Capabilities`, the same pattern §6 uses for `SupportsPurge`.
   The endpoint returns `409` rather than silently starting a session that would risk dead-lettering
   a customer's messages.
 - **Dedup by `MessageId`, not sequence number**: unlike the DLQ monitor (§4), which uses Azure's
@@ -315,7 +286,7 @@ subscription, that only runs while a user has explicitly opened it.
 
 ---
 
-## 9. Namespace sharing — one leverage point, one deliberate boundary (Preview)
+## 8. Namespace sharing — one leverage point, one deliberate boundary (Preview)
 
 ```mermaid
 %%{init: {'theme':'dark'}}%%
@@ -366,7 +337,7 @@ same namespace without literally sharing credentials.
 
 ---
 
-## 10. Audit log retention — opt-in, instance-wide, set-based delete
+## 9. Audit log retention — opt-in, instance-wide, set-based delete
 
 ```mermaid
 %%{init: {'theme':'dark'}}%%
@@ -409,7 +380,7 @@ graph LR
 `ICloudMessagingProvider.cs`, `AzureTraceSearcher.cs`/`IAzureTraceSearcher.cs`,
 `GcpMessageReceiver.cs`, `AwsMessageReceiver.cs`, `AwsResiliencePipeline.cs`, `GcpResiliencePipeline.cs`,
 `DlqMonitorWorker.cs`, `DlqHistoryService.cs`, `IDlqHistoryService.cs`, `DlqMessage.cs`,
-`SimulatorOnlyAttribute.cs`, `SimulatorController.cs`, `Program.cs`, `RateLimitingMiddleware.cs`,
+`Program.cs`, `RateLimitingMiddleware.cs`,
 `appsettings.json` — all read directly in the session that produced this document (2026-07-07).
 If behavior here looks wrong, re-check these files rather than assuming this doc is still current.
 
@@ -418,14 +389,14 @@ session (Azure + AWS + GCP simultaneously connected and dead-lettering) — conf
 `ScanNamespaceAsync` resolves the namespace's actual provider via `CloudProviderRouter` rather
 than hardcoding Azure, contradicting the original 2026-07-07 text this doc shipped with.
 
-**§7 added 2026-07-21**: `BulkOperationsController.cs`, `BulkOperationService.cs`,
+**§6 added 2026-07-21**: `BulkOperationsController.cs`, `BulkOperationService.cs`,
 `BulkOperationExecutor.cs`, `BulkOperationWorker.cs`, `BulkOperationQueue.cs`,
 `BulkOperationMatching.cs`, `IBulkOperationService.cs`, `IBulkOperationExecutor.cs`,
 `IBulkOperationQueue.cs`, `RulesController.cs` (`ReplayAll`) — verified live end-to-end against
 Simulator-mode Azure/AWS/GCP namespaces in a running Docker container (preview, create, poll to
 completion, list, idempotent cancel).
 
-**§8 added 2026-07-21**: `MessagesController.cs` (`LiveTail` action), `LiveTailSession.cs`,
+**§7 added 2026-07-21**: `MessagesController.cs` (`LiveTail` action), `LiveTailSession.cs`,
 `LiveTailSessionFactory.cs`, `LiveTailConnectionLimiter.cs`, `ILiveTailSession.cs`,
 `ILiveTailConnectionLimiter.cs`, `ProviderCapabilities.cs` — verified live against a running
 Docker container in Simulator mode: Azure and GCP streams open and emit heartbeats, AWS returns
@@ -435,12 +406,12 @@ frame within one poll cycle.
 **2026-07-21, architecture hardening**: `QueuesController`, `TopicsController`,
 `SubscriptionsController`, and `MessagesController` now depend on the new
 `ServiceHub.Core.Interfaces.ICloudProviderRouter` instead of the concrete
-`ServiceHub.Infrastructure.Routing.CloudProviderRouter` shown in the diagrams above (§1, §7, §8)
+`ServiceHub.Infrastructure.Routing.CloudProviderRouter` shown in the diagrams above (§1, §6, §7)
 — the diagrams' *behavior* is unchanged (same singleton router instance, same
 `Resolve`/`IsRegistered` calls), only the compile-time dependency direction at the Api/Infrastructure
 boundary changed. See `docs/EXTENDING-PROVIDERS.md` and `tests/ServiceHub.UnitTests/Architecture/ApiLayerBoundaryTests.cs`.
 
-**§9 added 2026-07-21**: `Namespace.cs` (`SharedWithOwnerIds`, `ShareWith`, `RevokeShare`,
+**§8 added 2026-07-21**: `Namespace.cs` (`SharedWithOwnerIds`, `ShareWith`, `RevokeShare`,
 `IsAccessibleBy`), `InMemoryNamespaceRepository.cs`, `ApiControllerBase.cs`
 (`GetExclusivelyOwnedNamespaceAsync`), `NamespacesController.cs` (`Share`, `RevokeShare`),
 `MeController.cs` — verified live against a running Docker container in Simulator mode with two
@@ -448,7 +419,7 @@ distinct scoped API keys (real cross-identity isolation, not just mocked): the o
 namespace with the second key's derived owner ID, and only after that grant could the second key
 successfully peek/browse it — before the grant it got the same 404 any unrelated caller gets.
 
-**§10 added 2026-07-21**: `AuditRetentionWorker.cs`, `AuditService.cs` (`PurgeExpiredAsync`),
+**§9 added 2026-07-21**: `AuditRetentionWorker.cs`, `AuditService.cs` (`PurgeExpiredAsync`),
 `AuditController.cs` (`Purge`), `AuditRetentionOptions.cs` — deletion correctness (only rows older
 than the cutoff are removed, across all owners) is proven against a real SQLite engine in
 `AuditServiceTests.cs` and `ServiceHub.IntegrationTests/Api/Controllers/AuditControllerTests.cs`

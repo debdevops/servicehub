@@ -5,7 +5,6 @@ using ServiceHub.Infrastructure;
 using ServiceHub.Infrastructure.Aws;
 using ServiceHub.Infrastructure.Gcp;
 using ServiceHub.Infrastructure.Persistence;
-using ServiceHub.Simulator;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -58,34 +57,22 @@ builder.Services.AddOpenTelemetryObservability(builder.Configuration);
 // Add ServiceHub API services
 builder.Services.AddServiceHubApi(builder.Configuration);
 
-// When running in Simulator mode, register in-memory providers so the
-// SimulatorController and related endpoints can resolve their dependencies.
-// This must come AFTER AddServiceHubApi so simulator providers can replace
-// real cloud provider registrations via services.Replace(...).
-// Outside Simulator mode, register the live Azure provider instead — the
-// CloudProviderRouter rejects duplicate provider types, so exactly one Azure
-// ICloudMessagingProvider may be registered.
-if (builder.Environment.IsEnvironment("Simulator"))
+// Register the live Azure provider — the CloudProviderRouter rejects duplicate
+// provider types, so exactly one Azure ICloudMessagingProvider may be registered.
+builder.Services.AddAzureProvider();
+
+// AWS/GCP are preview providers, disabled by default. Enabling a flag registers
+// that provider's ICloudMessagingProvider, its client factory, and its
+// connectivity health check ("aws-connectivity" / "gcp-connectivity").
+// Registration is inert until a namespace for that provider exists.
+if (builder.Configuration.GetValue("CloudProviders:Aws:Enabled", false))
 {
-    builder.Services.AddSimulatorProviders();
+    builder.Services.AddAwsProvider();
 }
-else
+
+if (builder.Configuration.GetValue("CloudProviders:Gcp:Enabled", false))
 {
-    builder.Services.AddAzureProvider();
-
-    // AWS/GCP are preview providers, disabled by default. Enabling a flag registers
-    // that provider's ICloudMessagingProvider, its client factory, and its
-    // connectivity health check ("aws-connectivity" / "gcp-connectivity").
-    // Registration is inert until a namespace for that provider exists.
-    if (builder.Configuration.GetValue("CloudProviders:Aws:Enabled", false))
-    {
-        builder.Services.AddAwsProvider();
-    }
-
-    if (builder.Configuration.GetValue("CloudProviders:Gcp:Enabled", false))
-    {
-        builder.Services.AddGcpProvider();
-    }
+    builder.Services.AddGcpProvider();
 }
 
 // Background workers (DLQ monitoring, message polling, anomaly detection).

@@ -14,11 +14,11 @@ record exactly.
 | **AWS SQS/SNS** | Preview | Implemented and unit-tested. Not validated against live AWS services in CI. Capability-gated (see below) — no parity guarantee with Azure. |
 | **GCP Pub/Sub** | Preview | Implemented and unit-tested. Not validated against live GCP services in CI. Capability-gated (see below) — no parity guarantee with Azure. |
 
-"Preview" here means concretely: the provider's `ICloudMessagingProvider` implementation exists,
-is unit-tested, and is exercised end-to-end by Simulator mode — but has not been validated against
-a real, live AWS/GCP account as part of this project's own test process, is gated behind a
-disabled-by-default flag (below), and does not claim feature parity with Azure where the
-underlying cloud platform itself doesn't offer an equivalent capability (see the table below).
+"Preview" here means concretely: the provider's `ICloudMessagingProvider` implementation exists
+and is unit-tested — but has not been validated against a real, live AWS/GCP account as part of
+this project's own test process, is gated behind a disabled-by-default flag (below), and does not
+claim feature parity with Azure where the underlying cloud platform itself doesn't offer an
+equivalent capability (see the table below).
 
 ## Enabling AWS/GCP
 
@@ -31,9 +31,7 @@ both `false`):
 | `CloudProviders:Aws:Enabled` | `false` | Registers the AWS `ICloudMessagingProvider`, its client factory, and the `aws-connectivity` health check. Inert until an AWS namespace is created. |
 | `CloudProviders:Gcp:Enabled` | `false` | Registers the GCP `ICloudMessagingProvider`, its client factory, and the `gcp-connectivity` health check. Inert until a GCP namespace is created. |
 
-Azure is always registered outside Simulator mode. Simulator mode registers all three
-unconditionally, regardless of these flags, so Simulator is the only way to exercise AWS/GCP code
-paths with zero configuration.
+Azure is always registered as the live provider.
 
 ## Capability matrix
 

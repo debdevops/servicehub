@@ -78,7 +78,7 @@ public sealed record PlatformEvent
     /// Cloud provider identifier for the namespace involved in this event.
     /// Intentionally a plain string (not an enum) to remain forward-compatible
     /// with providers not yet defined in <c>CloudProviderType</c>.
-    /// Expected values: <c>"azure"</c>, <c>"aws"</c>, <c>"gcp"</c>, <c>"simulator"</c>.
+    /// Expected values: <c>"azure"</c>, <c>"aws"</c>, <c>"gcp"</c>.
     /// Null when the event is not namespace-scoped.
     /// </summary>
     public string? CloudProvider { get; init; }

@@ -209,9 +209,9 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
     {
         // Pub/Sub has no direct message-count API (counts require the Cloud Monitoring API).
         // Return a neutral success (0) rather than a failure so this read behaves the same
-        // shape as the Azure/AWS providers and the simulator — callers get a uniform,
-        // non-error result instead of a provider-specific 400. This mirrors the existing
-        // "unsupported read" convention used by GetScheduledMessagesAsync (returns empty).
+        // shape as the Azure/AWS providers — callers get a uniform, non-error result instead
+        // of a provider-specific 400. This mirrors the existing "unsupported read" convention
+        // used by GetScheduledMessagesAsync (returns empty).
         _logger.LogDebug(
             "GCP Pub/Sub message count is unavailable via API; returning 0. Subscription: {Subscription}",
             SanitizeForLog(entityName));

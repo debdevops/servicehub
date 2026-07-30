@@ -13,19 +13,14 @@ vi.mock('@servicehub/ui-shared/lib/api/client', () => ({
 vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
-vi.mock('@servicehub/ui-shared/hooks/useSimulator', () => ({
-  useIsSimulatorMode: vi.fn(),
-}));
 vi.mock('react-hot-toast', () => ({
   default: { error: vi.fn(), success: vi.fn() },
   toast: vi.fn(),
 }));
 
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
-import { useIsSimulatorMode } from '@servicehub/ui-shared/hooks/useSimulator';
 
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
-const mockUseIsSimulatorMode = useIsSimulatorMode as ReturnType<typeof vi.fn>;
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -45,7 +40,6 @@ const mockNamespaces = [
 beforeEach(() => {
   localStorage.clear();
   mockUseNamespaces.mockReturnValue({ data: mockNamespaces, isLoading: false, refetch: vi.fn() });
-  mockUseIsSimulatorMode.mockReturnValue({ isSimulator: false });
 });
 
 describe('QuickAccessPanel', () => {
@@ -95,16 +89,4 @@ describe('QuickAccessPanel', () => {
     expect(screen.getByText('Active Messages')).toBeInTheDocument();
   });
 
-  it('does not show the Simulator link outside simulator mode', () => {
-    const Wrapper = createWrapper();
-    render(<Wrapper><QuickAccessPanel /></Wrapper>);
-    expect(screen.queryByText('Simulator')).not.toBeInTheDocument();
-  });
-
-  it('shows the Simulator link in simulator mode', () => {
-    mockUseIsSimulatorMode.mockReturnValue({ isSimulator: true });
-    const Wrapper = createWrapper();
-    render(<Wrapper><QuickAccessPanel /></Wrapper>);
-    expect(screen.getByText('Simulator')).toBeInTheDocument();
-  });
 });

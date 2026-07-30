@@ -180,7 +180,7 @@ public static class WebApplicationExtensions
         {
             // "SET_VIA_ENV_VAR" is appsettings.Production.json's own shipped placeholder — an
             // operator who hasn't set SiteUrl yet is just as "unconfigured" as one where the key
-            // is absent entirely (Development/Simulator/Local never define it at all). Either way,
+            // is absent entirely (Development/Local never define it at all). Either way,
             // falling through to an empty/placeholder baseUrl would emit an invalid <loc> (a bare
             // path, or one prefixed with literal placeholder text) instead of an absolute URL.
             var configuredUrl = config.GetValue<string>("SiteUrl");

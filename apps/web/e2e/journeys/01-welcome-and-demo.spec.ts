@@ -4,7 +4,7 @@
  * These tests verify the WelcomePage cloud provider cards render correctly
  * and that each demo URL loads mock messages without real credentials.
  */
-import { test, expect } from '../fixtures/simulator';
+import { test, expect } from '../fixtures/base';
 
 test('welcome page renders three cloud provider cards', async ({ page }) => {
   await page.goto('/welcome');

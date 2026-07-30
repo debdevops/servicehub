@@ -7,7 +7,6 @@ import { QuickAccessPanel } from './QuickAccessPanel';
 import { NamespacesPanel } from './NamespacesPanel';
 import { Footer } from './Footer';
 import { DemoModeBanner } from './DemoModeBanner';
-import { SimulatorModeBanner } from './SimulatorModeBanner';
 import { MessageFAB } from '@/components/fab';
 import { GuidedTour, isTourCompleted } from '@/components/help/GuidedTour';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -140,9 +139,6 @@ export function MainLayout() {
 
       {/* Demo Mode Banner — renders only when DemoModeProvider is active */}
       <DemoModeBanner />
-
-      {/* Simulator Mode Banner — renders only when the connected backend is running Simulator */}
-      <SimulatorModeBanner />
 
       {/* Main Content Area */}
       <div className="flex flex-1 overflow-hidden">

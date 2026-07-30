@@ -39,16 +39,13 @@ One canonical path, in order of how most operators should approach this:
 **Fastest path to a deployable artifact — one image serves the SPA and the API.**
 
 ```bash
-# Zero-credential demo (Simulator mode)
 docker compose up --build            # → http://localhost:8080
 ```
 
 This binds to `127.0.0.1:8080` (loopback) only — **not reachable from your network**, even on
-the same machine's other interfaces. Simulator mode disables auth/rate-limiting/encryption
-entirely, so this is deliberate: it must never be reachable from anything but the machine running
-it. For deliberate LAN/network exposure of a *real* deployment (never the Simulator default),
-change the port mapping in your own compose file to `"0.0.0.0:8080:8080"` — do this only once
-you've completed the checklist below, not as a shortcut around it.
+the same machine's other interfaces, until you deliberately change that. For deliberate LAN/
+network exposure, change the port mapping in your own compose file to `"0.0.0.0:8080:8080"` —
+do this only once you've completed the checklist below, not as a shortcut around it.
 
 For a real deployment, save the following as `docker-compose.prod.yml` next to your checkout —
 this is a complete, working configuration, not a template with pieces to fill in later:
@@ -122,8 +119,7 @@ SPA from calling its own API from a browser.
 - [ ] **At least one** of: a scoped API key (`Security:Authentication:ScopedApiKeys`) or OIDC (`Security:Oidc:Enabled=true` + `Authority` + `Audience`) — otherwise nobody has a way to authenticate at all once you also lock down the SPA token's implicit trust. See [Security Hardening](./security-hardening/README.md) for what the SPA token does and doesn't protect against before relying on it alone.
 
 > **Note:** In Production mode the app **will not start** without a real `SECURITY__ENCRYPTIONKEY`
-> (this is intentional — it prevents shipping with a known default key). The Simulator demo
-> above needs no key or checklist at all — it's the zero-credential path, not the production one.
+> (this is intentional — it prevents shipping with a known default key).
 
 ---
 

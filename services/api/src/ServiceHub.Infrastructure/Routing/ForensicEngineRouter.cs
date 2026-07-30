@@ -13,8 +13,7 @@ namespace ServiceHub.Infrastructure.Routing;
 /// Provider-specific engines (<c>AwsForensicEngine</c>, <c>GcpForensicEngine</c>) are registered
 /// unconditionally by <c>ServiceHub.Api</c>'s composition root, independent of whether the live
 /// AWS/GCP messaging provider flag is enabled — they are pure, stateless classifiers with no
-/// cloud SDK dependency, so Simulator-seeded AWS/GCP DLQ messages get the same provider-aware
-/// classification as messages from a real, flag-enabled namespace.
+/// cloud SDK dependency.
 /// </para>
 /// </summary>
 public sealed class ForensicEngineRouter : IForensicEngineRouter

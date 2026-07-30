@@ -160,7 +160,7 @@ public class SecurityHeadersMiddlewareTests
     {
         // Regression guard: the predicate must key on IsDevelopment(), not IsProduction() —
         // the inverse would silently serve the permissive dev CSP (unsafe-inline/unsafe-eval)
-        // to Staging, Simulator, or any other environment name that isn't literally "Production".
+        // to Staging, or any other environment name that isn't literally "Production".
         RequestDelegate next = _ => Task.CompletedTask;
         var options = new SecurityHeadersOptions();
         var middleware = CreateMiddleware(next, options, environmentName: "Staging");

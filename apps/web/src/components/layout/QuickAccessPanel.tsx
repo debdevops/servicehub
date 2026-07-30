@@ -11,13 +11,11 @@ import {
   HelpCircle,
   Shield,
   Cloud,
-  FlaskConical,
   Route,
   Pin,
 } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
-import { useIsSimulatorMode } from '@servicehub/ui-shared/hooks/useSimulator';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { getMockStats } from '@servicehub/ui-shared/lib/demo/mockProviders';
 import { ResizablePanel } from './ResizablePanel';
@@ -30,7 +28,6 @@ import { ResizablePanel } from './ResizablePanel';
 export function QuickAccessPanel() {
   const navigate = useNavigate();
   const { data: namespaces } = useNamespaces();
-  const { isSimulator } = useIsSimulatorMode();
   const { isDemoMode, cloudProvider } = useDemoContext();
 
   const activeNamespace = namespaces?.find((ns) => ns.isActive);
@@ -218,24 +215,6 @@ export function QuickAccessPanel() {
           <span className="flex-1 text-left">Help &amp; Guide</span>
           <span className="text-xs text-primary-600 font-medium">?</span>
         </NavLink>
-        {isSimulator && (
-          <>
-            <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Developer Tools</div>
-            <NavLink
-              to={`${navPrefix}/simulator`}
-              className={({ isActive }) =>
-                `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-                  isActive
-                    ? 'bg-amber-50 text-amber-700 border-amber-300'
-                    : 'bg-white hover:bg-amber-50 text-gray-700 hover:text-amber-700 border-gray-200 hover:border-amber-300'
-                }`
-              }
-            >
-              <FlaskConical className="w-4 h-4 text-amber-500" />
-              <span className="flex-1 text-left">Simulator</span>
-            </NavLink>
-          </>
-        )}
       </nav>
     </ResizablePanel>
   );

@@ -192,7 +192,3 @@ Mirror the existing provider test suites (`tests/ServiceHub.UnitTests/Infrastruc
 - `ListEntitiesAsync` mapping to `CloudEntity`.
 - Peek/replay/purge/dead-letter behavior, including whatever workaround your provider needs for
   the message-identity and non-destructive-peek constraints above.
-- A `Simulated<X>MessagingProvider` implementing the same `ICloudMessagingProvider` contract
-  in-memory, registered by `AddSimulatorProviders()` — this is how the whole product gets
-  exercised end-to-end without live credentials (see `ServiceHub.Simulator/Providers/`), and it's
-  the fastest way for reviewers/CI to verify a new provider actually works.

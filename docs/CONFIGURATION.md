@@ -4,7 +4,7 @@ ServiceHub is configured through the standard ASP.NET Core configuration stack. 
 can be supplied by (in increasing order of precedence):
 
 1. `appsettings.json` (shipped defaults)
-2. `appsettings.{Environment}.json` — `Development`, `Production`, `Simulator`
+2. `appsettings.{Environment}.json` — `Development`, `Production`
 3. `appsettings.Local.json` (git-ignored; for local secrets)
 4. **Environment variables** (recommended for secrets and containers)
 
@@ -39,7 +39,7 @@ key `Security:EncryptionKey` becomes the environment variable `SECURITY__ENCRYPT
 | `CloudProviders:Gcp:Enabled` | `CLOUDPROVIDERS__GCP__ENABLED` | `false` | Registers the GCP (preview) provider. Inert until a GCP namespace exists. |
 | `DlqMonitor:AllowDestructivePeek:Aws` | `DLQMONITOR__ALLOWDESTRUCTIVEPEEK__AWS` | `false` | AWS SQS has no non-destructive peek — every DLQ scan is a real receive that increments a message's `ReceiveCount`. Background DLQ monitoring skips AWS namespaces unless this is set to `true`. See [docs/PROVIDER-SUPPORT.md](PROVIDER-SUPPORT.md). |
 
-Azure is always registered as the live provider outside Simulator mode. Simulator mode registers all three unconditionally.
+Azure is always registered as the live provider.
 
 Both `CloudProviders:*:Enabled` flags default to `false` and are **absent from `appsettings.Production.json` entirely** — a production deployment only gets AWS/GCP by explicitly setting these via environment variable or `appsettings.Local.json`. See [docs/PROVIDER-SUPPORT.md](PROVIDER-SUPPORT.md) for what "preview" means concretely and the full capability matrix.
 

@@ -31,7 +31,7 @@ Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-
 > **Built for strict environments, single-operator by default.** Read-only by default (`Peek`, never consume) · connection strings AES-GCM-256 encrypted at rest · analysis runs entirely in your browser — no message data ever leaves your network ([telemetry](#application-insights-telemetry) is opt-in, disabled unless you enable it) · destructive actions (replay, send) blocked on production namespaces. **Every browser session shares one admin identity unless you turn on per-user identity** — OIDC (any standards-compliant IdP) or Azure Easy Auth, both off by default. Details in [Security](#security).
 
 > [!TIP]
-> **No credentials?** Try the built-in [Simulator Mode](#simulator-mode) — runs 3 synthetic namespaces (Azure + AWS + GCP) with 50 seeded messages each. No cloud account needed.
+> **No credentials?** The Welcome page's **"Try a live demo"** buttons open a fully client-side demo walkthrough per cloud — no backend, no cloud account needed.
 
 ```mermaid
 %%{init: {'theme':'dark', 'themeVariables': { 'fontSize':'22px', 'primaryTextColor':'#ffffff', 'fontFamily':'arial', 'lineColor':'#ffffff'}}}%%
@@ -96,13 +96,13 @@ what this does and doesn't support today.
 docker compose up --build
 ```
 
-Open **[http://localhost:8080](http://localhost:8080)** — Simulator mode boots synthetic Azure +
-AWS + GCP namespaces, zero credentials required. The port is bound to `127.0.0.1` (loopback) only
-by default, so it isn't reachable from your network until you deliberately change that — see
+Open **[http://localhost:8080](http://localhost:8080)**, then connect a namespace with your own
+cloud credentials. The port is bound to `127.0.0.1` (loopback) only by default, so it isn't
+reachable from your network until you deliberately change that — see
 [self-hosting/README.md](self-hosting/README.md) for a real deployment.
 
-Once it's running, the Welcome page's **"Try a live demo"** buttons open a fully client-side
-simulated walkthrough per cloud (`/demo/azure`, `/demo/aws`, `/demo/gcp`) — no backend calls, no
+No credentials yet? The Welcome page's **"Try a live demo"** buttons open a fully client-side
+demo walkthrough per cloud (`/demo/azure`, `/demo/aws`, `/demo/gcp`) — no backend calls, no
 credentials, safe to click around before connecting anything real.
 
 For connecting real cloud credentials, persistent storage, and production hardening, see
@@ -195,7 +195,7 @@ ServiceHub extends beyond Azure Service Bus to support **AWS SQS/SNS** and **GCP
 | **AWS SQS / SNS** | 🔶 Preview | ✅ | ✅ (redrive DLQ) | ✅ | ✅ | ✅ | ✅¹ |
 | **GCP Pub/Sub** | 🔶 Preview | ✅ | ✅ peek (nack/ack deadline)² | ✅ | ✅ | ✅ | ✅¹ |
 
-¹ Cross-Cloud Trace searches any namespace whose provider is registered in the API's dependency-injection container. Azure is always registered; AWS/GCP registration is disabled by default in this build — use Simulator mode, or register the provider, to exercise AWS/GCP trace search.
+¹ Cross-Cloud Trace searches any namespace whose provider is registered in the API's dependency-injection container. Azure is always registered; AWS/GCP registration is disabled by default in this build — register the provider to exercise AWS/GCP trace search.
 ² GCP Pub/Sub dead-lettering is policy-driven via `MaxDeliveryAttempts`; ServiceHub reads the DLQ through the subscription's configured dead-letter topic, and its test tooling moves messages there by republishing through the subscription's dead-letter policy. Message counts are unavailable via the Pub/Sub API and are reported as `0`.
 ³ Test tools (send a message, generate realistic test data, push messages to the DLQ) are available only on **DEV** namespaces with a Manage-level connection — never in UAT or production.
 
@@ -286,15 +286,15 @@ Follow this path before connecting to a production namespace. This protects your
 
 ## Quick Start
 
-### Docker — zero-credential demo (fastest)
+### Docker (fastest)
 
 ```bash
 docker compose up --build
 ```
 
-Open **[http://localhost:8080](http://localhost:8080)** — Simulator mode boots with synthetic Azure + AWS + GCP namespaces, no cloud credentials required. One image serves both the SPA and the API.
+Open **[http://localhost:8080](http://localhost:8080)**, then connect a namespace with your own cloud credentials. One image serves both the SPA and the API.
 
-To point at real cloud messaging, run the image in Production mode with your own encryption key:
+To point at real cloud messaging with persisted data and production hardening, run the image in Production mode with your own encryption key:
 
 ```bash
 docker build -t servicehub .
@@ -322,13 +322,6 @@ cd servicehub
 ```
 
 Open **[http://localhost:3000](http://localhost:3000)** — then connect with your connection string. The script automatically installs .NET 10 SDK and Node.js 20+ if not already present.
-
-### Simulator Mode
-
-```bash
-./run.sh --simulator
-```
-Open **[http://localhost:3000](http://localhost:3000)** and navigate to **Simulator** in the sidebar. See [SIMULATOR.md](SIMULATOR.md) for the full guide.
 
 ### Create a Dedicated Policy (Azure)
 
@@ -379,7 +372,6 @@ Browser (React 19 SPA)
                     ├── NamespacesController      → AES-GCM encrypted connections
                     ├── DlqHistoryController      → SQLite DLQ intelligence (no cloud SDK call)
                     ├── RulesController           → auto-replay rule engine
-                    ├── SimulatorController       → seeded demo data (no credentials)
                     ├── MessagesController        ┐
                     ├── QueuesController          ├── IMessageOperationsService → CloudProviderRouter
                     ├── TopicsController          ┘
@@ -434,7 +426,7 @@ cd apps/web && npm run test:coverage
 # Backend tests (xUnit — 1,500+ unit + integration tests)
 cd services/api && dotnet test
 
-# E2E tests (Playwright — requires ./run.sh --simulator)
+# E2E tests (Playwright)
 cd apps/web && npm run test:e2e
 ```
 For deep backend developer guidelines, refer to the [API README](services/api/README.md).
@@ -445,7 +437,7 @@ For deep backend developer guidelines, refer to the [API README](services/api/RE
 
 ServiceHub is built depth-first: make one workflow excellent before adding the next surface.
 
-- **Now (MVP)** — the forensic core across Azure (GA) and AWS/GCP (preview): explore, search, DLQ investigation, replay, purge, send, auto-replay rules, simulator, live updates. Also shipped: bulk replay/purge with dry-run preview, a fleet dashboard across namespaces, Slack/Teams-native alerts (DLQ spikes, bulk operation completion), and Live Tail (real-time "tail -f" for a queue/subscription, Azure and GCP).
+- **Now (MVP)** — the forensic core across Azure (GA) and AWS/GCP (preview): explore, search, DLQ investigation, replay, purge, send, auto-replay rules, live updates. Also shipped: bulk replay/purge with dry-run preview, a fleet dashboard across namespaces, Slack/Teams-native alerts (DLQ spikes, bulk operation completion), and Live Tail (real-time "tail -f" for a queue/subscription, Azure and GCP).
 - **Next** — operational habit: DLQ triage inbox.
 - **Later** — team & governance: SSO, role-based access, approval workflows for destructive operations, audit export.
 

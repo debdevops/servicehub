@@ -48,9 +48,8 @@ public static class GcpDependencyInjection
     /// <para>
     /// Unlike <see cref="AddGcpProvider"/>, this is called unconditionally by the API's
     /// composition root, independent of the <c>CloudProviders:Gcp:Enabled</c> flag — forensic
-    /// engines are pure, stateless classifiers with no GCP SDK dependency, so Simulator-seeded
-    /// GCP DLQ messages get GCP-aware classification even when the live Pub/Sub provider isn't
-    /// registered.
+    /// engines are pure, stateless classifiers with no GCP SDK dependency, so GCP DLQ messages
+    /// get GCP-aware classification even when the live Pub/Sub provider isn't registered.
     /// </para>
     /// </summary>
     /// <param name="services">The service collection to register into.</param>

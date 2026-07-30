@@ -123,8 +123,8 @@ public sealed class ForensicEngineRouterTests
     {
         var azureEngine = new Mock<IForensicEngine>();
         azureEngine.Setup(e => e.Analyse(It.IsAny<DlqMessage>())).Returns(AzureResult);
-        // Only Azure is registered — mirrors CloudProviders:Aws:Enabled=false in Simulator-off,
-        // non-flagged environments.
+        // Only Azure is registered — mirrors CloudProviders:Aws:Enabled=false in a non-flagged
+        // environment.
         var router = new ForensicEngineRouter(BuildProvider(azure: azureEngine.Object));
 
         var result = router.Analyse(CreateMessage(CloudProviderType.Aws));

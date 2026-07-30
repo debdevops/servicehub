@@ -634,7 +634,7 @@ public class ApiKeyAuthenticationMiddlewareTests
         var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config, authFailureThrottle: throttle);
 
         // With auth disabled, every request short-circuits before the throttle is ever consulted —
-        // Simulator mode and the local dev loop must never lock themselves out.
+        // the local dev loop must never lock itself out.
         for (var i = 0; i < 20; i++)
         {
             var context = CreateApiContext("wrong-key");

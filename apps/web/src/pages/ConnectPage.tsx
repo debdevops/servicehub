@@ -416,7 +416,7 @@ export function ConnectPage() {
                     </>
                   ) : (
                     <>
-                      <strong>AWS SQS/SNS is disabled on this server.</strong> An operator must set <code>CloudProviders:Aws:Enabled</code> to <code>true</code> in the API configuration and restart — or use Simulator mode to explore without credentials.
+                      <strong>AWS SQS/SNS is disabled on this server.</strong> An operator must set <code>CloudProviders:Aws:Enabled</code> to <code>true</code> in the API configuration and restart.
                     </>
                   )}
                 </div>
@@ -429,7 +429,7 @@ export function ConnectPage() {
                     </>
                   ) : (
                     <>
-                      <strong>GCP Pub/Sub is disabled on this server.</strong> An operator must set <code>CloudProviders:Gcp:Enabled</code> to <code>true</code> in the API configuration and restart — or use Simulator mode to explore without credentials.
+                      <strong>GCP Pub/Sub is disabled on this server.</strong> An operator must set <code>CloudProviders:Gcp:Enabled</code> to <code>true</code> in the API configuration and restart.
                     </>
                   )}
                 </div>

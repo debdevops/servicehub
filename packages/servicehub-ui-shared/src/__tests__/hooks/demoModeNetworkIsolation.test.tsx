@@ -68,15 +68,6 @@ vi.mock('../../lib/api/audit', () => ({
   auditApi: { getLogs: vi.fn(), getSummary: vi.fn() },
 }));
 
-vi.mock('../../lib/api/simulator', () => ({
-  getSimulatorStatus: vi.fn(),
-  injectFault: vi.fn(),
-  clearFaults: vi.fn(),
-  resetSimulator: vi.fn(),
-  advanceTime: vi.fn(),
-  injectDlqFlood: vi.fn(),
-}));
-
 vi.mock('../../lib/api/bulkOperations', () => ({
   bulkOperationsApi: { preview: vi.fn(), create: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn() },
   isTerminalBulkOperationStatus: (status: string) =>
@@ -115,7 +106,6 @@ import { fleetApi } from '../../lib/api/fleet';
 import { healthApi } from '../../lib/api/health';
 import { insightsApi } from '../../lib/api/insights';
 import { auditApi } from '../../lib/api/audit';
-import { getSimulatorStatus, injectFault, clearFaults, resetSimulator, advanceTime, injectDlqFlood } from '../../lib/api/simulator';
 import { bulkOperationsApi } from '../../lib/api/bulkOperations';
 import { crossCloudTraceApi } from '../../lib/api/crossCloudTrace';
 import { namespacesApi } from '../../lib/api/namespaces';
@@ -131,7 +121,6 @@ import { useFleetOverview } from '../../hooks/useFleet';
 import { useHealthStatus, useHealthReport } from '../../hooks/useHealth';
 import { useInsights, useDismissInsight } from '../../hooks/useInsights';
 import { useAuditLogs } from '../../hooks/useAudit';
-import { useSimulatorStatus, useInjectFault } from '../../hooks/useSimulator';
 import { useBulkOperationJobs, useCreateBulkOperation } from '../../hooks/useBulkOperations';
 import { useCrossCloudTrace } from '../../hooks/useCrossCloudTrace';
 import { useCreateNamespace, useDeleteNamespace } from '../../hooks/useNamespaces';
@@ -202,11 +191,6 @@ describe('Demo Mode network isolation — query hooks never call the real API', 
   it('useAuditLogs does not call auditApi.getLogs', async () => {
     renderHook(() => useAuditLogs({}), { wrapper: createDemoWrapper() });
     await waitFor(() => expect(auditApi.getLogs).not.toHaveBeenCalled());
-  });
-
-  it('useSimulatorStatus does not call getSimulatorStatus', async () => {
-    renderHook(() => useSimulatorStatus(), { wrapper: createDemoWrapper() });
-    await waitFor(() => expect(getSimulatorStatus).not.toHaveBeenCalled());
   });
 
   it('useBulkOperationJobs does not call bulkOperationsApi.list', async () => {
@@ -293,19 +277,6 @@ describe('Demo Mode network isolation — mutations reject locally instead of ca
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(insightsApi.dismiss).not.toHaveBeenCalled();
-  });
-
-  it('useInjectFault rejects without calling injectFault', async () => {
-    const { result } = renderHook(() => useInjectFault(), { wrapper: createDemoWrapper() });
-    await act(async () => {
-      result.current.mutate({ entityName: 'q', faultType: 'timeout' } as any);
-    });
-    await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(injectFault).not.toHaveBeenCalled();
-    expect(clearFaults).not.toHaveBeenCalled();
-    expect(resetSimulator).not.toHaveBeenCalled();
-    expect(advanceTime).not.toHaveBeenCalled();
-    expect(injectDlqFlood).not.toHaveBeenCalled();
   });
 
   it('useCreateBulkOperation rejects without calling bulkOperationsApi.create', async () => {

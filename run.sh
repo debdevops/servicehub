@@ -43,18 +43,10 @@ Commands:
   sandbox                   Start Sandbox application only
   all                       Start ServiceHub API, Web UI, Demo, and Sandbox
 
-Options:
-  --simulator               (with servicehub/all) Use simulator mode with seeded demo data.
-                            No real Azure/AWS/GCP credentials required.
-                            API runs on http://localhost:5200
-
 Examples:
   ./run.sh                  # Start ServiceHub (same as ./run.sh servicehub)
   ./run.sh servicehub       # Start ServiceHub API + Web UI
-  ./run.sh servicehub --simulator
-                            # Start ServiceHub in simulator mode
   ./run.sh demo             # Start Demo only
-  ./run.sh all --simulator  # Start everything in simulator mode
   ./run.sh --help           # Show this help message
 
 Press Ctrl+C to stop all services.
@@ -65,7 +57,6 @@ HELP
 declare -a PIDS
 
 # Parse command-line arguments
-SIMULATOR_MODE=false
 START_API=false
 START_WEB=false
 START_DEMO=false
@@ -77,12 +68,8 @@ case "$COMMAND" in
     START_API=true
     START_WEB=true
     shift || true
-    # Parse optional --simulator flag after command
     for arg in "$@"; do
       case $arg in
-        --simulator)
-          SIMULATOR_MODE=true
-          ;;
         --help|-h)
           show_help
           exit 0
@@ -122,9 +109,6 @@ case "$COMMAND" in
     shift || true
     for arg in "$@"; do
       case $arg in
-        --simulator)
-          SIMULATOR_MODE=true
-          ;;
         --help|-h)
           show_help
           exit 0
@@ -135,12 +119,6 @@ case "$COMMAND" in
   --help|-h)
     show_help
     exit 0
-    ;;
-  --simulator)
-    # Legacy support: ./run.sh --simulator (treated as servicehub --simulator)
-    START_API=true
-    START_WEB=true
-    SIMULATOR_MODE=true
     ;;
   *)
     echo -e "${RED}✗ Unknown command: $COMMAND${NC}"
@@ -836,11 +814,7 @@ echo ""
 
 PORTS_TO_VERIFY=""
 if [ "$START_API" = true ]; then
-    if [ "$SIMULATOR_MODE" = true ]; then
-        PORTS_TO_VERIFY="$PORTS_TO_VERIFY 5200"
-    else
-        PORTS_TO_VERIFY="$PORTS_TO_VERIFY 5153"
-    fi
+    PORTS_TO_VERIFY="$PORTS_TO_VERIFY 5153"
 fi
 if [ "$START_WEB" = true ]; then
     PORTS_TO_VERIFY="$PORTS_TO_VERIFY 3000"
@@ -968,21 +942,10 @@ echo ""
 
 # Start API if requested
 if [ "$START_API" = true ]; then
-    if [ "$SIMULATOR_MODE" = true ]; then
-        echo -e "${YELLOW}⚗️  Starting in SIMULATOR MODE — no real cloud credentials needed${NC}"
-        echo -e "${CYAN}   Seeding 3 namespaces: Azure (contoso) + AWS (acme) + GCP (globex)${NC}"
-        echo ""
-        API_HTTP_URL="http://localhost:5200"
-        HEALTH_URL="http://localhost:5200/health"
-        start_service "API (Simulator)" "5200" "$HEALTH_URL" \
-            "cd $API_DIR && export ASPNETCORE_ENVIRONMENT=Simulator && dotnet run --project $API_DIR/src/ServiceHub.Api/ServiceHub.Api.csproj --no-launch-profile --urls http://localhost:5200" \
-            "/tmp/servicehub_api_startup.log"
-    else
-        HEALTH_URL="http://localhost:5153/health"
-        start_service "API" "5153" "$HEALTH_URL" \
-            "cd $API_DIR && export ASPNETCORE_ENVIRONMENT=Development && export ASPNETCORE_URLS=http://localhost:5153 && bash run-api.sh" \
-            "/tmp/servicehub_api_startup.log"
-    fi
+    HEALTH_URL="http://localhost:5153/health"
+    start_service "API" "5153" "$HEALTH_URL" \
+        "cd $API_DIR && export ASPNETCORE_ENVIRONMENT=Development && export ASPNETCORE_URLS=http://localhost:5153 && bash run-api.sh" \
+        "/tmp/servicehub_api_startup.log"
 fi
 
 # Start Web UI if requested
@@ -1036,24 +999,14 @@ if [ -z "$SERVER_IP" ] && command -v ifconfig >/dev/null 2>&1; then
 fi
 
 echo -e "${YELLOW}╔════════════════════════════════════════╗${NC}"
-if [ "$SIMULATOR_MODE" = true ]; then
-    echo -e "${YELLOW}║  ⚗️  Simulator Mode — Services Ready   ║${NC}"
-else
-    echo -e "${GREEN}║   ✓ Services Running Successfully!     ║${NC}"
-fi
+echo -e "${GREEN}║   ✓ Services Running Successfully!     ║${NC}"
 echo -e "${YELLOW}╚════════════════════════════════════════╝${NC}"
 echo ""
-
-if [ "$SIMULATOR_MODE" = true ]; then
-    echo -e "${CYAN}⚗️  No real credentials needed. Using seeded demo data.${NC}"
-    echo -e "${CYAN}   Azure (contoso) · AWS (acme) · GCP (globex)${NC}"
-    echo ""
-fi
 
 if [ "$START_API" = true ]; then
     echo -e "${BLUE}📍 API Endpoints:${NC}"
     echo -e "  • ${GREEN}HTTP:  ${API_HTTP_URL}${NC}"
-    if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ] && [ "$SIMULATOR_MODE" != true ]; then
+    if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ]; then
         echo -e "  • ${GREEN}Remote: http://${SERVER_IP}:5153${NC}"
     fi
     echo -e "  • ${GREEN}Docs:   ${API_HTTP_URL}/scalar/v1${NC}"

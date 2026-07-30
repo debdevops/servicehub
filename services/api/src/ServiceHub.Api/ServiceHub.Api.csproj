@@ -47,7 +47,6 @@
     <ProjectReference Include="..\ServiceHub.Infrastructure.Aws\ServiceHub.Infrastructure.Aws.csproj" />
     <ProjectReference Include="..\ServiceHub.Infrastructure.Gcp\ServiceHub.Infrastructure.Gcp.csproj" />
     <ProjectReference Include="..\ServiceHub.Shared\ServiceHub.Shared.csproj" />
-    <ProjectReference Include="..\ServiceHub.Simulator\ServiceHub.Simulator.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -100,21 +100,6 @@ public sealed class NamespacesController : ApiControllerBase
             or ConnectionAuthType.AwsAccessKey
             or ConnectionAuthType.GcpServiceAccount;
 
-        // Simulator mode disables connection-string encryption (see appsettings.Simulator.json)
-        // and has no real cloud resources to connect to — accepting credential-bearing
-        // namespaces here would persist real secrets to SQLite in plaintext for no benefit.
-        if (storesCredential)
-        {
-            var hostEnvironment = HttpContext.RequestServices.GetService<IWebHostEnvironment>();
-            if (hostEnvironment is not null && hostEnvironment.IsEnvironment("Simulator"))
-            {
-                return Problem(
-                    statusCode: StatusCodes.Status403Forbidden,
-                    title: "Simulator Restriction",
-                    detail: "Namespaces with stored credentials cannot be created while running in Simulator mode. Simulator mode provides pre-seeded namespaces and does not connect to real cloud resources.");
-            }
-        }
-
         if (request.AuthType == ConnectionAuthType.AwsAccessKey && request.Provider != CloudProviderType.Aws)
         {
             return ToActionResult<NamespaceResponse>(Error.Validation(
@@ -130,8 +115,7 @@ public sealed class NamespacesController : ApiControllerBase
         }
 
         // Reject namespaces for providers that are not registered on this server, so the
-        // API cannot mint namespace records nothing can serve. Azure is always registered
-        // in real deployments; Simulator mode registers all three providers.
+        // API cannot mint namespace records nothing can serve. Azure is always registered.
         if (request.Provider is CloudProviderType.Aws or CloudProviderType.Gcp
             && !_messagingProviders.Any(p => p.ProviderType == request.Provider))
         {

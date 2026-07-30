@@ -4,7 +4,6 @@
 #
 # Build:  docker build -t servicehub:local .
 # Run:    docker run --rm -p 8080:8080 servicehub:local           # bring your own credentials
-# Demo:   docker run --rm -p 8080:8080 -e ASPNETCORE_ENVIRONMENT=Simulator servicehub:local
 #
 # Then open http://localhost:8080
 
@@ -57,8 +56,8 @@ RUN rm -rf ./wwwroot
 COPY --from=web /repo/apps/web/dist ./wwwroot/
 
 # The namespace store (JSON) and the SQLite DLQ/audit database live under this directory.
-# Pin BOTH data paths here for every environment (not just Production) — otherwise Simulator/
-# Development default to /app/data, which the non-root user cannot create. The path is within
+# Pin BOTH data paths here for every environment (not just Production) — otherwise Development
+# defaults to /app/data, which the non-root user cannot create. The path is within
 # the namespace repository's allow-list (/var) and is made writable below.
 ENV ASPNETCORE_URLS=http://+:8080 \
     ASPNETCORE_ENVIRONMENT=Production \

@@ -99,8 +99,6 @@ public static class DependencyInjection
     /// <summary>
     /// Registers the Azure Service Bus <see cref="ICloudMessagingProvider"/> so the
     /// <c>CloudProviderRouter</c> can dispatch operations for Azure namespaces.
-    /// Do not call this in Simulator mode — <c>AddSimulatorProviders()</c> registers a
-    /// simulated Azure provider and the router rejects duplicate provider types.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The service collection for chaining.</returns>

@@ -1,10 +1,11 @@
-# ServiceHub — zero-credential demo via Docker Compose.
+# ServiceHub — build and run via Docker Compose.
 #
 #   docker compose up --build
-#   → open http://localhost:8080  (seeds synthetic Azure + AWS + GCP namespaces)
+#   → open http://localhost:8080, then connect a namespace with your own cloud credentials
 #
-# This runs Simulator mode: no cloud credentials, no secrets, nothing to configure.
-# For a real deployment see the "production" service below and self-hosting/README.md.
+# For a zero-credential exploration of the UI without any backend, see Demo Mode
+# (apps/web — no container required). For a real deployment with persisted data see
+# the "production" service below and self-hosting/README.md.
 services:
   servicehub:
     build:
@@ -12,12 +13,10 @@ services:
       dockerfile: Dockerfile
     image: servicehub:local
     ports:
-      # Loopback-bound: Simulator profile runs with auth/rate-limit/encryption
-      # disabled, so it must not be reachable from the network.
-      # For deliberate LAN exposure, change to: - "0.0.0.0:8080:8080"
+      # Loopback-bound by default; for deliberate LAN exposure, change to: - "0.0.0.0:8080:8080"
       - "127.0.0.1:8080:8080"
     environment:
-      ASPNETCORE_ENVIRONMENT: Simulator
+      ASPNETCORE_ENVIRONMENT: Development
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/live"]
       interval: 30s

@@ -26,7 +26,7 @@ apps/web/
 ├── src/
 │   ├── main.tsx              # Application entry point (StrictMode + QueryClientProvider)
 │   ├── router.tsx            # React Router DOM v7 setup
-│   ├── pages/                # Top-level route components (17 pages)
+│   ├── pages/                # Top-level route components (16 pages)
 │   │   ├── ConnectPage.tsx         # /connect  — namespace management
 │   │   ├── MessagesPage.tsx        # /messages — main message browser
 │   │   ├── DashboardPage.tsx       # /dashboard
@@ -38,7 +38,6 @@ apps/web/
 │   │   ├── CorrelationExplorerPage.tsx # /correlation
 │   │   ├── SecurityPage.tsx        # /security
 │   │   ├── CrossCloudTracePage.tsx # /cross-cloud-trace
-│   │   ├── SimulatorPage.tsx       # /simulator
 │   │   ├── AwsDemoPage.tsx         # /demo/aws
 │   │   └── GcpDemoPage.tsx         # /demo/gcp
 │   ├── components/           # Reusable UI components

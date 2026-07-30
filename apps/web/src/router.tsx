@@ -16,7 +16,6 @@ const DashboardPageLazy = lazy(() => import('./pages/DashboardPage'));
 const FleetPageLazy = lazy(() => import('./pages/FleetPage'));
 const DlqHistoryPageLazy = lazy(() => import('./pages/DlqHistoryPage'));
 const CloudBridgePageLazy = lazy(() => import('./pages/CloudBridgePage').then(m => ({ default: m.CloudBridgePage })));
-const SimulatorPageLazy = lazy(() => import('./pages/SimulatorPage').then(m => ({ default: m.SimulatorPage })));
 const CrossCloudTracePageLazy = lazy(() => import('./pages/CrossCloudTracePage').then(m => ({ default: m.CrossCloudTracePage })));
 const AuditPageLazy = lazy(() => import('./pages/AuditPage').then(m => ({ default: m.AuditPage })));
 const MessagesOverviewPageLazy = lazy(() => import('./pages/MessagesOverviewPage'));
@@ -174,14 +173,6 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <CloudBridgePageLazy />
-      </Suspense>
-    ),
-  },
-  {
-    path: 'simulator',
-    element: (
-      <Suspense fallback={<PageLoading />}>
-        <SimulatorPageLazy />
       </Suspense>
     ),
   },

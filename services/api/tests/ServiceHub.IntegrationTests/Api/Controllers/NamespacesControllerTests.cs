@@ -166,7 +166,7 @@ public sealed class NamespacesControllerTests : IClassFixture<TestWebApplication
     // request routing, intent-header enforcement, response shape. Cross-identity access
     // (does a namespace shared with owner B actually become visible to B?) is covered by
     // ApiControllerBaseTests' GetOwnedNamespaceAsync unit tests and verified live against two
-    // real scoped API keys as part of Docker/Simulator verification.
+    // real scoped API keys as part of Docker verification.
 
     [Fact]
     public async Task Share_MissingIntentHeaders_ShouldReturn428()

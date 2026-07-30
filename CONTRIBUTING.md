@@ -105,7 +105,7 @@ npm run test:coverage
 ### End-to-End (Playwright)
 
 ```bash
-./run.sh --simulator   # starts API in simulator mode + Vite
+./run.sh
 cd apps/web
 npm run test:e2e
 ```

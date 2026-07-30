@@ -8,12 +8,11 @@ namespace ServiceHub.IntegrationTests.Api.Controllers;
 /// <summary>
 /// Integration tests for the cross-namespace fleet operations overview endpoint.
 /// </summary>
-[Trait("Category", "Simulator")]
-public sealed class FleetControllerTests : IClassFixture<SimulatorWebApplicationFactory>
+public sealed class FleetControllerTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;
 
-    public FleetControllerTests(SimulatorWebApplicationFactory factory)
+    public FleetControllerTests(TestWebApplicationFactory factory)
     {
         _client = factory.CreateClient();
     }

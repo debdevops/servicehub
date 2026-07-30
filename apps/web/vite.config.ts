@@ -41,9 +41,9 @@ function spaTokenDevPlugin(): Plugin {
 
 // https://vite.dev/config/
 // Allow the proxy target to be overridden at dev-server startup time via a
-// shell environment variable.  This is used in CI (e2e-simulator job) where
-// the .NET API listens on a different port (5200) instead of the default 5153.
-// The browser always talks to Vite on port 3000 so there are no CORS issues.
+// shell environment variable, for cases where the .NET API listens on a
+// different port than the default 5153. The browser always talks to Vite
+// on port 3000 so there are no CORS issues.
 const apiProxyTarget = process.env.VITE_PROXY_TARGET ?? 'http://localhost:5153';
 
 export default defineConfig({
@@ -153,8 +153,6 @@ export default defineConfig({
         'src/assets/**',
         // barrel re-export files have no testable logic
         'src/**/index.ts',
-        // demo / showcase pages — pure UI display with hardcoded data, no business logic
-        'src/pages/SimulatorPage.tsx',
       ],
       // ── Code Coverage Thresholds ────────────────────────────────────────
       // BUILD WILL FAIL if coverage falls below these minimums

@@ -38,7 +38,6 @@ body:
         - Azure Service Bus
         - AWS SQS/SNS
         - GCP Pub/Sub
-        - Simulator mode
         - Not provider-specific
     validations:
       required: true
@@ -48,7 +47,6 @@ body:
       label: Run mode
       options:
         - "./run.sh (development, real credentials)"
-        - "./run.sh --simulator"
         - Self-hosted deployment
         - Other
     validations:
