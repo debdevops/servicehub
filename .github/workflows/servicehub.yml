@@ -4,12 +4,12 @@ name: CI – Build & Unit Tests
 on:
   push:
     branches:
-      - main
       - develop
-      - 'release'
-      - 'bugfix/**'
-      - 'feature/**'
-      - 'hotfix/**'
+      - release
+      - main
+      - feature/**
+      - bugfix/**
+      - hotfix/**
   pull_request:
     branches:
       - main
