@@ -2,11 +2,13 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.AI;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
@@ -24,7 +26,9 @@ public sealed class DlqMonitorService : IDlqMonitorService
     private readonly DlqDbContext _dbContext;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly CloudProviderRouter _router;
-    private readonly IForensicEngine _forensicEngine;
+    private readonly IForensicEngineRouter _forensicEngine;
+    private readonly IConfiguration _configuration;
+    private readonly DlqNotMonitoredLogGuard _notMonitoredLogGuard;
     private readonly ILogger<DlqMonitorService> _logger;
 
     private const int MaxBodyPreviewLength = 500;
@@ -38,13 +42,17 @@ public sealed class DlqMonitorService : IDlqMonitorService
         DlqDbContext dbContext,
         INamespaceRepository namespaceRepository,
         CloudProviderRouter router,
-        IForensicEngine forensicEngine,
+        IForensicEngineRouter forensicEngine,
+        IConfiguration configuration,
+        DlqNotMonitoredLogGuard notMonitoredLogGuard,
         ILogger<DlqMonitorService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _router = router ?? throw new ArgumentNullException(nameof(router));
         _forensicEngine = forensicEngine ?? throw new ArgumentNullException(nameof(forensicEngine));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _notMonitoredLogGuard = notMonitoredLogGuard ?? throw new ArgumentNullException(nameof(notMonitoredLogGuard));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -74,6 +82,28 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
         var provider = _router.Resolve(ns.Provider);
 
+        // Providers that declare SupportsRepeatablePeek: false have no non-destructive peek —
+        // every call is a real receive that increments the message's ReceiveCount (AWS SQS).
+        // Timer-driven and manual scans alike must not silently mutate customer delivery state,
+        // so this is checked before ListEntitiesAsync is ever called. An operator who accepts
+        // that consequence can opt back in via DlqMonitor:AllowDestructivePeek:{Provider}.
+        if (!provider.Capabilities.SupportsRepeatablePeek
+            && !_configuration.GetValue($"DlqMonitor:AllowDestructivePeek:{ns.Provider}", false))
+        {
+            if (_notMonitoredLogGuard.ShouldLog(ns.Provider))
+            {
+                _logger.LogWarning(
+                    "DLQ background scanning is disabled for provider {Provider}: {Notes} Set " +
+                    "DlqMonitor:AllowDestructivePeek:{Provider}=true to re-enable if the ReceiveCount " +
+                    "increment this causes on every scan is acceptable.",
+                    ns.Provider, provider.Capabilities.Notes, ns.Provider);
+            }
+
+            return Result<int>.Failure(Error.Validation(
+                "Dlq.NotMonitored",
+                $"DLQ monitoring is not available for namespace '{ns.Name}': {provider.Capabilities.Notes}"));
+        }
+
         var entitiesResult = await provider.ListEntitiesAsync(namespaceId, cancellationToken);
         if (entitiesResult.IsFailure)
         {
@@ -100,9 +130,13 @@ public sealed class DlqMonitorService : IDlqMonitorService
             if (ns.Provider == CloudProviderType.Gcp && entity.Name.EndsWith("-dlq", StringComparison.Ordinal))
                 continue;
 
-            // Azure reports DeadLetterCount, so entities with 0 can be skipped without peeking.
-            // AWS/GCP entity listings do not populate DeadLetterCount — peek unconditionally.
-            if (ns.Provider == CloudProviderType.Azure && entity.DeadLetterCount == 0)
+            // A provider that genuinely reports live message counts (Azure, AWS — both populate
+            // DeadLetterCount reliably in ListEntitiesAsync) means entities with 0 can be skipped
+            // without peeking. GCP's Capabilities.SupportsMessageCounts is false (Pub/Sub has no
+            // count API, so CloudEntity.DeadLetterCount is never populated) — peek unconditionally
+            // rather than trusting an always-zero count. This mirrors the same capability check
+            // CrossCloudTraceController uses for its own dead-letter-peek gate.
+            if (provider.Capabilities.SupportsMessageCounts && entity.DeadLetterCount == 0)
             {
                 scannedEntities[entity.Name] = 0;
                 continue;
@@ -311,6 +345,32 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 dlqMessage.ReplaySafety = forensic.ReplaySafety;
 
                 _dbContext.DlqMessages.Add(dlqMessage);
+
+                var features = SignalExtractor.ExtractFeatures(dlqMessage);
+                _dbContext.MessageFeatureRecords.Add(new MessageFeatureRecord
+                {
+                    DlqMessage = dlqMessage,
+                    NamespaceId = namespaceId,
+                    OwnerId = ownerId,
+                    CapturedAt = detectedAt,
+                    DeliveryCount = features.DeliveryCount,
+                    BodySizeBytes = features.BodySizeBytes,
+                    TimeToDeadletterSeconds = features.TimeToDeadletterSeconds,
+                    SecondsSinceEnqueued = features.SecondsSinceEnqueued,
+                    HourOfDay = features.HourOfDay,
+                    DayOfWeek = features.DayOfWeek,
+                    PropertyCount = features.PropertyCount,
+                    Provider = features.Provider,
+                    EntityName = features.EntityName,
+                    DeadletterReason = features.DeadletterReason,
+                    ExceptionType = features.ExceptionType,
+                    ContentType = features.ContentType,
+                    PayloadShape = features.PayloadShape,
+                    ErrorTextNormalised = features.ErrorTextNormalised,
+                    SchemaFingerprint = features.SchemaFingerprint,
+                    FeatureVersion = features.FeatureVersion,
+                });
+
                 newCount++;
             }
 

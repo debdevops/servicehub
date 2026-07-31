@@ -234,4 +234,53 @@ public class RateLimitingMiddlewareTests
         options.RateLimitRemaining.Should().NotBeNullOrEmpty();
         options.RateLimitReset.Should().NotBeNullOrEmpty();
     }
+
+    // ── Bypass predicate (exact BypassPaths membership, not substring) ──────
+
+    public static IEnumerable<object[]> BypassPathCases() =>
+        ApiKeyAuthenticationMiddleware.BypassPaths.Select(path => new object[] { path });
+
+    [Theory]
+    [MemberData(nameof(BypassPathCases))]
+    public async Task InvokeAsync_EveryBypassPathsEntry_ShouldSkipRateLimiting(string path)
+    {
+        var callCount = 0;
+        RequestDelegate next = _ => { callCount++; return Task.CompletedTask; };
+        var options = new RateLimitOptions { MaxRequests = 1 };
+        var middleware = new RateLimitingMiddleware(next, _logger.Object, options);
+
+        // Two requests would exceed a 1-request limit if this path were not bypassed.
+        for (var i = 0; i < 2; i++)
+        {
+            var context = new DefaultHttpContext();
+            context.Request.Path = path;
+            context.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("10.0.0.30");
+            await middleware.InvokeAsync(context);
+        }
+
+        callCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_QueueNamedHealthEvents_ShouldNotBypassRateLimiting()
+    {
+        // Regression guard for the substring-bypass bug: a queue literally named "health-events"
+        // must not be able to dodge rate limiting just because its path contains "health".
+        RequestDelegate next = _ => Task.CompletedTask;
+        var options = new RateLimitOptions { MaxRequests = 1 };
+        var middleware = new RateLimitingMiddleware(next, _logger.Object, options);
+        const string path = "/api/v1/namespaces/11111111-1111-1111-1111-111111111111/queues/health-events/messages";
+
+        var first = new DefaultHttpContext();
+        first.Request.Path = path;
+        first.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("10.0.0.31");
+        await middleware.InvokeAsync(first);
+
+        var second = new DefaultHttpContext();
+        second.Request.Path = path;
+        second.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("10.0.0.31");
+        await middleware.InvokeAsync(second);
+
+        second.Response.StatusCode.Should().Be(429);
+    }
 }

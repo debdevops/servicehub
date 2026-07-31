@@ -55,4 +55,12 @@ public static class EventTypes
     /// Raised when an auto-replay rule matches a DLQ message and an action is taken.
     /// </summary>
     public const string RuleMatched = "servicehub.rule.matched.v1";
+
+    // ── Bulk Operations ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Raised when a bulk replay/purge job reaches a terminal status
+    /// (Completed, CompletedWithErrors, Failed, or Cancelled).
+    /// </summary>
+    public const string BulkOperationCompleted = "servicehub.bulkoperation.completed.v1";
 }

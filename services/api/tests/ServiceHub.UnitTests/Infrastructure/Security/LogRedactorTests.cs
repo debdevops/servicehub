@@ -303,4 +303,92 @@ public sealed class LogRedactorTests
         LogRedactor.SanitiseForLog(-1L).Should().Be("-1");
         LogRedactor.SanitiseForLog(0L).Should().Be("0");
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Multicloud credential redaction (Azure, AWS, GCP)
+    // ═══════════════════════════════════════════════════════════════
+
+    public static IEnumerable<object[]> CloudCredentialCases()
+    {
+        yield return
+        [
+            "Azure",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=Policy;SharedAccessKey=azuresecretkey123==",
+            new[] { "azuresecretkey123" }
+        ];
+        yield return
+        [
+            "AWS",
+            "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\naws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            new[] { "AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" }
+        ];
+        yield return
+        [
+            "GCP",
+            "{\"type\":\"service_account\",\"project_id\":\"my-project\",\"private_key_id\":\"abcd1234efgh5678\",\"private_key\":\"-----BEGIN PRIVATE KEY-----\\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwEXAMPLEKEYMATERIAL\\n-----END PRIVATE KEY-----\\n\",\"client_email\":\"sa@my-project.iam.gserviceaccount.com\"}",
+            new[] { "abcd1234efgh5678", "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwEXAMPLEKEYMATERIAL" }
+        ];
+    }
+
+    [Theory]
+    [MemberData(nameof(CloudCredentialCases))]
+    public void Redact_CloudCredential_LeavesNoRecoverableSecretMaterial(string cloud, string input, string[] secrets)
+    {
+        var result = LogRedactor.Redact(input);
+
+        foreach (var secret in secrets)
+        {
+            result.Should().NotContain(secret, $"{cloud} secret material must not survive redaction");
+        }
+    }
+
+    [Fact]
+    public void Redact_AllThreeCloudCredentialsCombined_LeavesNoRecoverableSecretMaterial()
+    {
+        var input = string.Join("\n", CloudCredentialCases().Select(c => (string)c[1]));
+
+        var result = LogRedactor.Redact(input);
+
+        foreach (var secret in CloudCredentialCases().SelectMany(c => (string[])c[2]))
+        {
+            result.Should().NotContain(secret);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Webhook URL redaction (Slack, Teams)
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void Redact_SlackWebhookUrl_MasksToken()
+    {
+        var input = "Posting to https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX failed";
+
+        var result = LogRedactor.Redact(input);
+
+        result.Should().NotContain("XXXXXXXXXXXXXXXXXXXXXXXX");
+        result.Should().Contain("[SLACK_WEBHOOK_REDACTED]");
+    }
+
+    [Fact]
+    public void Redact_TeamsLegacyWebhookUrl_MasksToken()
+    {
+        var input = "https://outlook.office.com/webhook/11111111-1111-1111-1111-111111111111@22222222-2222-2222-2222-222222222222/IncomingWebhook/33333333333333333333333333333333/44444444-4444-4444-4444-444444444444";
+
+        var result = LogRedactor.Redact(input);
+
+        result.Should().NotContain("33333333333333333333333333333333");
+        result.Should().Contain("[TEAMS_WEBHOOK_REDACTED]");
+    }
+
+    [Fact]
+    public void Redact_TeamsWorkflowsWebhookUrl_MasksToken()
+    {
+        var input = "https://contoso.webhook.office.com/webhookb2/11111111-1111-1111-1111-111111111111@22222222-2222-2222-2222-222222222222/IncomingWebhook/supersecrettoken12345/44444444-4444-4444-4444-444444444444";
+
+        var result = LogRedactor.Redact(input);
+
+        result.Should().NotContain("supersecrettoken12345");
+        result.Should().Contain("[TEAMS_WEBHOOK_REDACTED]");
+    }
 }

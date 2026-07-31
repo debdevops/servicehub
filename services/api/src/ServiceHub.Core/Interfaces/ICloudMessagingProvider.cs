@@ -17,6 +17,13 @@ public interface ICloudMessagingProvider
     CloudProviderType ProviderType { get; }
 
     /// <summary>
+    /// Gets the set of operations this provider genuinely supports, so callers can ask
+    /// "can this provider do X?" once instead of branching on <see cref="ProviderType"/>
+    /// at every call site. See <see cref="ProviderCapabilities"/>.
+    /// </summary>
+    ProviderCapabilities Capabilities { get; }
+
+    /// <summary>
     /// Validates whether the credentials in the given namespace are sufficient to
     /// establish a live connection to the remote messaging service.
     /// </summary>

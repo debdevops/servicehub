@@ -127,8 +127,7 @@ graph TB
         
         subgraph Pages["📄 Pages"]
             CONNECT["ConnectPage<br/><i>Namespace setup</i>"]
-            MESSAGES["MessagesPage<br/><i>Message browser</i>"]
-            INSIGHTS["InsightsPage<br/><i>AI analysis view</i>"]
+            MESSAGES["MessagesPage<br/><i>Message browser + AI Findings</i>"]
         end
         
         subgraph Components["🧩 Components"]
@@ -162,7 +161,7 @@ graph TB
         
         subgraph Infra_Layer["⚙️ Infrastructure Layer"]
             SB_SERVICE["ServiceBusClientWrapper<br/><i>Queue operations<br/>Message peek/receive</i>"]
-            AI_SERVICE["AIServiceClient<br/><i>stub — not implemented</i>"]
+            AI_SERVICE["AIServiceClient<br/><i>stub — not implemented, no external call</i>"]
             REPO["Repositories<br/><i>SQLite persistence</i>"]
             CRYPTO["Encryption Service<br/><i>Connection string security</i>"]
             CACHE_SVC["Client Cache<br/><i>Connection pooling</i>"]
@@ -174,7 +173,6 @@ graph TB
         ASB_Q["Queues"]
         ASB_T["Topics"]
         ASB_DLQ["Dead-Letter Queues"]
-        AI_API["AI API Endpoint"]
     end
     
     subgraph Storage["Local Storage"]
@@ -185,7 +183,6 @@ graph TB
     %% Frontend Flow
     CONNECT --> HOOKS
     MESSAGES --> HOOKS
-    INSIGHTS --> HOOKS
     SIDEBAR --> HOOKS
     MSGLIST --> HOOKS
     DETAIL --> HOOKS
@@ -209,8 +206,6 @@ graph TB
     ASB_NS --> ASB_Q
     ASB_NS --> ASB_T
     ASB_Q --> ASB_DLQ
-    
-    AI_SERVICE -->|HTTPS| AI_API
     
     %% Persistence
     REPO --> CRYPTO
@@ -639,8 +634,7 @@ graph TB
     
     subgraph Pages["Pages<br/>(Route Components)"]
         CONNECT["ConnectPage<br/><i>Manage namespaces</i>"]
-        MESSAGES["MessagesPage<br/><i>Message browser</i>"]
-        INSIGHTS["InsightsPage<br/><i>AI patterns</i>"]
+        MESSAGES["MessagesPage<br/><i>Message browser + AI Findings</i>"]
     end
     
     subgraph Layout["Layout Components"]
@@ -687,7 +681,6 @@ graph TB
     
     CONNECT --> Layout
     MESSAGES --> Layout
-    INSIGHTS --> Layout
     
     MESSAGES --> MSG_LIST
     MESSAGES --> MSG_DETAIL

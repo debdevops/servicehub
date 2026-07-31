@@ -5,6 +5,8 @@ using ServiceHub.Api.Filters;
 using ServiceHub.Api.Middleware;
 using ServiceHub.Api.Security;
 using ServiceHub.Infrastructure;
+using ServiceHub.Infrastructure.Aws;
+using ServiceHub.Infrastructure.Gcp;
 
 namespace ServiceHub.Api.Extensions;
 
@@ -23,6 +25,14 @@ public static class ServiceCollectionExtensions
     {
         // Add infrastructure services (pass configuration for encryption key)
         services.AddInfrastructure(configuration);
+
+        // Provider-specific forensic classification tiers — registered unconditionally
+        // (independent of the CloudProviders:Aws/Gcp:Enabled live-provider flags) so any
+        // real flag-enabled namespace gets provider-aware forensic analysis via
+        // IForensicEngineRouter. See
+        // AwsDependencyInjection.AddAwsForensicIntelligence / GcpDependencyInjection.AddGcpForensicIntelligence.
+        services.AddAwsForensicIntelligence();
+        services.AddGcpForensicIntelligence();
 
         // Add API services
         services.AddApiServices(configuration);
@@ -78,6 +88,9 @@ public static class ServiceCollectionExtensions
         // Response caching
         services.AddResponseCaching();
 
+        // In-memory cache (e.g. short-lived per-namespace DLQ signature analysis caching)
+        services.AddMemoryCache();
+
         // Response compression
         services.AddResponseCompression(options =>
         {
@@ -96,8 +109,18 @@ public static class ServiceCollectionExtensions
         // Security audit trail for critical operations
         services.AddSingleton<IAuditLogger, SecurityAuditLogger>();
 
-        // Rate limit options (read from RateLimit config section)
-        services.Configure<RateLimitOptions>(configuration.GetSection("RateLimit"));
+        // Throttles repeated API key authentication failures (see ApiKeyAuthenticationMiddleware).
+        // Singleton so failure counts persist across requests for the process lifetime.
+        services.AddSingleton<AuthFailureThrottle>();
+
+        // Domain metrics (fleet backlog, etc.). AddMetrics guarantees IMeterFactory is available;
+        // the meter is only exported when OpenTelemetry is enabled.
+        services.AddMetrics();
+        services.AddSingleton<Telemetry.ServiceHubMetrics>();
+
+        // Strongly-typed, validated configuration (ServiceBus, RateLimit, Webhooks) with
+        // fail-fast at startup. Also binds RateLimitOptions from the "RateLimit" section.
+        services.AddServiceHubConfigurationValidation(configuration);
 
         return services;
     }

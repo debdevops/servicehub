@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 # ServiceHub - Full Stack Development Server Runner
-# Automatically installs prerequisites and starts both the ServiceHub API (.NET) and UI (React)
+# Supports multiple applications: ServiceHub, Demo, Sandbox
+# Automatically installs prerequisites and starts requested services
 # Supports: macOS, Ubuntu/Debian, RHEL/CentOS/Fedora, Arch Linux, openSUSE, WSL
 
 set -e
@@ -9,32 +10,11 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 API_DIR="$SCRIPT_DIR/services/api"
 WEB_DIR="$SCRIPT_DIR/apps/web"
+DEMO_DIR="$SCRIPT_DIR/apps/demo"
+SANDBOX_DIR="$SCRIPT_DIR/apps/sandbox"
 API_HTTP_URL="http://localhost:5153"
 API_HTTPS_URL="https://localhost:7252"
 WEB_PORT=3000
-
-# Parse command-line arguments
-SIMULATOR_MODE=false
-for arg in "$@"; do
-  case $arg in
-    --simulator)
-      SIMULATOR_MODE=true
-      ;;
-    --help|-h)
-      echo "Usage: ./run.sh [--simulator]"
-      echo ""
-      echo "  --simulator   Start the API in Simulator mode with seeded demo data."
-      echo "                No real Azure/AWS/GCP credentials required."
-      echo "                API runs on http://localhost:5200"
-      echo "                UI runs on http://localhost:3000"
-      echo ""
-      echo "  (no flags)    Start in Development mode (requires credentials)."
-      echo "                API runs on http://localhost:5153"
-      echo "                UI runs on http://localhost:3000"
-      exit 0
-      ;;
-  esac
-done
 
 # Version requirements
 REQUIRED_DOTNET_VERSION="10.0"
@@ -51,6 +31,101 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
+
+# Show help message
+show_help() {
+  cat <<'HELP'
+Usage: ./run.sh [command] [options]
+
+Commands:
+  servicehub                Start ServiceHub API + Web UI (default)
+  demo                      Start Demo application only
+  sandbox                   Start Sandbox application only
+  all                       Start ServiceHub API, Web UI, Demo, and Sandbox
+
+Examples:
+  ./run.sh                  # Start ServiceHub (same as ./run.sh servicehub)
+  ./run.sh servicehub       # Start ServiceHub API + Web UI
+  ./run.sh demo             # Start Demo only
+  ./run.sh --help           # Show this help message
+
+Press Ctrl+C to stop all services.
+HELP
+}
+
+# Process PIDs for cleanup
+declare -a PIDS
+
+# Parse command-line arguments
+START_API=false
+START_WEB=false
+START_DEMO=false
+START_SANDBOX=false
+COMMAND="${1:-servicehub}"
+
+case "$COMMAND" in
+  servicehub)
+    START_API=true
+    START_WEB=true
+    shift || true
+    for arg in "$@"; do
+      case $arg in
+        --help|-h)
+          show_help
+          exit 0
+          ;;
+      esac
+    done
+    ;;
+  demo)
+    START_DEMO=true
+    shift || true
+    for arg in "$@"; do
+      case $arg in
+        --help|-h)
+          show_help
+          exit 0
+          ;;
+      esac
+    done
+    ;;
+  sandbox)
+    START_SANDBOX=true
+    shift || true
+    for arg in "$@"; do
+      case $arg in
+        --help|-h)
+          show_help
+          exit 0
+          ;;
+      esac
+    done
+    ;;
+  all)
+    START_API=true
+    START_WEB=true
+    START_DEMO=true
+    START_SANDBOX=true
+    shift || true
+    for arg in "$@"; do
+      case $arg in
+        --help|-h)
+          show_help
+          exit 0
+          ;;
+      esac
+    done
+    ;;
+  --help|-h)
+    show_help
+    exit 0
+    ;;
+  *)
+    echo -e "${RED}✗ Unknown command: $COMMAND${NC}"
+    show_help
+    exit 1
+    ;;
+esac
 
 # Check if running under WSL
 detect_wsl() {
@@ -494,12 +569,12 @@ restore_dotnet_packages() {
     echo -e "${GREEN}✓ .NET packages restored${NC}"
 }
 
-# Install npm packages
+# Install npm packages (monorepo workspaces)
 install_npm_packages() {
-    if [ ! -d "$WEB_DIR/node_modules" ] || [ ! -f "$WEB_DIR/node_modules/.package-lock.json" ]; then
-        echo -e "${YELLOW}Installing npm packages...${NC}"
-        cd "$WEB_DIR"
-        
+    if [ ! -d "$SCRIPT_DIR/node_modules" ] || [ ! -f "$SCRIPT_DIR/node_modules/.package-lock.json" ]; then
+        echo -e "${YELLOW}Installing npm packages (monorepo workspaces)...${NC}"
+        cd "$SCRIPT_DIR"
+
         # Use npm ci (clean install) if package-lock.json exists for reproducible builds
         if [ -f "package-lock.json" ]; then
             npm ci --legacy-peer-deps 2>&1 | tail -5
@@ -516,7 +591,7 @@ install_npm_packages() {
                 exit 1
             }
         fi
-        echo -e "${GREEN}✓ npm packages installed${NC}"
+        echo -e "${GREEN}✓ npm packages installed (all workspaces)${NC}"
     else
         echo -e "${GREEN}✓ npm packages already installed${NC}"
     fi
@@ -525,16 +600,43 @@ install_npm_packages() {
 cleanup() {
     echo ""
     echo -e "${YELLOW}Shutting down services...${NC}"
-    kill $API_PID 2>/dev/null || true
-    kill $WEB_PID 2>/dev/null || true
-    wait $API_PID 2>/dev/null || true
-    wait $WEB_PID 2>/dev/null || true
+
+    # Kill all tracked processes
+    for pid in "${PIDS[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+        fi
+    done
+
+    # Wait for all processes to terminate gracefully (max 5 seconds)
+    local count=0
+    while [ ${#PIDS[@]} -gt 0 ] && [ $count -lt 5 ]; do
+        local alive=()
+        for pid in "${PIDS[@]}"; do
+            if kill -0 "$pid" 2>/dev/null; then
+                alive+=("$pid")
+            fi
+        done
+        PIDS=("${alive[@]}")
+        if [ ${#PIDS[@]} -gt 0 ]; then
+            sleep 1
+            count=$((count + 1))
+        fi
+    done
+
+    # Force kill any remaining processes
+    for pid in "${PIDS[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -9 "$pid" 2>/dev/null || true
+        fi
+    done
+
     echo -e "${GREEN}✓ All services stopped${NC}"
     exit 0
 }
 
-# Trap SIGINT (Ctrl+C) to cleanup gracefully
-trap cleanup SIGINT SIGTERM
+# Trap SIGINT, SIGTERM, EXIT to cleanup gracefully
+trap cleanup SIGINT SIGTERM EXIT
 
 # ============================================================================
 # MAIN EXECUTION
@@ -637,35 +739,31 @@ echo ""
 echo -e "${YELLOW}Killing previous processes...${NC}"
 if command -v pkill >/dev/null 2>&1; then
     pkill -f "dotnet.*ServiceHub" 2>/dev/null || true
-    pkill -f "npm.*dev.*3000" 2>/dev/null || true
-    pkill -f "npm.*dev.*5173" 2>/dev/null || true
+    pkill -f "npm.*dev" 2>/dev/null || true
     pkill -f "vite" 2>/dev/null || true
 else
     # Fallback if pkill not available
-    ps aux | grep -E "dotnet.*ServiceHub|npm.*dev.*3000|npm.*dev.*5173|vite" | grep -v grep | awk '{print $2}' | xargs kill 2>/dev/null || true
+    ps aux | grep -E "dotnet.*ServiceHub|npm.*dev|vite" | grep -v grep | awk '{print $2}' | xargs kill 2>/dev/null || true
 fi
 sleep 1
 
 # Force kill any stubborn processes on the ports
-echo -e "${YELLOW}Force-closing ports 5153 and 3000...${NC}"
+PORTS_TO_CLEAN="5153 3000 5173"
+if [ "$START_DEMO" = true ]; then
+    PORTS_TO_CLEAN="$PORTS_TO_CLEAN 5174"
+fi
+if [ "$START_SANDBOX" = true ]; then
+    PORTS_TO_CLEAN="$PORTS_TO_CLEAN 5175"
+fi
+
+echo -e "${YELLOW}Force-closing ports: $PORTS_TO_CLEAN...${NC}"
 if command -v lsof >/dev/null 2>&1; then
-    # Kill processes on port 5153
-    PIDS=$(lsof -ti:5153 2>/dev/null || true)
-    if [ -n "$PIDS" ]; then
-        echo "$PIDS" | xargs kill -9 2>/dev/null || echo "$PIDS" | xargs -x kill -9 2>/dev/null || true
-    fi
-    
-    # Kill processes on port 3000
-    PIDS=$(lsof -ti:3000 2>/dev/null || true)
-    if [ -n "$PIDS" ]; then
-        echo "$PIDS" | xargs kill -9 2>/dev/null || echo "$PIDS" | xargs -x kill -9 2>/dev/null || true
-    fi
-    
-    # Kill processes on port 5173
-    PIDS=$(lsof -ti:5173 2>/dev/null || true)
-    if [ -n "$PIDS" ]; then
-        echo "$PIDS" | xargs kill -9 2>/dev/null || echo "$PIDS" | xargs -x kill -9 2>/dev/null || true
-    fi
+    for PORT in $PORTS_TO_CLEAN; do
+        PIDS=$(lsof -ti:$PORT 2>/dev/null || true)
+        if [ -n "$PIDS" ]; then
+            echo "$PIDS" | xargs kill -9 2>/dev/null || echo "$PIDS" | xargs -x kill -9 2>/dev/null || true
+        fi
+    done
 else
     echo -e "${YELLOW}⚠ lsof not available, skipping port cleanup${NC}"
 fi
@@ -714,12 +812,21 @@ echo -e "${YELLOW}║      Verifying Ports Available         ║${NC}"
 echo -e "${YELLOW}╚════════════════════════════════════════╝${NC}"
 echo ""
 
-if [ "$SIMULATOR_MODE" = true ]; then
-  PORTS_TO_CLEAN="5200 $WEB_PORT"
-else
-  PORTS_TO_CLEAN="5153 $WEB_PORT"
+PORTS_TO_VERIFY=""
+if [ "$START_API" = true ]; then
+    PORTS_TO_VERIFY="$PORTS_TO_VERIFY 5153"
 fi
-for PORT in $PORTS_TO_CLEAN; do
+if [ "$START_WEB" = true ]; then
+    PORTS_TO_VERIFY="$PORTS_TO_VERIFY 3000"
+fi
+if [ "$START_DEMO" = true ]; then
+    PORTS_TO_VERIFY="$PORTS_TO_VERIFY 5174"
+fi
+if [ "$START_SANDBOX" = true ]; then
+    PORTS_TO_VERIFY="$PORTS_TO_VERIFY 5175"
+fi
+
+for PORT in $PORTS_TO_VERIFY; do
     if command -v lsof >/dev/null 2>&1; then
         PID=$(lsof -nP -iTCP:$PORT -sTCP:LISTEN -t 2>/dev/null || true)
         if [ -n "$PID" ]; then
@@ -736,128 +843,139 @@ done
 
 echo ""
 
+# Helper function to start a service and wait for it to be ready
+start_service() {
+    local name=$1
+    local port=$2
+    local health_url=$3
+    local start_cmd=$4
+    local log_file=$5
+
+    echo -e "${BLUE}Starting $name...${NC}"
+    eval "$start_cmd" > "$log_file" 2>&1 &
+    local pid=$!
+    PIDS+=("$pid")
+    echo -e "${GREEN}✓ $name process started (PID: $pid)${NC}"
+
+    if [ -n "$health_url" ]; then
+        echo -e "${YELLOW}Waiting for $name to be ready...${NC}"
+        local wait_count=0
+        local max_wait=30
+        local ready=false
+
+        while [ $wait_count -lt $max_wait ]; do
+            if curl -s "$health_url" >/dev/null 2>&1; then
+                ready=true
+                break
+            fi
+
+            if ! kill -0 $pid 2>/dev/null; then
+                echo -e " ${RED}✗ $name process died (PID $pid)${NC}"
+                echo -e "${YELLOW}$name startup log:${NC}"
+                head -20 "$log_file" 2>/dev/null || echo "  (no log available)"
+                cleanup
+            fi
+
+            if [ $((wait_count % 5)) -eq 0 ]; then
+                printf "  .."
+            fi
+            sleep 1
+            wait_count=$((wait_count + 1))
+        done
+
+        if [ "$ready" = true ]; then
+            echo -e " ${GREEN}✓ $name is ready (${wait_count}s)${NC}"
+        else
+            echo -e " ${YELLOW}⚠ $name startup check timed out after ${max_wait}s${NC}"
+            if [ -f "$log_file" ] && [ -s "$log_file" ]; then
+                echo -e "${YELLOW}Last 5 $name log entries:${NC}"
+                tail -5 "$log_file" | sed 's/^/  /'
+            fi
+            echo -e "${YELLOW}Continuing anyway... (check $health_url manually)${NC}"
+        fi
+    else
+        # Port-based readiness check (for Vite/npm apps)
+        echo -e "${YELLOW}Waiting for $name to be ready...${NC}"
+        local wait_count=0
+        local max_wait=30
+        local ready=false
+
+        while [ $wait_count -lt $max_wait ]; do
+            if command -v lsof >/dev/null 2>&1; then
+                if lsof -nP -iTCP:$port -sTCP:LISTEN -t >/dev/null 2>&1; then
+                    ready=true
+                    break
+                fi
+            else
+                if [ $wait_count -ge 10 ]; then
+                    ready=true
+                    break
+                fi
+            fi
+
+            if [ $((wait_count % 5)) -eq 0 ]; then
+                printf "  .."
+            fi
+            sleep 1
+            wait_count=$((wait_count + 1))
+        done
+
+        if [ "$ready" = true ]; then
+            echo -e " ${GREEN}✓ $name is ready (${wait_count}s)${NC}"
+        else
+            echo -e " ${YELLOW}⚠ $name startup check timed out after ${max_wait}s${NC}"
+            if [ -f "$log_file" ]; then
+                echo -e "${YELLOW}Last $name log entries:${NC}"
+                tail -3 "$log_file" || true
+            fi
+        fi
+    fi
+
+    echo ""
+}
+
 # PHASE 4: START SERVICES
 echo -e "${YELLOW}╔════════════════════════════════════════╗${NC}"
 echo -e "${YELLOW}║        Starting Services              ║${NC}"
 echo -e "${YELLOW}╚════════════════════════════════════════╝${NC}"
 echo ""
 
-# Start API in background
-echo -e "${BLUE}Starting API...${NC}"
-cd "$API_DIR"
-if [ "$SIMULATOR_MODE" = true ]; then
-  echo -e "${YELLOW}⚗️  Starting in SIMULATOR MODE — no real cloud credentials needed${NC}"
-  echo -e "${CYAN}   Seeding 3 namespaces: Azure (contoso) + AWS (acme) + GCP (globex)${NC}"
-  echo ""
-  export ASPNETCORE_ENVIRONMENT=Simulator
-  dotnet run \
-    --project "$API_DIR/src/ServiceHub.Api/ServiceHub.Api.csproj" \
-    --no-launch-profile \
-    --urls http://localhost:5200 \
-    > /tmp/servicehub_api_startup.log 2>&1 &
-  API_PID=$!
-  API_HTTP_URL="http://localhost:5200"
-  HEALTH_URL="http://localhost:5200/health"
-else
-  # Ensure environment variables are set for .NET
-  export ASPNETCORE_ENVIRONMENT=Development
-  export ASPNETCORE_URLS="http://localhost:5153"
-  ASPNETCORE_ENVIRONMENT=Development bash run-api.sh > /tmp/servicehub_api_startup.log 2>&1 &
-  API_PID=$!
-  HEALTH_URL="http://localhost:5153/health"
-fi
-echo -e "${GREEN}✓ API process started (PID: $API_PID)${NC}"
-
-# Wait for API to be ready (max 30 seconds on first run)
-echo -e "${YELLOW}Waiting for API to be ready...${NC}"
-WAIT_COUNT=0
-MAX_WAIT=30
-API_READY=false
-API_ERROR=""
-while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
-    if curl -s $HEALTH_URL >/dev/null 2>&1; then
-        API_READY=true
-        break
-    fi
-    
-    # Check if process died
-    if ! kill -0 $API_PID 2>/dev/null; then
-        API_ERROR="API process died (PID $API_PID)"
-        break
-    fi
-    
-    # Show progress every 5 seconds
-    if [ $((WAIT_COUNT % 5)) -eq 0 ]; then
-        printf "  .."
-    fi
-    sleep 1
-    WAIT_COUNT=$((WAIT_COUNT + 1))
-done
-
-if [ "$API_READY" = true ]; then
-    echo -e " ${GREEN}✓ API is ready (${WAIT_COUNT}s)${NC}"
-elif [ -n "$API_ERROR" ]; then
-    echo -e " ${RED}✗ $API_ERROR${NC}"
-    echo -e "${YELLOW}API startup log:${NC}"
-    head -20 /tmp/servicehub_api_startup.log 2>/dev/null || echo "  (no log available)"
-    cleanup
-else
-    echo -e " ${YELLOW}⚠ API startup check timed out after ${MAX_WAIT}s${NC}"
-    if [ -f /tmp/servicehub_api_startup.log ] && [ -s /tmp/servicehub_api_startup.log ]; then
-        echo -e "${YELLOW}Last 5 API log entries:${NC}"
-        tail -5 /tmp/servicehub_api_startup.log | sed 's/^/  /'
-    fi
-    echo -e "${YELLOW}Continuing anyway... (check $HEALTH_URL manually)${NC}"
+# Start API if requested
+if [ "$START_API" = true ]; then
+    HEALTH_URL="http://localhost:5153/health"
+    start_service "API" "5153" "$HEALTH_URL" \
+        "cd $API_DIR && export ASPNETCORE_ENVIRONMENT=Development && export ASPNETCORE_URLS=http://localhost:5153 && bash run-api.sh" \
+        "/tmp/servicehub_api_startup.log"
 fi
 
-echo ""
+# Start Web UI if requested
+if [ "$START_WEB" = true ]; then
+    start_service "Web UI" "3000" "" \
+        "cd $SCRIPT_DIR && export VITE_PROXY_TARGET=$API_HTTP_URL && npm run -w apps/web dev -- --port 3000 --host 0.0.0.0 --strictPort" \
+        "/tmp/servicehub_ui_startup.log"
+fi
 
-# Start Web UI in background
-echo -e "${BLUE}Starting UI...${NC}"
-cd "$WEB_DIR"
-export VITE_PROXY_TARGET="$API_HTTP_URL"
-npm run dev -- --port $WEB_PORT --host 0.0.0.0 --strictPort > /tmp/servicehub_ui_startup.log 2>&1 &
-WEB_PID=$!
-echo -e "${GREEN}✓ UI process started (PID: $WEB_PID)${NC}"
-
-# Wait for UI to be ready — use port check instead of curl (Vite dev server
-# keeps connections open and curl hangs waiting for a response on macOS)
-echo -e "${YELLOW}Waiting for UI to be ready...${NC}"
-WAIT_COUNT=0
-MAX_WAIT=30
-UI_READY=false
-while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
-    if command -v lsof >/dev/null 2>&1; then
-        if lsof -nP -iTCP:$WEB_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
-            UI_READY=true
-            break
-        fi
+# Start Demo if requested
+if [ "$START_DEMO" = true ]; then
+    if [ ! -d "$DEMO_DIR" ]; then
+        echo -e "${YELLOW}⚠ Demo directory not found at $DEMO_DIR${NC}"
     else
-        # Fallback: give it time to start
-        if [ $WAIT_COUNT -ge 10 ]; then
-            UI_READY=true
-            break
-        fi
-    fi
-    # Show progress every 5 seconds
-    if [ $((WAIT_COUNT % 5)) -eq 0 ]; then
-        printf "  .."
-    fi
-    sleep 1
-    WAIT_COUNT=$((WAIT_COUNT + 1))
-done
-
-if [ "$UI_READY" = true ]; then
-    echo -e " ${GREEN}✓ UI is ready (${WAIT_COUNT}s)${NC}"
-else
-    echo -e " ${YELLOW}⚠ UI startup check timed out after ${MAX_WAIT}s${NC}"
-    if [ -f /tmp/servicehub_ui_startup.log ]; then
-        echo -e "${YELLOW}Last UI log entries:${NC}"
-        tail -3 /tmp/servicehub_ui_startup.log || true
+        start_service "Demo" "5174" "" \
+            "cd $SCRIPT_DIR && npm run -w apps/demo dev -- --port 5174 --host 0.0.0.0 --strictPort" \
+            "/tmp/servicehub_demo_startup.log"
     fi
 fi
 
-echo ""
+# Start Sandbox if requested
+if [ "$START_SANDBOX" = true ]; then
+    if [ ! -d "$SANDBOX_DIR" ]; then
+        echo -e "${YELLOW}⚠ Sandbox directory not found at $SANDBOX_DIR${NC}"
+    else
+        start_service "Sandbox" "5175" "" \
+            "cd $SCRIPT_DIR && npm run -w apps/sandbox dev -- --port 5175 --host 0.0.0.0 --strictPort" \
+            "/tmp/servicehub_sandbox_startup.log"
+    fi
+fi
 
 # PHASE 5: SERVICES READY
 # Detect server IP and hostname for remote access guidance
@@ -881,42 +999,57 @@ if [ -z "$SERVER_IP" ] && command -v ifconfig >/dev/null 2>&1; then
 fi
 
 echo -e "${YELLOW}╔════════════════════════════════════════╗${NC}"
-if [ "$SIMULATOR_MODE" = true ]; then
-echo -e "${YELLOW}║  ⚗️  Simulator Mode — All Services Up!  ║${NC}"
-else
-echo -e "${GREEN}║   ✓ All Services Running Successfully!  ║${NC}"
-fi
+echo -e "${GREEN}║   ✓ Services Running Successfully!     ║${NC}"
 echo -e "${YELLOW}╚════════════════════════════════════════╝${NC}"
 echo ""
-if [ "$SIMULATOR_MODE" = true ]; then
-echo -e "${CYAN}⚗️  No real credentials needed. Using seeded demo data.${NC}"
-echo -e "${CYAN}   Azure (contoso) · AWS (acme) · GCP (globex)${NC}"
-echo ""
+
+if [ "$START_API" = true ]; then
+    echo -e "${BLUE}📍 API Endpoints:${NC}"
+    echo -e "  • ${GREEN}HTTP:  ${API_HTTP_URL}${NC}"
+    if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ]; then
+        echo -e "  • ${GREEN}Remote: http://${SERVER_IP}:5153${NC}"
+    fi
+    echo -e "  • ${GREEN}Docs:   ${API_HTTP_URL}/scalar/v1${NC}"
+    echo ""
 fi
-echo -e "${BLUE}📍 API Endpoints:${NC}"
-echo -e "  • ${GREEN}HTTP:  ${API_HTTP_URL}${NC}"
-if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ] && [ "$SIMULATOR_MODE" != true ]; then
-    echo -e "  • ${GREEN}Remote: http://${SERVER_IP}:5153${NC}"
+
+if [ "$START_WEB" = true ]; then
+    echo -e "${BLUE}🌐 Web UI:${NC}"
+    echo -e "  • ${GREEN}http://localhost:${WEB_PORT}${NC}   ← from this machine"
+    if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ]; then
+        echo -e "  • ${GREEN}http://${SERVER_IP}:${WEB_PORT}${NC}   ← from remote machines (by IP)"
+    fi
+    if [ -n "$SERVER_HOSTNAME" ] && [ "$SERVER_HOSTNAME" != "localhost" ]; then
+        echo -e "  • ${GREEN}http://${SERVER_HOSTNAME}:${WEB_PORT}${NC}   ← from remote machines (by hostname)"
+    fi
+    echo ""
 fi
-echo -e "  • ${GREEN}Docs:   ${API_HTTP_URL}/scalar/v1${NC}"
-echo ""
-echo -e "${BLUE}🌐 Web UI:${NC}"
-echo -e "  • ${GREEN}http://localhost:${WEB_PORT}${NC}   ← from this machine"
-if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ]; then
-    echo -e "  • ${GREEN}http://${SERVER_IP}:${WEB_PORT}${NC}   ← from remote machines (by IP)"
+
+if [ "$START_DEMO" = true ] && [ -d "$DEMO_DIR" ]; then
+    echo -e "${BLUE}📦 Demo:${NC}"
+    echo -e "  • ${GREEN}http://localhost:5174${NC}"
+    echo ""
 fi
-if [ -n "$SERVER_HOSTNAME" ] && [ "$SERVER_HOSTNAME" != "localhost" ]; then
-    echo -e "  • ${GREEN}http://${SERVER_HOSTNAME}:${WEB_PORT}${NC}   ← from remote machines (by hostname)"
+
+if [ "$START_SANDBOX" = true ] && [ -d "$SANDBOX_DIR" ]; then
+    echo -e "${BLUE}🏖️  Sandbox:${NC}"
+    echo -e "  • ${GREEN}http://localhost:5175${NC}"
+    echo ""
 fi
+
+echo -e "${BLUE}📋 Running Processes:${NC}"
+for pid in "${PIDS[@]}"; do
+    if kill -0 "$pid" 2>/dev/null; then
+        echo -e "  • ${GREEN}PID: $pid${NC}"
+    fi
+done
 echo ""
-echo -e "${BLUE}📋 Process IDs:${NC}"
-echo -e "  • ${GREEN}API:  $API_PID${NC}"
-echo -e "  • ${GREEN}UI:   $WEB_PID${NC}"
-echo ""
+
 echo -e "${YELLOW}════════════════════════════════════════${NC}"
 echo -e "${BLUE}Press ${YELLOW}Ctrl+C${BLUE} to stop all services${NC}"
 echo -e "${YELLOW}════════════════════════════════════════${NC}"
 echo ""
+
 if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ]; then
     echo -e "${CYAN}ℹ  Remote access detected. If connection is refused from another machine:${NC}"
     echo -e "   ${YELLOW}Linux (UFW):${NC}    sudo ufw allow 3000/tcp && sudo ufw allow 5153/tcp && sudo ufw reload"

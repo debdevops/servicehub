@@ -159,4 +159,121 @@ public sealed class NamespacesControllerTests : IClassFixture<TestWebApplication
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    // ── Share / RevokeShare ──────────────────────────────────────────────────
+    // Authentication is disabled in this test host (every request resolves to the same SPA
+    // owner identity), so these tests exercise the API contract and persistence — full pipeline
+    // request routing, intent-header enforcement, response shape. Cross-identity access
+    // (does a namespace shared with owner B actually become visible to B?) is covered by
+    // ApiControllerBaseTests' GetOwnedNamespaceAsync unit tests and verified live against two
+    // real scoped API keys as part of Docker verification.
+
+    [Fact]
+    public async Task Share_MissingIntentHeaders_ShouldReturn428()
+    {
+        var request = MakeRequest("sharenointent");
+        var createResponse = await _client.PostAsJsonAsync(BaseUrl, request);
+        var created = await createResponse.Content.ReadFromJsonAsync<NamespaceResponse>(JsonOptions);
+
+        var response = await _client.PostAsJsonAsync(
+            $"{BaseUrl}/{created!.Id}/share", new ShareNamespaceRequest("colleague-owner"));
+
+        response.StatusCode.Should().Be((HttpStatusCode)428);
+    }
+
+    [Fact]
+    public async Task Share_ThenGetById_ReflectsSharedOwnerInResponse()
+    {
+        var request = MakeRequest("shareok");
+        var createResponse = await _client.PostAsJsonAsync(BaseUrl, request);
+        var created = await createResponse.Content.ReadFromJsonAsync<NamespaceResponse>(JsonOptions);
+
+        var shareRequest = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/{created!.Id}/share")
+        {
+            Content = JsonContent.Create(new ShareNamespaceRequest("colleague-owner-123"))
+        };
+        shareRequest.Headers.Add(IntentHeaders.IntentHeaderName, IntentHeaders.IntentShareNamespace);
+        shareRequest.Headers.Add(IntentHeaders.ConfirmHeaderName, "true");
+        var shareResponse = await _client.SendAsync(shareRequest);
+
+        shareResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var shared = await shareResponse.Content.ReadFromJsonAsync<NamespaceResponse>(JsonOptions);
+        shared!.SharedWithOwnerIds.Should().Contain("colleague-owner-123");
+
+        var getResponse = await _client.GetAsync($"{BaseUrl}/{created.Id}");
+        var refetched = await getResponse.Content.ReadFromJsonAsync<NamespaceResponse>(JsonOptions);
+        refetched!.SharedWithOwnerIds.Should().Contain("colleague-owner-123");
+    }
+
+    [Fact]
+    public async Task Share_WithSelf_ShouldReturnBadRequest()
+    {
+        var request = MakeRequest("shareself");
+        var createResponse = await _client.PostAsJsonAsync(BaseUrl, request);
+        var created = await createResponse.Content.ReadFromJsonAsync<NamespaceResponse>(JsonOptions);
+
+        var shareRequest = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/{created!.Id}/share")
+        {
+            Content = JsonContent.Create(new ShareNamespaceRequest("__spa__"))
+        };
+        shareRequest.Headers.Add(IntentHeaders.IntentHeaderName, IntentHeaders.IntentShareNamespace);
+        shareRequest.Headers.Add(IntentHeaders.ConfirmHeaderName, "true");
+        var response = await _client.SendAsync(shareRequest);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task ShareThenRevoke_RemovesSharedOwnerFromResponse()
+    {
+        var request = MakeRequest("sharerevoke");
+        var createResponse = await _client.PostAsJsonAsync(BaseUrl, request);
+        var created = await createResponse.Content.ReadFromJsonAsync<NamespaceResponse>(JsonOptions);
+
+        var shareRequest = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/{created!.Id}/share")
+        {
+            Content = JsonContent.Create(new ShareNamespaceRequest("temp-owner"))
+        };
+        shareRequest.Headers.Add(IntentHeaders.IntentHeaderName, IntentHeaders.IntentShareNamespace);
+        shareRequest.Headers.Add(IntentHeaders.ConfirmHeaderName, "true");
+        await _client.SendAsync(shareRequest);
+
+        var revokeRequest = new HttpRequestMessage(HttpMethod.Delete, $"{BaseUrl}/{created.Id}/share/temp-owner");
+        revokeRequest.Headers.Add(IntentHeaders.IntentHeaderName, IntentHeaders.IntentShareNamespace);
+        revokeRequest.Headers.Add(IntentHeaders.ConfirmHeaderName, "true");
+        var revokeResponse = await _client.SendAsync(revokeRequest);
+
+        revokeResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var getResponse = await _client.GetAsync($"{BaseUrl}/{created.Id}");
+        var refetched = await getResponse.Content.ReadFromJsonAsync<NamespaceResponse>(JsonOptions);
+        refetched!.SharedWithOwnerIds.Should().NotContain("temp-owner");
+    }
+
+    [Fact]
+    public async Task Share_NonExistentNamespace_ShouldReturnNotFound()
+    {
+        var shareRequest = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/{Guid.NewGuid()}/share")
+        {
+            Content = JsonContent.Create(new ShareNamespaceRequest("colleague-owner"))
+        };
+        shareRequest.Headers.Add(IntentHeaders.IntentHeaderName, IntentHeaders.IntentShareNamespace);
+        shareRequest.Headers.Add(IntentHeaders.ConfirmHeaderName, "true");
+
+        var response = await _client.SendAsync(shareRequest);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // ── /api/v1/me ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Me_ReturnsSpaOwnerIdentityByDefault()
+    {
+        var response = await _client.GetAsync("/api/v1/me");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var me = await response.Content.ReadFromJsonAsync<MeResponse>(JsonOptions);
+        me!.OwnerId.Should().Be("__spa__");
+    }
 }

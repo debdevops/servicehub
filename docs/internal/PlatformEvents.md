@@ -79,7 +79,7 @@ exactly what is needed when adding future providers (Kafka, IBM MQ) or external 
 | `Category` | `string` | Top-level grouping constant from `EventCategories`. |
 | `EventType` | `string` | Dotted canonical name from `EventTypes`. Primary discriminator. |
 | `Severity` | `EventSeverity` | Operational significance (Info / Warning / Error / Critical). |
-| `CloudProvider` | `string?` | Provider string: `"azure"`, `"aws"`, `"gcp"`, `"simulator"`. |
+| `CloudProvider` | `string?` | Provider string: `"azure"`, `"aws"`, `"gcp"`. |
 | `NamespaceId` | `Guid?` | Namespace context, if applicable. |
 | `NamespaceName` | `string?` | Snapshot of namespace display name. |
 | `CorrelationId` | `string?` | Propagated HTTP or job correlation ID. |

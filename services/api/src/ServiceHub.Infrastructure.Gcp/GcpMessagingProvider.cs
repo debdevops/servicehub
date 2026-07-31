@@ -54,6 +54,9 @@ public sealed class GcpMessagingProvider : ICloudMessagingProvider
     public CloudProviderType ProviderType => CloudProviderType.Gcp;
 
     /// <inheritdoc/>
+    public ProviderCapabilities Capabilities => ProviderCapabilities.Gcp;
+
+    /// <inheritdoc/>
     public IMessageReceiver GetMessageReceiver() => _receiver;
 
     /// <inheritdoc/>

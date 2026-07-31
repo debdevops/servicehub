@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Header } from '@/components/layout/Header';
 
 // Mock useNamespaces so Header renders without needing a real API
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: () => ({ data: undefined, isLoading: false }),
   useNamespace: () => ({ data: undefined, isLoading: false }),
   useCreateNamespace: () => ({ mutateAsync: vi.fn(), isPending: false }),

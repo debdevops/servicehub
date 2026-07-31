@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Send, X, Plus, Trash2, Clock, Zap } from 'lucide-react';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues } from '@/hooks/useQueues';
-import { useTopics } from '@/hooks/useTopics';
-import { useSendMessage } from '@/hooks/useMessages';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
+import { useSendMessage } from '@servicehub/ui-shared/hooks/useMessages';
 
 // ============================================================================
 // SendMessageModal - Modal for composing and sending messages
@@ -172,16 +172,23 @@ export function SendMessageModal({
       <div
         className="absolute inset-0 bg-black/50"
         onClick={onClose}
+        aria-hidden="true"
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div
+        className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="send-message-modal-title"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Send Message</h2>
+          <h2 id="send-message-modal-title" className="text-lg font-semibold text-gray-900">Send Message</h2>
           <button
             onClick={onClose}
             className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+            aria-label="Close dialog"
           >
             <X className="w-5 h-5 text-gray-500" />
           </button>
@@ -197,6 +204,7 @@ export function SendMessageModal({
             <select
               value={selectedNamespace}
               onChange={(e) => setSelectedNamespace(e.target.value)}
+              autoFocus
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"
             >
               <option value="">Select namespace...</option>

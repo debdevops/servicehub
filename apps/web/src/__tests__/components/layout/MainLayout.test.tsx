@@ -3,18 +3,24 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { useNamespaces } from '@/hooks/useNamespaces';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 
 vi.mock('@/components/layout/Header', () => ({
   Header: () => <header data-testid="header">Header</header>,
 }));
-vi.mock('@/components/layout/Sidebar', () => ({
-  Sidebar: () => <nav data-testid="sidebar">Sidebar</nav>,
+vi.mock('@/components/layout/IconRail', () => ({
+  IconRail: () => <nav data-testid="icon-rail">IconRail</nav>,
+}));
+vi.mock('@/components/layout/QuickAccessPanel', () => ({
+  QuickAccessPanel: () => <nav data-testid="quick-access-panel">QuickAccessPanel</nav>,
+}));
+vi.mock('@/components/layout/NamespacesPanel', () => ({
+  NamespacesPanel: () => <nav data-testid="namespaces-panel">NamespacesPanel</nav>,
 }));
 vi.mock('@/components/fab', () => ({
   MessageFAB: (_props: any) => <div data-testid="message-fab">FAB</div>,
 }));
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
 
@@ -80,7 +86,7 @@ describe('MainLayout', () => {
     expect(screen.getByTestId('header')).toBeInTheDocument();
   });
 
-  it('renders Sidebar component', () => {
+  it('renders the icon rail, Quick Access, and Namespaces panels', () => {
     const Wrapper = createWrapper();
     render(
       <Wrapper>
@@ -89,7 +95,9 @@ describe('MainLayout', () => {
         </Routes>
       </Wrapper>
     );
-    expect(screen.getByTestId('sidebar')).toBeInTheDocument();
+    expect(screen.getByTestId('icon-rail')).toBeInTheDocument();
+    expect(screen.getByTestId('quick-access-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('namespaces-panel')).toBeInTheDocument();
   });
 
   it('renders main content area', () => {

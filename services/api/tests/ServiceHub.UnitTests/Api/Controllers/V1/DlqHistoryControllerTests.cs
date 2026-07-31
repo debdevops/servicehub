@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -9,6 +10,7 @@ using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Api.Controllers.V1;
@@ -17,17 +19,30 @@ public class DlqHistoryControllerTests
 {
     private readonly Mock<IDlqHistoryService> _historyService = new();
     private readonly Mock<ILogger<DlqHistoryController>> _logger = new();
+    private readonly Mock<IDlqSignatureAnalysisService> _signatureAnalysisService = new();
+    private readonly Mock<INamespaceRepository> _namespaceRepository = new();
+    private readonly IMemoryCache _cache = new MemoryCache(new MemoryCacheOptions());
     private readonly DlqHistoryController _controller;
 
     public DlqHistoryControllerTests()
     {
         _controller = new DlqHistoryController(
             _historyService.Object,
-            _logger.Object);
+            _logger.Object,
+            _signatureAnalysisService.Object,
+            _namespaceRepository.Object,
+            _cache);
         _controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext()
         };
+    }
+
+    private static Namespace CreateOwnedNamespace(Guid id)
+    {
+        var ns = Namespace.Create("test-namespace", "PROTECTED:encrypted-data").Value;
+        typeof(Namespace).GetProperty(nameof(Namespace.Id))!.SetValue(ns, id);
+        return ns;
     }
 
     private static DlqMessage CreateTestMessage(long id = 1)
@@ -64,14 +79,16 @@ public class DlqHistoryControllerTests
     [Fact]
     public void Constructor_NullHistoryService_Throws()
     {
-        var act = () => new DlqHistoryController(null!, _logger.Object);
+        var act = () => new DlqHistoryController(
+            null!, _logger.Object, _signatureAnalysisService.Object, _namespaceRepository.Object, _cache);
         act.Should().Throw<ArgumentNullException>().WithParameterName("historyService");
     }
 
     [Fact]
     public void Constructor_NullLogger_Throws()
     {
-        var act = () => new DlqHistoryController(_historyService.Object, null!);
+        var act = () => new DlqHistoryController(
+            _historyService.Object, null!, _signatureAnalysisService.Object, _namespaceRepository.Object, _cache);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -344,7 +361,10 @@ public class DlqHistoryControllerTests
 
         var controller = new DlqHistoryController(
             _historyService.Object,
-            _logger.Object);
+            _logger.Object,
+            _signatureAnalysisService.Object,
+            _namespaceRepository.Object,
+            _cache);
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { RequestServices = serviceProvider }
@@ -435,5 +455,123 @@ public class DlqHistoryControllerTests
         trend.Should().HaveCount(2);
 
         _historyService.Verify(s => s.GetSummaryAsync(It.IsAny<string>(), nsId, 7, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ── GetSignatures ───────────────────────────────────────
+
+    private static DlqSignatureAnalysisResult CreateAvailableAnalysis() => new(
+        Available: true,
+        Method: "clustered",
+        BatchSize: 5,
+        Clusters:
+        [
+            new DlqClusterSignature(
+                Size: 4,
+                MessageIds: [1, 2, 3, 4],
+                DominantEntity: "orders-queue",
+                DominantDeadletterReason: "MaxDeliveryCountExceeded",
+                DominantDeadletterReasonCount: 4,
+                TopTerms: ["timeout"],
+                IsNew: true,
+                FirstSeenAt: DateTimeOffset.UtcNow,
+                OccurrenceCount: 1,
+                WindowStart: DateTimeOffset.UtcNow.AddHours(-1),
+                WindowEnd: DateTimeOffset.UtcNow,
+                Explanation: "4 messages: max delivery count exceeded on orders-queue.")
+        ],
+        Singletons: [new DlqSingletonSignature(5, "orders-queue", "TTLExpiredException")]);
+
+    [Fact]
+    public void Constructor_NullSignatureAnalysisService_Throws()
+    {
+        var act = () => new DlqHistoryController(
+            _historyService.Object, _logger.Object, null!, _namespaceRepository.Object, _cache);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("signatureAnalysisService");
+    }
+
+    [Fact]
+    public void Constructor_NullNamespaceRepository_Throws()
+    {
+        var act = () => new DlqHistoryController(
+            _historyService.Object, _logger.Object, _signatureAnalysisService.Object, null!, _cache);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("namespaceRepository");
+    }
+
+    [Fact]
+    public void Constructor_NullCache_Throws()
+    {
+        var act = () => new DlqHistoryController(
+            _historyService.Object, _logger.Object, _signatureAnalysisService.Object, _namespaceRepository.Object, null!);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("cache");
+    }
+
+    [Fact]
+    public async Task GetSignatures_Success_ReturnsSignaturesResponse()
+    {
+        var nsId = Guid.NewGuid();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureAnalysisService.Setup(s => s.AnalyzeAsync(It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSignatureAnalysisResult>.Success(CreateAvailableAnalysis()));
+
+        var result = await _controller.GetSignatures(nsId);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<DlqSignaturesResponse>().Subject;
+        response.Available.Should().BeTrue();
+        response.Method.Should().Be("clustered");
+        response.Clusters.Should().HaveCount(1);
+        response.Clusters[0].MessageIds.Should().BeEquivalentTo(new long[] { 1, 2, 3, 4 });
+        response.Singletons.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task GetSignatures_AIUnavailable_Returns200WithAvailableFalse()
+    {
+        var nsId = Guid.NewGuid();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureAnalysisService.Setup(s => s.AnalyzeAsync(It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSignatureAnalysisResult>.Success(new DlqSignatureAnalysisResult(
+                Available: false, Method: null, BatchSize: 5, Clusters: [], Singletons: [])));
+
+        var result = await _controller.GetSignatures(nsId);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<DlqSignaturesResponse>().Subject;
+        response.Available.Should().BeFalse();
+        response.Clusters.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetSignatures_NamespaceNotOwned_ReturnsNotFound()
+    {
+        var nsId = Guid.NewGuid();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("NOT_FOUND", "Namespace not found")));
+
+        var result = await _controller.GetSignatures(nsId);
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+        _signatureAnalysisService.Verify(s => s.AnalyzeAsync(
+            It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetSignatures_SecondCallWithinCacheWindow_DoesNotReanalyze()
+    {
+        var nsId = Guid.NewGuid();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureAnalysisService.Setup(s => s.AnalyzeAsync(It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSignatureAnalysisResult>.Success(CreateAvailableAnalysis()));
+
+        var first = await _controller.GetSignatures(nsId);
+        var second = await _controller.GetSignatures(nsId);
+
+        first.Result.Should().BeOfType<OkObjectResult>();
+        second.Result.Should().BeOfType<OkObjectResult>();
+        _signatureAnalysisService.Verify(s => s.AnalyzeAsync(
+            It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()), Times.Once);
     }
 }

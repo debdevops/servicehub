@@ -131,6 +131,32 @@ public sealed class ConnectionStringProtectorTests
     }
 
     [Fact]
+    public void Mask_WithAwsCredential_ShouldMaskAccessKeyAndSecret()
+    {
+        var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
+        var input = "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\naws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+
+        var masked = protector.Mask(input);
+
+        masked.Should().NotContain("AKIAIOSFODNN7EXAMPLE");
+        masked.Should().NotContain("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
+        masked.Should().Contain("***MASKED***");
+    }
+
+    [Fact]
+    public void Mask_WithGcpServiceAccountJson_ShouldMaskPrivateKey()
+    {
+        var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
+        var input = "{\"type\":\"service_account\",\"private_key_id\":\"abcd1234efgh5678\",\"private_key\":\"-----BEGIN PRIVATE KEY-----\\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwEXAMPLEKEYMATERIAL\\n-----END PRIVATE KEY-----\\n\"}";
+
+        var masked = protector.Mask(input);
+
+        masked.Should().NotContain("abcd1234efgh5678");
+        masked.Should().NotContain("MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwEXAMPLEKEYMATERIAL");
+        masked.Should().Contain("***MASKED***");
+    }
+
+    [Fact]
     public void ProtectAndUnprotect_RoundTrip_ShouldPreserveValue()
     {
         var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, BookOpen, ChevronDown, ChevronRight, Play, HelpCircle, Download, Zap, MessageSquare } from 'lucide-react';
-import { helpSections } from '@/lib/helpContent';
+import { helpSections } from '@servicehub/ui-shared/lib/helpContent';
 import { resetTour } from '@/components/help/GuidedTour';
 
 /**

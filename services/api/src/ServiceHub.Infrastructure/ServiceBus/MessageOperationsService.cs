@@ -373,6 +373,15 @@ public sealed class MessageOperationsService : IMessageOperationsService
                 return Result.Failure(Error.Validation(ErrorCodes.Namespace.NotFound, "Namespace ID is required for batch send."));
             }
 
+            for (var i = 1; i < requestList.Count; i++)
+            {
+                if (requestList[i].NamespaceId != first.NamespaceId)
+                {
+                    return Result.Failure(Error.Validation(ErrorCodes.Namespace.NotFound,
+                        $"All requests in a batch must target the same namespace. Entry at index {i} targets a different namespace."));
+                }
+            }
+
             var (ns, provider) = await ResolveProviderAsync(first.NamespaceId.Value, cancellationToken).ConfigureAwait(false);
             _logger.LogDebug("NamespaceId: {NamespaceId}, Provider: {Provider}, Operation: SendBatch", ns.Id, ns.Provider);
             var sender = GetSender(provider);

@@ -116,4 +116,7 @@ public sealed class DlqMessage
 
     /// <summary>Navigation property: replay history entries.</summary>
     public ICollection<ReplayHistory> ReplayHistories { get; init; } = new List<ReplayHistory>();
+
+    /// <summary>Navigation property: extracted feature snapshot (one per message).</summary>
+    public MessageFeatureRecord? FeatureRecord { get; init; }
 }

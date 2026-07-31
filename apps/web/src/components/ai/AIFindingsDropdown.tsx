@@ -1,6 +1,6 @@
 import { X } from 'lucide-react';
 import { useEffect } from 'react';
-import type { AIInsight } from '@/lib/api/types';
+import type { AIInsight } from '@servicehub/ui-shared/lib/api/types';
 
 // ============================================================================
 // AIFindingsDropdown - Dropdown showing active AI patterns

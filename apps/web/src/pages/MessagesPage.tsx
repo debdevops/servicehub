@@ -1,20 +1,23 @@
 import { useState, useMemo, useEffect, useRef, useDeferredValue } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause } from 'lucide-react';
-import { MessageList, MessageDetailPanel, type QueueTab } from '@/components/messages';
+import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause, Radio, Inbox, Clock, Archive } from 'lucide-react';
+import { MessageList, MessageDetailPanel, LiveTailPanel, type QueueTab } from '@/components/messages';
+import { EmptyState } from '@/components/EmptyState';
 import { AwsTopicFanout } from '@/components/aws/AwsTopicFanout';
 import { AIFindingsDropdown } from '@/components/ai';
 import { MessageListSkeleton } from '@/components/messages/MessageListSkeleton';
 import { HelpTooltip } from '@/components/help';
-import { tooltips } from '@/lib/helpContent';
-import { useMessages } from '@/hooks/useMessages';
-import { useClientSideInsights, useInsightsSummary } from '@/hooks/useInsights';
-import { useQueues } from '@/hooks/useQueues';
-import { useSubscriptions } from '@/hooks/useSubscriptions';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import type { Message, ContentType } from '@/lib/mockData';
-import type { Message as APIMessage, CloudProviderType } from '@/lib/api/types';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
+import { useMessages } from '@servicehub/ui-shared/hooks/useMessages';
+import { useClientSideInsights, useInsightsSummary } from '@servicehub/ui-shared/hooks/useInsights';
+import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
+import type { Message, ContentType } from '@servicehub/ui-shared/lib/mockData';
+import type { Message as APIMessage, CloudProviderType, ApiError } from '@servicehub/ui-shared/lib/api/types';
 import toast from 'react-hot-toast';
 
 const PROVIDER_SERVICE_LABELS: Record<CloudProviderType, string> = {
@@ -181,6 +184,16 @@ export function MessagesPage() {
     }
   }, [isAwsNamespace, namespaceId]);
 
+  // Live Tail
+  const [liveTailOpen, setLiveTailOpen] = useState(false);
+  const currentProvider = namespaces?.find(ns => ns.id === namespaceId)?.cloudProvider;
+  const { data: capabilitiesMap } = useProviderCapabilities();
+  const supportsRepeatablePeek = getProviderCapabilities(capabilitiesMap, currentProvider)?.supportsRepeatablePeek ?? true;
+  const canLiveTail = supportsRepeatablePeek && !isAwsTopicFanout && !!entityName;
+  const supportsScheduledMessages = getProviderCapabilities(capabilitiesMap, currentProvider)?.supportsScheduledMessages ?? true;
+  const canViewScheduled = entityType === 'queue' && !!namespaceId && !!queueName && supportsScheduledMessages;
+  const canViewDlqHistory = queueTab === 'deadletter' && !!namespaceId && !!entityName;
+
   // Pagination constants and state
   const BATCH_SIZE = 50; // Load 50 messages per batch for optimal performance
   const [paginationState, setPaginationState] = useState({ skip: 0, allMessages: [] as APIMessage[] });
@@ -206,6 +219,7 @@ export function MessagesPage() {
       return;
     }
     setSelectedMessageId(null);
+    setEvidenceFilter(null);
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
       next.delete('message');
@@ -390,6 +404,9 @@ export function MessagesPage() {
     return result;
   }, [messages, evidenceFilter, searchQuery, statusFilter]);
 
+  // Whether the empty result set below is due to an active filter rather than a truly empty queue
+  const hasActiveFilter = !!evidenceFilter || !!searchQuery.trim() || statusFilter !== 'all';
+
   // Active AI insights count - prefer client-side analysis, fallback to backend summary
   const activeInsightsCount = displayInsights?.length || insightsSummary?.activeCount || 0;
 
@@ -413,6 +430,7 @@ export function MessagesPage() {
   const handleQueueTabChange = (tab: QueueTab) => {
     setQueueTab(tab);
     setSelectedMessageId(null); // Clear selection when switching tabs
+    setEvidenceFilter(null); // AI pattern message IDs don't carry over across tabs
 
     // Update URL to keep it in sync with tab state (and drop the stale message link)
     const newParams = new URLSearchParams(searchParams);
@@ -494,7 +512,12 @@ export function MessagesPage() {
 
   // Error state
   if (error) {
-    const errorMessage = error instanceof Error ? error.message : 'An error occurred';
+    // Prefer the backend's ProblemDetails "detail" (e.g. the specific reason a GCP Pub/Sub
+    // subscription can't be browsed) over axios's generic "Request failed with status code..."
+    const errorMessage =
+      (error as ApiError)?.response?.data?.detail ||
+      (error as ApiError)?.response?.data?.message ||
+      (error instanceof Error ? error.message : 'An error occurred');
     const isConnectionError = errorMessage.toLowerCase().includes('network') ||
                               errorMessage.toLowerCase().includes('connection') ||
                               errorMessage.toLowerCase().includes('timeout');
@@ -504,7 +527,7 @@ export function MessagesPage() {
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md p-8">
-          <div className="text-6xl mb-4">⚠️</div>
+          <AlertCircle className="w-14 h-14 text-red-400 mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Failed to load messages</h2>
           <p className="text-gray-600 mb-2">{errorMessage}</p>
           {isConnectionError && (
@@ -527,13 +550,12 @@ export function MessagesPage() {
   if (!namespaceId || !entityName) {
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-50">
-        <div className="text-center max-w-md p-8">
-          <div className="text-6xl mb-4">📬</div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">No entity selected</h2>
-          <p className="text-gray-600">
-            Select a queue or topic subscription from the sidebar to view messages
-          </p>
-        </div>
+        <EmptyState
+          icon={Inbox}
+          heading="No entity selected"
+          subtext="Select a queue or topic subscription from the sidebar to view messages."
+          fillHeight={false}
+        />
       </div>
     );
   }
@@ -551,7 +573,7 @@ export function MessagesPage() {
             aria-label="Search messages"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-lg text-sm bg-white border border-gray-300 text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-all"
+            className="w-full pl-10 pr-4 py-2.5 rounded-lg text-sm bg-white border border-gray-300 text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all"
           />
           {searchInput && (
             <button
@@ -664,7 +686,7 @@ export function MessagesPage() {
         </button>
 
         {/* Refresh */}
-        <button 
+        <button
           onClick={handleRefresh}
           className="flex items-center gap-2 px-3 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors relative"
           aria-label="Refresh message list"
@@ -678,6 +700,45 @@ export function MessagesPage() {
             </span>
           )}
         </button>
+
+        {/* Live Tail */}
+        {canLiveTail && (
+          <button
+            onClick={() => setLiveTailOpen(true)}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium transition-colors"
+            aria-label="Open Live Tail"
+            title="Watch new messages arrive in real time"
+          >
+            <Radio className="w-4 h-4" />
+            <span className="hidden sm:inline">Live Tail</span>
+          </button>
+        )}
+
+        {/* Scheduled Messages */}
+        {canViewScheduled && (
+          <button
+            onClick={() => navigate(`/scheduled?namespace=${namespaceId}&queue=${encodeURIComponent(queueName)}`)}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium transition-colors"
+            aria-label="View scheduled messages for this queue"
+            title="View messages scheduled for future delivery in this queue"
+          >
+            <Clock className="w-4 h-4" />
+            <span className="hidden sm:inline">Scheduled</span>
+          </button>
+        )}
+
+        {/* DLQ History */}
+        {canViewDlqHistory && (
+          <button
+            onClick={() => navigate(`/dlq-history?namespace=${namespaceId}&entity=${encodeURIComponent(entityName)}`)}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium transition-colors"
+            aria-label="View DLQ history for this entity"
+            title="View dead-letter history and replay tools for this entity"
+          >
+            <Archive className="w-4 h-4" />
+            <span className="hidden sm:inline">DLQ History</span>
+          </button>
+        )}
       </div>
 
       {/* Evidence Filter Banner */}
@@ -736,6 +797,7 @@ export function MessagesPage() {
           isLoadingMore={isLoadingMore}
           onLoadMore={handleLoadMore}
           isSyncing={isTabSyncing}
+          isFiltered={hasActiveFilter}
           tabLabels={isAwsNamespace ? {
             active: 'Queue',
             deadletter: 'DLQ',
@@ -749,12 +811,21 @@ export function MessagesPage() {
         />
 
         {/* Right: Detail Panel */}
-        <MessageDetailPanel 
-          message={selectedMessage} 
+        <MessageDetailPanel
+          message={selectedMessage}
           onViewPattern={handleViewEvidence}
           insights={displayInsights}
         />
       </div>
+
+      <LiveTailPanel
+        isOpen={liveTailOpen}
+        onClose={() => setLiveTailOpen(false)}
+        namespaceId={namespaceId || ''}
+        entityName={entityType === 'topic' ? (topicName || '') : (queueName || '')}
+        subscriptionName={entityType === 'topic' ? subscriptionName || undefined : undefined}
+        fromDeadLetter={queueTab === 'deadletter'}
+      />
     </div>
   );
 }

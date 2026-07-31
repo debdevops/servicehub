@@ -6,8 +6,9 @@ using ServiceHub.Infrastructure.Security;
 namespace ServiceHub.Api.Filters;
 
 /// <summary>
-/// Authorization filter that enforces API key scope requirements.
-/// Checks if the authenticated API key has the required scope for the endpoint.
+/// Authorization filter that enforces scope requirements. Checks if the authenticated API key
+/// — or, when present, an OIDC Bearer token's <c>scope</c> claim (see
+/// <c>OidcBearerAuthenticationMiddleware</c>) — has the required scope for the endpoint.
 /// </summary>
 public sealed class ScopeAuthorizationFilter : IAsyncAuthorizationFilter
 {
@@ -36,11 +37,39 @@ public sealed class ScopeAuthorizationFilter : IAsyncAuthorizationFilter
             return;
         }
 
-        // SPA token and EasyAuth (Azure AD) authentication grant full access.
-        // Scope restrictions only apply to external API key consumers.
+        // SPA token and EasyAuth (Azure AD) grant unconditional full access — this trust model
+        // predates per-request scoping and only ever applied to the single shared browser/Azure
+        // identity, not something an operator can restrict per-caller.
         if (context.HttpContext.Items.TryGetValue("AuthMethod", out var authMethod)
             && authMethod is "SpaToken" or "EasyAuth")
         {
+            return;
+        }
+
+        // OIDC Bearer identities: enforce scopes if the token carried an OAuth2 'scope' claim
+        // (see OidcBearerAuthenticationMiddleware), otherwise fall back to the same unconditional
+        // full access SPA/EasyAuth get — most identity providers don't emit an app-specific
+        // scope claim without deliberate configuration, so this preserves prior behaviour for
+        // any OIDC deployment that hasn't opted into scoped tokens.
+        if (authMethod is "Oidc")
+        {
+            if (context.HttpContext.Items.TryGetValue("OidcScopes", out var oidcScopesObj)
+                && oidcScopesObj is string[] { Length: > 0 } oidcScopes)
+            {
+                if (!oidcScopes.Any(scope => ApiKeyScopes.Grants(scope, requiredScope)))
+                {
+                    _logger.LogWarning(
+                        "Authorization failed: OIDC identity lacks required scope {Scope} for {Method} {Path}",
+                        requiredScope,
+                        LogRedactor.SanitiseForLog(context.HttpContext.Request.Method),
+                        LogRedactor.SanitiseForLog(context.HttpContext.Request.Path));
+
+                    context.Result = BuildForbidden(context, requiredScope);
+                }
+
+                return;
+            }
+
             return;
         }
 
@@ -79,17 +108,7 @@ public sealed class ScopeAuthorizationFilter : IAsyncAuthorizationFilter
                 LogRedactor.SanitiseForLog(context.HttpContext.Request.Method),
                 LogRedactor.SanitiseForLog(context.HttpContext.Request.Path));
 
-            context.Result = new JsonResult(new
-            {
-                type = "https://tools.ietf.org/html/rfc7231#section-6.5.3",
-                title = "Forbidden",
-                status = 403,
-                detail = $"Insufficient permissions. Required scope: {requiredScope}",
-                correlationId = context.HttpContext.Items["CorrelationId"]?.ToString() ?? "unknown"
-            })
-            {
-                StatusCode = StatusCodes.Status403Forbidden
-            };
+            context.Result = BuildForbidden(context, requiredScope);
             return;
         }
 
@@ -102,6 +121,19 @@ public sealed class ScopeAuthorizationFilter : IAsyncAuthorizationFilter
 
         await Task.CompletedTask;
     }
+
+    private static JsonResult BuildForbidden(AuthorizationFilterContext context, string requiredScope) =>
+        new(new
+        {
+            type = "https://tools.ietf.org/html/rfc7231#section-6.5.3",
+            title = "Forbidden",
+            status = 403,
+            detail = $"Insufficient permissions. Required scope: {requiredScope}",
+            correlationId = context.HttpContext.Items["CorrelationId"]?.ToString() ?? "unknown"
+        })
+        {
+            StatusCode = StatusCodes.Status403Forbidden
+        };
 
     private static string? GetRequiredScope(AuthorizationFilterContext context)
     {

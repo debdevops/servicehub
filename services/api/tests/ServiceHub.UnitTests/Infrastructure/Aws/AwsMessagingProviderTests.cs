@@ -100,6 +100,17 @@ public sealed class AwsMessagingProviderTests
         provider.ProviderType.Should().Be(CloudProviderType.Aws);
     }
 
+    [Fact]
+    public void Capabilities_ReflectsAwsConstraints()
+    {
+        var capabilities = BuildProvider().Capabilities;
+
+        capabilities.SupportsMessageCounts.Should().BeTrue();
+        capabilities.SupportsManualDeadLetter.Should().BeTrue();
+        capabilities.SupportsPurge.Should().BeTrue();
+        capabilities.SupportsScheduledMessages.Should().BeFalse();
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // GetMessageReceiver / GetMessageSender
     // ─────────────────────────────────────────────────────────────────────────

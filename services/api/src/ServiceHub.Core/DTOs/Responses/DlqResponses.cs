@@ -11,6 +11,7 @@ public sealed record DlqHistoryResponse(
     long SequenceNumber,
     string BodyHash,
     Guid NamespaceId,
+    string CloudProvider,
     string EntityName,
     string EntityType,
     DateTimeOffset EnqueuedTimeUtc,
@@ -28,6 +29,7 @@ public sealed record DlqHistoryResponse(
     DateTimeOffset? ReplayedAt,
     bool? ReplaySuccess,
     DateTimeOffset? ArchivedAt,
+    DateTimeOffset? ResolvedAt,
     string? UserNotes,
     string? CorrelationId,
     string? TopicName,
@@ -44,6 +46,7 @@ public sealed record DlqMessageDetailResponse(
     long SequenceNumber,
     string BodyHash,
     Guid NamespaceId,
+    string CloudProvider,
     string EntityName,
     string EntityType,
     DateTimeOffset EnqueuedTimeUtc,
@@ -62,6 +65,7 @@ public sealed record DlqMessageDetailResponse(
     DateTimeOffset? ReplayedAt,
     bool? ReplaySuccess,
     DateTimeOffset? ArchivedAt,
+    DateTimeOffset? ResolvedAt,
     string? UserNotes,
     string? CorrelationId,
     string? SessionId,
@@ -124,3 +128,10 @@ public sealed record DlqTrendPointResponse(
 /// Request DTO for updating notes on a DLQ message.
 /// </summary>
 public sealed record UpdateDlqNotesRequest(string Notes);
+
+/// <summary>
+/// Request DTO for triaging a DLQ message (status transition).
+/// </summary>
+/// <param name="Status">Target lifecycle status (Active, Archived, Discarded, Resolved).</param>
+/// <param name="Notes">Optional notes to record alongside the transition.</param>
+public sealed record UpdateDlqStatusRequest(DlqMessageStatus Status, string? Notes = null);

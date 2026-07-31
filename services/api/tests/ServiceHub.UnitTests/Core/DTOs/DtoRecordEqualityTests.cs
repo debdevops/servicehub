@@ -29,14 +29,14 @@ public class DtoRecordEqualityTests
 
         var a = new DlqMessageDetailResponse(
             Id: 42, MessageId: "m1", SequenceNumber: 99, BodyHash: "h",
-            NamespaceId: nsId, EntityName: "q1", EntityType: "Queue",
+            NamespaceId: nsId, CloudProvider: "azure", EntityName: "q1", EntityType: "Queue",
             EnqueuedTimeUtc: now, DeadLetterTimeUtc: now, DetectedAtUtc: now,
             DeadLetterReason: "MaxDelivery", DeadLetterErrorDescription: "desc",
             DeliveryCount: 10, ContentType: "application/json", MessageSize: 512,
             BodyPreview: "{}", ApplicationPropertiesJson: "{\"a\":1}",
             FailureCategory: "Transient", CategoryConfidence: 0.9,
             Status: "Active", ReplayedAt: null, ReplaySuccess: null,
-            ArchivedAt: null, UserNotes: "note", CorrelationId: "c1",
+            ArchivedAt: null, ResolvedAt: null, UserNotes: "note", CorrelationId: "c1",
             SessionId: "s1", TopicName: null, ReplayHistory: replayHistory);
 
         var b = a with { Id = 42 }; // identical copy
@@ -385,14 +385,14 @@ public class DtoRecordEqualityTests
         var nsId = Guid.NewGuid();
         var r = new DlqHistoryResponse(
             Id: 1, MessageId: "m1", SequenceNumber: 1, BodyHash: "h",
-            NamespaceId: nsId, EntityName: "q1", EntityType: "Queue",
+            NamespaceId: nsId, CloudProvider: "azure", EntityName: "q1", EntityType: "Queue",
             EnqueuedTimeUtc: now, DeadLetterTimeUtc: now, DetectedAtUtc: now,
             DeadLetterReason: "R", DeadLetterErrorDescription: "D",
             DeliveryCount: 5, ContentType: "json", MessageSize: 100,
             BodyPreview: "{}", FailureCategory: "Transient",
             CategoryConfidence: 0.8, Status: "Active",
             ReplayedAt: null, ReplaySuccess: null, ArchivedAt: null,
-            UserNotes: null, CorrelationId: null, TopicName: null,
+            ResolvedAt: null, UserNotes: null, CorrelationId: null, TopicName: null,
             ForensicRootCause: null, ForensicConfidence: 0.0,
             ReplaySafety: null);
 
@@ -471,14 +471,14 @@ public class DtoRecordEqualityTests
     {
         return new DlqMessageDetailResponse(
             Id: 1, MessageId: messageId, SequenceNumber: 1, BodyHash: "h",
-            NamespaceId: Guid.NewGuid(), EntityName: "q1", EntityType: "Queue",
+            NamespaceId: Guid.NewGuid(), CloudProvider: "azure", EntityName: "q1", EntityType: "Queue",
             EnqueuedTimeUtc: now, DeadLetterTimeUtc: now, DetectedAtUtc: now,
             DeadLetterReason: null, DeadLetterErrorDescription: null,
             DeliveryCount: 1, ContentType: null, MessageSize: 100,
             BodyPreview: null, ApplicationPropertiesJson: null,
             FailureCategory: "Unknown", CategoryConfidence: 0,
             Status: "Active", ReplayedAt: null, ReplaySuccess: null,
-            ArchivedAt: null, UserNotes: null, CorrelationId: null,
+            ArchivedAt: null, ResolvedAt: null, UserNotes: null, CorrelationId: null,
             SessionId: null, TopicName: null,
             ReplayHistory: new List<ReplayHistoryResponse>());
     }

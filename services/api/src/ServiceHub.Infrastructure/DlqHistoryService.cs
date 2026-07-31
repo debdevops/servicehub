@@ -239,6 +239,84 @@ public sealed class DlqHistoryService : IDlqHistoryService
         }
     }
 
+    // Manual triage may only move a message to one of these lifecycle states. Replayed /
+    // ReplayFailed are outcomes of the replay flow and must not be settable by hand, so a
+    // "Replayed" status always corresponds to a real replay attempt.
+    private static readonly HashSet<DlqMessageStatus> ManualTriageTargets =
+    [
+        DlqMessageStatus.Active,
+        DlqMessageStatus.Archived,
+        DlqMessageStatus.Discarded,
+        DlqMessageStatus.Resolved
+    ];
+
+    /// <inheritdoc />
+    public async Task<Result<DlqMessage>> UpdateStatusAsync(
+        string ownerId,
+        long id,
+        DlqMessageStatus newStatus,
+        string? notes = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!ManualTriageTargets.Contains(newStatus))
+        {
+            return Result<DlqMessage>.Failure(Error.Validation(
+                "Dlq.InvalidStatusTransition",
+                $"'{newStatus}' is not a valid triage status. Allowed: Active, Archived, Discarded, Resolved."));
+        }
+
+        try
+        {
+            var message = await _dbContext.DlqMessages
+                .FirstOrDefaultAsync(m => m.Id == id && m.OwnerId == ownerId, cancellationToken);
+            if (message == null)
+                return Result<DlqMessage>.Failure(Error.NotFound("Dlq.NotFound", $"DLQ message with ID {id} was not found"));
+
+            var now = DateTimeOffset.UtcNow;
+            message.Status = newStatus;
+
+            // Each transition stamps its own timestamp and clears the other, so a message
+            // moving e.g. Archived -> Resolved doesn't retain a stale ArchivedAt.
+            switch (newStatus)
+            {
+                case DlqMessageStatus.Archived:
+                    message.ArchivedAt = now;
+                    message.ResolvedAt = null;
+                    break;
+                case DlqMessageStatus.Resolved:
+                case DlqMessageStatus.Discarded:
+                    message.ResolvedAt = now;
+                    message.ArchivedAt = null;
+                    break;
+                case DlqMessageStatus.Active:
+                    // Re-opening a triaged message: clear the resolution stamps.
+                    message.ArchivedAt = null;
+                    message.ResolvedAt = null;
+                    break;
+            }
+
+            if (!string.IsNullOrWhiteSpace(notes))
+            {
+                message.UserNotes = string.IsNullOrWhiteSpace(message.UserNotes)
+                    ? notes
+                    : $"{message.UserNotes}{Environment.NewLine}{notes}";
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation(
+                "DLQ message {Id} triaged to {Status} for owner {OwnerId}", id, newStatus, ownerId);
+
+            return message;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update status for DLQ message {Id}", id);
+            return Result<DlqMessage>.Failure(
+                Error.Internal("Dlq.UpdateFailed", $"Failed to update status: {ex.Message}"));
+        }
+    }
+
     /// <inheritdoc />
     public async Task<Result<DlqSummary>> GetSummaryAsync(
         string ownerId, Guid? namespaceId = null, int days = 30, CancellationToken cancellationToken = default)
@@ -299,28 +377,26 @@ public sealed class DlqHistoryService : IDlqHistoryService
                 .Select(m => m.ReplayedAt!.Value)
                 .ToListAsync(cancellationToken);
 
-            var dailyNew = detectedTimestamps
+            var dailyNewByDate = detectedTimestamps
                 .GroupBy(d => d.UtcDateTime.Date)
-                .Select(g => new { Date = g.Key, Count = g.Count() })
-                .OrderBy(x => x.Date)
-                .ToList();
+                .ToDictionary(g => g.Key, g => g.Count());
 
-            var dailyResolved = replayedTimestamps
+            var dailyResolvedByDate = replayedTimestamps
                 .GroupBy(d => d.UtcDateTime.Date)
-                .Select(g => new { Date = g.Key, Count = g.Count() })
-                .OrderBy(x => x.Date)
-                .ToList();
+                .ToDictionary(g => g.Key, g => g.Count());
 
-            var allDates = dailyNew.Select(d => d.Date)
-                .Union(dailyResolved.Select(d => d.Date))
-                .OrderBy(d => d)
-                .ToList();
-
-            var trend = allDates.Select(date => new DlqTrendPoint(
-                Date: new DateTimeOffset(date, TimeSpan.Zero),
-                NewMessages: dailyNew.FirstOrDefault(d => d.Date == date)?.Count ?? 0,
-                ResolvedMessages: dailyResolved.FirstOrDefault(d => d.Date == date)?.Count ?? 0
-            )).ToList();
+            // Zero-fill every day in the window — mirrors FleetOverviewService.BuildTrend —
+            // so the trend is a continuous daily series instead of only the days that had activity.
+            var trendStartDate = DateTimeOffset.UtcNow.UtcDateTime.Date.AddDays(-(days - 1));
+            var trend = new List<DlqTrendPoint>(days);
+            for (var i = 0; i < days; i++)
+            {
+                var day = trendStartDate.AddDays(i);
+                trend.Add(new DlqTrendPoint(
+                    Date: new DateTimeOffset(day, TimeSpan.Zero),
+                    NewMessages: dailyNewByDate.GetValueOrDefault(day, 0),
+                    ResolvedMessages: dailyResolvedByDate.GetValueOrDefault(day, 0)));
+            }
 
             var summary = new DlqSummary(
                 TotalMessages: total,

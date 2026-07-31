@@ -120,6 +120,29 @@ public sealed class CloudBridgeControllerTests : IClassFixture<CloudBridgeTestFa
     }
 
     // -------------------------------------------------------------------------
+    // GET /api/v1/cloud-bridge/capabilities
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetCapabilities_ReturnsAllThreeProviders_EvenWithFlagsDisabled()
+    {
+        // Capabilities are provider-type-inherent facts, not tied to a live registration —
+        // this factory disables both AWS and GCP flags, so this proves the endpoint doesn't
+        // depend on ICloudMessagingProvider registration to answer "what does GCP support?".
+        var response = await _client.GetAsync("/api/v1/cloud-bridge/capabilities");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        root.GetProperty("Azure").GetProperty("supportsPurge").GetBoolean().Should().BeFalse();
+        root.GetProperty("Aws").GetProperty("supportsPurge").GetBoolean().Should().BeTrue();
+        root.GetProperty("Gcp").GetProperty("supportsMessageCounts").GetBoolean().Should().BeFalse();
+        root.GetProperty("Gcp").GetProperty("supportsManualDeadLetter").GetBoolean().Should().BeFalse();
+    }
+
+    // -------------------------------------------------------------------------
     // GET /api/v1/cloud-bridge/namespaces/{id}/entities?provider=Aws
     // -------------------------------------------------------------------------
 

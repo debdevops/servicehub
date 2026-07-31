@@ -125,6 +125,17 @@ public sealed class GcpMessagingProviderTests
         provider.ProviderType.Should().Be(CloudProviderType.Gcp);
     }
 
+    [Fact]
+    public void Capabilities_ReflectsGcpConstraints()
+    {
+        var capabilities = BuildProvider().Capabilities;
+
+        capabilities.SupportsMessageCounts.Should().BeFalse();
+        capabilities.SupportsManualDeadLetter.Should().BeFalse();
+        capabilities.SupportsPurge.Should().BeTrue();
+        capabilities.SupportsScheduledMessages.Should().BeFalse();
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // GetMessageReceiver / GetMessageSender
     // ─────────────────────────────────────────────────────────────────────────

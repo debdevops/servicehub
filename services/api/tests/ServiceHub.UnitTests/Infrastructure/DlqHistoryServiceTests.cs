@@ -395,6 +395,56 @@ public class DlqHistoryServiceTests : IDisposable
         result365.Value.DailyTrend.Sum(t => t.NewMessages).Should().Be(2);
     }
 
+    [Fact]
+    public async Task GetSummary_TrendIsZeroFilledForEveryDayInWindow()
+    {
+        var nsId = Guid.NewGuid();
+
+        // Only two days have activity within the 7-day window, several days apart —
+        // the trend must still be a continuous daily series, not just the days with data.
+        var today = new DlqMessage
+        {
+            MessageId = "msg-today",
+            SequenceNumber = 1,
+            BodyHash = "hash-today",
+            NamespaceId = nsId,
+            OwnerId = TestConstants.TestOwnerId,
+            EntityName = "test-queue",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddHours(-2),
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            DeliveryCount = 10,
+            MessageSize = 256,
+            FailureCategory = FailureCategory.Transient,
+            Status = DlqMessageStatus.Active
+        };
+        var fourDaysAgo = new DlqMessage
+        {
+            MessageId = "msg-old",
+            SequenceNumber = 2,
+            BodyHash = "hash-old",
+            NamespaceId = nsId,
+            OwnerId = TestConstants.TestOwnerId,
+            EntityName = "test-queue",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddDays(-4),
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddDays(-4),
+            DeliveryCount = 10,
+            MessageSize = 256,
+            FailureCategory = FailureCategory.Transient,
+            Status = DlqMessageStatus.Active
+        };
+        _dbContext.DlqMessages.AddRange(today, fourDaysAgo);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetSummaryAsync(TestConstants.TestOwnerId, namespaceId: nsId, days: 7);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.DailyTrend.Should().HaveCount(7);
+        result.Value.DailyTrend.Sum(t => t.NewMessages).Should().Be(2);
+        result.Value.DailyTrend.Count(t => t.NewMessages == 0).Should().Be(5);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-5)]
@@ -514,6 +564,117 @@ public class DlqHistoryServiceTests : IDisposable
     public async Task LookupAsync_NotFound_ReturnsFailure()
     {
         var result = await _service.LookupAsync(Guid.NewGuid(), "no-such-queue", 99999);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Dlq.NotFound");
+    }
+
+    // ── UpdateStatusAsync (triage) ──────────────────────────
+
+    [Theory]
+    [InlineData(DlqMessageStatus.Archived)]
+    [InlineData(DlqMessageStatus.Discarded)]
+    [InlineData(DlqMessageStatus.Resolved)]
+    public async Task UpdateStatusAsync_ValidTarget_TransitionsAndStampsTimestamps(DlqMessageStatus target)
+    {
+        var msg = CreateMessage(seq: 1, status: DlqMessageStatus.Active);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.UpdateStatusAsync(TestConstants.TestOwnerId, msg.Id, target);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(target);
+        if (target == DlqMessageStatus.Archived)
+            result.Value.ArchivedAt.Should().NotBeNull();
+        else
+            result.Value.ResolvedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_ReopenToActive_ClearsResolutionStamps()
+    {
+        var msg = CreateMessage(seq: 2, status: DlqMessageStatus.Archived);
+        msg.ArchivedAt = DateTimeOffset.UtcNow.AddDays(-1);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.UpdateStatusAsync(TestConstants.TestOwnerId, msg.Id, DlqMessageStatus.Active);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(DlqMessageStatus.Active);
+        result.Value.ArchivedAt.Should().BeNull();
+        result.Value.ResolvedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_AppendsNotes_WhenProvided()
+    {
+        var msg = CreateMessage(seq: 3, status: DlqMessageStatus.Active);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.UpdateStatusAsync(
+            TestConstants.TestOwnerId, msg.Id, DlqMessageStatus.Resolved, "fixed upstream");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.UserNotes.Should().Be("fixed upstream");
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_AppendsNotes_ToExistingNotes()
+    {
+        var msg = CreateMessage(seq: 4, status: DlqMessageStatus.Active);
+        msg.UserNotes = "investigating";
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.UpdateStatusAsync(
+            TestConstants.TestOwnerId, msg.Id, DlqMessageStatus.Resolved, "fixed upstream");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.UserNotes.Should().Be($"investigating{Environment.NewLine}fixed upstream");
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_ArchivedToResolved_ClearsArchivedAt()
+    {
+        var msg = CreateMessage(seq: 5, status: DlqMessageStatus.Archived);
+        msg.ArchivedAt = DateTimeOffset.UtcNow.AddDays(-1);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.UpdateStatusAsync(
+            TestConstants.TestOwnerId, msg.Id, DlqMessageStatus.Resolved);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ArchivedAt.Should().BeNull();
+        result.Value.ResolvedAt.Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData(DlqMessageStatus.Replayed)]
+    [InlineData(DlqMessageStatus.ReplayFailed)]
+    public async Task UpdateStatusAsync_ReplayOutcomeTarget_IsRejected(DlqMessageStatus target)
+    {
+        var msg = CreateMessage(seq: 4, status: DlqMessageStatus.Active);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.UpdateStatusAsync(TestConstants.TestOwnerId, msg.Id, target);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Dlq.InvalidStatusTransition");
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_WrongOwner_ReturnsNotFound()
+    {
+        var msg = CreateMessage(seq: 5, status: DlqMessageStatus.Active);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.UpdateStatusAsync("someone-else", msg.Id, DlqMessageStatus.Resolved);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("Dlq.NotFound");

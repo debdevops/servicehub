@@ -2,16 +2,18 @@ import { useState, useEffect, useCallback } from 'react';
 import { Outlet, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Header } from './Header';
-import { Sidebar } from './Sidebar';
+import { IconRail } from './IconRail';
+import { QuickAccessPanel } from './QuickAccessPanel';
+import { NamespacesPanel } from './NamespacesPanel';
 import { Footer } from './Footer';
 import { DemoModeBanner } from './DemoModeBanner';
 import { MessageFAB } from '@/components/fab';
 import { GuidedTour, isTourCompleted } from '@/components/help/GuidedTour';
 import { CommandPalette } from '@/components/CommandPalette';
 import { KeyboardShortcutsOverlay } from '@/components/KeyboardShortcutsOverlay';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { getThemeProvider, setThemeProvider, subscribeThemeProvider } from '@/lib/providerTheme';
-import { useDemoContext } from '@/lib/demo/DemoContext';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { getThemeProvider, setThemeProvider, subscribeThemeProvider } from '@servicehub/ui-shared/lib/providerTheme';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 
 export function MainLayout() {
   const { isDemoMode } = useDemoContext();
@@ -140,11 +142,17 @@ export function MainLayout() {
 
       {/* Main Content Area */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <Sidebar />
+        {/* Slim icon-only nav rail — always visible */}
+        <IconRail />
+
+        {/* Quick Access — first panel, collapsible/resizable/draggable */}
+        <QuickAccessPanel />
+
+        {/* Namespaces / Connections — second panel, independently resizable */}
+        <NamespacesPanel />
 
         {/* Content */}
-        <main className="flex-1 overflow-hidden flex flex-col">
+        <main className="flex-1 overflow-hidden flex flex-col min-w-0">
           <Outlet />
         </main>
       </div>

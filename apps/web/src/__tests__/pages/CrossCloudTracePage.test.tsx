@@ -4,11 +4,11 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CrossCloudTracePage } from '@/pages/CrossCloudTracePage';
 
-vi.mock('@/hooks/useCrossCloudTrace', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useCrossCloudTrace', () => ({
   useCrossCloudTrace: vi.fn(),
 }));
 
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
 
@@ -16,8 +16,8 @@ vi.mock('react-hot-toast', () => ({
   default: { error: vi.fn(), success: vi.fn() },
 }));
 
-import { useCrossCloudTrace } from '@/hooks/useCrossCloudTrace';
-import { useNamespaces } from '@/hooks/useNamespaces';
+import { useCrossCloudTrace } from '@servicehub/ui-shared/hooks/useCrossCloudTrace';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 
 const mockUseCrossCloudTrace = useCrossCloudTrace as ReturnType<typeof vi.fn>;
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;

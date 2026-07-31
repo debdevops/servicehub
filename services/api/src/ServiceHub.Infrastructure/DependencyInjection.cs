@@ -3,12 +3,16 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.AI;
 using ServiceHub.Infrastructure.BackgroundServices;
+using ServiceHub.Infrastructure.BulkOperations;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Persistence.InMemory;
+using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Infrastructure.Events;
 using ServiceHub.Infrastructure.Events.Handlers;
@@ -42,7 +46,7 @@ public static class DependencyInjection
         services.AddSecurity(configuration);
 
         // AI
-        services.AddAI();
+        services.AddAI(configuration);
 
         // Webhooks
         services.AddWebhooks(configuration);
@@ -70,11 +74,20 @@ public static class DependencyInjection
         services.TryAddScoped<IMessageSender, MessageSender>();
         services.TryAddScoped<IMessageReceiver, MessageReceiver>();
         services.AddScoped<IMessageOperationsService, MessageOperationsService>();
+        services.AddScoped<Core.Interfaces.ILiveTailSessionFactory, LiveTail.LiveTailSessionFactory>();
+        services.AddSingleton<Core.Interfaces.ILiveTailConnectionLimiter, LiveTail.LiveTailConnectionLimiter>();
 
         // Router depends on all registered ICloudMessagingProvider implementations.
         // Scoped (not singleton) because live providers such as AzureMessagingProvider are
         // scoped — a root-built singleton cannot resolve them under scope validation.
         services.TryAddScoped(sp => new ServiceHub.Infrastructure.Routing.CloudProviderRouter(sp.GetServices<ICloudMessagingProvider>()));
+
+        // Also expose ICloudProviderRouter to the same scoped instance, so the Api layer
+        // (controllers) can depend on the Core interface instead of the concrete
+        // Infrastructure type — mirrors the IPlatformEventBus/InProcessPlatformEventBus
+        // pattern below. Infrastructure-internal consumers keep resolving the concrete type.
+        services.TryAddScoped<Core.Interfaces.ICloudProviderRouter>(
+            sp => sp.GetRequiredService<ServiceHub.Infrastructure.Routing.CloudProviderRouter>());
 
         // Health check
         services.AddHealthChecks()
@@ -86,8 +99,6 @@ public static class DependencyInjection
     /// <summary>
     /// Registers the Azure Service Bus <see cref="ICloudMessagingProvider"/> so the
     /// <c>CloudProviderRouter</c> can dispatch operations for Azure namespaces.
-    /// Do not call this in Simulator mode — <c>AddSimulatorProviders()</c> registers a
-    /// simulated Azure provider and the router rejects duplicate provider types.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The service collection for chaining.</returns>
@@ -136,24 +147,41 @@ public static class DependencyInjection
     /// </para>
     /// </summary>
     /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration (optional).</param>
     /// <returns>The service collection for chaining.</returns>
-    public static IServiceCollection AddAI(this IServiceCollection services)
+    public static IServiceCollection AddAI(this IServiceCollection services, IConfiguration? configuration = null)
     {
+        services.Configure<Core.Models.AIServiceOptions>(opts =>
+            configuration?.GetSection(Core.Models.AIServiceOptions.SectionName).Bind(opts));
+
+        services.AddHttpClient(AI.AIServiceClient.HttpClientName, (sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptions<Core.Models.AIServiceOptions>>().Value;
+            if (Uri.TryCreate(options.ServiceUrl, UriKind.Absolute, out var baseUri))
+            {
+                client.BaseAddress = baseUri;
+            }
+
+            client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+        });
+
         services.TryAddSingleton<IAIServiceClient, AIServiceClient>();
 
         return services;
     }
 
     /// <summary>
-    /// Adds background services for message polling and anomaly detection.
+    /// Adds background services for anomaly detection, DLQ monitoring, bulk operations, and
+    /// audit-log retention.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddBackgroundWorkers(this IServiceCollection services)
     {
-        services.AddHostedService<MessagePollingWorker>();
         services.AddHostedService<AnomalyDetectionWorker>();
         services.AddHostedService<DlqMonitorWorker>();
+        services.AddHostedService<BulkOperationWorker>();
+        services.AddHostedService<AuditRetentionWorker>();
 
         return services;
     }
@@ -194,17 +222,38 @@ public static class DependencyInjection
         });
 
         // Register DLQ services
+        services.TryAddSingleton<DlqNotMonitoredLogGuard>();
         services.TryAddScoped<IDlqMonitorService, DlqMonitorService>();
         services.TryAddScoped<IDlqHistoryService, DlqHistoryService>();
+        services.TryAddScoped<INamespaceSignatureLookupService, NamespaceSignatureLookupService>();
+        services.TryAddScoped<IDlqSignatureAnalysisService, AI.DlqSignatureAnalysisService>();
+        services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();
+
+        // Forensic engine — base engine registered both unkeyed (so provider-specific decorators
+        // like AwsForensicEngine/GcpForensicEngine can resolve it as their base-engine dependency)
+        // and keyed under CloudProviderType.Azure (so ForensicEngineRouter can resolve it
+        // uniformly alongside any provider-specific engines registered elsewhere). Callers that
+        // need provider-aware dispatch should depend on IForensicEngineRouter, not IForensicEngine
+        // directly — see DlqMonitorService.
         services.TryAddScoped<IForensicEngine, ForensicEngine>();
+        services.TryAddKeyedScoped<IForensicEngine, ForensicEngine>(CloudProviderType.Azure);
+        services.TryAddScoped<IForensicEngineRouter, ForensicEngineRouter>();
 
         // Audit Trail — registered as singleton so the channel is shared across all
         // request scopes. The BackgroundService lifetime matches the application lifetime.
         services.AddSingleton<AuditService>();
         services.AddSingleton<IAuditService>(sp => sp.GetRequiredService<AuditService>());
         services.AddHostedService(sp => sp.GetRequiredService<AuditService>());
+
+        // Bulk Operations — the queue is a singleton (process-wide hand-off + cancellation
+        // registry, mirrors AuditService/InProcessPlatformEventBus); the service and executor
+        // are scoped like every other DlqDbContext-backed service. The worker itself is
+        // registered by AddBackgroundWorkers(), not here — same split DlqMonitorWorker uses.
+        services.TryAddSingleton<IBulkOperationQueue, BulkOperationQueue>();
+        services.TryAddScoped<IBulkOperationService, BulkOperationService>();
+        services.TryAddScoped<IBulkOperationExecutor, BulkOperationExecutor>();
 
         return services;
     }
@@ -220,6 +269,13 @@ public static class DependencyInjection
     {
         services.Configure<WebhookOptions>(opts =>
             configuration?.GetSection(WebhookOptions.SectionName).Bind(opts));
+
+        // One IWebhookMessageFormatter per WebhookFormat — WebhookNotifier selects among them
+        // at send time based on WebhookOptions.Format. A future destination format is a new
+        // registration here, not a change to WebhookNotifier or any existing formatter.
+        services.AddSingleton<Core.Interfaces.IWebhookMessageFormatter, Webhooks.GenericWebhookFormatter>();
+        services.AddSingleton<Core.Interfaces.IWebhookMessageFormatter, Webhooks.SlackWebhookFormatter>();
+        services.AddSingleton<Core.Interfaces.IWebhookMessageFormatter, Webhooks.TeamsWebhookFormatter>();
 
         services.AddHttpClient<IWebhookNotifier, WebhookNotifier>(client =>
         {
@@ -265,6 +321,10 @@ public static class DependencyInjection
         // safely resolve the scoped IWebhookNotifier dependency.
         services.AddSingleton<WebhookDlqSpikeHandler>();
 
+        // WebhookBulkOperationCompletedHandler bridges BulkOperationCompleted events to
+        // IWebhookNotifier — same pattern as WebhookDlqSpikeHandler above.
+        services.AddSingleton<WebhookBulkOperationCompletedHandler>();
+
         return services;
     }
 
@@ -280,5 +340,8 @@ public static class DependencyInjection
         var bus = serviceProvider.GetRequiredService<Core.Interfaces.IPlatformEventBus>();
         var webhookHandler = serviceProvider.GetRequiredService<WebhookDlqSpikeHandler>();
         bus.Subscribe(webhookHandler.HandleAsync);
+
+        var bulkOperationWebhookHandler = serviceProvider.GetRequiredService<WebhookBulkOperationCompletedHandler>();
+        bus.Subscribe(bulkOperationWebhookHandler.HandleAsync);
     }
 }
