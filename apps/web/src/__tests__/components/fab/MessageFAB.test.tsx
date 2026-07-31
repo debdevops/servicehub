@@ -45,7 +45,7 @@ vi.mock('@/components/fab/MessageGeneratorModal', () => ({
     ) : null,
 }));
 
-vi.mock('@/lib/api/messages', () => ({
+vi.mock('@servicehub/ui-shared/lib/api/messages', () => ({
   messagesApi: {
     deadLetter: vi.fn().mockResolvedValue({ deadLetteredCount: 3 }),
   },
@@ -223,7 +223,7 @@ describe('MessageFAB', () => {
   });
 
   it.each(['aws', 'gcp'] as const)('dead-letters messages for %s namespaces when Test DLQ is clicked', async (provider) => {
-    const { messagesApi } = await import('@/lib/api/messages');
+    const { messagesApi } = await import('@servicehub/ui-shared/lib/api/messages');
     renderFAB({ cloudProvider: provider });
     await userEvent.click(screen.getByTitle('Open message menu'));
     await userEvent.click(screen.getByText('Test DLQ'));

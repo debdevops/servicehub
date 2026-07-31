@@ -5,20 +5,20 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MessagesPage } from '@/pages/MessagesPage';
 
 // Mock hooks
-vi.mock('@/hooks/useMessages', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useMessages', () => ({
   useMessages: vi.fn(),
 }));
-vi.mock('@/hooks/useInsights', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useInsights', () => ({
   useClientSideInsights: vi.fn(),
   useInsightsSummary: vi.fn(),
 }));
-vi.mock('@/hooks/useQueues', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({
   useQueues: vi.fn(),
 }));
-vi.mock('@/hooks/useSubscriptions', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useSubscriptions', () => ({
   useSubscriptions: vi.fn(),
 }));
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
 
@@ -34,6 +34,7 @@ vi.mock('@/components/messages', () => ({
     </div>
   ),
   MessageDetailPanel: () => <div data-testid="message-detail-panel" />,
+  LiveTailPanel: () => <div data-testid="live-tail-panel" />,
 }));
 vi.mock('@/components/messages/MessageListSkeleton', () => ({
   MessageListSkeleton: () => <div data-testid="message-list-skeleton" />,
@@ -48,11 +49,11 @@ vi.mock('react-hot-toast', () => ({
   default: { success: vi.fn(), error: vi.fn() },
 }));
 
-import { useMessages } from '@/hooks/useMessages';
-import { useClientSideInsights, useInsightsSummary } from '@/hooks/useInsights';
-import { useQueues } from '@/hooks/useQueues';
-import { useSubscriptions } from '@/hooks/useSubscriptions';
-import { useNamespaces } from '@/hooks/useNamespaces';
+import { useMessages } from '@servicehub/ui-shared/hooks/useMessages';
+import { useClientSideInsights, useInsightsSummary } from '@servicehub/ui-shared/hooks/useInsights';
+import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 
 const mockUseMessages = useMessages as ReturnType<typeof vi.fn>;
 const mockUseClientSideInsights = useClientSideInsights as ReturnType<typeof vi.fn>;

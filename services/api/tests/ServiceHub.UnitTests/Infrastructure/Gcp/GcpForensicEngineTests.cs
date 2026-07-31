@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
@@ -71,7 +72,7 @@ public sealed class GcpForensicEngineTests
 
         result.Category.Should().Be(FailureCategory.MaxDelivery);
         result.Confidence.Should().BeApproximately(0.99, 0.01);
-        result.ReplaySafety.Should().Be("ManualReviewRequired");
+        result.ReplaySafety.Should().Be(ReplaySafetyLevels.RequiresReview);
         result.Tier.Should().Be("GCP-Deterministic");
         baseEngine.Verify(e => e.Analyse(It.IsAny<DlqMessage>()), Times.Never);
     }

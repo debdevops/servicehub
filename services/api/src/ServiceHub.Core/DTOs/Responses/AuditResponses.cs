@@ -46,3 +46,6 @@ public sealed record AuditSummaryResponse(
     int PartialCount,
     int ActiveUsers,
     double SuccessRate);
+
+/// <summary>Response for an on-demand audit log retention purge.</summary>
+public sealed record PurgeAuditLogsResponse(int DeletedCount, DateTimeOffset CutoffUtc);

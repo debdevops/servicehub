@@ -3,9 +3,9 @@ import { Send, Wand2, Plus, X, Skull, RefreshCw } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { SendMessageModal, type MessagePayload } from './SendMessageModal';
 import { MessageGeneratorModal } from './MessageGeneratorModal';
-import { messagesApi } from '@/lib/api/messages';
+import { messagesApi } from '@servicehub/ui-shared/lib/api/messages';
 import toast from 'react-hot-toast';
-import type { CloudProviderType } from '@/lib/api/types';
+import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 
 // ============================================================================
 // MessageFAB - Enhanced Floating Action Button with multiple actions

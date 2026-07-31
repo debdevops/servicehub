@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { PropertiesTab } from '@/components/messages/tabs/PropertiesTab';
-import type { Message } from '@/lib/mockData';
+import type { Message } from '@servicehub/ui-shared/lib/mockData';
 
 function renderWithRouter(ui: React.ReactElement) {
   return render(<MemoryRouter>{ui}</MemoryRouter>);

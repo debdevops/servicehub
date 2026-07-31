@@ -1,34 +1,38 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
-import { Clock, RefreshCw, XCircle, Calendar, AlertCircle, Inbox, CalendarClock, Plus, Info } from 'lucide-react';
+import { Clock, RefreshCw, XCircle, Calendar, AlertCircle, Inbox, CalendarClock, Plus, Info, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { useNamespaces } from '@/hooks/useNamespaces';
-import { useQueues } from '@/hooks/useQueues';
-import { useScheduledMessages, useCancelScheduledMessage } from '@/hooks/useScheduledMessages';
-import { useSendMessage } from '@/hooks/useMessages';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useScheduledMessages, useCancelScheduledMessage } from '@servicehub/ui-shared/hooks/useScheduledMessages';
+import { useSendMessage } from '@servicehub/ui-shared/hooks/useMessages';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CopyButton } from '@/components/CopyButton';
-import { ProviderBadge, getProviderStyle } from '@/lib/providerStyles';
-import { apiClient } from '@/lib/api/client';
-import { Message, Namespace } from '@/lib/api/types';
+import { ProviderBadge, getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
+import { apiClient } from '@servicehub/ui-shared/lib/api/client';
+import { Message, Namespace } from '@servicehub/ui-shared/lib/api/types';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import toast from 'react-hot-toast';
 
-// Native message scheduling is an Azure Service Bus feature. SQS tops out at a
-// 15-minute DelaySeconds and Pub/Sub has no per-message scheduling at all, so
-// those providers get an explanatory panel instead of an empty table.
-const SCHEDULING_UNSUPPORTED: Record<string, { title: string; detail: string }> = {
-  aws: {
-    title: 'AWS SQS does not support scheduled messages',
-    detail:
-      'SQS only offers DelaySeconds (max 15 minutes) at send time. For real scheduling on AWS, use EventBridge Scheduler to publish into the queue at the target time.',
-  },
-  gcp: {
-    title: 'GCP Pub/Sub does not support scheduled messages',
-    detail:
-      'Pub/Sub has no per-message scheduling. Use Cloud Tasks or Cloud Scheduler to publish into the topic at the target time.',
-  },
-};
+/**
+ * Derives the "scheduling unsupported" panel copy from the shared provider-capabilities
+ * API (`GET /cloud-bridge/capabilities`) instead of a hardcoded per-provider map, so a
+ * future provider that also lacks scheduled messages is handled automatically.
+ */
+function useSchedulingUnsupported(namespace: Namespace | undefined | null) {
+  const { data: capabilitiesMap } = useProviderCapabilities();
+  const capabilities = getProviderCapabilities(capabilitiesMap, namespace?.cloudProvider);
+  if (!capabilities || capabilities.supportsScheduledMessages) return undefined;
+
+  const providerLabel = getProviderStyle(namespace?.cloudProvider).label;
+  return {
+    title: `${providerLabel} does not support scheduled messages`,
+    detail: capabilities.notes,
+  };
+}
 
 function NamespaceScheduleWidget({
   namespace,
@@ -40,7 +44,8 @@ function NamespaceScheduleWidget({
   onSelect: () => void;
 }) {
   const style = getProviderStyle(namespace.cloudProvider);
-  const unsupported = SCHEDULING_UNSUPPORTED[namespace.cloudProvider ?? 'azure'];
+  const unsupported = useSchedulingUnsupported(namespace);
+  const { isDemoMode } = useDemoContext();
   const { data: stats } = useQuery({
     queryKey: ['namespace-stats', namespace.id] as const,
     queryFn: async () => {
@@ -50,7 +55,7 @@ function NamespaceScheduleWidget({
       );
       return response.data;
     },
-    enabled: !unsupported,
+    enabled: !isDemoMode && !unsupported,
     staleTime: 30_000,
     refetchIntervalInBackground: false,
   });
@@ -253,6 +258,14 @@ function ScheduleNewMessageModal({ namespaceId, queueName, onClose }: ScheduleNe
 
   const minValue = new Date(Date.now() + 30_000).toISOString().slice(0, 16);
 
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [busy, onClose]);
+
   const handleSchedule = async () => {
     if (!messageBody.trim()) {
       toast.error('Message body cannot be empty');
@@ -294,21 +307,26 @@ function ScheduleNewMessageModal({ namespaceId, queueName, onClose }: ScheduleNe
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-        <div className="bg-sky-600 text-white px-6 py-4 flex items-center justify-between">
+  return createPortal(
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="schedule-new-message-title"
+    >
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div className="flex items-center gap-2">
-            <Plus className="w-5 h-5" />
-            <span className="font-semibold">Schedule New Message</span>
+            <Plus className="w-5 h-5 text-sky-600" />
+            <h2 id="schedule-new-message-title" className="text-base font-semibold text-gray-900">Schedule New Message</h2>
           </div>
           <button
             onClick={onClose}
             disabled={busy}
-            className="hover:bg-white/20 p-1 rounded disabled:opacity-50"
+            className="p-1 text-gray-400 hover:text-gray-600 rounded-lg disabled:opacity-50"
             aria-label="Close"
           >
-            <XCircle className="w-5 h-5" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -413,7 +431,8 @@ function ScheduleNewMessageModal({ namespaceId, queueName, onClose }: ScheduleNe
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -555,9 +574,7 @@ export function ScheduledMessagesPage() {
   const { data: queues } = useQueues(selectedNamespaceId);
 
   const selectedNamespace = namespaces?.find((ns) => ns.id === selectedNamespaceId);
-  const unsupported = selectedNamespace
-    ? SCHEDULING_UNSUPPORTED[selectedNamespace.cloudProvider ?? 'azure']
-    : undefined;
+  const unsupported = useSchedulingUnsupported(selectedNamespace);
 
   const {
     data: paginatedMessages,
@@ -731,25 +748,25 @@ export function ScheduledMessagesPage() {
         ) : (
           <div className="p-6">
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <table className="w-full text-left">
-                <thead>
+              <table className="w-full text-left" aria-label="Scheduled messages">
+                <thead className="sticky top-0 z-10 bg-gray-50">
                   <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Message ID
                     </th>
-                    <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Body Preview
                     </th>
-                    <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Scheduled For
                     </th>
-                    <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Delivers In
                     </th>
-                    <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Size
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Action
                     </th>
                   </tr>

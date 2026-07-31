@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { AIFindingsDropdown } from '@/components/ai/AIFindingsDropdown';
-import type { AIInsight } from '@/lib/api/types';
+import type { AIInsight } from '@servicehub/ui-shared/lib/api/types';
 
 const makeInsight = (overrides: Partial<AIInsight> = {}): AIInsight => ({
   id: 'ins-1',

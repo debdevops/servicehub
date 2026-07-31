@@ -27,24 +27,41 @@ public sealed class InMemoryMessagingProvider : ICloudMessagingProvider
     private readonly MockMessageStore _store;
     private readonly MockMessageReceiver _receiver;
     private readonly MockMessageSender _sender;
+    private readonly CloudProviderType _providerType;
 
     /// <summary>
     /// Initialises a new instance of <see cref="InMemoryMessagingProvider"/>.
     /// </summary>
-    public InMemoryMessagingProvider(MockMessageStore store)
+    /// <param name="store">The in-memory message store.</param>
+    /// <param name="providerType">
+    /// Which provider this instance stands in for. Defaults to <see cref="CloudProviderType.Azure"/>
+    /// for backward compatibility with existing single-argument construction; pass
+    /// <see cref="CloudProviderType.Aws"/> or <see cref="CloudProviderType.Gcp"/> so
+    /// <see cref="Capabilities"/> reports that provider's real constraints instead of Azure's.
+    /// </param>
+    public InMemoryMessagingProvider(MockMessageStore store, CloudProviderType providerType = CloudProviderType.Azure)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _providerType = providerType;
         _receiver = new MockMessageReceiver(_store);
         _sender = new MockMessageSender(_store);
     }
 
     /// <inheritdoc/>
+    public CloudProviderType ProviderType => _providerType;
+
+    /// <inheritdoc/>
     /// <remarks>
-    /// Returns <see cref="CloudProviderType.Azure"/> so that it acts as a transparent in-process
-    /// stand-in for the real Azure provider during development and testing.  When AWS and GCP
-    /// providers are implemented in Phase 2 this value can be made configurable.
+    /// Returns the preset matching <see cref="ProviderType"/> — an AWS-flavoured instance reports
+    /// <see cref="ProviderCapabilities.Aws"/>, not the Azure default, so capability-gated UI (Live
+    /// Tail, scheduled messages, purge) behaves correctly when this stands in for a non-Azure provider.
     /// </remarks>
-    public CloudProviderType ProviderType => CloudProviderType.Azure;
+    public ProviderCapabilities Capabilities => _providerType switch
+    {
+        CloudProviderType.Aws => ProviderCapabilities.Aws,
+        CloudProviderType.Gcp => ProviderCapabilities.Gcp,
+        _ => ProviderCapabilities.Azure,
+    };
 
     /// <summary>
     /// Returns <see langword="true"/> when the mock provider should handle the given namespace.

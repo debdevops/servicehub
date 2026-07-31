@@ -29,6 +29,15 @@ public sealed class DlqDbContext : DbContext
     /// <summary>Persistent audit trail entries.</summary>
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
+    /// <summary>Bulk replay/purge operation jobs.</summary>
+    public DbSet<BulkOperationJob> BulkOperationJobs => Set<BulkOperationJob>();
+
+    /// <summary>Structured feature snapshots captured per DLQ message at scan time.</summary>
+    public DbSet<MessageFeatureRecord> MessageFeatureRecords => Set<MessageFeatureRecord>();
+
+    /// <summary>Tracks whether a DLQ error cluster's signature has been seen before in a namespace.</summary>
+    public DbSet<NamespaceSignature> NamespaceSignatures => Set<NamespaceSignature>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -40,6 +49,9 @@ public sealed class DlqDbContext : DbContext
         ConfigureReplayHistory(modelBuilder);
         ConfigureAutoReplayRule(modelBuilder);
         ConfigureAuditLog(modelBuilder);
+        ConfigureBulkOperationJob(modelBuilder);
+        ConfigureMessageFeatureRecord(modelBuilder);
+        ConfigureNamespaceSignature(modelBuilder);
     }
 
     private static void ApplyUtcDateTimeConverters(ModelBuilder modelBuilder)
@@ -325,5 +337,166 @@ public sealed class DlqDbContext : DbContext
 
         entity.HasIndex(e => e.Action)
             .HasDatabaseName("IX_AuditLogs_Action");
+    }
+
+    private static void ConfigureBulkOperationJob(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<BulkOperationJob>();
+
+        entity.ToTable("BulkOperationJobs");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.OperationType)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.Status)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        entity.Property(e => e.NamespaceDisplayName)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.EntityNameFilter)
+            .HasMaxLength(512);
+
+        entity.Property(e => e.StatusFilter)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        entity.Property(e => e.CategoryFilter)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        entity.Property(e => e.FailureSampleJson)
+            .HasMaxLength(8192);
+
+        entity.Property(e => e.ErrorSummary)
+            .HasMaxLength(2048);
+
+        entity.Property(e => e.CorrelationId)
+            .HasMaxLength(256);
+
+        // Owner-scoped job history, most recent first — the list endpoint's primary access path.
+        entity.HasIndex(e => new { e.OwnerId, e.CreatedAt })
+            .HasDatabaseName("IX_BulkOperationJobs_Owner_CreatedAt");
+
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.CreatedAt })
+            .HasDatabaseName("IX_BulkOperationJobs_Owner_Namespace_CreatedAt");
+
+        // Worker startup scan for jobs left Pending/Running across a restart.
+        entity.HasIndex(e => e.Status)
+            .HasDatabaseName("IX_BulkOperationJobs_Status");
+    }
+
+    private static void ConfigureMessageFeatureRecord(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<MessageFeatureRecord>();
+
+        entity.ToTable("MessageFeatureRecords");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.Id)
+            .ValueGeneratedOnAdd();
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.Provider)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.EntityName)
+            .HasMaxLength(512)
+            .IsRequired();
+
+        entity.Property(e => e.DeadletterReason)
+            .HasMaxLength(1024)
+            .IsRequired();
+
+        entity.Property(e => e.ExceptionType)
+            .HasMaxLength(512)
+            .IsRequired();
+
+        entity.Property(e => e.ContentType)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.PayloadShape)
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.ErrorTextNormalised)
+            .HasMaxLength(8192)
+            .IsRequired();
+
+        entity.Property(e => e.SchemaFingerprint)
+            .HasMaxLength(32)
+            .IsRequired();
+
+        // Cascade so feature rows can never outlive their parent message — the same
+        // mechanism ReplayHistories relies on for its own cleanup (ConfigureReplayHistory).
+        entity.HasOne(e => e.DlqMessage)
+            .WithOne(m => m.FeatureRecord)
+            .HasForeignKey<MessageFeatureRecord>(e => e.DlqMessageId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        entity.HasIndex(e => e.DlqMessageId)
+            .IsUnique()
+            .HasDatabaseName("IX_MessageFeatureRecords_DlqMessageId");
+
+        // Query shapes clustering/baselining will use.
+        entity.HasIndex(e => new { e.NamespaceId, e.CapturedAt })
+            .HasDatabaseName("IX_MessageFeatureRecords_Namespace_CapturedAt");
+
+        entity.HasIndex(e => new { e.NamespaceId, e.EntityName })
+            .HasDatabaseName("IX_MessageFeatureRecords_Namespace_EntityName");
+    }
+
+    private static void ConfigureNamespaceSignature(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<NamespaceSignature>();
+
+        entity.ToTable("NamespaceSignatures");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.Id)
+            .ValueGeneratedOnAdd();
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.SignatureHash)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        entity.Property(e => e.DominantDeadletterReason)
+            .HasMaxLength(1024)
+            .IsRequired();
+
+        entity.Property(e => e.TopTermsJson)
+            .HasMaxLength(2048)
+            .IsRequired();
+
+        // One row per distinct signature per namespace per owner — the upsert key. Includes
+        // OwnerId (unlike the task's literal (NamespaceId, SignatureHash) spec) because
+        // Namespace.SharedWithOwnerIds means two owners can legitimately observe the same
+        // hash in the same namespace and must get independent, isolated rows.
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.SignatureHash })
+            .IsUnique()
+            .HasDatabaseName("IX_NamespaceSignatures_Owner_Namespace_SignatureHash");
+
+        // Owner-scoped queries.
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId })
+            .HasDatabaseName("IX_NamespaceSignatures_Owner_Namespace");
     }
 }

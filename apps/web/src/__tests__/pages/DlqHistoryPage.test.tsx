@@ -4,12 +4,15 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DlqHistoryPage } from '@/pages/DlqHistoryPage';
 
-vi.mock('@/hooks/useDlqHistory', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useDlqHistory', () => ({
   useDlqHistory: vi.fn(),
   useDlqSummary: vi.fn(),
 }));
-vi.mock('@/hooks/useNamespaces', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
+}));
+vi.mock('@servicehub/ui-shared/hooks/useCloudBridge', () => ({
+  useProviderCapabilities: vi.fn(),
 }));
 vi.mock('@/components/dlq', () => ({
   DlqHistoryTable: ({ items, isLoading }: { items: any[]; isLoading: boolean }) => (
@@ -21,8 +24,16 @@ vi.mock('@/components/dlq', () => ({
     messageId ? <div data-testid="timeline-drawer">Timeline {messageId}</div> : null,
   StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,
   CategoryBadge: ({ category }: { category: string }) => <span>{category}</span>,
+  BulkOperationPreviewModal: ({ operationType, onJobCreated }: { operationType: string; onJobCreated: (jobId: string) => void }) => (
+    <div data-testid="bulk-preview-modal">
+      Preview: {operationType}
+      <button onClick={() => onJobCreated('job-1')}>Confirm</button>
+    </div>
+  ),
+  BulkOperationProgressPanel: () => <div data-testid="bulk-progress-panel">Progress</div>,
+  DlqSignaturesPanel: () => <div data-testid="dlq-signatures-panel" />,
 }));
-vi.mock('@/lib/api/dlqHistory', () => ({
+vi.mock('@servicehub/ui-shared/lib/api/dlqHistory', () => ({
   dlqHistoryApi: {
     downloadExport: vi.fn(() => Promise.resolve()),
     triggerScan: vi.fn(),
@@ -32,18 +43,24 @@ vi.mock('react-hot-toast', () => ({
   default: { success: vi.fn(), error: vi.fn() },
 }));
 
-import { useDlqHistory, useDlqSummary } from '@/hooks/useDlqHistory';
-import { useNamespaces } from '@/hooks/useNamespaces';
+import { useDlqHistory, useDlqSummary } from '@servicehub/ui-shared/hooks/useDlqHistory';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 import userEvent from '@testing-library/user-event';
-import { dlqHistoryApi } from '@/lib/api/dlqHistory';
+import { dlqHistoryApi } from '@servicehub/ui-shared/lib/api/dlqHistory';
 
 const mockUseDlqHistory = useDlqHistory as ReturnType<typeof vi.fn>;
 const mockUseDlqSummary = useDlqSummary as ReturnType<typeof vi.fn>;
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
+const mockUseProviderCapabilities = useProviderCapabilities as ReturnType<typeof vi.fn>;
 
 const mockNamespaces = [
-  { id: 'ns1', name: 'my-namespace', displayName: 'My Namespace', isActive: true },
+  { id: 'ns1', name: 'my-namespace', displayName: 'My Namespace', isActive: true, environment: 'dev', cloudProvider: 'aws' },
 ];
+
+const mockCapabilitiesMap = {
+  Aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, notes: '' },
+};
 
 const mockDlqData = {
   items: [
@@ -70,6 +87,7 @@ const mockSummary = {
   replayedMessages: 10,
   archivedMessages: 3,
   totalMessages: 18,
+  byCategory: { MaxDelivery: 7, Transient: 3 },
 };
 
 function createWrapper(initialPath = '/dlq-history?namespace=ns1') {
@@ -88,6 +106,7 @@ beforeEach(() => {
   mockUseNamespaces.mockReturnValue({ data: mockNamespaces });
   mockUseDlqHistory.mockReturnValue({ data: mockDlqData, isLoading: false, refetch: vi.fn(), isFetching: false });
   mockUseDlqSummary.mockReturnValue({ data: mockSummary });
+  mockUseProviderCapabilities.mockReturnValue({ data: mockCapabilitiesMap });
 });
 
 describe('DlqHistoryPage', () => {
@@ -222,5 +241,101 @@ describe('DlqHistoryPage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><DlqHistoryPage /></Wrapper>);
     expect(screen.queryByText('Replayed')).not.toBeInTheDocument();
+  });
+
+  describe('Failure category breakdown', () => {
+    it('renders a chip per non-zero category, sorted by count descending', () => {
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      expect(screen.getByText('By Failure Category')).toBeInTheDocument();
+      const maxDelivery = screen.getByRole('button', { name: /MaxDelivery · 7/ });
+      const transient = screen.getByRole('button', { name: /Transient · 3/ });
+      expect(maxDelivery).toBeInTheDocument();
+      expect(transient).toBeInTheDocument();
+    });
+
+    it('does not render when byCategory is empty or missing', () => {
+      mockUseDlqSummary.mockReturnValue({ data: { ...mockSummary, byCategory: {} } });
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+      expect(screen.queryByText('By Failure Category')).not.toBeInTheDocument();
+    });
+
+    it('sets the category filter chip when a category is clicked', async () => {
+      const user = userEvent.setup();
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      await user.click(screen.getByRole('button', { name: /MaxDelivery · 7/ }));
+
+      expect(screen.getByText('Category: MaxDelivery')).toBeInTheDocument();
+    });
+
+    it('toggles the category filter off when the active category is clicked again', async () => {
+      const user = userEvent.setup();
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      await user.click(screen.getByRole('button', { name: /MaxDelivery · 7/ }));
+      expect(screen.getByText('Category: MaxDelivery')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /MaxDelivery · 7/ }));
+      expect(screen.queryByText('Category: MaxDelivery')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Bulk operations', () => {
+    it('enables Bulk Replay and Bulk Purge for a dev namespace whose provider supports purge', () => {
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      expect(screen.getByRole('button', { name: /Bulk Replay/ })).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: /Bulk Purge/ })).not.toBeDisabled();
+    });
+
+    it('disables both bulk actions for a production namespace', () => {
+      mockUseNamespaces.mockReturnValue({
+        data: [{ ...mockNamespaces[0], environment: 'prod' }],
+      });
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      expect(screen.getByRole('button', { name: /Bulk Replay/ })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Bulk Purge/ })).toBeDisabled();
+    });
+
+    it('disables Bulk Purge (but not Bulk Replay) when the provider does not support purge', () => {
+      mockUseProviderCapabilities.mockReturnValue({
+        data: { Aws: { ...mockCapabilitiesMap.Aws, supportsPurge: false, notes: 'Purge not supported' } },
+      });
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      expect(screen.getByRole('button', { name: /Bulk Replay/ })).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: /Bulk Purge/ })).toBeDisabled();
+    });
+
+    it('opens the preview modal for the correct operation type when clicked', async () => {
+      const user = userEvent.setup();
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      await user.click(screen.getByRole('button', { name: /Bulk Replay/ }));
+
+      expect(screen.getByTestId('bulk-preview-modal')).toHaveTextContent('Preview: Replay');
+    });
+
+    it('disables both bulk actions once a job is created, until dismissed', async () => {
+      const user = userEvent.setup();
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      await user.click(screen.getByRole('button', { name: /Bulk Replay/ }));
+      await user.click(screen.getByRole('button', { name: /Confirm/ }));
+
+      expect(screen.getByRole('button', { name: /Bulk Replay/ })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Bulk Purge/ })).toBeDisabled();
+    });
   });
 });

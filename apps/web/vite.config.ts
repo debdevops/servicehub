@@ -11,8 +11,10 @@ const appVersion = fs.readFileSync(path.resolve(__dirname, '../../.version'), 'u
  * Vite plugin that injects a SPA token <meta> tag into index.html during
  * development. Fetches a fresh HMAC token from the API's /internal/spa-token
  * endpoint on every page load, mirroring what SpaTokenInjectionMiddleware
- * does in production. This ensures local dev also requires auth — Postman
- * callers who copy URLs from DevTools will get 401.
+ * does in production. The token is a CSRF/automation mitigation, not
+ * authentication — anyone who fetches the page (curl included) can read
+ * and replay it. It does still stop the common case of copying a bare
+ * endpoint URL out of DevTools without also copying the header.
  */
 function spaTokenDevPlugin(): Plugin {
   return {
@@ -39,9 +41,9 @@ function spaTokenDevPlugin(): Plugin {
 
 // https://vite.dev/config/
 // Allow the proxy target to be overridden at dev-server startup time via a
-// shell environment variable.  This is used in CI (e2e-simulator job) where
-// the .NET API listens on a different port (5200) instead of the default 5153.
-// The browser always talks to Vite on port 3000 so there are no CORS issues.
+// shell environment variable, for cases where the .NET API listens on a
+// different port than the default 5153. The browser always talks to Vite
+// on port 3000 so there are no CORS issues.
 const apiProxyTarget = process.env.VITE_PROXY_TARGET ?? 'http://localhost:5153';
 
 export default defineConfig({
@@ -52,6 +54,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
+      '@servicehub/ui-shared': resolve(__dirname, '../../packages/servicehub-ui-shared/src'),
     },
   },
   server: {
@@ -96,9 +99,20 @@ export default defineConfig({
         // Code splitting strategy: extract heavy dependencies and pages into separate chunks
         // This reduces initial bundle size and improves cold-start performance on Azure App Service
         manualChunks: (id: string) => {
-          // Vendor chunk for heavy UI libraries
-          if (id.includes('node_modules/recharts') || 
-              id.includes('node_modules/@tanstack/react-table') || 
+          // Vendor chunk for heavy UI libraries. recharts pulls in a sizeable transitive
+          // dependency graph (victory-vendor, redux, immer, the d3-* family) that Rollup
+          // would otherwise resolve into whichever lazy page chunk imports recharts first
+          // (observed: page-dashboard ballooning to 557kB while FleetPage's own recharts
+          // usage stayed at 13kB) — group them here so the weight is shared and cached once.
+          if (id.includes('node_modules/recharts') ||
+              id.includes('node_modules/victory-vendor') ||
+              id.includes('node_modules/d3-') ||
+              id.includes('node_modules/@reduxjs') ||
+              id.includes('node_modules/react-redux') ||
+              id.includes('node_modules/redux') ||
+              id.includes('node_modules/immer') ||
+              id.includes('node_modules/es-toolkit') ||
+              id.includes('node_modules/@tanstack/react-table') ||
               id.includes('node_modules/@tanstack/react-virtual')) {
             return 'vendor-ui';
           }
@@ -119,7 +133,10 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
-    alias: { '@': resolve(__dirname, './src') },
+    alias: {
+      '@': resolve(__dirname, './src'),
+      '@servicehub/ui-shared': resolve(__dirname, '../../packages/servicehub-ui-shared/src'),
+    },
     // Exclude Playwright E2E specs — they are run by `npm run test:e2e`, not Vitest
     exclude: ['e2e/**', 'node_modules/**'],
     coverage: {
@@ -136,26 +153,6 @@ export default defineConfig({
         'src/assets/**',
         // barrel re-export files have no testable logic
         'src/**/index.ts',
-        // pure mock/fixture data — not application logic
-        'src/lib/mockData.ts',
-        'src/lib/aiMockData.ts',
-        'src/lib/insightsMockData.ts',
-        'src/lib/awsMockData.ts',
-        'src/lib/gcpMockData.ts',
-        'src/lib/azureMockData.ts',
-        // test/demo message generator — not application logic
-        'src/lib/messageGenerator.ts',
-        // TypeScript type definitions only — no runtime code
-        'src/lib/api/types.ts',
-        // single-line QueryClient instantiation
-        'src/lib/queryClient.ts',
-        // thin API wrapper — no testable logic beyond axios delegation
-        'src/lib/api/crossCloudTrace.ts',
-        // demo / showcase pages — pure UI display with hardcoded data, no business logic
-        'src/pages/AwsDemoPage.tsx',
-        'src/pages/GcpDemoPage.tsx',
-        'src/pages/AzureDemoPage.tsx',
-        'src/pages/SimulatorPage.tsx',
       ],
       // ── Code Coverage Thresholds ────────────────────────────────────────
       // BUILD WILL FAIL if coverage falls below these minimums

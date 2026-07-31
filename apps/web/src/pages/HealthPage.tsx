@@ -1,4 +1,6 @@
-import { useHealthVersion, useHealthStatus, useHealthReport } from '@/hooks/useHealth';
+import { useHealthVersion, useHealthStatus, useHealthReport } from '@servicehub/ui-shared/hooks/useHealth';
+import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
+import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import {
   Activity,
   Server,
@@ -6,7 +8,16 @@ import {
   HardDrive,
   Clock,
   RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
+
+// Maps a health-check entry name (registered in Program.cs / AwsDependencyInjection /
+// GcpDependencyInjection) to the provider it reports connectivity for, if any.
+const CHECK_PROVIDER: Record<string, CloudProviderType> = {
+  servicebus: 'azure',
+  'aws-connectivity': 'aws',
+  'gcp-connectivity': 'gcp',
+};
 
 function formatUptime(isoDuration: string): string {
   // Parse .NET TimeSpan format: "d.hh:mm:ss.fffffff" or "hh:mm:ss.fffffff"
@@ -26,7 +37,7 @@ function formatUptime(isoDuration: string): string {
 function checkStatusStyle(status: string): { pill: string; dot: string } {
   switch (status) {
     case 'Healthy':
-      return { pill: 'bg-green-100 text-green-700', dot: 'bg-green-500' };
+      return { pill: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' };
     case 'Degraded':
       return { pill: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' };
     default:
@@ -48,7 +59,7 @@ function StatCard({
   color: string;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+    <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
       <div className="flex items-center gap-3 mb-3">
         <div className={`p-2 rounded-lg ${color}`}>
           <Icon className="w-5 h-5 text-white" />
@@ -78,7 +89,12 @@ export function HealthPage() {
   const { data: report, refetch: refetchReport } = useHealthReport();
 
   const isLoading = versionLoading || statusLoading;
-  const hasError = versionError || statusError;
+  const hasError = Boolean(versionError || statusError);
+  const hasData = Boolean(version || status);
+  // A transient poll failure shouldn't blank out a dashboard that's already showing
+  // good cached data — only fall back to the full-page error when there's nothing to show.
+  const showFullPageError = hasError && !isLoading && !hasData;
+  const showStaleWarning = hasError && !isLoading && hasData;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -110,7 +126,7 @@ export function HealthPage() {
           </div>
         )}
 
-        {hasError && !isLoading && (
+        {showFullPageError && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
             <p className="text-red-700 font-medium">
               Unable to reach the API server
@@ -121,20 +137,27 @@ export function HealthPage() {
           </div>
         )}
 
-        {!isLoading && !hasError && (
+        {!isLoading && !showFullPageError && (
           <>
+            {showStaleWarning && (
+              <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 mb-4 text-sm text-amber-700">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                Unable to refresh from the API — showing last known data.
+              </div>
+            )}
+
             {/* Health badge */}
             <div className="flex items-center gap-3 mb-6">
               <span
                 className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${
                   status?.isHealthy
-                    ? 'bg-green-100 text-green-700'
+                    ? 'bg-emerald-100 text-emerald-700'
                     : 'bg-red-100 text-red-700'
                 }`}
               >
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    status?.isHealthy ? 'bg-green-500' : 'bg-red-500'
+                    status?.isHealthy ? 'bg-emerald-500' : 'bg-red-500'
                   }`}
                 />
                 {status?.isHealthy ? 'Healthy' : 'Unhealthy'}
@@ -197,12 +220,14 @@ export function HealthPage() {
                 <div className="divide-y divide-gray-100">
                   {Object.entries(report.entries).map(([name, entry]) => {
                     const style = checkStatusStyle(entry.status);
+                    const provider = CHECK_PROVIDER[name];
                     return (
                       <div
                         key={name}
                         className="flex items-center px-5 py-2.5 text-sm gap-3"
                       >
-                        <span className="w-40 text-gray-900 font-medium shrink-0">
+                        <span className="w-40 flex items-center gap-1.5 text-gray-900 font-medium shrink-0">
+                          {provider && <ProviderIcon provider={provider} className="w-3.5 h-3.5 shrink-0" />}
                           {name}
                         </span>
                         <span
@@ -211,10 +236,19 @@ export function HealthPage() {
                           <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
                           {entry.status}
                         </span>
-                        {entry.description && (
-                          <span className="text-gray-500 truncate">
-                            {entry.description}
-                          </span>
+                        {(entry.description || entry.exception) && (
+                          <div className="min-w-0 flex flex-col gap-0.5">
+                            {entry.description && (
+                              <span className="text-gray-500 truncate">
+                                {entry.description}
+                              </span>
+                            )}
+                            {entry.exception && (
+                              <span className="text-red-500 text-xs truncate">
+                                {entry.exception}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
                     );

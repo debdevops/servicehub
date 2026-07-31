@@ -5,7 +5,7 @@
  * each provider shows the correct credential fields, and that Azure is the default.
  * No real credentials are submitted — tests do NOT call the backend.
  */
-import { test, expect } from '../fixtures/simulator';
+import { test, expect } from '../fixtures/base';
 
 test('connect page shows cloud provider selector', async ({ page }) => {
   await page.goto('/connect');

@@ -53,6 +53,9 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
     public CloudProviderType ProviderType => CloudProviderType.Aws;
 
     /// <inheritdoc/>
+    public ProviderCapabilities Capabilities => ProviderCapabilities.Aws;
+
+    /// <inheritdoc/>
     public IMessageReceiver GetMessageReceiver() => _receiver;
 
     /// <inheritdoc/>

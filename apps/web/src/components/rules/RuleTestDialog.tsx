@@ -1,7 +1,7 @@
 import { X, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
-import { useTestRule } from '@/hooks/useRules';
-import type { RuleCondition, RuleResponse, RuleTestResponse } from '@/lib/api/rules';
-import { useState } from 'react';
+import { useTestRule } from '@servicehub/ui-shared/hooks/useRules';
+import type { RuleCondition, RuleResponse, RuleTestResponse } from '@servicehub/ui-shared/lib/api/rules';
+import { useState, useEffect } from 'react';
 
 interface RuleTestDialogProps {
   open: boolean;
@@ -46,18 +46,35 @@ export function RuleTestDialog({
     setResult(null);
   }
 
+  // Handle Escape key to close dialog
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && open) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   const title = rule ? `Test Rule: ${rule.name}` : 'Test Rule Conditions';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4">
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rule-test-dialog-title"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-bold text-gray-900">{title}</h2>
+          <h2 id="rule-test-dialog-title" className="text-lg font-bold text-gray-900">{title}</h2>
           <button
             onClick={onClose}
+            aria-label="Close dialog"
             className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="w-5 h-5 text-gray-500" />

@@ -4,8 +4,9 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NamespaceCard } from '@/pages/DashboardPage';
 
-vi.mock('@/hooks/useQueues', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({
   useQueues: vi.fn(),
+  useNamespaceStats: vi.fn(),
 }));
 
 const mockNavigate = vi.fn();
@@ -14,9 +15,10 @@ vi.mock('react-router-dom', async () => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
-import { useQueues } from '@/hooks/useQueues';
+import { useQueues, useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
 
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;
+const mockUseNamespaceStats = useNamespaceStats as ReturnType<typeof vi.fn>;
 
 const mockNamespace = {
   id: 'ns1',
@@ -66,6 +68,7 @@ describe('NamespaceCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseQueues.mockReturnValue({ data: mockQueues, isLoading: false, isError: false });
+    mockUseNamespaceStats.mockReturnValue([{ data: undefined, isLoading: false, isError: false }]);
   });
 
   it('renders namespace display name', async () => {
@@ -85,7 +88,7 @@ describe('NamespaceCard', () => {
 
   it('shows Healthy status when DLQ count is within threshold', async () => {
     render(<NamespaceCard namespace={mockNamespace} />, { wrapper: createWrapper() });
-    expect(await screen.findByText('✅ Healthy')).toBeInTheDocument();
+    expect(await screen.findByText('Healthy')).toBeInTheDocument();
   });
 
   it('shows DLQ spike banner when DLQ count exceeds threshold', async () => {

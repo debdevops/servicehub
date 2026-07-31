@@ -4,13 +4,13 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HealthPage } from '@/pages/HealthPage';
 
-vi.mock('@/hooks/useHealth', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useHealth', () => ({
   useHealthVersion: vi.fn(),
   useHealthStatus: vi.fn(),
   useHealthReport: vi.fn(),
 }));
 
-import { useHealthVersion, useHealthStatus, useHealthReport } from '@/hooks/useHealth';
+import { useHealthVersion, useHealthStatus, useHealthReport } from '@servicehub/ui-shared/hooks/useHealth';
 
 const mockUseHealthVersion = useHealthVersion as ReturnType<typeof vi.fn>;
 const mockUseHealthStatus = useHealthStatus as ReturnType<typeof vi.fn>;
@@ -210,6 +210,40 @@ describe('HealthPage', () => {
     expect(screen.getByText('Degraded')).toBeInTheDocument();
     expect(screen.getByText('aws-connectivity')).toBeInTheDocument();
     expect(screen.getByText('All AWS SQS namespaces are unreachable.')).toBeInTheDocument();
+  });
+
+  it('renders the exception detail beneath the description when present', () => {
+    const failingReport = {
+      status: 'Unhealthy',
+      totalDuration: 20,
+      entries: {
+        'aws-connectivity': {
+          status: 'Unhealthy',
+          description: 'AWS SQS health check failed with an exception.',
+          duration: 10,
+          exception: 'Access denied for user: arn:aws:iam::123456789012:user/test (Service: Sqs)',
+        },
+      },
+    };
+    mockUseHealthVersion.mockReturnValue({ data: mockVersionData, isLoading: false, error: null });
+    mockUseHealthStatus.mockReturnValue({ data: mockStatusData, isLoading: false, error: null, refetch: vi.fn() });
+    mockUseHealthReport.mockReturnValue({ data: failingReport, isLoading: false, error: null, refetch: vi.fn() });
+
+    renderHealthPage();
+    expect(screen.getByText('AWS SQS health check failed with an exception.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Access denied for user: arn:aws:iam::123456789012:user/test (Service: Sqs)')
+    ).toBeInTheDocument();
+  });
+
+  it('omits the exception detail when not present on the entry', () => {
+    mockUseHealthVersion.mockReturnValue({ data: mockVersionData, isLoading: false, error: null });
+    mockUseHealthStatus.mockReturnValue({ data: mockStatusData, isLoading: false, error: null, refetch: vi.fn() });
+    mockUseHealthReport.mockReturnValue({ data: mockReportData, isLoading: false, error: null, refetch: vi.fn() });
+
+    renderHealthPage();
+    expect(screen.getByText('All 1 Azure Service Bus namespace(s) are healthy.')).toBeInTheDocument();
+    expect(screen.queryByText(/exception/i)).not.toBeInTheDocument();
   });
 
   it('omits component health section when report is unavailable', () => {

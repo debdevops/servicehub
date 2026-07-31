@@ -115,33 +115,28 @@ curl http://localhost:5153/health
 Open a **second terminal** in the repository root:
 
 ```bash
-# Step 1: Navigate to the web app
-cd apps/web
+# Step 1: Copy the example environment file (from repo root)
+cp apps/web/.env.example apps/web/.env.local
 ```
 
 ```bash
-# Step 2: Copy the example environment file
-cp .env.example .env.local
-```
-
-```bash
-# Step 3: Leave VITE_API_BASE_URL commented out in .env.local
+# Step 2: Leave VITE_API_BASE_URL commented out in .env.local
 # The Vite proxy handles routing to localhost:5153 automatically.
 # You only need to set VITE_API_BASE_URL if your API runs on a different host.
 ```
 
 ```bash
-# Step 4: Install npm dependencies
+# Step 3: Install npm dependencies (monorepo workspaces — from repo root)
 npm install
 ```
 
 ```bash
-# Step 5: Start the Vite dev server
-npm run dev
+# Step 4: Start the Vite dev server for the web app
+npm run -w apps/web dev
 ```
 
 ```bash
-# Step 6: Open in browser
+# Step 5: Open in browser
 # http://localhost:3000
 ```
 

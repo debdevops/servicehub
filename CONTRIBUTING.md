@@ -105,7 +105,7 @@ npm run test:coverage
 ### End-to-End (Playwright)
 
 ```bash
-./run.sh --simulator   # starts API in simulator mode + Vite
+./run.sh
 cd apps/web
 npm run test:e2e
 ```
@@ -183,3 +183,5 @@ servicehub/
 ```
 
 The API uses a **Result/Error pattern** (no exceptions for business logic), **AES-256-GCM** for connection string encryption, and **tenant isolation** via `OwnerId` on every data access. The SPA authenticates via an ephemeral SPA token injected into `<meta>` at page load time.
+
+Interested in adding a new messaging provider (Kafka, RabbitMQ, IBM MQ, ActiveMQ, ...)? See [docs/EXTENDING-PROVIDERS.md](docs/EXTENDING-PROVIDERS.md) for the extension seam, what's already generic, and the constraints the existing three providers hit.

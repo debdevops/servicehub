@@ -44,6 +44,20 @@ public interface IDlqHistoryService
     Task<Result<DlqMessage>> UpdateNotesAsync(string ownerId, long id, string notes, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Triages a DLQ message by transitioning its lifecycle status, scoped to the owner.
+    /// Only manual triage targets are accepted (Active/Archived/Discarded/Resolved); replay
+    /// outcomes (Replayed/ReplayFailed) are set by the replay flow, not by triage. Stamps
+    /// <see cref="DlqMessage.ArchivedAt"/> / <see cref="DlqMessage.ResolvedAt"/> as appropriate
+    /// and optionally appends notes. Returns NotFound when the message belongs to a different owner.
+    /// </summary>
+    Task<Result<DlqMessage>> UpdateStatusAsync(
+        string ownerId,
+        long id,
+        DlqMessageStatus newStatus,
+        string? notes = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets a summary of DLQ activity across all or a specific namespace, scoped to the owner.
     /// </summary>
     /// <param name="ownerId">Owner whose messages to summarise.</param>

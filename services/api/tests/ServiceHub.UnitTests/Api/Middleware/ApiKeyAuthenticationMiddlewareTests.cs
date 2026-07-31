@@ -2,7 +2,9 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
+using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Middleware;
 using ServiceHub.Api.Security;
 
@@ -278,6 +280,33 @@ public class ApiKeyAuthenticationMiddlewareTests
     }
 
     [Fact]
+    public async Task LoadApiKeys_ScopedKeyWithRoleName_ExpandsToScopesAtLoadTime()
+    {
+        var dict = new Dictionary<string, string?>
+        {
+            ["Security:Authentication:Enabled"] = "true",
+            ["Security:Authentication:ScopedApiKeys:0:Key"] = "viewer-key",
+            ["Security:Authentication:ScopedApiKeys:0:Scopes:0"] = "Viewer",
+            ["Security:Authentication:ScopedApiKeys:0:Description"] = "Viewer role key",
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Request.Headers["X-API-KEY"] = "viewer-key";
+
+        await middleware.InvokeAsync(context);
+
+        var keyConfig = (ApiKeyConfiguration)context.Items["ApiKeyConfig"]!;
+        keyConfig.Scopes.Should().Contain(ApiKeyScopes.DlqRead);
+        keyConfig.Scopes.Should().Contain(ApiKeyScopes.NamespacesRead);
+        keyConfig.Scopes.Should().NotContain(ApiKeyScopes.MessagesSend);
+    }
+
+    [Fact]
     public async Task LoadApiKeys_ScopedKeyWithPlaceholder_ShouldSkip()
     {
         var dict = new Dictionary<string, string?>
@@ -455,7 +484,7 @@ public class ApiKeyAuthenticationMiddlewareTests
     [Fact]
     public async Task InvokeAsync_OwnerIdSetButNotEasyAuth_ShouldNotShortCircuit()
     {
-        // Only AuthMethod == "EasyAuth" may skip credential checks; an OwnerId set by
+        // Only AuthMethod == "EasyAuth" or "Oidc" may skip credential checks; an OwnerId set by
         // anything else must still be authenticated.
         RequestDelegate next = _ => Task.CompletedTask;
         var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
@@ -469,6 +498,31 @@ public class ApiKeyAuthenticationMiddlewareTests
         await middleware.InvokeAsync(context);
 
         context.Response.StatusCode.Should().Be(401);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_OidcAuthenticated_WithoutSpaTokenOrApiKey_ShouldCallNext()
+    {
+        // OIDC-authenticated request (validated by OidcBearerAuthenticationMiddleware
+        // upstream) with no other credential must pass through, not 401 at the API-key
+        // fall-through — same short-circuit EasyAuth already gets.
+        var nextCalled = false;
+        RequestDelegate next = _ => { nextCalled = true; return Task.CompletedTask; };
+        var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Items["OwnerId"] = "oidc:user-abc";
+        context.Items["Authenticated"] = true;
+        context.Items["AuthMethod"] = "Oidc";
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
+        context.Response.StatusCode.Should().Be(200);
+        context.Items["OwnerId"].Should().Be("oidc:user-abc");
     }
 
     [Fact]
@@ -486,5 +540,108 @@ public class ApiKeyAuthenticationMiddlewareTests
         await middleware.InvokeAsync(context);
 
         nextCalled.Should().BeTrue();
+    }
+
+    // ── Auth Failure Throttle ─────────────────────────────────────────
+
+    private static AuthFailureThrottle CreateThrottle(int threshold, TimeSpan? window = null) =>
+        new(Options.Create(new AuthFailureThrottleOptions
+        {
+            Threshold = threshold,
+            Window = window ?? TimeSpan.FromMinutes(5)
+        }));
+
+    private static DefaultHttpContext CreateApiContext(string apiKey)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Request.Headers["X-API-KEY"] = apiKey;
+        context.Response.Body = new MemoryStream();
+        return context;
+    }
+
+    [Fact]
+    public async Task InvokeAsync_RepeatedInvalidApiKey_LocksOutAfterThreshold()
+    {
+        RequestDelegate next = _ => Task.CompletedTask;
+        var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
+        var throttle = CreateThrottle(threshold: 3);
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config, authFailureThrottle: throttle);
+
+        for (var i = 0; i < 3; i++)
+        {
+            var context = CreateApiContext("wrong-key");
+            await middleware.InvokeAsync(context);
+            context.Response.StatusCode.Should().Be(403, $"attempt {i + 1} is under the lockout threshold");
+        }
+
+        var lockedOutContext = CreateApiContext("wrong-key");
+        await middleware.InvokeAsync(lockedOutContext);
+
+        lockedOutContext.Response.StatusCode.Should().Be(429);
+        lockedOutContext.Response.Headers.RetryAfter.ToString().Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task InvokeAsync_LockedOut_RecoversAfterWindow()
+    {
+        RequestDelegate next = _ => Task.CompletedTask;
+        var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
+        var throttle = CreateThrottle(threshold: 2, window: TimeSpan.FromMilliseconds(50));
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config, authFailureThrottle: throttle);
+
+        await middleware.InvokeAsync(CreateApiContext("wrong-key"));
+        await middleware.InvokeAsync(CreateApiContext("wrong-key"));
+
+        var lockedOutContext = CreateApiContext("wrong-key");
+        await middleware.InvokeAsync(lockedOutContext);
+        lockedOutContext.Response.StatusCode.Should().Be(429);
+
+        await Task.Delay(100);
+
+        var recoveredContext = CreateApiContext("wrong-key");
+        await middleware.InvokeAsync(recoveredContext);
+        recoveredContext.Response.StatusCode.Should().Be(403, "the window has expired, so this is back to a plain invalid-key rejection, not a lockout");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_SuccessfulAuth_ResetsFailureCount()
+    {
+        RequestDelegate next = _ => Task.CompletedTask;
+        var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
+        var throttle = CreateThrottle(threshold: 2);
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config, authFailureThrottle: throttle);
+
+        await middleware.InvokeAsync(CreateApiContext("wrong-key"));
+
+        var successContext = CreateApiContext("test-key-12345");
+        await middleware.InvokeAsync(successContext);
+        successContext.Response.StatusCode.Should().Be(200, "the valid key request completes normally");
+
+        // Threshold is 2; without the reset this would be failure #2 and lock out.
+        var afterSuccessContext = CreateApiContext("wrong-key");
+        await middleware.InvokeAsync(afterSuccessContext);
+        afterSuccessContext.Response.StatusCode.Should().Be(403, "the successful auth cleared the prior failure, so this is only failure #1 again");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_AuthenticationDisabled_ThrottleNeverEngagesRegardlessOfFailureVolume()
+    {
+        var nextCallCount = 0;
+        RequestDelegate next = _ => { nextCallCount++; return Task.CompletedTask; };
+        var config = CreateConfig(enabled: false);
+        var throttle = CreateThrottle(threshold: 1);
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config, authFailureThrottle: throttle);
+
+        // With auth disabled, every request short-circuits before the throttle is ever consulted —
+        // the local dev loop must never lock itself out.
+        for (var i = 0; i < 20; i++)
+        {
+            var context = CreateApiContext("wrong-key");
+            await middleware.InvokeAsync(context);
+            context.Response.StatusCode.Should().Be(200);
+        }
+
+        nextCallCount.Should().Be(20);
     }
 }

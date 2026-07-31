@@ -1,31 +1,38 @@
-using System.Collections.Concurrent;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
-using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Security;
-using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Infrastructure.Persistence.InMemory;
 
 /// <summary>
-/// Thread-safe in-memory implementation of the namespace repository.
-/// Intended for development and MVP purposes only.
+/// Namespace repository backed by a JSON file on disk, so stored connections survive
+/// process restarts. Intended for development and MVP purposes only.
 /// </summary>
-public sealed class InMemoryNamespaceRepository : INamespaceRepository
+public sealed class InMemoryNamespaceRepository : InMemoryNamespaceRepositoryBase
 {
-    private readonly ConcurrentDictionary<Guid, Namespace> _namespaces = new();
-    private readonly ILogger<InMemoryNamespaceRepository> _logger;
     private readonly string _storagePath;
+    private readonly object _saveLock = new();
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
+
+    // Fixed GUIDs the removed ServiceHub.Simulator project's SimulatorDataSeeder used to
+    // register its simulated namespaces directly in this shared repository. That project is
+    // gone, but namespaces it already persisted to disk remain until cleaned up below.
+    private static readonly HashSet<Guid> LegacySimulatorNamespaceIds =
+    [
+        new Guid("a1b2c3d4-0001-0001-0001-000000000001"),
+        new Guid("b2c3d4e5-0002-0002-0002-000000000002"),
+        new Guid("c3d4e5f6-0003-0003-0003-000000000003"),
+    ];
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InMemoryNamespaceRepository"/> class.
@@ -35,9 +42,8 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
     public InMemoryNamespaceRepository(
         ILogger<InMemoryNamespaceRepository> logger,
         IConfiguration configuration)
+        : base(logger)
     {
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
         var rawDataDir = configuration["NamespaceRepository:DataDirectory"]
             ?? Path.Combine(AppContext.BaseDirectory, "data");
 
@@ -71,236 +77,7 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
     }
 
     /// <inheritdoc/>
-    public Task<Result<Namespace>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        if (id == Guid.Empty)
-        {
-            return Task.FromResult(Result.Failure<Namespace>(Error.Validation(
-                ErrorCodes.Namespace.NotFound,
-                "Namespace ID cannot be empty.")));
-        }
-
-        if (_namespaces.TryGetValue(id, out var ns))
-        {
-            _logger.LogDebug("Retrieved namespace {NamespaceId} from in-memory store", id);
-            return Task.FromResult(Result.Success(ns));
-        }
-
-        _logger.LogDebug("Namespace {NamespaceId} not found in in-memory store", id);
-        return Task.FromResult(Result.Failure<Namespace>(Error.NotFound(
-            ErrorCodes.Namespace.NotFound,
-            $"Namespace with ID '{id}' was not found.")));
-    }
-
-    /// <inheritdoc/>
-    public Task<Result<Namespace>> GetByNameAsync(string name, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return Task.FromResult(Result.Failure<Namespace>(Error.Validation(
-                ErrorCodes.Namespace.NameRequired,
-                "Namespace name is required.")));
-        }
-
-        var normalizedName = name.Trim().ToLowerInvariant();
-        var ns = _namespaces.Values.FirstOrDefault(n =>
-            n.Name.Equals(normalizedName, StringComparison.OrdinalIgnoreCase));
-
-        if (ns is not null)
-        {
-            _logger.LogDebug("Retrieved namespace {NamespaceName} from in-memory store", LogRedactor.SanitiseForLog(name));
-            return Task.FromResult(Result.Success(ns));
-        }
-
-        _logger.LogDebug("Namespace {NamespaceName} not found in in-memory store", LogRedactor.SanitiseForLog(name));
-        return Task.FromResult(Result.Failure<Namespace>(Error.NotFound(
-            ErrorCodes.Namespace.NotFound,
-            $"Namespace with name '{name}' was not found.")));
-    }
-
-    /// <inheritdoc/>
-    public Task<Result<IReadOnlyList<Namespace>>> GetAllAsync(CancellationToken cancellationToken = default)
-    {
-        var namespaces = _namespaces.Values.ToList();
-        _logger.LogDebug("Retrieved {Count} namespaces from in-memory store", namespaces.Count);
-        return Task.FromResult(Result.Success<IReadOnlyList<Namespace>>(namespaces));
-    }
-
-    /// <inheritdoc/>
-    public Task<Result<IReadOnlyList<Namespace>>> GetByOwnerAsync(string ownerId, CancellationToken cancellationToken = default)
-    {
-        // SPA owner also owns legacy namespaces that pre-date the OwnerId field
-        // (they were written without an OwnerId and deserialise to the default value).
-        var namespaces = _namespaces.Values
-            .Where(n => string.Equals(n.OwnerId, ownerId, StringComparison.Ordinal))
-            .ToList();
-
-        _logger.LogDebug(
-            "Retrieved {Count} namespaces for owner {OwnerId}",
-            namespaces.Count,
-            ownerId);
-
-        return Task.FromResult(Result.Success<IReadOnlyList<Namespace>>(namespaces));
-    }
-
-    /// <inheritdoc/>
-    public Task<Result<IReadOnlyList<Namespace>>> GetActiveAsync(CancellationToken cancellationToken = default)
-    {
-        var activeNamespaces = _namespaces.Values
-            .Where(n => n.IsActive)
-            .ToList();
-
-        _logger.LogDebug("Retrieved {Count} active namespaces from in-memory store", activeNamespaces.Count);
-        return Task.FromResult(Result.Success<IReadOnlyList<Namespace>>(activeNamespaces));
-    }
-
-    /// <inheritdoc/>
-    public Task<Result> AddAsync(Namespace @namespace, CancellationToken cancellationToken = default)
-    {
-        if (@namespace is null)
-        {
-            return Task.FromResult(Result.Failure(Error.Validation(
-                ErrorCodes.Namespace.NotFound,
-                "Namespace cannot be null.")));
-        }
-
-        // Check for duplicate name within the same tenant
-        var existingByName = _namespaces.Values.FirstOrDefault(n =>
-            n.Name.Equals(@namespace.Name, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(n.OwnerId, @namespace.OwnerId, StringComparison.Ordinal));
-
-        if (existingByName is not null)
-        {
-            _logger.LogWarning(
-                "Attempted to add namespace with duplicate name {NamespaceName}",
-                LogRedactor.SanitiseForLog(@namespace.Name));
-
-            return Task.FromResult(Result.Failure(Error.Conflict(
-                ErrorCodes.Namespace.AlreadyExists,
-                $"A namespace with the name '{@namespace.Name}' already exists.")));
-        }
-
-        if (_namespaces.TryAdd(@namespace.Id, @namespace))
-        {
-            SaveToDisk();
-
-            _logger.LogInformation(
-                "Added namespace {NamespaceId} ({NamespaceName}) to in-memory store",
-                @namespace.Id,
-                LogRedactor.SanitiseForLog(@namespace.Name));
-
-            return Task.FromResult(Result.Success());
-        }
-
-        return Task.FromResult(Result.Failure(Error.Conflict(
-            ErrorCodes.Namespace.AlreadyExists,
-            $"A namespace with the ID '{@namespace.Id}' already exists.")));
-    }
-
-    /// <inheritdoc/>
-    public Task<Result> UpdateAsync(Namespace @namespace, CancellationToken cancellationToken = default)
-    {
-        if (@namespace is null)
-        {
-            return Task.FromResult(Result.Failure(Error.Validation(
-                ErrorCodes.Namespace.NotFound,
-                "Namespace cannot be null.")));
-        }
-
-        if (!_namespaces.ContainsKey(@namespace.Id))
-        {
-            _logger.LogWarning(
-                "Attempted to update non-existent namespace {NamespaceId}",
-                @namespace.Id);
-
-            return Task.FromResult(Result.Failure(Error.NotFound(
-                ErrorCodes.Namespace.NotFound,
-                $"Namespace with ID '{@namespace.Id}' was not found.")));
-        }
-
-        // Prevent OwnerId from being changed — immutable after creation
-        var existing = _namespaces[@namespace.Id];
-        if (!string.Equals(existing.OwnerId, @namespace.OwnerId, StringComparison.Ordinal))
-        {
-            _logger.LogWarning(
-                "Attempted to change OwnerId on namespace {NamespaceId}",
-                @namespace.Id);
-
-            return Task.FromResult(Result.Failure(Error.Validation(
-                ErrorCodes.Namespace.NotFound,
-                "Cannot modify the owner of a namespace.")));
-        }
-
-        // Check for duplicate name (excluding current namespace) within the same tenant
-        var existingByName = _namespaces.Values.FirstOrDefault(n =>
-            n.Id != @namespace.Id &&
-            n.Name.Equals(@namespace.Name, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(n.OwnerId, @namespace.OwnerId, StringComparison.Ordinal));
-
-        if (existingByName is not null)
-        {
-            return Task.FromResult(Result.Failure(Error.Conflict(
-                ErrorCodes.Namespace.AlreadyExists,
-                $"A namespace with the name '{@namespace.Name}' already exists.")));
-        }
-
-        _namespaces[@namespace.Id] = @namespace;
-
-        SaveToDisk();
-
-        _logger.LogInformation(
-            "Updated namespace {NamespaceId} ({NamespaceName}) in in-memory store",
-            @namespace.Id,
-            LogRedactor.SanitiseForLog(@namespace.Name));
-
-        return Task.FromResult(Result.Success());
-    }
-
-    /// <inheritdoc/>
-    public Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        if (id == Guid.Empty)
-        {
-            return Task.FromResult(Result.Failure(Error.Validation(
-                ErrorCodes.Namespace.NotFound,
-                "Namespace ID cannot be empty.")));
-        }
-
-        if (_namespaces.TryRemove(id, out var removed))
-        {
-            SaveToDisk();
-
-            _logger.LogInformation(
-                "Deleted namespace {NamespaceId} ({NamespaceName}) from in-memory store",
-                id,
-                LogRedactor.SanitiseForLog(removed.Name));
-
-            return Task.FromResult(Result.Success());
-        }
-
-        _logger.LogWarning(
-            "Attempted to delete non-existent namespace {NamespaceId}",
-            id);
-
-        return Task.FromResult(Result.Failure(Error.NotFound(
-            ErrorCodes.Namespace.NotFound,
-            $"Namespace with ID '{id}' was not found.")));
-    }
-
-    /// <inheritdoc/>
-    public Task<bool> ExistsAsync(string name, string ownerId, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return Task.FromResult(false);
-        }
-
-        var exists = _namespaces.Values.Any(n =>
-            n.Name.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(n.OwnerId, ownerId, StringComparison.Ordinal));
-
-        return Task.FromResult(exists);
-    }
+    protected override void OnMutated() => SaveToDisk();
 
     private void LoadFromDisk()
     {
@@ -329,6 +106,8 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
             }
 
             _logger.LogInformation("Loaded {Count} namespace(s) from {Path}", loaded, _storagePath);
+
+            RemoveLegacySimulatorNamespaces();
         }
         catch (Exception ex)
         {
@@ -336,26 +115,78 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
         }
     }
 
+    /// <summary>
+    /// One-time startup migration: purges namespaces left behind by the removed
+    /// ServiceHub.Simulator feature and, if any were found, immediately re-persists the
+    /// cleaned store. Runs only against what was just loaded from disk, so it never touches
+    /// namespaces created afterward even if their name happens to start with "sim-".
+    /// </summary>
+    private void RemoveLegacySimulatorNamespaces()
+    {
+        var legacyIds = _namespaces.Values
+            .Where(IsLegacySimulatorNamespace)
+            .Select(ns => ns.Id)
+            .ToList();
+
+        if (legacyIds.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var id in legacyIds)
+        {
+            _namespaces.TryRemove(id, out _);
+        }
+
+        _logger.LogInformation(
+            "Removed {Count} legacy simulator namespace(s) left over from the removed Simulator feature",
+            legacyIds.Count);
+
+        SaveToDisk();
+    }
+
+    private static bool IsLegacySimulatorNamespace(Namespace ns) =>
+        LegacySimulatorNamespaceIds.Contains(ns.Id)
+        || (ns.DisplayName?.StartsWith("Simulated", StringComparison.Ordinal) ?? false)
+        || ns.Name.StartsWith("sim-", StringComparison.Ordinal);
+
     private void SaveToDisk()
     {
         try
         {
-            var snapshots = _namespaces.Values
-                .Select(ToSnapshot)
-                .OrderBy(n => n.Name)
-                .ToList();
+            // Guards the whole serialise → write → rename sequence. Without this, two
+            // concurrent writers both targeting the same fixed temp filename could interleave
+            // their writes on that shared file before either renamed — corrupting or
+            // truncating the one file every stored credential lives in. The lock is safe here
+            // because the method is synchronous and the section below never awaits.
+            lock (_saveLock)
+            {
+                var snapshots = _namespaces.Values
+                    .Select(ToSnapshot)
+                    .OrderBy(n => n.Name)
+                    .ToList();
 
-            var json = JsonSerializer.Serialize(snapshots, JsonOptions);
+                var json = JsonSerializer.Serialize(snapshots, JsonOptions);
+                var bytes = Encoding.UTF8.GetBytes(json);
 
-            // CRITICAL FIX: Atomic write via temp file + rename.
-            // File.WriteAllText truncates then writes — a crash mid-write produces a
-            // zero-byte or partial file, losing ALL stored namespaces permanently.
-            // File.Move is atomic on the same volume (single directory rename syscall).
-            var tempPath = _storagePath + ".tmp";
-            File.WriteAllText(tempPath, json);
-            File.Move(tempPath, _storagePath, overwrite: true);
+                // Atomic write via a unique-per-call temp file + rename. The unique name is
+                // defence in depth (still correct if this method is ever made async and the
+                // lock no longer applies). The temp file is flushed to the physical device
+                // (flushToDisk: true — fsync on Linux, FlushFileBuffers on Windows) before the
+                // rename, so an unclean shutdown between write and rename cannot leave a
+                // valid-looking but empty or truncated file at the destination. File.Move is
+                // then a single atomic rename syscall on the same volume.
+                var tempPath = $"{_storagePath}.{Guid.NewGuid():N}.tmp";
+                using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    stream.Write(bytes, 0, bytes.Length);
+                    stream.Flush(flushToDisk: true);
+                }
 
-            _logger.LogDebug("Persisted {Count} namespace(s) to {Path}", snapshots.Count, _storagePath);
+                File.Move(tempPath, _storagePath, overwrite: true);
+
+                _logger.LogDebug("Persisted {Count} namespace(s) to {Path}", snapshots.Count, _storagePath);
+            }
         }
         catch (Exception ex)
         {
@@ -382,6 +213,7 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
             HasManagePermission = ns.HasManagePermission,
             Environment = ns.Environment,
             OwnerId = ns.OwnerId,
+            SharedWithOwnerIds = ns.SharedWithOwnerIds.Count > 0 ? [.. ns.SharedWithOwnerIds] : null,
             ConnectionStringHash = ns.ConnectionStringHash,
             Provider = ns.Provider,
             AwsRegion = ns.AwsRegion,
@@ -437,6 +269,7 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
             SetPrivateProperty(ns, nameof(Namespace.HasSendPermission), snapshot.HasSendPermission);
             SetPrivateProperty(ns, nameof(Namespace.HasManagePermission), snapshot.HasManagePermission);
             SetPrivateProperty(ns, nameof(Namespace.Environment), snapshot.Environment);
+            SetPrivateProperty(ns, nameof(Namespace.SharedWithOwnerIds), (IReadOnlyList<string>)(snapshot.SharedWithOwnerIds ?? []));
 
             if (!snapshot.IsActive)
             {
@@ -483,6 +316,12 @@ public sealed class InMemoryNamespaceRepository : INamespaceRepository
         /// namespaces written before this field existed remain visible to the instance admin.
         /// </summary>
         public string OwnerId { get; init; } = Namespace.SpaOwnerId;
+        /// <summary>
+        /// Additional owner IDs this namespace is shared with. Null/absent on files written
+        /// before sharing existed — deserialises to null and is normalised to an empty list on
+        /// rehydration, so older snapshot files load unaffected.
+        /// </summary>
+        public List<string>? SharedWithOwnerIds { get; init; }
         /// <summary>SHA-256 hash of the plaintext connection string for fast deduplication.</summary>
         public string? ConnectionStringHash { get; init; }
         /// <summary>Cloud provider (Azure, AWS, GCP). Defaults to Azure for backward compatibility.</summary>

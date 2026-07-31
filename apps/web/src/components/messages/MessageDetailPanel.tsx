@@ -2,14 +2,16 @@ import { useState } from 'react';
 import { FileText, Code, Bot, List, Inbox, AlertTriangle } from 'lucide-react';
 import { Play, Clipboard, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import { useTabPersistence, type DetailTab } from '@/hooks/useTabPersistence';
+import { useTabPersistence, type DetailTab } from '@servicehub/ui-shared/hooks/useTabPersistence';
 import { PropertiesTab, BodyTab, AIInsightsTab, HeadersTab } from './tabs';
-import { useReplayMessage, usePurgeMessage } from '@/hooks/useMessages';
-import { useNamespaces } from '@/hooks/useNamespaces';
+import { useReplayMessage, usePurgeMessage } from '@servicehub/ui-shared/hooks/useMessages';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CopyButton } from '@/components/CopyButton';
-import type { Message } from '@/lib/mockData';
-import type { AIInsight } from '@/lib/api/types';
+import type { Message } from '@servicehub/ui-shared/lib/mockData';
+import type { AIInsight } from '@servicehub/ui-shared/lib/api/types';
 import toast from 'react-hot-toast';
 
 // ============================================================================
@@ -100,9 +102,12 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
   const currentNs = namespaces?.find(ns => ns.id === namespaceId);
   const isProd = currentNs?.environment === 'prod';
   const hasSendPermission = currentNs?.hasSendPermission !== false;
-  // Purge is provider-gated: AWS (delete by receipt handle) and GCP (acknowledge)
-  // support single-message deletion; Azure Service Bus does not.
-  const purgeSupported = currentNs?.cloudProvider === 'aws' || currentNs?.cloudProvider === 'gcp';
+  // Purge is provider-gated — driven by the shared capability API rather than a
+  // hardcoded provider check, so a future provider's support is picked up automatically.
+  const { data: capabilitiesMap } = useProviderCapabilities();
+  const providerCapabilities = getProviderCapabilities(capabilitiesMap, currentNs?.cloudProvider);
+  const purgeSupported = providerCapabilities?.supportsPurge ?? false;
+  const purgeUnsupportedReason = providerCapabilities?.notes ?? 'Purge is not supported for this provider.';
   const [searchParams] = useSearchParams();
   
   const [confirmState, setConfirmState] = useState<ConfirmState>({
@@ -269,13 +274,13 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
           <Clipboard size={16} />
           Copy ID
         </button>
-        {/* Purge — provider-gated: enabled for AWS/GCP, disabled with explanation for Azure */}
+        {/* Purge — provider-gated via the shared capability API (see useProviderCapabilities) */}
         {!purgeSupported ? (
           <button
             disabled
-            title="Purge is not supported for Azure Service Bus — the SDK has no reliable single-message delete by sequence number"
+            title={purgeUnsupportedReason}
             className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-400 border border-gray-200 rounded-lg font-medium cursor-not-allowed"
-            aria-label="Purge not supported for Azure Service Bus"
+            aria-label={`Purge not supported: ${purgeUnsupportedReason}`}
           >
             <Trash2 size={16} />
             Purge

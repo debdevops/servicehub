@@ -3,12 +3,12 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RuleTestDialog } from '@/components/rules/RuleTestDialog';
 
-vi.mock('@/hooks/useRules', () => ({
+vi.mock('@servicehub/ui-shared/hooks/useRules', () => ({
   useTestRule: vi.fn(),
 }));
 
-import { useTestRule } from '@/hooks/useRules';
-import type { RuleResponse } from '@/lib/api/rules';
+import { useTestRule } from '@servicehub/ui-shared/hooks/useRules';
+import type { RuleResponse } from '@servicehub/ui-shared/lib/api/rules';
 
 const mockUseTestRule = useTestRule as ReturnType<typeof vi.fn>;
 
@@ -72,7 +72,7 @@ describe('RuleTestDialog', () => {
         <RuleTestDialog open={true} onClose={vi.fn()} />
       </QueryClientProvider>,
     );
-    expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
   });
 
   it('calls onClose when Close button is clicked', () => {
@@ -82,7 +82,7 @@ describe('RuleTestDialog', () => {
         <RuleTestDialog open={true} onClose={onClose} />
       </QueryClientProvider>,
     );
-    fireEvent.click(screen.getByRole('button', { name: /close/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -137,5 +137,16 @@ describe('RuleTestDialog', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /re-test/i }));
     expect(mutate).toHaveBeenCalled();
+  });
+
+  it('calls onClose when Escape key is pressed', () => {
+    const onClose = vi.fn();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <RuleTestDialog open={true} onClose={onClose} rule={sampleRule} />
+      </QueryClientProvider>,
+    );
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
   });
 });

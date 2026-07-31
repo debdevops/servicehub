@@ -177,6 +177,31 @@ describe('DlqHistoryTable', () => {
     expect(screen.getByText('No DLQ messages found')).toBeInTheDocument();
   });
 
+  it('shows a distinct not-monitored notice instead of the empty state when notMonitored is true', () => {
+    render(<DlqHistoryTable {...defaultProps} items={[]} totalCount={0} notMonitored />);
+    expect(screen.getByText('DLQ monitoring not available for this provider')).toBeInTheDocument();
+    expect(screen.queryByText('No DLQ messages found')).not.toBeInTheDocument();
+  });
+
+  it('shows the provided notMonitoredReason text', () => {
+    render(
+      <DlqHistoryTable
+        {...defaultProps}
+        items={[]}
+        totalCount={0}
+        notMonitored
+        notMonitoredReason="SQS has no non-destructive peek."
+      />
+    );
+    expect(screen.getByText('SQS has no non-destructive peek.')).toBeInTheDocument();
+  });
+
+  it('ignores notMonitored when there are items to show', () => {
+    render(<DlqHistoryTable {...defaultProps} notMonitored />);
+    expect(screen.queryByText('DLQ monitoring not available for this provider')).not.toBeInTheDocument();
+    expect(screen.getByText('orders-queue')).toBeInTheDocument();
+  });
+
   it('uses high delivery count style (red) for 10+ deliveries', () => {
     render(<DlqHistoryTable {...defaultProps} />);
     // Item 1 has deliveryCount 10
