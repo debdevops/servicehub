@@ -269,6 +269,16 @@ public sealed class MessageOperationsService : IMessageOperationsService
         try
         {
             var (ns, provider) = await ResolveProviderAsync(namespaceId, cancellationToken).ConfigureAwait(false);
+
+            if (!provider.Capabilities.SupportsMessageCounts)
+            {
+                return Result<long>.Failure(Error.Validation(
+                    ErrorCodes.Message.CountUnsupported,
+                    $"Message count queries are not supported for {ns.Provider}. " +
+                    $"Supported providers: Azure, AWS. Current provider: {ns.Provider}. " +
+                    $"See provider capabilities: {provider.Capabilities.Notes}"));
+            }
+
             _logger.LogDebug("NamespaceId: {NamespaceId}, Provider: {Provider}, Operation: GetMessageCount", ns.Id, ns.Provider);
             var receiver = GetReceiver(provider);
             return await receiver.GetMessageCountAsync(namespaceId, entityName, subscriptionName, cancellationToken).ConfigureAwait(false);
@@ -284,6 +294,16 @@ public sealed class MessageOperationsService : IMessageOperationsService
         try
         {
             var (ns, provider) = await ResolveProviderAsync(request.NamespaceId, cancellationToken).ConfigureAwait(false);
+
+            if (!provider.Capabilities.SupportsManualDeadLetter)
+            {
+                return Result<int>.Failure(Error.Validation(
+                    ErrorCodes.Message.DeadLetterUnsupported,
+                    $"Manual dead-lettering is not supported for {ns.Provider}. " +
+                    $"Supported providers: Azure, AWS. Current provider: {ns.Provider}. " +
+                    $"See provider capabilities: {provider.Capabilities.Notes}"));
+            }
+
             _logger.LogDebug("NamespaceId: {NamespaceId}, Provider: {Provider}, Operation: DeadLetterMessages", ns.Id, ns.Provider);
             var receiver = GetReceiver(provider);
             return await receiver.DeadLetterMessagesAsync(request, cancellationToken).ConfigureAwait(false);
@@ -314,6 +334,16 @@ public sealed class MessageOperationsService : IMessageOperationsService
         try
         {
             var (ns, provider) = await ResolveProviderAsync(namespaceId, cancellationToken).ConfigureAwait(false);
+
+            if (!provider.Capabilities.SupportsPurge)
+            {
+                return Result.Failure(Error.Validation(
+                    ErrorCodes.Message.PurgeUnsupported,
+                    $"Purge is not supported for {ns.Provider}. " +
+                    $"Supported providers: AWS, GCP. Current provider: {ns.Provider}. " +
+                    $"See provider capabilities: {provider.Capabilities.Notes}"));
+            }
+
             _logger.LogDebug("NamespaceId: {NamespaceId}, Provider: {Provider}, Operation: PurgeMessage", ns.Id, ns.Provider);
             var receiver = GetReceiver(provider);
             return await receiver.PurgeMessageAsync(namespaceId, entityName, subscriptionName, sequenceNumber, fromDeadLetter, cancellationToken).ConfigureAwait(false);
@@ -329,6 +359,16 @@ public sealed class MessageOperationsService : IMessageOperationsService
         try
         {
             var (ns, provider) = await ResolveProviderAsync(namespaceId, cancellationToken).ConfigureAwait(false);
+
+            if (!provider.Capabilities.SupportsScheduledMessages)
+            {
+                return Result<IReadOnlyList<Message>>.Failure(Error.Validation(
+                    ErrorCodes.Message.ScheduledUnsupported,
+                    $"Scheduled messages are not supported for {ns.Provider}. " +
+                    $"Supported providers: Azure. Current provider: {ns.Provider}. " +
+                    $"See provider capabilities: {provider.Capabilities.Notes}"));
+            }
+
             _logger.LogDebug("NamespaceId: {NamespaceId}, Provider: {Provider}, Operation: GetScheduledMessages", ns.Id, ns.Provider);
             var receiver = GetReceiver(provider);
             return await receiver.GetScheduledMessagesAsync(namespaceId, entityName, subscriptionName, maxMessages, cancellationToken).ConfigureAwait(false);

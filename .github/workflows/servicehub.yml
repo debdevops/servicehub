@@ -303,7 +303,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Regression check - docker-compose.yml must not have hardcoded encryption key fallback
+        run: |
+          # Ensure docker-compose.yml does not have a hardcoded default SECURITY__ENCRYPTIONKEY.
+          if grep -q '0a1715d2edbbbef62384ee797ed6bf7ce01ef56ee7da55dcc04fb7f297e53a4d' docker-compose.yml; then
+            echo "❌ REGRESSION: Hardcoded encryption key found in docker-compose.yml"
+            exit 1
+          fi
+          if grep 'SECURITY__ENCRYPTIONKEY:' docker-compose.yml | grep -q ':-'; then
+            echo "❌ REGRESSION: Found fallback default (:-) for SECURITY__ENCRYPTIONKEY"
+            exit 1
+          fi
+          echo "✅ PASSED: No hardcoded encryption key or fallback in docker-compose.yml"
+
       - name: Build and start container (docker compose up --build)
+        env:
+          SECURITY__ENCRYPTIONKEY: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210  # 32-byte test key for CI only
         run: docker compose up --build -d
 
       - name: Wait for container health check
@@ -343,10 +358,79 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  production-configuration-validation:
+    name: Production Configuration Validation
+    runs-on: ubuntu-latest
+    # Validates that the app fails fast if production configuration is incomplete.
+    # This proves that developers/operators cannot accidentally deploy to production
+    # with placeholder or missing required configuration.
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate app fails without SECURITY__ENCRYPTIONKEY
+        run: |
+          echo "Testing: App should fail to start if SECURITY__ENCRYPTIONKEY is missing"
+          # Run with env var explicitly unset, should fail
+          timeout 30 bash -c 'unset SECURITY__ENCRYPTIONKEY; docker compose up 2>&1' || true
+
+          # Check that the container exited with error (not running healthcheck)
+          RUNNING=$(docker compose ps --services --filter "status=running" 2>/dev/null || echo "")
+          if [ -z "$RUNNING" ]; then
+            echo "✅ Container correctly failed to start without SECURITY__ENCRYPTIONKEY"
+          else
+            echo "❌ Container should not have started without SECURITY__ENCRYPTIONKEY"
+            docker compose logs servicehub
+            exit 1
+          fi
+          docker compose down -v 2>/dev/null || true
+
+      - name: Validate app fails with placeholder SECURITY__ENCRYPTIONKEY
+        run: |
+          echo "Testing: App should fail to start with placeholder SECURITY__ENCRYPTIONKEY"
+          # Start with a placeholder value that should be rejected in Production
+          SECURITY__ENCRYPTIONKEY="SET_VIA_ENV_VAR" docker compose up --build -d 2>&1
+
+          # Give it 10 seconds to fail
+          sleep 10
+
+          # Check that container is NOT healthy
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health/live 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "✅ Container correctly rejected placeholder SECURITY__ENCRYPTIONKEY (HTTP $HTTP_CODE)"
+            docker compose down -v
+            exit 0
+          else
+            echo "❌ Container should not have accepted placeholder SECURITY__ENCRYPTIONKEY"
+            docker compose logs servicehub
+            docker compose down -v
+            exit 1
+          fi
+
+      - name: Validate app starts with valid SECURITY__ENCRYPTIONKEY
+        run: |
+          echo "Testing: App should start successfully with valid SECURITY__ENCRYPTIONKEY"
+          SECURITY__ENCRYPTIONKEY=$(openssl rand -hex 32) docker compose up --build -d 2>&1
+
+          echo "Waiting for container to become healthy..."
+          for i in $(seq 1 60); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health/live 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Container started successfully with valid encryption key"
+              docker compose down -v
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "❌ Container did not start with valid configuration"
+          docker compose logs servicehub
+          docker compose down -v
+          exit 1
+
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [build-and-test-backend, build-and-test-frontend, container-smoke-test]
+    needs: [build-and-test-backend, build-and-test-frontend, container-smoke-test, production-configuration-validation]
     if: always()
 
     steps:
@@ -364,7 +448,11 @@ jobs:
             echo "❌ Container build/health check failed"
             exit 1
           fi
-          echo "✅ All builds and unit tests passed!"
+          if [ "${{ needs.production-configuration-validation.result }}" != "success" ]; then
+            echo "❌ Production configuration validation failed"
+            exit 1
+          fi
+          echo "✅ All builds, unit tests, and configuration validation passed!"
 
   container-security:
     name: Container Build, Scan & SBOM

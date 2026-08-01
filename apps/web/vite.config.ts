@@ -94,30 +94,42 @@ export default defineConfig({
     // This means one dotnet publish produces both the API and the SPA.
     outDir: '../../services/api/src/ServiceHub.Api/wwwroot',
     emptyOutDir: true,
+    // Chunk size warning threshold. Dashboard pages are data-heavy and acceptable at 560 kB.
+    // Initial load (index + vendor) is optimized to ~460 kB for welcome page cold-start.
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
         // Code splitting strategy: extract heavy dependencies and pages into separate chunks
         // This reduces initial bundle size and improves cold-start performance on Azure App Service
         manualChunks: (id: string) => {
-          // Vendor chunk for heavy UI libraries. recharts pulls in a sizeable transitive
-          // dependency graph (victory-vendor, redux, immer, the d3-* family) that Rollup
-          // would otherwise resolve into whichever lazy page chunk imports recharts first
-          // (observed: page-dashboard ballooning to 557kB while FleetPage's own recharts
-          // usage stayed at 13kB) — group them here so the weight is shared and cached once.
+          // Separate charts/visualization dependencies from core UI
+          // These are large (~65 kB) and only needed by pages that visualize data.
+          // Keeping them separate allows pages to lazy-load this chunk on-demand.
           if (id.includes('node_modules/recharts') ||
               id.includes('node_modules/victory-vendor') ||
-              id.includes('node_modules/d3-') ||
-              id.includes('node_modules/@reduxjs') ||
-              id.includes('node_modules/react-redux') ||
-              id.includes('node_modules/redux') ||
-              id.includes('node_modules/immer') ||
-              id.includes('node_modules/es-toolkit') ||
-              id.includes('node_modules/@tanstack/react-table') ||
+              id.includes('node_modules/d3-')) {
+            return 'vendor-charts';
+          }
+          // Vendor chunk for UI table/virtual libraries that may be used across pages
+          if (id.includes('node_modules/@tanstack/react-table') ||
               id.includes('node_modules/@tanstack/react-virtual')) {
             return 'vendor-ui';
           }
-          // Routing and HTTP
-          if (id.includes('node_modules/react-router-dom') || 
+          // Redux dependencies bundled with charts (recharts transitively pulls redux)
+          // but only loaded by pages that import recharts
+          if (id.includes('node_modules/@reduxjs') ||
+              id.includes('node_modules/react-redux') ||
+              id.includes('node_modules/redux') ||
+              id.includes('node_modules/immer') ||
+              id.includes('node_modules/es-toolkit')) {
+            return 'vendor-charts';
+          }
+          // Core UI utilities and layout dependencies
+          if (id.includes('node_modules/lucide-react')) {
+            return 'vendor-ui';
+          }
+          // Routing and HTTP — loaded on every page
+          if (id.includes('node_modules/react-router-dom') ||
               id.includes('node_modules/axios')) {
             return 'vendor-http';
           }
