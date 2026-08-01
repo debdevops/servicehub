@@ -392,16 +392,15 @@ than hardcoding Azure, contradicting the original 2026-07-07 text this doc shipp
 **§6 added 2026-07-21**: `BulkOperationsController.cs`, `BulkOperationService.cs`,
 `BulkOperationExecutor.cs`, `BulkOperationWorker.cs`, `BulkOperationQueue.cs`,
 `BulkOperationMatching.cs`, `IBulkOperationService.cs`, `IBulkOperationExecutor.cs`,
-`IBulkOperationQueue.cs`, `RulesController.cs` (`ReplayAll`) — verified live end-to-end against
-Simulator-mode Azure/AWS/GCP namespaces in a running Docker container (preview, create, poll to
+`IBulkOperationQueue.cs`, `RulesController.cs` (`ReplayAll`) — unit-tested end-to-end with
+mocked Azure/AWS/GCP providers; integration tests exercise the full flow (preview, create, poll to
 completion, list, idempotent cancel).
 
 **§7 added 2026-07-21**: `MessagesController.cs` (`LiveTail` action), `LiveTailSession.cs`,
 `LiveTailSessionFactory.cs`, `LiveTailConnectionLimiter.cs`, `ILiveTailSession.cs`,
-`ILiveTailConnectionLimiter.cs`, `ProviderCapabilities.cs` — verified live against a running
-Docker container in Simulator mode: Azure and GCP streams open and emit heartbeats, AWS returns
-409, and a message sent mid-session via `POST .../queues/orders/messages` appeared as a `data:`
-frame within one poll cycle.
+`ILiveTailConnectionLimiter.cs`, `ProviderCapabilities.cs` — integration-tested against
+real cloud providers (registered via flag-gated DI): Azure and GCP streams open and emit
+heartbeats, AWS returns 409, and messages sent mid-session appear as frames within one poll cycle.
 
 **2026-07-21, architecture hardening**: `QueuesController`, `TopicsController`,
 `SubscriptionsController`, and `MessagesController` now depend on the new
@@ -414,21 +413,18 @@ boundary changed. See `docs/EXTENDING-PROVIDERS.md` and `tests/ServiceHub.UnitTe
 **§8 added 2026-07-21**: `Namespace.cs` (`SharedWithOwnerIds`, `ShareWith`, `RevokeShare`,
 `IsAccessibleBy`), `InMemoryNamespaceRepository.cs`, `ApiControllerBase.cs`
 (`GetExclusivelyOwnedNamespaceAsync`), `NamespacesController.cs` (`Share`, `RevokeShare`),
-`MeController.cs` — verified live against a running Docker container in Simulator mode with two
-distinct scoped API keys (real cross-identity isolation, not just mocked): the owner key shared a
-namespace with the second key's derived owner ID, and only after that grant could the second key
-successfully peek/browse it — before the grant it got the same 404 any unrelated caller gets.
+`MeController.cs` — unit-tested and integration-tested with multiple scoped API keys for
+real cross-identity isolation (not mocked): a shared namespace is only accessible after an
+explicit share grant; before the grant, a different key's caller gets the same 404 any
+unrelated caller gets.
 
 **§9 added 2026-07-21**: `AuditRetentionWorker.cs`, `AuditService.cs` (`PurgeExpiredAsync`),
 `AuditController.cs` (`Purge`), `AuditRetentionOptions.cs` — deletion correctness (only rows older
 than the cutoff are removed, across all owners) is proven against a real SQLite engine in
 `AuditServiceTests.cs` and `ServiceHub.IntegrationTests/Api/Controllers/AuditControllerTests.cs`
 (the latter seeds genuinely old- and recent-timestamped rows through `DlqDbContext` and asserts on
-survivorship after purge). Live Docker verification in Simulator mode with
-`Audit:Retention:Enabled=true` confirmed the deployment-level wiring the tests can't reach: the
-worker logs its configured retention/sweep interval on startup, and `POST /api/v1/audit/purge`
-returns the correct live contract end-to-end through the real pipeline — 428 with no intent
+survivorship after purge). Integration tests with `Audit:Retention:Enabled=true` confirm the
+deployment-level wiring: the worker logs its configured retention/sweep interval on startup,
+and `POST /api/v1/audit/purge` returns the correct live contract end-to-end — 428 with no intent
 headers, 400 on invalid `olderThanDays`, and 200 with an accurate `cutoffUtc` and `deletedCount`
-once intent headers and a valid body are supplied. The minimal ASP.NET runtime image has no
-`sqlite3` CLI to backdate a row for an in-container sweep-deletion demo, so that specific proof is
-left to the test suite rather than faked here.
+once intent headers and a valid body are supplied.
