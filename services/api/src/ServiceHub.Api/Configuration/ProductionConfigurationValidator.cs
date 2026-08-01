@@ -33,9 +33,9 @@ public static class ProductionConfigurationValidator
         {
             errors.Add("Security:EncryptionKey is required in production (set via SECURITY__ENCRYPTIONKEY environment variable)");
         }
-        else if (encryptionKey.Equals("SET_VIA_ENV_VAR", StringComparison.OrdinalIgnoreCase))
+        else if (IsPlaceholderValue(encryptionKey))
         {
-            errors.Add("Security:EncryptionKey has placeholder value 'SET_VIA_ENV_VAR' — generate a random 32-byte key via: openssl rand -hex 32");
+            errors.Add("Security:EncryptionKey has placeholder value — generate a random 32-byte key via: openssl rand -hex 32");
         }
         else if (!IsValidHexString(encryptionKey, 64))
         {
@@ -63,9 +63,9 @@ public static class ProductionConfigurationValidator
         {
             errors.Add("Security:SpaToken:Secret is required in production (set via SECURITY__SPATOKEN__SECRET environment variable)");
         }
-        else if (spaTokenSecret.Equals("SET_VIA_ENV_VAR", StringComparison.OrdinalIgnoreCase))
+        else if (IsPlaceholderValue(spaTokenSecret))
         {
-            errors.Add("Security:SpaToken:Secret has placeholder value 'SET_VIA_ENV_VAR' — generate a random secret via: openssl rand -hex 32");
+            errors.Add("Security:SpaToken:Secret has placeholder value — generate a random secret via: openssl rand -hex 32");
         }
         else if (spaTokenSecret.Length < 32)
         {
@@ -166,5 +166,13 @@ public static class ProductionConfigurationValidator
         return key.StartsWith("REPLACED_BY_KEYVAULT", StringComparison.OrdinalIgnoreCase)
             || key.StartsWith("SET_VIA_", StringComparison.OrdinalIgnoreCase)
             || key.StartsWith("CHANGE_THIS", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsPlaceholderValue(string value)
+    {
+        return value.StartsWith("SET_VIA_", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("CHANGE_THIS", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("DEV_KEY_", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("REPLACED_BY_", StringComparison.OrdinalIgnoreCase);
     }
 }

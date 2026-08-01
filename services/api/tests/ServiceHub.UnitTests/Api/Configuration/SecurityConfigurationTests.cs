@@ -40,12 +40,13 @@ public class SecurityConfigurationTests
             // Look for patterns that indicate a hardcoded value
             if (trimmed.Contains(":") && !trimmed.Contains("SET_VIA_ENV_VAR") && !trimmed.Contains("${"))
             {
-                // Extract the value part (after the colon)
-                var colonIndex = trimmed.LastIndexOf(':');
+                // Extract the value part (after the first colon, which is the YAML separator)
+                var colonIndex = trimmed.IndexOf(':');
                 if (colonIndex > 0 && colonIndex < trimmed.Length - 1)
                 {
                     var value = trimmed.Substring(colonIndex + 1).Trim();
                     value = value.TrimEnd(',');
+                    value = value.Trim('"');
 
                     // Check for 64+ hex digit patterns (actual encryption keys)
                     if (System.Text.RegularExpressions.Regex.IsMatch(value, @"^[a-f0-9]{64,}$"))
