@@ -102,6 +102,78 @@ public sealed class DeterministicClusteringStrategy : ISignatureAnalysisStrategy
         return await Task.FromResult(Result.Success(result)).ConfigureAwait(false);
     }
 
+    public async Task<Result<ClusterAnalysisResult>> AnalyzeFingerprintsAsync(
+        IReadOnlyList<FailureFingerprint> fingerprints,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(fingerprints);
+
+        // Empty batch: return empty result (no clustering needed).
+        if (fingerprints.Count == 0)
+        {
+            return Result.Success(new ClusterAnalysisResult([], [], StrategyName, new Dictionary<string, long>()));
+        }
+
+        // Group fingerprints by their hash (stable identifier for same failure patterns).
+        var groupsByHash = fingerprints
+            .Select((fp, idx) => (Index: idx.ToString(), Fingerprint: fp))
+            .GroupBy(x => x.Fingerprint.Hash)
+            .ToList();
+
+        var clusters = new List<ClusterSummary>();
+        var singletons = new List<ClusterSingleton>();
+        var refToMessageId = new Dictionary<string, long>();
+
+        // Build ref → message ID mapping (needed for ref resolution downstream).
+        // Note: fingerprints don't contain messageId directly, so refs are indices.
+        for (var i = 0; i < fingerprints.Count; i++)
+        {
+            refToMessageId[i.ToString()] = 0; // Placeholder; real message IDs not available from fingerprints alone
+        }
+
+        foreach (var group in groupsByHash)
+        {
+            var members = group.ToList();
+
+            if (members.Count < MinClusterSize)
+            {
+                // Singleton: fingerprint with unique hash.
+                foreach (var member in members)
+                {
+                    singletons.Add(new ClusterSingleton(
+                        Ref: member.Index,
+                        DominantEntity: member.Fingerprint.Features.EntityName,
+                        DominantDeadletterReason: member.Fingerprint.Features.DeadLetterReason));
+                }
+                continue;
+            }
+
+            // Cluster: multiple fingerprints with the same hash.
+            var representative = members[0].Fingerprint;
+            var topTerms = representative.TopTerms.ToList();
+
+            var cluster = new ClusterSummary(
+                Size: members.Count,
+                RepresentativeRef: members[0].Index,
+                TopTerms: topTerms,
+                FirstOccurrenceRef: members[0].Index,
+                LastOccurrenceRef: members[^1].Index,
+                DominantEntity: representative.Features.EntityName,
+                DominantDeadletterReason: representative.Features.DeadLetterReason,
+                MemberRefs: members.Select(m => m.Index).ToList(),
+                DominantDeadletterReasonCount: members.Count(m =>
+                    string.Equals(
+                        m.Fingerprint.Features.DeadLetterReason,
+                        representative.Features.DeadLetterReason,
+                        StringComparison.OrdinalIgnoreCase)));
+
+            clusters.Add(cluster);
+        }
+
+        var result = new ClusterAnalysisResult(clusters, singletons, StrategyName, refToMessageId);
+        return await Task.FromResult(Result.Success(result)).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Computes a stable fingerprint from a message's observable characteristics.
     /// Same input message properties always produce the same fingerprint.

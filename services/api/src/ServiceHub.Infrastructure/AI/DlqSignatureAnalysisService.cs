@@ -29,6 +29,9 @@ public sealed class DlqSignatureAnalysisService : IDlqSignatureAnalysisService
     private readonly AIClusteringStrategy _aiStrategy;
     private readonly DeterministicClusteringStrategy _deterministicStrategy;
     private readonly INamespaceSignatureLookupService _signatureLookupService;
+    private readonly IFailureFeatureExtractor _featureExtractor;
+    private readonly IFailureFingerprintBuilder _fingerprintBuilder;
+    private readonly IFailureSignatureRecognitionService _signatureRecognition;
     private readonly ILogger<DlqSignatureAnalysisService> _logger;
 
     public DlqSignatureAnalysisService(
@@ -36,12 +39,18 @@ public sealed class DlqSignatureAnalysisService : IDlqSignatureAnalysisService
         AIClusteringStrategy aiStrategy,
         DeterministicClusteringStrategy deterministicStrategy,
         INamespaceSignatureLookupService signatureLookupService,
+        IFailureFeatureExtractor featureExtractor,
+        IFailureFingerprintBuilder fingerprintBuilder,
+        IFailureSignatureRecognitionService signatureRecognition,
         ILogger<DlqSignatureAnalysisService> logger)
     {
         _historyService = historyService ?? throw new ArgumentNullException(nameof(historyService));
         _aiStrategy = aiStrategy ?? throw new ArgumentNullException(nameof(aiStrategy));
         _deterministicStrategy = deterministicStrategy ?? throw new ArgumentNullException(nameof(deterministicStrategy));
         _signatureLookupService = signatureLookupService ?? throw new ArgumentNullException(nameof(signatureLookupService));
+        _featureExtractor = featureExtractor ?? throw new ArgumentNullException(nameof(featureExtractor));
+        _fingerprintBuilder = fingerprintBuilder ?? throw new ArgumentNullException(nameof(fingerprintBuilder));
+        _signatureRecognition = signatureRecognition ?? throw new ArgumentNullException(nameof(signatureRecognition));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -75,7 +84,52 @@ public sealed class DlqSignatureAnalysisService : IDlqSignatureAnalysisService
                 Singletons: []));
         }
 
+        // Extract features from all messages (strategy-independent layer).
+        var extractResult = await _featureExtractor.ExtractBatchAsync(messages, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (extractResult.IsFailure)
+        {
+            _logger.LogWarning(
+                "Feature extraction failed for namespace {NamespaceId}; cannot proceed with signature analysis",
+                namespaceId);
+            return Result.Failure<DlqSignatureAnalysisResult>(extractResult.Error);
+        }
+
+        var features = extractResult.Value;
+
+        // Build fingerprints from extracted features (deterministic, strategy-independent).
+        var fingerprintResult = await _fingerprintBuilder.ComputeBatchAsync(features, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (fingerprintResult.IsFailure)
+        {
+            _logger.LogWarning(
+                "Fingerprint computation failed for namespace {NamespaceId}; cannot proceed with signature analysis",
+                namespaceId);
+            return Result.Failure<DlqSignatureAnalysisResult>(fingerprintResult.Error);
+        }
+
+        var fingerprints = fingerprintResult.Value;
+
+        // Recognize or create signatures from fingerprints (Phase 2: business-level domain model).
+        // This happens before clustering to establish signature identity early.
+        var signatureResult = await _signatureRecognition.RecognizeBatchAsync(
+            ownerId, namespaceId, fingerprints, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (signatureResult.IsFailure)
+        {
+            _logger.LogWarning(
+                "Signature recognition failed for namespace {NamespaceId}; cannot proceed with signature analysis",
+                namespaceId);
+            return Result.Failure<DlqSignatureAnalysisResult>(signatureResult.Error);
+        }
+
+        var signatures = signatureResult.Value;
+
         // Try AI clustering first; fall back to deterministic if it fails.
+        // (Clustering now serves as secondary grouping for UI visualization)
         var analyzeResult = await _aiStrategy.AnalyzeAsync(messages, cancellationToken)
             .ConfigureAwait(false);
 

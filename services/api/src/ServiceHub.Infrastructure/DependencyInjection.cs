@@ -167,6 +167,13 @@ public static class DependencyInjection
 
         services.TryAddSingleton<IAIServiceClient, AIServiceClient>();
 
+        // Feature extraction and fingerprinting services (strategy-independent layer)
+        services.TryAddScoped<IFailureFeatureExtractor, AI.FailureFeatureExtractor>();
+        services.TryAddScoped<IFailureFingerprintBuilder, AI.FailureFingerprintBuilder>();
+
+        // Signature recognition service (business-level layer)
+        services.TryAddScoped<IFailureSignatureRecognitionService, AI.FailureSignatureRecognitionService>();
+
         return services;
     }
 
@@ -237,6 +244,9 @@ public static class DependencyInjection
         // DlqSignatureAnalysisService orchestrates both strategies, trying AI first
         // and falling back to deterministic if AI is unavailable.
         services.TryAddScoped<IDlqSignatureAnalysisService, AI.DlqSignatureAnalysisService>();
+
+        // Failure Knowledge service for operational memory
+        services.TryAddScoped<IFailureKnowledgeService, FailureKnowledgeService>();
 
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();

@@ -27,4 +27,17 @@ public interface ISignatureAnalysisStrategy
     Task<Result<ClusterAnalysisResult>> AnalyzeAsync(
         IReadOnlyList<DlqMessage> messages,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Analyzes pre-built failure fingerprints and groups them into error clusters.
+    /// This is the fingerprint-based path (preferred for new code).
+    /// </summary>
+    /// <param name="fingerprints">Pre-extracted and fingerprinted failures.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// A result containing clusters, singletons, and method name.
+    /// </returns>
+    Task<Result<ClusterAnalysisResult>> AnalyzeFingerprintsAsync(
+        IReadOnlyList<FailureFingerprint> fingerprints,
+        CancellationToken cancellationToken = default);
 }

@@ -37,4 +37,32 @@ public sealed class AIClusteringStrategy : ISignatureAnalysisStrategy
 
         return result;
     }
+
+    public async Task<Result<ClusterAnalysisResult>> AnalyzeFingerprintsAsync(
+        IReadOnlyList<FailureFingerprint> fingerprints,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(fingerprints);
+
+        // Empty batch: return empty result.
+        if (fingerprints.Count == 0)
+        {
+            return Result.Success(new ClusterAnalysisResult([], [], "ai", new Dictionary<string, long>()));
+        }
+
+        // For fingerprint-based analysis, delegate to AI service by reconstructing
+        // message-like features. This is a bridge implementation for Phase 1.
+        // Future improvements could pass fingerprints directly to the AI service.
+        var refToMessageId = new Dictionary<string, long>();
+        for (var i = 0; i < fingerprints.Count; i++)
+        {
+            refToMessageId[i.ToString()] = 0; // Placeholder; real message IDs not available from fingerprints
+        }
+
+        // For now, fall back to deterministic clustering when using fingerprints.
+        // This ensures the fingerprint path is always available and functional.
+        var deterministicStrategy = new DeterministicClusteringStrategy();
+        return await deterministicStrategy.AnalyzeFingerprintsAsync(fingerprints, cancellationToken)
+            .ConfigureAwait(false);
+    }
 }

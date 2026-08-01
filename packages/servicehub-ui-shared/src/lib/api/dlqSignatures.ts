@@ -2,6 +2,19 @@ import { apiClient } from './client';
 
 // ─── Types ─────────────────────────────────────────────────────────
 
+export interface FailureKnowledge {
+  rootCause: string | null;
+  resolutionNotes: string | null;
+  operationalNotes: string | null;
+  runbookLink: string | null;
+  owner: string | null;
+  replayGuidance: string | null;
+  lastUpdatedAt: string | null;
+  knowledgeVersion: number;
+  reviewDueAt: string | null;
+  tags: string | null;
+}
+
 export interface DlqClusterSignature {
   size: number;
   messageIds: number[];
@@ -15,6 +28,7 @@ export interface DlqClusterSignature {
   windowStart: string;
   windowEnd: string;
   explanation: string;
+  knowledge?: FailureKnowledge | null;
 }
 
 export interface DlqSingletonSignature {
