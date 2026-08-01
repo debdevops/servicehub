@@ -10,21 +10,20 @@ and restart.
 
 ## Behavior changes to be aware of
 
-- **Simulator demo port is now loopback-bound.** `docker-compose.yml`'s Simulator profile binds
-  `127.0.0.1:8080:8080` instead of `8080:8080`. If you demo across a LAN today, this will stop
-  working until you deliberately change the port mapping — see `docs/DEMO-MODE.md`. Why: Simulator
-  mode disables auth/rate-limiting/encryption by design, so it should never have been reachable
-  over a network.
+- **Simulator backend has been removed.** The `ASPNETCORE_ENVIRONMENT=Simulator` backend and
+  `docker-compose.yml`'s Simulator profile are no longer available. The zero-credential way to
+  explore the UI is now the client-side Demo Mode (`/demo/azure`, `/demo/aws`, `/demo/gcp`) —
+  fully functional, backend-free, and safe to use anywhere without credentials. See `docs/DEMO-MODE.md`.
 - **AWS DLQ background monitoring is off unless opted in.** Background scanning (and "Scan Now")
   now skip AWS namespaces by default, returning a distinct "not monitored" state instead of an
   indistinguishable empty result. Set `DlqMonitor:AllowDestructivePeek:Aws=true` to opt back in.
   Why: every scan was a real SQS `ReceiveMessage` call, incrementing `ReceiveCount` and risking
   accidental dead-lettering. Azure and GCP are unaffected.
-- **Restrictive CSP now applies to Staging and Simulator, not just Production.** The security
-  headers middleware is keyed on `IsDevelopment()`, not `IsProduction()` — previously any
-  non-Production environment name risked getting the permissive development CSP by mistake. If you
-  run a `Staging` environment and depended on the permissive policy there (e.g. for an in-browser
-  tool that needs a looser CSP), you'll need to explicitly configure for that now.
+- **Restrictive CSP now applies to Staging, not just Production.** The security headers
+  middleware is keyed on `IsDevelopment()`, not `IsProduction()` — previously any non-Production
+  environment name risked getting the permissive development CSP by mistake. If you run a `Staging`
+  environment and depended on the permissive policy there (e.g. for an in-browser tool that needs
+  a looser CSP), you'll need to explicitly configure for that now.
 - **Repeated authentication failures are now throttled.** A sliding-window lockout
   (`AuthFailureThrottle`, default: 10 failures / 5 minutes) now returns `429` on repeated invalid
   API-key attempts. If you have automation that retries with a bad key in a loop, it will start

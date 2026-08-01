@@ -131,6 +131,26 @@ public static class ErrorCodes
         /// Failed to cancel a scheduled message.
         /// </summary>
         public const string ScheduledCancelFailed = "Message.Scheduled.CancelFailed";
+
+        /// <summary>
+        /// The provider does not support the purge operation.
+        /// </summary>
+        public const string PurgeUnsupported = "Message.Operation.PurgeUnsupported";
+
+        /// <summary>
+        /// The provider does not support retrieving message counts.
+        /// </summary>
+        public const string CountUnsupported = "Message.Operation.CountUnsupported";
+
+        /// <summary>
+        /// The provider does not support scheduled messages.
+        /// </summary>
+        public const string ScheduledUnsupported = "Message.Operation.ScheduledUnsupported";
+
+        /// <summary>
+        /// The provider does not support manual dead-lettering.
+        /// </summary>
+        public const string DeadLetterUnsupported = "Message.Operation.DeadLetterUnsupported";
     }
 
     /// <summary>
