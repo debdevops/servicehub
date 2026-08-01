@@ -85,6 +85,12 @@ var app = builder.Build();
 // Emit a single, secret-free summary of the effective configuration for operability.
 app.LogStartupSummary();
 
+// Validate production configuration — fail fast if required settings are missing or invalid
+ProductionConfigurationValidator.ValidateProduction(
+    app.Configuration,
+    app.Environment,
+    app.Logger);
+
 // Wire Platform Event subscribers before any hosted service starts.
 // This registers WebhookDlqSpikeHandler (and future handlers) with the
 // InProcessPlatformEventBus singleton drain loop.

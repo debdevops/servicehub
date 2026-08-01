@@ -121,6 +121,56 @@ SPA from calling its own API from a browser.
 > **Note:** In Production mode the app **will not start** without a real `SECURITY__ENCRYPTIONKEY`
 > (this is intentional — it prevents shipping with a known default key).
 
+#### 🌐 Reverse proxy and X-Forwarded-For header configuration
+
+If ServiceHub runs behind a reverse proxy (Nginx, HAProxy, AWS ALB, Azure Application Gateway, etc.),
+the proxy must be explicitly configured to ensure audit logging and auth throttling work correctly.
+
+**Why this matters:** ServiceHub reads the client IP from `X-Forwarded-For` headers to log audit
+events and throttle failed authentication attempts. If your reverse proxy is not explicitly trusted,
+ServiceHub will accept `X-Forwarded-For` from any client, allowing spoofed IPs in audit logs and
+bypassing auth throttling.
+
+**If you run ServiceHub directly on the internet (not behind a proxy):** No action needed.
+
+**If you run behind a reverse proxy:** You must explicitly configure which proxy IP(s) to trust.
+Edit `appsettings.Production.json` or set environment variables:
+
+**For Nginx reverse proxy** (forward traffic from `10.0.0.5`):
+```json
+{
+  "ForwardedHeaders": {
+    "KnownProxies": ["10.0.0.5"],
+    "ForwardedHeaders": ["XForwardedFor", "XForwardedProto"]
+  }
+}
+```
+
+**For AWS ALB or Azure Application Gateway** (trust all traffic from load balancer):
+```json
+{
+  "ForwardedHeaders": {
+    "KnownIPNetworks": ["10.0.0.0/8"],
+    "ForwardedHeaders": ["XForwardedFor", "XForwardedProto"]
+  }
+}
+```
+
+**For multi-proxy setups** (Nginx → Application Gateway → ServiceHub):
+```json
+{
+  "ForwardedHeaders": {
+    "KnownProxies": ["10.0.0.5"],
+    "KnownIPNetworks": ["10.0.0.0/8"],
+    "ForwardedHeaders": ["XForwardedFor", "XForwardedProto"]
+  }
+}
+```
+
+See [docs/CONFIGURATION.md](../docs/CONFIGURATION.md) for the complete `ForwardedHeaders` schema and
+all allowed values. Once configured, ServiceHub logs the actual client IP in audit trails and
+correctly throttles authentication failures per source.
+
 ---
 
 ### 💻 Run locally on your machine
