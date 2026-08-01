@@ -21,8 +21,12 @@ services:
       # UseStaticFiles/MapFallbackToFile and redirects / to /scalar/v1 instead, since it
       # assumes a separate `npm run dev` frontend on :3000, which this container doesn't run.
       ASPNETCORE_ENVIRONMENT: Production
-      # Override for anything you'd treat as sensitive: SECURITY__ENCRYPTIONKEY=$(openssl rand -hex 32) docker compose up --build
-      SECURITY__ENCRYPTIONKEY: ${SECURITY__ENCRYPTIONKEY:-0a1715d2edbbbef62384ee797ed6bf7ce01ef56ee7da55dcc04fb7f297e53a4d}
+      # SECURITY: SECURITY__ENCRYPTIONKEY is required and must be generated per-deployment.
+      # DO NOT use a default or hardcoded value. Generate a random key per deployment:
+      #   SECURITY__ENCRYPTIONKEY=$(openssl rand -hex 32) docker compose up --build
+      # Reusing the same key across deployments or checking keys into version control
+      # compromises connection-string encryption for every namespace stored with that key.
+      SECURITY__ENCRYPTIONKEY: ${SECURITY__ENCRYPTIONKEY}
       # appsettings.Production.json's AllowedHosts placeholder rejects every Host header
       # until overridden; this container is only reachable via localhost per the ports mapping.
       AllowedHosts: localhost
