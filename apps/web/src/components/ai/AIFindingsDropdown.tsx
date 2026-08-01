@@ -68,6 +68,9 @@ export function AIFindingsDropdown({ insights, onClose, onViewEvidence }: AIFind
       <div
         className="fixed w-[420px] bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden"
         style={coords ? { top: coords.top, right: coords.right } : { top: 0, right: 0, opacity: 0 }}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Active AI Patterns"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
@@ -79,6 +82,7 @@ export function AIFindingsDropdown({ insights, onClose, onViewEvidence }: AIFind
           </div>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="p-1 hover:bg-gray-200 rounded-lg transition-colors"
           >
             <X className="w-4 h-4 text-gray-500" />

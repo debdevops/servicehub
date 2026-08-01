@@ -74,7 +74,7 @@ export function HelpPage() {
                 </div>
               </div>
               <p className="text-gray-600 ml-[68px] text-sm leading-relaxed max-w-2xl">
-                Everything you need to debug Azure Service Bus effectively — from getting started to advanced troubleshooting. Search or browse by topic.
+                Everything you need to debug Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub effectively — from getting started to advanced troubleshooting. Search or browse by topic.
               </p>
             </div>
             <button

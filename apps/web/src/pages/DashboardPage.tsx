@@ -281,7 +281,7 @@ function SkeletonCard() {
         <div className="h-5 w-32 bg-gray-200 rounded" />
       </div>
       <div className="h-3 w-48 bg-gray-100 rounded mb-4" />
-      <div className="grid grid-cols-6 gap-2 mb-4">
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4">
         {[0, 1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="bg-gray-100 rounded-lg p-3">
             <div className="h-3 w-8 bg-gray-200 rounded mb-2 mx-auto" />
@@ -453,7 +453,7 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-6 gap-2 px-5 pb-3">
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 px-5 pb-3">
         <StatCell label="Queues" value={isError ? '—' : totalQueues} />
         <StatCell label="Topics" value={isError ? '—' : totalTopics} colorClass="text-indigo-700" />
         <StatCell label="Subs" value={isError ? '—' : totalSubscriptions} colorClass="text-indigo-700" />

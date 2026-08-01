@@ -230,10 +230,10 @@ export default function FleetPage() {
           {/* Summary tiles */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatTile
-              icon={<Inbox className="w-5 h-5 text-purple-600" />}
+              icon={<Inbox className="w-5 h-5 text-amber-600" />}
               label="Active dead-letters"
               value={data.totalActive}
-              tone="bg-purple-50"
+              tone="bg-amber-50"
             />
             <StatTile
               icon={<AlertTriangle className="w-5 h-5 text-red-600" />}

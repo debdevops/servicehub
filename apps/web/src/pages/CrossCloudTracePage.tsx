@@ -241,7 +241,7 @@ export function CrossCloudTracePage() {
         <button
           onClick={handleTrace}
           disabled={!traceId.trim() || isPending}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+          className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
         >
           {isPending ? (
             <>

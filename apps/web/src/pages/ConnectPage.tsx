@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight, AlertTriangle, Upload, FileJson, X, Inbox, PlugZap, RefreshCw } from 'lucide-react';
+import { Eye, EyeOff, Trash2, Github, Play, Star, Shield, ArrowRight, AlertTriangle, Upload, FileJson, X, Inbox, PlugZap, RefreshCw, ChevronDown, Plus } from 'lucide-react';
 import { useNamespaces, useCreateNamespace, useDeleteNamespace, useTestConnection } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useProviderStatus } from '@servicehub/ui-shared/hooks/useCloudBridge';
 import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
@@ -12,9 +12,15 @@ import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 import type { EnvironmentType, CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import toast from 'react-hot-toast';
 
+const DEMO_OPTIONS = [
+  { label: 'Azure', sub: 'Service Bus · Contoso', url: '/demo/azure', color: 'bg-blue-600 hover:bg-blue-700' },
+  { label: 'AWS', sub: 'SQS · AcmeRetail', url: '/demo/aws', color: 'bg-orange-500 hover:bg-orange-600' },
+  { label: 'GCP', sub: 'Pub/Sub · MedStream', url: '/demo/gcp', color: 'bg-green-600 hover:bg-green-700' },
+] as const;
+
 /**
  * Connection Setup Page
- * 
+ *
  * Onboarding-style screen for connecting cloud messaging namespaces (Azure Service Bus, AWS SQS/SNS, GCP Pub/Sub).
  */
 export function ConnectPage() {
@@ -96,6 +102,16 @@ export function ConnectPage() {
   const createNamespace = useCreateNamespace();
   const deleteNamespace = useDeleteNamespace();
   const testConnection = useTestConnection();
+
+  // Returning users (who already have a saved connection) get a compact,
+  // saved-connections-first layout; first-time users get the form and Demo
+  // Mode front and center. Recomputed each render (not a mount-time snapshot)
+  // so the "Connect another" accordion collapses automatically right after a
+  // first successful connect, unless the user has explicitly toggled it.
+  const hasNamespaces = !!namespaces && namespaces.length > 0;
+  const [addFormOpenOverride, setAddFormOpenOverride] = useState<boolean | null>(null);
+  const addFormOpen = addFormOpenOverride ?? !hasNamespaces;
+  const [learnMoreOpen, setLearnMoreOpen] = useState(false);
 
   // Whether the AWS/GCP providers are actually enabled on this server
   // (CloudProviders:{provider}:Enabled). Treated as disabled until known.
@@ -285,23 +301,35 @@ export function ConnectPage() {
             HEADER — compact tagline
         ══════════════════════════════════════════════════════════════ */}
         <div className="mb-6">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse" />
-            <span className="text-xs font-semibold text-sky-700">Free · Open Source · No installation</span>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900 leading-tight">
-            Debug your cloud message queues{' '}
-            <span className="text-primary-600">in seconds.</span>
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Browse messages, pinpoint DLQ failures, replay dead-lettered events — all from your browser.
-          </p>
+          {hasNamespaces ? (
+            <>
+              <h1 className="text-2xl font-bold text-gray-900 leading-tight">Connections</h1>
+              <p className="text-sm text-gray-500 mt-1">
+                Manage your saved namespace connections, or add another below.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse" />
+                <span className="text-xs font-semibold text-sky-700">Free · Open Source · No installation</span>
+              </div>
+              <h1 className="text-2xl font-bold text-gray-900 leading-tight">
+                Debug your cloud message queues{' '}
+                <span className="text-primary-600">in seconds.</span>
+              </h1>
+              <p className="text-sm text-gray-500 mt-1">
+                Browse messages, pinpoint DLQ failures, replay dead-lettered events — all from your browser.
+              </p>
+            </>
+          )}
         </div>
 
         {/* ══════════════════════════════════════════════════════════════
-            v3.1.0 UPGRADE NOTICE
+            v3.1.0 UPGRADE NOTICE — only relevant once a connection exists
+            to migrate; meaningless noise on a fresh install.
         ══════════════════════════════════════════════════════════════ */}
-        {showHkdfNotice && (
+        {hasNamespaces && showHkdfNotice && (
           <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 p-3 flex items-start justify-between gap-3">
             <p className="text-xs text-amber-800">
               <span className="font-semibold">ServiceHub v3.1.0</span> upgrades encryption key derivation (HKDF).
@@ -319,33 +347,175 @@ export function ConnectPage() {
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            MULTI-INSTANCE STORAGE NOTICE
+            MULTI-INSTANCE STORAGE NOTICE — an operational/deployment
+            consideration, not a first-connection concern.
         ══════════════════════════════════════════════════════════════ */}
-        <div className="mb-4 rounded-lg bg-sky-50 border border-sky-200 p-3 flex items-start gap-2.5">
-          <AlertTriangle className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
-          <p className="text-xs text-sky-800">
-            <span className="font-semibold">Single-instance storage:</span> Namespace connections are stored locally on the server running ServiceHub.
-            {' '}If you are running <strong>multiple instances</strong> (e.g., Azure App Service with scale-out), each instance has its own connection list.
-            {' '}Use <strong>sticky sessions</strong> or ensure all instances share the same storage path to avoid inconsistent connection lists across page refreshes.
-          </p>
-        </div>
+        {hasNamespaces && (
+          <div className="mb-4 rounded-lg bg-sky-50 border border-sky-200 p-3 flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-sky-800">
+              <span className="font-semibold">Single-instance storage:</span> Namespace connections are stored locally on the server running ServiceHub.
+              {' '}If you are running <strong>multiple instances</strong> (e.g., Azure App Service with scale-out), each instance has its own connection list.
+              {' '}Use <strong>sticky sessions</strong> or ensure all instances share the same storage path to avoid inconsistent connection lists across page refreshes.
+            </p>
+          </div>
+        )}
 
         {/* ══════════════════════════════════════════════════════════════
-            CONNECT FORM + SAVED CONNECTIONS  (primary action — above fold)
+            DEMO HERO — primary onboarding path for first-time users.
+            No credentials, no risk, understand the product in one click.
+        ══════════════════════════════════════════════════════════════ */}
+        {!hasNamespaces && (
+          <div className="mb-6 rounded-xl border border-slate-700 bg-gradient-to-r from-slate-800 to-primary-900 p-5">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Play className="w-4 h-4 text-amber-300 fill-current" />
+              <span className="text-sm font-semibold text-white">New here? Explore instantly — no credentials needed</span>
+            </div>
+            <p className="text-xs text-slate-300 mb-4">
+              Every demo is pre-loaded with realistic failure data — DLQ inspection, AI root-cause detection, and replay all work out of the box.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {DEMO_OPTIONS.map(({ label, sub, url, color }) => (
+                <button
+                  key={label}
+                  onClick={() => navigate(url)}
+                  className={`${color} text-white rounded-lg px-4 py-3 text-left transition-colors`}
+                >
+                  <div className="text-sm font-semibold">{label} Demo</div>
+                  <div className="text-white/70 text-xs mt-0.5">{sub}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════
+            SAVED CONNECTIONS HERO — primary surface for returning users.
+        ══════════════════════════════════════════════════════════════ */}
+        {hasNamespaces && (
+          <div className="mb-6 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-1.5">
+              Saved Connections
+              <HelpTooltip {...tooltips.connect.savedConnections} position="bottom" className="ml-1" />
+            </h2>
+            <div className="space-y-3">
+              {namespaces!.map((ns) => (
+                <div
+                  key={ns.id}
+                  className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg transition-colors bg-gray-50 border border-gray-200 hover:bg-gray-100 hover:border-gray-300"
+                >
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div
+                      className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                        ns.isActive ? 'bg-green-500' : 'bg-gray-300'
+                      }`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <h3
+                        className="font-medium text-gray-900 truncate"
+                        title={ns.displayName || ns.name}
+                      >
+                        {ns.displayName || ns.name}
+                      </h3>
+                      <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                        <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase ${
+                          ns.environment === 'prod' ? 'bg-red-100 text-red-700' :
+                          ns.environment === 'uat' ? 'bg-amber-100 text-amber-700' :
+                          'bg-green-100 text-green-700'
+                        }`}>
+                          {ns.environment || 'dev'}
+                        </span>
+                        <ProviderBadge provider={ns.cloudProvider} />
+                      </div>
+                      <p className="text-xs text-gray-500 truncate mt-0.5">
+                        {ns.name}
+                        {ns.lastUsedAt && ` • Last used: ${new Date(ns.lastUsedAt).toLocaleDateString()}`}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => testConnection.mutate(ns.id)}
+                      disabled={testConnection.isPending && testConnection.variables === ns.id}
+                      className="p-1.5 hover:bg-primary-100 text-primary-600 rounded-lg transition-colors disabled:opacity-50"
+                      type="button"
+                      aria-label={`Test connection to ${ns.displayName || ns.name}`}
+                      title="Test connection"
+                    >
+                      {testConnection.isPending && testConnection.variables === ns.id ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <PlugZap className="w-4 h-4" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => navigate(`/messages?namespace=${ns.id}`)}
+                      className="px-3 py-1.5 text-white text-sm font-medium rounded-lg transition-colors bg-primary-500 hover:bg-primary-600"
+                      aria-label={`Open ${ns.displayName || ns.name} namespace`}
+                    >
+                      Open
+                    </button>
+                    <button
+                      onClick={() => openDeleteConfirm(ns.id, ns.displayName || ns.name)}
+                      className="p-1.5 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
+                      type="button"
+                      aria-label={`Delete ${ns.displayName || ns.name} connection`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════
+            CONNECT FORM  (+ empty Saved Connections state for first-timers)
         ══════════════════════════════════════════════════════════════ */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start mb-6">
-          {/* Left: Connect Form */}
+          {/* Left: Connect Form — a full card for first-time users (the primary
+              action), a collapsed accordion trigger for returning users who
+              already have a saved connection open in the right column. */}
+          {hasNamespaces && !addFormOpen ? (
+            <button
+              type="button"
+              onClick={() => setAddFormOpenOverride(true)}
+              aria-expanded={false}
+              className="w-full flex items-center justify-between gap-3 bg-white rounded-xl border border-gray-200 shadow-sm p-5 text-left hover:border-primary-300 hover:bg-primary-50/40 transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <Plus className="w-4 h-4 text-primary-600" />
+                <span className="text-sm font-semibold text-gray-900">Connect another namespace</span>
+              </span>
+              <ChevronDown className="w-4 h-4 text-gray-400" />
+            </button>
+          ) : (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-9 h-9 bg-primary-50 border border-primary-100 rounded-lg flex items-center justify-center">
-                <span className="text-base">☁️</span>
+            <div className="flex items-center justify-between gap-3 mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-primary-50 border border-primary-100 rounded-lg flex items-center justify-center">
+                  <span className="text-base">☁️</span>
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-gray-900">Connect to Cloud Messaging</h2>
+                  <p className="text-xs text-gray-500">
+                    Azure Service Bus · AWS SQS · GCP Pub/Sub
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-base font-semibold text-gray-900">Connect to Cloud Messaging</h2>
-                <p className="text-xs text-gray-500">
-                  Azure Service Bus · AWS SQS · GCP Pub/Sub
-                </p>
-              </div>
+              {hasNamespaces && (
+                <button
+                  type="button"
+                  onClick={() => setAddFormOpenOverride(false)}
+                  aria-expanded={true}
+                  className="shrink-0 flex items-center gap-1 text-xs font-medium text-gray-400 hover:text-gray-600"
+                >
+                  Collapse
+                  <ChevronDown className="w-3.5 h-3.5 rotate-180" />
+                </button>
+              )}
             </div>
 
             {/* ── Cloud provider selector ───────────────────────────────────────── */}
@@ -436,42 +606,48 @@ export function ConnectPage() {
               )}
             </div>
 
-            {/* Trust & Security panel (Azure only — GCP/AWS have different security models) */}
+            {/* Trust & Security — condensed to one line; full checklist is one click away
+                (Azure only — GCP/AWS have different security models) */}
             {cloudProvider === 'azure' && (
-              <div className="mb-4 rounded-lg bg-green-50 border border-green-100 p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Shield className="w-4 h-4 text-green-600 flex-shrink-0" />
-                  <span className="text-xs font-semibold text-green-800">Your data stays yours</span>
+              <details className="mb-4 rounded-lg bg-green-50 border border-green-100 group">
+                <summary className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none list-none">
+                  <Shield className="w-3.5 h-3.5 text-green-600 shrink-0" />
+                  <span className="text-xs font-medium text-green-800 flex-1">
+                    Your data stays yours — encrypted at rest, never logged
+                  </span>
+                  <ChevronDown className="w-3.5 h-3.5 text-green-600 shrink-0 transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="px-3 pb-3">
+                  <div className="space-y-1">
+                    {[
+                      { label: 'Connection string', value: 'AES-256-GCM encrypted before saving — never returned to browser' },
+                      { label: 'Message content', value: 'Never logged or stored by ServiceHub' },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="flex items-start gap-2 text-xs">
+                        <span className="text-green-500 mt-0.5 flex-shrink-0">✓</span>
+                        <span><span className="font-medium text-green-800">{label}:</span>{' '}
+                          <span className="text-green-700">{value}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-3 mt-2 pt-2 border-t border-green-100">
+                    <a
+                      href="https://github.com/debdevops/servicehub/blob/main/services/api/src/ServiceHub.Infrastructure/Security/ConnectionStringProtector.cs"
+                      target="_blank" rel="noopener noreferrer"
+                      className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
+                    >
+                      Verify encryption code →
+                    </a>
+                    <Link
+                      to="/security"
+                      className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
+                    >
+                      Security overview →
+                    </Link>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  {[
-                    { label: 'Connection string', value: 'AES-256-GCM encrypted before saving — never returned to browser' },
-                    { label: 'Message content', value: 'Never logged or stored by ServiceHub' },
-                  ].map(({ label, value }) => (
-                    <div key={label} className="flex items-start gap-2 text-xs">
-                      <span className="text-green-500 mt-0.5 flex-shrink-0">✓</span>
-                      <span><span className="font-medium text-green-800">{label}:</span>{' '}
-                        <span className="text-green-700">{value}</span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex items-center gap-3 mt-2 pt-2 border-t border-green-100">
-                  <a
-                    href="https://github.com/debdevops/servicehub/blob/main/services/api/src/ServiceHub.Infrastructure/Security/ConnectionStringProtector.cs"
-                    target="_blank" rel="noopener noreferrer"
-                    className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
-                  >
-                    Verify encryption code →
-                  </a>
-                  <Link
-                    to="/security"
-                    className="text-xs text-green-700 hover:text-green-900 underline underline-offset-2"
-                  >
-                    Security overview →
-                  </Link>
-                </div>
-              </div>
+              </details>
             )}
 
             <form onSubmit={handleConnect}>
@@ -790,137 +966,73 @@ export function ConnectPage() {
               </button>
             </form>
 
-            {/* SAS instructions — Azure only */}
+            {/* SAS instructions — Azure only; collapsed by default, one click away */}
             {cloudProvider === 'azure' && (
-              <div className="mt-3 rounded-r-lg border-l-2 border-blue-300 bg-blue-50 pl-3 pr-2 py-2">
-                <p className="text-xs font-semibold text-blue-800 mb-1">
-                  💡 A Listen-only key is all you need — and it's the safest option
-                </p>
-                <p className="text-xs text-blue-700 mb-1">
-                  A Listen-only policy can <strong>only read</strong> messages. It cannot delete, send, or
-                  modify anything. Even if this key were ever exposed, your data remains safe.
-                </p>
-                <ol className="text-xs text-blue-700 space-y-0.5 list-decimal list-inside">
-                  <li>Azure Portal → your Service Bus namespace</li>
-                  <li>Shared access policies → + Add policy</li>
-                  <li>Name it <code className="bg-blue-100 px-1 rounded">servicehub</code>, tick <strong>Listen only</strong></li>
-                  <li>Save → copy Primary Connection String → paste above</li>
-                </ol>
-              </div>
+              <details className="mt-3 rounded-lg border border-blue-200 bg-blue-50 group">
+                <summary className="cursor-pointer select-none list-none px-3 py-2 flex items-center gap-2">
+                  <span className="text-xs font-semibold text-blue-800 flex-1">
+                    💡 Need a connection string? Create a Listen-only key (safest option)
+                  </span>
+                  <ChevronDown className="w-3.5 h-3.5 text-blue-600 shrink-0 transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="px-3 pb-3 pt-0">
+                  <p className="text-xs text-blue-700 mb-1">
+                    A Listen-only policy can <strong>only read</strong> messages. It cannot delete, send, or
+                    modify anything. Even if this key were ever exposed, your data remains safe.
+                  </p>
+                  <ol className="text-xs text-blue-700 space-y-0.5 list-decimal list-inside">
+                    <li>Azure Portal → your Service Bus namespace</li>
+                    <li>Shared access policies → + Add policy</li>
+                    <li>Name it <code className="bg-blue-100 px-1 rounded">servicehub</code>, tick <strong>Listen only</strong></li>
+                    <li>Save → copy Primary Connection String → paste above</li>
+                  </ol>
+                </div>
+              </details>
             )}
           </div>
+          )}
 
-          {/* Right: Saved Connections + Demo callout */}
+          {/* Right: returning users see saved connections up top (hero, full width)
+              plus a compact demo callout here; first-time users see the empty
+              Saved Connections state here alongside the Demo hero above the fold. */}
           <div className="space-y-4">
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-              <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-1.5">
-                Saved Connections
-                <HelpTooltip {...tooltips.connect.savedConnections} position="bottom" className="ml-1" />
-              </h2>
+            {!hasNamespaces && (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-1.5">
+                  Saved Connections
+                  <HelpTooltip {...tooltips.connect.savedConnections} position="bottom" className="ml-1" />
+                </h2>
+                <EmptyState
+                  icon={Inbox}
+                  heading="No saved connections yet"
+                  subtext="Connect your first namespace to get started"
+                />
+              </div>
+            )}
 
-              <div className="space-y-3">
-                {namespaces && namespaces.length > 0 ? (
-                  namespaces.map((ns) => (
-                    <div
-                      key={ns.id}
-                      className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg transition-colors bg-gray-50 border border-gray-200 hover:bg-gray-100 hover:border-gray-300"
+            {/* Demo callout — compact; the full-size hero above already covers
+                this for first-time users, so only show it once they have a
+                saved connection and the hero has moved on to that. */}
+            {hasNamespaces && (
+              <div className="rounded-xl border border-slate-700 bg-gradient-to-r from-slate-800 to-primary-900 p-4">
+                <p className="text-xs font-semibold text-white mb-3 flex items-center gap-2">
+                  <Play className="w-3.5 h-3.5 text-amber-300 fill-current" />
+                  No credentials? Try Demo Mode first
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {DEMO_OPTIONS.map(({ label, sub, url, color }) => (
+                    <button
+                      key={label}
+                      onClick={() => navigate(url)}
+                      className={`${color} text-white text-xs font-semibold rounded-lg px-3 py-2 text-left transition-colors`}
                     >
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <div
-                          className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                            ns.isActive ? 'bg-green-500' : 'bg-gray-300'
-                          }`}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <h3
-                            className="font-medium text-gray-900 truncate"
-                            title={ns.displayName || ns.name}
-                          >
-                            {ns.displayName || ns.name}
-                          </h3>
-                          <div className="flex flex-wrap items-center gap-2 mt-0.5">
-                            <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase ${
-                              ns.environment === 'prod' ? 'bg-red-100 text-red-700' :
-                              ns.environment === 'uat' ? 'bg-amber-100 text-amber-700' :
-                              'bg-green-100 text-green-700'
-                            }`}>
-                              {ns.environment || 'dev'}
-                            </span>
-                            <ProviderBadge provider={ns.cloudProvider} />
-                          </div>
-                          <p className="text-xs text-gray-500 truncate mt-0.5">
-                            {ns.name}
-                            {ns.lastUsedAt && ` • Last used: ${new Date(ns.lastUsedAt).toLocaleDateString()}`}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          onClick={() => testConnection.mutate(ns.id)}
-                          disabled={testConnection.isPending && testConnection.variables === ns.id}
-                          className="p-1.5 hover:bg-primary-100 text-primary-600 rounded-lg transition-colors disabled:opacity-50"
-                          type="button"
-                          aria-label={`Test connection to ${ns.displayName || ns.name}`}
-                          title="Test connection"
-                        >
-                          {testConnection.isPending && testConnection.variables === ns.id ? (
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <PlugZap className="w-4 h-4" />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => navigate(`/messages?namespace=${ns.id}`)}
-                          className="px-3 py-1.5 text-white text-sm font-medium rounded-lg transition-colors bg-primary-500 hover:bg-primary-600"
-                          aria-label={`Open ${ns.displayName || ns.name} namespace`}
-                        >
-                          Open
-                        </button>
-                        <button
-                          onClick={() => openDeleteConfirm(ns.id, ns.displayName || ns.name)}
-                          className="p-1.5 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
-                          type="button"
-                          aria-label={`Delete ${ns.displayName || ns.name} connection`}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <EmptyState
-                    icon={Inbox}
-                    heading="No saved connections yet"
-                    subtext="Connect your first namespace to get started"
-                  />
-                )}
+                      <div>{label} Demo</div>
+                      <div className="text-white/70 font-normal text-[10px] mt-0.5">{sub}</div>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-
-            {/* Demo callout — three cloud demos */}
-            <div className="rounded-xl border border-slate-700 bg-gradient-to-r from-slate-800 to-primary-900 p-4">
-              <p className="text-xs font-semibold text-white mb-3 flex items-center gap-2">
-                <Play className="w-3.5 h-3.5 text-amber-300 fill-current" />
-                No credentials? Try Demo Mode first
-              </p>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { label: 'Azure', sub: 'Service Bus · Contoso', url: '/demo/azure', color: 'bg-blue-600 hover:bg-blue-700' },
-                  { label: 'AWS', sub: 'SQS · AcmeRetail', url: '/demo/aws', color: 'bg-orange-500 hover:bg-orange-600' },
-                  { label: 'GCP', sub: 'Pub/Sub · MedStream', url: '/demo/gcp', color: 'bg-green-600 hover:bg-green-700' },
-                ].map(({ label, sub, url, color }) => (
-                  <button
-                    key={label}
-                    onClick={() => navigate(url)}
-                    className={`${color} text-white text-xs font-semibold rounded-lg px-3 py-2 text-left transition-colors`}
-                  >
-                    <div>{label} Demo</div>
-                    <div className="text-white/70 font-normal text-[10px] mt-0.5">{sub}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
+            )}
 
             {/* Self-host callout */}
             <div className="bg-white rounded-xl border border-blue-100 p-4">
@@ -949,6 +1061,26 @@ export function ConnectPage() {
           </div>
         </div>
 
+        {/* ══════════════════════════════════════════════════════════════
+            LEARN MORE — how it works / use cases / comparison / star CTA.
+            Collapsed by default: this is persuasion content for people
+            deciding whether to adopt ServiceHub, not part of the connect
+            task itself, so it shouldn't compete with the primary action.
+        ══════════════════════════════════════════════════════════════ */}
+        <div className="text-center mb-8">
+          <button
+            type="button"
+            onClick={() => setLearnMoreOpen((open) => !open)}
+            aria-expanded={learnMoreOpen}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700"
+          >
+            {learnMoreOpen ? 'Hide details' : 'See what makes ServiceHub different'}
+            <ChevronDown className={`w-4 h-4 transition-transform ${learnMoreOpen ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
+
+        {learnMoreOpen && (
+        <>
         {/* ══════════════════════════════════════════════════════════════
             HOW IT WORKS
         ══════════════════════════════════════════════════════════════ */}
@@ -1081,6 +1213,8 @@ export function ConnectPage() {
             </a>
           </div>
         </div>
+        </>
+        )}
 
       </div>
 

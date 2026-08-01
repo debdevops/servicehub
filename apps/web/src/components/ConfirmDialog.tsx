@@ -100,7 +100,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors ${
               isDanger
-                ? 'bg-red-500 hover:bg-red-600'
+                ? 'bg-red-600 hover:bg-red-700'
                 : 'bg-primary-500 hover:bg-primary-600'
             }`}
             autoFocus={!isDanger} // Only auto-focus confirm for non-danger dialogs

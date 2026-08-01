@@ -151,7 +151,7 @@ describe('TemplateGalleryDialog', () => {
       <TemplateGalleryDialog open={true} onClose={mockOnClose} onSelect={vi.fn()} />,
       { wrapper: createWrapper() }
     );
-    const closeButton = screen.getByRole('button', { name: '' });
+    const closeButton = screen.getByRole('button', { name: 'Close' });
     fireEvent.click(closeButton);
     expect(mockOnClose).toHaveBeenCalled();
   });

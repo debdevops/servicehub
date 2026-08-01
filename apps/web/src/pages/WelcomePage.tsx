@@ -837,35 +837,35 @@ export function WelcomePage() {
               </p>
             </div>
             <div>
-              <h4 className="font-semibold text-white/80 mb-4 text-sm">Product</h4>
-              <ul className="space-y-2.5 text-sm text-white/50">
-                <li><a href={`${GITHUB_URL}/blob/main/README.md`} target="_blank" rel="noopener noreferrer" className="hover:text-white flex items-center gap-1.5 transition-colors">Documentation <ExternalLink className="w-3 h-3" /></a></li>
-                <li><a href={`${GITHUB_URL}/tree/main/self-hosting`} target="_blank" rel="noopener noreferrer" className="hover:text-white flex items-center gap-1.5 transition-colors">Self-Hosting Guide <ExternalLink className="w-3 h-3" /></a></li>
-                <li><Link to="/security" className="hover:text-white transition-colors">Security &amp; Privacy</Link></li>
-                <li><a href={`${GITHUB_URL}/blob/main/CHANGELOG.md`} target="_blank" rel="noopener noreferrer" className="hover:text-white flex items-center gap-1.5 transition-colors">Changelog <ExternalLink className="w-3 h-3" /></a></li>
+              <h4 className="font-semibold text-gray-800 mb-4 text-sm">Product</h4>
+              <ul className="space-y-2.5 text-sm text-gray-500">
+                <li><a href={`${GITHUB_URL}/blob/main/README.md`} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 flex items-center gap-1.5 transition-colors">Documentation <ExternalLink className="w-3 h-3" /></a></li>
+                <li><a href={`${GITHUB_URL}/tree/main/self-hosting`} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 flex items-center gap-1.5 transition-colors">Self-Hosting Guide <ExternalLink className="w-3 h-3" /></a></li>
+                <li><Link to="/security" className="hover:text-gray-900 transition-colors">Security &amp; Privacy</Link></li>
+                <li><a href={`${GITHUB_URL}/blob/main/CHANGELOG.md`} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 flex items-center gap-1.5 transition-colors">Changelog <ExternalLink className="w-3 h-3" /></a></li>
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold text-white/80 mb-4 text-sm">Community</h4>
-              <ul className="space-y-2.5 text-sm text-white/50">
-                <li><a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="hover:text-white flex items-center gap-1.5 transition-colors"><Github className="w-4 h-4" /> GitHub Repository</a></li>
-                <li><a href={`${GITHUB_URL}/issues`} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Report an Issue</a></li>
-                <li><a href={`${GITHUB_URL}/discussions`} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Discussions</a></li>
+              <h4 className="font-semibold text-gray-800 mb-4 text-sm">Community</h4>
+              <ul className="space-y-2.5 text-sm text-gray-500">
+                <li><a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 flex items-center gap-1.5 transition-colors"><Github className="w-4 h-4" /> GitHub Repository</a></li>
+                <li><a href={`${GITHUB_URL}/issues`} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors">Report an Issue</a></li>
+                <li><a href={`${GITHUB_URL}/discussions`} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors">Discussions</a></li>
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold text-white/80 mb-4 text-sm">Legal</h4>
-              <ul className="space-y-2.5 text-sm text-white/50">
-                <li><a href={`${GITHUB_URL}/blob/main/SECURITY.md`} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Security Policy</a></li>
-                <li><a href={`${GITHUB_URL}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">MIT License</a></li>
-                <li><Link to="/security" className="hover:text-white transition-colors">Privacy Notice</Link></li>
+              <h4 className="font-semibold text-gray-800 mb-4 text-sm">Legal</h4>
+              <ul className="space-y-2.5 text-sm text-gray-500">
+                <li><a href={`${GITHUB_URL}/blob/main/SECURITY.md`} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors">Security Policy</a></li>
+                <li><a href={`${GITHUB_URL}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors">MIT License</a></li>
+                <li><Link to="/security" className="hover:text-gray-900 transition-colors">Privacy Notice</Link></li>
               </ul>
             </div>
           </div>
-          <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-white/40">
+          <div className="border-t border-gray-200 pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-400">
             <p>
               ServiceHub is open source, free to use, and MIT licensed. Made with \u2764\uFE0F by{' '}
-              <a href="https://github.com/debdevops" className="text-blue-400 hover:underline font-medium">Debasis</a>
+              <a href="https://github.com/debdevops" className="text-primary-600 hover:underline font-medium">Debasis</a>
             </p>
             <p className="text-gray-400">© 2026 ServiceHub v{import.meta.env.VITE_APP_VERSION} · All rights reserved</p>
           </div>

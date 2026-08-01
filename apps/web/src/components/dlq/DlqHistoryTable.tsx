@@ -7,6 +7,7 @@ import {
   Shield,
   AlertCircle,
   Info,
+  Inbox,
 } from 'lucide-react';
 import type { DlqHistoryItem } from '@servicehub/ui-shared/lib/api/dlqHistory';
 import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
@@ -158,7 +159,7 @@ export function DlqHistoryTable({
     return (
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="p-12 text-center">
-          <div className="text-5xl mb-3">📭</div>
+          <Inbox className="w-10 h-10 text-gray-300 mx-auto mb-3" />
           <h3 className="text-lg font-semibold text-gray-900">No DLQ messages found</h3>
           <p className="text-gray-500 mt-1">
             No dead-letter queue messages have been detected yet.
