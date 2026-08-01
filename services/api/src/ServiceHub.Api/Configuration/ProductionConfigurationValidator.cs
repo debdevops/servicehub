@@ -72,14 +72,28 @@ public static class ProductionConfigurationValidator
             errors.Add("Security:SpaToken:Secret must be at least 32 characters long for production security");
         }
 
-        // Validate API Keys are configured (optional but recommend checking in production)
-        var spaTokenEnabled = configuration.GetValue<bool>("Security:SpaToken:Enabled");
-        if (spaTokenEnabled)
+        // Validate authentication configuration in production
+        var authenticationEnabled = configuration.GetValue<bool>("Security:Authentication:Enabled");
+        if (authenticationEnabled)
         {
-            var apiKeysSection = configuration.GetSection("Security:Authentication:ScopedApiKeys");
-            if (!apiKeysSection.Exists() || !apiKeysSection.GetChildren().Any())
+            var spaTokenEnabled = configuration.GetValue<bool>("Security:SpaToken:Enabled");
+            var easyAuthEnabled = configuration.GetValue<bool>("Security:EasyAuth:Enabled");
+            var oidcEnabled = configuration.GetValue<bool>("Security:Oidc:Enabled");
+
+            var hasApiKeys = HasConfiguredApiKeys(configuration);
+            var hasOidcConfig = oidcEnabled
+                && !string.IsNullOrWhiteSpace(configuration["Security:Oidc:Authority"])
+                && !string.IsNullOrWhiteSpace(configuration["Security:Oidc:Audience"]);
+
+            if (!hasApiKeys && !spaTokenEnabled && !easyAuthEnabled && !hasOidcConfig)
             {
-                logger.LogWarning("No API keys configured in Security:Authentication:ScopedApiKeys. Users will need to authenticate via browser SPA token or OIDC.");
+                errors.Add(
+                    "Security:Authentication:Enabled is true in production but no usable authentication method is configured. " +
+                    "Configure at least one of: " +
+                    "Security:Authentication:ApiKeys/ScopedApiKeys, " +
+                    "Security:SpaToken:Enabled=true, " +
+                    "Security:EasyAuth:Enabled=true, " +
+                    "or Security:Oidc:Enabled=true with Authority and Audience.");
             }
         }
 
@@ -113,5 +127,44 @@ public static class ProductionConfigurationValidator
         {
             return false;
         }
+    }
+
+    private static bool HasConfiguredApiKeys(IConfiguration configuration)
+    {
+        // Check simple ApiKeys array
+        var simpleKeys = configuration.GetSection("Security:Authentication:ApiKeys").Get<string[]>();
+        if (simpleKeys is { Length: > 0 })
+        {
+            foreach (var key in simpleKeys)
+            {
+                if (!string.IsNullOrWhiteSpace(key) && !IsPlaceholderKey(key))
+                {
+                    return true;
+                }
+            }
+        }
+
+        // Check ScopedApiKeys
+        var scopedKeysSection = configuration.GetSection("Security:Authentication:ScopedApiKeys");
+        if (scopedKeysSection.Exists())
+        {
+            foreach (var child in scopedKeysSection.GetChildren())
+            {
+                var keyValue = child.GetValue<string>("Key");
+                if (!string.IsNullOrWhiteSpace(keyValue) && !IsPlaceholderKey(keyValue))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsPlaceholderKey(string key)
+    {
+        return key.StartsWith("REPLACED_BY_KEYVAULT", StringComparison.OrdinalIgnoreCase)
+            || key.StartsWith("SET_VIA_", StringComparison.OrdinalIgnoreCase)
+            || key.StartsWith("CHANGE_THIS", StringComparison.OrdinalIgnoreCase);
     }
 }

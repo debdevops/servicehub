@@ -195,6 +195,149 @@ public sealed class ProductionConfigurationTests
     }
 
     [Fact]
+    public void ProductionApp_WithAuthenticationEnabledButNoAuthMethod_ShouldFailAtStartup()
+    {
+        var factory = new ProductionTestWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["AllowedHosts"] = "servicehub.example.com",
+            ["Security:EncryptionKey"] = "0a1715d2edbbbef62384ee797ed6bf7ce01ef56ee7da55dcc04fb7f297e53a4d",
+            ["SiteUrl"] = "https://servicehub.example.com",
+            ["Security:SpaToken:Secret"] = "test-token-secret-minimum-32-chars--",
+            ["Security:Authentication:Enabled"] = "true",
+            ["Security:SpaToken:Enabled"] = "false",
+            ["Security:EasyAuth:Enabled"] = "false",
+            ["Security:Oidc:Enabled"] = "false",
+            // Ensure no API keys are configured
+            ["Security:Authentication:ApiKeys:0"] = null,
+        });
+
+        var action = () => factory.CreateClient();
+
+        action.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Production configuration is incomplete*");
+    }
+
+    [Fact]
+    public void ProductionApp_WithAuthenticationEnabledAndApiKey_ShouldStartSuccessfully()
+    {
+        var factory = new ProductionTestWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["AllowedHosts"] = "servicehub.example.com",
+            ["Security:EncryptionKey"] = "0a1715d2edbbbef62384ee797ed6bf7ce01ef56ee7da55dcc04fb7f297e53a4d",
+            ["SiteUrl"] = "https://servicehub.example.com",
+            ["Security:SpaToken:Secret"] = "test-token-secret-minimum-32-chars--",
+            ["Security:Authentication:Enabled"] = "true",
+            ["Security:Authentication:ApiKeys:0"] = "valid-api-key-1234",
+            ["Security:SpaToken:Enabled"] = "false",
+        });
+
+        var action = () => factory.CreateClient();
+
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ProductionApp_WithAuthenticationEnabledAndScopedApiKey_ShouldStartSuccessfully()
+    {
+        var factory = new ProductionTestWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["AllowedHosts"] = "servicehub.example.com",
+            ["Security:EncryptionKey"] = "0a1715d2edbbbef62384ee797ed6bf7ce01ef56ee7da55dcc04fb7f297e53a4d",
+            ["SiteUrl"] = "https://servicehub.example.com",
+            ["Security:SpaToken:Secret"] = "test-token-secret-minimum-32-chars--",
+            ["Security:Authentication:Enabled"] = "true",
+            ["Security:Authentication:ScopedApiKeys:0:Key"] = "valid-scoped-key-1234",
+            ["Security:Authentication:ScopedApiKeys:0:Scopes:0"] = "Viewer",
+            ["Security:SpaToken:Enabled"] = "false",
+        });
+
+        var action = () => factory.CreateClient();
+
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ProductionApp_WithAuthenticationEnabledAndSpaTokenEnabled_ShouldStartSuccessfully()
+    {
+        var factory = new ProductionTestWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["AllowedHosts"] = "servicehub.example.com",
+            ["Security:EncryptionKey"] = "0a1715d2edbbbef62384ee797ed6bf7ce01ef56ee7da55dcc04fb7f297e53a4d",
+            ["SiteUrl"] = "https://servicehub.example.com",
+            ["Security:SpaToken:Secret"] = "test-token-secret-minimum-32-chars--",
+            ["Security:Authentication:Enabled"] = "true",
+            ["Security:SpaToken:Enabled"] = "true",
+        });
+
+        var action = () => factory.CreateClient();
+
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ProductionApp_WithAuthenticationEnabledAndEasyAuthEnabled_ShouldStartSuccessfully()
+    {
+        var factory = new ProductionTestWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["AllowedHosts"] = "servicehub.example.com",
+            ["Security:EncryptionKey"] = "0a1715d2edbbbef62384ee797ed6bf7ce01ef56ee7da55dcc04fb7f297e53a4d",
+            ["SiteUrl"] = "https://servicehub.example.com",
+            ["Security:SpaToken:Secret"] = "test-token-secret-minimum-32-chars--",
+            ["Security:Authentication:Enabled"] = "true",
+            ["Security:EasyAuth:Enabled"] = "true",
+            ["Security:SpaToken:Enabled"] = "false",
+        });
+
+        var action = () => factory.CreateClient();
+
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ProductionApp_WithAuthenticationEnabledAndOidcEnabled_ShouldStartSuccessfully()
+    {
+        var factory = new ProductionTestWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["AllowedHosts"] = "servicehub.example.com",
+            ["Security:EncryptionKey"] = "0a1715d2edbbbef62384ee797ed6bf7ce01ef56ee7da55dcc04fb7f297e53a4d",
+            ["SiteUrl"] = "https://servicehub.example.com",
+            ["Security:SpaToken:Secret"] = "test-token-secret-minimum-32-chars--",
+            ["Security:Authentication:Enabled"] = "true",
+            ["Security:Oidc:Enabled"] = "true",
+            ["Security:Oidc:Authority"] = "https://auth.example.com",
+            ["Security:Oidc:Audience"] = "servicehub-api",
+            ["Security:SpaToken:Enabled"] = "false",
+        });
+
+        var action = () => factory.CreateClient();
+
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ProductionApp_WithAuthenticationEnabledAndPlaceholderApiKey_ShouldFailAtStartup()
+    {
+        var factory = new ProductionTestWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["AllowedHosts"] = "servicehub.example.com",
+            ["Security:EncryptionKey"] = "0a1715d2edbbbef62384ee797ed6bf7ce01ef56ee7da55dcc04fb7f297e53a4d",
+            ["SiteUrl"] = "https://servicehub.example.com",
+            ["Security:SpaToken:Secret"] = "test-token-secret-minimum-32-chars--",
+            ["Security:Authentication:Enabled"] = "true",
+            ["Security:Authentication:ScopedApiKeys:0:Key"] = "SET_VIA_ENV_VAR_Key",
+            ["Security:Authentication:ScopedApiKeys:0:Scopes:0"] = "Viewer",
+            ["Security:SpaToken:Enabled"] = "false",
+            ["Security:EasyAuth:Enabled"] = "false",
+            ["Security:Oidc:Enabled"] = "false",
+        });
+
+        var action = () => factory.CreateClient();
+
+        action.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Production configuration is incomplete*");
+    }
+
+    [Fact]
     public void DevelopmentApp_SkipsProductionValidation_CanStartWithInvalidConfig()
     {
         // Use the standard test factory which runs in Development environment
