@@ -39,6 +39,17 @@ public class MessageOperationsServiceTests
 
         var providerMock = new Mock<ICloudMessagingProvider>();
         providerMock.SetupGet(p => p.ProviderType).Returns(providerType);
+
+        // Set up capabilities based on provider type
+        var capabilities = providerType switch
+        {
+            CloudProviderType.Azure => ServiceHub.Core.Models.ProviderCapabilities.Azure,
+            CloudProviderType.Aws => ServiceHub.Core.Models.ProviderCapabilities.Aws,
+            CloudProviderType.Gcp => ServiceHub.Core.Models.ProviderCapabilities.Gcp,
+            _ => throw new ArgumentOutOfRangeException(nameof(providerType))
+        };
+        providerMock.SetupGet(p => p.Capabilities).Returns(capabilities);
+
         providerMock.Setup(p => p.GetMessageSender()).Returns(senderMock.Object);
         providerMock.Setup(p => p.GetMessageReceiver()).Returns(receiverMock.Object);
 
@@ -205,7 +216,6 @@ public class MessageOperationsServiceTests
     }
 
     [Theory]
-    [InlineData(CloudProviderType.Azure)]
     [InlineData(CloudProviderType.Aws)]
     [InlineData(CloudProviderType.Gcp)]
     public async Task PurgeMessageAsync_ProviderRegistered_DelegatesToReceiver(CloudProviderType providerType)
@@ -224,7 +234,6 @@ public class MessageOperationsServiceTests
     [Theory]
     [InlineData(CloudProviderType.Azure)]
     [InlineData(CloudProviderType.Aws)]
-    [InlineData(CloudProviderType.Gcp)]
     public async Task GetMessageCountAsync_ProviderRegistered_DelegatesToReceiver(CloudProviderType providerType)
     {
         var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(providerType);
@@ -239,13 +248,10 @@ public class MessageOperationsServiceTests
         receiverMock.Verify(r => r.GetMessageCountAsync(ns.Id, "queue", null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    [Theory]
-    [InlineData(CloudProviderType.Azure)]
-    [InlineData(CloudProviderType.Aws)]
-    [InlineData(CloudProviderType.Gcp)]
-    public async Task GetScheduledMessagesAsync_ProviderRegistered_DelegatesToReceiver(CloudProviderType providerType)
+    [Fact]
+    public async Task GetScheduledMessagesAsync_ProviderRegistered_DelegatesToReceiver()
     {
-        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(providerType);
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
 
         var expected = new List<Message> { new() { MessageId = "m1", SequenceNumber = 1, NamespaceId = ns.Id } };
         receiverMock.Setup(r => r.GetScheduledMessagesAsync(ns.Id, "queue", null, 10, It.IsAny<CancellationToken>()))
@@ -546,7 +552,7 @@ public class MessageOperationsServiceTests
     [Fact]
     public async Task PurgeMessageAsync_ReceiverThrows_ReturnsUnexpectedError()
     {
-        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Aws);
 
         receiverMock.Setup(r => r.PurgeMessageAsync(ns.Id, "queue", null, 123L, false, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("boom"));
@@ -777,4 +783,142 @@ public class MessageOperationsServiceTests
         res.IsFailure.Should().BeTrue();
         res.Error.Code.Should().Be("Send.Failed");
     }
+
+    #region Capability-Gating Tests
+
+    private static (MessageOperationsService svc, Mock<ICloudMessagingProvider> providerMock, Namespace ns) CreateServiceWithCapabilities(CloudProviderType providerType, ServiceHub.Core.Models.ProviderCapabilities capabilities)
+    {
+        var nsRes = Namespace.CreateWithManagedIdentity("test", provider: providerType);
+        nsRes.IsSuccess.Should().BeTrue();
+        var ns = nsRes.Value;
+
+        var nsRepo = new Mock<INamespaceRepository>();
+        nsRepo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var senderMock = new Mock<IMessageSender>();
+        var receiverMock = new Mock<IMessageReceiver>();
+
+        var providerMock = new Mock<ICloudMessagingProvider>();
+        providerMock.SetupGet(p => p.ProviderType).Returns(providerType);
+        providerMock.SetupGet(p => p.Capabilities).Returns(capabilities);
+        providerMock.Setup(p => p.GetMessageSender()).Returns(senderMock.Object);
+        providerMock.Setup(p => p.GetMessageReceiver()).Returns(receiverMock.Object);
+
+        var router = new CloudProviderRouter(new[] { providerMock.Object });
+
+        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+
+        return (svc, providerMock, ns);
+    }
+
+    [Fact]
+    public async Task PurgeMessageAsync_AzureDoesNotSupportPurge_ReturnsCapabilityUnsupported()
+    {
+        var (svc, providerMock, ns) = CreateServiceWithCapabilities(CloudProviderType.Azure, ServiceHub.Core.Models.ProviderCapabilities.Azure);
+
+        var res = await svc.PurgeMessageAsync(ns.Id, "queue", null, 42, false);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Message.PurgeUnsupported);
+        res.Error.Message.Should().Contain("Purge is not supported for Azure");
+        res.Error.Type.Should().Be(ErrorType.Validation);
+    }
+
+    [Fact]
+    public async Task PurgeMessageAsync_AwsSupportsPurge_DelegatesToReceiver()
+    {
+        var (svc, providerMock, ns) = CreateServiceWithCapabilities(CloudProviderType.Aws, ServiceHub.Core.Models.ProviderCapabilities.Aws);
+
+        var receiverMock = providerMock.Object.GetMessageReceiver() as Mock<IMessageReceiver>;
+        receiverMock = new Mock<IMessageReceiver>();
+        receiverMock.Setup(r => r.PurgeMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        providerMock.Setup(p => p.GetMessageReceiver()).Returns(receiverMock.Object);
+
+        var res = await svc.PurgeMessageAsync(ns.Id, "queue", null, 42, false);
+
+        res.IsSuccess.Should().BeTrue();
+        receiverMock.Verify(r => r.PurgeMessageAsync(ns.Id, "queue", null, 42, false, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetMessageCountAsync_GcpDoesNotSupportMessageCounts_ReturnsCapabilityUnsupported()
+    {
+        var (svc, providerMock, ns) = CreateServiceWithCapabilities(CloudProviderType.Gcp, ServiceHub.Core.Models.ProviderCapabilities.Gcp);
+
+        var res = await svc.GetMessageCountAsync(ns.Id, "queue");
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Message.CountUnsupported);
+        res.Error.Message.Should().Contain("Message count queries are not supported for Gcp");
+        res.Error.Type.Should().Be(ErrorType.Validation);
+    }
+
+    [Fact]
+    public async Task GetMessageCountAsync_AzureSupportsMessageCounts_DelegatesToReceiver()
+    {
+        var (svc, providerMock, ns) = CreateServiceWithCapabilities(CloudProviderType.Azure, ServiceHub.Core.Models.ProviderCapabilities.Azure);
+
+        var receiverMock = new Mock<IMessageReceiver>();
+        receiverMock.Setup(r => r.GetMessageCountAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<long>.Success(42));
+
+        providerMock.Setup(p => p.GetMessageReceiver()).Returns(receiverMock.Object);
+
+        var res = await svc.GetMessageCountAsync(ns.Id, "queue");
+
+        res.IsSuccess.Should().BeTrue();
+        res.Value.Should().Be(42);
+        receiverMock.Verify(r => r.GetMessageCountAsync(ns.Id, "queue", null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetScheduledMessagesAsync_AwsDoesNotSupportScheduledMessages_ReturnsCapabilityUnsupported()
+    {
+        var (svc, providerMock, ns) = CreateServiceWithCapabilities(CloudProviderType.Aws, ServiceHub.Core.Models.ProviderCapabilities.Aws);
+
+        var res = await svc.GetScheduledMessagesAsync(ns.Id, "queue", null, 10);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Message.ScheduledUnsupported);
+        res.Error.Message.Should().Contain("Scheduled messages are not supported for Aws");
+        res.Error.Type.Should().Be(ErrorType.Validation);
+    }
+
+    [Fact]
+    public async Task DeadLetterMessagesAsync_GcpDoesNotSupportManualDeadLetter_ReturnsCapabilityUnsupported()
+    {
+        var (svc, providerMock, ns) = CreateServiceWithCapabilities(CloudProviderType.Gcp, ServiceHub.Core.Models.ProviderCapabilities.Gcp);
+
+        var req = new DeadLetterRequest(ns.Id, "queue", null);
+        var res = await svc.DeadLetterMessagesAsync(req);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Message.DeadLetterUnsupported);
+        res.Error.Message.Should().Contain("Manual dead-lettering is not supported for Gcp");
+        res.Error.Type.Should().Be(ErrorType.Validation);
+    }
+
+    [Fact]
+    public async Task DeadLetterMessagesAsync_AzureSupportsManualDeadLetter_DelegatesToReceiver()
+    {
+        var (svc, providerMock, ns) = CreateServiceWithCapabilities(CloudProviderType.Azure, ServiceHub.Core.Models.ProviderCapabilities.Azure);
+
+        var receiverMock = new Mock<IMessageReceiver>();
+        receiverMock.Setup(r => r.DeadLetterMessagesAsync(It.IsAny<DeadLetterRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<int>.Success(5));
+
+        providerMock.Setup(p => p.GetMessageReceiver()).Returns(receiverMock.Object);
+
+        var req = new DeadLetterRequest(ns.Id, "queue", null);
+        var res = await svc.DeadLetterMessagesAsync(req);
+
+        res.IsSuccess.Should().BeTrue();
+        res.Value.Should().Be(5);
+        receiverMock.Verify(r => r.DeadLetterMessagesAsync(It.Is<DeadLetterRequest>(r => r.NamespaceId == ns.Id), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    #endregion
 }

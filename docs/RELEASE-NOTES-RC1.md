@@ -65,24 +65,21 @@ an operator-enabled flag. The copy now states what's actually true: implemented 
 not validated against live cloud services, capability-gated, no parity guarantee with Azure — an
 accuracy correction, not a new capability. See `docs/DEMO-MODE.md` and `docs/PROVIDER-SUPPORT.md`.
 
-## Behavior change: Simulator demo port is now loopback-only
+## Backend Simulator has been removed
 
-`docker-compose.yml`'s Simulator profile now binds `127.0.0.1:8080:8080` instead of
-`8080:8080`. If you were relying on reaching the Simulator demo from another machine on your LAN
-(a shared team demo, a VM host reaching a container, etc.), that will stop working after this
-update — the port is only reachable from the machine running it. This is intentional: Simulator
-mode disables auth, rate limiting, and encryption by design, so it should never have been reachable
-over a network in the first place. See `docs/DEMO-MODE.md` for the one-line override if you have a
-deliberate, understood reason to expose a *real* (non-Simulator) deployment on your LAN.
+The `ASPNETCORE_ENVIRONMENT=Simulator` backend and `docker-compose.yml`'s Simulator profile have
+been permanently removed. The zero-credential way to explore the UI is now the client-side Demo
+Mode (`/demo/azure`, `/demo/aws`, `/demo/gcp`) — fully functional, backend-free, and safe to
+access from anywhere without needing real cloud credentials. See `docs/DEMO-MODE.md`.
 
 ## Also in this release
 
-Restrictive CSP is now correctly applied to Staging and Simulator environments (previously the
-permissive development CSP policy could apply to any non-Production environment name by mistake);
-repeated API-key authentication failures are now throttled (429 after a threshold, closing an
-unthrottled brute-force gap). See `CHANGELOG.md` for the full list, including provider-aware DLQ
-forensic classification, namespace sharing, RBAC roles, OIDC Bearer authentication, Live Tail,
-Bulk Operations, and Slack/Teams-native webhook alerts.
+Restrictive CSP is now correctly applied to Staging environments (previously the permissive
+development CSP policy could apply to any non-Production environment name by mistake); repeated
+API-key authentication failures are now throttled (429 after a threshold, closing an unthrottled
+brute-force gap). See `CHANGELOG.md` for the full list, including provider-aware DLQ forensic
+classification, namespace sharing, RBAC roles, OIDC Bearer authentication, Live Tail, Bulk
+Operations, and Slack/Teams-native webhook alerts.
 
 ## Upgrading
 

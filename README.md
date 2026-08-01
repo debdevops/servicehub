@@ -427,7 +427,7 @@ npm run -w apps/web test:coverage
 dotnet test services/api/tests/ServiceHub.UnitTests
 dotnet test services/api/tests/ServiceHub.IntegrationTests
 
-# E2E tests (Playwright — requires simulator running)
+# E2E tests (Playwright)
 npm run -w apps/web test:e2e
 ```
 For deep backend developer guidelines, refer to the [API README](services/api/README.md).

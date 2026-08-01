@@ -33,13 +33,11 @@ else
     builder.Logging.SetMinimumLevel(LogLevel.Information);
 }
 
-// Configure forwarded headers for reverse proxy (Azure App Service)
-builder.Services.Configure<ForwardedHeadersOptions>(options =>
-{
-    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    options.KnownIPNetworks.Clear();
-    options.KnownProxies.Clear();
-});
+// Configure forwarded headers for reverse proxy scenarios.
+// Secure by default: headers are trusted only if explicitly configured via appsettings
+// or environment variables (ForwardedHeaders:Enabled=true, ForwardedHeaders:KnownProxies, etc).
+// Azure App Service is auto-detected and enabled if WEBSITE_AUTH_ENABLED=true.
+builder.Services.AddSecureForwardedHeaders(builder.Configuration, builder.Environment);
 
 // Configure request body size limit (prevent large payload attacks)
 builder.WebHost.ConfigureKestrel(options =>
@@ -84,6 +82,12 @@ var app = builder.Build();
 
 // Emit a single, secret-free summary of the effective configuration for operability.
 app.LogStartupSummary();
+
+// Validate production configuration — fail fast if required settings are missing or invalid
+ProductionConfigurationValidator.ValidateProduction(
+    app.Configuration,
+    app.Environment,
+    app.Logger);
 
 // Wire Platform Event subscribers before any hosted service starts.
 // This registers WebhookDlqSpikeHandler (and future handlers) with the
