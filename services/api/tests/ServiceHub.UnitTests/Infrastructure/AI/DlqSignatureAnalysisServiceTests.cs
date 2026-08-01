@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
@@ -18,14 +19,20 @@ public sealed class DlqSignatureAnalysisServiceTests
     private readonly Mock<IDlqHistoryService> _historyService = new();
     private readonly Mock<IAIServiceClient> _aiServiceClient = new();
     private readonly Mock<INamespaceSignatureLookupService> _signatureLookupService = new();
+    private readonly Mock<ILogger<DlqSignatureAnalysisService>> _logger = new();
     private readonly DlqSignatureAnalysisService _sut;
 
     public DlqSignatureAnalysisServiceTests()
     {
+        var aiStrategy = new AIClusteringStrategy(_aiServiceClient.Object);
+        var deterministicStrategy = new DeterministicClusteringStrategy();
+
         _sut = new DlqSignatureAnalysisService(
             _historyService.Object,
-            _aiServiceClient.Object,
-            _signatureLookupService.Object);
+            aiStrategy,
+            deterministicStrategy,
+            _signatureLookupService.Object,
+            _logger.Object);
     }
 
     private static DlqMessage CreateMessage(long id, DateTimeOffset detectedAt, DateTimeOffset? deadLetterAt = null)
@@ -97,22 +104,31 @@ public sealed class DlqSignatureAnalysisServiceTests
     }
 
     [Fact]
-    public async Task AnalyzeAsync_AIUnavailable_ReturnsAvailableFalseWithoutThrowing()
+    public async Task AnalyzeAsync_AIUnavailable_FallsBackToDeterministicStrategy()
     {
-        SetupMessages(CreateMessage(1, DateTimeOffset.UtcNow));
+        var msg1 = CreateMessage(1, DateTimeOffset.UtcNow);
+        var msg2 = CreateMessage(2, DateTimeOffset.UtcNow);
+        SetupMessages(msg1, msg2);
+        SetupLookupPassthrough();
+
+        // AI service fails
         _aiServiceClient.Setup(c => c.AnalyzeMessagesAsync(It.IsAny<IReadOnlyList<DlqMessage>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Failure<ClusterAnalysisResult>(Error.Internal("AI_UNAVAILABLE", "down")));
 
         var result = await _sut.AnalyzeAsync(OwnerId, NamespaceId);
 
+        // Feature still works: available=true, clusters produced by deterministic strategy
         result.IsSuccess.Should().BeTrue();
-        result.Value.Available.Should().BeFalse();
-        result.Value.Method.Should().BeNull();
-        result.Value.Clusters.Should().BeEmpty();
-        result.Value.Singletons.Should().BeEmpty();
+        result.Value.Available.Should().BeTrue();
+        result.Value.Method.Should().Be("deterministic");
+        // Both messages have the same reason + entity, so they should be clustered together
+        result.Value.Clusters.Should().HaveCount(1);
+        result.Value.Clusters[0].Size.Should().Be(2);
+
+        // Signature lookup should still be called for persistence
         _signatureLookupService.Verify(s => s.LookupAndRecordAsync(
-            It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<IReadOnlyList<ClusterSignatureObservation>>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+            OwnerId, NamespaceId, It.IsAny<IReadOnlyList<ClusterSignatureObservation>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     // ── Composition ─────────────────────────────────────────
@@ -312,21 +328,43 @@ public sealed class DlqSignatureAnalysisServiceTests
     [Fact]
     public void Constructor_NullHistoryService_Throws()
     {
-        var act = () => new DlqSignatureAnalysisService(null!, _aiServiceClient.Object, _signatureLookupService.Object);
+        var aiStrategy = new AIClusteringStrategy(_aiServiceClient.Object);
+        var deterministicStrategy = new DeterministicClusteringStrategy();
+        var act = () => new DlqSignatureAnalysisService(null!, aiStrategy, deterministicStrategy, _signatureLookupService.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("historyService");
     }
 
     [Fact]
-    public void Constructor_NullAIServiceClient_Throws()
+    public void Constructor_NullAIStrategy_Throws()
     {
-        var act = () => new DlqSignatureAnalysisService(_historyService.Object, null!, _signatureLookupService.Object);
-        act.Should().Throw<ArgumentNullException>().WithParameterName("aiServiceClient");
+        var deterministicStrategy = new DeterministicClusteringStrategy();
+        var act = () => new DlqSignatureAnalysisService(_historyService.Object, null!, deterministicStrategy, _signatureLookupService.Object, _logger.Object);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("aiStrategy");
+    }
+
+    [Fact]
+    public void Constructor_NullDeterministicStrategy_Throws()
+    {
+        var aiStrategy = new AIClusteringStrategy(_aiServiceClient.Object);
+        var act = () => new DlqSignatureAnalysisService(_historyService.Object, aiStrategy, null!, _signatureLookupService.Object, _logger.Object);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("deterministicStrategy");
     }
 
     [Fact]
     public void Constructor_NullSignatureLookupService_Throws()
     {
-        var act = () => new DlqSignatureAnalysisService(_historyService.Object, _aiServiceClient.Object, null!);
+        var aiStrategy = new AIClusteringStrategy(_aiServiceClient.Object);
+        var deterministicStrategy = new DeterministicClusteringStrategy();
+        var act = () => new DlqSignatureAnalysisService(_historyService.Object, aiStrategy, deterministicStrategy, null!, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("signatureLookupService");
+    }
+
+    [Fact]
+    public void Constructor_NullLogger_Throws()
+    {
+        var aiStrategy = new AIClusteringStrategy(_aiServiceClient.Object);
+        var deterministicStrategy = new DeterministicClusteringStrategy();
+        var act = () => new DlqSignatureAnalysisService(_historyService.Object, aiStrategy, deterministicStrategy, _signatureLookupService.Object, null!);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 }

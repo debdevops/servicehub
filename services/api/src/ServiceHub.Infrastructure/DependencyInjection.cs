@@ -226,7 +226,18 @@ public static class DependencyInjection
         services.TryAddScoped<IDlqMonitorService, DlqMonitorService>();
         services.TryAddScoped<IDlqHistoryService, DlqHistoryService>();
         services.TryAddScoped<INamespaceSignatureLookupService, NamespaceSignatureLookupService>();
+
+        // Register signature analysis strategies.
+        // AIClusteringStrategy wraps the AI service client and provides rich clustering.
+        // DeterministicClusteringStrategy provides reliable fallback clustering without
+        // external dependencies. Both implement ISignatureAnalysisStrategy.
+        services.TryAddScoped<AI.AIClusteringStrategy>();
+        services.TryAddScoped<AI.DeterministicClusteringStrategy>();
+
+        // DlqSignatureAnalysisService orchestrates both strategies, trying AI first
+        // and falling back to deterministic if AI is unavailable.
         services.TryAddScoped<IDlqSignatureAnalysisService, AI.DlqSignatureAnalysisService>();
+
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();
