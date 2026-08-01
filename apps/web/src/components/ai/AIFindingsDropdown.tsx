@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AIInsight } from '@servicehub/ui-shared/lib/api/types';
 
 // ============================================================================
@@ -28,6 +28,18 @@ const CONFIDENCE_COLORS: Record<string, string> = {
 
 export function AIFindingsDropdown({ insights, onClose, onViewEvidence }: AIFindingsDropdownProps) {
   const activeInsights = insights.filter((i) => i.status === 'active');
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState<{ top: number; right: number } | null>(null);
+
+  // Position from the trigger's own coordinates (fixed, not absolute) so the
+  // panel escapes ancestor overflow-hidden containers — it was getting
+  // clipped whenever the message list column was narrower than its 420px width.
+  useEffect(() => {
+    const rect = anchorRef.current?.getBoundingClientRect();
+    if (rect) {
+      setCoords({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+    }
+  }, []);
 
   // Handle Escape key to close dropdown
   useEffect(() => {
@@ -49,8 +61,14 @@ export function AIFindingsDropdown({ insights, onClose, onViewEvidence }: AIFind
         onClick={onClose}
       />
       
+      {/* Anchor — marks the trigger's on-screen position for the fixed panel below */}
+      <div ref={anchorRef} className="absolute top-full right-0" />
+
       {/* Dropdown */}
-      <div className="absolute top-full right-0 mt-2 w-[420px] bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
+      <div
+        className="fixed w-[420px] bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden"
+        style={coords ? { top: coords.top, right: coords.right } : { top: 0, right: 0, opacity: 0 }}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
           <div>
