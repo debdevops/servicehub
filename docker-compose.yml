@@ -22,12 +22,11 @@ services:
       # assumes a separate `npm run dev` frontend on :3000, which this container doesn't run.
       ASPNETCORE_ENVIRONMENT: Production
       # SECURITY: SECURITY__ENCRYPTIONKEY is required and must be generated per-deployment.
-      # For production, generate a random key per deployment:
+      # DO NOT use a default or hardcoded value. Generate a random key per deployment:
       #   SECURITY__ENCRYPTIONKEY=$(openssl rand -hex 32) docker compose up --build
       # Reusing the same key across deployments or checking keys into version control
       # compromises connection-string encryption for every namespace stored with that key.
-      # For local development only, a placeholder is used; never commit production keys.
-      SECURITY__ENCRYPTIONKEY: ${SECURITY__ENCRYPTIONKEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      SECURITY__ENCRYPTIONKEY: ${SECURITY__ENCRYPTIONKEY}
       # appsettings.Production.json's AllowedHosts placeholder rejects every Host header
       # until overridden; this container is only reachable via localhost per the ports mapping.
       AllowedHosts: localhost
