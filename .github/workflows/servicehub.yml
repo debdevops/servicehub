@@ -303,7 +303,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Regression check - docker-compose.yml must not have hardcoded encryption key fallback
+        run: |
+          # Ensure docker-compose.yml does not have a hardcoded default SECURITY__ENCRYPTIONKEY.
+          if grep -q '0a1715d2edbbbef62384ee797ed6bf7ce01ef56ee7da55dcc04fb7f297e53a4d' docker-compose.yml; then
+            echo "❌ REGRESSION: Hardcoded encryption key found in docker-compose.yml"
+            exit 1
+          fi
+          if grep 'SECURITY__ENCRYPTIONKEY:' docker-compose.yml | grep -q ':-'; then
+            echo "❌ REGRESSION: Found fallback default (:-) for SECURITY__ENCRYPTIONKEY"
+            exit 1
+          fi
+          echo "✅ PASSED: No hardcoded encryption key or fallback in docker-compose.yml"
+
       - name: Build and start container (docker compose up --build)
+        env:
+          SECURITY__ENCRYPTIONKEY: aaaabbbbccccddddeeeeffffgggghhhh  # 32-byte test key for CI only
         run: docker compose up --build -d
 
       - name: Wait for container health check
