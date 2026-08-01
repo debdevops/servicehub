@@ -318,7 +318,7 @@ jobs:
 
       - name: Build and start container (docker compose up --build)
         env:
-          SECURITY__ENCRYPTIONKEY: aaaabbbbccccddddeeeeffffgggghhhh  # 32-byte test key for CI only
+          SECURITY__ENCRYPTIONKEY: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210  # 32-byte test key for CI only
         run: docker compose up --build -d
 
       - name: Wait for container health check
