@@ -121,55 +121,66 @@ SPA from calling its own API from a browser.
 > **Note:** In Production mode the app **will not start** without a real `SECURITY__ENCRYPTIONKEY`
 > (this is intentional — it prevents shipping with a known default key).
 
-#### 🌐 Reverse proxy and X-Forwarded-For header configuration
+#### 🌐 Reverse proxy and X-Forwarded-* header configuration
 
-If ServiceHub runs behind a reverse proxy (Nginx, HAProxy, AWS ALB, Azure Application Gateway, etc.),
-the proxy must be explicitly configured to ensure audit logging and auth throttling work correctly.
+ServiceHub defaults to **NOT trusting** `X-Forwarded-For` and other proxy headers — a secure default.
+Enable only when deployed behind a known, trusted reverse proxy.
 
-**Why this matters:** ServiceHub reads the client IP from `X-Forwarded-For` headers to log audit
-events and throttle failed authentication attempts. If your reverse proxy is not explicitly trusted,
-ServiceHub will accept `X-Forwarded-For` from any client, allowing spoofed IPs in audit logs and
-bypassing auth throttling.
+**Why this matters:** Client IP from `X-Forwarded-For` headers is used for audit logging and auth
+throttling. Trusting this header from arbitrary sources allows spoofed IPs in audit logs and
+bypasses auth rate limiting.
 
-**If you run ServiceHub directly on the internet (not behind a proxy):** No action needed.
+**If you run ServiceHub directly on the internet (not behind a proxy):** No action needed — forwarded
+headers are disabled by default.
 
-**If you run behind a reverse proxy:** You must explicitly configure which proxy IP(s) to trust.
-Edit `appsettings.Production.json` or set environment variables:
+**If you run behind a reverse proxy:** Explicitly configure which proxy IP(s) or networks to trust
+via environment variables:
 
-**For Nginx reverse proxy** (forward traffic from `10.0.0.5`):
-```json
-{
-  "ForwardedHeaders": {
-    "KnownProxies": ["10.0.0.5"],
-    "ForwardedHeaders": ["XForwardedFor", "XForwardedProto"]
-  }
-}
+**For Nginx reverse proxy** (forwarding from `10.0.0.5`):
+```bash
+FORWARDEDHEADERS__ENABLED=true
+FORWARDEDHEADERS__KNOWNPROXIES__0=10.0.0.5
 ```
 
-**For AWS ALB or Azure Application Gateway** (trust all traffic from load balancer):
-```json
-{
-  "ForwardedHeaders": {
-    "KnownIPNetworks": ["10.0.0.0/8"],
-    "ForwardedHeaders": ["XForwardedFor", "XForwardedProto"]
-  }
-}
+**For AWS ALB or Azure Application Gateway** (trust all traffic from network):
+```bash
+FORWARDEDHEADERS__ENABLED=true
+FORWARDEDHEADERS__KNOWNNETWORKS__0=10.0.0.0/8
 ```
 
-**For multi-proxy setups** (Nginx → Application Gateway → ServiceHub):
-```json
-{
-  "ForwardedHeaders": {
-    "KnownProxies": ["10.0.0.5"],
-    "KnownIPNetworks": ["10.0.0.0/8"],
-    "ForwardedHeaders": ["XForwardedFor", "XForwardedProto"]
-  }
-}
+**For multi-proxy setups** (Nginx → ALB → ServiceHub):
+```bash
+FORWARDEDHEADERS__ENABLED=true
+FORWARDEDHEADERS__KNOWNPROXIES__0=10.0.0.5
+FORWARDEDHEADERS__KNOWNNETWORKS__0=10.0.0.0/8
 ```
 
-See [docs/CONFIGURATION.md](../docs/CONFIGURATION.md) for the complete `ForwardedHeaders` schema and
-all allowed values. Once configured, ServiceHub logs the actual client IP in audit trails and
-correctly throttles authentication failures per source.
+**For Azure App Service** (auto-detected):
+No configuration needed when deployed to Azure App Service — the `WEBSITE_AUTH_ENABLED` environment
+variable automatically enables trusted forwarded headers.
+
+**Per environment variable:**
+```bash
+# Minimal: just enable for one proxy
+FORWARDEDHEADERS__ENABLED=true
+FORWARDEDHEADERS__KNOWNPROXIES__0=10.0.0.1
+
+# Multiple proxies by IP
+FORWARDEDHEADERS__KNOWNPROXIES__0=10.0.0.1
+FORWARDEDHEADERS__KNOWNPROXIES__1=10.0.0.2
+
+# CIDR networks (preferred for ALBs/gateways with dynamic IPs)
+FORWARDEDHEADERS__KNOWNNETWORKS__0=10.0.0.0/8
+FORWARDEDHEADERS__KNOWNNETWORKS__1=192.168.0.0/16
+
+# Fine-grained control (optional)
+FORWARDEDHEADERS__USEXFORWARDEDFOR=true          # Trust X-Forwarded-For (client IP)
+FORWARDEDHEADERS__USEXFORWARDEDPROTO=true        # Trust X-Forwarded-Proto (http/https)
+FORWARDEDHEADERS__AUTODETECTAZUREAPPSERVICE=true # Auto-enable on Azure App Service
+```
+
+See [docs/CONFIGURATION.md](../docs/CONFIGURATION.md) for the complete reference. Once configured
+correctly, audit logs record the actual client IP and auth rate limiting works per real source IP.
 
 ---
 

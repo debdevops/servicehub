@@ -31,6 +31,38 @@ key `Security:EncryptionKey` becomes the environment variable `SECURITY__ENCRYPT
 | `Security:EasyAuth:Enabled` | `SECURITY__EASYAUTH__ENABLED` | `true` | Trust Azure App Service EasyAuth headers. Only unforgeable behind Azure's proxy — leave off elsewhere. |
 | `Security:Oidc:*` | `SECURITY__OIDC__*` | `Enabled=false` | Provider-neutral per-user SSO for any OIDC identity provider, on any host. See [Oidc](#oidc-byo-idp-sso---validated-at-startup) below. |
 
+## Reverse proxy & forwarded headers (X-Forwarded-*)
+
+ServiceHub defaults to **not trusting** `X-Forwarded-For`, `X-Forwarded-Proto`, and related headers from arbitrary sources — a safe default that prevents spoofed client IPs in audit logs and bypassed rate limiting. Enable only when deployed behind a known, trusted reverse proxy, and explicitly specify which proxy IP addresses or CIDR networks to trust.
+
+| Key | Env var | Default | Notes |
+|---|---|---|---|
+| `ForwardedHeaders:Enabled` | `FORWARDEDHEADERS__ENABLED` | `false` | Trust X-Forwarded-* headers from proxies. Set to `true` only if behind a trusted reverse proxy (Nginx, HAProxy, AWS ALB, Azure App Gateway, etc). |
+| `ForwardedHeaders:AutoDetectAzureAppService` | `FORWARDEDHEADERS__AUTODETECTAZUREAPPSERVICE` | `true` | Automatically enable forwarded headers when deployed on Azure App Service (detected via `WEBSITE_AUTH_ENABLED`). No action needed for Azure App Service — this flag enables the auto-detection. |
+| `ForwardedHeaders:KnownProxies:[]` | `FORWARDEDHEADERS__KNOWNPROXIES__0`, `__1`, ... | `[]` | Individual proxy IP addresses to trust. Example: `["10.0.0.5", "10.0.0.6"]`. |
+| `ForwardedHeaders:KnownNetworks:[]` | `FORWARDEDHEADERS__KNOWNNETWORKS__0`, `__1`, ... | `[]` | CIDR ranges of trusted proxies. Example: `["10.0.0.0/8", "192.168.0.0/16"]`. |
+| `ForwardedHeaders:UseXForwardedFor` | `FORWARDEDHEADERS__USEXFORWARDEDFOR` | `true` | Trust the `X-Forwarded-For` header (client IP) when enabled. |
+| `ForwardedHeaders:UseXForwardedProto` | `FORWARDEDHEADERS__USEXFORWARDEDPROTO` | `true` | Trust the `X-Forwarded-Proto` header (http/https scheme) when enabled. |
+
+**Examples:**
+
+- **Nginx reverse proxy** on `10.0.0.5`:
+  ```
+  FORWARDEDHEADERS__ENABLED=true
+  FORWARDEDHEADERS__KNOWNPROXIES__0=10.0.0.5
+  ```
+
+- **AWS ALB** behind a private network:
+  ```
+  FORWARDEDHEADERS__ENABLED=true
+  FORWARDEDHEADERS__KNOWNNETWORKS__0=10.0.0.0/8
+  ```
+
+- **Azure App Service** (auto-detected):
+  ```
+  # No configuration needed if WEBSITE_AUTH_ENABLED=true is set by Azure
+  ```
+
 ## Cloud providers
 
 | Key | Env var | Default | Notes |
