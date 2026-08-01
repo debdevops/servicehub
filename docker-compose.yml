@@ -30,6 +30,10 @@ services:
       # appsettings.Production.json's AllowedHosts placeholder rejects every Host header
       # until overridden; this container is only reachable via localhost per the ports mapping.
       AllowedHosts: localhost
+      # SiteUrl for CORS and SPA token validation
+      SITEURL: ${SITEURL}
+      # SPA token signing secret
+      SECURITY__SPATOKEN__SECRET: ${SECURITY__SPATOKEN__SECRET}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/live"]
       interval: 30s
