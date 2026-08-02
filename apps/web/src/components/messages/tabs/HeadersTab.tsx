@@ -44,6 +44,7 @@ function HeaderRow({
             onClick={handleCopy}
             className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-200 transition-all"
             title="Copy value"
+            aria-label="Copy value"
           >
             {copied ? (
               <Check size={14} className="text-green-600" />

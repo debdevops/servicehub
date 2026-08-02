@@ -38,6 +38,9 @@ public sealed class DlqDbContext : DbContext
     /// <summary>Tracks whether a DLQ error cluster's signature has been seen before in a namespace.</summary>
     public DbSet<NamespaceSignature> NamespaceSignatures => Set<NamespaceSignature>();
 
+    /// <summary>Operational knowledge associated with FailureSignatures.</summary>
+    public DbSet<FailureKnowledgeEntity> FailureKnowledgeEntities => Set<FailureKnowledgeEntity>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -52,6 +55,7 @@ public sealed class DlqDbContext : DbContext
         ConfigureBulkOperationJob(modelBuilder);
         ConfigureMessageFeatureRecord(modelBuilder);
         ConfigureNamespaceSignature(modelBuilder);
+        ConfigureFailureKnowledge(modelBuilder);
     }
 
     private static void ApplyUtcDateTimeConverters(ModelBuilder modelBuilder)
@@ -498,5 +502,61 @@ public sealed class DlqDbContext : DbContext
         // Owner-scoped queries.
         entity.HasIndex(e => new { e.OwnerId, e.NamespaceId })
             .HasDatabaseName("IX_NamespaceSignatures_Owner_Namespace");
+    }
+
+    private static void ConfigureFailureKnowledge(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<FailureKnowledgeEntity>();
+
+        entity.ToTable("FailureKnowledge");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.Id)
+            .ValueGeneratedOnAdd();
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.SignatureHash)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        entity.Property(e => e.RootCause)
+            .HasMaxLength(4096);
+
+        entity.Property(e => e.ResolutionNotes)
+            .HasMaxLength(4096);
+
+        entity.Property(e => e.OperationalNotes)
+            .HasMaxLength(4096);
+
+        entity.Property(e => e.RunbookLink)
+            .HasMaxLength(1024);
+
+        entity.Property(e => e.Owner)
+            .HasMaxLength(256);
+
+        entity.Property(e => e.ReplayGuidance)
+            .HasMaxLength(32);
+
+        entity.Property(e => e.KnowledgeVersion)
+            .HasDefaultValue(1);
+
+        entity.Property(e => e.Tags)
+            .HasMaxLength(2048);
+
+        // One row per signature per namespace per owner
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.SignatureHash })
+            .IsUnique()
+            .HasDatabaseName("IX_FailureKnowledge_Owner_Namespace_SignatureHash");
+
+        // Owner-scoped queries
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId })
+            .HasDatabaseName("IX_FailureKnowledge_Owner_Namespace");
+
+        // Find overdue knowledge reviews
+        entity.HasIndex(e => new { e.ReviewDueAt })
+            .HasDatabaseName("IX_FailureKnowledge_ReviewDueAt");
     }
 }

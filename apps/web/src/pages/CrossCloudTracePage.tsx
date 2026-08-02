@@ -172,7 +172,7 @@ export function CrossCloudTracePage() {
   const [submitted, setSubmitted] = useState('');
 
   const { data: namespaces } = useNamespaces();
-  const { mutate: runTrace, data: result, isPending, isSuccess } = useCrossCloudTrace();
+  const { mutate: runTrace, data: result, isPending, isSuccess, isError, error } = useCrossCloudTrace();
 
   // Compute distinct clouds connected
   const connectedClouds = new Set((namespaces ?? []).map(n => n.cloudProvider ?? 'azure'));
@@ -241,7 +241,7 @@ export function CrossCloudTracePage() {
         <button
           onClick={handleTrace}
           disabled={!traceId.trim() || isPending}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+          className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
         >
           {isPending ? (
             <>
@@ -256,6 +256,14 @@ export function CrossCloudTracePage() {
           )}
         </button>
       </div>
+
+      {/* In-progress feedback — a multi-cloud search can take a few seconds */}
+      {isPending && (
+        <div className="flex items-center gap-2 text-sm text-gray-500 px-1">
+          <div className="w-3.5 h-3.5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
+          Searching {connectedClouds.size === 0 ? 'connected namespaces' : [...connectedClouds].map(c => getProviderStyle(c as CloudProviderType).label).join(', ')}…
+        </div>
+      )}
 
       {/* Trace ID help */}
       <details className="rounded-lg border border-violet-200 bg-violet-50 text-xs">
@@ -286,6 +294,19 @@ export function CrossCloudTracePage() {
           </div>
         </div>
       </details>
+
+      {/* Error recovery */}
+      {isError && !isPending && (
+        <div className="flex items-start gap-2 rounded-lg bg-red-50 border border-red-200 p-4 text-sm text-red-700">
+          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span className="flex-1">
+            {error?.response?.data?.detail ?? error?.response?.data?.message ?? error?.message ?? 'Trace failed.'}
+          </span>
+          <button className="text-xs font-medium underline shrink-0" onClick={handleTrace}>
+            Try Again
+          </button>
+        </div>
+      )}
 
       {/* Results */}
       {isSuccess && result && (

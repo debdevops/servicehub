@@ -74,7 +74,7 @@ export function HelpPage() {
                 </div>
               </div>
               <p className="text-gray-600 ml-[68px] text-sm leading-relaxed max-w-2xl">
-                Everything you need to debug Azure Service Bus effectively — from getting started to advanced troubleshooting. Search or browse by topic.
+                Everything you need to debug Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub effectively — from getting started to advanced troubleshooting. Search or browse by topic.
               </p>
             </div>
             <button
@@ -200,6 +200,7 @@ export function HelpPage() {
                 {/* Section header */}
                 <button
                   onClick={() => toggleSection(section.id)}
+                  aria-expanded={isExpanded}
                   className="w-full flex items-center gap-4 px-6 py-4 text-left hover:bg-gradient-to-r hover:from-blue-50 hover:to-transparent transition-colors"
                 >
                   <span className="text-2xl">{section.icon}</span>

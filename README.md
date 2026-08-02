@@ -6,14 +6,15 @@
 
 ![ServiceHub Banner](docs/screenshots/servicehub-banner.png)
 
+[![CI](https://github.com/debdevops/servicehub/actions/workflows/servicehub.yml/badge.svg)](https://github.com/debdevops/servicehub/actions/workflows/servicehub.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10-purple.svg)](https://dotnet.microsoft.com/)
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6.svg)](https://www.typescriptlang.org/)
-[![Version](https://img.shields.io/badge/version-3.3.0-brightgreen.svg)](.version)
+[![Version](https://img.shields.io/badge/version-3.4.0-brightgreen.svg)](.version)
 [![Self-Hosted](https://img.shields.io/badge/Deployment-Self--Hosted-0078D4.svg)](#quick-start)
 
-[⚡ Quick Start](#quick-start) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security)
+[⚡ Quick Start](#quick-start) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security) · [📋 Changelog](CHANGELOG.md)
 
 </div>
 
@@ -28,7 +29,7 @@ Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-
 > **Your cloud console shows you counts. ServiceHub shows you answers.**
 
 > [!IMPORTANT]
-> **Built for strict environments, single-operator by default.** Read-only by default (`Peek`, never consume) · connection strings AES-GCM-256 encrypted at rest · analysis runs entirely in your browser — no message data ever leaves your network ([telemetry](#application-insights-telemetry) is opt-in, disabled unless you enable it) · destructive actions (replay, send) blocked on production namespaces. **Every browser session shares one admin identity unless you turn on per-user identity** — OIDC (any standards-compliant IdP) or Azure Easy Auth, both off by default. Details in [Security](#security).
+> **Built for strict environments, single-operator by default.** Read-only by default (`Peek`, never consume) · connection strings AES-GCM-256 encrypted at rest · analysis runs entirely in your browser — no message data ever leaves your network ([telemetry](#telemetry-opt-in-vendor-neutral) is opt-in, disabled unless you enable it) · destructive actions (replay, send) blocked on production namespaces. **Every browser session shares one admin identity unless you turn on per-user identity** — OIDC (any standards-compliant IdP) or Azure Easy Auth, both off by default. Details in [Security](#security).
 
 > [!TIP]
 > **No credentials?** The Welcome page's **"Try a live demo"** buttons open a fully client-side demo walkthrough per cloud — no backend, no cloud account needed.
@@ -321,7 +322,7 @@ cd servicehub
 ./run.sh
 ```
 
-Open **[http://localhost:3000](http://localhost:3000)** — then connect with your connection string. The script automatically installs .NET 10 SDK and Node.js 20+ if not already present.
+Open **[http://localhost:3000](http://localhost:3000)** — then connect with your connection string. The script automatically installs .NET 10 SDK and Node.js 22+ if not already present.
 
 ### Create a Dedicated Policy (Azure)
 
@@ -344,7 +345,7 @@ ServiceHub is built for strict enterprise environments.
 - **Read-only by default** — Uses `PeekMessagesAsync`; messages are **never removed or consumed**.
 - **AES-GCM encryption** — Connection strings encrypted at rest; key stored in local config, never returned to the browser.
 - **Zero external calls** — AI analysis runs entirely in-browser; no message data leaves your environment.
-- **No message persistence** — Messages are displayed in-memory only during your session; never written to a database.
+- **No message persistence for live browsing** — Messages viewed on the Queues/Topics/Messages pages are in-memory only during your session, never written to a database. The deliberate exception is DLQ Intelligence, which stores a 500-character body preview and classification metadata per dead-lettered message in local SQLite to power History and 30-Day Trends.
 - **Log redaction** — Backend logging pipeline strips connection strings, API keys, and access tokens (best-effort pattern matching, not a formal guarantee).
 
 ### What ServiceHub does not do by default
@@ -420,10 +421,10 @@ On AWS (delete by receipt handle) and GCP (acknowledge), yes — the Purge actio
 Bug fixes, features, and documentation improvements are welcome!
 
 ```bash
-# Unit tests (Vitest — 1,100+ tests, ≥60% coverage required)
+# Unit tests (Vitest — 780+ tests, ≥60% coverage required)
 npm run -w apps/web test:coverage
 
-# Backend tests (xUnit — 1,500+ unit + integration tests)
+# Backend tests (xUnit — 1,900+ unit + integration tests)
 dotnet test services/api/tests/ServiceHub.UnitTests
 dotnet test services/api/tests/ServiceHub.IntegrationTests
 
@@ -438,9 +439,9 @@ For deep backend developer guidelines, refer to the [API README](services/api/RE
 
 ServiceHub is built depth-first: make one workflow excellent before adding the next surface.
 
-- **Now (MVP)** — the forensic core across Azure (GA) and AWS/GCP (preview): explore, search, DLQ investigation, replay, purge, send, auto-replay rules, live updates. Also shipped: bulk replay/purge with dry-run preview, a fleet dashboard across namespaces, Slack/Teams-native alerts (DLQ spikes, bulk operation completion), and Live Tail (real-time "tail -f" for a queue/subscription, Azure and GCP).
-- **Next** — operational habit: DLQ triage inbox.
-- **Later** — team & governance: SSO, role-based access, approval workflows for destructive operations, audit export.
+- **Now (MVP)** — the forensic core across Azure (GA) and AWS/GCP (preview): explore, search, DLQ investigation, replay, purge, send, auto-replay rules, live updates. Also shipped: bulk replay/purge with dry-run preview, a fleet dashboard across namespaces, Slack/Teams-native alerts (DLQ spikes, bulk operation completion), Live Tail (real-time "tail -f" for a queue/subscription, Azure and GCP), a DLQ triage inbox, OIDC SSO (bring your own standards-compliant identity provider), role-based access via API key/OIDC scopes (Viewer/Operator/Auditor), and an exportable per-owner audit trail.
+- **Next** — Failure Signature Intelligence: clustering dead-letter messages into named, recurring failure patterns instead of one-off incidents.
+- **Later** — team & governance: approval workflows for destructive operations, extending namespace sharing to cover shared DLQ history and audit visibility (not just live namespace access).
 
 Have a use-case that should shape this? [Open a feature request](https://github.com/debdevops/servicehub/issues/new) — describe the problem, not just the solution.
 

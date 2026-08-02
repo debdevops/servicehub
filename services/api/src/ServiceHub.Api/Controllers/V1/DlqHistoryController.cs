@@ -9,6 +9,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Shared.Constants;
+using ServiceHub.Shared.Helpers;
 
 namespace ServiceHub.Api.Controllers.V1;
 
@@ -27,6 +28,7 @@ public sealed class DlqHistoryController : ApiControllerBase
     private readonly IDlqSignatureAnalysisService _signatureAnalysisService;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IMemoryCache _cache;
+    private readonly IFailureKnowledgeService _knowledgeService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DlqHistoryController"/> class.
@@ -36,13 +38,15 @@ public sealed class DlqHistoryController : ApiControllerBase
         ILogger<DlqHistoryController> logger,
         IDlqSignatureAnalysisService signatureAnalysisService,
         INamespaceRepository namespaceRepository,
-        IMemoryCache cache)
+        IMemoryCache cache,
+        IFailureKnowledgeService knowledgeService)
     {
         _historyService = historyService ?? throw new ArgumentNullException(nameof(historyService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _signatureAnalysisService = signatureAnalysisService ?? throw new ArgumentNullException(nameof(signatureAnalysisService));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+        _knowledgeService = knowledgeService ?? throw new ArgumentNullException(nameof(knowledgeService));
     }
 
     /// <summary>
@@ -421,34 +425,86 @@ public sealed class DlqHistoryController : ApiControllerBase
         if (result.IsFailure)
             return ToActionResult<DlqSignaturesResponse>(result.Error);
 
-        var response = MapToSignaturesResponse(result.Value);
+        var response = await MapToSignaturesResponseAsync(result.Value, OwnerId, namespaceId, cancellationToken);
         _cache.Set(cacheKey, response, SignatureCacheDuration);
 
         return Ok(response);
     }
 
-    /// <summary>Maps a composed signature analysis to its API response shape.</summary>
-    private static DlqSignaturesResponse MapToSignaturesResponse(DlqSignatureAnalysisResult analysis) => new(
-        Available: analysis.Available,
-        Method: analysis.Method,
-        BatchSize: analysis.BatchSize,
-        Clusters: analysis.Clusters.Select(c => new DlqClusterSignatureResponse(
-            Size: c.Size,
-            MessageIds: c.MessageIds,
-            DominantEntity: c.DominantEntity,
-            DominantDeadletterReason: c.DominantDeadletterReason,
-            DominantDeadletterReasonCount: c.DominantDeadletterReasonCount,
-            TopTerms: c.TopTerms,
-            IsNew: c.IsNew,
-            FirstSeenAt: c.FirstSeenAt,
-            OccurrenceCount: c.OccurrenceCount,
-            WindowStart: c.WindowStart,
-            WindowEnd: c.WindowEnd,
-            Explanation: c.Explanation)).ToList(),
-        Singletons: analysis.Singletons.Select(s => new DlqSingletonSignatureResponse(
-            MessageId: s.MessageId,
-            DominantEntity: s.DominantEntity,
-            DominantDeadletterReason: s.DominantDeadletterReason)).ToList());
+    /// <summary>Maps a composed signature analysis to its API response shape, including operational knowledge.</summary>
+    private async Task<DlqSignaturesResponse> MapToSignaturesResponseAsync(
+        DlqSignatureAnalysisResult analysis,
+        string ownerId,
+        Guid namespaceId,
+        CancellationToken cancellationToken)
+    {
+        // Load knowledge for all clusters in a single batch operation
+        var clusterHashes = analysis.Clusters.Select(c => c.TopTerms).ToList();
+        if (clusterHashes.Count == 0)
+        {
+            return new DlqSignaturesResponse(
+                Available: analysis.Available,
+                Method: analysis.Method,
+                BatchSize: analysis.BatchSize,
+                Clusters: [],
+                Singletons: analysis.Singletons.Select(s => new DlqSingletonSignatureResponse(
+                    MessageId: s.MessageId,
+                    DominantEntity: s.DominantEntity,
+                    DominantDeadletterReason: s.DominantDeadletterReason)).ToList());
+        }
+
+        var clusterSignatureHashes = analysis.Clusters
+            .Select(c => ClusterSignatureHasher.ComputeHash(c.TopTerms, c.DominantDeadletterReason))
+            .ToList();
+
+        var knowledgeResult = await _knowledgeService.GetKnowledgeBatchAsync(
+            ownerId, namespaceId, clusterSignatureHashes, cancellationToken)
+            .ConfigureAwait(false);
+
+        var knowledgeByHash = knowledgeResult.IsSuccess
+            ? knowledgeResult.Value
+            : new Dictionary<string, Core.Models.FailureKnowledge>();
+
+        return new DlqSignaturesResponse(
+            Available: analysis.Available,
+            Method: analysis.Method,
+            BatchSize: analysis.BatchSize,
+            Clusters: analysis.Clusters.Select((c, idx) =>
+            {
+                var hash = clusterSignatureHashes[idx];
+                var knowledge = knowledgeByHash.TryGetValue(hash, out var k) ? k : null;
+                var knowledgeResponse = knowledge != null ? new KnowledgeResponse(
+                    RootCause: knowledge.RootCause,
+                    ResolutionNotes: knowledge.ResolutionNotes,
+                    OperationalNotes: knowledge.OperationalNotes,
+                    RunbookLink: knowledge.RunbookLink,
+                    Owner: knowledge.Owner,
+                    ReplayGuidance: knowledge.ReplayGuidance,
+                    LastUpdatedAt: knowledge.LastUpdatedAt,
+                    KnowledgeVersion: knowledge.KnowledgeVersion,
+                    ReviewDueAt: knowledge.ReviewDueAt,
+                    Tags: knowledge.Tags) : null;
+
+                return new DlqClusterSignatureResponse(
+                    Size: c.Size,
+                    MessageIds: c.MessageIds,
+                    DominantEntity: c.DominantEntity,
+                    DominantDeadletterReason: c.DominantDeadletterReason,
+                    DominantDeadletterReasonCount: c.DominantDeadletterReasonCount,
+                    TopTerms: c.TopTerms,
+                    IsNew: c.IsNew,
+                    FirstSeenAt: c.FirstSeenAt,
+                    OccurrenceCount: c.OccurrenceCount,
+                    WindowStart: c.WindowStart,
+                    WindowEnd: c.WindowEnd,
+                    Explanation: c.Explanation,
+                    Knowledge: knowledgeResponse);
+            }).ToList(),
+            Singletons: analysis.Singletons.Select(s => new DlqSingletonSignatureResponse(
+                MessageId: s.MessageId,
+                DominantEntity: s.DominantEntity,
+                DominantDeadletterReason: s.DominantDeadletterReason)).ToList());
+    }
 
     private static string GenerateCsv(IReadOnlyList<Core.Entities.DlqMessage> messages)
     {

@@ -249,7 +249,7 @@ describe('DlqHistoryPage', () => {
       render(<Wrapper><DlqHistoryPage /></Wrapper>);
 
       expect(screen.getByText('By Failure Category')).toBeInTheDocument();
-      const maxDelivery = screen.getByRole('button', { name: /MaxDelivery · 7/ });
+      const maxDelivery = screen.getByRole('button', { name: /Max Delivery Exceeded · 7/ });
       const transient = screen.getByRole('button', { name: /Transient · 3/ });
       expect(maxDelivery).toBeInTheDocument();
       expect(transient).toBeInTheDocument();
@@ -267,9 +267,9 @@ describe('DlqHistoryPage', () => {
       const Wrapper = createWrapper();
       render(<Wrapper><DlqHistoryPage /></Wrapper>);
 
-      await user.click(screen.getByRole('button', { name: /MaxDelivery · 7/ }));
+      await user.click(screen.getByRole('button', { name: /Max Delivery Exceeded · 7/ }));
 
-      expect(screen.getByText('Category: MaxDelivery')).toBeInTheDocument();
+      expect(screen.getByText('Category: Max Delivery Exceeded')).toBeInTheDocument();
     });
 
     it('toggles the category filter off when the active category is clicked again', async () => {
@@ -277,11 +277,11 @@ describe('DlqHistoryPage', () => {
       const Wrapper = createWrapper();
       render(<Wrapper><DlqHistoryPage /></Wrapper>);
 
-      await user.click(screen.getByRole('button', { name: /MaxDelivery · 7/ }));
-      expect(screen.getByText('Category: MaxDelivery')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: /Max Delivery Exceeded · 7/ }));
+      expect(screen.getByText('Category: Max Delivery Exceeded')).toBeInTheDocument();
 
-      await user.click(screen.getByRole('button', { name: /MaxDelivery · 7/ }));
-      expect(screen.queryByText('Category: MaxDelivery')).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: /Max Delivery Exceeded · 7/ }));
+      expect(screen.queryByText('Category: Max Delivery Exceeded')).not.toBeInTheDocument();
     });
   });
 

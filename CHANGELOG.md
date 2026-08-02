@@ -1,6 +1,6 @@
 # ServiceHub Changelog
 
-## [Unreleased] — 2026-07-07
+## [3.4.0] — 2026-08-02
 
 ### Removed
 
@@ -31,6 +31,9 @@
 
 ### Security
 
+- **Fixed cross-tenant read in the Cloud Bridge API** — `GET /api/v1/cloud-bridge/namespaces/{id}/entities` and `GET /api/v1/cloud-bridge/namespaces/{id}/visibility/{queueName}` performed no ownership check, so any authenticated caller who knew or guessed another tenant's namespace ID could list its entities or read its visibility status. Both endpoints now call `VerifyNamespaceOwnershipAsync` and return `404` (not `403`) on a mismatch, matching the "not yours" vs. "doesn't exist" convention used elsewhere.
+- **Restrictive CSP now correctly applied to Staging** — `SecurityHeadersMiddleware` previously keyed its Content-Security-Policy choice on `IsProduction()`, so the permissive Development policy silently applied to any non-Production environment name, including Staging. Now keyed on `IsDevelopment()` instead, so every environment other than Development gets the restrictive policy.
+- **Repeated API-key authentication failures are now throttled** — `ApiKeyAuthenticationMiddleware` previously evaluated every credential unconditionally, leaving key brute-forcing unthrottled. Failures are now tracked per client IP and return `429 Too Many Requests` with a `Retry-After` once a threshold is crossed, checked before any credential is evaluated so a bad key can't be brute-forced just because it also fails fast.
 - **Fixed cross-owner IDOR in DLQ Intelligence** — `IDlqHistoryService.GetByIdAsync`, `GetTimelineAsync`, `UpdateNotesAsync`, and `GetSummaryAsync` previously took no owner parameter, so any authenticated caller who guessed/enumerated a DLQ message ID could read or annotate another tenant's message. All four methods (plus `GetHistoryAsync`/`ExportAsync`, already scoped) now require `ownerId` and filter on it consistently, matching the isolation already applied to the list endpoint.
 - **Rate limiting bypass behind reverse proxies** — `RateLimitingMiddleware` previously keyed solely on `Connection.RemoteIpAddress`, which is the proxy's IP for every request when ServiceHub runs behind one (e.g. Azure App Service), collapsing all tenants into a single shared limit bucket. It now keys on the authenticated `OwnerId` when available (`owner:{id}`), falling back to remote IP (`ip:{addr}`) only for unauthenticated requests. `X-Forwarded-For` remains untrusted for this purpose.
 - **`AllowedHosts` hardened in production config** — `appsettings.Production.json` shipped with `"AllowedHosts": "*"`, disabling ASP.NET Core's host-header filtering (host-header injection / cache-poisoning risk). Now defaults to `SET_VIA_ENV_VAR` with inline guidance to set real deployment hostnames.
@@ -49,6 +52,7 @@
 - **`QueuesController`/`TopicsController`/`SubscriptionsController`/`MessagesController` depend on `ICloudProviderRouter`, not the concrete `CloudProviderRouter`** — closes an Api/Infrastructure boundary leak CLAUDE.md already documented as a rule ("Controllers depend on Core interfaces, not concrete Infrastructure types") but four controllers didn't actually follow. New `ServiceHub.Core.Interfaces.ICloudProviderRouter` wraps `Resolve`/`IsRegistered`; `CloudProviderRouter` implements it and is registered against both the concrete type (for Infrastructure-internal consumers) and the interface (for the Api layer) from the same DI instance — zero behavior change, zero test-file changes needed beyond adding coverage. Locked in with a new `ApiLayerBoundaryTests.cs` reflection test that fails if any Api-layer constructor takes the concrete type again. See `docs/EXTENDING-PROVIDERS.md`.
 - **Messages/Queues/Topics controllers migrated to a unified provider path** — `MessagesController`, `QueuesController`, and `TopicsController` now depend on `IMessageOperationsService`, which resolves the correct `ICloudMessagingProvider` via `CloudProviderRouter` instead of each controller holding its own per-provider dispatch logic. `CrossCloudTraceController` was refactored to extract Azure-specific search into `IAzureTraceSearcher`, shrinking the controller to orchestration/aggregation; it still dispatches Azure and non-Azure namespaces through separate code paths rather than the shared router (see `docs/FLOW.md` for the current, as-built diagram).
 - **`DlqMessage` gained a `CloudProvider` column** — defaults to `CloudProviderType.Azure` for rows written before the column existed, so historical records are attributed correctly without a data migration.
+- `.version` updated to `3.4.0`
 
 ---
 
