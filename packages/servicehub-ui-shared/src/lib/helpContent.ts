@@ -302,7 +302,7 @@ export const tourSteps: TourStep[] = [
     target: '[data-tour="add-connection"]',
     title: 'Add a Connection',
     content:
-      'Click the "+" button to connect a new Azure Service Bus namespace. You\'ll need a connection string from the Azure Portal.',
+      'Click the "+" button to connect a real cloud namespace — Azure Service Bus, AWS SQS/SNS, or GCP Pub/Sub. You\'ll need credentials from your cloud provider\'s console.',
     placement: 'bottom',
   },
 ];

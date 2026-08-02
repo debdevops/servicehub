@@ -29,14 +29,14 @@ export function MainLayout() {
   // Keyboard shortcuts overlay state
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
-  // Auto-launch tour on first visit — skip in demo mode
+  // Auto-launch tour on first visit (demo and real app alike)
   useEffect(() => {
-    if (!isDemoMode && !isTourCompleted()) {
+    if (!isTourCompleted()) {
       // Small delay so DOM is ready for spotlight targeting
       const timer = setTimeout(() => setTourActive(true), 800);
       return () => clearTimeout(timer);
     }
-  }, [isDemoMode]);
+  }, []);
 
   // Listen for "Take a Tour" event from HelpPage
   const handleStartTour = useCallback(() => setTourActive(true), []);
