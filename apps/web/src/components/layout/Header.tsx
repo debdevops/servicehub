@@ -34,7 +34,7 @@ export function Header() {
             <span className="text-white font-bold">Hub</span>
           </span>
           <span className="hidden sm:inline text-[10px] font-semibold bg-white/15 border border-white/20 rounded-full px-2 py-0.5 ml-1">
-            v3.3.0
+            v{import.meta.env.VITE_APP_VERSION}
           </span>
         </Link>
 

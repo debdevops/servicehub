@@ -197,7 +197,10 @@ function NamespaceEntitiesSection({
       {isOpen && (
         <div className="p-4 space-y-4">
           {queuesLoading ? (
-            <p className="text-sm text-gray-400">Loading entities…</p>
+            <p className="text-sm text-gray-400 flex items-center gap-2">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              Loading entities…
+            </p>
           ) : queuesError ? (
             <div className="flex items-center gap-2 text-sm text-red-600">
               <AlertTriangle className="w-4 h-4 shrink-0" />

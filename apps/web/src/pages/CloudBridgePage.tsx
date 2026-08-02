@@ -117,7 +117,7 @@ function EntityTable({ namespaceId, provider }: { namespaceId: string; provider:
         <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
         <span className="flex-1">{msg}</span>
         <button className="text-xs font-medium underline shrink-0" onClick={() => refetch()}>
-          Retry
+          Try Again
         </button>
       </div>
     );
