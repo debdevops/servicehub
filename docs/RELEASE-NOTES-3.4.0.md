@@ -1,4 +1,4 @@
-# ServiceHub RC1 — Release Notes
+# ServiceHub v3.4.0 — Release Notes
 
 This document is a curated, reader-facing summary of this release. For the exhaustive
 engineering-level log of every change, see `CHANGELOG.md`.

@@ -11,10 +11,10 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10-purple.svg)](https://dotnet.microsoft.com/)
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6.svg)](https://www.typescriptlang.org/)
-[![Version](https://img.shields.io/badge/version-3.3.0-brightgreen.svg)](.version)
+[![Version](https://img.shields.io/badge/version-3.4.0-brightgreen.svg)](.version)
 [![Self-Hosted](https://img.shields.io/badge/Deployment-Self--Hosted-0078D4.svg)](#quick-start)
 
-[⚡ Quick Start](#quick-start) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security)
+[⚡ Quick Start](#quick-start) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security) · [📋 Changelog](CHANGELOG.md)
 
 </div>
 
@@ -345,7 +345,7 @@ ServiceHub is built for strict enterprise environments.
 - **Read-only by default** — Uses `PeekMessagesAsync`; messages are **never removed or consumed**.
 - **AES-GCM encryption** — Connection strings encrypted at rest; key stored in local config, never returned to the browser.
 - **Zero external calls** — AI analysis runs entirely in-browser; no message data leaves your environment.
-- **No message persistence** — Messages are displayed in-memory only during your session; never written to a database.
+- **No message persistence for live browsing** — Messages viewed on the Queues/Topics/Messages pages are in-memory only during your session, never written to a database. The deliberate exception is DLQ Intelligence, which stores a 500-character body preview and classification metadata per dead-lettered message in local SQLite to power History and 30-Day Trends.
 - **Log redaction** — Backend logging pipeline strips connection strings, API keys, and access tokens (best-effort pattern matching, not a formal guarantee).
 
 ### What ServiceHub does not do by default
@@ -421,10 +421,10 @@ On AWS (delete by receipt handle) and GCP (acknowledge), yes — the Purge actio
 Bug fixes, features, and documentation improvements are welcome!
 
 ```bash
-# Unit tests (Vitest — 1,100+ tests, ≥60% coverage required)
+# Unit tests (Vitest — 780+ tests, ≥60% coverage required)
 npm run -w apps/web test:coverage
 
-# Backend tests (xUnit — 1,500+ unit + integration tests)
+# Backend tests (xUnit — 1,900+ unit + integration tests)
 dotnet test services/api/tests/ServiceHub.UnitTests
 dotnet test services/api/tests/ServiceHub.IntegrationTests
 
