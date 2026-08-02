@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
@@ -17,14 +16,10 @@ namespace ServiceHub.Infrastructure;
 public sealed class FailureKnowledgeService : IFailureKnowledgeService
 {
     private readonly DlqDbContext _dbContext;
-    private readonly ILogger<FailureKnowledgeService> _logger;
 
-    public FailureKnowledgeService(
-        DlqDbContext dbContext,
-        ILogger<FailureKnowledgeService> logger)
+    public FailureKnowledgeService(DlqDbContext dbContext)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<Result<FailureKnowledge>> GetKnowledgeAsync(

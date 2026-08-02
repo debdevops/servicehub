@@ -66,7 +66,7 @@ export function AIFindingsDropdown({ insights, onClose, onViewEvidence }: AIFind
 
       {/* Dropdown */}
       <div
-        className="fixed w-[420px] bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden"
+        className="fixed w-[420px] max-w-[90vw] bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden"
         style={coords ? { top: coords.top, right: coords.right } : { top: 0, right: 0, opacity: 0 }}
         role="dialog"
         aria-modal="true"

@@ -4,7 +4,6 @@ using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure;
 using ServiceHub.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 
 namespace ServiceHub.UnitTests;
 
@@ -12,7 +11,6 @@ public sealed class FailureKnowledgeServiceTests
 {
     private readonly DlqDbContext _dbContext;
     private readonly FailureKnowledgeService _sut;
-    private readonly ILogger<FailureKnowledgeService> _logger;
 
     private const string OwnerId = "entra:test-owner";
     private static readonly Guid NamespaceId = Guid.NewGuid();
@@ -25,8 +23,7 @@ public sealed class FailureKnowledgeServiceTests
             .Options;
 
         _dbContext = new DlqDbContext(options);
-        _logger = Moq.Mock.Of<ILogger<FailureKnowledgeService>>();
-        _sut = new FailureKnowledgeService(_dbContext, _logger);
+        _sut = new FailureKnowledgeService(_dbContext);
     }
 
     [Fact]

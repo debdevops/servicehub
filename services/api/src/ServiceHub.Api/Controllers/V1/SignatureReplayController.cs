@@ -5,6 +5,7 @@ using ServiceHub.Api.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.Api.Controllers.V1;
@@ -117,7 +118,7 @@ public sealed class SignatureReplayController : ApiControllerBase
 
         _logger.LogInformation(
             "Signature replay job {JobId} created by {OwnerId} for namespace {NamespaceId}, signature {SignatureHash}",
-            result.Value.Id, OwnerId, namespaceId, signatureHash);
+            result.Value.Id, OwnerId, namespaceId, LogRedactor.SanitiseForLog(signatureHash));
 
         return AcceptedAtAction(nameof(GetJob), new { id = result.Value.Id }, result.Value);
     }

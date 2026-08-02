@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using ServiceHub.Core.Enums;
 
 namespace ServiceHub.Core.DTOs.Responses;
@@ -107,7 +108,7 @@ public sealed record SignatureTimelineResponse(
 /// <summary>Request to transition a failure signature's lifecycle status.</summary>
 public sealed record UpdateSignatureStatusRequest(
     SignatureLifecycleStatus Status,
-    string? Notes = null);
+    [property: StringLength(4096)] string? Notes = null);
 
 /// <summary>The result of a failure signature lifecycle transition.</summary>
 public sealed record SignatureLifecycleStatusResponse(

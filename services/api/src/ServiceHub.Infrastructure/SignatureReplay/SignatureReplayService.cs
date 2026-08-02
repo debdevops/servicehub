@@ -7,6 +7,7 @@ using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Routing;
+using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Helpers;
 using ServiceHub.Shared.Results;
 
@@ -130,7 +131,7 @@ public sealed class SignatureReplayService : ISignatureReplayService
 
         _logger.LogInformation(
             "Signature replay job {JobId} created for namespace {NamespaceId}, signature {SignatureHash}: {TotalMatched} message(s) matched",
-            job.Id, job.NamespaceId, job.SignatureHash, job.TotalMatched);
+            job.Id, job.NamespaceId, LogRedactor.SanitiseForLog(job.SignatureHash), job.TotalMatched);
 
         // Fires the execution on a background task with its own DI scope — the request's own
         // scope (and its DlqDbContext) must not be captured past this method returning. Mirrors

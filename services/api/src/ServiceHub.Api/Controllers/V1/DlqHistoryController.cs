@@ -238,7 +238,7 @@ public sealed class DlqHistoryController : ApiControllerBase
     [HttpPost("history/{id:long}/status")]
     [RequireScope(ApiKeyScopes.DlqWrite)]
     [ProducesResponseType(typeof(DlqHistoryResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<DlqHistoryResponse>> UpdateStatus(
         long id,
@@ -749,7 +749,7 @@ public sealed class DlqHistoryController : ApiControllerBase
     [RequireNamespaceOwnership]
     [RequireScope(ApiKeyScopes.DlqWrite)]
     [ProducesResponseType(typeof(SignatureLifecycleStatusResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<SignatureLifecycleStatusResponse>> UpdateSignatureStatus(
         Guid namespaceId,
@@ -790,7 +790,7 @@ public sealed class DlqHistoryController : ApiControllerBase
     [RequireNamespaceOwnership]
     [RequireScope(ApiKeyScopes.DlqWrite)]
     [ProducesResponseType(typeof(KnowledgeResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<KnowledgeResponse>> UpsertKnowledge(
         Guid namespaceId,
@@ -878,7 +878,7 @@ public sealed class DlqHistoryController : ApiControllerBase
     [RequireNamespaceOwnership]
     [RequireScope(ApiKeyScopes.DlqWrite)]
     [ProducesResponseType(typeof(KnowledgeResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<KnowledgeResponse>> MarkKnowledgeForReview(
         Guid namespaceId,
@@ -942,6 +942,9 @@ public sealed class DlqHistoryController : ApiControllerBase
     {
         var monitorService = HttpContext.RequestServices.GetRequiredService<IDlqMonitorService>();
         var result = await monitorService.ScanNamespaceAsync(namespaceId, cancellationToken);
+
+        if (result.IsSuccess)
+            _cache.Remove($"dlq-signatures:{OwnerId}:{namespaceId}");
 
         return ToActionResult(result);
     }
