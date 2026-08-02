@@ -992,7 +992,17 @@ export function useSendMessage() {
 
 ## Deployment Architecture
 
-### Production Deployment Options
+### Production Deployment Model
+
+ServiceHub is self-hosted, single-instance software for one team, not a multi-tenant SaaS
+platform: one process serves the SPA and the API from a single Docker image (see the root
+`Dockerfile`/`docker-compose.yml`), backed by one SQLite database and one in-process event bus,
+both scoped to that process's lifetime. There is no shared state between instances and no
+supported way to run two instances against the same data directory — this is a deliberate
+trade-off for this release, not an omission. See
+[docs/KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md) for the complete list of what this does and
+doesn't support, and [self-hosting/README.md](../self-hosting/README.md) for concrete deployment
+guides (Azure App Service, local/on-prem, security hardening).
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': { 'fontSize':'16px'}}}%%
@@ -1002,62 +1012,30 @@ graph TB
         SRE["SREs"]
         SUPPORT["Support Teams"]
     end
-    
-    subgraph Frontend["Frontend Deployment"]
-        CF["Cloudflare Pages<br/><i>or</i><br/>Azure Static Web Apps<br/><i>or</i><br/>Nginx"]
-        CDN["CDN Distribution"]
+
+    subgraph Instance["Single ServiceHub Instance (one Docker image)"]
+        API["ASP.NET Core process<br/>serves SPA + API"]
+        DB["SQLite DB<br/><i>DLQ history, rules, audit trail</i>"]
+        SECRETS["Master encryption key<br/><i>env var, optionally sourced from a secrets manager</i><br/>Connection strings stay AES-GCM-encrypted in SQLite"]
     end
-    
-    subgraph Backend["Backend Deployment"]
-        AKS["Azure Kubernetes Service<br/><i>or</i><br/>Azure Container Instances<br/><i>or</i><br/>Azure App Service"]
-        LB["Load Balancer"]
+
+    subgraph Providers["Cloud Providers"]
+        ASB["Azure Service Bus / AWS SQS+SNS / GCP Pub/Sub<br/>namespaces, connected with your own credentials"]
     end
-    
-    subgraph Data["Data Layer"]
-        PV["Persistent Volume<br/><i>SQLite DB</i>"]
-        SECRETS["Master encryption key<br/><i>env var, optionally sourced from Key Vault</i><br/>Connection strings stay AES-GCM-encrypted in SQLite"]
-    end
-    
-    subgraph Azure["Azure Services"]
-        ASB["Multiple Service Bus<br/>Namespaces"]
-    end
-    
-    Users --> CDN
-    CDN --> CF
-    CF --> LB
-    LB --> AKS
-    AKS --> PV
-    AKS --> SECRETS
-    AKS --> ASB
-    
+
+    Users --> API
+    API --> DB
+    API --> SECRETS
+    API --> ASB
+
     style Users fill:#e0f2fe,stroke:#0369a1,stroke-width:2px,color:#000
-    style Frontend fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#000
-    style Backend fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#000
-    style Data fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#000
-    style Azure fill:#fce7f3,stroke:#db2777,stroke-width:2px,color:#000
+    style Instance fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#000
+    style Providers fill:#fce7f3,stroke:#db2777,stroke-width:2px,color:#000
 ```
 
-**Deployment Strategies:**
-
-1. **Docker Containers**
-   ```dockerfile
-   # Frontend
-   FROM node:20-alpine
-   COPY dist /usr/share/nginx/html
-   
-   # Backend
-   FROM mcr.microsoft.com/dotnet/aspnet:10.0
-   COPY published /app
-   ```
-
-2. **Kubernetes**
-   - Frontend: 2-3 replicas
-   - Backend: 3-5 replicas (auto-scaling)
-   - Persistent volume for SQLite
-
-3. **Environment Variables**
-   - `ENCRYPTION_KEY` — Master key for connection-string encryption
-   - `CORS_ORIGINS` — Allowed frontend origins
+**Environment Variables** (see [docs/CONFIGURATION.md](CONFIGURATION.md) for the full reference):
+- `SECURITY__ENCRYPTIONKEY` — Master key for connection-string encryption (required, no default)
+- `SITEURL` — Public URL for CORS and SPA token validation
 
 ---
 
@@ -1467,7 +1445,6 @@ ServiceHub solves a critical problem for teams using Azure Service Bus: **visibi
 1. **Getting Started**: See [README.md](../README.md)
 2. **API Documentation**: See [services/api/README.md](../services/api/README.md)
 3. **Architecture Details**: See [services/api/ARCHITECTURE.md](../services/api/ARCHITECTURE.md)
-4. **Class-A Quality**: See [Quality Review](../copilot-prompt/ui-review-agent.md)
 
 ---
 

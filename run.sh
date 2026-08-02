@@ -18,7 +18,7 @@ WEB_PORT=3000
 
 # Version requirements
 REQUIRED_DOTNET_VERSION="10.0"
-REQUIRED_NODE_MAJOR_VERSION="20"
+REQUIRED_NODE_MAJOR_VERSION="22"
 
 # Global flags
 IS_WSL=false
@@ -226,7 +226,7 @@ detect_os() {
             ;;
         FreeBSD*|OpenBSD*|NetBSD*)
             echo -e "${RED}✗ Error: BSD systems are not fully supported yet${NC}"
-            echo -e "${YELLOW}Please install .NET 10 SDK and Node.js 20+ manually${NC}"
+            echo -e "${YELLOW}Please install .NET 10 SDK and Node.js 22+ manually${NC}"
             exit 1
             ;;
         CYGWIN*|MINGW*|MSYS*)
@@ -441,18 +441,18 @@ check_and_install_nodejs() {
         if [ "$OS" = "macos" ]; then
             brew install node
         elif [ "$OS" = "linux" ]; then
-            # Install Node.js 20.x LTS
+            # Install Node.js 22.x LTS
             if [ "$PACKAGE_MANAGER" = "apt" ] && [ "$HAS_SUDO" = true ]; then
-                curl -fsSL https://deb.nodesource.com/setup_20.x 2>/dev/null | sudo -E bash - || {
+                curl -fsSL https://deb.nodesource.com/setup_22.x 2>/dev/null | sudo -E bash - || {
                     echo -e "${YELLOW}⚠ NodeSource setup failed, trying alternative method...${NC}"
                     sudo apt-get install -y nodejs npm
                 }
                 sudo apt-get install -y nodejs
             elif [ "$PACKAGE_MANAGER" = "dnf" ] && [ "$HAS_SUDO" = true ]; then
-                curl -fsSL https://rpm.nodesource.com/setup_20.x 2>/dev/null | sudo bash - || 
+                curl -fsSL https://rpm.nodesource.com/setup_22.x 2>/dev/null | sudo bash - || 
                 sudo dnf install -y nodejs
             elif [ "$PACKAGE_MANAGER" = "yum" ] && [ "$HAS_SUDO" = true ]; then
-                curl -fsSL https://rpm.nodesource.com/setup_20.x 2>/dev/null | sudo bash - || 
+                curl -fsSL https://rpm.nodesource.com/setup_22.x 2>/dev/null | sudo bash - || 
                 sudo yum install -y nodejs
             elif [ "$PACKAGE_MANAGER" = "pacman" ] && [ "$HAS_SUDO" = true ]; then
                 sudo pacman -S --noconfirm nodejs npm
@@ -472,8 +472,8 @@ check_and_install_nodejs() {
             echo ""
             echo -e "${YELLOW}Manual installation options:${NC}"
             echo -e "  macOS:    brew install node"
-            echo -e "  Ubuntu:   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs"
-            echo -e "  RHEL:     curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -"
+            echo -e "  Ubuntu:   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs"
+            echo -e "  RHEL:     curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -"
             echo -e "  Arch:     sudo pacman -S nodejs npm"
             echo -e "  Windows:  winget install OpenJS.NodeJS.LTS"
             echo -e "  Manual:   https://nodejs.org/"

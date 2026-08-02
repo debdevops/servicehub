@@ -322,7 +322,7 @@ cd servicehub
 ./run.sh
 ```
 
-Open **[http://localhost:3000](http://localhost:3000)** — then connect with your connection string. The script automatically installs .NET 10 SDK and Node.js 20+ if not already present.
+Open **[http://localhost:3000](http://localhost:3000)** — then connect with your connection string. The script automatically installs .NET 10 SDK and Node.js 22+ if not already present.
 
 ### Create a Dedicated Policy (Azure)
 
