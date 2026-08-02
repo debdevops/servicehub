@@ -424,6 +424,82 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                     b.ToTable("DlqMessages", (string)null);
                 });
 
+            modelBuilder.Entity("ServiceHub.Core.Entities.FailureKnowledgeEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("KnowledgeVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(1);
+
+                    b.Property<DateTime?>("LastUpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("NamespaceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OperationalNotes")
+                        .HasMaxLength(4096)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Owner")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReplayGuidance")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ResolutionNotes")
+                        .HasMaxLength(4096)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ReviewDueAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RootCause")
+                        .HasMaxLength(4096)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RunbookLink")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SignatureHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Tags")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReviewDueAt")
+                        .HasDatabaseName("IX_FailureKnowledge_ReviewDueAt");
+
+                    b.HasIndex("OwnerId", "NamespaceId")
+                        .HasDatabaseName("IX_FailureKnowledge_Owner_Namespace");
+
+                    b.HasIndex("OwnerId", "NamespaceId", "SignatureHash")
+                        .IsUnique()
+                        .HasDatabaseName("IX_FailureKnowledge_Owner_Namespace_SignatureHash");
+
+                    b.ToTable("FailureKnowledge", (string)null);
+                });
+
             modelBuilder.Entity("ServiceHub.Core.Entities.MessageFeatureRecord", b =>
                 {
                     b.Property<long>("Id")

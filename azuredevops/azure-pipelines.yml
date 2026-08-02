@@ -1,3 +1,6 @@
+# Optional pipeline for teams self-hosting via Azure DevOps instead of GitHub Actions.
+# GitHub Actions (.github/workflows/) is the CI this repo actually runs and gates on;
+# keep this in sync manually if you rely on it — it is not run by the public repo's CI.
 trigger:
   branches:
     include:

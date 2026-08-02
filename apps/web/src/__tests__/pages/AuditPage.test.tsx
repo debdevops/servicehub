@@ -138,8 +138,8 @@ describe('AuditPage', () => {
     render(<Wrapper><AuditPage /></Wrapper>);
     
     const exportBtn = screen.getByRole('button', { name: /^Export$/ });
-    fireEvent.mouseOver(exportBtn); // hover to show menu
-    
+    fireEvent.click(exportBtn); // click to open menu
+
     const csvBtn = screen.getByText('Export as CSV');
     fireEvent.click(csvBtn);
     

@@ -3,6 +3,19 @@ using ServiceHub.Core.Interfaces;
 
 namespace ServiceHub.Infrastructure.AI;
 
+/// <summary>Confidence level of a cluster's classification.</summary>
+public enum Confidence
+{
+    /// <summary>Low confidence; minimal data or heuristic-only analysis.</summary>
+    Low = 1,
+
+    /// <summary>Medium confidence; deterministic clustering or partial data.</summary>
+    Medium = 2,
+
+    /// <summary>High confidence; AI-powered analysis with rich data.</summary>
+    High = 3,
+}
+
 /// <summary>
 /// Renders a DLQ error cluster's metadata plus its signature history into a single,
 /// human-readable sentence — e.g. "4,412 messages (61% of the batch): max delivery count
@@ -27,16 +40,18 @@ internal static class ClusterExplanationRenderer
     /// Less than <paramref name="Size"/> means the cluster's failure reasons are mixed.
     /// </param>
     /// <param name="TopTerms">Top distinguishing terms for the cluster, if any.</param>
+    /// <param name="Confidence">Confidence level of this cluster's classification (for display rendering).</param>
     internal sealed record ClusterMetadata(
         int Size,
         int BatchSize,
         string? DominantEntity,
         string? DominantDeadletterReason,
         int DominantDeadletterReasonCount,
-        IReadOnlyList<string>? TopTerms = null);
+        IReadOnlyList<string>? TopTerms = null,
+        Confidence Confidence = Confidence.Medium);
 
     /// <summary>
-    /// Composes the readable sentence for one cluster.
+    /// Composes the readable sentence for one cluster, including confidence indicator.
     /// </summary>
     /// <param name="cluster">The cluster's metadata.</param>
     /// <param name="signature">
@@ -52,6 +67,11 @@ internal static class ClusterExplanationRenderer
         var (reasonPhrase, showTerms) = DescribeReason(cluster.DominantDeadletterReason, isMixed);
 
         var sb = new StringBuilder();
+
+        // Add confidence indicator as visual badge.
+        sb.Append(ConfidenceBadge(cluster.Confidence));
+        sb.Append(' ');
+
         sb.Append(CountClause(cluster.Size, cluster.BatchSize));
         sb.Append(": ");
         sb.Append(reasonPhrase);
@@ -68,6 +88,15 @@ internal static class ClusterExplanationRenderer
         sb.Append('.');
         return sb.ToString();
     }
+
+    /// <summary>Returns a visual confidence badge (e.g., ★★★★★ for high, ★★★★☆ for medium).</summary>
+    private static string ConfidenceBadge(Confidence confidence) => confidence switch
+    {
+        Confidence.High => "★★★★★",
+        Confidence.Medium => "★★★★☆",
+        Confidence.Low => "★★★☆☆",
+        _ => "★★★★☆",
+    };
 
     private static string CountClause(int size, int batchSize)
     {

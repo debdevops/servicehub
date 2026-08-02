@@ -142,9 +142,9 @@ function CategoryBreakdown({
                 ? 'bg-primary-600 text-white border-primary-600'
                 : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-primary-300'
             }`}
-            title={`Filter table to ${category}`}
+            title={`Filter table to ${categoryLabel(category)}`}
           >
-            {category} · {count.toLocaleString()}
+            {categoryLabel(category)} · {count.toLocaleString()}
           </button>
         ))}
       </div>
@@ -199,6 +199,24 @@ const CATEGORY_OPTIONS = [
   'Unknown', 'Transient', 'MaxDelivery', 'Expired', 'DataQuality',
   'Authorization', 'ProcessingError', 'ResourceNotFound', 'QuotaExceeded',
 ] as const;
+
+const STATUS_LABELS: Record<string, string> = {
+  ReplayFailed: 'Replay Failed',
+};
+const CATEGORY_LABELS: Record<string, string> = {
+  MaxDelivery: 'Max Delivery Exceeded',
+  DataQuality: 'Data Quality',
+  ProcessingError: 'Processing Error',
+  ResourceNotFound: 'Resource Not Found',
+  QuotaExceeded: 'Quota Exceeded',
+};
+
+function statusLabel(status: string): string {
+  return STATUS_LABELS[status] ?? status;
+}
+function categoryLabel(category: string): string {
+  return CATEGORY_LABELS[category] ?? category;
+}
 
 export function DlqHistoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -543,10 +561,10 @@ export function DlqHistoryPage() {
           )}
 
           {statusFilter && (
-            <FilterChip label={`Status: ${statusFilter}`} onRemove={() => { setStatusFilter(undefined); setPage(1); }} />
+            <FilterChip label={`Status: ${statusLabel(statusFilter)}`} onRemove={() => { setStatusFilter(undefined); setPage(1); }} />
           )}
           {categoryFilter && (
-            <FilterChip label={`Category: ${categoryFilter}`} onRemove={() => { setCategoryFilter(undefined); setPage(1); }} />
+            <FilterChip label={`Category: ${categoryLabel(categoryFilter)}`} onRemove={() => { setCategoryFilter(undefined); setPage(1); }} />
           )}
           {entityFilter && (
             <FilterChip label={`Entity: ${entityFilter}`} onRemove={() => { setEntityFilter(''); setPage(1); }} />
@@ -564,7 +582,7 @@ export function DlqHistoryPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               >
                 <option value="">All</option>
-                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
               </select>
             </div>
             <div>
@@ -575,7 +593,7 @@ export function DlqHistoryPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               >
                 <option value="">All</option>
-                {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{categoryLabel(c)}</option>)}
               </select>
             </div>
             <div>
@@ -685,7 +703,7 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
   return (
     <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-primary-100 text-primary-700 rounded-full text-xs font-medium">
       {label}
-      <button onClick={onRemove} className="hover:text-primary-900">
+      <button onClick={onRemove} className="hover:text-primary-900" aria-label={`Remove filter: ${label}`}>
         <X className="w-3 h-3" />
       </button>
     </span>

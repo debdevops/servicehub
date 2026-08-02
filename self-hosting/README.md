@@ -14,7 +14,7 @@ Before you start, confirm the following are installed on your machine.
 | Prerequisite | Minimum version | How to check |
 |---|---|---|
 | .NET SDK | 10.0 | `dotnet --version` |
-| Node.js | 20.x | `node --version` |
+| Node.js | 22.x | `node --version` |
 | Git | Any | `git --version` |
 
 ---

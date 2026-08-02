@@ -167,6 +167,13 @@ public static class DependencyInjection
 
         services.TryAddSingleton<IAIServiceClient, AIServiceClient>();
 
+        // Feature extraction and fingerprinting services (strategy-independent layer)
+        services.TryAddScoped<IFailureFeatureExtractor, AI.FailureFeatureExtractor>();
+        services.TryAddScoped<IFailureFingerprintBuilder, AI.FailureFingerprintBuilder>();
+
+        // Signature recognition service (business-level layer)
+        services.TryAddScoped<IFailureSignatureRecognitionService, AI.FailureSignatureRecognitionService>();
+
         return services;
     }
 
@@ -226,7 +233,21 @@ public static class DependencyInjection
         services.TryAddScoped<IDlqMonitorService, DlqMonitorService>();
         services.TryAddScoped<IDlqHistoryService, DlqHistoryService>();
         services.TryAddScoped<INamespaceSignatureLookupService, NamespaceSignatureLookupService>();
+
+        // Register signature analysis strategies.
+        // AIClusteringStrategy wraps the AI service client and provides rich clustering.
+        // DeterministicClusteringStrategy provides reliable fallback clustering without
+        // external dependencies. Both implement ISignatureAnalysisStrategy.
+        services.TryAddScoped<AI.AIClusteringStrategy>();
+        services.TryAddScoped<AI.DeterministicClusteringStrategy>();
+
+        // DlqSignatureAnalysisService orchestrates both strategies, trying AI first
+        // and falling back to deterministic if AI is unavailable.
         services.TryAddScoped<IDlqSignatureAnalysisService, AI.DlqSignatureAnalysisService>();
+
+        // Failure Knowledge service for operational memory
+        services.TryAddScoped<IFailureKnowledgeService, FailureKnowledgeService>();
+
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();

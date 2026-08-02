@@ -108,7 +108,7 @@ public class ClusterExplanationRendererTests
 
         var sentence = ClusterExplanationRenderer.Render(cluster, null, Now);
 
-        sentence.Should().StartWith("1 message");
+        sentence.Should().Contain("1 message");
         sentence.Should().NotContain("1 messages");
     }
 
@@ -125,7 +125,7 @@ public class ClusterExplanationRendererTests
 
         var sentence = ClusterExplanationRenderer.Render(cluster, null, Now);
 
-        sentence.Should().Be("1 message: subscriber nack on PaymentQueue.");
+        sentence.Should().Be("★★★★☆ 1 message: subscriber nack on PaymentQueue.");
     }
 
     // ── Missing entity ───────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ public class ClusterExplanationRendererTests
 
         sentence.Should().NotContain(" on ,");
         sentence.Should().NotContain(" on .");
-        sentence.Should().Be("10 messages (10% of the batch): max delivery count exceeded, first seen 18 minutes ago.");
+        sentence.Should().Be("★★★★☆ 10 messages (10% of the batch): max delivery count exceeded, first seen 18 minutes ago.");
     }
 
     // ── New vs recurring phrasing ────────────────────────────────────────────
@@ -173,7 +173,7 @@ public class ClusterExplanationRendererTests
         var sentence = ClusterExplanationRenderer.Render(cluster, null, Now);
 
         sentence.Should().NotContain(",.");
-        sentence.Should().Be("10 messages (10% of the batch): max delivery count exceeded on OrderService.");
+        sentence.Should().Be("★★★★☆ 10 messages (10% of the batch): max delivery count exceeded on OrderService.");
     }
 
     // ── Never empty or placeholder output ───────────────────────────────────

@@ -155,6 +155,14 @@ function RescheduleModal({ message, namespaceId, queueName, onClose }: Reschedul
 
   const minValue = new Date(Date.now() + 30_000).toISOString().slice(0, 16);
 
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [busy, onClose]);
+
   const handleReschedule = async () => {
     if (!newTime) return;
     setBusy(true);

@@ -319,6 +319,7 @@ jobs:
       - name: Build and start container (docker compose up --build)
         env:
           SECURITY__ENCRYPTIONKEY: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210  # 32-byte test key for CI only
+          SECURITY__SPATOKEN__SECRET: abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890  # test secret for CI only
         run: docker compose up --build -d
 
       - name: Wait for container health check
@@ -410,7 +411,7 @@ jobs:
       - name: Validate app starts with valid SECURITY__ENCRYPTIONKEY
         run: |
           echo "Testing: App should start successfully with valid SECURITY__ENCRYPTIONKEY"
-          SECURITY__ENCRYPTIONKEY=$(openssl rand -hex 32) docker compose up --build -d 2>&1
+          SECURITY__ENCRYPTIONKEY=$(openssl rand -hex 32) SECURITY__SPATOKEN__SECRET=$(openssl rand -hex 32) docker compose up --build -d 2>&1
 
           echo "Waiting for container to become healthy..."
           for i in $(seq 1 60); do

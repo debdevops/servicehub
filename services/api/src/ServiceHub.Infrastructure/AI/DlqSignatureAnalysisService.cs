@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
@@ -8,25 +9,49 @@ using ServiceHub.Shared.Results;
 namespace ServiceHub.Infrastructure.AI;
 
 /// <summary>
-/// <see cref="IDlqSignatureAnalysisService"/> implementation. Lives in
-/// <c>ServiceHub.Infrastructure</c> (rather than a separate assembly) specifically so it can
-/// call the <see langword="internal"/> <see cref="ClusterExplanationRenderer"/> directly instead
-/// of duplicating its logic.
+/// <see cref="IDlqSignatureAnalysisService"/> implementation using a strategy-based
+/// architecture for graceful fallback when AI clustering is unavailable.
+///
+/// Analysis flow:
+/// 1. Export active DLQ messages for the namespace
+/// 2. Try to cluster using the AI strategy (requires AI service availability)
+/// 3. If AI fails or is unavailable, fall back to deterministic strategy
+/// 4. Both strategies produce the same <see cref="ClusterAnalysisResult"/> contract
+/// 5. Persist signature history (regardless of which strategy was used)
+/// 6. Render explanations with confidence levels (hiding which strategy was used)
+///
+/// This design ensures the feature always works: when AI is unavailable, deterministic
+/// clustering provides meaningful results automatically.
 /// </summary>
 public sealed class DlqSignatureAnalysisService : IDlqSignatureAnalysisService
 {
     private readonly IDlqHistoryService _historyService;
-    private readonly IAIServiceClient _aiServiceClient;
+    private readonly AIClusteringStrategy _aiStrategy;
+    private readonly DeterministicClusteringStrategy _deterministicStrategy;
     private readonly INamespaceSignatureLookupService _signatureLookupService;
+    private readonly IFailureFeatureExtractor _featureExtractor;
+    private readonly IFailureFingerprintBuilder _fingerprintBuilder;
+    private readonly IFailureSignatureRecognitionService _signatureRecognition;
+    private readonly ILogger<DlqSignatureAnalysisService> _logger;
 
     public DlqSignatureAnalysisService(
         IDlqHistoryService historyService,
-        IAIServiceClient aiServiceClient,
-        INamespaceSignatureLookupService signatureLookupService)
+        AIClusteringStrategy aiStrategy,
+        DeterministicClusteringStrategy deterministicStrategy,
+        INamespaceSignatureLookupService signatureLookupService,
+        IFailureFeatureExtractor featureExtractor,
+        IFailureFingerprintBuilder fingerprintBuilder,
+        IFailureSignatureRecognitionService signatureRecognition,
+        ILogger<DlqSignatureAnalysisService> logger)
     {
         _historyService = historyService ?? throw new ArgumentNullException(nameof(historyService));
-        _aiServiceClient = aiServiceClient ?? throw new ArgumentNullException(nameof(aiServiceClient));
+        _aiStrategy = aiStrategy ?? throw new ArgumentNullException(nameof(aiStrategy));
+        _deterministicStrategy = deterministicStrategy ?? throw new ArgumentNullException(nameof(deterministicStrategy));
         _signatureLookupService = signatureLookupService ?? throw new ArgumentNullException(nameof(signatureLookupService));
+        _featureExtractor = featureExtractor ?? throw new ArgumentNullException(nameof(featureExtractor));
+        _fingerprintBuilder = fingerprintBuilder ?? throw new ArgumentNullException(nameof(fingerprintBuilder));
+        _signatureRecognition = signatureRecognition ?? throw new ArgumentNullException(nameof(signatureRecognition));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <inheritdoc/>
@@ -59,9 +84,72 @@ public sealed class DlqSignatureAnalysisService : IDlqSignatureAnalysisService
                 Singletons: []));
         }
 
-        var analyzeResult = await _aiServiceClient.AnalyzeMessagesAsync(messages, cancellationToken).ConfigureAwait(false);
+        // Extract features from all messages (strategy-independent layer).
+        var extractResult = await _featureExtractor.ExtractBatchAsync(messages, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (extractResult.IsFailure)
+        {
+            _logger.LogWarning(
+                "Feature extraction failed for namespace {NamespaceId}; cannot proceed with signature analysis",
+                namespaceId);
+            return Result.Failure<DlqSignatureAnalysisResult>(extractResult.Error);
+        }
+
+        var features = extractResult.Value;
+
+        // Build fingerprints from extracted features (deterministic, strategy-independent).
+        var fingerprintResult = await _fingerprintBuilder.ComputeBatchAsync(features, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (fingerprintResult.IsFailure)
+        {
+            _logger.LogWarning(
+                "Fingerprint computation failed for namespace {NamespaceId}; cannot proceed with signature analysis",
+                namespaceId);
+            return Result.Failure<DlqSignatureAnalysisResult>(fingerprintResult.Error);
+        }
+
+        var fingerprints = fingerprintResult.Value;
+
+        // Recognize or create signatures from fingerprints (Phase 2: business-level domain model).
+        // This happens before clustering to establish signature identity early.
+        var signatureResult = await _signatureRecognition.RecognizeBatchAsync(
+            ownerId, namespaceId, fingerprints, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (signatureResult.IsFailure)
+        {
+            _logger.LogWarning(
+                "Signature recognition failed for namespace {NamespaceId}; cannot proceed with signature analysis",
+                namespaceId);
+            return Result.Failure<DlqSignatureAnalysisResult>(signatureResult.Error);
+        }
+
+        var signatures = signatureResult.Value;
+
+        // Try AI clustering first; fall back to deterministic if it fails.
+        // (Clustering now serves as secondary grouping for UI visualization)
+        var analyzeResult = await _aiStrategy.AnalyzeAsync(messages, cancellationToken)
+            .ConfigureAwait(false);
+
         if (analyzeResult.IsFailure)
         {
+            _logger.LogInformation(
+                "AI clustering unavailable for namespace {NamespaceId}; falling back to deterministic strategy",
+                namespaceId);
+
+            analyzeResult = await _deterministicStrategy.AnalyzeAsync(messages, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (analyzeResult.IsFailure)
+        {
+            // Both strategies failed; this should not happen (deterministic has no external dependencies).
+            _logger.LogWarning(
+                "Both AI and deterministic clustering failed for namespace {NamespaceId}",
+                namespaceId);
+
             return Result.Success(new DlqSignatureAnalysisResult(
                 Available: false,
                 Method: null,
@@ -85,6 +173,13 @@ public sealed class DlqSignatureAnalysisService : IDlqSignatureAnalysisService
 
         var now = DateTimeOffset.UtcNow;
         var clusters = new List<DlqClusterSignature>(analysis.Clusters.Count);
+
+        // Determine confidence level based on which strategy was used.
+        // AI → high confidence; Deterministic → medium confidence.
+        var isAIResult = string.Equals(analysis.Method, "clustered", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(analysis.Method, "grouped", StringComparison.OrdinalIgnoreCase);
+        var confidence = isAIResult ? Confidence.High : Confidence.Medium;
+
         for (var i = 0; i < analysis.Clusters.Count; i++)
         {
             var cluster = analysis.Clusters[i];
@@ -102,7 +197,8 @@ public sealed class DlqSignatureAnalysisService : IDlqSignatureAnalysisService
                 DominantEntity: cluster.DominantEntity,
                 DominantDeadletterReason: cluster.DominantDeadletterReason,
                 DominantDeadletterReasonCount: cluster.DominantDeadletterReasonCount,
-                TopTerms: cluster.TopTerms);
+                TopTerms: cluster.TopTerms,
+                Confidence: confidence);
 
             var explanation = ClusterExplanationRenderer.Render(metadata, signature, now);
 

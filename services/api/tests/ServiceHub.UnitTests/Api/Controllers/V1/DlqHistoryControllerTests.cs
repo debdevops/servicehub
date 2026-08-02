@@ -21,17 +21,24 @@ public class DlqHistoryControllerTests
     private readonly Mock<ILogger<DlqHistoryController>> _logger = new();
     private readonly Mock<IDlqSignatureAnalysisService> _signatureAnalysisService = new();
     private readonly Mock<INamespaceRepository> _namespaceRepository = new();
+    private readonly Mock<IFailureKnowledgeService> _knowledgeService = new();
     private readonly IMemoryCache _cache = new MemoryCache(new MemoryCacheOptions());
     private readonly DlqHistoryController _controller;
 
     public DlqHistoryControllerTests()
     {
+        // Configure knowledge service to return empty dict by default (no knowledge stored)
+        _knowledgeService
+            .Setup(x => x.GetKnowledgeBatchAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.FromResult(Result<IReadOnlyDictionary<string, FailureKnowledge>>.Success(new Dictionary<string, FailureKnowledge>())));
+
         _controller = new DlqHistoryController(
             _historyService.Object,
             _logger.Object,
             _signatureAnalysisService.Object,
             _namespaceRepository.Object,
-            _cache);
+            _cache,
+            _knowledgeService.Object);
         _controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext()
@@ -80,7 +87,7 @@ public class DlqHistoryControllerTests
     public void Constructor_NullHistoryService_Throws()
     {
         var act = () => new DlqHistoryController(
-            null!, _logger.Object, _signatureAnalysisService.Object, _namespaceRepository.Object, _cache);
+            null!, _logger.Object, _signatureAnalysisService.Object, _namespaceRepository.Object, _cache, _knowledgeService.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("historyService");
     }
 
@@ -88,7 +95,7 @@ public class DlqHistoryControllerTests
     public void Constructor_NullLogger_Throws()
     {
         var act = () => new DlqHistoryController(
-            _historyService.Object, null!, _signatureAnalysisService.Object, _namespaceRepository.Object, _cache);
+            _historyService.Object, null!, _signatureAnalysisService.Object, _namespaceRepository.Object, _cache, _knowledgeService.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -364,7 +371,8 @@ public class DlqHistoryControllerTests
             _logger.Object,
             _signatureAnalysisService.Object,
             _namespaceRepository.Object,
-            _cache);
+            _cache,
+            _knowledgeService.Object);
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { RequestServices = serviceProvider }
@@ -485,7 +493,7 @@ public class DlqHistoryControllerTests
     public void Constructor_NullSignatureAnalysisService_Throws()
     {
         var act = () => new DlqHistoryController(
-            _historyService.Object, _logger.Object, null!, _namespaceRepository.Object, _cache);
+            _historyService.Object, _logger.Object, null!, _namespaceRepository.Object, _cache, _knowledgeService.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("signatureAnalysisService");
     }
 
@@ -493,7 +501,7 @@ public class DlqHistoryControllerTests
     public void Constructor_NullNamespaceRepository_Throws()
     {
         var act = () => new DlqHistoryController(
-            _historyService.Object, _logger.Object, _signatureAnalysisService.Object, null!, _cache);
+            _historyService.Object, _logger.Object, _signatureAnalysisService.Object, null!, _cache, _knowledgeService.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("namespaceRepository");
     }
 
@@ -501,7 +509,7 @@ public class DlqHistoryControllerTests
     public void Constructor_NullCache_Throws()
     {
         var act = () => new DlqHistoryController(
-            _historyService.Object, _logger.Object, _signatureAnalysisService.Object, _namespaceRepository.Object, null!);
+            _historyService.Object, _logger.Object, _signatureAnalysisService.Object, _namespaceRepository.Object, null!, _knowledgeService.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("cache");
     }
 
