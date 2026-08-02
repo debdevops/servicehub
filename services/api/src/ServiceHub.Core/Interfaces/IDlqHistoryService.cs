@@ -98,6 +98,17 @@ public interface IDlqHistoryService
         string entityName,
         long sequenceNumber,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets multiple DLQ messages by ID in one query, scoped to the owner. Missing or
+    /// out-of-tenant IDs are silently omitted from the result rather than failing the call —
+    /// used to resolve a failure signature's related messages, where some IDs may no longer
+    /// be present.
+    /// </summary>
+    Task<Result<IReadOnlyList<DlqMessage>>> GetByIdsAsync(
+        string ownerId,
+        IReadOnlyList<long> ids,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

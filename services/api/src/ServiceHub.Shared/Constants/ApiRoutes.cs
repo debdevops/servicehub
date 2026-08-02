@@ -281,6 +281,21 @@ public static class ApiRoutes
         public const string Signatures = $"{VersionedBase}/namespaces/{{namespaceId:guid}}/dlq/signatures";
 
         /// <summary>
+        /// Route for a single failure signature's detail, by its stable hash.
+        /// </summary>
+        public const string SignatureById = $"{Signatures}/{{signatureHash}}";
+
+        /// <summary>
+        /// Route for a failure signature's merged, computed lifecycle timeline.
+        /// </summary>
+        public const string SignatureTimeline = $"{SignatureById}/timeline";
+
+        /// <summary>
+        /// Route for transitioning a failure signature's lifecycle status.
+        /// </summary>
+        public const string SignatureStatus = $"{SignatureById}/status";
+
+        /// <summary>
         /// Routes for auto-replay rule operations.
         /// </summary>
         public static class Rules

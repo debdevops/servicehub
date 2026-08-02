@@ -145,4 +145,43 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
         var act = () => new NamespaceSignatureLookupService(null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("dbContext");
     }
+
+    // ── GetByHashAsync ──────────────────────────────────────
+
+    [Fact]
+    public async Task GetByHashAsync_KnownHash_ReturnsRecord()
+    {
+        var namespaceId = Guid.NewGuid();
+        var observation = MakeObservation();
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation });
+
+        var result = await _service.GetByHashAsync(TestConstants.TestOwnerId, namespaceId, observation.SignatureHash);
+
+        result.Should().NotBeNull();
+        result!.SignatureHash.Should().Be(observation.SignatureHash);
+    }
+
+    [Fact]
+    public async Task GetByHashAsync_UnknownHash_ReturnsNull()
+    {
+        var result = await _service.GetByHashAsync(TestConstants.TestOwnerId, Guid.NewGuid(), "never-seen");
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetByHashAsync_DoesNotMutateOccurrenceCountOrLastSeenAt()
+    {
+        var namespaceId = Guid.NewGuid();
+        var observation = MakeObservation();
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation });
+
+        var before = await _service.GetByHashAsync(TestConstants.TestOwnerId, namespaceId, observation.SignatureHash);
+        await _service.GetByHashAsync(TestConstants.TestOwnerId, namespaceId, observation.SignatureHash);
+        await _service.GetByHashAsync(TestConstants.TestOwnerId, namespaceId, observation.SignatureHash);
+        var after = await _service.GetByHashAsync(TestConstants.TestOwnerId, namespaceId, observation.SignatureHash);
+
+        after!.OccurrenceCount.Should().Be(before!.OccurrenceCount);
+        after.LastSeenAt.Should().Be(before.LastSeenAt);
+    }
 }

@@ -10,6 +10,7 @@ using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Helpers;
+using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Api.Controllers.V1;
 
@@ -29,6 +30,8 @@ public sealed class DlqHistoryController : ApiControllerBase
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IMemoryCache _cache;
     private readonly IFailureKnowledgeService _knowledgeService;
+    private readonly INamespaceSignatureLookupService _signatureLookupService;
+    private readonly ISignatureLifecycleService _lifecycleService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DlqHistoryController"/> class.
@@ -39,7 +42,9 @@ public sealed class DlqHistoryController : ApiControllerBase
         IDlqSignatureAnalysisService signatureAnalysisService,
         INamespaceRepository namespaceRepository,
         IMemoryCache cache,
-        IFailureKnowledgeService knowledgeService)
+        IFailureKnowledgeService knowledgeService,
+        INamespaceSignatureLookupService signatureLookupService,
+        ISignatureLifecycleService lifecycleService)
     {
         _historyService = historyService ?? throw new ArgumentNullException(nameof(historyService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -47,6 +52,8 @@ public sealed class DlqHistoryController : ApiControllerBase
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _knowledgeService = knowledgeService ?? throw new ArgumentNullException(nameof(knowledgeService));
+        _signatureLookupService = signatureLookupService ?? throw new ArgumentNullException(nameof(signatureLookupService));
+        _lifecycleService = lifecycleService ?? throw new ArgumentNullException(nameof(lifecycleService));
     }
 
     /// <summary>
@@ -413,22 +420,34 @@ public sealed class DlqHistoryController : ApiControllerBase
         Guid namespaceId,
         CancellationToken cancellationToken = default)
     {
+        var result = await GetOrBuildSignaturesResponseAsync(namespaceId, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// Ownership-checks, cache-or-computes, and returns a namespace's signature analysis —
+    /// shared by <see cref="GetSignatures"/> and <see cref="GetSignatureDetail"/> so both use
+    /// the exact same 60s-cached clustering pass instead of re-running analysis.
+    /// </summary>
+    private async Task<Result<DlqSignaturesResponse>> GetOrBuildSignaturesResponseAsync(
+        Guid namespaceId, CancellationToken cancellationToken)
+    {
         var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
         if (namespaceResult.IsFailure)
-            return ToActionResult<DlqSignaturesResponse>(namespaceResult.Error);
+            return Result<DlqSignaturesResponse>.Failure(namespaceResult.Error);
 
         var cacheKey = $"dlq-signatures:{OwnerId}:{namespaceId}";
         if (_cache.TryGetValue(cacheKey, out DlqSignaturesResponse? cached) && cached is not null)
-            return Ok(cached);
+            return cached;
 
         var result = await _signatureAnalysisService.AnalyzeAsync(OwnerId, namespaceId, cancellationToken);
         if (result.IsFailure)
-            return ToActionResult<DlqSignaturesResponse>(result.Error);
+            return Result<DlqSignaturesResponse>.Failure(result.Error);
 
         var response = await MapToSignaturesResponseAsync(result.Value, OwnerId, namespaceId, cancellationToken);
         _cache.Set(cacheKey, response, SignatureCacheDuration);
 
-        return Ok(response);
+        return response;
     }
 
     /// <summary>Maps a composed signature analysis to its API response shape, including operational knowledge.</summary>
@@ -465,6 +484,16 @@ public sealed class DlqHistoryController : ApiControllerBase
             ? knowledgeResult.Value
             : new Dictionary<string, Core.Models.FailureKnowledge>();
 
+        var statusResult = await _lifecycleService.GetStatusBatchAsync(
+            ownerId, namespaceId, clusterSignatureHashes, cancellationToken)
+            .ConfigureAwait(false);
+
+        var statusByHash = statusResult.IsSuccess
+            ? statusResult.Value
+            : new Dictionary<string, Core.Models.SignatureLifecycleSnapshot>();
+
+        var now = DateTimeOffset.UtcNow;
+
         return new DlqSignaturesResponse(
             Available: analysis.Available,
             Method: analysis.Method,
@@ -473,17 +502,11 @@ public sealed class DlqHistoryController : ApiControllerBase
             {
                 var hash = clusterSignatureHashes[idx];
                 var knowledge = knowledgeByHash.TryGetValue(hash, out var k) ? k : null;
-                var knowledgeResponse = knowledge != null ? new KnowledgeResponse(
-                    RootCause: knowledge.RootCause,
-                    ResolutionNotes: knowledge.ResolutionNotes,
-                    OperationalNotes: knowledge.OperationalNotes,
-                    RunbookLink: knowledge.RunbookLink,
-                    Owner: knowledge.Owner,
-                    ReplayGuidance: knowledge.ReplayGuidance,
-                    LastUpdatedAt: knowledge.LastUpdatedAt,
-                    KnowledgeVersion: knowledge.KnowledgeVersion,
-                    ReviewDueAt: knowledge.ReviewDueAt,
-                    Tags: knowledge.Tags) : null;
+                var status = statusByHash.TryGetValue(hash, out var snapshot)
+                    ? snapshot.Status
+                    : SignatureLifecycleStatus.Active;
+                var trend = Shared.Helpers.SignatureTrendHeuristic.Compute(
+                    c.IsNew, c.OccurrenceCount, c.FirstSeenAt, c.WindowEnd, now);
 
                 return new DlqClusterSignatureResponse(
                     Size: c.Size,
@@ -498,12 +521,257 @@ public sealed class DlqHistoryController : ApiControllerBase
                     WindowStart: c.WindowStart,
                     WindowEnd: c.WindowEnd,
                     Explanation: c.Explanation,
-                    Knowledge: knowledgeResponse);
+                    Knowledge: ToKnowledgeResponse(knowledge),
+                    SignatureHash: hash,
+                    Status: status.ToString(),
+                    Trend: trend);
             }).ToList(),
             Singletons: analysis.Singletons.Select(s => new DlqSingletonSignatureResponse(
                 MessageId: s.MessageId,
                 DominantEntity: s.DominantEntity,
                 DominantDeadletterReason: s.DominantDeadletterReason)).ToList());
+    }
+
+    /// <summary>Maps operational knowledge to its API response shape, or null if none exists.</summary>
+    private static KnowledgeResponse? ToKnowledgeResponse(Core.Models.FailureKnowledge? knowledge) =>
+        knowledge is null ? null : new KnowledgeResponse(
+            RootCause: knowledge.RootCause,
+            ResolutionNotes: knowledge.ResolutionNotes,
+            OperationalNotes: knowledge.OperationalNotes,
+            RunbookLink: knowledge.RunbookLink,
+            Owner: knowledge.Owner,
+            ReplayGuidance: knowledge.ReplayGuidance,
+            LastUpdatedAt: knowledge.LastUpdatedAt,
+            KnowledgeVersion: knowledge.KnowledgeVersion,
+            ReviewDueAt: knowledge.ReviewDueAt,
+            Tags: knowledge.Tags);
+
+    /// <summary>Derives a signature's confidence label from the clustering method used, mirroring
+    /// the High/AI vs. Medium/deterministic heuristic in DlqSignatureAnalysisService.</summary>
+    private static string DeriveConfidence(string? method) =>
+        string.Equals(method, "clustered", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(method, "grouped", StringComparison.OrdinalIgnoreCase)
+            ? "High"
+            : "Medium";
+
+    /// <summary>
+    /// Gets full detail for a single failure signature: identity, history, knowledge, lifecycle
+    /// status/trend, and its related DLQ messages. Falls back to the persisted historical record
+    /// (NamespaceSignature) when the signature's messages are no longer in the current cluster set.
+    /// </summary>
+    /// <param name="namespaceId">The namespace the signature belongs to.</param>
+    /// <param name="signatureHash">The signature's stable identity hash.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpGet("~/" + ApiRoutes.Dlq.SignatureById)]
+    [RequireNamespaceOwnership]
+    [RequireScope(ApiKeyScopes.DlqRead)]
+    [ProducesResponseType(typeof(DlqSignatureDetailResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DlqSignatureDetailResponse>> GetSignatureDetail(
+        Guid namespaceId,
+        string signatureHash,
+        CancellationToken cancellationToken = default)
+    {
+        var signaturesResult = await GetOrBuildSignaturesResponseAsync(namespaceId, cancellationToken);
+        if (signaturesResult.IsFailure)
+            return ToActionResult<DlqSignatureDetailResponse>(signaturesResult.Error);
+
+        var cluster = signaturesResult.Value.Clusters.FirstOrDefault(c => c.SignatureHash == signatureHash);
+        if (cluster is not null)
+        {
+            var relatedResult = await _historyService.GetByIdsAsync(OwnerId, cluster.MessageIds, cancellationToken);
+            var relatedMessages = relatedResult.IsSuccess
+                ? relatedResult.Value.Select(MapToResponse).ToList()
+                : [];
+
+            return Ok(new DlqSignatureDetailResponse(
+                SignatureHash: signatureHash,
+                NamespaceId: namespaceId,
+                Size: cluster.Size,
+                MessageIds: cluster.MessageIds,
+                DominantEntity: cluster.DominantEntity,
+                DominantDeadletterReason: cluster.DominantDeadletterReason,
+                DominantDeadletterReasonCount: cluster.DominantDeadletterReasonCount,
+                TopTerms: cluster.TopTerms,
+                IsNew: cluster.IsNew,
+                FirstSeenAt: cluster.FirstSeenAt,
+                OccurrenceCount: cluster.OccurrenceCount,
+                WindowStart: cluster.WindowStart,
+                WindowEnd: cluster.WindowEnd,
+                Explanation: cluster.Explanation,
+                Knowledge: cluster.Knowledge,
+                Status: cluster.Status,
+                Trend: cluster.Trend,
+                Confidence: DeriveConfidence(signaturesResult.Value.Method),
+                IsCurrentlyClustered: true,
+                RelatedMessages: relatedMessages));
+        }
+
+        // Not currently clustered — fall back to the persisted historical record, if any.
+        var persisted = await _signatureLookupService.GetByHashAsync(
+            OwnerId, namespaceId, signatureHash, cancellationToken);
+        if (persisted is null)
+        {
+            return ToActionResult<DlqSignatureDetailResponse>(Error.NotFound(
+                "Dlq.SignatureNotFound", $"Failure signature '{signatureHash}' was not found."));
+        }
+
+        var knowledgeResult = await _knowledgeService.GetKnowledgeAsync(
+            OwnerId, namespaceId, signatureHash, cancellationToken);
+        var knowledgeResponse = knowledgeResult.IsSuccess ? ToKnowledgeResponse(knowledgeResult.Value) : null;
+
+        var statusResult = await _lifecycleService.GetStatusAsync(
+            OwnerId, namespaceId, signatureHash, cancellationToken);
+        var status = statusResult.IsSuccess ? statusResult.Value.Status : SignatureLifecycleStatus.Active;
+
+        var topTerms = JsonSerializer.Deserialize<List<string>>(persisted.TopTermsJson) ?? [];
+        var trend = Shared.Helpers.SignatureTrendHeuristic.Compute(
+            isNew: false, persisted.OccurrenceCount, persisted.FirstSeenAt, persisted.LastSeenAt, DateTimeOffset.UtcNow);
+
+        return Ok(new DlqSignatureDetailResponse(
+            SignatureHash: signatureHash,
+            NamespaceId: namespaceId,
+            Size: 0,
+            MessageIds: [],
+            DominantEntity: string.Empty,
+            DominantDeadletterReason: persisted.DominantDeadletterReason,
+            DominantDeadletterReasonCount: 0,
+            TopTerms: topTerms,
+            IsNew: false,
+            FirstSeenAt: persisted.FirstSeenAt,
+            OccurrenceCount: persisted.OccurrenceCount,
+            WindowStart: persisted.FirstSeenAt,
+            WindowEnd: persisted.LastSeenAt,
+            Explanation: "This signature's messages are no longer active in the DLQ — showing its historical record only.",
+            Knowledge: knowledgeResponse,
+            Status: status.ToString(),
+            Trend: trend,
+            Confidence: "Medium",
+            IsCurrentlyClustered: false,
+            RelatedMessages: []));
+    }
+
+    /// <summary>
+    /// Gets the merged, computed lifecycle timeline for a failure signature: first observed,
+    /// recurrences, knowledge recorded, and lifecycle status transitions, sorted ascending.
+    /// </summary>
+    /// <param name="namespaceId">The namespace the signature belongs to.</param>
+    /// <param name="signatureHash">The signature's stable identity hash.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpGet("~/" + ApiRoutes.Dlq.SignatureTimeline)]
+    [RequireNamespaceOwnership]
+    [RequireScope(ApiKeyScopes.DlqRead)]
+    [ProducesResponseType(typeof(SignatureTimelineResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<SignatureTimelineResponse>> GetSignatureTimeline(
+        Guid namespaceId,
+        string signatureHash,
+        CancellationToken cancellationToken = default)
+    {
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+            return ToActionResult<SignatureTimelineResponse>(namespaceResult.Error);
+
+        var persisted = await _signatureLookupService.GetByHashAsync(
+            OwnerId, namespaceId, signatureHash, cancellationToken);
+
+        var historyResult = await _lifecycleService.GetHistoryAsync(
+            OwnerId, namespaceId, signatureHash, cancellationToken);
+        var lifecycleEvents = historyResult.IsSuccess ? historyResult.Value : [];
+
+        if (persisted is null && lifecycleEvents.Count == 0)
+        {
+            return ToActionResult<SignatureTimelineResponse>(Error.NotFound(
+                "Dlq.SignatureNotFound", $"Failure signature '{signatureHash}' was not found."));
+        }
+
+        var events = new List<DlqTimelineEventResponse>();
+
+        if (persisted is not null)
+        {
+            events.Add(new DlqTimelineEventResponse(
+                EventType: "SignatureFirstObserved",
+                Description: "Signature first observed in this namespace's DLQ",
+                Timestamp: persisted.FirstSeenAt,
+                Details: null));
+
+            if (persisted.LastSeenAt > persisted.FirstSeenAt)
+            {
+                events.Add(new DlqTimelineEventResponse(
+                    EventType: "SignatureRecurred",
+                    Description: $"Signature recurred (seen {persisted.OccurrenceCount} times total)",
+                    Timestamp: persisted.LastSeenAt,
+                    Details: new Dictionary<string, string> { ["OccurrenceCount"] = persisted.OccurrenceCount.ToString() }));
+            }
+        }
+
+        var knowledgeResult = await _knowledgeService.GetKnowledgeAsync(
+            OwnerId, namespaceId, signatureHash, cancellationToken);
+        if (knowledgeResult.IsSuccess && knowledgeResult.Value.LastUpdatedAt.HasValue)
+        {
+            events.Add(new DlqTimelineEventResponse(
+                EventType: "KnowledgeRecorded",
+                Description: "Operational knowledge recorded for this signature",
+                Timestamp: knowledgeResult.Value.LastUpdatedAt.Value,
+                Details: null));
+        }
+
+        foreach (var e in lifecycleEvents)
+        {
+            events.Add(new DlqTimelineEventResponse(
+                EventType: "StatusChanged",
+                Description: $"Status changed from {e.FromStatus} to {e.ToStatus}",
+                Timestamp: e.Timestamp,
+                Details: new Dictionary<string, string>
+                {
+                    ["From"] = e.FromStatus.ToString(),
+                    ["To"] = e.ToStatus.ToString(),
+                    ["Notes"] = e.Notes ?? string.Empty,
+                }));
+        }
+
+        var sorted = events.OrderBy(e => e.Timestamp).ToList();
+        return Ok(new SignatureTimelineResponse(signatureHash, sorted));
+    }
+
+    /// <summary>
+    /// Transitions a failure signature's lifecycle status (Resolved/Reopened/Suppressed/Archived).
+    /// Invalidates the cached signature list so its Status doesn't serve stale for up to 60s.
+    /// </summary>
+    /// <param name="namespaceId">The namespace the signature belongs to.</param>
+    /// <param name="signatureHash">The signature's stable identity hash.</param>
+    /// <param name="request">The target status and optional notes.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpPost("~/" + ApiRoutes.Dlq.SignatureStatus)]
+    [RequireNamespaceOwnership]
+    [RequireScope(ApiKeyScopes.DlqWrite)]
+    [ProducesResponseType(typeof(SignatureLifecycleStatusResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<SignatureLifecycleStatusResponse>> UpdateSignatureStatus(
+        Guid namespaceId,
+        string signatureHash,
+        [FromBody] UpdateSignatureStatusRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+            return ToActionResult<SignatureLifecycleStatusResponse>(namespaceResult.Error);
+
+        var result = await _lifecycleService.TransitionAsync(
+            OwnerId, namespaceId, signatureHash, request.Status, request.Notes, cancellationToken);
+        if (result.IsFailure)
+            return ToActionResult<SignatureLifecycleStatusResponse>(result.Error);
+
+        _cache.Remove($"dlq-signatures:{OwnerId}:{namespaceId}");
+
+        var snapshot = result.Value;
+        return Ok(new SignatureLifecycleStatusResponse(
+            SignatureHash: signatureHash,
+            Status: snapshot.Status.ToString(),
+            PreviousStatus: snapshot.PreviousStatus?.ToString(),
+            TransitionedAt: snapshot.TransitionedAt,
+            Notes: snapshot.Notes));
     }
 
     private static string GenerateCsv(IReadOnlyList<Core.Entities.DlqMessage> messages)

@@ -1,3 +1,5 @@
+using ServiceHub.Core.Enums;
+
 namespace ServiceHub.Core.DTOs.Responses;
 
 /// <summary>
@@ -42,10 +44,59 @@ public sealed record DlqClusterSignatureResponse(
     DateTimeOffset WindowStart,
     DateTimeOffset WindowEnd,
     string Explanation,
-    KnowledgeResponse? Knowledge);
+    KnowledgeResponse? Knowledge,
+    string SignatureHash,
+    string Status,
+    string Trend);
 
 /// <summary>A message the AI service could not group into any cluster.</summary>
 public sealed record DlqSingletonSignatureResponse(
     long MessageId,
     string DominantEntity,
     string DominantDeadletterReason);
+
+/// <summary>
+/// Full detail for a single failure signature: everything on <see cref="DlqClusterSignatureResponse"/>
+/// plus its related messages and lifecycle confidence. Field-for-field superset of
+/// <see cref="DlqClusterSignatureResponse"/> so the frontend's cluster-detail UI can render
+/// either shape without a separate component.
+/// </summary>
+public sealed record DlqSignatureDetailResponse(
+    string SignatureHash,
+    Guid NamespaceId,
+    int Size,
+    IReadOnlyList<long> MessageIds,
+    string DominantEntity,
+    string DominantDeadletterReason,
+    int DominantDeadletterReasonCount,
+    IReadOnlyList<string> TopTerms,
+    bool IsNew,
+    DateTimeOffset FirstSeenAt,
+    int OccurrenceCount,
+    DateTimeOffset WindowStart,
+    DateTimeOffset WindowEnd,
+    string Explanation,
+    KnowledgeResponse? Knowledge,
+    string Status,
+    string Trend,
+    string Confidence,
+    bool IsCurrentlyClustered,
+    IReadOnlyList<DlqHistoryResponse> RelatedMessages);
+
+/// <summary>A failure signature's merged, computed timeline (first seen, recurrences, knowledge, lifecycle changes).</summary>
+public sealed record SignatureTimelineResponse(
+    string SignatureHash,
+    IReadOnlyList<DlqTimelineEventResponse> Events);
+
+/// <summary>Request to transition a failure signature's lifecycle status.</summary>
+public sealed record UpdateSignatureStatusRequest(
+    SignatureLifecycleStatus Status,
+    string? Notes = null);
+
+/// <summary>The result of a failure signature lifecycle transition.</summary>
+public sealed record SignatureLifecycleStatusResponse(
+    string SignatureHash,
+    string Status,
+    string? PreviousStatus,
+    DateTimeOffset? TransitionedAt,
+    string? Notes);

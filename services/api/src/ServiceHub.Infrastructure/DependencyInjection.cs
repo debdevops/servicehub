@@ -248,6 +248,10 @@ public static class DependencyInjection
         // Failure Knowledge service for operational memory
         services.TryAddScoped<IFailureKnowledgeService, FailureKnowledgeService>();
 
+        // Failure Signature lifecycle (Active/Resolved/Reopened/Suppressed/Archived) — in-memory,
+        // must be Singleton so state survives across requests within the process.
+        services.TryAddSingleton<ISignatureLifecycleService, SignatureLifecycleService>();
+
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();

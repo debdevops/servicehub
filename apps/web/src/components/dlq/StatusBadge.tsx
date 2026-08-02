@@ -10,6 +10,14 @@ const statusStyles: Record<string, { bg: string; text: string; dot: string }> = 
   Discarded: { bg: 'bg-yellow-100', text: 'text-yellow-700', dot: 'bg-yellow-500' },
   ReplayFailed: { bg: 'bg-orange-100', text: 'text-orange-700', dot: 'bg-orange-500' },
   Resolved: { bg: 'bg-sky-100', text: 'text-sky-700', dot: 'bg-sky-500' },
+  Suppressed: { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500' },
+  Reopened: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
+};
+
+const trendStyles: Record<string, { bg: string; text: string }> = {
+  New: { bg: 'bg-amber-100', text: 'text-amber-700' },
+  Recurring: { bg: 'bg-blue-100', text: 'text-blue-700' },
+  Escalating: { bg: 'bg-red-100', text: 'text-red-700' },
 };
 
 const categoryStyles: Record<string, { bg: string; text: string }> = {
@@ -55,6 +63,22 @@ export function CategoryBadge({ category, confidence, size = 'sm' }: CategoryBad
       {confidence !== undefined && confidence > 0 && (
         <span className="opacity-60">({(confidence * 100).toFixed(0)}%)</span>
       )}
+    </span>
+  );
+}
+
+interface TrendBadgeProps {
+  trend: string;
+  size?: 'sm' | 'md';
+}
+
+export function TrendBadge({ trend, size = 'sm' }: TrendBadgeProps) {
+  const style = trendStyles[trend] || trendStyles.Recurring;
+  const sizeClass = size === 'md' ? 'px-3 py-1 text-sm' : 'px-2 py-0.5 text-xs';
+
+  return (
+    <span className={`inline-flex items-center rounded-full font-medium ${style.bg} ${style.text} ${sizeClass}`}>
+      {trend}
     </span>
   );
 }

@@ -34,6 +34,9 @@ const createMockCluster = (overrides?: Partial<DlqClusterSignature>): DlqCluster
   windowEnd: new Date(NOW.getTime() - 3600000).toISOString(), // 1 hour ago
   explanation: 'Connection timeouts during database maintenance windows',
   knowledge: createMockKnowledge(),
+  signatureHash: 'hash-1',
+  status: 'Active',
+  trend: 'Recurring',
   ...overrides,
 });
 

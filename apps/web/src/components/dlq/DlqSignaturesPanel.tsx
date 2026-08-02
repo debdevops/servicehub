@@ -1,4 +1,5 @@
 import { Sparkles } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useDlqSignatures } from '@servicehub/ui-shared/hooks/useDlqSignatures';
 import type { DlqClusterSignature } from '@servicehub/ui-shared/lib/api/dlqSignatures';
 import { FailureInvestigationPanel } from './FailureInvestigationPanel';
@@ -10,9 +11,11 @@ interface DlqSignaturesPanelProps {
 
 function ClusterCard({
   cluster,
+  namespaceId,
   onFilterEntity,
 }: {
   cluster: DlqClusterSignature;
+  namespaceId?: string;
   onFilterEntity?: (entityName: string) => void;
 }) {
   return (
@@ -48,14 +51,24 @@ function ClusterCard({
           </div>
         )}
 
-        {onFilterEntity && (
-          <button
-            onClick={() => onFilterEntity(cluster.dominantEntity)}
-            className="text-xs text-primary-600 hover:text-primary-700 font-medium"
-          >
-            Filter table to {cluster.dominantEntity} →
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {onFilterEntity && (
+            <button
+              onClick={() => onFilterEntity(cluster.dominantEntity)}
+              className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+            >
+              Filter table to {cluster.dominantEntity} →
+            </button>
+          )}
+          {namespaceId && (
+            <Link
+              to={`/signatures/${cluster.signatureHash}?namespace=${namespaceId}`}
+              className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+            >
+              View details →
+            </Link>
+          )}
+        </div>
       </div>
 
       <FailureInvestigationPanel cluster={cluster} />
@@ -82,7 +95,12 @@ export function DlqSignaturesPanel({ namespaceId, onFilterEntity }: DlqSignature
 
       <div className="space-y-3">
         {data.clusters.map((cluster) => (
-          <ClusterCard key={`${cluster.dominantEntity}-${cluster.windowStart}`} cluster={cluster} onFilterEntity={onFilterEntity} />
+          <ClusterCard
+            key={`${cluster.dominantEntity}-${cluster.windowStart}`}
+            cluster={cluster}
+            namespaceId={namespaceId}
+            onFilterEntity={onFilterEntity}
+          />
         ))}
       </div>
 

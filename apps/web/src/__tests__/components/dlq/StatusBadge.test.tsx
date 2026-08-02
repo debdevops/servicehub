@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { StatusBadge, CategoryBadge } from '@/components/dlq/StatusBadge';
+import { StatusBadge, CategoryBadge, TrendBadge } from '@/components/dlq/StatusBadge';
 
 // ─── StatusBadge ─────────────────────────────────────────────────────────────
 
@@ -50,6 +50,20 @@ describe('StatusBadge', () => {
     const badge = container.firstChild as HTMLElement;
     expect(badge.className).toContain('bg-sky-100');
     expect(badge.className).toContain('text-sky-700');
+  });
+
+  it('applies purple styles for Suppressed status', () => {
+    const { container } = render(<StatusBadge status="Suppressed" />);
+    const badge = container.firstChild as HTMLElement;
+    expect(badge.className).toContain('bg-purple-100');
+    expect(badge.className).toContain('text-purple-700');
+  });
+
+  it('applies amber styles for Reopened status', () => {
+    const { container } = render(<StatusBadge status="Reopened" />);
+    const badge = container.firstChild as HTMLElement;
+    expect(badge.className).toContain('bg-amber-100');
+    expect(badge.className).toContain('text-amber-700');
   });
 
   it('falls back to Active (red) styles for an unknown status', () => {
@@ -164,5 +178,41 @@ describe('CategoryBadge', () => {
     const badge = container.firstChild as HTMLElement;
     expect(badge.className).toContain('px-3');
     expect(badge.className).toContain('text-sm');
+  });
+});
+
+// ─── TrendBadge ───────────────────────────────────────────────────────────────
+
+describe('TrendBadge', () => {
+  it('renders the trend text', () => {
+    render(<TrendBadge trend="New" />);
+    expect(screen.getByText('New')).toBeInTheDocument();
+  });
+
+  it('applies amber styles for New', () => {
+    const { container } = render(<TrendBadge trend="New" />);
+    const badge = container.firstChild as HTMLElement;
+    expect(badge.className).toContain('bg-amber-100');
+    expect(badge.className).toContain('text-amber-700');
+  });
+
+  it('applies blue styles for Recurring', () => {
+    const { container } = render(<TrendBadge trend="Recurring" />);
+    const badge = container.firstChild as HTMLElement;
+    expect(badge.className).toContain('bg-blue-100');
+    expect(badge.className).toContain('text-blue-700');
+  });
+
+  it('applies red styles for Escalating', () => {
+    const { container } = render(<TrendBadge trend="Escalating" />);
+    const badge = container.firstChild as HTMLElement;
+    expect(badge.className).toContain('bg-red-100');
+    expect(badge.className).toContain('text-red-700');
+  });
+
+  it('falls back to Recurring styles for an unknown trend', () => {
+    const { container } = render(<TrendBadge trend="SomethingElse" />);
+    const badge = container.firstChild as HTMLElement;
+    expect(badge.className).toContain('bg-blue-100');
   });
 });

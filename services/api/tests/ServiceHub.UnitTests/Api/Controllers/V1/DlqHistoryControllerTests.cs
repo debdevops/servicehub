@@ -11,6 +11,7 @@ using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
+using ServiceHub.Shared.Helpers;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Api.Controllers.V1;
@@ -22,6 +23,8 @@ public class DlqHistoryControllerTests
     private readonly Mock<IDlqSignatureAnalysisService> _signatureAnalysisService = new();
     private readonly Mock<INamespaceRepository> _namespaceRepository = new();
     private readonly Mock<IFailureKnowledgeService> _knowledgeService = new();
+    private readonly Mock<INamespaceSignatureLookupService> _signatureLookupService = new();
+    private readonly Mock<ISignatureLifecycleService> _lifecycleService = new();
     private readonly IMemoryCache _cache = new MemoryCache(new MemoryCacheOptions());
     private readonly DlqHistoryController _controller;
 
@@ -32,13 +35,28 @@ public class DlqHistoryControllerTests
             .Setup(x => x.GetKnowledgeBatchAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
             .Returns(Task.FromResult(Result<IReadOnlyDictionary<string, FailureKnowledge>>.Success(new Dictionary<string, FailureKnowledge>())));
 
+        // Default lifecycle status: nothing transitioned (every hash reports Active).
+        _lifecycleService
+            .Setup(x => x.GetStatusBatchAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyDictionary<string, SignatureLifecycleSnapshot>>.Success(
+                new Dictionary<string, SignatureLifecycleSnapshot>()));
+        _lifecycleService
+            .Setup(x => x.GetStatusAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SignatureLifecycleSnapshot>.Success(
+                new SignatureLifecycleSnapshot(SignatureLifecycleStatus.Active, null, null, null)));
+        _lifecycleService
+            .Setup(x => x.GetHistoryAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<SignatureLifecycleEvent>>.Success([]));
+
         _controller = new DlqHistoryController(
             _historyService.Object,
             _logger.Object,
             _signatureAnalysisService.Object,
             _namespaceRepository.Object,
             _cache,
-            _knowledgeService.Object);
+            _knowledgeService.Object,
+            _signatureLookupService.Object,
+            _lifecycleService.Object);
         _controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext()
@@ -87,7 +105,8 @@ public class DlqHistoryControllerTests
     public void Constructor_NullHistoryService_Throws()
     {
         var act = () => new DlqHistoryController(
-            null!, _logger.Object, _signatureAnalysisService.Object, _namespaceRepository.Object, _cache, _knowledgeService.Object);
+            null!, _logger.Object, _signatureAnalysisService.Object, _namespaceRepository.Object, _cache, _knowledgeService.Object,
+            _signatureLookupService.Object, _lifecycleService.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("historyService");
     }
 
@@ -95,7 +114,8 @@ public class DlqHistoryControllerTests
     public void Constructor_NullLogger_Throws()
     {
         var act = () => new DlqHistoryController(
-            _historyService.Object, null!, _signatureAnalysisService.Object, _namespaceRepository.Object, _cache, _knowledgeService.Object);
+            _historyService.Object, null!, _signatureAnalysisService.Object, _namespaceRepository.Object, _cache, _knowledgeService.Object,
+            _signatureLookupService.Object, _lifecycleService.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -372,7 +392,9 @@ public class DlqHistoryControllerTests
             _signatureAnalysisService.Object,
             _namespaceRepository.Object,
             _cache,
-            _knowledgeService.Object);
+            _knowledgeService.Object,
+            _signatureLookupService.Object,
+            _lifecycleService.Object);
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { RequestServices = serviceProvider }
@@ -493,7 +515,8 @@ public class DlqHistoryControllerTests
     public void Constructor_NullSignatureAnalysisService_Throws()
     {
         var act = () => new DlqHistoryController(
-            _historyService.Object, _logger.Object, null!, _namespaceRepository.Object, _cache, _knowledgeService.Object);
+            _historyService.Object, _logger.Object, null!, _namespaceRepository.Object, _cache, _knowledgeService.Object,
+            _signatureLookupService.Object, _lifecycleService.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("signatureAnalysisService");
     }
 
@@ -501,7 +524,8 @@ public class DlqHistoryControllerTests
     public void Constructor_NullNamespaceRepository_Throws()
     {
         var act = () => new DlqHistoryController(
-            _historyService.Object, _logger.Object, _signatureAnalysisService.Object, null!, _cache, _knowledgeService.Object);
+            _historyService.Object, _logger.Object, _signatureAnalysisService.Object, null!, _cache, _knowledgeService.Object,
+            _signatureLookupService.Object, _lifecycleService.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("namespaceRepository");
     }
 
@@ -509,7 +533,8 @@ public class DlqHistoryControllerTests
     public void Constructor_NullCache_Throws()
     {
         var act = () => new DlqHistoryController(
-            _historyService.Object, _logger.Object, _signatureAnalysisService.Object, _namespaceRepository.Object, null!, _knowledgeService.Object);
+            _historyService.Object, _logger.Object, _signatureAnalysisService.Object, _namespaceRepository.Object, null!, _knowledgeService.Object,
+            _signatureLookupService.Object, _lifecycleService.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("cache");
     }
 
@@ -581,5 +606,197 @@ public class DlqHistoryControllerTests
         second.Result.Should().BeOfType<OkObjectResult>();
         _signatureAnalysisService.Verify(s => s.AnalyzeAsync(
             It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ── GetSignatureDetail ──────────────────────────────────
+
+    private static readonly string ClusteredHash =
+        ClusterSignatureHasher.ComputeHash(["timeout"], "MaxDeliveryCountExceeded");
+
+    [Fact]
+    public async Task GetSignatureDetail_Clustered_ReturnsDetailWithRelatedMessages()
+    {
+        var nsId = Guid.NewGuid();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureAnalysisService.Setup(s => s.AnalyzeAsync(It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSignatureAnalysisResult>.Success(CreateAvailableAnalysis()));
+        _historyService.Setup(s => s.GetByIdsAsync(It.IsAny<string>(), It.Is<IReadOnlyList<long>>(ids => ids.Count == 4), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<DlqMessage>>.Success(
+                new List<DlqMessage> { CreateTestMessage(1), CreateTestMessage(2) }));
+
+        var result = await _controller.GetSignatureDetail(nsId, ClusteredHash);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<DlqSignatureDetailResponse>().Subject;
+        response.SignatureHash.Should().Be(ClusteredHash);
+        response.IsCurrentlyClustered.Should().BeTrue();
+        response.RelatedMessages.Should().HaveCount(2);
+        response.Status.Should().Be("Active");
+        response.Confidence.Should().Be("High");
+    }
+
+    [Fact]
+    public async Task GetSignatureDetail_NotClustered_FallsBackToPersistedRecord()
+    {
+        var nsId = Guid.NewGuid();
+        const string hash = "no-longer-clustered-hash";
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureAnalysisService.Setup(s => s.AnalyzeAsync(It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSignatureAnalysisResult>.Success(CreateAvailableAnalysis()));
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NamespaceSignature
+            {
+                NamespaceId = nsId,
+                OwnerId = Namespace.SpaOwnerId,
+                SignatureHash = hash,
+                FirstSeenAt = DateTimeOffset.UtcNow.AddDays(-10),
+                LastSeenAt = DateTimeOffset.UtcNow.AddDays(-5),
+                OccurrenceCount = 3,
+                DominantDeadletterReason = "TTLExpiredException",
+                TopTermsJson = "[\"expired\"]",
+            });
+        _knowledgeService.Setup(s => s.GetKnowledgeAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<FailureKnowledge>.Success(new FailureKnowledge(
+                null, null, null, null, null, null, null, 0, null, null)));
+
+        var result = await _controller.GetSignatureDetail(nsId, hash);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<DlqSignatureDetailResponse>().Subject;
+        response.IsCurrentlyClustered.Should().BeFalse();
+        response.RelatedMessages.Should().BeEmpty();
+        response.OccurrenceCount.Should().Be(3);
+        response.DominantDeadletterReason.Should().Be("TTLExpiredException");
+    }
+
+    [Fact]
+    public async Task GetSignatureDetail_NeverObserved_ReturnsNotFound()
+    {
+        var nsId = Guid.NewGuid();
+        const string hash = "never-seen-hash";
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureAnalysisService.Setup(s => s.AnalyzeAsync(It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSignatureAnalysisResult>.Success(CreateAvailableAnalysis()));
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((NamespaceSignature?)null);
+
+        var result = await _controller.GetSignatureDetail(nsId, hash);
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    // ── GetSignatureTimeline ─────────────────────────────────
+
+    [Fact]
+    public async Task GetSignatureTimeline_MergesEventsInAscendingOrder()
+    {
+        var nsId = Guid.NewGuid();
+        const string hash = "timeline-hash";
+        var firstSeen = DateTimeOffset.UtcNow.AddDays(-10);
+        var lastSeen = DateTimeOffset.UtcNow.AddDays(-1);
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NamespaceSignature
+            {
+                NamespaceId = nsId,
+                OwnerId = Namespace.SpaOwnerId,
+                SignatureHash = hash,
+                FirstSeenAt = firstSeen,
+                LastSeenAt = lastSeen,
+                OccurrenceCount = 4,
+                DominantDeadletterReason = "MaxDeliveryCountExceeded",
+                TopTermsJson = "[\"timeout\"]",
+            });
+        _knowledgeService.Setup(s => s.GetKnowledgeAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<FailureKnowledge>.Success(new FailureKnowledge(
+                null, null, null, null, null, null, null, 0, null, null)));
+        _lifecycleService.Setup(s => s.GetHistoryAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<SignatureLifecycleEvent>>.Success(
+            [
+                new SignatureLifecycleEvent(
+                    SignatureLifecycleStatus.Active, SignatureLifecycleStatus.Resolved,
+                    DateTimeOffset.UtcNow, "fixed it"),
+            ]));
+
+        var result = await _controller.GetSignatureTimeline(nsId, hash);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<SignatureTimelineResponse>().Subject;
+        response.Events.Should().HaveCount(3);
+        response.Events.Select(e => e.Timestamp).Should().BeInAscendingOrder();
+        response.Events[0].EventType.Should().Be("SignatureFirstObserved");
+        response.Events[^1].EventType.Should().Be("StatusChanged");
+    }
+
+    [Fact]
+    public async Task GetSignatureTimeline_NeverObserved_ReturnsNotFound()
+    {
+        var nsId = Guid.NewGuid();
+        const string hash = "never-seen-hash";
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((NamespaceSignature?)null);
+        _lifecycleService.Setup(s => s.GetHistoryAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<SignatureLifecycleEvent>>.Success([]));
+
+        var result = await _controller.GetSignatureTimeline(nsId, hash);
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    // ── UpdateSignatureStatus ────────────────────────────────
+
+    [Fact]
+    public async Task UpdateSignatureStatus_ValidTransition_ReturnsOkAndInvalidatesCache()
+    {
+        var nsId = Guid.NewGuid();
+        const string hash = "status-hash";
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureAnalysisService.Setup(s => s.AnalyzeAsync(It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSignatureAnalysisResult>.Success(CreateAvailableAnalysis()));
+        _lifecycleService.Setup(s => s.TransitionAsync(
+                It.IsAny<string>(), nsId, hash, SignatureLifecycleStatus.Resolved, "done", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SignatureLifecycleSnapshot>.Success(
+                new SignatureLifecycleSnapshot(SignatureLifecycleStatus.Resolved, SignatureLifecycleStatus.Active, DateTimeOffset.UtcNow, "done")));
+
+        // Warm the 60s cache, then confirm the status update busts it.
+        await _controller.GetSignatures(nsId);
+
+        var result = await _controller.UpdateSignatureStatus(
+            nsId, hash, new UpdateSignatureStatusRequest(SignatureLifecycleStatus.Resolved, "done"));
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<SignatureLifecycleStatusResponse>().Subject;
+        response.Status.Should().Be("Resolved");
+        response.PreviousStatus.Should().Be("Active");
+
+        await _controller.GetSignatures(nsId);
+        _signatureAnalysisService.Verify(s => s.AnalyzeAsync(
+            It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task UpdateSignatureStatus_InvalidTransition_ReturnsBadRequest()
+    {
+        var nsId = Guid.NewGuid();
+        const string hash = "status-hash";
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _lifecycleService.Setup(s => s.TransitionAsync(
+                It.IsAny<string>(), nsId, hash, SignatureLifecycleStatus.Active, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SignatureLifecycleSnapshot>.Failure(
+                Error.Validation("SignatureLifecycle.InvalidTransition", "Cannot transition")));
+
+        var result = await _controller.UpdateSignatureStatus(
+            nsId, hash, new UpdateSignatureStatusRequest(SignatureLifecycleStatus.Active));
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
     }
 }
