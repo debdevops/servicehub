@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Filters;
+using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
@@ -544,7 +545,9 @@ public sealed class DlqHistoryController : ApiControllerBase
             LastUpdatedAt: knowledge.LastUpdatedAt,
             KnowledgeVersion: knowledge.KnowledgeVersion,
             ReviewDueAt: knowledge.ReviewDueAt,
-            Tags: knowledge.Tags);
+            Tags: knowledge.Tags,
+            UpdatedBy: knowledge.UpdatedBy,
+            IsReviewOverdue: knowledge.ReviewDueAt.HasValue && knowledge.ReviewDueAt.Value < DateTimeOffset.UtcNow);
 
     /// <summary>Derives a signature's confidence label from the clustering method used, mirroring
     /// the High/AI vs. Medium/deterministic heuristic in DlqSignatureAnalysisService.</summary>
@@ -772,6 +775,129 @@ public sealed class DlqHistoryController : ApiControllerBase
             PreviousStatus: snapshot.PreviousStatus?.ToString(),
             TransitionedAt: snapshot.TransitionedAt,
             Notes: snapshot.Notes));
+    }
+
+    /// <summary>
+    /// Creates or updates a failure signature's operational knowledge. On update, the prior
+    /// version is snapshotted into history before being overwritten. Invalidates the cached
+    /// signature list so the change is reflected immediately rather than for up to 60s.
+    /// </summary>
+    /// <param name="namespaceId">The namespace the signature belongs to.</param>
+    /// <param name="signatureHash">The signature's stable identity hash.</param>
+    /// <param name="request">The knowledge fields to persist.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpPut("~/" + ApiRoutes.Dlq.SignatureKnowledge)]
+    [RequireNamespaceOwnership]
+    [RequireScope(ApiKeyScopes.DlqWrite)]
+    [ProducesResponseType(typeof(KnowledgeResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<KnowledgeResponse>> UpsertKnowledge(
+        Guid namespaceId,
+        string signatureHash,
+        [FromBody] UpsertKnowledgeRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+            return ToActionResult<KnowledgeResponse>(namespaceResult.Error);
+
+        var knowledge = new Core.Models.FailureKnowledge(
+            RootCause: request.RootCause,
+            ResolutionNotes: request.ResolutionNotes,
+            OperationalNotes: request.OperationalNotes,
+            RunbookLink: request.RunbookLink,
+            Owner: request.Owner,
+            ReplayGuidance: request.ReplayGuidance,
+            LastUpdatedAt: null,
+            KnowledgeVersion: 1,
+            ReviewDueAt: request.ReviewDueAt,
+            Tags: request.Tags,
+            UpdatedBy: request.ChangedBy);
+
+        var result = await _knowledgeService.UpsertKnowledgeAsync(
+            OwnerId, namespaceId, signatureHash, knowledge, cancellationToken);
+        if (result.IsFailure)
+            return ToActionResult<KnowledgeResponse>(result.Error);
+
+        _cache.Remove($"dlq-signatures:{OwnerId}:{namespaceId}");
+
+        return Ok(ToKnowledgeResponse(result.Value)!);
+    }
+
+    /// <summary>
+    /// Gets prior versions of a failure signature's operational knowledge, most recent first.
+    /// </summary>
+    /// <param name="namespaceId">The namespace the signature belongs to.</param>
+    /// <param name="signatureHash">The signature's stable identity hash.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpGet("~/" + ApiRoutes.Dlq.SignatureKnowledgeHistory)]
+    [RequireNamespaceOwnership]
+    [RequireScope(ApiKeyScopes.DlqRead)]
+    [ProducesResponseType(typeof(IReadOnlyList<FailureKnowledgeHistoryResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<FailureKnowledgeHistoryResponse>>> GetKnowledgeHistory(
+        Guid namespaceId,
+        string signatureHash,
+        CancellationToken cancellationToken = default)
+    {
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+            return ToActionResult<IReadOnlyList<FailureKnowledgeHistoryResponse>>(namespaceResult.Error);
+
+        var result = await _knowledgeService.GetKnowledgeHistoryAsync(
+            OwnerId, namespaceId, signatureHash, cancellationToken);
+        if (result.IsFailure)
+            return ToActionResult<IReadOnlyList<FailureKnowledgeHistoryResponse>>(result.Error);
+
+        var response = result.Value.Select(e => new FailureKnowledgeHistoryResponse(
+            KnowledgeVersion: e.KnowledgeVersion,
+            RootCause: e.RootCause,
+            ResolutionNotes: e.ResolutionNotes,
+            OperationalNotes: e.OperationalNotes,
+            RunbookLink: e.RunbookLink,
+            Owner: e.Owner,
+            ReplayGuidance: e.ReplayGuidance,
+            Tags: e.Tags,
+            ReviewDueAt: e.ReviewDueAt,
+            UpdatedBy: e.UpdatedBy,
+            UpdatedAt: e.UpdatedAt)).ToList();
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Marks a failure signature's knowledge as needing review by the given date. Invalidates
+    /// the cached signature list so the change is reflected immediately rather than for up to 60s.
+    /// </summary>
+    /// <param name="namespaceId">The namespace the signature belongs to.</param>
+    /// <param name="signatureHash">The signature's stable identity hash.</param>
+    /// <param name="request">The review-due date.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpPost("~/" + ApiRoutes.Dlq.SignatureKnowledgeReview)]
+    [RequireNamespaceOwnership]
+    [RequireScope(ApiKeyScopes.DlqWrite)]
+    [ProducesResponseType(typeof(KnowledgeResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<KnowledgeResponse>> MarkKnowledgeForReview(
+        Guid namespaceId,
+        string signatureHash,
+        [FromBody] MarkForReviewRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, namespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+            return ToActionResult<KnowledgeResponse>(namespaceResult.Error);
+
+        var result = await _knowledgeService.MarkForReviewAsync(
+            OwnerId, namespaceId, signatureHash, request.ReviewDueAt, cancellationToken);
+        if (result.IsFailure)
+            return ToActionResult<KnowledgeResponse>(result.Error);
+
+        _cache.Remove($"dlq-signatures:{OwnerId}:{namespaceId}");
+
+        return Ok(ToKnowledgeResponse(result.Value)!);
     }
 
     private static string GenerateCsv(IReadOnlyList<Core.Entities.DlqMessage> messages)

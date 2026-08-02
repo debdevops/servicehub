@@ -296,6 +296,21 @@ public static class ApiRoutes
         public const string SignatureStatus = $"{SignatureById}/status";
 
         /// <summary>
+        /// Route for creating or updating a failure signature's operational knowledge.
+        /// </summary>
+        public const string SignatureKnowledge = $"{SignatureById}/knowledge";
+
+        /// <summary>
+        /// Route for a failure signature's operational knowledge version history.
+        /// </summary>
+        public const string SignatureKnowledgeHistory = $"{SignatureKnowledge}/history";
+
+        /// <summary>
+        /// Route for marking a failure signature's knowledge as needing review.
+        /// </summary>
+        public const string SignatureKnowledgeReview = $"{SignatureKnowledge}/review";
+
+        /// <summary>
         /// Route for dry-running a replay of a failure signature's member messages.
         /// </summary>
         public const string SignatureReplayPreview = $"{SignatureById}/replay/preview";

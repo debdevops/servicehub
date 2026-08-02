@@ -10,7 +10,6 @@ import {
   useArchiveSignature,
 } from '@servicehub/ui-shared/hooks/useDlqSignatures';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
-import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import {
   StatusBadge,
@@ -37,7 +36,6 @@ export function SignatureDetailsPage() {
   const { signatureHash } = useParams<{ signatureHash: string }>();
   const [searchParams] = useSearchParams();
   const namespaceId = searchParams.get('namespace') || undefined;
-  const { isDemoMode } = useDemoContext();
 
   const { data: namespaces } = useNamespaces();
   const namespace = namespaces?.find(ns => ns.id === namespaceId);
@@ -59,16 +57,6 @@ export function SignatureDetailsPage() {
     if (!namespaceId || !signatureHash) return;
     mutation.mutate({ namespaceId, signatureHash });
   };
-
-  if (isDemoMode) {
-    return (
-      <div className="p-6 max-w-3xl mx-auto">
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center text-sm text-gray-600">
-          Signature details require a live connection — try a real namespace.
-        </div>
-      </div>
-    );
-  }
 
   if (!namespaceId || !signatureHash) {
     return (
@@ -165,7 +153,7 @@ export function SignatureDetailsPage() {
           {/* Knowledge */}
           <div className="mb-4">
             <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Knowledge</h2>
-            <FailureInvestigationPanel cluster={detail} />
+            <FailureInvestigationPanel cluster={detail} namespaceId={namespaceId} />
           </div>
 
           {/* Timeline */}

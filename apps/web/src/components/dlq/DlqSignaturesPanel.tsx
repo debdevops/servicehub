@@ -71,7 +71,7 @@ function ClusterCard({
         </div>
       </div>
 
-      <FailureInvestigationPanel cluster={cluster} />
+      {namespaceId && <FailureInvestigationPanel cluster={cluster} namespaceId={namespaceId} />}
     </div>
   );
 }

@@ -5,6 +5,8 @@ export { BulkOperationPreviewModal } from './BulkOperationPreviewModal';
 export { BulkOperationProgressPanel } from './BulkOperationProgressPanel';
 export { DlqSignaturesPanel } from './DlqSignaturesPanel';
 export { FailureInvestigationPanel } from './FailureInvestigationPanel';
+export { KnowledgeEditDialog } from './KnowledgeEditDialog';
+export { KnowledgeHistoryPanel } from './KnowledgeHistoryPanel';
 export { SignatureLifecycleActions } from './SignatureLifecycleActions';
 export { SignatureTimelinePanel } from './SignatureTimelinePanel';
 export { SignatureReplayPreviewModal } from './SignatureReplayPreviewModal';

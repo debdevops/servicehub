@@ -16,7 +16,23 @@ public sealed record KnowledgeResponse(
     DateTimeOffset? LastUpdatedAt,
     int KnowledgeVersion,
     DateTimeOffset? ReviewDueAt,
-    string? Tags);
+    string? Tags,
+    string? UpdatedBy,
+    bool IsReviewOverdue);
+
+/// <summary>A prior version of a failure signature's operational knowledge.</summary>
+public sealed record FailureKnowledgeHistoryResponse(
+    int KnowledgeVersion,
+    string? RootCause,
+    string? ResolutionNotes,
+    string? OperationalNotes,
+    string? RunbookLink,
+    string? Owner,
+    string? ReplayGuidance,
+    string? Tags,
+    DateTimeOffset? ReviewDueAt,
+    string? UpdatedBy,
+    DateTimeOffset UpdatedAt);
 
 /// <summary>
 /// A namespace's DLQ error-signature analysis. <see cref="Available"/> is <see langword="false"/>

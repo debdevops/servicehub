@@ -14,6 +14,36 @@ export interface FailureKnowledge {
   knowledgeVersion: number;
   reviewDueAt: string | null;
   tags: string | null;
+  updatedBy: string | null;
+  isReviewOverdue: boolean;
+}
+
+/** Request to create or update a failure signature's operational knowledge. */
+export interface UpsertKnowledgeRequest {
+  rootCause: string;
+  resolutionNotes?: string | null;
+  operationalNotes?: string | null;
+  runbookLink?: string | null;
+  owner?: string | null;
+  replayGuidance?: string | null;
+  tags?: string | null;
+  reviewDueAt?: string | null;
+  changedBy?: string | null;
+}
+
+/** A prior version of a failure signature's operational knowledge. */
+export interface FailureKnowledgeHistoryEntry {
+  knowledgeVersion: number;
+  rootCause: string | null;
+  resolutionNotes: string | null;
+  operationalNotes: string | null;
+  runbookLink: string | null;
+  owner: string | null;
+  replayGuidance: string | null;
+  tags: string | null;
+  reviewDueAt: string | null;
+  updatedBy: string | null;
+  updatedAt: string;
 }
 
 export interface DlqClusterSignature {
@@ -122,6 +152,50 @@ export const dlqSignaturesApi = {
     const response = await apiClient.post<SignatureLifecycleStatusResponse>(
       `/namespaces/${namespaceId}/dlq/signatures/${signatureHash}/status`,
       { status, notes }
+    );
+    return response.data;
+  },
+
+  /**
+   * Create or update a failure signature's operational knowledge. On update, the prior
+   * version is preserved and retrievable via `getKnowledgeHistory`.
+   */
+  upsertKnowledge: async (
+    namespaceId: string,
+    signatureHash: string,
+    request: UpsertKnowledgeRequest
+  ): Promise<FailureKnowledge> => {
+    const response = await apiClient.put<FailureKnowledge>(
+      `/namespaces/${namespaceId}/dlq/signatures/${signatureHash}/knowledge`,
+      request
+    );
+    return response.data;
+  },
+
+  /**
+   * Get prior versions of a failure signature's operational knowledge, most recent first.
+   */
+  getKnowledgeHistory: async (
+    namespaceId: string,
+    signatureHash: string
+  ): Promise<FailureKnowledgeHistoryEntry[]> => {
+    const response = await apiClient.get<FailureKnowledgeHistoryEntry[]>(
+      `/namespaces/${namespaceId}/dlq/signatures/${signatureHash}/knowledge/history`
+    );
+    return response.data;
+  },
+
+  /**
+   * Mark a failure signature's knowledge as needing review by the given date.
+   */
+  markForReview: async (
+    namespaceId: string,
+    signatureHash: string,
+    reviewDueAt: string
+  ): Promise<FailureKnowledge> => {
+    const response = await apiClient.post<FailureKnowledge>(
+      `/namespaces/${namespaceId}/dlq/signatures/${signatureHash}/knowledge/review`,
+      { reviewDueAt }
     );
     return response.data;
   },

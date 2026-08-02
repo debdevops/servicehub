@@ -86,12 +86,94 @@ describe('SignatureListPage', () => {
     expect(screen.getAllByText('Recurring').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('shows a demo-mode message instead of the list when in demo mode', () => {
-    mockUseDemoContext.mockReturnValue({ isDemoMode: true });
+  it('renders the signature list in demo mode too — demo fixtures come from the data hooks, not a page-level bailout', () => {
+    mockUseDemoContext.mockReturnValue({ isDemoMode: true, cloudProvider: 'azure' });
     const Wrapper = createWrapper();
     render(<Wrapper><SignatureListPage /></Wrapper>);
-    expect(screen.getByText(/requires a live connection/)).toBeInTheDocument();
-    expect(screen.queryByText('MaxDeliveryCountExceeded')).not.toBeInTheDocument();
+    expect(screen.getByText('MaxDeliveryCountExceeded')).toBeInTheDocument();
+  });
+
+  it('filters the list by search query across owner, tags, runbook, and root cause', () => {
+    mockUseDlqSignatures.mockReturnValue({
+      data: {
+        available: true,
+        method: 'clustered',
+        batchSize: 5,
+        clusters: [
+          {
+            ...mockCluster,
+            knowledge: {
+              rootCause: 'Database timeout',
+              resolutionNotes: null,
+              operationalNotes: null,
+              runbookLink: null,
+              owner: 'platform-team@example.com',
+              replayGuidance: 'Safe',
+              lastUpdatedAt: null,
+              knowledgeVersion: 1,
+              reviewDueAt: null,
+              tags: 'database',
+              updatedBy: null,
+              isReviewOverdue: false,
+            },
+          },
+        ],
+        singletons: [],
+      },
+      loading: false,
+      error: null,
+      available: true,
+    });
+    const Wrapper = createWrapper();
+    render(<Wrapper><SignatureListPage /></Wrapper>);
+
+    fireEvent.change(screen.getByPlaceholderText(/search by owner/i), { target: { value: 'nonexistent' } });
+    expect(screen.getByText('No failure signatures match the current filters.')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText(/search by owner/i), { target: { value: 'platform-team' } });
+    expect(screen.getByText('MaxDeliveryCountExceeded')).toBeInTheDocument();
+  });
+
+  it('filters the list by review status', () => {
+    mockUseDlqSignatures.mockReturnValue({
+      data: {
+        available: true,
+        method: 'clustered',
+        batchSize: 5,
+        clusters: [
+          {
+            ...mockCluster,
+            knowledge: {
+              rootCause: 'Database timeout',
+              resolutionNotes: null,
+              operationalNotes: null,
+              runbookLink: null,
+              owner: null,
+              replayGuidance: null,
+              lastUpdatedAt: null,
+              knowledgeVersion: 1,
+              reviewDueAt: '2026-01-01T00:00:00Z',
+              tags: null,
+              updatedBy: null,
+              isReviewOverdue: true,
+            },
+          },
+        ],
+        singletons: [],
+      },
+      loading: false,
+      error: null,
+      available: true,
+    });
+    const Wrapper = createWrapper();
+    render(<Wrapper><SignatureListPage /></Wrapper>);
+
+    fireEvent.click(screen.getByRole('button', { name: 'No review date' }));
+    expect(screen.getByText('No failure signatures match the current filters.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'No review date' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Overdue' }));
+    expect(screen.getByText('MaxDeliveryCountExceeded')).toBeInTheDocument();
   });
 
   it('filters the list by status', () => {

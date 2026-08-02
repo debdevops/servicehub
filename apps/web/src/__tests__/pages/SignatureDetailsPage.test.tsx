@@ -147,12 +147,11 @@ describe('SignatureDetailsPage', () => {
     expect(screen.getByText('msg-1')).toBeInTheDocument();
   });
 
-  it('shows a demo-mode message instead of details when in demo mode', () => {
-    mockUseDemoContext.mockReturnValue({ isDemoMode: true });
+  it('renders signature details in demo mode too — demo fixtures come from the data hooks, not a page-level bailout', () => {
+    mockUseDemoContext.mockReturnValue({ isDemoMode: true, cloudProvider: 'azure' });
     const Wrapper = createWrapper();
     render(<Wrapper><SignatureDetailsPage /></Wrapper>);
-    expect(screen.getByText(/require a live connection/)).toBeInTheDocument();
-    expect(screen.queryByText(/MaxDeliveryCountExceeded/)).not.toBeInTheDocument();
+    expect(screen.getByText(/MaxDeliveryCountExceeded/)).toBeInTheDocument();
   });
 
   it('shows a historical-record note when the signature is not currently clustered', () => {

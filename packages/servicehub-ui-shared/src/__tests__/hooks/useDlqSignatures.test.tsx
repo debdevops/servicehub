@@ -9,6 +9,9 @@ vi.mock('../../lib/api/dlqSignatures', () => ({
     getSignatureDetail: vi.fn(),
     getSignatureTimeline: vi.fn(),
     updateSignatureStatus: vi.fn(),
+    upsertKnowledge: vi.fn(),
+    getKnowledgeHistory: vi.fn(),
+    markForReview: vi.fn(),
   },
 }));
 
@@ -27,11 +30,15 @@ import {
   useDlqSignatures,
   useDlqSignatureDetail,
   useSignatureTimeline,
+  useKnowledgeHistory,
   useResolveSignature,
   useReopenSignature,
   useSuppressSignature,
   useArchiveSignature,
+  useUpsertKnowledge,
+  useMarkForReview,
 } from '../../hooks/useDlqSignatures';
+import { DemoModeProvider } from '../../lib/demo/DemoContext';
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -39,6 +46,19 @@ function createWrapper() {
   });
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return React.createElement(QueryClientProvider, { client: queryClient }, children);
+  };
+}
+
+function createDemoWrapper(cloudProvider: 'azure' | 'aws' | 'gcp' = 'azure') {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(DemoModeProvider, { cloudProvider, children }),
+    );
   };
 }
 
@@ -233,5 +253,192 @@ describe('signature lifecycle mutation hooks', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(toast.error).toHaveBeenCalledWith('Cannot transition from Archived to Resolved.');
+  });
+});
+
+// ─── Demo Mode fixtures ────────────────────────────────────────────────────
+
+describe('demo mode data fixtures', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('useDlqSignatures returns curated demo clusters without calling the real API', async () => {
+    const { result } = renderHook(() => useDlqSignatures('demo-azure-contoso-prod'), {
+      wrapper: createDemoWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(dlqSignaturesApi.getSignatures).not.toHaveBeenCalled();
+    expect(result.current.available).toBe(true);
+    expect(result.current.data?.clusters.length).toBeGreaterThan(0);
+    expect(result.current.data?.clusters[0].knowledge).toBeTruthy();
+  });
+
+  it('useDlqSignatureDetail returns curated demo detail for a known demo hash', async () => {
+    const { result } = renderHook(
+      () => useDlqSignatureDetail('demo-azure-contoso-prod', 'demo-max-delivery-count-exceeded'),
+      { wrapper: createDemoWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(dlqSignaturesApi.getSignatureDetail).not.toHaveBeenCalled();
+    expect(result.current.data?.signatureHash).toBe('demo-max-delivery-count-exceeded');
+    expect(result.current.data?.relatedMessages).toEqual([]);
+  });
+
+  it('useSignatureTimeline returns a curated demo timeline for a known demo hash', async () => {
+    const { result } = renderHook(
+      () => useSignatureTimeline('demo-azure-contoso-prod', 'demo-max-delivery-count-exceeded'),
+      { wrapper: createDemoWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(dlqSignaturesApi.getSignatureTimeline).not.toHaveBeenCalled();
+    expect(result.current.data?.events.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── useKnowledgeHistory ────────────────────────────────────────────────────
+
+describe('useKnowledgeHistory', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('is disabled when namespaceId or signatureHash is missing', () => {
+    const { result } = renderHook(() => useKnowledgeHistory(undefined, 'hash-1'), { wrapper: createWrapper() });
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(dlqSignaturesApi.getKnowledgeHistory).not.toHaveBeenCalled();
+  });
+
+  it('calls getKnowledgeHistory with namespaceId and signatureHash', async () => {
+    vi.mocked(dlqSignaturesApi.getKnowledgeHistory).mockResolvedValueOnce([
+      {
+        knowledgeVersion: 1,
+        rootCause: 'v1',
+        resolutionNotes: null,
+        operationalNotes: null,
+        runbookLink: null,
+        owner: null,
+        replayGuidance: null,
+        tags: null,
+        reviewDueAt: null,
+        updatedBy: null,
+        updatedAt: '2026-01-01T00:00:00Z',
+      },
+    ]);
+
+    const { result } = renderHook(() => useKnowledgeHistory('ns-1', 'hash-1'), { wrapper: createWrapper() });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(dlqSignaturesApi.getKnowledgeHistory).toHaveBeenCalledWith('ns-1', 'hash-1');
+    expect(result.current.data).toHaveLength(1);
+  });
+});
+
+// ─── useUpsertKnowledge ─────────────────────────────────────────────────────
+
+describe('useUpsertKnowledge', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('calls upsertKnowledge and shows a success toast', async () => {
+    vi.mocked(dlqSignaturesApi.upsertKnowledge).mockResolvedValueOnce({
+      rootCause: 'Timeout',
+      resolutionNotes: null,
+      operationalNotes: null,
+      runbookLink: null,
+      owner: null,
+      replayGuidance: null,
+      lastUpdatedAt: '2026-01-01T00:00:00Z',
+      knowledgeVersion: 2,
+      reviewDueAt: null,
+      tags: null,
+      updatedBy: 'alice@example.com',
+      isReviewOverdue: false,
+    });
+
+    const { result } = renderHook(() => useUpsertKnowledge(), { wrapper: createWrapper() });
+
+    await act(async () => {
+      result.current.mutate({
+        namespaceId: 'ns-1',
+        signatureHash: 'hash-1',
+        request: { rootCause: 'Timeout', changedBy: 'alice@example.com' },
+      });
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(dlqSignaturesApi.upsertKnowledge).toHaveBeenCalledWith('ns-1', 'hash-1', {
+      rootCause: 'Timeout',
+      changedBy: 'alice@example.com',
+    });
+    expect(toast.success).toHaveBeenCalledWith('Knowledge saved');
+  });
+
+  it('rejects without calling the API in demo mode', async () => {
+    const { result } = renderHook(() => useUpsertKnowledge(), { wrapper: createDemoWrapper() });
+
+    await act(async () => {
+      result.current.mutate({ namespaceId: 'ns-1', signatureHash: 'hash-1', request: { rootCause: 'x' } });
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(dlqSignaturesApi.upsertKnowledge).not.toHaveBeenCalled();
+  });
+
+  it('shows API error detail on failure', async () => {
+    vi.mocked(dlqSignaturesApi.upsertKnowledge).mockRejectedValueOnce({
+      response: { data: { detail: 'Root cause is required.' } },
+    });
+
+    const { result } = renderHook(() => useUpsertKnowledge(), { wrapper: createWrapper() });
+
+    await act(async () => {
+      result.current.mutate({ namespaceId: 'ns-1', signatureHash: 'hash-1', request: { rootCause: '' } });
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(toast.error).toHaveBeenCalledWith('Root cause is required.');
+  });
+});
+
+// ─── useMarkForReview ───────────────────────────────────────────────────────
+
+describe('useMarkForReview', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('calls markForReview and shows a success toast', async () => {
+    vi.mocked(dlqSignaturesApi.markForReview).mockResolvedValueOnce({
+      rootCause: null,
+      resolutionNotes: null,
+      operationalNotes: null,
+      runbookLink: null,
+      owner: null,
+      replayGuidance: null,
+      lastUpdatedAt: '2026-01-01T00:00:00Z',
+      knowledgeVersion: 1,
+      reviewDueAt: '2026-02-01T00:00:00Z',
+      tags: null,
+      updatedBy: null,
+      isReviewOverdue: false,
+    });
+
+    const { result } = renderHook(() => useMarkForReview(), { wrapper: createWrapper() });
+
+    await act(async () => {
+      result.current.mutate({ namespaceId: 'ns-1', signatureHash: 'hash-1', reviewDueAt: '2026-02-01T00:00:00Z' });
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(dlqSignaturesApi.markForReview).toHaveBeenCalledWith('ns-1', 'hash-1', '2026-02-01T00:00:00Z');
+    expect(toast.success).toHaveBeenCalledWith('Marked for review');
+  });
+
+  it('rejects without calling the API in demo mode', async () => {
+    const { result } = renderHook(() => useMarkForReview(), { wrapper: createDemoWrapper() });
+
+    await act(async () => {
+      result.current.mutate({ namespaceId: 'ns-1', signatureHash: 'hash-1', reviewDueAt: '2026-02-01T00:00:00Z' });
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(dlqSignaturesApi.markForReview).not.toHaveBeenCalled();
   });
 });

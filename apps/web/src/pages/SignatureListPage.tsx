@@ -3,13 +3,40 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { Sparkles } from 'lucide-react';
 import { useDlqSignatures } from '@servicehub/ui-shared/hooks/useDlqSignatures';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
-import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import type { DlqClusterSignature } from '@servicehub/ui-shared/lib/api/dlqSignatures';
 import { StatusBadge, TrendBadge, FailureInvestigationPanel } from '@/components/dlq';
 
 const STATUS_OPTIONS = ['Active', 'Resolved', 'Reopened', 'Suppressed', 'Archived'] as const;
 const TREND_OPTIONS = ['New', 'Recurring', 'Escalating'] as const;
+const REVIEW_STATUS_OPTIONS = ['Due', 'Overdue', 'No review date'] as const;
+type ReviewStatusFilter = (typeof REVIEW_STATUS_OPTIONS)[number];
+
+function matchesReviewStatus(signature: DlqClusterSignature, filter: ReviewStatusFilter): boolean {
+  const knowledge = signature.knowledge;
+  switch (filter) {
+    case 'Overdue':
+      return !!knowledge?.isReviewOverdue;
+    case 'Due':
+      return !!knowledge?.reviewDueAt && !knowledge.isReviewOverdue;
+    case 'No review date':
+      return !knowledge?.reviewDueAt;
+  }
+}
+
+function matchesSearch(signature: DlqClusterSignature, query: string): boolean {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  const knowledge = signature.knowledge;
+  const haystacks = [
+    knowledge?.owner,
+    knowledge?.tags,
+    knowledge?.runbookLink,
+    knowledge?.rootCause,
+    knowledge?.resolutionNotes,
+  ];
+  return haystacks.some((h) => h?.toLowerCase().includes(q));
+}
 
 function SignatureListItem({ signature, namespaceId }: { signature: DlqClusterSignature; namespaceId: string }) {
   return (
@@ -35,7 +62,7 @@ function SignatureListItem({ signature, namespaceId }: { signature: DlqClusterSi
         <p className="text-sm text-gray-600">{signature.explanation}</p>
       </div>
 
-      <FailureInvestigationPanel cluster={signature} />
+      <FailureInvestigationPanel cluster={signature} namespaceId={namespaceId} />
     </div>
   );
 }
@@ -43,7 +70,6 @@ function SignatureListItem({ signature, namespaceId }: { signature: DlqClusterSi
 export function SignatureListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlNamespaceId = searchParams.get('namespace') || undefined;
-  const { isDemoMode } = useDemoContext();
 
   const { data: namespaces } = useNamespaces();
   const activeNamespace = namespaces?.find(ns => ns.isActive);
@@ -58,6 +84,8 @@ export function SignatureListPage() {
 
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [trendFilter, setTrendFilter] = useState<string | undefined>();
+  const [reviewStatusFilter, setReviewStatusFilter] = useState<ReviewStatusFilter | undefined>();
+  const [searchQuery, setSearchQuery] = useState('');
 
   const { data, loading, available } = useDlqSignatures(namespaceId);
 
@@ -66,9 +94,11 @@ export function SignatureListPage() {
     return clusters.filter(c => {
       if (statusFilter && c.status !== statusFilter) return false;
       if (trendFilter && c.trend !== trendFilter) return false;
+      if (reviewStatusFilter && !matchesReviewStatus(c, reviewStatusFilter)) return false;
+      if (!matchesSearch(c, searchQuery.trim())) return false;
       return true;
     });
-  }, [data, statusFilter, trendFilter]);
+  }, [data, statusFilter, trendFilter, reviewStatusFilter, searchQuery]);
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -92,16 +122,23 @@ export function SignatureListPage() {
         {currentNamespace?.cloudProvider && <ProviderBadge provider={currentNamespace.cloudProvider} />}
       </div>
 
-      {isDemoMode ? (
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center text-sm text-gray-600">
-          Signature browsing requires a live connection — try a real namespace.
-        </div>
-      ) : !namespaceId ? (
+      {!namespaceId ? (
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center text-sm text-gray-600">
           Select a namespace to view its failure signatures.
         </div>
       ) : (
         <>
+          {/* Search */}
+          <div className="mb-3">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search by owner, tags, runbook, root cause, or resolution notes…"
+              className="w-full px-3 py-1.5 text-sm rounded-lg border border-gray-200 bg-white"
+            />
+          </div>
+
           {/* Filters */}
           <div className="flex items-center gap-2 mb-4 flex-wrap text-xs">
             <span className="text-gray-500 font-medium">Status:</span>
@@ -128,6 +165,22 @@ export function SignatureListPage() {
                 className={`px-2.5 py-1 rounded-full font-medium border ${trendFilter === trend ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200'}`}
               >
                 {trend}
+              </button>
+            ))}
+            <span className="text-gray-500 font-medium ml-3">Review:</span>
+            <button
+              onClick={() => setReviewStatusFilter(undefined)}
+              className={`px-2.5 py-1 rounded-full font-medium border ${!reviewStatusFilter ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200'}`}
+            >
+              All
+            </button>
+            {REVIEW_STATUS_OPTIONS.map(reviewStatus => (
+              <button
+                key={reviewStatus}
+                onClick={() => setReviewStatusFilter(reviewStatus === reviewStatusFilter ? undefined : reviewStatus)}
+                className={`px-2.5 py-1 rounded-full font-medium border ${reviewStatusFilter === reviewStatus ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200'}`}
+              >
+                {reviewStatus}
               </button>
             ))}
           </div>

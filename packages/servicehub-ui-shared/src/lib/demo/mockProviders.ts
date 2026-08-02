@@ -16,6 +16,14 @@ import { generateAwsMockMessages } from '../awsMockData';
 import { generateGcpMockMessages } from '../gcpMockData';
 import type { Message as MockMessage } from '../mockData';
 import type { ProviderCapabilities, ProviderCapabilitiesMap } from '../api/cloudBridge';
+import type {
+  DlqSignaturesResponse,
+  DlqClusterSignature,
+  DlqSignatureDetail,
+  SignatureTimelineResponse,
+  FailureKnowledge,
+} from '../api/dlqSignatures';
+import type { DlqTimelineEvent } from '../api/dlqHistory';
 
 // ─── Namespace IDs ──────────────────────────────────────────────────────────
 // Stable IDs used in URL query params and as namespace identifiers in demo mode
@@ -375,5 +383,270 @@ export function getMockMessages(
     pageSize: take,
     hasNextPage: skip + take < typed.length,
     hasPreviousPage: skip > 0,
+  };
+}
+
+// ─── Failure Signatures & Knowledge ─────────────────────────────────────────
+// A small, curated set of failure signatures demonstrating ServiceHub's core
+// differentiator — Failure Intelligence — with populated operational knowledge,
+// version-appropriate review status, and a short timeline. Identical across all
+// three demo providers (the failure taxonomy here is cloud-agnostic); read-only,
+// matching the rest of Demo Mode. Not derived from the generated message fixtures
+// above — these are self-contained illustrative clusters, not tied to specific
+// generated message IDs.
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+interface DemoSignatureDefinition {
+  hash: string;
+  dominantDeadletterReason: string;
+  topTerms: string[];
+  explanation: string;
+  size: number;
+  isNew: boolean;
+  daysSinceFirstSeen: number;
+  status: DlqClusterSignature['status'];
+  trend: DlqClusterSignature['trend'];
+  knowledge: FailureKnowledge | null;
+}
+
+const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
+  {
+    hash: 'demo-max-delivery-count-exceeded',
+    dominantDeadletterReason: 'MaxDeliveryCountExceeded',
+    topTerms: ['inventory-service', 'timeout', 'max-delivery-count'],
+    explanation:
+      'Messages exceeded the maximum delivery count without being completed — the consumer repeatedly abandons them.',
+    size: 42,
+    isNew: false,
+    daysSinceFirstSeen: 18,
+    status: 'Resolved',
+    trend: 'Recurring',
+    knowledge: {
+      rootCause:
+        'Downstream inventory service times out under load, causing the consumer to abandon the message repeatedly until MaxDeliveryCount is exceeded.',
+      resolutionNotes:
+        'Increased consumer visibility timeout and added exponential backoff; downstream inventory service was also scaled out.',
+      operationalNotes: 'Recurs during flash-sale traffic spikes — watch during planned promotions.',
+      runbookLink: 'https://wiki.example.com/runbooks/max-delivery-count',
+      owner: 'platform-team@example.com',
+      replayGuidance: 'Safe',
+      lastUpdatedAt: new Date(Date.now() - 3 * DAY_MS).toISOString(),
+      knowledgeVersion: 3,
+      reviewDueAt: new Date(Date.now() + 30 * DAY_MS).toISOString(),
+      tags: 'delivery,timeout,inventory',
+      updatedBy: 'alice@example.com',
+      isReviewOverdue: false,
+    },
+  },
+  {
+    hash: 'demo-poison-message',
+    dominantDeadletterReason: 'PoisonMessage',
+    topTerms: ['order-payload', 'schema-violation', 'sku'],
+    explanation: 'A single malformed message crashes the consumer on every delivery attempt.',
+    size: 7,
+    isNew: false,
+    daysSinceFirstSeen: 9,
+    status: 'Reopened',
+    trend: 'Escalating',
+    knowledge: {
+      rootCause: 'A malformed order payload (missing required `sku` field) crashes the consumer on every delivery attempt.',
+      resolutionNotes: 'Added schema validation at the producer boundary; the malformed payload was manually purged.',
+      operationalNotes: 'Reopened — a second, similarly malformed payload was seen from a different producer.',
+      runbookLink: 'https://wiki.example.com/runbooks/poison-message',
+      owner: 'checkout-team@example.com',
+      replayGuidance: 'Unsafe',
+      lastUpdatedAt: new Date(Date.now() - 1 * DAY_MS).toISOString(),
+      knowledgeVersion: 2,
+      reviewDueAt: new Date(Date.now() - 5 * DAY_MS).toISOString(),
+      tags: 'poison,schema,validation',
+      updatedBy: 'bob@example.com',
+      isReviewOverdue: true,
+    },
+  },
+  {
+    hash: 'demo-deserialization-failure',
+    dominantDeadletterReason: 'DeserializationError',
+    topTerms: ['schema-version', 'json', 'consumer-mismatch'],
+    explanation: 'The producer emitted a message shape the consumer cannot deserialize.',
+    size: 15,
+    isNew: true,
+    daysSinceFirstSeen: 1,
+    status: 'Active',
+    trend: 'New',
+    knowledge: {
+      rootCause:
+        'Producer upgraded to a new message schema version without a compatible consumer deployed, so JSON deserialization throws on the new field shape.',
+      resolutionNotes: null,
+      operationalNotes: 'Under investigation — coordinating a compatible consumer rollout with the producer team.',
+      runbookLink: null,
+      owner: 'data-platform@example.com',
+      replayGuidance: 'Investigate',
+      lastUpdatedAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+      knowledgeVersion: 1,
+      reviewDueAt: null,
+      tags: 'schema,deserialization',
+      updatedBy: null,
+      isReviewOverdue: false,
+    },
+  },
+  {
+    hash: 'demo-authentication-failure',
+    dominantDeadletterReason: 'AuthenticationFailure',
+    topTerms: ['managed-identity', 'unauthorized', 'role-assignment'],
+    explanation: "The consumer's identity was rejected by a downstream dependency on every call.",
+    size: 63,
+    isNew: false,
+    daysSinceFirstSeen: 41,
+    status: 'Resolved',
+    trend: 'Recurring',
+    knowledge: {
+      rootCause:
+        "Consumer's managed identity role assignment was revoked during a permissions audit, causing every downstream call to fail with 401.",
+      resolutionNotes: 'Role assignment restored; added an alert on identity permission changes for this app.',
+      operationalNotes: 'Caused a full processing outage for ~40 minutes.',
+      runbookLink: 'https://wiki.example.com/runbooks/auth-failure',
+      owner: 'security-team@example.com',
+      replayGuidance: 'Safe',
+      lastUpdatedAt: new Date(Date.now() - 20 * DAY_MS).toISOString(),
+      knowledgeVersion: 2,
+      reviewDueAt: new Date(Date.now() + 14 * DAY_MS).toISOString(),
+      tags: 'auth,identity,security',
+      updatedBy: 'security-team@example.com',
+      isReviewOverdue: false,
+    },
+  },
+  {
+    hash: 'demo-duplicate-detection',
+    dominantDeadletterReason: 'DuplicateMessage',
+    topTerms: ['retry', 'duplicate-window', 'idempotency'],
+    explanation: 'Retried messages are arriving faster than the duplicate-detection window allows.',
+    size: 28,
+    isNew: false,
+    daysSinceFirstSeen: 25,
+    status: 'Suppressed',
+    trend: 'Recurring',
+    knowledge: {
+      rootCause:
+        'Producer retry logic re-sends the same message on ambiguous network timeouts, and the duplicate-detection window was shorter than the retry interval.',
+      resolutionNotes: 'Extended the duplicate-detection window from 10 minutes to 1 hour.',
+      operationalNotes: 'Known noisy signature — suppressed rather than resolved since occasional duplicates are expected and harmless.',
+      runbookLink: 'https://wiki.example.com/runbooks/duplicate-detection',
+      owner: 'platform-team@example.com',
+      replayGuidance: 'Safe',
+      lastUpdatedAt: new Date(Date.now() - 10 * DAY_MS).toISOString(),
+      knowledgeVersion: 2,
+      reviewDueAt: new Date(Date.now() + 60 * DAY_MS).toISOString(),
+      tags: 'duplicate,idempotency,retry',
+      updatedBy: 'alice@example.com',
+      isReviewOverdue: false,
+    },
+  },
+];
+
+function buildDemoCluster(def: DemoSignatureDefinition): DlqClusterSignature {
+  const firstSeenAt = new Date(Date.now() - def.daysSinceFirstSeen * DAY_MS);
+  const windowEnd = new Date();
+  return {
+    size: def.size,
+    messageIds: Array.from({ length: Math.min(def.size, 5) }, (_, i) => 900000 + i),
+    dominantEntity: 'orders-processing',
+    dominantDeadletterReason: def.dominantDeadletterReason,
+    dominantDeadletterReasonCount: def.size,
+    topTerms: def.topTerms,
+    isNew: def.isNew,
+    firstSeenAt: firstSeenAt.toISOString(),
+    occurrenceCount: def.size,
+    windowStart: firstSeenAt.toISOString(),
+    windowEnd: windowEnd.toISOString(),
+    explanation: def.explanation,
+    knowledge: def.knowledge,
+    signatureHash: def.hash,
+    status: def.status,
+    trend: def.trend,
+  };
+}
+
+let demoClusterCache: DlqClusterSignature[] | null = null;
+
+function getDemoClusters(): DlqClusterSignature[] {
+  if (!demoClusterCache) {
+    demoClusterCache = DEMO_SIGNATURE_DEFS.map(buildDemoCluster);
+  }
+  return demoClusterCache;
+}
+
+/**
+ * Get a namespace's mock DLQ failure signatures. Identical curated set across
+ * providers — read-only, matching the rest of Demo Mode.
+ */
+export function getMockDlqSignatures(_provider: CloudProviderType): DlqSignaturesResponse {
+  return {
+    available: true,
+    method: 'demo',
+    batchSize: 200,
+    clusters: getDemoClusters(),
+    singletons: [],
+  };
+}
+
+/**
+ * Get full mock detail for a single demo failure signature, or undefined if the
+ * hash doesn't match one of the curated demo signatures.
+ */
+export function getMockDlqSignatureDetail(
+  provider: CloudProviderType,
+  signatureHash: string,
+): DlqSignatureDetail | undefined {
+  const cluster = getDemoClusters().find((c) => c.signatureHash === signatureHash);
+  if (!cluster) return undefined;
+
+  return {
+    ...cluster,
+    namespaceId: DEMO_NAMESPACE_IDS[provider],
+    confidence: 'High',
+    isCurrentlyClustered: true,
+    relatedMessages: [],
+  };
+}
+
+/**
+ * Get a mock lifecycle timeline for a demo failure signature, or undefined if the
+ * hash doesn't match one of the curated demo signatures.
+ */
+export function getMockSignatureTimeline(signatureHash: string): SignatureTimelineResponse | undefined {
+  const cluster = getDemoClusters().find((c) => c.signatureHash === signatureHash);
+  if (!cluster) return undefined;
+
+  const events: DlqTimelineEvent[] = [
+    {
+      eventType: 'SignatureFirstObserved',
+      description: 'Signature first observed in this namespace\'s DLQ',
+      timestamp: cluster.firstSeenAt,
+      details: null,
+    },
+  ];
+
+  if (cluster.knowledge?.lastUpdatedAt) {
+    events.push({
+      eventType: 'KnowledgeRecorded',
+      description: 'Operational knowledge recorded for this signature',
+      timestamp: cluster.knowledge.lastUpdatedAt,
+      details: null,
+    });
+  }
+
+  if (cluster.status !== 'Active') {
+    events.push({
+      eventType: 'StatusChanged',
+      description: `Status changed to ${cluster.status}`,
+      timestamp: cluster.windowEnd,
+      details: { From: 'Active', To: cluster.status, Notes: '' },
+    });
+  }
+
+  return {
+    signatureHash,
+    events: events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()),
   };
 }

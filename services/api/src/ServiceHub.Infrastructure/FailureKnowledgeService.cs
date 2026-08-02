@@ -64,9 +64,11 @@ public sealed class FailureKnowledgeService : IFailureKnowledgeService
                 cancellationToken)
             .ConfigureAwait(false);
 
+        var now = DateTimeOffset.UtcNow;
+
         if (entity == null)
         {
-            // Create new
+            // Create new — nothing prior exists, so no history snapshot to take.
             entity = new FailureKnowledgeEntity
             {
                 NamespaceId = namespaceId,
@@ -78,16 +80,36 @@ public sealed class FailureKnowledgeService : IFailureKnowledgeService
                 RunbookLink = knowledge.RunbookLink,
                 Owner = knowledge.Owner,
                 ReplayGuidance = knowledge.ReplayGuidance,
-                LastUpdatedAt = DateTimeOffset.UtcNow,
+                LastUpdatedAt = now,
                 KnowledgeVersion = knowledge.KnowledgeVersion,
                 ReviewDueAt = knowledge.ReviewDueAt,
                 Tags = knowledge.Tags,
+                UpdatedBy = knowledge.UpdatedBy,
             };
 
             _dbContext.FailureKnowledgeEntities.Add(entity);
         }
         else
         {
+            // Snapshot the pre-update state before overwriting it, so it remains retrievable.
+            _dbContext.FailureKnowledgeHistoryEntities.Add(new FailureKnowledgeHistoryEntity
+            {
+                NamespaceId = entity.NamespaceId,
+                OwnerId = entity.OwnerId,
+                SignatureHash = entity.SignatureHash,
+                KnowledgeVersion = entity.KnowledgeVersion,
+                RootCause = entity.RootCause,
+                ResolutionNotes = entity.ResolutionNotes,
+                OperationalNotes = entity.OperationalNotes,
+                RunbookLink = entity.RunbookLink,
+                Owner = entity.Owner,
+                ReplayGuidance = entity.ReplayGuidance,
+                Tags = entity.Tags,
+                ReviewDueAt = entity.ReviewDueAt,
+                UpdatedBy = entity.UpdatedBy,
+                UpdatedAt = entity.LastUpdatedAt ?? entity.CreatedAt,
+            });
+
             // Update existing
             entity.RootCause = knowledge.RootCause;
             entity.ResolutionNotes = knowledge.ResolutionNotes;
@@ -95,10 +117,11 @@ public sealed class FailureKnowledgeService : IFailureKnowledgeService
             entity.RunbookLink = knowledge.RunbookLink;
             entity.Owner = knowledge.Owner;
             entity.ReplayGuidance = knowledge.ReplayGuidance;
-            entity.LastUpdatedAt = DateTimeOffset.UtcNow;
-            entity.KnowledgeVersion = knowledge.KnowledgeVersion + 1;
+            entity.LastUpdatedAt = now;
+            entity.KnowledgeVersion = entity.KnowledgeVersion + 1;
             entity.ReviewDueAt = knowledge.ReviewDueAt;
             entity.Tags = knowledge.Tags;
+            entity.UpdatedBy = knowledge.UpdatedBy;
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -113,7 +136,8 @@ public sealed class FailureKnowledgeService : IFailureKnowledgeService
             LastUpdatedAt: entity.LastUpdatedAt,
             KnowledgeVersion: entity.KnowledgeVersion,
             ReviewDueAt: entity.ReviewDueAt,
-            Tags: entity.Tags);
+            Tags: entity.Tags,
+            UpdatedBy: entity.UpdatedBy);
 
         return Result.Success(result);
     }
@@ -158,7 +182,8 @@ public sealed class FailureKnowledgeService : IFailureKnowledgeService
                     LastUpdatedAt: entity.LastUpdatedAt,
                     KnowledgeVersion: entity.KnowledgeVersion,
                     ReviewDueAt: entity.ReviewDueAt,
-                    Tags: entity.Tags);
+                    Tags: entity.Tags,
+                    UpdatedBy: entity.UpdatedBy);
             }
             else
             {
@@ -228,8 +253,39 @@ public sealed class FailureKnowledgeService : IFailureKnowledgeService
             LastUpdatedAt: entity.LastUpdatedAt,
             KnowledgeVersion: entity.KnowledgeVersion,
             ReviewDueAt: entity.ReviewDueAt,
-            Tags: entity.Tags);
+            Tags: entity.Tags,
+            UpdatedBy: entity.UpdatedBy);
 
         return Result.Success(result);
+    }
+
+    public async Task<Result<IReadOnlyList<FailureKnowledgeHistoryEntry>>> GetKnowledgeHistoryAsync(
+        string ownerId,
+        Guid namespaceId,
+        string signatureHash,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(ownerId);
+        ArgumentNullException.ThrowIfNull(signatureHash);
+
+        var entries = await _dbContext.FailureKnowledgeHistoryEntities
+            .Where(e => e.OwnerId == ownerId && e.NamespaceId == namespaceId && e.SignatureHash == signatureHash)
+            .OrderByDescending(e => e.KnowledgeVersion)
+            .Select(e => new FailureKnowledgeHistoryEntry(
+                KnowledgeVersion: e.KnowledgeVersion,
+                RootCause: e.RootCause,
+                ResolutionNotes: e.ResolutionNotes,
+                OperationalNotes: e.OperationalNotes,
+                RunbookLink: e.RunbookLink,
+                Owner: e.Owner,
+                ReplayGuidance: e.ReplayGuidance,
+                Tags: e.Tags,
+                ReviewDueAt: e.ReviewDueAt,
+                UpdatedBy: e.UpdatedBy,
+                UpdatedAt: e.UpdatedAt))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return Result.Success<IReadOnlyList<FailureKnowledgeHistoryEntry>>(entries);
     }
 }

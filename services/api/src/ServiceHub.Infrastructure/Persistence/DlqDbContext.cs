@@ -41,6 +41,9 @@ public sealed class DlqDbContext : DbContext
     /// <summary>Operational knowledge associated with FailureSignatures.</summary>
     public DbSet<FailureKnowledgeEntity> FailureKnowledgeEntities => Set<FailureKnowledgeEntity>();
 
+    /// <summary>Prior versions of operational knowledge, snapshotted before each edit.</summary>
+    public DbSet<FailureKnowledgeHistoryEntity> FailureKnowledgeHistoryEntities => Set<FailureKnowledgeHistoryEntity>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -56,6 +59,7 @@ public sealed class DlqDbContext : DbContext
         ConfigureMessageFeatureRecord(modelBuilder);
         ConfigureNamespaceSignature(modelBuilder);
         ConfigureFailureKnowledge(modelBuilder);
+        ConfigureFailureKnowledgeHistory(modelBuilder);
     }
 
     private static void ApplyUtcDateTimeConverters(ModelBuilder modelBuilder)
@@ -546,6 +550,9 @@ public sealed class DlqDbContext : DbContext
         entity.Property(e => e.Tags)
             .HasMaxLength(2048);
 
+        entity.Property(e => e.UpdatedBy)
+            .HasMaxLength(256);
+
         // One row per signature per namespace per owner
         entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.SignatureHash })
             .IsUnique()
@@ -558,5 +565,52 @@ public sealed class DlqDbContext : DbContext
         // Find overdue knowledge reviews
         entity.HasIndex(e => new { e.ReviewDueAt })
             .HasDatabaseName("IX_FailureKnowledge_ReviewDueAt");
+    }
+
+    private static void ConfigureFailureKnowledgeHistory(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<FailureKnowledgeHistoryEntity>();
+
+        entity.ToTable("FailureKnowledgeHistory");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.Id)
+            .ValueGeneratedOnAdd();
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.SignatureHash)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        entity.Property(e => e.RootCause)
+            .HasMaxLength(4096);
+
+        entity.Property(e => e.ResolutionNotes)
+            .HasMaxLength(4096);
+
+        entity.Property(e => e.OperationalNotes)
+            .HasMaxLength(4096);
+
+        entity.Property(e => e.RunbookLink)
+            .HasMaxLength(1024);
+
+        entity.Property(e => e.Owner)
+            .HasMaxLength(256);
+
+        entity.Property(e => e.ReplayGuidance)
+            .HasMaxLength(32);
+
+        entity.Property(e => e.Tags)
+            .HasMaxLength(2048);
+
+        entity.Property(e => e.UpdatedBy)
+            .HasMaxLength(256);
+
+        // Version history lookups, ordered by version, per signature.
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.SignatureHash, e.KnowledgeVersion })
+            .HasDatabaseName("IX_FailureKnowledgeHistory_Owner_Namespace_SignatureHash_Version");
     }
 }

@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
 using ServiceHub.Api.Controllers.V1;
+using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
@@ -798,5 +799,121 @@ public class DlqHistoryControllerTests
             nsId, hash, new UpdateSignatureStatusRequest(SignatureLifecycleStatus.Active));
 
         result.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    // ── UpsertKnowledge ────────────────────────────────
+
+    [Fact]
+    public async Task UpsertKnowledge_ValidRequest_ReturnsOkAndInvalidatesCache()
+    {
+        var nsId = Guid.NewGuid();
+        const string hash = "knowledge-hash";
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureAnalysisService.Setup(s => s.AnalyzeAsync(It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSignatureAnalysisResult>.Success(CreateAvailableAnalysis()));
+
+        var persisted = new FailureKnowledge(
+            RootCause: "Timeout", ResolutionNotes: null, OperationalNotes: null, RunbookLink: null,
+            Owner: null, ReplayGuidance: null, LastUpdatedAt: DateTimeOffset.UtcNow, KnowledgeVersion: 1,
+            ReviewDueAt: null, Tags: null, UpdatedBy: "alice@example.com");
+        _knowledgeService.Setup(s => s.UpsertKnowledgeAsync(
+                It.IsAny<string>(), nsId, hash, It.IsAny<FailureKnowledge>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<FailureKnowledge>.Success(persisted));
+
+        // Warm the 60s cache, then confirm the upsert busts it.
+        await _controller.GetSignatures(nsId);
+
+        var request = new UpsertKnowledgeRequest { RootCause = "Timeout", ChangedBy = "alice@example.com" };
+        var result = await _controller.UpsertKnowledge(nsId, hash, request);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<KnowledgeResponse>().Subject;
+        response.RootCause.Should().Be("Timeout");
+        response.UpdatedBy.Should().Be("alice@example.com");
+
+        await _controller.GetSignatures(nsId);
+        _signatureAnalysisService.Verify(s => s.AnalyzeAsync(
+            It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task UpsertKnowledge_NamespaceNotOwned_ReturnsNotFound()
+    {
+        var nsId = Guid.NewGuid();
+        const string hash = "knowledge-hash";
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("NOT_FOUND", "Namespace not found")));
+
+        var request = new UpsertKnowledgeRequest { RootCause = "Timeout" };
+        var result = await _controller.UpsertKnowledge(nsId, hash, request);
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    // ── GetKnowledgeHistory ────────────────────────────────
+
+    [Fact]
+    public async Task GetKnowledgeHistory_ReturnsEntriesFromService()
+    {
+        var nsId = Guid.NewGuid();
+        const string hash = "knowledge-hash";
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+
+        var entries = new List<FailureKnowledgeHistoryEntry>
+        {
+            new(KnowledgeVersion: 2, RootCause: "v2", ResolutionNotes: null, OperationalNotes: null,
+                RunbookLink: null, Owner: null, ReplayGuidance: null, Tags: null, ReviewDueAt: null,
+                UpdatedBy: "bob@example.com", UpdatedAt: DateTimeOffset.UtcNow),
+            new(KnowledgeVersion: 1, RootCause: "v1", ResolutionNotes: null, OperationalNotes: null,
+                RunbookLink: null, Owner: null, ReplayGuidance: null, Tags: null, ReviewDueAt: null,
+                UpdatedBy: "alice@example.com", UpdatedAt: DateTimeOffset.UtcNow.AddDays(-1)),
+        };
+        _knowledgeService.Setup(s => s.GetKnowledgeHistoryAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<FailureKnowledgeHistoryEntry>>.Success(entries));
+
+        var result = await _controller.GetKnowledgeHistory(nsId, hash);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeAssignableTo<IReadOnlyList<FailureKnowledgeHistoryResponse>>().Subject;
+        response.Should().HaveCount(2);
+        response[0].KnowledgeVersion.Should().Be(2);
+        response[0].UpdatedBy.Should().Be("bob@example.com");
+        response[1].KnowledgeVersion.Should().Be(1);
+    }
+
+    // ── MarkKnowledgeForReview ────────────────────────────────
+
+    [Fact]
+    public async Task MarkKnowledgeForReview_ValidRequest_ReturnsOkAndInvalidatesCache()
+    {
+        var nsId = Guid.NewGuid();
+        const string hash = "knowledge-hash";
+        var reviewDueAt = DateTimeOffset.UtcNow.AddDays(7);
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureAnalysisService.Setup(s => s.AnalyzeAsync(It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSignatureAnalysisResult>.Success(CreateAvailableAnalysis()));
+
+        var persisted = new FailureKnowledge(
+            RootCause: null, ResolutionNotes: null, OperationalNotes: null, RunbookLink: null,
+            Owner: null, ReplayGuidance: null, LastUpdatedAt: DateTimeOffset.UtcNow, KnowledgeVersion: 1,
+            ReviewDueAt: reviewDueAt, Tags: null);
+        _knowledgeService.Setup(s => s.MarkForReviewAsync(
+                It.IsAny<string>(), nsId, hash, reviewDueAt, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<FailureKnowledge>.Success(persisted));
+
+        await _controller.GetSignatures(nsId);
+
+        var result = await _controller.MarkKnowledgeForReview(nsId, hash, new MarkForReviewRequest(reviewDueAt));
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<KnowledgeResponse>().Subject;
+        response.ReviewDueAt.Should().Be(reviewDueAt);
+
+        await _controller.GetSignatures(nsId);
+        _signatureAnalysisService.Verify(s => s.AnalyzeAsync(
+            It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 }
