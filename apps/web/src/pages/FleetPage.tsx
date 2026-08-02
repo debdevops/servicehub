@@ -213,8 +213,14 @@ export default function FleetPage() {
       <ConnectivityStrip />
 
       {isError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm">
-          Failed to load the fleet overview. Please try again.
+        <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm">
+          <span>Failed to load the fleet overview.</span>
+          <button
+            onClick={() => refetch()}
+            className="shrink-0 px-3 py-1.5 text-xs font-medium text-red-700 bg-white border border-red-300 rounded-lg hover:bg-red-100 transition-colors focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1"
+          >
+            Try Again
+          </button>
         </div>
       )}
 

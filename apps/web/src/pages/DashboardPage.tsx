@@ -241,6 +241,7 @@ function HealthScoreBadge({ totalActive, totalDlq }: { totalActive: number; tota
     <div
       className={`flex flex-col items-center px-2 py-1 rounded-lg border ${bgClass} ${borderClass}`}
       title={`DLQ ratio: ${dlqPct}% | ${totalDlq} DLQ of ${total} total messages`}
+      aria-label={`Health grade ${grade}. DLQ ratio: ${dlqPct}% — ${totalDlq} dead-lettered of ${total} total messages`}
     >
       <span className={`text-2xl font-bold leading-none ${textClass}`}>{grade}</span>
       <span className={`text-[10px] font-medium ${textClass}`}>Health</span>

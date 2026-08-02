@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Shield,
@@ -139,6 +139,7 @@ function AuditDetailDrawer({
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+            aria-label="Close details"
           >
             <X className="w-4 h-4" />
           </button>
@@ -263,8 +264,30 @@ export function AuditPage() {
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<AuditLogItem | null>(null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
   const pageSize = 50;
+
+  // Close the export menu on outside click or Escape — it used to be CSS
+  // hover-only, which made it unreachable for keyboard/touch users.
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowExportMenu(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [showExportMenu]);
 
   // ─── Derive time range from preset ──────────────────────────────────
   const { from, to } = useMemo(() => {
@@ -348,27 +371,34 @@ export function AuditPage() {
           </div>
           <div className="flex items-center gap-2">
             {/* Export dropdown */}
-            <div className="relative group">
+            <div className="relative" ref={exportMenuRef}>
               <button
+                onClick={() => setShowExportMenu(v => !v)}
+                aria-haspopup="menu"
+                aria-expanded={showExportMenu}
                 className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
               >
                 <Download className="w-4 h-4" />
                 Export
               </button>
-              <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-200 rounded-lg shadow-lg z-10 hidden group-hover:block">
-                <button
-                  onClick={() => handleExport('csv')}
-                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-t-lg"
-                >
-                  Export as CSV
-                </button>
-                <button
-                  onClick={() => handleExport('json')}
-                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-b-lg"
-                >
-                  Export as JSON
-                </button>
-              </div>
+              {showExportMenu && (
+                <div role="menu" className="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                  <button
+                    role="menuitem"
+                    onClick={() => { handleExport('csv'); setShowExportMenu(false); }}
+                    className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-t-lg"
+                  >
+                    Export as CSV
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => { handleExport('json'); setShowExportMenu(false); }}
+                    className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-b-lg"
+                  >
+                    Export as JSON
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Filter toggle */}

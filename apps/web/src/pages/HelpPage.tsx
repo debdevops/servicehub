@@ -200,6 +200,7 @@ export function HelpPage() {
                 {/* Section header */}
                 <button
                   onClick={() => toggleSection(section.id)}
+                  aria-expanded={isExpanded}
                   className="w-full flex items-center gap-4 px-6 py-4 text-left hover:bg-gradient-to-r hover:from-blue-50 hover:to-transparent transition-colors"
                 >
                   <span className="text-2xl">{section.icon}</span>

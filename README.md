@@ -6,6 +6,7 @@
 
 ![ServiceHub Banner](docs/screenshots/servicehub-banner.png)
 
+[![CI](https://github.com/debdevops/servicehub/actions/workflows/servicehub.yml/badge.svg)](https://github.com/debdevops/servicehub/actions/workflows/servicehub.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10-purple.svg)](https://dotnet.microsoft.com/)
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
@@ -438,9 +439,9 @@ For deep backend developer guidelines, refer to the [API README](services/api/RE
 
 ServiceHub is built depth-first: make one workflow excellent before adding the next surface.
 
-- **Now (MVP)** — the forensic core across Azure (GA) and AWS/GCP (preview): explore, search, DLQ investigation, replay, purge, send, auto-replay rules, live updates. Also shipped: bulk replay/purge with dry-run preview, a fleet dashboard across namespaces, Slack/Teams-native alerts (DLQ spikes, bulk operation completion), and Live Tail (real-time "tail -f" for a queue/subscription, Azure and GCP).
-- **Next** — operational habit: DLQ triage inbox.
-- **Later** — team & governance: SSO, role-based access, approval workflows for destructive operations, audit export.
+- **Now (MVP)** — the forensic core across Azure (GA) and AWS/GCP (preview): explore, search, DLQ investigation, replay, purge, send, auto-replay rules, live updates. Also shipped: bulk replay/purge with dry-run preview, a fleet dashboard across namespaces, Slack/Teams-native alerts (DLQ spikes, bulk operation completion), Live Tail (real-time "tail -f" for a queue/subscription, Azure and GCP), a DLQ triage inbox, OIDC SSO (bring your own standards-compliant identity provider), role-based access via API key/OIDC scopes (Viewer/Operator/Auditor), and an exportable per-owner audit trail.
+- **Next** — Failure Signature Intelligence: clustering dead-letter messages into named, recurring failure patterns instead of one-off incidents.
+- **Later** — team & governance: approval workflows for destructive operations, extending namespace sharing to cover shared DLQ history and audit visibility (not just live namespace access).
 
 Have a use-case that should shape this? [Open a feature request](https://github.com/debdevops/servicehub/issues/new) — describe the problem, not just the solution.
 

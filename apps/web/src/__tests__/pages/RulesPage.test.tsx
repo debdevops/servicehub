@@ -239,8 +239,7 @@ describe('RulesPage', () => {
   it('opens RuleBuilderDialog when Edit button is clicked', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><RulesPage /></Wrapper>);
-    fireEvent.click(screen.getAllByRole('button', { name: '' })[0]);
-    // Edit button click — look for the pencil-icon delete or edit button
+    fireEvent.click(screen.getAllByRole('button', { name: /^Edit$/ })[0]);
   });
 
   it('shows ReplayAllConfirmDialog when Replay All is clicked on enabled rule', () => {

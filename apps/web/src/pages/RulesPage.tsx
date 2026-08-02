@@ -354,6 +354,7 @@ function RuleCard({
           onClick={onToggle}
           className="shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
           title={rule.enabled ? 'Disable rule' : 'Enable rule'}
+          aria-label={rule.enabled ? 'Disable rule' : 'Enable rule'}
         >
           {rule.enabled ? (
             <ToggleRight className="w-5 h-5 text-green-500" />
@@ -470,6 +471,8 @@ function RuleCard({
         <button
           onClick={onDelete}
           className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-red-500 border border-gray-200 rounded-lg hover:bg-red-50 hover:border-red-200 transition-colors ml-auto focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1"
+          title="Delete rule"
+          aria-label="Delete rule"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
@@ -578,7 +581,7 @@ function ReplayAllConfirmDialog({
             </div>
           </div>
           {!isExecuting && (
-            <button onClick={onCancel} className="p-1 hover:bg-red-100 rounded-lg transition-colors">
+            <button onClick={onCancel} className="p-1 hover:bg-red-100 rounded-lg transition-colors" aria-label="Close dialog">
               <X className="w-5 h-5 text-gray-500" />
             </button>
           )}
