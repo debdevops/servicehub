@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type React from 'react';
@@ -27,6 +27,15 @@ vi.mock('@/components/dlq', () => ({
   SignatureTimelinePanel: ({ events }: { events: unknown[] }) => <div data-testid="timeline-panel">{events.length} events</div>,
   DlqTimelineDrawer: ({ messageId }: { messageId: number | null }) =>
     messageId ? <div data-testid="timeline-drawer">Timeline {messageId}</div> : null,
+  SignatureReplayPreviewModal: ({ onClose, onJobStarted }: { onClose: () => void; onJobStarted: (jobId: string) => void }) => (
+    <div data-testid="replay-preview-modal">
+      <button onClick={onClose}>Close preview</button>
+      <button onClick={() => onJobStarted('job-123')}>Confirm replay</button>
+    </div>
+  ),
+  SignatureReplayProgressPanel: ({ jobId }: { jobId: string }) => (
+    <div data-testid="replay-progress-panel">Progress for {jobId}</div>
+  ),
 }));
 
 import {
@@ -154,5 +163,37 @@ describe('SignatureDetailsPage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><SignatureDetailsPage /></Wrapper>);
     expect(screen.getByText('No — historical record')).toBeInTheDocument();
+  });
+
+  describe('Replay Signature', () => {
+    it('is enabled when the signature is currently clustered with related messages', () => {
+      const Wrapper = createWrapper();
+      render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+      expect(screen.getByRole('button', { name: /Replay Signature/ })).toBeEnabled();
+    });
+
+    it('is disabled when the signature is not currently clustered', () => {
+      mockUseDlqSignatureDetail.mockReturnValue({
+        data: { ...mockDetail, isCurrentlyClustered: false, relatedMessages: [] },
+        isLoading: false,
+      });
+      const Wrapper = createWrapper();
+      render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+      expect(screen.getByRole('button', { name: /Replay Signature/ })).toBeDisabled();
+    });
+
+    it('opens the preview modal on click, then shows the progress panel once a job starts', () => {
+      const Wrapper = createWrapper();
+      render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+
+      expect(screen.queryByTestId('replay-preview-modal')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: /Replay Signature/ }));
+      expect(screen.getByTestId('replay-preview-modal')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('Confirm replay'));
+      expect(screen.queryByTestId('replay-preview-modal')).not.toBeInTheDocument();
+      expect(screen.getByTestId('replay-progress-panel')).toHaveTextContent('Progress for job-123');
+    });
   });
 });

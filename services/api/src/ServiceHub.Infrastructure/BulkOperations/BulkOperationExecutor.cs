@@ -246,9 +246,11 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
     /// Reconstructs the queue/subscription pair a live replay/purge call needs from the
     /// persisted <see cref="DlqMessage"/>'s combined <c>EntityName</c> + <c>TopicName</c> —
     /// mirroring the same convention <c>DlqMonitorService.ParseEntity</c> used to store it and
-    /// <c>RulesController.ReplayAll</c> used to reconstruct it.
+    /// <c>RulesController.ReplayAll</c> used to reconstruct it. Internal (not private) so
+    /// <see cref="SignatureReplay.SignatureReplayExecutor"/> can reuse it instead of duplicating
+    /// this parsing.
     /// </summary>
-    private static (string EntityName, string? SubscriptionName) ResolveEntityAndSubscription(DlqMessage message)
+    internal static (string EntityName, string? SubscriptionName) ResolveEntityAndSubscription(DlqMessage message)
     {
         if (message.EntityType != ServiceBusEntityType.Subscription || message.TopicName is null)
             return (message.EntityName, null);

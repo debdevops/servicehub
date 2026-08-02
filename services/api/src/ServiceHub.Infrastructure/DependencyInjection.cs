@@ -280,6 +280,13 @@ public static class DependencyInjection
         services.TryAddScoped<IBulkOperationService, BulkOperationService>();
         services.TryAddScoped<IBulkOperationExecutor, BulkOperationExecutor>();
 
+        // Signature Replay — no persisted job row (a failure signature's member messages aren't
+        // durable anywhere to begin with), so the job store is an in-memory singleton like
+        // ISignatureLifecycleService, not a queue/worker pair backed by DlqDbContext.
+        services.TryAddSingleton<ISignatureReplayJobStore, SignatureReplay.SignatureReplayJobStore>();
+        services.TryAddScoped<ISignatureReplayService, SignatureReplay.SignatureReplayService>();
+        services.TryAddScoped<ISignatureReplayExecutor, SignatureReplay.SignatureReplayExecutor>();
+
         return services;
     }
 

@@ -18,6 +18,7 @@ public static class IntentHeaders
     public const string IntentReplayAllRules = "rules:replay-all";
     public const string IntentBulkReplay = "bulk:replay";
     public const string IntentBulkPurge = "bulk:purge";
+    public const string IntentSignatureReplay = "signature:replay";
     public const string IntentPurgeAuditLogs = "audit:purge";
 
     /// <summary>

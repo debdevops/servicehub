@@ -296,6 +296,16 @@ public static class ApiRoutes
         public const string SignatureStatus = $"{SignatureById}/status";
 
         /// <summary>
+        /// Route for dry-running a replay of a failure signature's member messages.
+        /// </summary>
+        public const string SignatureReplayPreview = $"{SignatureById}/replay/preview";
+
+        /// <summary>
+        /// Route for starting a replay of a failure signature's member messages.
+        /// </summary>
+        public const string SignatureReplay = $"{SignatureById}/replay";
+
+        /// <summary>
         /// Routes for auto-replay rule operations.
         /// </summary>
         public static class Rules
@@ -318,6 +328,23 @@ public static class ApiRoutes
             /// <summary>Route for rule execution statistics.</summary>
             public const string Stats = $"{Base}/{{id:long}}/stats";
         }
+    }
+
+    /// <summary>
+    /// Routes for polling/cancelling an in-flight signature-replay job. Not namespace-scoped
+    /// (like <see cref="Dlq.SignatureReplay"/>) — a job ID is already owner-scoped, matching the
+    /// shape of the bulk-operations job routes.
+    /// </summary>
+    public static class SignatureReplayJobs
+    {
+        /// <summary>Base route for signature-replay job operations.</summary>
+        public const string Base = $"{VersionedBase}/signature-replay-jobs";
+
+        /// <summary>Route for a specific signature-replay job by ID.</summary>
+        public const string ById = $"{Base}/{{id:guid}}";
+
+        /// <summary>Route for cancelling a signature-replay job.</summary>
+        public const string Cancel = $"{ById}/cancel";
     }
 
     /// <summary>Routes for the cross-namespace fleet operations overview.</summary>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, RefreshCw } from 'lucide-react';
 import {
   useDlqSignatureDetail,
   useSignatureTimeline,
@@ -19,6 +19,8 @@ import {
   SignatureLifecycleActions,
   SignatureTimelinePanel,
   DlqTimelineDrawer,
+  SignatureReplayPreviewModal,
+  SignatureReplayProgressPanel,
 } from '@/components/dlq';
 
 function formatDate(ts: string): string {
@@ -44,6 +46,8 @@ export function SignatureDetailsPage() {
   const { data: timeline, isLoading: timelineLoading } = useSignatureTimeline(namespaceId, signatureHash);
 
   const [selectedMessageId, setSelectedMessageId] = useState<number | null>(null);
+  const [showReplayPreview, setShowReplayPreview] = useState(false);
+  const [replayJobId, setReplayJobId] = useState<string | null>(null);
 
   const resolve = useResolveSignature();
   const reopen = useReopenSignature();
@@ -133,14 +137,29 @@ export function SignatureDetailsPage() {
               )}
             </div>
 
-            <SignatureLifecycleActions
-              status={detail.status}
-              onResolve={() => mutate(resolve)}
-              onReopen={() => mutate(reopen)}
-              onSuppress={() => mutate(suppress)}
-              onArchive={() => mutate(archive)}
-              pending={anyPending}
-            />
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <SignatureLifecycleActions
+                status={detail.status}
+                onResolve={() => mutate(resolve)}
+                onReopen={() => mutate(reopen)}
+                onSuppress={() => mutate(suppress)}
+                onArchive={() => mutate(archive)}
+                pending={anyPending}
+              />
+              <button
+                onClick={() => setShowReplayPreview(true)}
+                disabled={!detail.isCurrentlyClustered || detail.relatedMessages.length === 0}
+                title={
+                  !detail.isCurrentlyClustered || detail.relatedMessages.length === 0
+                    ? 'No currently resolvable messages for this signature'
+                    : undefined
+                }
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Replay Signature
+              </button>
+            </div>
           </div>
 
           {/* Knowledge */}
@@ -186,6 +205,27 @@ export function SignatureDetailsPage() {
           </div>
 
           <DlqTimelineDrawer messageId={selectedMessageId} onClose={() => setSelectedMessageId(null)} />
+
+          {showReplayPreview && (
+            <SignatureReplayPreviewModal
+              namespaceId={namespaceId}
+              signatureHash={signatureHash}
+              onClose={() => setShowReplayPreview(false)}
+              onJobStarted={(jobId) => {
+                setShowReplayPreview(false);
+                setReplayJobId(jobId);
+              }}
+            />
+          )}
+
+          {replayJobId && (
+            <SignatureReplayProgressPanel
+              jobId={replayJobId}
+              namespaceId={namespaceId}
+              signatureHash={signatureHash}
+              onDismiss={() => setReplayJobId(null)}
+            />
+          )}
         </>
       )}
     </div>

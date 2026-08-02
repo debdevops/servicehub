@@ -7,3 +7,5 @@ export { DlqSignaturesPanel } from './DlqSignaturesPanel';
 export { FailureInvestigationPanel } from './FailureInvestigationPanel';
 export { SignatureLifecycleActions } from './SignatureLifecycleActions';
 export { SignatureTimelinePanel } from './SignatureTimelinePanel';
+export { SignatureReplayPreviewModal } from './SignatureReplayPreviewModal';
+export { SignatureReplayProgressPanel } from './SignatureReplayProgressPanel';
