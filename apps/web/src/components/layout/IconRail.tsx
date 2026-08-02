@@ -11,6 +11,7 @@ import {
   Route,
   Activity,
   Shield,
+  ScrollText,
   HelpCircle,
   Settings,
 } from 'lucide-react';
@@ -43,6 +44,7 @@ export function IconRail() {
     { to: `${navPrefix}/rules`, label: 'Auto-Replay Rules', icon: Zap },
     { to: `${navPrefix}/cross-cloud-trace`, label: 'Multi-Cloud Trace', icon: Route },
     { to: `${navPrefix}/health`, label: 'System Health', icon: Activity },
+    { to: `${navPrefix}/audit`, label: 'Audit Trail', icon: ScrollText },
     { to: `${navPrefix}/security`, label: 'Security & Privacy', icon: Shield },
     { to: `${navPrefix}/help`, label: 'Help & Guide', icon: HelpCircle },
   ];

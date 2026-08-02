@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { X, Star, Zap } from 'lucide-react';
 import { useRuleTemplates } from '@servicehub/ui-shared/hooks/useRules';
 import type { RuleTemplateResponse } from '@servicehub/ui-shared/lib/api/rules';
@@ -27,19 +28,40 @@ const categoryIcons: Record<string, string> = {
 export function TemplateGalleryDialog({ open, onClose, onSelect }: TemplateGalleryDialogProps) {
   const { data: templates, isLoading } = useRuleTemplates();
 
+  // Handle Escape key to close dialog
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && open) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col mx-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col mx-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="template-gallery-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div className="flex items-center gap-2">
             <Zap className="w-5 h-5 text-primary-500" />
-            <h2 className="text-lg font-bold text-gray-900">Choose a Rule Template</h2>
+            <h2 id="template-gallery-title" className="text-lg font-bold text-gray-900">Choose a Rule Template</h2>
           </div>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="w-5 h-5 text-gray-500" />

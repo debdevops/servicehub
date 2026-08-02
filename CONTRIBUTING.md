@@ -28,7 +28,7 @@ This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 
 **Do NOT open a public GitHub issue for security vulnerabilities.**
 
-Please read [SECURITY.md](SECURITY.md) for instructions on responsible disclosure. We aim to respond within 72 hours.
+Please read [SECURITY.md](SECURITY.md) for instructions on responsible disclosure. We aim to respond within 48 hours.
 
 ---
 

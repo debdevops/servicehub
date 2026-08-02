@@ -32,8 +32,9 @@ services:
       AllowedHosts: localhost
       # SiteUrl for CORS and SPA token validation
       SITEURL: ${SITEURL:-http://localhost:8080}
-      # SPA token signing secret
-      SECURITY__SPATOKEN__SECRET: ${SECURITY__SPATOKEN__SECRET:-dev-secret-key-change-in-production}
+      # SECURITY: SPA token signing secret — required, no default. Generate per-deployment:
+      #   SECURITY__SPATOKEN__SECRET=$(openssl rand -hex 32) docker compose up --build
+      SECURITY__SPATOKEN__SECRET: ${SECURITY__SPATOKEN__SECRET}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/live"]
       interval: 30s

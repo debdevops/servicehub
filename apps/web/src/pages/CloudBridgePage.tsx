@@ -5,6 +5,7 @@ import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
 import { getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
 import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
+import { EmptyState } from '@/components/EmptyState';
 import type { CloudEntity } from '@servicehub/ui-shared/lib/api/cloudBridge';
 import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 
@@ -116,14 +117,20 @@ function EntityTable({ namespaceId, provider }: { namespaceId: string; provider:
         <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
         <span className="flex-1">{msg}</span>
         <button className="text-xs font-medium underline shrink-0" onClick={() => refetch()}>
-          Retry
+          Try Again
         </button>
       </div>
     );
   }
 
   if (!data || data.length === 0) {
-    return <p className="h-full flex items-center justify-center text-sm text-gray-400">No entities found for this namespace.</p>;
+    return (
+      <EmptyState
+        icon={Inbox}
+        heading="No entities found"
+        subtext="This namespace has no queues, topics, or subscriptions to display."
+      />
+    );
   }
 
   return (

@@ -1,4 +1,4 @@
-# Migration Notes — RC1
+# Migration Notes — v3.4.0
 
 **No schema change and no data migration is required to upgrade to this release.** Stating this
 explicitly and upfront: a release of this size will otherwise make an operator assume there's a

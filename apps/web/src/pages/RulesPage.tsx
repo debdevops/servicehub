@@ -157,7 +157,7 @@ export function RulesPage() {
             <button
               onClick={() => generateMutation.mutate(undefined)}
               disabled={generateMutation.isPending}
-              className="flex items-center gap-1.5 px-3 py-2 bg-violet-50 border border-violet-200 rounded-lg text-sm text-violet-700 hover:bg-violet-100 transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50"
               title="Analyse DLQ patterns and automatically create smart rules"
             >
               <Brain className={`w-4 h-4 ${generateMutation.isPending ? 'animate-pulse' : ''}`} />
@@ -327,7 +327,7 @@ function RuleCard({
             }`}
           />
           {rule.name.startsWith('Auto:') && (
-            <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-bold text-violet-700 bg-violet-100 border border-violet-200 rounded">
+            <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 rounded">
               AI
             </span>
           )}
@@ -354,6 +354,7 @@ function RuleCard({
           onClick={onToggle}
           className="shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
           title={rule.enabled ? 'Disable rule' : 'Enable rule'}
+          aria-label={rule.enabled ? 'Disable rule' : 'Enable rule'}
         >
           {rule.enabled ? (
             <ToggleRight className="w-5 h-5 text-green-500" />
@@ -470,6 +471,8 @@ function RuleCard({
         <button
           onClick={onDelete}
           className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-red-500 border border-gray-200 rounded-lg hover:bg-red-50 hover:border-red-200 transition-colors ml-auto focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1"
+          title="Delete rule"
+          aria-label="Delete rule"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
@@ -491,7 +494,7 @@ function EmptyState({
 }) {
   return (
     <div className="py-16 text-center">
-      <Brain className="w-12 h-12 text-violet-300 mx-auto mb-4" />
+      <Brain className="w-12 h-12 text-amber-300 mx-auto mb-4" />
       <h3 className="text-lg font-semibold text-gray-900 mb-1">No auto-replay rules yet</h3>
       <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">
         Let ServiceHub analyse your DLQ messages and automatically create intelligent replay rules,
@@ -501,7 +504,7 @@ function EmptyState({
         <button
           onClick={onGenerateRules}
           disabled={isGenerating}
-          className="flex items-center gap-1.5 px-4 py-2 bg-violet-500 hover:bg-violet-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+          className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
         >
           <Brain className={`w-4 h-4 ${isGenerating ? 'animate-pulse' : ''}`} />
           {isGenerating ? 'Analysing DLQ Patterns...' : 'Generate Intelligent Rules'}
@@ -578,7 +581,7 @@ function ReplayAllConfirmDialog({
             </div>
           </div>
           {!isExecuting && (
-            <button onClick={onCancel} className="p-1 hover:bg-red-100 rounded-lg transition-colors">
+            <button onClick={onCancel} className="p-1 hover:bg-red-100 rounded-lg transition-colors" aria-label="Close dialog">
               <X className="w-5 h-5 text-gray-500" />
             </button>
           )}

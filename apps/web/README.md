@@ -370,7 +370,7 @@ export function useReplayMessage() {
 
 ### 4. AIInsightsTab
 
-**Location**: [src/components/ai/AIInsightsTab.tsx](src/components/ai/AIInsightsTab.tsx)
+**Location**: [src/components/messages/tabs/AIInsightsTab.tsx](src/components/messages/tabs/AIInsightsTab.tsx)
 
 **Features**:
 - Pattern membership badges

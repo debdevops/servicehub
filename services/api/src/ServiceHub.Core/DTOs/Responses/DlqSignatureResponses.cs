@@ -1,6 +1,22 @@
 namespace ServiceHub.Core.DTOs.Responses;
 
 /// <summary>
+/// Operational knowledge attached to a failure signature.
+/// Contains root cause, resolution notes, owner, and replay guidance.
+/// </summary>
+public sealed record KnowledgeResponse(
+    string? RootCause,
+    string? ResolutionNotes,
+    string? OperationalNotes,
+    string? RunbookLink,
+    string? Owner,
+    string? ReplayGuidance,
+    DateTimeOffset? LastUpdatedAt,
+    int KnowledgeVersion,
+    DateTimeOffset? ReviewDueAt,
+    string? Tags);
+
+/// <summary>
 /// A namespace's DLQ error-signature analysis. <see cref="Available"/> is <see langword="false"/>
 /// when the AI service could not be reached — the frontend renders its unavailable state from
 /// this, it is never a non-200 response.
@@ -12,7 +28,7 @@ public sealed record DlqSignaturesResponse(
     IReadOnlyList<DlqClusterSignatureResponse> Clusters,
     IReadOnlyList<DlqSingletonSignatureResponse> Singletons);
 
-/// <summary>One error-signature cluster, with message identity, history, and explanation.</summary>
+/// <summary>One error-signature cluster, with message identity, history, explanation, and operational knowledge.</summary>
 public sealed record DlqClusterSignatureResponse(
     int Size,
     IReadOnlyList<long> MessageIds,
@@ -25,7 +41,8 @@ public sealed record DlqClusterSignatureResponse(
     int OccurrenceCount,
     DateTimeOffset WindowStart,
     DateTimeOffset WindowEnd,
-    string Explanation);
+    string Explanation,
+    KnowledgeResponse? Knowledge);
 
 /// <summary>A message the AI service could not group into any cluster.</summary>
 public sealed record DlqSingletonSignatureResponse(

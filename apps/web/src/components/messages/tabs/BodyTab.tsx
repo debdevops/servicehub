@@ -165,6 +165,7 @@ export function BodyTab({ body, contentType }: BodyTabProps) {
           onClick={handleCopy}
           className="absolute top-7 right-7 p-2 rounded-md bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors z-10"
           title="Copy formatted JSON to clipboard"
+          aria-label="Copy formatted JSON to clipboard"
         >
           {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
         </button>

@@ -56,7 +56,7 @@ body:
     attributes:
       label: ServiceHub version
       description: From the `.version` file or the version badge in the UI footer.
-      placeholder: "3.3.0"
+      placeholder: "3.4.0"
     validations:
       required: true
   - type: textarea
