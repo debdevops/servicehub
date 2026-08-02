@@ -44,7 +44,7 @@ The repository includes `run.sh` which automatically installs all prerequisites 
 This script:
 1. Detects your OS (macOS, Ubuntu/Debian, RHEL/CentOS, Arch, openSUSE, or WSL)
 2. Installs .NET 10 SDK if missing
-3. Installs Node.js 20 if missing
+3. Installs Node.js 22 if missing
 4. Generates local encryption keys (creates `appsettings.Local.json` on first run — git-ignored, never affects Azure)
 5. Cleans up any previously running instances on ports 5153 and 3000
 6. Starts the API on `http://localhost:5153`
