@@ -54,7 +54,7 @@ public sealed class EventsController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     public async Task Stream(CancellationToken cancellationToken)
     {
-        using var subscription = _broker.Register(OwnerId);
+        using var subscription = _broker.Register(OwnerId, AllowedNamespaceIds);
         if (subscription is null)
         {
             Response.StatusCode = StatusCodes.Status503ServiceUnavailable;

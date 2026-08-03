@@ -44,7 +44,7 @@ public sealed class BulkOperationsController : ApiControllerBase
         [FromBody] BulkOperationPreviewRequest request,
         CancellationToken cancellationToken = default)
     {
-        var result = await _bulkOperationService.PreviewAsync(OwnerId, request, cancellationToken);
+        var result = await _bulkOperationService.PreviewAsync(OwnerId, request, AllowedNamespaceIds, cancellationToken);
         return ToActionResult(result);
     }
 
@@ -90,7 +90,7 @@ public sealed class BulkOperationsController : ApiControllerBase
             detail: $"entityFilter={request.Filter.EntityName}; statusFilter={request.Filter.Status}");
 
         var correlationId = HttpContext.Items["CorrelationId"]?.ToString();
-        var result = await _bulkOperationService.CreateJobAsync(OwnerId, request, correlationId, cancellationToken);
+        var result = await _bulkOperationService.CreateJobAsync(OwnerId, request, correlationId, AllowedNamespaceIds, cancellationToken);
 
         if (result.IsFailure)
         {

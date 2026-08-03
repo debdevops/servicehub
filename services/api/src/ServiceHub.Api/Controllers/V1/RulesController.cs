@@ -577,8 +577,13 @@ public sealed class RulesController : ApiControllerBase
 
                 var ns = nsResult.Value;
 
-                // Defense-in-depth tenant isolation for namespace lookups.
-                if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal))
+                // Defense-in-depth tenant isolation for namespace lookups, further narrowed by
+                // the caller's namespace allow-list when its credential carries one — otherwise a
+                // key restricted to one namespace could still trigger a rule-driven replay-all
+                // against another namespace it truly owns.
+                var allowedNamespaceIds = AllowedNamespaceIds;
+                if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal)
+                    || (allowedNamespaceIds is not null && !allowedNamespaceIds.Contains(ns.Id)))
                 {
                     foreach (var msg in group)
                     {

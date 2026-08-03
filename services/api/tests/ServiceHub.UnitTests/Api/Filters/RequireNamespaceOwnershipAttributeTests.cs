@@ -25,7 +25,8 @@ public sealed class RequireNamespaceOwnershipAttributeTests
         Mock<INamespaceRepository> repo,
         string? ownerId = "owner-a",
         Guid? routeNamespaceId = null,
-        Guid? queryNamespaceId = null)
+        Guid? queryNamespaceId = null,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton(repo.Object);
@@ -38,6 +39,11 @@ public sealed class RequireNamespaceOwnershipAttributeTests
         if (ownerId is not null)
         {
             httpContext.Items["OwnerId"] = ownerId;
+        }
+
+        if (allowedNamespaceIds is not null)
+        {
+            httpContext.Items["AllowedNamespaceIds"] = allowedNamespaceIds;
         }
 
         if (queryNamespaceId is not null)
@@ -201,5 +207,44 @@ public sealed class RequireNamespaceOwnershipAttributeTests
 
         wasCalled().Should().BeTrue();
         context.Result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AllowListContainsNamespace_CallsNext()
+    {
+        var ns = CreateTestNamespace("owner-a");
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>())).ReturnsAsync(Result.Success(ns));
+
+        var context = CreateContext(
+            repo, ownerId: "owner-a", routeNamespaceId: ns.Id,
+            allowedNamespaceIds: new HashSet<Guid> { ns.Id });
+        var (next, wasCalled) = CreateNext();
+        var filter = new RequireNamespaceOwnershipAttribute();
+
+        await filter.OnActionExecutionAsync(context, next);
+
+        wasCalled().Should().BeTrue();
+        context.Result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AllowListExcludesNamespace_ShortCircuitsWith404EvenForTrueOwner()
+    {
+        var ns = CreateTestNamespace("owner-a");
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>())).ReturnsAsync(Result.Success(ns));
+
+        var context = CreateContext(
+            repo, ownerId: "owner-a", routeNamespaceId: ns.Id,
+            allowedNamespaceIds: new HashSet<Guid> { Guid.NewGuid() });
+        var (next, wasCalled) = CreateNext();
+        var filter = new RequireNamespaceOwnershipAttribute();
+
+        await filter.OnActionExecutionAsync(context, next);
+
+        wasCalled().Should().BeFalse();
+        var objectResult = context.Result.Should().BeOfType<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(StatusCodes.Status404NotFound);
     }
 }

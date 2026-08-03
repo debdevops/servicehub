@@ -134,7 +134,7 @@ public sealed class Namespace
     /// <summary>
     /// Gets the additional owner IDs this namespace has been explicitly shared with, granting
     /// live operational access (browse entities, peek/replay/purge messages, Live Tail) —
-    /// see <see cref="ShareWith"/>/<see cref="RevokeShare"/>/<see cref="IsAccessibleBy"/>.
+    /// see <see cref="ShareWith"/>/<see cref="RevokeShare"/>/<see cref="IsAccessibleBy(string)"/>.
     /// Empty by default; unlike <see cref="OwnerId"/>, this is mutable after creation.
     /// <para>
     /// <b>Known limitation (Preview):</b> DLQ Intelligence history, Bulk Operation job history,
@@ -504,6 +504,17 @@ public sealed class Namespace
     public bool IsAccessibleBy(string callerOwnerId) =>
         string.Equals(OwnerId, callerOwnerId, StringComparison.Ordinal)
         || SharedWithOwnerIds.Contains(callerOwnerId, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Same check as <see cref="IsAccessibleBy(string)"/>, additionally requiring this
+    /// namespace's <see cref="Id"/> to appear in <paramref name="allowedNamespaceIds"/> when the
+    /// caller's credential carries a namespace allow-list. A null allow-list means the caller is
+    /// unrestricted (today's behaviour); a non-null list can only narrow access, never widen it —
+    /// the owner/share check above must still pass regardless of list contents.
+    /// </summary>
+    public bool IsAccessibleBy(string callerOwnerId, IReadOnlySet<Guid>? allowedNamespaceIds) =>
+        IsAccessibleBy(callerOwnerId)
+        && (allowedNamespaceIds is null || allowedNamespaceIds.Contains(Id));
 
     /// <summary>
     /// Validates parameters for connection string authentication.

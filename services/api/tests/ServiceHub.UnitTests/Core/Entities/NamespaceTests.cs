@@ -398,6 +398,40 @@ public sealed class NamespaceTests
     }
 
     [Fact]
+    public void IsAccessibleBy_WithAllowList_NullAllowList_IsUnrestricted()
+    {
+        var ns = CreateTestNamespace(ownerId: "owner-a");
+
+        ns.IsAccessibleBy("owner-a", allowedNamespaceIds: null).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsAccessibleBy_WithAllowList_ContainsThisNamespace_ReturnsTrue()
+    {
+        var ns = CreateTestNamespace(ownerId: "owner-a");
+
+        ns.IsAccessibleBy("owner-a", new HashSet<Guid> { ns.Id }).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsAccessibleBy_WithAllowList_DoesNotContainThisNamespace_ReturnsFalse()
+    {
+        var ns = CreateTestNamespace(ownerId: "owner-a");
+
+        ns.IsAccessibleBy("owner-a", new HashSet<Guid> { Guid.NewGuid() }).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsAccessibleBy_WithAllowList_NarrowsButNeverWidensAccess()
+    {
+        // Owner-c isn't the owner and wasn't shared with — the allow-list containing this
+        // namespace's ID must not grant access on its own.
+        var ns = CreateTestNamespace(ownerId: "owner-a");
+
+        ns.IsAccessibleBy("owner-c", new HashSet<Guid> { ns.Id }).Should().BeFalse();
+    }
+
+    [Fact]
     public void ShareWith_UpdatesModifiedAt()
     {
         var ns = CreateTestNamespace();

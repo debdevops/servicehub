@@ -25,6 +25,7 @@ public interface IBulkOperationService
     Task<Result<BulkOperationPreviewResponse>> PreviewAsync(
         string ownerId,
         BulkOperationPreviewRequest request,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -37,6 +38,7 @@ public interface IBulkOperationService
         string ownerId,
         BulkOperationCreateRequest request,
         string? correlationId,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>Gets a single job's current state, scoped to the owner.</summary>

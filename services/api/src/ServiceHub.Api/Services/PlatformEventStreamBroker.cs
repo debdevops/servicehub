@@ -75,7 +75,12 @@ public sealed class PlatformEventStreamBroker
     /// Dispose the returned subscription to unregister the connection.
     /// </summary>
     /// <param name="ownerId">Owner identity of the authenticated caller.</param>
-    public EventStreamSubscription? Register(string ownerId)
+    /// <param name="allowedNamespaceIds">
+    /// Optional namespace allow-list from the caller's credential. When non-null, namespace-scoped
+    /// events for namespaces outside this set are withheld from this connection even though they
+    /// fall within the owner's broader visibility — see <see cref="IsWithinAllowList"/>.
+    /// </param>
+    public EventStreamSubscription? Register(string ownerId, IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(ownerId);
 
@@ -97,7 +102,7 @@ public sealed class PlatformEventStreamBroker
         });
 
         var connectionId = Guid.NewGuid();
-        _connections[connectionId] = new Connection(ownerId, channel);
+        _connections[connectionId] = new Connection(ownerId, allowedNamespaceIds, channel);
 
         _logger.LogInformation(
             "SSE connection {ConnectionId} registered for owner {OwnerId}. Active connections: {Count}.",
@@ -132,22 +137,36 @@ public sealed class PlatformEventStreamBroker
         if (_connections.IsEmpty)
             return;
 
-        var visibilityByOwner = new Dictionary<string, bool>(StringComparer.Ordinal);
+        // Cached per owner, not per connection: two connections can share an OwnerId (e.g. two
+        // admin keys) but carry different namespace allow-lists, so the allow-list check below
+        // must stay outside this cache and be re-evaluated per connection.
+        var ownerVisibilityCache = new Dictionary<string, bool>(StringComparer.Ordinal);
 
         foreach (var connection in _connections.Values)
         {
-            if (!visibilityByOwner.TryGetValue(connection.OwnerId, out var visible))
+            if (!ownerVisibilityCache.TryGetValue(connection.OwnerId, out var ownerVisible))
             {
-                visible = await IsVisibleToOwnerAsync(connection.OwnerId, platformEvent, cancellationToken);
-                visibilityByOwner[connection.OwnerId] = visible;
+                ownerVisible = await IsVisibleToOwnerAsync(connection.OwnerId, platformEvent, cancellationToken);
+                ownerVisibilityCache[connection.OwnerId] = ownerVisible;
             }
 
-            if (visible)
+            if (ownerVisible && IsWithinAllowList(platformEvent, connection.AllowedNamespaceIds))
             {
                 connection.Channel.Writer.TryWrite(platformEvent);
             }
         }
     }
+
+    /// <summary>
+    /// Further restricts a namespace-scoped event to a connection's own allow-list, on top of
+    /// the owner-wide visibility already established by <see cref="IsVisibleToOwnerAsync"/>.
+    /// Events without a <see cref="PlatformEvent.NamespaceId"/> (e.g. actor-only matches) are
+    /// never namespace-restricted — the allow-list only narrows namespace-scoped visibility.
+    /// </summary>
+    private static bool IsWithinAllowList(PlatformEvent platformEvent, IReadOnlySet<Guid>? allowedNamespaceIds) =>
+        allowedNamespaceIds is null
+        || platformEvent.NamespaceId is not Guid namespaceId
+        || allowedNamespaceIds.Contains(namespaceId);
 
     internal void Unregister(Guid connectionId)
     {
@@ -188,7 +207,12 @@ public sealed class PlatformEventStreamBroker
             var repository = scope.ServiceProvider.GetRequiredService<INamespaceRepository>();
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(OwnerNamespaceLookupTimeout);
-            result = await repository.GetByOwnerAsync(ownerId, timeoutCts.Token);
+            // Deliberately unfiltered (allowedNamespaceIds: null): this result is cached by
+            // OwnerId and shared across every connection for that owner, so it must reflect the
+            // owner's full visibility. Per-connection allow-list narrowing happens afterward in
+            // IsWithinAllowList, which is NOT cached, so it can't leak between connections that
+            // share an OwnerId but carry different allow-lists.
+            result = await repository.GetByOwnerAsync(ownerId, allowedNamespaceIds: null, timeoutCts.Token);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -218,7 +242,7 @@ public sealed class PlatformEventStreamBroker
         return namespaceIds;
     }
 
-    private sealed record Connection(string OwnerId, Channel<PlatformEvent> Channel);
+    private sealed record Connection(string OwnerId, IReadOnlySet<Guid>? AllowedNamespaceIds, Channel<PlatformEvent> Channel);
 
     private sealed record OwnerNamespaceCacheEntry(IReadOnlySet<Guid> NamespaceIds, DateTimeOffset ExpiresUtc);
 }

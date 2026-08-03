@@ -129,8 +129,11 @@ public sealed class NamespacesController : ApiControllerBase
             });
         }
 
-        // Owner-scoped duplicate checks: only look within the same tenant's pool.
-        var ownerNamespaces = await _namespaceRepository.GetByOwnerAsync(OwnerId, cancellationToken);
+        // Owner-scoped duplicate checks: only look within the same tenant's pool. Deliberately
+        // not narrowed by AllowedNamespaceIds — this is a conflict check against the full owner
+        // pool, not a response payload, so a restricted key still gets a clean Conflict instead
+        // of creating a namespace whose name collides with one it can't see.
+        var ownerNamespaces = await _namespaceRepository.GetByOwnerAsync(OwnerId, allowedNamespaceIds: null, cancellationToken);
         if (ownerNamespaces.IsSuccess)
         {
             // Check for existing namespace with same name (within this owner's pool)
@@ -295,8 +298,9 @@ public sealed class NamespacesController : ApiControllerBase
     {
         _logger.LogInformation("Getting all namespaces");
 
-        // TENANT ISOLATION: Only return namespaces owned by the authenticated caller.
-        var result = await _namespaceRepository.GetByOwnerAsync(OwnerId, cancellationToken);
+        // TENANT ISOLATION: Only return namespaces owned by the authenticated caller, further
+        // narrowed by the caller's namespace allow-list when its credential carries one.
+        var result = await _namespaceRepository.GetByOwnerAsync(OwnerId, AllowedNamespaceIds, cancellationToken);
         if (result.IsFailure)
         {
             return ToActionResult<IReadOnlyList<NamespaceResponse>>(result.Error);

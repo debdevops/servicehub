@@ -38,9 +38,14 @@ public interface INamespaceRepository
     /// should use <see cref="GetAllAsync"/> instead.
     /// </summary>
     /// <param name="ownerId">The owner identifier derived from the caller's credential.</param>
+    /// <param name="allowedNamespaceIds">
+    /// Optional namespace allow-list from the caller's credential. When non-null, results are
+    /// further restricted to namespaces whose ID appears in this set — null means unrestricted
+    /// (today's behaviour).
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A result containing the owner's namespaces.</returns>
-    Task<Result<IReadOnlyList<Namespace>>> GetByOwnerAsync(string ownerId, CancellationToken cancellationToken = default);
+    Task<Result<IReadOnlyList<Namespace>>> GetByOwnerAsync(string ownerId, IReadOnlySet<Guid>? allowedNamespaceIds = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets all active namespaces.

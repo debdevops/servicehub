@@ -51,13 +51,13 @@ public sealed class PlatformEventStreamBrokerTests
     {
         var repositoryMock = new Mock<INamespaceRepository>();
         repositoryMock
-            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success([]));
 
         foreach (var (ownerId, namespaces) in ownerNamespaces)
         {
             repositoryMock
-                .Setup(r => r.GetByOwnerAsync(ownerId, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetByOwnerAsync(ownerId, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(namespaces));
         }
 
@@ -243,7 +243,7 @@ public sealed class PlatformEventStreamBrokerTests
     {
         var repositoryMock = new Mock<INamespaceRepository>();
         repositoryMock
-            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Failure(
                 Error.ExternalService("REPO_ERR", "Repository unavailable")));
         var services = new ServiceCollection();
@@ -265,7 +265,7 @@ public sealed class PlatformEventStreamBrokerTests
     {
         var repositoryMock = new Mock<INamespaceRepository>();
         repositoryMock
-            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Failure(
                 Error.ExternalService("REPO_ERR", "Repository unavailable")));
         var services = new ServiceCollection();
@@ -279,7 +279,7 @@ public sealed class PlatformEventStreamBrokerTests
         await broker.HandleAsync(BuildDlqSpikeEvent(namespaceId: Guid.NewGuid()), CancellationToken.None);
 
         repositoryMock.Verify(
-            r => r.GetByOwnerAsync(OwnerA, It.IsAny<CancellationToken>()),
+            r => r.GetByOwnerAsync(OwnerA, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -290,8 +290,8 @@ public sealed class PlatformEventStreamBrokerTests
         // the lookup timeout converts the hang into the failure/fallback path.
         var repositoryMock = new Mock<INamespaceRepository>();
         repositoryMock
-            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(async (string _, CancellationToken ct) =>
+            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
+            .Returns(async (string _, IReadOnlySet<Guid>? _, CancellationToken ct) =>
             {
                 await Task.Delay(Timeout.InfiniteTimeSpan, ct);
                 return Result<IReadOnlyList<Namespace>>.Success([]);
@@ -323,7 +323,7 @@ public sealed class PlatformEventStreamBrokerTests
         await broker.HandleAsync(BuildDlqSpikeEvent(namespaceId: ns.Id), CancellationToken.None);
 
         repositoryMock.Verify(
-            r => r.GetByOwnerAsync(OwnerA, It.IsAny<CancellationToken>()),
+            r => r.GetByOwnerAsync(OwnerA, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -339,7 +339,7 @@ public sealed class PlatformEventStreamBrokerTests
         await broker.HandleAsync(BuildDlqSpikeEvent(namespaceId: ns.Id), CancellationToken.None);
 
         repositoryMock.Verify(
-            r => r.GetByOwnerAsync(OwnerA, It.IsAny<CancellationToken>()),
+            r => r.GetByOwnerAsync(OwnerA, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()),
             Times.Exactly(2));
     }
 
