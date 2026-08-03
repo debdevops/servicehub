@@ -1,30 +1,24 @@
-using System.Collections.Concurrent;
-using System.Collections.Immutable;
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
+using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Infrastructure;
 
 /// <summary>
-/// In-memory implementation of <see cref="ISignatureLifecycleService"/>. State lives in a
-/// process-lifetime <see cref="ConcurrentDictionary{TKey,TValue}"/> and is deliberately NOT
-/// durable across API restarts — a restart resets every signature back to the default Active
-/// status and discards its transition history. This is an accepted MVP limitation (see the
-/// interface's XML doc): the schema change needed to persist it durably is out of scope for
-/// this release, and this class is the sole implementation callers depend on, so swapping in
-/// a durable store later requires no caller changes.
+/// EF Core-backed implementation of <see cref="ISignatureLifecycleService"/>. Current status
+/// lives in <see cref="DlqDbContext.SignatureLifecycleStates"/> (one row per signature, upserted
+/// on each transition) and full transition history in
+/// <see cref="DlqDbContext.SignatureLifecycleHistory"/> (append-only), so both survive an API
+/// restart. A signature with no state row is implicitly <c>Active</c> — the same default the
+/// prior in-memory implementation used, so no data backfill is needed.
 /// </summary>
 public sealed class SignatureLifecycleService : ISignatureLifecycleService
 {
-    private sealed record LifecycleRecord(
-        SignatureLifecycleStatus Status,
-        SignatureLifecycleStatus? PreviousStatus,
-        DateTimeOffset? TransitionedAt,
-        string? Notes,
-        ImmutableList<SignatureLifecycleEvent> Events);
-
     private static readonly SignatureLifecycleSnapshot DefaultSnapshot =
         new(SignatureLifecycleStatus.Active, null, null, null);
 
@@ -53,35 +47,47 @@ public sealed class SignatureLifecycleService : ISignatureLifecycleService
             },
         };
 
-    private readonly ConcurrentDictionary<string, LifecycleRecord> _store = new(StringComparer.Ordinal);
-    private readonly object _writeLock = new();
+    private readonly DlqDbContext _dbContext;
+    private readonly IAuditService _auditService;
+
+    /// <summary>Initialises a new instance of <see cref="SignatureLifecycleService"/>.</summary>
+    public SignatureLifecycleService(DlqDbContext dbContext, IAuditService auditService)
+    {
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _auditService = auditService ?? throw new ArgumentNullException(nameof(auditService));
+    }
 
     /// <inheritdoc />
-    public Task<Result<SignatureLifecycleSnapshot>> GetStatusAsync(
+    public async Task<Result<SignatureLifecycleSnapshot>> GetStatusAsync(
         string ownerId, Guid namespaceId, string signatureHash, CancellationToken cancellationToken = default)
     {
-        var snapshot = _store.TryGetValue(BuildKey(ownerId, namespaceId, signatureHash), out var record)
-            ? ToSnapshot(record)
-            : DefaultSnapshot;
+        var state = await _dbContext.SignatureLifecycleStates
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                s => s.OwnerId == ownerId && s.NamespaceId == namespaceId && s.SignatureHash == signatureHash,
+                cancellationToken);
 
-        return Task.FromResult(Result<SignatureLifecycleSnapshot>.Success(snapshot));
+        return Result<SignatureLifecycleSnapshot>.Success(state is null ? DefaultSnapshot : ToSnapshot(state));
     }
 
     /// <inheritdoc />
-    public Task<Result<IReadOnlyDictionary<string, SignatureLifecycleSnapshot>>> GetStatusBatchAsync(
+    public async Task<Result<IReadOnlyDictionary<string, SignatureLifecycleSnapshot>>> GetStatusBatchAsync(
         string ownerId, Guid namespaceId, IReadOnlyList<string> signatureHashes, CancellationToken cancellationToken = default)
     {
-        var result = signatureHashes.ToDictionary(
-            hash => hash,
-            hash => _store.TryGetValue(BuildKey(ownerId, namespaceId, hash), out var record)
-                ? ToSnapshot(record)
-                : DefaultSnapshot);
+        var states = await _dbContext.SignatureLifecycleStates
+            .AsNoTracking()
+            .Where(s => s.OwnerId == ownerId && s.NamespaceId == namespaceId && signatureHashes.Contains(s.SignatureHash))
+            .ToDictionaryAsync(s => s.SignatureHash, cancellationToken);
 
-        return Task.FromResult(Result<IReadOnlyDictionary<string, SignatureLifecycleSnapshot>>.Success(result));
+        IReadOnlyDictionary<string, SignatureLifecycleSnapshot> result = signatureHashes.ToDictionary(
+            hash => hash,
+            hash => states.TryGetValue(hash, out var state) ? ToSnapshot(state) : DefaultSnapshot);
+
+        return Result<IReadOnlyDictionary<string, SignatureLifecycleSnapshot>>.Success(result);
     }
 
     /// <inheritdoc />
-    public Task<Result<SignatureLifecycleSnapshot>> TransitionAsync(
+    public async Task<Result<SignatureLifecycleSnapshot>> TransitionAsync(
         string ownerId,
         Guid namespaceId,
         string signatureHash,
@@ -89,50 +95,88 @@ public sealed class SignatureLifecycleService : ISignatureLifecycleService
         string? notes,
         CancellationToken cancellationToken = default)
     {
-        var key = BuildKey(ownerId, namespaceId, signatureHash);
+        var existing = await _dbContext.SignatureLifecycleStates.FirstOrDefaultAsync(
+            s => s.OwnerId == ownerId && s.NamespaceId == namespaceId && s.SignatureHash == signatureHash,
+            cancellationToken);
 
-        lock (_writeLock)
+        var current = existing?.Status ?? SignatureLifecycleStatus.Active;
+
+        if (!AllowedSourcesByTarget.TryGetValue(targetStatus, out var allowedSources) ||
+            !allowedSources.Contains(current))
         {
-            var current = _store.TryGetValue(key, out var existing)
-                ? existing.Status
-                : SignatureLifecycleStatus.Active;
-
-            if (!AllowedSourcesByTarget.TryGetValue(targetStatus, out var allowedSources) ||
-                !allowedSources.Contains(current))
-            {
-                return Task.FromResult(Result<SignatureLifecycleSnapshot>.Failure(Error.Validation(
-                    "SignatureLifecycle.InvalidTransition",
-                    $"Cannot transition a signature from '{current}' to '{targetStatus}'.")));
-            }
-
-            var now = DateTimeOffset.UtcNow;
-            var events = (_store.TryGetValue(key, out var previousRecord)
-                ? previousRecord.Events
-                : ImmutableList<SignatureLifecycleEvent>.Empty)
-                .Add(new SignatureLifecycleEvent(current, targetStatus, now, notes));
-
-            var updated = new LifecycleRecord(targetStatus, current, now, notes, events);
-            _store[key] = updated;
-
-            return Task.FromResult(Result<SignatureLifecycleSnapshot>.Success(ToSnapshot(updated)));
+            return Result<SignatureLifecycleSnapshot>.Failure(Error.Validation(
+                "SignatureLifecycle.InvalidTransition",
+                $"Cannot transition a signature from '{current}' to '{targetStatus}'."));
         }
+
+        var now = DateTimeOffset.UtcNow;
+
+        if (existing is null)
+        {
+            existing = new SignatureLifecycleState
+            {
+                OwnerId = ownerId,
+                NamespaceId = namespaceId,
+                SignatureHash = signatureHash,
+                Status = targetStatus,
+                PreviousStatus = current,
+                TransitionedAt = now,
+                Notes = notes,
+                CreatedAt = now,
+            };
+            _dbContext.SignatureLifecycleStates.Add(existing);
+        }
+        else
+        {
+            existing.PreviousStatus = current;
+            existing.Status = targetStatus;
+            existing.TransitionedAt = now;
+            existing.Notes = notes;
+        }
+
+        _dbContext.SignatureLifecycleHistory.Add(new SignatureLifecycleHistoryEntry
+        {
+            OwnerId = ownerId,
+            NamespaceId = namespaceId,
+            SignatureHash = signatureHash,
+            FromStatus = current,
+            ToStatus = targetStatus,
+            Timestamp = now,
+            Notes = notes,
+        });
+
+        _auditService.Enqueue(new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            Timestamp = now,
+            OwnerId = ownerId,
+            UserIdentity = ownerId,
+            Action = "SignatureLifecycle.Transition",
+            Outcome = targetStatus.ToString(),
+            NamespaceId = namespaceId,
+            ResourceName = signatureHash,
+            DetailsJson = JsonSerializer.Serialize(new { fromStatus = current.ToString(), toStatus = targetStatus.ToString(), notes }),
+        });
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result<SignatureLifecycleSnapshot>.Success(ToSnapshot(existing));
     }
 
     /// <inheritdoc />
-    public Task<Result<IReadOnlyList<SignatureLifecycleEvent>>> GetHistoryAsync(
+    public async Task<Result<IReadOnlyList<SignatureLifecycleEvent>>> GetHistoryAsync(
         string ownerId, Guid namespaceId, string signatureHash, CancellationToken cancellationToken = default)
     {
-        IReadOnlyList<SignatureLifecycleEvent> events = _store.TryGetValue(
-            BuildKey(ownerId, namespaceId, signatureHash), out var record)
-            ? record.Events
-            : [];
+        var events = await _dbContext.SignatureLifecycleHistory
+            .AsNoTracking()
+            .Where(h => h.OwnerId == ownerId && h.NamespaceId == namespaceId && h.SignatureHash == signatureHash)
+            .OrderBy(h => h.Timestamp)
+            .Select(h => new SignatureLifecycleEvent(h.FromStatus, h.ToStatus, h.Timestamp, h.Notes))
+            .ToListAsync(cancellationToken);
 
-        return Task.FromResult(Result<IReadOnlyList<SignatureLifecycleEvent>>.Success(events));
+        return Result<IReadOnlyList<SignatureLifecycleEvent>>.Success(events);
     }
 
-    private static string BuildKey(string ownerId, Guid namespaceId, string signatureHash) =>
-        $"{ownerId}|{namespaceId:N}|{signatureHash}";
-
-    private static SignatureLifecycleSnapshot ToSnapshot(LifecycleRecord record) =>
-        new(record.Status, record.PreviousStatus, record.TransitionedAt, record.Notes);
+    private static SignatureLifecycleSnapshot ToSnapshot(SignatureLifecycleState state) =>
+        new(state.Status, state.PreviousStatus, state.TransitionedAt, state.Notes);
 }

@@ -1,18 +1,18 @@
 namespace ServiceHub.Core.Interfaces;
 
 /// <summary>
-/// Processes one signature-replay job's messages sequentially through
-/// <see cref="IMessageOperationsService"/>, updating the job's in-memory progress
-/// (<see cref="ISignatureReplayJobStore"/>) as it goes. Mirrors <see cref="IBulkOperationExecutor"/>'s
-/// role, minus the persisted-job load/save — progress lives entirely on the
-/// <see cref="SignatureReplayJobState"/> instance passed in.
+/// Executes a single, already-persisted <see cref="Entities.SignatureReplayJob"/>: loads its
+/// snapshotted member messages, replays each one via <see cref="IMessageOperationsService"/>,
+/// persists progress as it goes, and records the terminal outcome. Mirrors
+/// <see cref="IBulkOperationExecutor"/>'s shape exactly.
 /// </summary>
 public interface ISignatureReplayExecutor
 {
     /// <summary>
-    /// Runs the job to completion (or until cancelled/faulted), updating <paramref name="job"/>
-    /// in place. Intended to run on a background task in its own DI scope, not inline with the
-    /// HTTP request that created the job.
+    /// Runs the job identified by <paramref name="jobId"/> to completion, cancellation, or
+    /// failure. Never throws for expected per-message failures — those are recorded on the job
+    /// and processing continues with the next message. Intended to run on a background task in
+    /// its own DI scope, not inline with the HTTP request that created the job.
     /// </summary>
-    Task ExecuteAsync(SignatureReplayJobState job, CancellationToken cancellationToken);
+    Task ExecuteAsync(Guid jobId, CancellationToken cancellationToken);
 }

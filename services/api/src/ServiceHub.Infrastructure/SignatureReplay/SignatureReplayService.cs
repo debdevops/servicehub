@@ -1,4 +1,5 @@
-using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Constants;
 using ServiceHub.Core.DTOs.Requests;
@@ -6,6 +7,7 @@ using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Helpers;
@@ -20,30 +22,30 @@ public sealed class SignatureReplayService : ISignatureReplayService
 {
     private const int MaxSampleSize = 10;
 
+    private readonly DlqDbContext _dbContext;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly CloudProviderRouter _router;
     private readonly IDlqSignatureAnalysisService _signatureAnalysisService;
     private readonly IDlqHistoryService _historyService;
-    private readonly ISignatureReplayJobStore _jobStore;
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ISignatureReplayQueue _queue;
     private readonly ILogger<SignatureReplayService> _logger;
 
     /// <summary>Initialises a new instance of <see cref="SignatureReplayService"/>.</summary>
     public SignatureReplayService(
+        DlqDbContext dbContext,
         INamespaceRepository namespaceRepository,
         CloudProviderRouter router,
         IDlqSignatureAnalysisService signatureAnalysisService,
         IDlqHistoryService historyService,
-        ISignatureReplayJobStore jobStore,
-        IServiceScopeFactory scopeFactory,
+        ISignatureReplayQueue queue,
         ILogger<SignatureReplayService> logger)
     {
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _router = router ?? throw new ArgumentNullException(nameof(router));
         _signatureAnalysisService = signatureAnalysisService ?? throw new ArgumentNullException(nameof(signatureAnalysisService));
         _historyService = historyService ?? throw new ArgumentNullException(nameof(historyService));
-        _jobStore = jobStore ?? throw new ArgumentNullException(nameof(jobStore));
-        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+        _queue = queue ?? throw new ArgumentNullException(nameof(queue));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -112,9 +114,8 @@ public sealed class SignatureReplayService : ISignatureReplayService
                 "SignatureReplay.NoMatches", "No DLQ messages match this signature and filter."));
         }
 
-        var job = new SignatureReplayJobState
+        var job = new SignatureReplayJob
         {
-            Id = Guid.NewGuid(),
             OwnerId = ownerId,
             NamespaceId = ns.Id,
             NamespaceDisplayName = ns.DisplayName ?? ns.Name,
@@ -122,66 +123,95 @@ public sealed class SignatureReplayService : ISignatureReplayService
             StatusFilter = request.Filter.Status,
             FromFilter = request.Filter.From,
             ToFilter = request.Filter.To,
-            MessageIds = matched.Select(m => m.Id).ToList(),
+            MessageIdsJson = JsonSerializer.Serialize(matched.Select(m => m.Id)),
             TotalMatched = matched.Count,
-            CancellationTokenSource = new CancellationTokenSource(),
+            CreatedAt = DateTimeOffset.UtcNow,
         };
 
-        _jobStore.Add(job);
+        _dbContext.SignatureReplayJobs.Add(job);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _queue.Enqueue(job.Id);
 
         _logger.LogInformation(
             "Signature replay job {JobId} created for namespace {NamespaceId}, signature {SignatureHash}: {TotalMatched} message(s) matched",
             job.Id, job.NamespaceId, LogRedactor.SanitiseForLog(job.SignatureHash), job.TotalMatched);
 
-        // Fires the execution on a background task with its own DI scope — the request's own
-        // scope (and its DlqDbContext) must not be captured past this method returning. Mirrors
-        // BulkOperationWorker.ProcessJobAsync's per-job scope creation.
-        _ = Task.Run(() => RunInBackgroundAsync(job), CancellationToken.None);
-
         return ToResponse(job);
     }
 
     /// <inheritdoc />
-    public Task<Result<BulkOperationJobResponse>> GetJobAsync(
+    public async Task<Result<BulkOperationJobResponse>> GetJobAsync(
         string ownerId, Guid jobId, CancellationToken cancellationToken = default)
     {
-        var job = _jobStore.Get(jobId, ownerId);
-        return Task.FromResult(job is null
+        var job = await _dbContext.SignatureReplayJobs
+            .AsNoTracking()
+            .FirstOrDefaultAsync(j => j.Id == jobId && j.OwnerId == ownerId, cancellationToken);
+
+        return job is null
             ? Result.Failure<BulkOperationJobResponse>(Error.NotFound(
                 "SignatureReplay.NotFound", $"Signature replay job {jobId} was not found"))
-            : ToResponse(job));
+            : ToResponse(job);
     }
 
     /// <inheritdoc />
-    public Task<Result<BulkOperationJobResponse>> CancelJobAsync(
+    public async Task<Result<PaginatedResponse<BulkOperationJobResponse>>> ListJobsAsync(
+        string ownerId, Guid namespaceId, string signatureHash, int page, int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var query = _dbContext.SignatureReplayJobs.AsNoTracking().Where(j =>
+            j.OwnerId == ownerId && j.NamespaceId == namespaceId && j.SignatureHash == signatureHash);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(j => j.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return new PaginatedResponse<BulkOperationJobResponse>(
+            Items: items.Select(ToResponse).ToList(),
+            TotalCount: totalCount,
+            Page: page,
+            PageSize: pageSize,
+            HasNextPage: page * pageSize < totalCount,
+            HasPreviousPage: page > 1);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<BulkOperationJobResponse>> CancelJobAsync(
         string ownerId, Guid jobId, CancellationToken cancellationToken = default)
     {
-        var job = _jobStore.Get(jobId, ownerId);
+        var job = await _dbContext.SignatureReplayJobs
+            .FirstOrDefaultAsync(j => j.Id == jobId && j.OwnerId == ownerId, cancellationToken);
+
         if (job is null)
         {
-            return Task.FromResult(Result.Failure<BulkOperationJobResponse>(Error.NotFound(
-                "SignatureReplay.NotFound", $"Signature replay job {jobId} was not found")));
+            return Result.Failure<BulkOperationJobResponse>(Error.NotFound(
+                "SignatureReplay.NotFound", $"Signature replay job {jobId} was not found"));
         }
 
-        _jobStore.RequestCancellation(jobId, ownerId);
-        return Task.FromResult(Result.Success(ToResponse(job)));
+        // Idempotent: cancelling a terminal job is a no-op success, not an error — the caller
+        // may race a "Cancel" click against the job finishing naturally.
+        if (job.Status is BulkOperationStatus.Pending or BulkOperationStatus.Running)
+        {
+            job.CancellationRequestedAt = DateTimeOffset.UtcNow;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            // Signals the worker immediately if the job is already running; harmless no-op if
+            // it's still Pending (the worker checks CancellationRequestedAt before starting).
+            _queue.RequestCancellation(jobId);
+
+            _logger.LogInformation("Cancellation requested for signature replay job {JobId}", jobId);
+        }
+
+        return ToResponse(job);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
-
-    private async Task RunInBackgroundAsync(SignatureReplayJobState job)
-    {
-        try
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var executor = scope.ServiceProvider.GetRequiredService<ISignatureReplayExecutor>();
-            await executor.ExecuteAsync(job, job.CancellationTokenSource.Token);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Signature replay job {JobId} failed unexpectedly", job.Id);
-        }
-    }
 
     private async Task<Result<Namespace>> ResolveOwnedNamespaceAsync(
         string ownerId, Guid namespaceId, CancellationToken cancellationToken)
@@ -270,32 +300,41 @@ public sealed class SignatureReplayService : ISignatureReplayService
         return Result.Success<IReadOnlyList<DlqMessage>>(filtered.ToList());
     }
 
-    private static BulkOperationJobResponse ToResponse(SignatureReplayJobState job)
+    private static BulkOperationJobResponse ToResponse(SignatureReplayJob job) => new(
+        Id: job.Id,
+        OperationType: "Replay",
+        Status: job.Status.ToString(),
+        NamespaceId: job.NamespaceId,
+        NamespaceDisplayName: job.NamespaceDisplayName,
+        EntityNameFilter: null,
+        StatusFilter: job.StatusFilter?.ToString(),
+        CategoryFilter: null,
+        From: job.FromFilter,
+        To: job.ToFilter,
+        TotalMatched: job.TotalMatched,
+        ProcessedCount: job.ProcessedCount,
+        SuccessCount: job.SuccessCount,
+        FailureCount: job.FailureCount,
+        SkippedCount: job.SkippedCount,
+        FailureSample: DeserializeFailureSample(job.FailureSampleJson),
+        ErrorSummary: job.ErrorSummary,
+        CreatedAt: job.CreatedAt,
+        StartedAt: job.StartedAt,
+        CompletedAt: job.CompletedAt,
+        IsCancellable: job.Status is BulkOperationStatus.Pending or BulkOperationStatus.Running);
+
+    private static IReadOnlyList<BulkOperationFailureSample>? DeserializeFailureSample(string? json)
     {
-        lock (job.SyncRoot)
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
         {
-            return new BulkOperationJobResponse(
-                Id: job.Id,
-                OperationType: "Replay",
-                Status: job.Status.ToString(),
-                NamespaceId: job.NamespaceId,
-                NamespaceDisplayName: job.NamespaceDisplayName,
-                EntityNameFilter: null,
-                StatusFilter: job.StatusFilter?.ToString(),
-                CategoryFilter: null,
-                From: job.FromFilter,
-                To: job.ToFilter,
-                TotalMatched: job.TotalMatched,
-                ProcessedCount: job.ProcessedCount,
-                SuccessCount: job.SuccessCount,
-                FailureCount: job.FailureCount,
-                SkippedCount: job.SkippedCount,
-                FailureSample: job.FailureSample.Count > 0 ? job.FailureSample.ToList() : null,
-                ErrorSummary: job.ErrorSummary,
-                CreatedAt: job.CreatedAt,
-                StartedAt: job.StartedAt,
-                CompletedAt: job.CompletedAt,
-                IsCancellable: job.IsCancellable);
+            return JsonSerializer.Deserialize<List<BulkOperationFailureSample>>(json);
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 }

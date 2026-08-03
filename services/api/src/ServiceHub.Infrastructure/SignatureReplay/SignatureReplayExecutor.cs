@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.DTOs.Responses;
@@ -15,8 +16,8 @@ namespace ServiceHub.Infrastructure.SignatureReplay;
 /// <remarks>
 /// Every message is processed through <see cref="IMessageOperationsService"/> — the same call
 /// <see cref="BulkOperations.BulkOperationExecutor"/> and single-message replay already use — so
-/// this class contributes no new replay behavior, only the loop, progress tracking, and
-/// cancellation around it.
+/// this class contributes no new replay behavior, only the loop, progress persistence, and
+/// cancellation around it. Mirrors <see cref="BulkOperationExecutor"/>'s load/guard/save shape.
 /// </remarks>
 public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
 {
@@ -39,20 +40,36 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
     }
 
     /// <inheritdoc />
-    public async Task ExecuteAsync(SignatureReplayJobState job, CancellationToken cancellationToken)
+    public async Task ExecuteAsync(Guid jobId, CancellationToken cancellationToken)
     {
-        lock (job.SyncRoot)
+        // Loaded with CancellationToken.None: even if cancellation was requested before this
+        // call started, we still need to load and terminate the job cleanly rather than throw.
+        var job = await _dbContext.SignatureReplayJobs.FirstOrDefaultAsync(j => j.Id == jobId, CancellationToken.None);
+        if (job is null)
         {
-            if (job.CancellationRequestedAt.HasValue)
-            {
-                job.Status = BulkOperationStatus.Cancelled;
-                job.CompletedAt = DateTimeOffset.UtcNow;
-                return;
-            }
-
-            job.Status = BulkOperationStatus.Running;
-            job.StartedAt = DateTimeOffset.UtcNow;
+            _logger.LogWarning("Signature replay job {JobId} not found at execution time", jobId);
+            return;
         }
+
+        if (job.Status != BulkOperationStatus.Pending)
+        {
+            _logger.LogWarning(
+                "Signature replay job {JobId} is not Pending (status={Status}) — skipping duplicate dequeue",
+                jobId, job.Status);
+            return;
+        }
+
+        if (job.CancellationRequestedAt.HasValue)
+        {
+            job.Status = BulkOperationStatus.Cancelled;
+            job.CompletedAt = DateTimeOffset.UtcNow;
+            await _dbContext.SaveChangesAsync(CancellationToken.None);
+            return;
+        }
+
+        job.Status = BulkOperationStatus.Running;
+        job.StartedAt = DateTimeOffset.UtcNow;
+        await _dbContext.SaveChangesAsync(CancellationToken.None);
 
         try
         {
@@ -60,46 +77,41 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         }
         catch (OperationCanceledException)
         {
-            lock (job.SyncRoot)
-            {
-                job.Status = BulkOperationStatus.Cancelled;
-            }
-
+            job.Status = BulkOperationStatus.Cancelled;
             _logger.LogInformation(
                 "Signature replay job {JobId} cancelled after processing {Processed}/{Total} message(s)",
-                job.Id, job.ProcessedCount, job.TotalMatched);
+                jobId, job.ProcessedCount, job.TotalMatched);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Signature replay job {JobId} failed unexpectedly", job.Id);
-            lock (job.SyncRoot)
-            {
-                job.Status = BulkOperationStatus.Failed;
-                job.ErrorSummary = ex.Message;
-            }
+            _logger.LogError(ex, "Signature replay job {JobId} failed unexpectedly", jobId);
+            job.Status = BulkOperationStatus.Failed;
+            job.ErrorSummary = ex.Message;
         }
         finally
         {
-            lock (job.SyncRoot)
+            job.CompletedAt = DateTimeOffset.UtcNow;
+            if (job.Status == BulkOperationStatus.Running)
             {
-                job.CompletedAt = DateTimeOffset.UtcNow;
-                if (job.Status == BulkOperationStatus.Running)
-                {
-                    job.Status = job.FailureCount > 0 || job.SkippedCount > 0
-                        ? BulkOperationStatus.CompletedWithErrors
-                        : BulkOperationStatus.Completed;
-                }
+                job.Status = job.FailureCount > 0 || job.SkippedCount > 0
+                    ? BulkOperationStatus.CompletedWithErrors
+                    : BulkOperationStatus.Completed;
             }
+
+            await _dbContext.SaveChangesAsync(CancellationToken.None);
         }
     }
 
-    private async Task RunAsync(SignatureReplayJobState job, CancellationToken cancellationToken)
+    private async Task RunAsync(SignatureReplayJob job, CancellationToken cancellationToken)
     {
+        var messageIds = JsonSerializer.Deserialize<List<long>>(job.MessageIdsJson) ?? [];
+
         var messages = await _dbContext.DlqMessages
-            .Where(m => job.MessageIds.Contains(m.Id))
+            .Where(m => messageIds.Contains(m.Id))
             .OrderBy(m => m.DetectedAtUtc)
             .ToListAsync(cancellationToken);
 
+        var failureSample = new List<BulkOperationFailureSample>();
         var sinceLastSave = 0;
 
         foreach (var message in messages)
@@ -107,34 +119,32 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             cancellationToken.ThrowIfCancellationRequested();
 
             var (outcome, reason) = await ProcessMessageAsync(message, cancellationToken);
+            job.ProcessedCount++;
 
-            lock (job.SyncRoot)
+            switch (outcome)
             {
-                job.ProcessedCount++;
-                switch (outcome)
-                {
-                    case MessageOutcome.Success:
-                        job.SuccessCount++;
-                        break;
-                    case MessageOutcome.Failure:
-                        job.FailureCount++;
-                        AddToSample(job.FailureSample, message, reason!);
-                        break;
-                    case MessageOutcome.Skipped:
-                        job.SkippedCount++;
-                        AddToSample(job.FailureSample, message, reason!);
-                        break;
-                }
+                case MessageOutcome.Success:
+                    job.SuccessCount++;
+                    break;
+                case MessageOutcome.Failure:
+                    job.FailureCount++;
+                    AddToSample(failureSample, message, reason!);
+                    break;
+                case MessageOutcome.Skipped:
+                    job.SkippedCount++;
+                    AddToSample(failureSample, message, reason!);
+                    break;
             }
 
             if (++sinceLastSave >= SaveProgressEveryNMessages)
             {
+                job.FailureSampleJson = failureSample.Count > 0 ? JsonSerializer.Serialize(failureSample) : null;
                 await _dbContext.SaveChangesAsync(CancellationToken.None);
                 sinceLastSave = 0;
             }
         }
 
-        await _dbContext.SaveChangesAsync(CancellationToken.None);
+        job.FailureSampleJson = failureSample.Count > 0 ? JsonSerializer.Serialize(failureSample) : null;
     }
 
     private async Task<(MessageOutcome Outcome, string? Reason)> ProcessMessageAsync(

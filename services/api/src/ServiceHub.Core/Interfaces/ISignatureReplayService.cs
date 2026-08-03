@@ -8,8 +8,8 @@ namespace ServiceHub.Core.Interfaces;
 /// Orchestrates replaying every message currently belonging to a failure signature — "replay
 /// this whole recurring failure, not just one message" — reusing <see cref="IMessageOperationsService"/>
 /// (the same provider-neutral facade single-message and bulk replay already go through) for the
-/// actual replay call. Job state is in-memory only (see <see cref="ISignatureReplayJobStore"/>);
-/// there is no persisted job row, unlike <see cref="IBulkOperationService"/>.
+/// actual replay call. Job state is persisted (<see cref="Entities.SignatureReplayJob"/>), the
+/// same durability shape <see cref="IBulkOperationService"/> already has.
 /// </summary>
 public interface ISignatureReplayService
 {
@@ -24,8 +24,8 @@ public interface ISignatureReplayService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Validates the request (production guard, Send permission, non-empty match), creates an
-    /// in-memory job, and starts processing it in the background. Returns the created job
+    /// Validates the request (production guard, Send permission, non-empty match), persists a
+    /// <c>Pending</c> job, and enqueues it for the background worker. Returns the created job
     /// immediately — the caller polls <see cref="GetJobAsync"/> for progress.
     /// </summary>
     Task<Result<BulkOperationJobResponse>> StartAsync(
@@ -37,6 +37,18 @@ public interface ISignatureReplayService
     Task<Result<BulkOperationJobResponse>> GetJobAsync(
         string ownerId,
         Guid jobId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists past and in-flight replay jobs for one signature, most recent first — the durable
+    /// replay-history record for that signature.
+    /// </summary>
+    Task<Result<PaginatedResponse<BulkOperationJobResponse>>> ListJobsAsync(
+        string ownerId,
+        Guid namespaceId,
+        string signatureHash,
+        int page,
+        int pageSize,
         CancellationToken cancellationToken = default);
 
     /// <summary>

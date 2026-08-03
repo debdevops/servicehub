@@ -132,6 +132,23 @@ public sealed class SignatureReplayControllerTests
         GetOkValue(result).Should().Be(response);
     }
 
+    // ── History ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task History_DelegatesToService_WithNamespaceAndSignature()
+    {
+        var response = new PaginatedResponse<BulkOperationJobResponse>(
+            Items: [SampleJobResponse(_namespaceId)], TotalCount: 1, Page: 1, PageSize: 20,
+            HasNextPage: false, HasPreviousPage: false);
+        _serviceMock
+            .Setup(s => s.ListJobsAsync(It.IsAny<string>(), _namespaceId, SignatureHash, 1, 20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<PaginatedResponse<BulkOperationJobResponse>>.Success(response));
+
+        var result = await _controller.History(_namespaceId, SignatureHash, page: 1, pageSize: 20);
+
+        GetOkValue(result).TotalCount.Should().Be(1);
+    }
+
     // ── GetJob ───────────────────────────────────────────────────────────────
 
     [Fact]

@@ -1,5 +1,5 @@
 using FluentAssertions;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Core.DTOs.Requests;
@@ -7,6 +7,7 @@ using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
+using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.SignatureReplay;
 using ServiceHub.Shared.Helpers;
@@ -14,29 +15,41 @@ using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Infrastructure.SignatureReplay;
 
-public sealed class SignatureReplayServiceTests
+public sealed class SignatureReplayServiceTests : IDisposable
 {
+    private readonly DlqDbContext _dbContext;
     private readonly Mock<INamespaceRepository> _namespaceRepositoryMock = new();
     private readonly Mock<IDlqSignatureAnalysisService> _analysisServiceMock = new();
     private readonly Mock<IDlqHistoryService> _historyServiceMock = new();
-    private readonly ISignatureReplayJobStore _jobStore = new SignatureReplayJobStore();
+    private readonly Mock<ISignatureReplayQueue> _queueMock = new();
     private readonly Guid _namespaceId = Guid.NewGuid();
     private const string OwnerId = "entra:test-owner-123";
     private static readonly string[] TopTerms = ["timeout", "connection"];
     private const string DominantReason = "MaxDeliveryCountExceeded";
     private static readonly string SignatureHash = ClusterSignatureHasher.ComputeHash(TopTerms, DominantReason);
 
+    public SignatureReplayServiceTests()
+    {
+        var options = new DbContextOptionsBuilder<DlqDbContext>()
+            .UseSqlite("DataSource=:memory:")
+            .Options;
+        _dbContext = new DlqDbContext(options);
+        _dbContext.Database.OpenConnection();
+        _dbContext.Database.EnsureCreated();
+    }
+
+    public void Dispose()
+    {
+        _dbContext.Database.CloseConnection();
+        _dbContext.Dispose();
+    }
+
     private SignatureReplayService CreateSut(params ICloudMessagingProvider[] providers)
     {
         var router = new CloudProviderRouter(providers);
-        var scopeFactory = new ServiceCollection()
-            .AddSingleton(Mock.Of<ISignatureReplayExecutor>())
-            .BuildServiceProvider()
-            .GetRequiredService<IServiceScopeFactory>();
-
         return new SignatureReplayService(
-            _namespaceRepositoryMock.Object, router, _analysisServiceMock.Object, _historyServiceMock.Object,
-            _jobStore, scopeFactory, NullLogger<SignatureReplayService>.Instance);
+            _dbContext, _namespaceRepositoryMock.Object, router, _analysisServiceMock.Object, _historyServiceMock.Object,
+            _queueMock.Object, NullLogger<SignatureReplayService>.Instance);
     }
 
     private static Mock<ICloudMessagingProvider> BuildProviderMock(CloudProviderType type) =>
@@ -249,10 +262,12 @@ public sealed class SignatureReplayServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.TotalMatched.Should().Be(2);
         result.Value.OperationType.Should().Be("Replay");
+        result.Value.Status.Should().Be(nameof(BulkOperationStatus.Pending));
 
-        var stored = _jobStore.Get(result.Value.Id, OwnerId);
+        var stored = await _dbContext.SignatureReplayJobs.FirstOrDefaultAsync(j => j.Id == result.Value.Id);
         stored.Should().NotBeNull();
-        stored!.MessageIds.Should().HaveCount(2);
+        stored!.Status.Should().Be(BulkOperationStatus.Pending);
+        _queueMock.Verify(q => q.Enqueue(result.Value.Id), Times.Once);
     }
 
     [Fact]
@@ -305,8 +320,9 @@ public sealed class SignatureReplayServiceTests
         var cancelled = await sut.CancelJobAsync(OwnerId, created.Value.Id);
 
         cancelled.IsSuccess.Should().BeTrue();
-        var stored = _jobStore.Get(created.Value.Id, OwnerId);
+        var stored = await _dbContext.SignatureReplayJobs.FirstOrDefaultAsync(j => j.Id == created.Value.Id);
         stored!.CancellationRequestedAt.Should().NotBeNull();
+        _queueMock.Verify(q => q.RequestCancellation(created.Value.Id), Times.Once);
     }
 
     [Fact]
@@ -318,6 +334,37 @@ public sealed class SignatureReplayServiceTests
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Contain("NotFound");
+    }
+
+    // ── ListJobsAsync ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ListJobsAsync_ReturnsJobsForSignature_MostRecentFirst()
+    {
+        var sut = CreateSut(BuildProviderMock(CloudProviderType.Aws).Object);
+        SetupNamespace();
+        SetupSignatureWithMessages(BuildMessage(1));
+        var first = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)));
+        SetupSignatureWithMessages(BuildMessage(2));
+        var second = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)));
+
+        var result = await sut.ListJobsAsync(OwnerId, _namespaceId, SignatureHash, page: 1, pageSize: 20);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TotalCount.Should().Be(2);
+        result.Value.Items.Select(i => i.Id).Should().ContainInOrder(second.Value.Id, first.Value.Id);
+    }
+
+    [Fact]
+    public async Task ListJobsAsync_NoJobs_ReturnsEmptyPage()
+    {
+        var sut = CreateSut(BuildProviderMock(CloudProviderType.Aws).Object);
+
+        var result = await sut.ListJobsAsync(OwnerId, _namespaceId, SignatureHash, page: 1, pageSize: 20);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Items.Should().BeEmpty();
+        result.Value.TotalCount.Should().Be(0);
     }
 }
 

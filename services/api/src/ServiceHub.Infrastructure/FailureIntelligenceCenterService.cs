@@ -20,20 +20,17 @@ public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCente
     private readonly INamespaceSignatureLookupService _signatureLookup;
     private readonly ISignatureLifecycleService _lifecycle;
     private readonly IFailureKnowledgeService _knowledge;
-    private readonly ISignatureReplayJobStore _replayJobStore;
 
     public FailureIntelligenceCenterService(
         DlqDbContext dbContext,
         INamespaceSignatureLookupService signatureLookup,
         ISignatureLifecycleService lifecycle,
-        IFailureKnowledgeService knowledge,
-        ISignatureReplayJobStore replayJobStore)
+        IFailureKnowledgeService knowledge)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _signatureLookup = signatureLookup ?? throw new ArgumentNullException(nameof(signatureLookup));
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _knowledge = knowledge ?? throw new ArgumentNullException(nameof(knowledge));
-        _replayJobStore = replayJobStore ?? throw new ArgumentNullException(nameof(replayJobStore));
     }
 
     public async Task<Result<InvestigationCenterResponse>> GetInvestigationCenterAsync(
@@ -200,9 +197,9 @@ public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCente
     {
         var items = new List<FailedReplayItem>();
 
-        // For MVP: replay jobs are in-memory only in ISignatureReplayJobStore.
-        // Populating this section requires making the job store queryable or
-        // adding a durable replay job table. Both are future enhancements.
+        // Replay jobs are now durable and queryable (ISignatureReplayService.ListJobsAsync,
+        // backed by SignatureReplayJob) — wiring this section to that data is a future
+        // enhancement, out of scope for the durability work that made it possible.
 
         return Task.FromResult(items);
     }
@@ -302,9 +299,10 @@ public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCente
     {
         var items = new List<RecentChangeItem>();
 
-        // For MVP: Lifecycle events are in-memory only in ISignatureLifecycleService.
-        // Populating this section requires adding a durable lifecycle history table,
-        // which is a future enhancement. Knowledge updates can be sourced from
+        // Lifecycle transition history is now durable and queryable
+        // (ISignatureLifecycleService.GetHistoryAsync, backed by SignatureLifecycleHistory) —
+        // wiring this section to that data is a future enhancement, out of scope for the
+        // durability work that made it possible. Knowledge updates can be sourced from
         // FailureKnowledgeHistoryEntity once we add queries for them.
 
         return Task.FromResult(items);

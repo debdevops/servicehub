@@ -12,10 +12,10 @@ namespace ServiceHub.Api.Controllers.V1;
 
 /// <summary>
 /// Replays every DLQ message currently belonging to a failure signature — "replay this whole
-/// recurring failure" as a dry-run-first, cancellable, progress-reporting job, reusing the same
-/// <see cref="IMessageOperationsService"/> replay call single-message and bulk replay already go
-/// through. See <see cref="ISignatureReplayService"/> for why this has its own (in-memory-only)
-/// job tracking instead of reusing <c>BulkOperationsController</c>'s persisted job pipeline.
+/// recurring failure" as a dry-run-first, cancellable, progress-reporting, durable job, reusing
+/// the same <see cref="IMessageOperationsService"/> replay call single-message and bulk replay
+/// already go through. See <see cref="ISignatureReplayService"/> for why this has its own job
+/// pipeline (signature-scoped) instead of reusing <c>BulkOperationsController</c>'s filter-scoped one.
 /// </summary>
 [Tags("Signature Replay")]
 public sealed class SignatureReplayController : ApiControllerBase
@@ -121,6 +121,32 @@ public sealed class SignatureReplayController : ApiControllerBase
             result.Value.Id, OwnerId, namespaceId, LogRedactor.SanitiseForLog(signatureHash));
 
         return AcceptedAtAction(nameof(GetJob), new { id = result.Value.Id }, result.Value);
+    }
+
+    /// <summary>
+    /// Lists past and in-flight replay jobs for one failure signature, most recent first —
+    /// the durable replay-history record for that signature.
+    /// </summary>
+    /// <param name="namespaceId">The namespace the signature belongs to.</param>
+    /// <param name="signatureHash">The signature's stable identity hash.</param>
+    /// <param name="page">1-based page number.</param>
+    /// <param name="pageSize">Page size (clamped to 1–100).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpGet("~/" + ApiRoutes.Dlq.SignatureReplayHistory)]
+    [RequireNamespaceOwnership]
+    [RequireScope(ApiKeyScopes.DlqRead)]
+    [ProducesResponseType(typeof(PaginatedResponse<BulkOperationJobResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PaginatedResponse<BulkOperationJobResponse>>> History(
+        Guid namespaceId,
+        string signatureHash,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _signatureReplayService.ListJobsAsync(
+            OwnerId, namespaceId, signatureHash, page, pageSize, cancellationToken);
+        return ToActionResult(result);
     }
 
     /// <summary>Gets a single signature-replay job's current status and progress.</summary>

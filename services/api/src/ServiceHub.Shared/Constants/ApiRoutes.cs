@@ -321,6 +321,11 @@ public static class ApiRoutes
         public const string SignatureReplay = $"{SignatureById}/replay";
 
         /// <summary>
+        /// Route for listing a failure signature's past and in-flight replay jobs, most recent first.
+        /// </summary>
+        public const string SignatureReplayHistory = $"{SignatureReplay}/history";
+
+        /// <summary>
         /// Routes for auto-replay rule operations.
         /// </summary>
         public static class Rules

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -60,20 +61,31 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         return msg;
     }
 
-    private static SignatureReplayJobState CreateJob(
+    private SignatureReplayJob CreateJob(
         IReadOnlyList<long> messageIds,
-        DateTimeOffset? cancellationRequestedAt = null) => new()
+        DateTimeOffset? cancellationRequestedAt = null,
+        BulkOperationStatus status = BulkOperationStatus.Pending)
     {
-        Id = Guid.NewGuid(),
-        OwnerId = OwnerId,
-        NamespaceId = Guid.NewGuid(),
-        NamespaceDisplayName = "ns",
-        SignatureHash = "hash-1",
-        MessageIds = messageIds,
-        TotalMatched = messageIds.Count,
-        CancellationRequestedAt = cancellationRequestedAt,
-        CancellationTokenSource = new CancellationTokenSource(),
-    };
+        var job = new SignatureReplayJob
+        {
+            Id = Guid.NewGuid(),
+            OwnerId = OwnerId,
+            Status = status,
+            NamespaceId = Guid.NewGuid(),
+            NamespaceDisplayName = "ns",
+            SignatureHash = "hash-1",
+            MessageIdsJson = JsonSerializer.Serialize(messageIds),
+            TotalMatched = messageIds.Count,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CancellationRequestedAt = cancellationRequestedAt,
+        };
+        _dbContext.SignatureReplayJobs.Add(job);
+        _dbContext.SaveChanges();
+        return job;
+    }
+
+    private async Task<SignatureReplayJob> ReloadAsync(Guid jobId) =>
+        await _dbContext.SignatureReplayJobs.AsNoTracking().FirstAsync(j => j.Id == jobId);
 
     [Fact]
     public async Task ExecuteAsync_CancellationAlreadyRequested_MarksCancelledWithoutProcessing()
@@ -82,13 +94,40 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         var message = AddDlqMessage();
         var job = CreateJob([message.Id], cancellationRequestedAt: DateTimeOffset.UtcNow);
 
-        await sut.ExecuteAsync(job, job.CancellationTokenSource.Token);
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
-        job.Status.Should().Be(BulkOperationStatus.Cancelled);
-        job.ProcessedCount.Should().Be(0);
+        var reloaded = await ReloadAsync(job.Id);
+        reloaded.Status.Should().Be(BulkOperationStatus.Cancelled);
+        reloaded.ProcessedCount.Should().Be(0);
         _messageOperationsMock.Verify(
             m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_JobNotPending_SkipsDuplicateDequeue()
+    {
+        var sut = CreateSut();
+        var message = AddDlqMessage();
+        var job = CreateJob([message.Id], status: BulkOperationStatus.Running);
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        var reloaded = await ReloadAsync(job.Id);
+        reloaded.Status.Should().Be(BulkOperationStatus.Running);
+        _messageOperationsMock.Verify(
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_UnknownJobId_LogsAndReturnsWithoutThrowing()
+    {
+        var sut = CreateSut();
+
+        var act = async () => await sut.ExecuteAsync(Guid.NewGuid(), CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
@@ -101,12 +140,13 @@ public sealed class SignatureReplayExecutorTests : IDisposable
             .ReturnsAsync(Result.Success());
 
         var job = CreateJob([message.Id]);
-        await sut.ExecuteAsync(job, job.CancellationTokenSource.Token);
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
-        job.Status.Should().Be(BulkOperationStatus.Completed);
-        job.ProcessedCount.Should().Be(1);
-        job.SuccessCount.Should().Be(1);
-        job.FailureCount.Should().Be(0);
+        var reloaded = await ReloadAsync(job.Id);
+        reloaded.Status.Should().Be(BulkOperationStatus.Completed);
+        reloaded.ProcessedCount.Should().Be(1);
+        reloaded.SuccessCount.Should().Be(1);
+        reloaded.FailureCount.Should().Be(0);
 
         var stored = await _dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == message.Id);
         stored.Status.Should().Be(DlqMessageStatus.Replayed);
@@ -125,11 +165,12 @@ public sealed class SignatureReplayExecutorTests : IDisposable
             .ReturnsAsync(Result.Failure(Error.ExternalService("Provider.Error", "boom")));
 
         var job = CreateJob([message.Id]);
-        await sut.ExecuteAsync(job, job.CancellationTokenSource.Token);
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
-        job.Status.Should().Be(BulkOperationStatus.CompletedWithErrors);
-        job.FailureCount.Should().Be(1);
-        job.FailureSample.Should().ContainSingle(f => f.Reason == "boom");
+        var reloaded = await ReloadAsync(job.Id);
+        reloaded.Status.Should().Be(BulkOperationStatus.CompletedWithErrors);
+        reloaded.FailureCount.Should().Be(1);
+        reloaded.FailureSampleJson.Should().Contain("boom");
 
         var stored = await _dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == message.Id);
         stored.Status.Should().Be(DlqMessageStatus.ReplayFailed);
@@ -142,10 +183,11 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         var message = AddDlqMessage(status: DlqMessageStatus.Replayed);
 
         var job = CreateJob([message.Id]);
-        await sut.ExecuteAsync(job, job.CancellationTokenSource.Token);
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
-        job.SkippedCount.Should().Be(1);
-        job.SuccessCount.Should().Be(0);
+        var reloaded = await ReloadAsync(job.Id);
+        reloaded.SkippedCount.Should().Be(1);
+        reloaded.SuccessCount.Should().Be(0);
         _messageOperationsMock.Verify(
             m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -159,16 +201,18 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         var second = AddDlqMessage(seq: 2);
 
         var job = CreateJob([first.Id, second.Id]);
+        using var cts = new CancellationTokenSource();
 
         _messageOperationsMock
             .Setup(m => m.ReplayMessageAsync(first.NamespaceId, "orders", null, 1, It.IsAny<CancellationToken>()))
-            .Callback(() => job.CancellationTokenSource.Cancel())
+            .Callback(() => cts.Cancel())
             .ReturnsAsync(Result.Success());
 
-        await sut.ExecuteAsync(job, job.CancellationTokenSource.Token);
+        await sut.ExecuteAsync(job.Id, cts.Token);
 
-        job.Status.Should().Be(BulkOperationStatus.Cancelled);
-        job.ProcessedCount.Should().Be(1);
+        var reloaded = await ReloadAsync(job.Id);
+        reloaded.Status.Should().Be(BulkOperationStatus.Cancelled);
+        reloaded.ProcessedCount.Should().Be(1);
         _messageOperationsMock.Verify(
             m => m.ReplayMessageAsync(second.NamespaceId, "orders", null, 2, It.IsAny<CancellationToken>()),
             Times.Never);
@@ -200,9 +244,10 @@ public sealed class SignatureReplayExecutorTests : IDisposable
             .ReturnsAsync(Result.Success());
 
         var job = CreateJob([message.Id]);
-        await sut.ExecuteAsync(job, job.CancellationTokenSource.Token);
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
-        job.SuccessCount.Should().Be(1);
+        var reloaded = await ReloadAsync(job.Id);
+        reloaded.SuccessCount.Should().Be(1);
         _messageOperationsMock.Verify(
             m => m.ReplayMessageAsync(_namespaceId, "orders-topic", "orders-sub", 1, It.IsAny<CancellationToken>()),
             Times.Once);

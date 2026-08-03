@@ -44,6 +44,15 @@ public sealed class DlqDbContext : DbContext
     /// <summary>Prior versions of operational knowledge, snapshotted before each edit.</summary>
     public DbSet<FailureKnowledgeHistoryEntity> FailureKnowledgeHistoryEntities => Set<FailureKnowledgeHistoryEntity>();
 
+    /// <summary>Durable current lifecycle status (Active/Resolved/Reopened/Suppressed/Archived) per failure signature.</summary>
+    public DbSet<SignatureLifecycleState> SignatureLifecycleStates => Set<SignatureLifecycleState>();
+
+    /// <summary>Append-only transition history for failure signature lifecycle changes.</summary>
+    public DbSet<SignatureLifecycleHistoryEntry> SignatureLifecycleHistory => Set<SignatureLifecycleHistoryEntry>();
+
+    /// <summary>Signature-replay operation jobs.</summary>
+    public DbSet<SignatureReplayJob> SignatureReplayJobs => Set<SignatureReplayJob>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -60,6 +69,9 @@ public sealed class DlqDbContext : DbContext
         ConfigureNamespaceSignature(modelBuilder);
         ConfigureFailureKnowledge(modelBuilder);
         ConfigureFailureKnowledgeHistory(modelBuilder);
+        ConfigureSignatureLifecycleState(modelBuilder);
+        ConfigureSignatureLifecycleHistoryEntry(modelBuilder);
+        ConfigureSignatureReplayJob(modelBuilder);
     }
 
     private static void ApplyUtcDateTimeConverters(ModelBuilder modelBuilder)
@@ -612,5 +624,126 @@ public sealed class DlqDbContext : DbContext
         // Version history lookups, ordered by version, per signature.
         entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.SignatureHash, e.KnowledgeVersion })
             .HasDatabaseName("IX_FailureKnowledgeHistory_Owner_Namespace_SignatureHash_Version");
+    }
+
+    private static void ConfigureSignatureLifecycleState(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<SignatureLifecycleState>();
+
+        entity.ToTable("SignatureLifecycleStates");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.Id)
+            .ValueGeneratedOnAdd();
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.SignatureHash)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        entity.Property(e => e.Status)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.PreviousStatus)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        entity.Property(e => e.Notes)
+            .HasMaxLength(4096);
+
+        // One current-state row per signature per namespace per owner — the upsert key.
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.SignatureHash })
+            .IsUnique()
+            .HasDatabaseName("IX_SignatureLifecycleStates_Owner_Namespace_SignatureHash");
+    }
+
+    private static void ConfigureSignatureLifecycleHistoryEntry(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<SignatureLifecycleHistoryEntry>();
+
+        entity.ToTable("SignatureLifecycleHistory");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.Id)
+            .ValueGeneratedOnAdd();
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.SignatureHash)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        entity.Property(e => e.FromStatus)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.ToStatus)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.Notes)
+            .HasMaxLength(4096);
+
+        // Ordered transition history lookups per signature.
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.SignatureHash, e.Timestamp })
+            .HasDatabaseName("IX_SignatureLifecycleHistory_Owner_Namespace_SignatureHash_Timestamp");
+    }
+
+    private static void ConfigureSignatureReplayJob(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<SignatureReplayJob>();
+
+        entity.ToTable("SignatureReplayJobs");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.Status)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        entity.Property(e => e.NamespaceDisplayName)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.SignatureHash)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        entity.Property(e => e.StatusFilter)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        entity.Property(e => e.MessageIdsJson)
+            .IsRequired();
+
+        entity.Property(e => e.FailureSampleJson)
+            .HasMaxLength(8192);
+
+        entity.Property(e => e.ErrorSummary)
+            .HasMaxLength(2048);
+
+        entity.Property(e => e.CorrelationId)
+            .HasMaxLength(256);
+
+        // Owner+signature-scoped job history, most recent first — the history list endpoint's
+        // primary access path.
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.SignatureHash, e.CreatedAt })
+            .HasDatabaseName("IX_SignatureReplayJobs_Owner_Namespace_SignatureHash_CreatedAt");
+
+        // Worker startup scan for jobs left Pending/Running across a restart.
+        entity.HasIndex(e => e.Status)
+            .HasDatabaseName("IX_SignatureReplayJobs_Status");
     }
 }
