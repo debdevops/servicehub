@@ -208,6 +208,13 @@ public sealed class RulesController : ApiControllerBase
             _dbContext.AutoReplayRules.Add(entity);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: "Rule.Create",
+                outcome: "Succeeded",
+                resourceName: entity.Name);
+
             _logger.LogInformation("Created auto-replay rule {RuleId}/{RuleName}", entity.Id, LogRedactor.SanitiseForLog(entity.Name));
 
             return CreatedAtAction(
@@ -282,6 +289,13 @@ public sealed class RulesController : ApiControllerBase
 
             await _dbContext.SaveChangesAsync(cancellationToken);
 
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: "Rule.Update",
+                outcome: "Succeeded",
+                resourceName: rule.Name);
+
             _logger.LogInformation("Updated auto-replay rule {RuleId}/{RuleName}", rule.Id, LogRedactor.SanitiseForLog(rule.Name));
 
             return Ok(MapToResponse(rule));
@@ -338,6 +352,13 @@ public sealed class RulesController : ApiControllerBase
             _dbContext.AutoReplayRules.Remove(rule);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
+            _auditLogger.LogCriticalAction(
+                HttpContext,
+                OwnerId,
+                action: "Rule.Delete",
+                outcome: "Succeeded",
+                resourceName: rule.Name);
+
             _logger.LogInformation("Deleted auto-replay rule {RuleId}/{RuleName}", rule.Id, LogRedactor.SanitiseForLog(rule.Name));
 
             return NoContent();
@@ -389,6 +410,14 @@ public sealed class RulesController : ApiControllerBase
         rule.Enabled = !rule.Enabled;
         rule.UpdatedAt = DateTimeOffset.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _auditLogger.LogCriticalAction(
+            HttpContext,
+            OwnerId,
+            action: "Rule.Toggle",
+            outcome: "Succeeded",
+            resourceName: rule.Name,
+            detail: rule.Enabled ? "enabled" : "disabled");
 
         _logger.LogInformation(
             "Toggled rule {RuleId} to {State}", rule.Id, rule.Enabled ? "enabled" : "disabled");

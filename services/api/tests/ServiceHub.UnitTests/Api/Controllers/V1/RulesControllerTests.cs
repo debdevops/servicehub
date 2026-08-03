@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Controllers.V1;
+using ServiceHub.Api.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
@@ -22,6 +23,7 @@ public class RulesControllerTests : IDisposable
     private readonly DlqDbContext _dbContext;
     private readonly Mock<IRuleEngine> _ruleEngine = new();
     private readonly Mock<ILogger<RulesController>> _logger = new();
+    private readonly Mock<IAuditLogger> _auditLogger = new();
     private readonly RulesController _controller;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -40,7 +42,7 @@ public class RulesControllerTests : IDisposable
         _dbContext.Database.OpenConnection();
         _dbContext.Database.EnsureCreated();
 
-        _controller = new RulesController(_dbContext, _ruleEngine.Object, _logger.Object);
+        _controller = new RulesController(_dbContext, _ruleEngine.Object, _logger.Object, _auditLogger.Object);
         _controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext
@@ -254,6 +256,10 @@ public class RulesControllerTests : IDisposable
         var request = CreateRuleRequest();
         var result = await _controller.Create(request);
         result.Result.Should().BeOfType<CreatedAtActionResult>();
+        _auditLogger.Verify(a => a.LogCriticalAction(
+            It.IsAny<HttpContext>(), It.IsAny<string>(), "Rule.Create", "Succeeded",
+            It.IsAny<Guid?>(), It.IsAny<EnvironmentType?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<string?>(), request.Name, It.IsAny<long?>(), It.IsAny<string?>()), Times.Once);
     }
 
     [Fact]
@@ -265,6 +271,10 @@ public class RulesControllerTests : IDisposable
         var request = CreateRuleRequest("Existing Rule");
         var result = await _controller.Create(request);
         result.Result.Should().NotBeOfType<CreatedAtActionResult>();
+        _auditLogger.Verify(a => a.LogCriticalAction(
+            It.IsAny<HttpContext>(), It.IsAny<string>(), "Rule.Create", It.IsAny<string>(),
+            It.IsAny<Guid?>(), It.IsAny<EnvironmentType?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<long?>(), It.IsAny<string?>()), Times.Never);
     }
 
     // ── Update ──────────────────────────────────────────────
@@ -282,6 +292,10 @@ public class RulesControllerTests : IDisposable
         var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var response = ok.Value.Should().BeOfType<RuleResponse>().Subject;
         response.Name.Should().Be("Updated Rule");
+        _auditLogger.Verify(a => a.LogCriticalAction(
+            It.IsAny<HttpContext>(), It.IsAny<string>(), "Rule.Update", "Succeeded",
+            It.IsAny<Guid?>(), It.IsAny<EnvironmentType?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<string?>(), "Updated Rule", It.IsAny<long?>(), It.IsAny<string?>()), Times.Once);
     }
 
     [Fact]
@@ -290,6 +304,10 @@ public class RulesControllerTests : IDisposable
         var request = CreateRuleRequest();
         var result = await _controller.Update(999, request);
         result.Result.Should().NotBeOfType<OkObjectResult>();
+        _auditLogger.Verify(a => a.LogCriticalAction(
+            It.IsAny<HttpContext>(), It.IsAny<string>(), "Rule.Update", It.IsAny<string>(),
+            It.IsAny<Guid?>(), It.IsAny<EnvironmentType?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<long?>(), It.IsAny<string?>()), Times.Never);
     }
 
     [Fact]
@@ -316,6 +334,10 @@ public class RulesControllerTests : IDisposable
 
         var result = await _controller.Delete(rule.Id);
         result.Should().BeOfType<NoContentResult>();
+        _auditLogger.Verify(a => a.LogCriticalAction(
+            It.IsAny<HttpContext>(), It.IsAny<string>(), "Rule.Delete", "Succeeded",
+            It.IsAny<Guid?>(), It.IsAny<EnvironmentType?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<string?>(), rule.Name, It.IsAny<long?>(), It.IsAny<string?>()), Times.Once);
     }
 
     [Fact]
@@ -323,6 +345,10 @@ public class RulesControllerTests : IDisposable
     {
         var result = await _controller.Delete(999);
         result.Should().NotBeOfType<NoContentResult>();
+        _auditLogger.Verify(a => a.LogCriticalAction(
+            It.IsAny<HttpContext>(), It.IsAny<string>(), "Rule.Delete", It.IsAny<string>(),
+            It.IsAny<Guid?>(), It.IsAny<EnvironmentType?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<long?>(), It.IsAny<string?>()), Times.Never);
     }
 
     // ── Toggle ──────────────────────────────────────────────
@@ -338,6 +364,10 @@ public class RulesControllerTests : IDisposable
         var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var response = ok.Value.Should().BeOfType<RuleResponse>().Subject;
         response.Enabled.Should().BeFalse();
+        _auditLogger.Verify(a => a.LogCriticalAction(
+            It.IsAny<HttpContext>(), It.IsAny<string>(), "Rule.Toggle", "Succeeded",
+            It.IsAny<Guid?>(), It.IsAny<EnvironmentType?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<string?>(), rule.Name, It.IsAny<long?>(), "disabled"), Times.Once);
     }
 
     [Fact]
@@ -358,6 +388,10 @@ public class RulesControllerTests : IDisposable
     {
         var result = await _controller.Toggle(999);
         result.Result.Should().NotBeOfType<OkObjectResult>();
+        _auditLogger.Verify(a => a.LogCriticalAction(
+            It.IsAny<HttpContext>(), It.IsAny<string>(), "Rule.Toggle", It.IsAny<string>(),
+            It.IsAny<Guid?>(), It.IsAny<EnvironmentType?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<long?>(), It.IsAny<string?>()), Times.Never);
     }
 
     // ── TestRule ─────────────────────────────────────────────

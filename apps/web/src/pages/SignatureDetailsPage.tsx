@@ -22,6 +22,7 @@ import {
   SignatureReplayProgressPanel,
   ReplaySafetyPanel,
   RootCauseExplorerPanel,
+  RecentChangesPanel,
   CrossCloudTraceLink,
   getTrendRecommendation,
 } from '@/components/dlq';
@@ -190,6 +191,15 @@ export function SignatureDetailsPage() {
               signatureHash={signatureHash}
               dominantDeadletterReason={detail.dominantDeadletterReason}
               namespaces={namespaces}
+            />
+          </div>
+
+          {/* Recent Changes Before Failure */}
+          <div className="mb-4">
+            <RecentChangesPanel
+              namespaceId={namespaceId}
+              signatureHash={signatureHash}
+              firstSeenAt={detail.firstSeenAt}
             />
           </div>
 

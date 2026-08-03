@@ -243,6 +243,15 @@ public sealed class NamespacesController : ApiControllerBase
 
         _logger.LogInformation("Namespace {NamespaceId} created successfully", ns.Id);
 
+        _auditLogger.LogCriticalAction(
+            HttpContext,
+            OwnerId,
+            action: "Namespace.Create",
+            outcome: "Succeeded",
+            namespaceId: ns.Id,
+            environment: ns.Environment,
+            resourceName: ns.Name);
+
         // Publish after commit — only fires when AddAsync has durably succeeded.
         if (_eventBus is not null)
         {

@@ -27,6 +27,7 @@ public class NamespacesControllerTests
     private readonly Mock<IConnectionStringProtector> _connectionStringProtector;
     private readonly Mock<ILogger<NamespacesController>> _logger;
     private readonly Mock<IPlatformEventBus> _eventBus;
+    private readonly Mock<IAuditLogger> _auditLogger;
     private readonly NamespacesController _controller;
 
     public NamespacesControllerTests()
@@ -37,6 +38,7 @@ public class NamespacesControllerTests
         _connectionStringProtector = new Mock<IConnectionStringProtector>();
         _logger = new Mock<ILogger<NamespacesController>>();
         _eventBus = new Mock<IPlatformEventBus>();
+        _auditLogger = new Mock<IAuditLogger>();
 
         // Default: PublishAsync is a no-op ValueTask — does not throw.
         _eventBus
@@ -49,7 +51,7 @@ public class NamespacesControllerTests
             _clientCache.Object,
             _connectionStringProtector.Object,
             _logger.Object,
-            auditLogger: null,
+            auditLogger: _auditLogger.Object,
             eventBus: _eventBus.Object)
         {
             ControllerContext = new ControllerContext
@@ -215,6 +217,10 @@ public class NamespacesControllerTests
         var result = await _controller.Create(request);
 
         result.Result.Should().BeOfType<CreatedAtActionResult>();
+        _auditLogger.Verify(a => a.LogCriticalAction(
+            It.IsAny<HttpContext>(), It.IsAny<string>(), "Namespace.Create", "Succeeded",
+            It.IsAny<Guid?>(), It.IsAny<EnvironmentType?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<string?>(), "test-namespace", It.IsAny<long?>(), It.IsAny<string?>()), Times.Once);
     }
 
     [Fact]
@@ -233,6 +239,10 @@ public class NamespacesControllerTests
         var result = await _controller.Create(request);
 
         result.Result.Should().BeOfType<ConflictObjectResult>();
+        _auditLogger.Verify(a => a.LogCriticalAction(
+            It.IsAny<HttpContext>(), It.IsAny<string>(), "Namespace.Create", It.IsAny<string>(),
+            It.IsAny<Guid?>(), It.IsAny<EnvironmentType?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<long?>(), It.IsAny<string?>()), Times.Never);
     }
 
     [Fact]

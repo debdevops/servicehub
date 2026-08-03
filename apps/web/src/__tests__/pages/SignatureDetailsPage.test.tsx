@@ -44,6 +44,9 @@ vi.mock('@/components/dlq', () => ({
   RootCauseExplorerPanel: ({ namespaceId, signatureHash }: { namespaceId: string; signatureHash: string }) => (
     <div data-testid="root-cause-explorer-panel">Root cause explorer for {namespaceId}/{signatureHash}</div>
   ),
+  RecentChangesPanel: ({ namespaceId, signatureHash, firstSeenAt }: { namespaceId: string; signatureHash: string; firstSeenAt: string }) => (
+    <div data-testid="recent-changes-panel">Recent changes for {namespaceId}/{signatureHash} before {firstSeenAt}</div>
+  ),
   CrossCloudTraceLink: ({ correlationId }: { correlationId?: string | null }) =>
     correlationId ? <a data-testid="cross-cloud-trace-link" href={`/cross-cloud-trace?traceId=${correlationId}`}>View cross-cloud path</a> : null,
   getTrendRecommendation: (trend: string) => (trend === 'Recurring' ? 'Check the Timeline for prior attempts before acting again.' : null),
@@ -168,6 +171,14 @@ describe('SignatureDetailsPage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><SignatureDetailsPage /></Wrapper>);
     expect(screen.getByTestId('root-cause-explorer-panel')).toHaveTextContent('Root cause explorer for ns1/hash-1');
+  });
+
+  it('renders the Recent Changes Before Failure panel for the current namespace, signature, and first-seen window', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+    expect(screen.getByTestId('recent-changes-panel')).toHaveTextContent(
+      'Recent changes for ns1/hash-1 before 2026-01-01T00:00:00Z',
+    );
   });
 
   it('opening replay from the Replay Safety panel reuses the same preview flow as the Actions bar button', () => {

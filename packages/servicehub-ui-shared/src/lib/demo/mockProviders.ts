@@ -27,6 +27,7 @@ import type {
 } from '../api/dlqSignatures';
 import type { DlqTimelineEvent } from '../api/dlqHistory';
 import type { BulkOperationJob, PaginatedBulkOperationJobs } from '../api/bulkOperations';
+import type { AuditLogItem, AuditPageResponse } from '../api/audit';
 
 // ─── Namespace IDs ──────────────────────────────────────────────────────────
 // Stable IDs used in URL query params and as namespace identifiers in demo mode
@@ -415,6 +416,8 @@ interface DemoSignatureDefinition {
   replayHistory: BulkOperationJob[];
   /** Occurrences of this same signature hash in other (fictional) namespaces in the fleet, for Root Cause Explorer. */
   rootCauseMatches: RootCauseMatch[];
+  /** Namespace-wide audit entries in the 24h before firstSeenAt, for the Recent Changes Before Failure panel. */
+  recentChanges: AuditLogItem[];
 }
 
 const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
@@ -471,6 +474,50 @@ const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
       },
     ],
     rootCauseMatches: [],
+    recentChanges: [
+      {
+        id: 'demo-audit-max-delivery-1',
+        timestamp: new Date(Date.now() - 18 * DAY_MS - 5 * 60 * 60 * 1000).toISOString(),
+        userIdentity: 'alice@example.com',
+        action: 'Rule.Toggle',
+        outcome: 'Success',
+        namespaceId: null,
+        namespaceName: null,
+        entityName: null,
+        cloudProvider: null,
+        environment: null,
+        resourceName: 'Retry-on-timeout',
+        sequenceNumber: null,
+        detailsJson: null,
+        errorDetails: null,
+        clientIp: null,
+        userAgent: null,
+        correlationId: null,
+        httpMethod: null,
+        httpPath: null,
+      },
+      {
+        id: 'demo-audit-max-delivery-2',
+        timestamp: new Date(Date.now() - 18 * DAY_MS - 16 * 60 * 60 * 1000).toISOString(),
+        userIdentity: 'bob@example.com',
+        action: 'Namespace.Create',
+        outcome: 'Success',
+        namespaceId: null,
+        namespaceName: null,
+        entityName: null,
+        cloudProvider: null,
+        environment: null,
+        resourceName: 'prod-orders-eastus',
+        sequenceNumber: null,
+        detailsJson: null,
+        errorDetails: null,
+        clientIp: null,
+        userAgent: null,
+        correlationId: null,
+        httpMethod: null,
+        httpPath: null,
+      },
+    ],
   },
   {
     hash: 'demo-poison-message',
@@ -524,6 +571,7 @@ const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
       },
     ],
     rootCauseMatches: [],
+    recentChanges: [],
   },
   {
     hash: 'demo-deserialization-failure',
@@ -575,6 +623,29 @@ const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
         },
       },
     ],
+    recentChanges: [
+      {
+        id: 'demo-audit-deserialization-1',
+        timestamp: new Date(Date.now() - 1 * DAY_MS - 12 * 60 * 60 * 1000).toISOString(),
+        userIdentity: 'data-platform@example.com',
+        action: 'Rule.Create',
+        outcome: 'Success',
+        namespaceId: null,
+        namespaceName: null,
+        entityName: null,
+        cloudProvider: null,
+        environment: null,
+        resourceName: 'Schema-version-gate',
+        sequenceNumber: null,
+        detailsJson: null,
+        errorDetails: null,
+        clientIp: null,
+        userAgent: null,
+        correlationId: null,
+        httpMethod: null,
+        httpPath: null,
+      },
+    ],
   },
   {
     hash: 'demo-authentication-failure',
@@ -603,6 +674,7 @@ const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
     },
     replayHistory: [],
     rootCauseMatches: [],
+    recentChanges: [],
   },
   {
     hash: 'demo-duplicate-detection',
@@ -631,6 +703,7 @@ const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
     },
     replayHistory: [],
     rootCauseMatches: [],
+    recentChanges: [],
   },
 ];
 
@@ -777,5 +850,26 @@ export function getMockRootCauseMatches(signatureHash: string): RootCauseExplore
     topTerms: def.topTerms,
     totalOccurrencesAcrossFleet: def.size + def.rootCauseMatches.reduce((sum, m) => sum + m.occurrenceCount, 0),
     matches: def.rootCauseMatches,
+  };
+}
+
+/**
+ * Recent Changes Before Failure, demo mode: this signature's fixture audit entries in the 24h
+ * before its firstSeenAt, or undefined if the hash doesn't match one of the curated demo
+ * signatures. Backs the Recent Changes Before Failure panel in demo mode, where `useAuditLogs`
+ * is disabled entirely (`enabled: !isDemoMode`) — most demo signatures have no fixture changes,
+ * matching `rootCauseMatches`' mostly-empty curated pattern.
+ */
+export function getMockRecentChanges(signatureHash: string): AuditPageResponse | undefined {
+  const def = DEMO_SIGNATURE_DEFS.find((d) => d.hash === signatureHash);
+  if (!def) return undefined;
+
+  return {
+    items: def.recentChanges,
+    totalCount: def.recentChanges.length,
+    page: 1,
+    pageSize: 20,
+    hasNextPage: false,
+    hasPreviousPage: false,
   };
 }
