@@ -117,3 +117,30 @@ public sealed record SignatureLifecycleStatusResponse(
     string? PreviousStatus,
     DateTimeOffset? TransitionedAt,
     string? Notes);
+
+/// <summary>
+/// One other namespace where this exact signature hash has also been observed — same
+/// dominant deadletter reason and top terms as the signature being investigated, since the
+/// hash is derived from those alone (see <c>ClusterSignatureHasher</c>). <see cref="Knowledge"/>
+/// is <see langword="null"/> when no root cause has been recorded for it in that namespace.
+/// </summary>
+public sealed record RootCauseMatchResponse(
+    Guid NamespaceId,
+    int OccurrenceCount,
+    DateTimeOffset FirstSeenAt,
+    DateTimeOffset LastSeenAt,
+    string LifecycleStatus,
+    KnowledgeResponse? Knowledge);
+
+/// <summary>
+/// Fleet-wide view of one failure signature: every other namespace it has also occurred in,
+/// and the resulting total occurrence count across the whole fleet. Answers "has this happened
+/// before anywhere in my fleet?" using only already-persisted <c>NamespaceSignature</c> rows —
+/// no scoring, no inference.
+/// </summary>
+public sealed record RootCauseExplorerResponse(
+    string SignatureHash,
+    string DominantDeadletterReason,
+    IReadOnlyList<string> TopTerms,
+    int TotalOccurrencesAcrossFleet,
+    IReadOnlyList<RootCauseMatchResponse> Matches);

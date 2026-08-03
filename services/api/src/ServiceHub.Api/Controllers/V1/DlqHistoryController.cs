@@ -804,6 +804,70 @@ public sealed class DlqHistoryController : ApiControllerBase
     }
 
     /// <summary>
+    /// Finds this failure signature's occurrences in every other namespace in the fleet — Root
+    /// Cause Explorer. Matching is exact <c>SignatureHash</c> equality only (the hash already
+    /// encodes the dominant deadletter reason and top terms, so a match is never a fuzzy/scored
+    /// guess); for each matching namespace, surfaces its occurrence history, lifecycle status,
+    /// and recorded knowledge, if any.
+    /// </summary>
+    /// <param name="namespaceId">The namespace the signature belongs to.</param>
+    /// <param name="signatureHash">The signature's stable identity hash.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpGet("~/" + ApiRoutes.Dlq.SignatureRootCauseMatches)]
+    [RequireNamespaceOwnership]
+    [RequireScope(ApiKeyScopes.DlqRead)]
+    [ProducesResponseType(typeof(RootCauseExplorerResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<RootCauseExplorerResponse>> GetSignatureRootCauseMatches(
+        Guid namespaceId,
+        string signatureHash,
+        CancellationToken cancellationToken = default)
+    {
+        var current = await _signatureLookupService.GetByHashAsync(
+            OwnerId, namespaceId, signatureHash, cancellationToken);
+        if (current is null)
+        {
+            return ToActionResult<RootCauseExplorerResponse>(Error.NotFound(
+                "Dlq.SignatureNotFound", $"Failure signature '{signatureHash}' was not found."));
+        }
+
+        var others = await _signatureLookupService.FindAcrossNamespacesAsync(
+            OwnerId, signatureHash, namespaceId, cancellationToken);
+
+        var matches = new List<RootCauseMatchResponse>(others.Count);
+        foreach (var other in others)
+        {
+            var knowledgeResult = await _knowledgeService.GetKnowledgeAsync(
+                OwnerId, other.NamespaceId, signatureHash, cancellationToken);
+            var knowledge = knowledgeResult.IsSuccess && knowledgeResult.Value.RootCause is not null
+                ? ToKnowledgeResponse(knowledgeResult.Value)
+                : null;
+
+            var statusResult = await _lifecycleService.GetStatusAsync(
+                OwnerId, other.NamespaceId, signatureHash, cancellationToken);
+            var status = statusResult.IsSuccess ? statusResult.Value.Status : SignatureLifecycleStatus.Active;
+
+            matches.Add(new RootCauseMatchResponse(
+                NamespaceId: other.NamespaceId,
+                OccurrenceCount: other.OccurrenceCount,
+                FirstSeenAt: other.FirstSeenAt,
+                LastSeenAt: other.LastSeenAt,
+                LifecycleStatus: status.ToString(),
+                Knowledge: knowledge));
+        }
+
+        var topTerms = JsonSerializer.Deserialize<List<string>>(current.TopTermsJson) ?? [];
+        var totalOccurrences = current.OccurrenceCount + matches.Sum(m => m.OccurrenceCount);
+
+        return Ok(new RootCauseExplorerResponse(
+            SignatureHash: signatureHash,
+            DominantDeadletterReason: current.DominantDeadletterReason,
+            TopTerms: topTerms,
+            TotalOccurrencesAcrossFleet: totalOccurrences,
+            Matches: matches.OrderByDescending(m => m.LastSeenAt).ToList()));
+    }
+
+    /// <summary>
     /// Transitions a failure signature's lifecycle status (Resolved/Reopened/Suppressed/Archived).
     /// Invalidates the cached signature list so its Status doesn't serve stale for up to 60s.
     /// </summary>

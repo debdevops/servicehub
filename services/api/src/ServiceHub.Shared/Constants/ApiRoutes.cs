@@ -326,6 +326,12 @@ public static class ApiRoutes
         public const string SignatureReplayHistory = $"{SignatureReplay}/history";
 
         /// <summary>
+        /// Route for finding this failure signature's occurrences in other namespaces in the
+        /// fleet (Root Cause Explorer).
+        /// </summary>
+        public const string SignatureRootCauseMatches = $"{SignatureById}/root-cause-matches";
+
+        /// <summary>
         /// Routes for auto-replay rule operations.
         /// </summary>
         public static class Rules

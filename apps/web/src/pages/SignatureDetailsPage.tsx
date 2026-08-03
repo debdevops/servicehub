@@ -21,6 +21,7 @@ import {
   SignatureReplayPreviewModal,
   SignatureReplayProgressPanel,
   ReplaySafetyPanel,
+  RootCauseExplorerPanel,
   CrossCloudTraceLink,
   getTrendRecommendation,
 } from '@/components/dlq';
@@ -179,6 +180,16 @@ export function SignatureDetailsPage() {
               signatureHash={signatureHash}
               cloudProvider={namespace?.cloudProvider}
               onStartReplay={() => setShowReplayPreview(true)}
+            />
+          </div>
+
+          {/* Root Cause Explorer */}
+          <div className="mb-4">
+            <RootCauseExplorerPanel
+              namespaceId={namespaceId}
+              signatureHash={signatureHash}
+              dominantDeadletterReason={detail.dominantDeadletterReason}
+              namespaces={namespaces}
             />
           </div>
 

@@ -895,6 +895,124 @@ public class DlqHistoryControllerTests
         result.Result.Should().BeOfType<NotFoundObjectResult>();
     }
 
+    // ── GetSignatureRootCauseMatches ──────────────────────────
+
+    private static NamespaceSignature MakeSignature(Guid namespaceId, string hash, int occurrenceCount = 1) =>
+        new()
+        {
+            NamespaceId = namespaceId,
+            OwnerId = Namespace.SpaOwnerId,
+            SignatureHash = hash,
+            FirstSeenAt = DateTimeOffset.UtcNow.AddDays(-3),
+            LastSeenAt = DateTimeOffset.UtcNow.AddDays(-1),
+            OccurrenceCount = occurrenceCount,
+            DominantDeadletterReason = "MaxDeliveryCountExceeded",
+            TopTermsJson = "[\"timeout\",\"sql\"]",
+        };
+
+    [Fact]
+    public async Task GetSignatureRootCauseMatches_SignatureNotFound_ReturnsNotFound()
+    {
+        var nsId = Guid.NewGuid();
+        const string hash = "unknown-hash";
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((NamespaceSignature?)null);
+
+        var result = await _controller.GetSignatureRootCauseMatches(nsId, hash);
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task GetSignatureRootCauseMatches_NoMatchesElsewhere_ReturnsEmptyMatchesWithFleetTotalEqualToLocal()
+    {
+        var nsId = Guid.NewGuid();
+        const string hash = "solo-hash";
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeSignature(nsId, hash, occurrenceCount: 5));
+        _signatureLookupService.Setup(s => s.FindAcrossNamespacesAsync(It.IsAny<string>(), hash, nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<NamespaceSignature>)[]);
+
+        var result = await _controller.GetSignatureRootCauseMatches(nsId, hash);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RootCauseExplorerResponse>().Subject;
+        response.Matches.Should().BeEmpty();
+        response.TotalOccurrencesAcrossFleet.Should().Be(5);
+        response.DominantDeadletterReason.Should().Be("MaxDeliveryCountExceeded");
+        response.TopTerms.Should().BeEquivalentTo(new[] { "timeout", "sql" });
+    }
+
+    [Fact]
+    public async Task GetSignatureRootCauseMatches_MatchInOtherNamespace_IncludesItWithKnowledgeAndStatus()
+    {
+        var nsId = Guid.NewGuid();
+        var otherNsId = Guid.NewGuid();
+        const string hash = "shared-hash";
+
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeSignature(nsId, hash, occurrenceCount: 3));
+        var otherSignature = MakeSignature(otherNsId, hash, occurrenceCount: 7);
+        _signatureLookupService.Setup(s => s.FindAcrossNamespacesAsync(It.IsAny<string>(), hash, nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<NamespaceSignature>)[otherSignature]);
+        _knowledgeService.Setup(s => s.GetKnowledgeAsync(It.IsAny<string>(), otherNsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<FailureKnowledge>.Success(new FailureKnowledge(
+                RootCause: "Downstream service returned 500s during deploy window",
+                ResolutionNotes: "Rolled back the deploy",
+                OperationalNotes: null,
+                RunbookLink: null,
+                Owner: "team-payments",
+                ReplayGuidance: "Safe",
+                LastUpdatedAt: DateTimeOffset.UtcNow,
+                KnowledgeVersion: 2,
+                ReviewDueAt: null,
+                Tags: null)));
+        _lifecycleService.Setup(s => s.GetStatusAsync(It.IsAny<string>(), otherNsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SignatureLifecycleSnapshot>.Success(
+                new SignatureLifecycleSnapshot(SignatureLifecycleStatus.Resolved, SignatureLifecycleStatus.Active, DateTimeOffset.UtcNow, "fixed")));
+
+        var result = await _controller.GetSignatureRootCauseMatches(nsId, hash);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RootCauseExplorerResponse>().Subject;
+        response.TotalOccurrencesAcrossFleet.Should().Be(10);
+        response.Matches.Should().ContainSingle();
+        var match = response.Matches[0];
+        match.NamespaceId.Should().Be(otherNsId);
+        match.OccurrenceCount.Should().Be(7);
+        match.LifecycleStatus.Should().Be(nameof(SignatureLifecycleStatus.Resolved));
+        match.Knowledge.Should().NotBeNull();
+        match.Knowledge!.RootCause.Should().Be("Downstream service returned 500s during deploy window");
+        match.Knowledge.Owner.Should().Be("team-payments");
+    }
+
+    [Fact]
+    public async Task GetSignatureRootCauseMatches_MatchWithNoRecordedRootCause_HasNullKnowledge()
+    {
+        var nsId = Guid.NewGuid();
+        var otherNsId = Guid.NewGuid();
+        const string hash = "shared-hash-no-knowledge";
+
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeSignature(nsId, hash));
+        var otherSignature = MakeSignature(otherNsId, hash);
+        _signatureLookupService.Setup(s => s.FindAcrossNamespacesAsync(It.IsAny<string>(), hash, nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<NamespaceSignature>)[otherSignature]);
+        _knowledgeService.Setup(s => s.GetKnowledgeAsync(It.IsAny<string>(), otherNsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<FailureKnowledge>.Success(new FailureKnowledge(
+                null, null, null, null, null, null, null, 1, null, null)));
+        _lifecycleService.Setup(s => s.GetStatusAsync(It.IsAny<string>(), otherNsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SignatureLifecycleSnapshot>.Success(
+                new SignatureLifecycleSnapshot(SignatureLifecycleStatus.Active, null, null, null)));
+
+        var result = await _controller.GetSignatureRootCauseMatches(nsId, hash);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RootCauseExplorerResponse>().Subject;
+        response.Matches.Should().ContainSingle();
+        response.Matches[0].Knowledge.Should().BeNull();
+    }
+
     // ── UpdateSignatureStatus ────────────────────────────────
 
     [Fact]

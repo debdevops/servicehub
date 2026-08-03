@@ -41,6 +41,9 @@ vi.mock('@/components/dlq', () => ({
       <button onClick={onStartReplay}>Panel start replay</button>
     </div>
   ),
+  RootCauseExplorerPanel: ({ namespaceId, signatureHash }: { namespaceId: string; signatureHash: string }) => (
+    <div data-testid="root-cause-explorer-panel">Root cause explorer for {namespaceId}/{signatureHash}</div>
+  ),
   CrossCloudTraceLink: ({ correlationId }: { correlationId?: string | null }) =>
     correlationId ? <a data-testid="cross-cloud-trace-link" href={`/cross-cloud-trace?traceId=${correlationId}`}>View cross-cloud path</a> : null,
   getTrendRecommendation: (trend: string) => (trend === 'Recurring' ? 'Check the Timeline for prior attempts before acting again.' : null),
@@ -159,6 +162,12 @@ describe('SignatureDetailsPage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><SignatureDetailsPage /></Wrapper>);
     expect(screen.getByTestId('replay-safety-panel')).toBeInTheDocument();
+  });
+
+  it('renders the Root Cause Explorer panel for the current namespace and signature', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+    expect(screen.getByTestId('root-cause-explorer-panel')).toHaveTextContent('Root cause explorer for ns1/hash-1');
   });
 
   it('opening replay from the Replay Safety panel reuses the same preview flow as the Actions bar button', () => {

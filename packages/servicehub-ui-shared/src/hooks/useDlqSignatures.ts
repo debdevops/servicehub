@@ -4,10 +4,16 @@ import {
   DlqSignaturesResponse,
   DlqSignatureDetail,
   SignatureTimelineResponse,
+  RootCauseExplorerResponse,
   UpsertKnowledgeRequest,
 } from '../lib/api/dlqSignatures';
 import { useDemoContext, rejectDemoModeMutation } from '../lib/demo/DemoContext';
-import { getMockDlqSignatures, getMockDlqSignatureDetail, getMockSignatureTimeline } from '../lib/demo/mockProviders';
+import {
+  getMockDlqSignatures,
+  getMockDlqSignatureDetail,
+  getMockSignatureTimeline,
+  getMockRootCauseMatches,
+} from '../lib/demo/mockProviders';
 import toast from 'react-hot-toast';
 
 /**
@@ -97,6 +103,36 @@ export function useSignatureTimeline(namespaceId?: string, signatureHash?: strin
     : {
         queryKey: ['dlq-signature-timeline', namespaceId, signatureHash],
         queryFn: () => dlqSignaturesApi.getSignatureTimeline(namespaceId!, signatureHash!),
+        enabled: !!namespaceId && !!signatureHash,
+        staleTime: 30_000,
+      };
+
+  return useQuery(options);
+}
+
+/**
+ * Root Cause Explorer — fetches this signature's occurrences in every other namespace in the
+ * fleet, plus the resulting total occurrence count across the whole fleet. Matching is exact
+ * signature-hash equality only, computed server-side; this hook does no matching of its own.
+ */
+export function useRootCauseMatches(namespaceId?: string, signatureHash?: string) {
+  const { isDemoMode, cloudProvider } = useDemoContext();
+
+  const options: UseQueryOptions<RootCauseExplorerResponse, unknown> = isDemoMode && cloudProvider
+    ? {
+        queryKey: ['dlq-signature-root-cause-matches', 'demo', cloudProvider, signatureHash],
+        queryFn: (): Promise<RootCauseExplorerResponse> => {
+          const matches = getMockRootCauseMatches(signatureHash!);
+          if (!matches) return Promise.reject(new Error('Signature not found'));
+          return Promise.resolve(matches);
+        },
+        enabled: !!signatureHash,
+        staleTime: Infinity,
+        retry: false,
+      }
+    : {
+        queryKey: ['dlq-signature-root-cause-matches', namespaceId, signatureHash],
+        queryFn: () => dlqSignaturesApi.getRootCauseMatches(namespaceId!, signatureHash!),
         enabled: !!namespaceId && !!signatureHash,
         staleTime: 30_000,
       };

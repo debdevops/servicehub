@@ -12,6 +12,7 @@ vi.mock('../../lib/api/dlqSignatures', () => ({
     upsertKnowledge: vi.fn(),
     getKnowledgeHistory: vi.fn(),
     markForReview: vi.fn(),
+    getRootCauseMatches: vi.fn(),
   },
 }));
 
@@ -24,6 +25,7 @@ import {
   type DlqSignaturesResponse,
   type DlqSignatureDetail,
   type SignatureTimelineResponse,
+  type RootCauseExplorerResponse,
 } from '../../lib/api/dlqSignatures';
 import toast from 'react-hot-toast';
 import {
@@ -37,6 +39,7 @@ import {
   useArchiveSignature,
   useUpsertKnowledge,
   useMarkForReview,
+  useRootCauseMatches,
 } from '../../hooks/useDlqSignatures';
 import { DemoModeProvider } from '../../lib/demo/DemoContext';
 
@@ -203,6 +206,66 @@ describe('useSignatureTimeline', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(dlqSignaturesApi.getSignatureTimeline).toHaveBeenCalledWith('ns-1', 'hash-1');
     expect(result.current.data).toEqual(timeline);
+  });
+});
+
+// ─── useRootCauseMatches ──────────────────────────────────────────────────────
+
+describe('useRootCauseMatches', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('is disabled when namespaceId or signatureHash is missing', () => {
+    const { result } = renderHook(() => useRootCauseMatches(undefined, 'hash-1'), { wrapper: createWrapper() });
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(dlqSignaturesApi.getRootCauseMatches).not.toHaveBeenCalled();
+  });
+
+  it('calls getRootCauseMatches with namespaceId and signatureHash', async () => {
+    const response: RootCauseExplorerResponse = {
+      signatureHash: 'hash-1',
+      dominantDeadletterReason: 'MaxDeliveryCountExceeded',
+      topTerms: ['timeout'],
+      totalOccurrencesAcrossFleet: 9,
+      matches: [
+        {
+          namespaceId: 'ns-2',
+          occurrenceCount: 5,
+          firstSeenAt: '2026-01-01T00:00:00Z',
+          lastSeenAt: '2026-01-02T00:00:00Z',
+          lifecycleStatus: 'Resolved',
+          knowledge: null,
+        },
+      ],
+    };
+    vi.mocked(dlqSignaturesApi.getRootCauseMatches).mockResolvedValueOnce(response);
+
+    const { result } = renderHook(() => useRootCauseMatches('ns-1', 'hash-1'), { wrapper: createWrapper() });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(dlqSignaturesApi.getRootCauseMatches).toHaveBeenCalledWith('ns-1', 'hash-1');
+    expect(result.current.data).toEqual(response);
+  });
+
+  it('demo mode: returns curated fixture data without calling the real API', async () => {
+    const { result } = renderHook(
+      () => useRootCauseMatches('demo-gcp-medstream-prod', 'demo-deserialization-failure'),
+      { wrapper: createDemoWrapper('gcp') },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(dlqSignaturesApi.getRootCauseMatches).not.toHaveBeenCalled();
+    expect(result.current.data?.matches.length).toBeGreaterThan(0);
+    expect(result.current.data?.matches[0].knowledge?.rootCause).toBeTruthy();
+  });
+
+  it('demo mode: a signature with no fleet matches returns an empty matches array', async () => {
+    const { result } = renderHook(
+      () => useRootCauseMatches('demo-azure-contoso-prod', 'demo-max-delivery-count-exceeded'),
+      { wrapper: createDemoWrapper('azure') },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.matches).toEqual([]);
   });
 });
 

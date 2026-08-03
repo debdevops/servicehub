@@ -101,4 +101,18 @@ public sealed class NamespaceSignatureLookupService : INamespaceSignatureLookupS
                 cancellationToken)
             .ConfigureAwait(false);
     }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<NamespaceSignature>> FindAcrossNamespacesAsync(
+        string ownerId,
+        string signatureHash,
+        Guid excludeNamespaceId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.NamespaceSignatures
+            .AsNoTracking()
+            .Where(s => s.OwnerId == ownerId && s.SignatureHash == signatureHash && s.NamespaceId != excludeNamespaceId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
 }

@@ -184,4 +184,83 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
         after!.OccurrenceCount.Should().Be(before!.OccurrenceCount);
         after.LastSeenAt.Should().Be(before.LastSeenAt);
     }
+
+    // ── FindAcrossNamespacesAsync ───────────────────────────
+
+    [Fact]
+    public async Task FindAcrossNamespacesAsync_SameHashInOtherNamespace_ReturnsIt()
+    {
+        var namespaceA = Guid.NewGuid();
+        var namespaceB = Guid.NewGuid();
+        var observation = MakeObservation();
+
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceA, new[] { observation });
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceB, new[] { observation });
+
+        var matches = await _service.FindAcrossNamespacesAsync(
+            TestConstants.TestOwnerId, observation.SignatureHash, excludeNamespaceId: namespaceA);
+
+        matches.Should().ContainSingle(m => m.NamespaceId == namespaceB);
+    }
+
+    [Fact]
+    public async Task FindAcrossNamespacesAsync_ExcludesTheGivenNamespace()
+    {
+        var namespaceA = Guid.NewGuid();
+        var observation = MakeObservation();
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceA, new[] { observation });
+
+        var matches = await _service.FindAcrossNamespacesAsync(
+            TestConstants.TestOwnerId, observation.SignatureHash, excludeNamespaceId: namespaceA);
+
+        matches.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task FindAcrossNamespacesAsync_NoOtherNamespaceHasHash_ReturnsEmpty()
+    {
+        var namespaceA = Guid.NewGuid();
+        var observation = MakeObservation();
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceA, new[] { observation });
+
+        var matches = await _service.FindAcrossNamespacesAsync(
+            TestConstants.TestOwnerId, "never-seen-hash", excludeNamespaceId: Guid.NewGuid());
+
+        matches.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task FindAcrossNamespacesAsync_OwnerIsolation_OtherOwnersMatchesNotReturned()
+    {
+        var namespaceA = Guid.NewGuid();
+        var namespaceB = Guid.NewGuid();
+        var observation = MakeObservation();
+
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceA, new[] { observation });
+        await _service.LookupAndRecordAsync(TestConstants.AltOwnerId, namespaceB, new[] { observation });
+
+        var matches = await _service.FindAcrossNamespacesAsync(
+            TestConstants.TestOwnerId, observation.SignatureHash, excludeNamespaceId: namespaceA);
+
+        matches.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task FindAcrossNamespacesAsync_MultipleOtherNamespaces_ReturnsAll()
+    {
+        var namespaceA = Guid.NewGuid();
+        var namespaceB = Guid.NewGuid();
+        var namespaceC = Guid.NewGuid();
+        var observation = MakeObservation();
+
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceA, new[] { observation });
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceB, new[] { observation });
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceC, new[] { observation });
+
+        var matches = await _service.FindAcrossNamespacesAsync(
+            TestConstants.TestOwnerId, observation.SignatureHash, excludeNamespaceId: namespaceA);
+
+        matches.Should().HaveCount(2);
+        matches.Select(m => m.NamespaceId).Should().BeEquivalentTo(new[] { namespaceB, namespaceC });
+    }
 }

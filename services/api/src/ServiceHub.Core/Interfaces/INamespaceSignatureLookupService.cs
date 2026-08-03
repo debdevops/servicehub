@@ -33,6 +33,18 @@ public interface INamespaceSignatureLookupService
         Guid namespaceId,
         string signatureHash,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finds every persisted record of this exact signature hash in namespaces other than
+    /// <paramref name="excludeNamespaceId"/>, scoped to <paramref name="ownerId"/> — the
+    /// fleet-wide counterpart to <see cref="GetByHashAsync"/>, answering "has this signature
+    /// been observed anywhere else in my fleet?"
+    /// </summary>
+    Task<IReadOnlyList<NamespaceSignature>> FindAcrossNamespacesAsync(
+        string ownerId,
+        string signatureHash,
+        Guid excludeNamespaceId,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

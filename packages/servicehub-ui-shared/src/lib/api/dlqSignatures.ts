@@ -106,6 +106,29 @@ export interface SignatureLifecycleStatusResponse {
   notes: string | null;
 }
 
+/**
+ * One other namespace where this exact signature hash has also been observed — same dominant
+ * deadletter reason and top terms as the signature being investigated, since the hash is
+ * derived from those alone. `knowledge` is null when no root cause has been recorded there.
+ */
+export interface RootCauseMatch {
+  namespaceId: string;
+  occurrenceCount: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  lifecycleStatus: string;
+  knowledge: FailureKnowledge | null;
+}
+
+/** Fleet-wide view of one failure signature: where else it has occurred, and the total. */
+export interface RootCauseExplorerResponse {
+  signatureHash: string;
+  dominantDeadletterReason: string;
+  topTerms: string[];
+  totalOccurrencesAcrossFleet: number;
+  matches: RootCauseMatch[];
+}
+
 // ─── API Client ────────────────────────────────────────────────────
 
 export const dlqSignaturesApi = {
@@ -196,6 +219,17 @@ export const dlqSignaturesApi = {
     const response = await apiClient.post<FailureKnowledge>(
       `/namespaces/${namespaceId}/dlq/signatures/${signatureHash}/knowledge/review`,
       { reviewDueAt }
+    );
+    return response.data;
+  },
+
+  /**
+   * Root Cause Explorer: find this signature's occurrences in every other namespace in the
+   * fleet. Matching is exact signature-hash equality only — never a fuzzy/scored guess.
+   */
+  getRootCauseMatches: async (namespaceId: string, signatureHash: string): Promise<RootCauseExplorerResponse> => {
+    const response = await apiClient.get<RootCauseExplorerResponse>(
+      `/namespaces/${namespaceId}/dlq/signatures/${signatureHash}/root-cause-matches`
     );
     return response.data;
   },

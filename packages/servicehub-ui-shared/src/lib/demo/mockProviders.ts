@@ -22,6 +22,8 @@ import type {
   DlqSignatureDetail,
   SignatureTimelineResponse,
   FailureKnowledge,
+  RootCauseExplorerResponse,
+  RootCauseMatch,
 } from '../api/dlqSignatures';
 import type { DlqTimelineEvent } from '../api/dlqHistory';
 import type { BulkOperationJob, PaginatedBulkOperationJobs } from '../api/bulkOperations';
@@ -411,6 +413,8 @@ interface DemoSignatureDefinition {
   knowledge: FailureKnowledge | null;
   /** Past signature-replay job outcomes, most recent first — mirrors `knowledge`'s per-signature fixture pattern. */
   replayHistory: BulkOperationJob[];
+  /** Occurrences of this same signature hash in other (fictional) namespaces in the fleet, for Root Cause Explorer. */
+  rootCauseMatches: RootCauseMatch[];
 }
 
 const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
@@ -466,6 +470,7 @@ const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
         isCancellable: false,
       },
     ],
+    rootCauseMatches: [],
   },
   {
     hash: 'demo-poison-message',
@@ -518,6 +523,7 @@ const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
         isCancellable: false,
       },
     ],
+    rootCauseMatches: [],
   },
   {
     hash: 'demo-deserialization-failure',
@@ -545,6 +551,30 @@ const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
       isReviewOverdue: false,
     },
     replayHistory: [],
+    rootCauseMatches: [
+      {
+        namespaceId: 'demo-gcp-medstream-staging',
+        occurrenceCount: 9,
+        firstSeenAt: new Date(Date.now() - 60 * DAY_MS).toISOString(),
+        lastSeenAt: new Date(Date.now() - 55 * DAY_MS).toISOString(),
+        lifecycleStatus: 'Resolved',
+        knowledge: {
+          rootCause:
+            'Producer upgraded to a new message schema version without a compatible consumer deployed, so JSON deserialization throws on the new field shape.',
+          resolutionNotes: 'Pinned the consumer to the prior schema version until the compatible rollout shipped; then upgraded both together.',
+          operationalNotes: null,
+          runbookLink: 'https://wiki.example.com/runbooks/schema-deserialization',
+          owner: 'data-platform@example.com',
+          replayGuidance: 'Safe',
+          lastUpdatedAt: new Date(Date.now() - 55 * DAY_MS).toISOString(),
+          knowledgeVersion: 2,
+          reviewDueAt: null,
+          tags: 'schema,deserialization',
+          updatedBy: 'data-platform@example.com',
+          isReviewOverdue: false,
+        },
+      },
+    ],
   },
   {
     hash: 'demo-authentication-failure',
@@ -572,6 +602,7 @@ const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
       isReviewOverdue: false,
     },
     replayHistory: [],
+    rootCauseMatches: [],
   },
   {
     hash: 'demo-duplicate-detection',
@@ -599,6 +630,7 @@ const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
       isReviewOverdue: false,
     },
     replayHistory: [],
+    rootCauseMatches: [],
   },
 ];
 
@@ -725,5 +757,25 @@ export function getMockSignatureReplayHistory(signatureHash: string): PaginatedB
     pageSize: 20,
     hasNextPage: false,
     hasPreviousPage: false,
+  };
+}
+
+/**
+ * Root Cause Explorer, demo mode: this signature's occurrences in other (fictional) namespaces
+ * in the fleet, or undefined if the hash doesn't match one of the curated demo signatures.
+ * Demo mode simulates a single namespace per cloud provider, so most demo signatures have no
+ * fleet matches — one curated signature (`demo-deserialization-failure`) has a fixture match to
+ * demonstrate the populated state.
+ */
+export function getMockRootCauseMatches(signatureHash: string): RootCauseExplorerResponse | undefined {
+  const def = DEMO_SIGNATURE_DEFS.find((d) => d.hash === signatureHash);
+  if (!def) return undefined;
+
+  return {
+    signatureHash: def.hash,
+    dominantDeadletterReason: def.dominantDeadletterReason,
+    topTerms: def.topTerms,
+    totalOccurrencesAcrossFleet: def.size + def.rootCauseMatches.reduce((sum, m) => sum + m.occurrenceCount, 0),
+    matches: def.rootCauseMatches,
   };
 }
