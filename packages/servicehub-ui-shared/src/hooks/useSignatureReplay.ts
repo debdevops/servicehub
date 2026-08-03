@@ -1,10 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
 import { signatureReplayApi } from '../lib/api/signatureReplay';
 import type { SignatureReplayFilter } from '../lib/api/signatureReplay';
 import { isTerminalBulkOperationStatus } from '../lib/api/bulkOperations';
+import type { PaginatedBulkOperationJobs } from '../lib/api/bulkOperations';
 import type { ApiError } from '../lib/api/types';
 import { useDemoContext, rejectDemoModeMutation } from '../lib/demo/DemoContext';
+import { getMockSignatureReplayHistory } from '../lib/demo/mockProviders';
 import toast from 'react-hot-toast';
 
 const POLL_INTERVAL_MS = 1_500;
@@ -109,6 +111,41 @@ export function useSignatureReplayJob(
   }, [query.data, queryClient, namespaceId, signatureHash]);
 
   return query;
+}
+
+/**
+ * Lists past and in-flight replay jobs for one failure signature, most recent first — the
+ * Replay Safety & History panel's data source. Wraps the already-existing, already-deployed
+ * replay-history endpoint (previously unused by the frontend).
+ */
+export function useSignatureReplayHistory(
+  namespaceId?: string,
+  signatureHash?: string,
+  page = 1,
+  pageSize = 20,
+) {
+  const { isDemoMode, cloudProvider } = useDemoContext();
+
+  const options: UseQueryOptions<PaginatedBulkOperationJobs, unknown> = isDemoMode && cloudProvider
+    ? {
+        queryKey: ['signature-replay-history', 'demo', cloudProvider, signatureHash],
+        queryFn: (): Promise<PaginatedBulkOperationJobs> => {
+          const history = getMockSignatureReplayHistory(signatureHash!);
+          if (!history) return Promise.reject(new Error('Signature not found'));
+          return Promise.resolve(history);
+        },
+        enabled: !!signatureHash,
+        staleTime: Infinity,
+        retry: false,
+      }
+    : {
+        queryKey: ['signature-replay-history', namespaceId, signatureHash, page, pageSize],
+        queryFn: () => signatureReplayApi.history(namespaceId!, signatureHash!, page, pageSize),
+        enabled: !!namespaceId && !!signatureHash,
+        staleTime: 30_000,
+      };
+
+  return useQuery(options);
 }
 
 /** Requests cancellation of a pending/running signature-replay job. */

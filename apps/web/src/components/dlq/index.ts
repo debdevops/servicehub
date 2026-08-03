@@ -11,3 +11,8 @@ export { SignatureLifecycleActions } from './SignatureLifecycleActions';
 export { SignatureTimelinePanel } from './SignatureTimelinePanel';
 export { SignatureReplayPreviewModal } from './SignatureReplayPreviewModal';
 export { SignatureReplayProgressPanel } from './SignatureReplayProgressPanel';
+export { ReplaySafetyPanel } from './ReplaySafetyPanel';
+export { computeReplaySafetyVerdict } from './replaySafetyVerdict';
+export { CrossCloudTraceLink } from './CrossCloudTraceLink';
+export { getTrendRecommendation } from './signatureRecommendations';
+export { getTimelineCallout } from './timelineCallout';

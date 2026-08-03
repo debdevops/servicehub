@@ -36,6 +36,14 @@ vi.mock('@/components/dlq', () => ({
   SignatureReplayProgressPanel: ({ jobId }: { jobId: string }) => (
     <div data-testid="replay-progress-panel">Progress for {jobId}</div>
   ),
+  ReplaySafetyPanel: ({ onStartReplay }: { onStartReplay: () => void }) => (
+    <div data-testid="replay-safety-panel">
+      <button onClick={onStartReplay}>Panel start replay</button>
+    </div>
+  ),
+  CrossCloudTraceLink: ({ correlationId }: { correlationId?: string | null }) =>
+    correlationId ? <a data-testid="cross-cloud-trace-link" href={`/cross-cloud-trace?traceId=${correlationId}`}>View cross-cloud path</a> : null,
+  getTrendRecommendation: (trend: string) => (trend === 'Recurring' ? 'Check the Timeline for prior attempts before acting again.' : null),
 }));
 
 import {
@@ -145,6 +153,47 @@ describe('SignatureDetailsPage', () => {
     render(<Wrapper><SignatureDetailsPage /></Wrapper>);
     expect(screen.getByText('Related Messages (1)')).toBeInTheDocument();
     expect(screen.getByText('msg-1')).toBeInTheDocument();
+  });
+
+  it('renders the Replay Safety & History panel', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+    expect(screen.getByTestId('replay-safety-panel')).toBeInTheDocument();
+  });
+
+  it('opening replay from the Replay Safety panel reuses the same preview flow as the Actions bar button', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+
+    expect(screen.queryByTestId('replay-preview-modal')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Panel start replay'));
+    expect(screen.getByTestId('replay-preview-modal')).toBeInTheDocument();
+  });
+
+  describe('View cross-cloud path', () => {
+    it('does not render when no related message carries a correlation ID', () => {
+      const Wrapper = createWrapper();
+      render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+      expect(screen.queryByTestId('cross-cloud-trace-link')).not.toBeInTheDocument();
+    });
+
+    it('renders when a related message carries a correlation ID', () => {
+      mockUseDlqSignatureDetail.mockReturnValue({
+        data: {
+          ...mockDetail,
+          relatedMessages: [
+            { id: 1, messageId: 'msg-1', entityName: 'orders-queue', status: 'Active', correlationId: 'trace-xyz' },
+          ],
+        },
+        isLoading: false,
+      });
+      const Wrapper = createWrapper();
+      render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+      expect(screen.getByTestId('cross-cloud-trace-link')).toHaveAttribute(
+        'href',
+        '/cross-cloud-trace?traceId=trace-xyz',
+      );
+    });
   });
 
   it('renders signature details in demo mode too — demo fixtures come from the data hooks, not a page-level bailout', () => {

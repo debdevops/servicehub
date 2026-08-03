@@ -1,6 +1,6 @@
 import { apiClient } from './client';
 import { riskIntent, withRiskIntent } from './intentHeaders';
-import type { BulkOperationJob, BulkOperationPreview } from './bulkOperations';
+import type { BulkOperationJob, BulkOperationPreview, PaginatedBulkOperationJobs } from './bulkOperations';
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -78,6 +78,24 @@ export const signatureReplayApi = {
   /** POST /api/v1/signature-replay-jobs/{id}/cancel */
   cancelJob: async (id: string): Promise<BulkOperationJob> => {
     const response = await apiClient.post<BulkOperationJob>(`/signature-replay-jobs/${id}/cancel`);
+    return response.data;
+  },
+
+  /**
+   * GET /api/v1/namespaces/{namespaceId}/dlq/signatures/{signatureHash}/replay/history
+   * Past and in-flight replay jobs for one failure signature, most recent first — the Replay
+   * Safety & History panel's data source.
+   */
+  history: async (
+    namespaceId: string,
+    signatureHash: string,
+    page = 1,
+    pageSize = 20,
+  ): Promise<PaginatedBulkOperationJobs> => {
+    const response = await apiClient.get<PaginatedBulkOperationJobs>(
+      `/namespaces/${namespaceId}/dlq/signatures/${signatureHash}/replay/history`,
+      { params: { page, pageSize } },
+    );
     return response.data;
   },
 };

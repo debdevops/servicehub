@@ -12,6 +12,7 @@ vi.mock('../../lib/api/signatureReplay', async () => {
       start: vi.fn(),
       getJob: vi.fn(),
       cancelJob: vi.fn(),
+      history: vi.fn(),
     },
   };
 });
@@ -26,12 +27,15 @@ import {
   useStartSignatureReplay,
   useSignatureReplayJob,
   useCancelSignatureReplayJob,
+  useSignatureReplayHistory,
 } from '../../hooks/useSignatureReplay';
+import { DemoModeProvider } from '../../lib/demo/DemoContext';
 
 const mockPreview = signatureReplayApi.preview as ReturnType<typeof vi.fn>;
 const mockStart = signatureReplayApi.start as ReturnType<typeof vi.fn>;
 const mockGetJob = signatureReplayApi.getJob as ReturnType<typeof vi.fn>;
 const mockCancelJob = signatureReplayApi.cancelJob as ReturnType<typeof vi.fn>;
+const mockHistory = signatureReplayApi.history as ReturnType<typeof vi.fn>;
 
 function createWrapper() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -39,6 +43,17 @@ function createWrapper() {
     Wrapper: ({ children }: { children: React.ReactNode }) =>
       React.createElement(QueryClientProvider, { client: queryClient }, children),
     queryClient,
+  };
+}
+
+function createDemoWrapper(cloudProvider: 'azure' | 'aws' | 'gcp' = 'azure') {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(DemoModeProvider, { cloudProvider, children }),
+    );
   };
 }
 
@@ -144,5 +159,56 @@ describe('useCancelSignatureReplayJob', () => {
 
     expect(mockCancelJob).toHaveBeenCalledWith('job-1');
     expect(queryClient.getQueryData(['signature-replay', 'job', 'job-1'])).toEqual(cancelledJob);
+  });
+});
+
+describe('useSignatureReplayHistory', () => {
+  it('is disabled when namespaceId or signatureHash is missing', () => {
+    const { Wrapper } = createWrapper();
+    const { result } = renderHook(() => useSignatureReplayHistory(undefined, 'hash-1'), { wrapper: Wrapper });
+
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(mockHistory).not.toHaveBeenCalled();
+  });
+
+  it('calls signatureReplayApi.history with namespaceId, signatureHash, and default paging', async () => {
+    const page = {
+      items: [makeJob({ status: 'Completed' })],
+      totalCount: 1,
+      page: 1,
+      pageSize: 20,
+      hasNextPage: false,
+      hasPreviousPage: false,
+    };
+    mockHistory.mockResolvedValue(page);
+    const { Wrapper } = createWrapper();
+
+    const { result } = renderHook(() => useSignatureReplayHistory('ns-1', 'hash-1'), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockHistory).toHaveBeenCalledWith('ns-1', 'hash-1', 1, 20);
+    expect(result.current.data).toEqual(page);
+  });
+
+  it('returns curated demo replay history for a known demo hash without calling the real API', async () => {
+    const { result } = renderHook(
+      () => useSignatureReplayHistory('demo-azure-contoso-prod', 'demo-max-delivery-count-exceeded'),
+      { wrapper: createDemoWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockHistory).not.toHaveBeenCalled();
+    expect(result.current.data?.items.length).toBeGreaterThan(0);
+    expect(result.current.data?.items[0].status).toBe('Completed');
+  });
+
+  it('returns an empty page for a demo signature with no replay history', async () => {
+    const { result } = renderHook(
+      () => useSignatureReplayHistory('demo-azure-contoso-prod', 'demo-deserialization-failure'),
+      { wrapper: createDemoWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.items).toEqual([]);
   });
 });

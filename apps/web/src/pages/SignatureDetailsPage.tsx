@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
-import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Lightbulb } from 'lucide-react';
 import {
   useDlqSignatureDetail,
   useSignatureTimeline,
@@ -20,6 +20,9 @@ import {
   DlqTimelineDrawer,
   SignatureReplayPreviewModal,
   SignatureReplayProgressPanel,
+  ReplaySafetyPanel,
+  CrossCloudTraceLink,
+  getTrendRecommendation,
 } from '@/components/dlq';
 
 function formatDate(ts: string): string {
@@ -68,8 +71,11 @@ export function SignatureDetailsPage() {
     );
   }
 
+  const correlationId = detail?.relatedMessages.find(m => m.correlationId)?.correlationId ?? null;
+  const trendRecommendation = detail ? getTrendRecommendation(detail.trend) : null;
+
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <div className="p-6 max-w-5xl mx-auto">
       <Link to={`/signatures?namespace=${namespaceId}`} className="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 mb-4">
         <ArrowLeft className="w-4 h-4" />
         Back to signatures
@@ -79,6 +85,7 @@ export function SignatureDetailsPage() {
         <div className="text-sm text-gray-500">Loading signature…</div>
       ) : (
         <>
+          {/* Header / Identity */}
           <div className="bg-white border border-gray-200 rounded-xl p-5 mb-4">
             <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
               <div>
@@ -125,15 +132,26 @@ export function SignatureDetailsPage() {
               )}
             </div>
 
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <SignatureLifecycleActions
-                status={detail.status}
-                onResolve={() => mutate(resolve)}
-                onReopen={() => mutate(reopen)}
-                onSuppress={() => mutate(suppress)}
-                onArchive={() => mutate(archive)}
-                pending={anyPending}
-              />
+            {trendRecommendation && (
+              <div className="flex items-center gap-2 text-sm text-sky-700 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2">
+                <Lightbulb className="w-4 h-4 shrink-0" />
+                {trendRecommendation}
+              </div>
+            )}
+          </div>
+
+          {/* Actions bar */}
+          <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4 flex items-center justify-between gap-2 flex-wrap">
+            <SignatureLifecycleActions
+              status={detail.status}
+              onResolve={() => mutate(resolve)}
+              onReopen={() => mutate(reopen)}
+              onSuppress={() => mutate(suppress)}
+              onArchive={() => mutate(archive)}
+              pending={anyPending}
+            />
+            <div className="flex items-center gap-2 flex-wrap">
+              <CrossCloudTraceLink correlationId={correlationId} />
               <button
                 onClick={() => setShowReplayPreview(true)}
                 disabled={!detail.isCurrentlyClustered || detail.relatedMessages.length === 0}
@@ -150,10 +168,18 @@ export function SignatureDetailsPage() {
             </div>
           </div>
 
-          {/* Knowledge */}
-          <div className="mb-4">
-            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Knowledge</h2>
-            <FailureInvestigationPanel cluster={detail} namespaceId={namespaceId} />
+          {/* Root Cause & Knowledge · Replay Safety & History */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-start">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Root Cause &amp; Knowledge</h2>
+              <FailureInvestigationPanel cluster={detail} namespaceId={namespaceId} />
+            </div>
+            <ReplaySafetyPanel
+              namespaceId={namespaceId}
+              signatureHash={signatureHash}
+              cloudProvider={namespace?.cloudProvider}
+              onStartReplay={() => setShowReplayPreview(true)}
+            />
           </div>
 
           {/* Timeline */}

@@ -24,6 +24,7 @@ import type {
   FailureKnowledge,
 } from '../api/dlqSignatures';
 import type { DlqTimelineEvent } from '../api/dlqHistory';
+import type { BulkOperationJob, PaginatedBulkOperationJobs } from '../api/bulkOperations';
 
 // ─── Namespace IDs ──────────────────────────────────────────────────────────
 // Stable IDs used in URL query params and as namespace identifiers in demo mode
@@ -408,6 +409,8 @@ interface DemoSignatureDefinition {
   status: DlqClusterSignature['status'];
   trend: DlqClusterSignature['trend'];
   knowledge: FailureKnowledge | null;
+  /** Past signature-replay job outcomes, most recent first — mirrors `knowledge`'s per-signature fixture pattern. */
+  replayHistory: BulkOperationJob[];
 }
 
 const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
@@ -438,6 +441,31 @@ const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
       updatedBy: 'alice@example.com',
       isReviewOverdue: false,
     },
+    replayHistory: [
+      {
+        id: 'demo-replay-job-max-delivery-1',
+        operationType: 'Replay',
+        status: 'Completed',
+        namespaceId: '',
+        namespaceDisplayName: '',
+        entityNameFilter: null,
+        statusFilter: null,
+        categoryFilter: null,
+        from: null,
+        to: null,
+        totalMatched: 42,
+        processedCount: 42,
+        successCount: 42,
+        failureCount: 0,
+        skippedCount: 0,
+        failureSample: null,
+        errorSummary: null,
+        createdAt: new Date(Date.now() - 3 * DAY_MS).toISOString(),
+        startedAt: new Date(Date.now() - 3 * DAY_MS).toISOString(),
+        completedAt: new Date(Date.now() - 3 * DAY_MS + 5 * 60_000).toISOString(),
+        isCancellable: false,
+      },
+    ],
   },
   {
     hash: 'demo-poison-message',
@@ -463,6 +491,33 @@ const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
       updatedBy: 'bob@example.com',
       isReviewOverdue: true,
     },
+    replayHistory: [
+      {
+        id: 'demo-replay-job-poison-message-1',
+        operationType: 'Replay',
+        status: 'Failed',
+        namespaceId: '',
+        namespaceDisplayName: '',
+        entityNameFilter: null,
+        statusFilter: null,
+        categoryFilter: null,
+        from: null,
+        to: null,
+        totalMatched: 7,
+        processedCount: 1,
+        successCount: 0,
+        failureCount: 1,
+        skippedCount: 0,
+        failureSample: [
+          { messageId: 'msg-poison-1', entityName: 'orders-processing', reason: 'Schema violation: missing sku field' },
+        ],
+        errorSummary: 'Replay rejected — signature is marked Unsafe for replay',
+        createdAt: new Date(Date.now() - 1 * DAY_MS).toISOString(),
+        startedAt: new Date(Date.now() - 1 * DAY_MS).toISOString(),
+        completedAt: new Date(Date.now() - 1 * DAY_MS + 60_000).toISOString(),
+        isCancellable: false,
+      },
+    ],
   },
   {
     hash: 'demo-deserialization-failure',
@@ -489,6 +544,7 @@ const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
       updatedBy: null,
       isReviewOverdue: false,
     },
+    replayHistory: [],
   },
   {
     hash: 'demo-authentication-failure',
@@ -515,6 +571,7 @@ const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
       updatedBy: 'security-team@example.com',
       isReviewOverdue: false,
     },
+    replayHistory: [],
   },
   {
     hash: 'demo-duplicate-detection',
@@ -541,6 +598,7 @@ const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
       updatedBy: 'alice@example.com',
       isReviewOverdue: false,
     },
+    replayHistory: [],
   },
 ];
 
@@ -648,5 +706,24 @@ export function getMockSignatureTimeline(signatureHash: string): SignatureTimeli
   return {
     signatureHash,
     events: events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()),
+  };
+}
+
+/**
+ * Get a mock replay-job history page for a demo failure signature, or undefined if the hash
+ * doesn't match one of the curated demo signatures. Backs the Replay Safety & History panel in
+ * demo mode, where real replay mutations reject but this read-only history list still renders.
+ */
+export function getMockSignatureReplayHistory(signatureHash: string): PaginatedBulkOperationJobs | undefined {
+  const def = DEMO_SIGNATURE_DEFS.find((d) => d.hash === signatureHash);
+  if (!def) return undefined;
+
+  return {
+    items: def.replayHistory,
+    totalCount: def.replayHistory.length,
+    page: 1,
+    pageSize: 20,
+    hasNextPage: false,
+    hasPreviousPage: false,
   };
 }

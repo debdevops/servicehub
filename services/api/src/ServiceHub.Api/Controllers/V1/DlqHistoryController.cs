@@ -33,6 +33,7 @@ public sealed class DlqHistoryController : ApiControllerBase
     private readonly IFailureKnowledgeService _knowledgeService;
     private readonly INamespaceSignatureLookupService _signatureLookupService;
     private readonly ISignatureLifecycleService _lifecycleService;
+    private readonly ISignatureReplayService _signatureReplayService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DlqHistoryController"/> class.
@@ -45,7 +46,8 @@ public sealed class DlqHistoryController : ApiControllerBase
         IMemoryCache cache,
         IFailureKnowledgeService knowledgeService,
         INamespaceSignatureLookupService signatureLookupService,
-        ISignatureLifecycleService lifecycleService)
+        ISignatureLifecycleService lifecycleService,
+        ISignatureReplayService signatureReplayService)
     {
         _historyService = historyService ?? throw new ArgumentNullException(nameof(historyService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -55,6 +57,7 @@ public sealed class DlqHistoryController : ApiControllerBase
         _knowledgeService = knowledgeService ?? throw new ArgumentNullException(nameof(knowledgeService));
         _signatureLookupService = signatureLookupService ?? throw new ArgumentNullException(nameof(signatureLookupService));
         _lifecycleService = lifecycleService ?? throw new ArgumentNullException(nameof(lifecycleService));
+        _signatureReplayService = signatureReplayService ?? throw new ArgumentNullException(nameof(signatureReplayService));
     }
 
     /// <summary>
@@ -733,8 +736,71 @@ public sealed class DlqHistoryController : ApiControllerBase
                 }));
         }
 
+        var replayJobsResult = await _signatureReplayService.ListJobsAsync(
+            OwnerId, namespaceId, signatureHash, page: 1, pageSize: 100, cancellationToken);
+        if (replayJobsResult.IsSuccess)
+        {
+            foreach (var job in replayJobsResult.Value.Items)
+                events.AddRange(BuildReplayJobEvents(job));
+        }
+
         var sorted = events.OrderBy(e => e.Timestamp).ToList();
         return Ok(new SignatureTimelineResponse(signatureHash, sorted));
+    }
+
+    /// <summary>Maps one signature-replay job's lifecycle into timeline events (started, plus a
+    /// terminal completed/failed/cancelled event once the job has finished).</summary>
+    private static IEnumerable<DlqTimelineEventResponse> BuildReplayJobEvents(BulkOperationJobResponse job)
+    {
+        yield return new DlqTimelineEventResponse(
+            EventType: "ReplayJobStarted",
+            Description: $"Signature replay started ({job.TotalMatched} message(s) matched)",
+            Timestamp: job.CreatedAt,
+            Details: new Dictionary<string, string> { ["TotalMatched"] = job.TotalMatched.ToString() });
+
+        if (job.CompletedAt is null)
+            yield break;
+
+        var details = new Dictionary<string, string>
+        {
+            ["SuccessCount"] = job.SuccessCount.ToString(),
+            ["FailureCount"] = job.FailureCount.ToString(),
+            ["TotalMatched"] = job.TotalMatched.ToString(),
+        };
+
+        switch (job.Status)
+        {
+            case "Completed":
+                yield return new DlqTimelineEventResponse(
+                    EventType: "ReplayJobCompleted",
+                    Description: $"Signature replay completed — {job.SuccessCount}/{job.TotalMatched} succeeded",
+                    Timestamp: job.CompletedAt.Value,
+                    Details: details);
+                break;
+            case "CompletedWithErrors":
+                yield return new DlqTimelineEventResponse(
+                    EventType: "ReplayJobCompleted",
+                    Description: $"Signature replay completed with errors — {job.SuccessCount} succeeded, {job.FailureCount} failed",
+                    Timestamp: job.CompletedAt.Value,
+                    Details: details);
+                break;
+            case "Failed":
+                yield return new DlqTimelineEventResponse(
+                    EventType: "ReplayJobFailed",
+                    Description: string.IsNullOrEmpty(job.ErrorSummary)
+                        ? "Signature replay failed"
+                        : $"Signature replay failed: {job.ErrorSummary}",
+                    Timestamp: job.CompletedAt.Value,
+                    Details: details);
+                break;
+            case "Cancelled":
+                yield return new DlqTimelineEventResponse(
+                    EventType: "ReplayJobCancelled",
+                    Description: $"Signature replay cancelled after {job.ProcessedCount}/{job.TotalMatched} message(s)",
+                    Timestamp: job.CompletedAt.Value,
+                    Details: details);
+                break;
+        }
     }
 
     /// <summary>

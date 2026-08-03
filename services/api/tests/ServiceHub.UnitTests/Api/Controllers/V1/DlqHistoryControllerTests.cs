@@ -26,6 +26,7 @@ public class DlqHistoryControllerTests
     private readonly Mock<IFailureKnowledgeService> _knowledgeService = new();
     private readonly Mock<INamespaceSignatureLookupService> _signatureLookupService = new();
     private readonly Mock<ISignatureLifecycleService> _lifecycleService = new();
+    private readonly Mock<ISignatureReplayService> _signatureReplayService = new();
     private readonly IMemoryCache _cache = new MemoryCache(new MemoryCacheOptions());
     private readonly DlqHistoryController _controller;
 
@@ -49,6 +50,12 @@ public class DlqHistoryControllerTests
             .Setup(x => x.GetHistoryAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<SignatureLifecycleEvent>>.Success([]));
 
+        // Default replay history: no jobs (most tests don't care about replay events).
+        _signatureReplayService
+            .Setup(x => x.ListJobsAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<PaginatedResponse<BulkOperationJobResponse>>.Success(
+                new PaginatedResponse<BulkOperationJobResponse>([], 0, 1, 100, false, false)));
+
         _controller = new DlqHistoryController(
             _historyService.Object,
             _logger.Object,
@@ -57,7 +64,8 @@ public class DlqHistoryControllerTests
             _cache,
             _knowledgeService.Object,
             _signatureLookupService.Object,
-            _lifecycleService.Object);
+            _lifecycleService.Object,
+            _signatureReplayService.Object);
         _controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext()
@@ -107,7 +115,7 @@ public class DlqHistoryControllerTests
     {
         var act = () => new DlqHistoryController(
             null!, _logger.Object, _signatureAnalysisService.Object, _namespaceRepository.Object, _cache, _knowledgeService.Object,
-            _signatureLookupService.Object, _lifecycleService.Object);
+            _signatureLookupService.Object, _lifecycleService.Object, _signatureReplayService.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("historyService");
     }
 
@@ -116,7 +124,7 @@ public class DlqHistoryControllerTests
     {
         var act = () => new DlqHistoryController(
             _historyService.Object, null!, _signatureAnalysisService.Object, _namespaceRepository.Object, _cache, _knowledgeService.Object,
-            _signatureLookupService.Object, _lifecycleService.Object);
+            _signatureLookupService.Object, _lifecycleService.Object, _signatureReplayService.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -395,7 +403,8 @@ public class DlqHistoryControllerTests
             _cache,
             _knowledgeService.Object,
             _signatureLookupService.Object,
-            _lifecycleService.Object);
+            _lifecycleService.Object,
+            _signatureReplayService.Object);
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { RequestServices = serviceProvider }
@@ -517,7 +526,7 @@ public class DlqHistoryControllerTests
     {
         var act = () => new DlqHistoryController(
             _historyService.Object, _logger.Object, null!, _namespaceRepository.Object, _cache, _knowledgeService.Object,
-            _signatureLookupService.Object, _lifecycleService.Object);
+            _signatureLookupService.Object, _lifecycleService.Object, _signatureReplayService.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("signatureAnalysisService");
     }
 
@@ -526,7 +535,7 @@ public class DlqHistoryControllerTests
     {
         var act = () => new DlqHistoryController(
             _historyService.Object, _logger.Object, _signatureAnalysisService.Object, null!, _cache, _knowledgeService.Object,
-            _signatureLookupService.Object, _lifecycleService.Object);
+            _signatureLookupService.Object, _lifecycleService.Object, _signatureReplayService.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("namespaceRepository");
     }
 
@@ -535,7 +544,7 @@ public class DlqHistoryControllerTests
     {
         var act = () => new DlqHistoryController(
             _historyService.Object, _logger.Object, _signatureAnalysisService.Object, _namespaceRepository.Object, null!, _knowledgeService.Object,
-            _signatureLookupService.Object, _lifecycleService.Object);
+            _signatureLookupService.Object, _lifecycleService.Object, _signatureReplayService.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("cache");
     }
 
@@ -732,6 +741,141 @@ public class DlqHistoryControllerTests
         response.Events.Select(e => e.Timestamp).Should().BeInAscendingOrder();
         response.Events[0].EventType.Should().Be("SignatureFirstObserved");
         response.Events[^1].EventType.Should().Be("StatusChanged");
+    }
+
+    [Fact]
+    public async Task GetSignatureTimeline_IncludesReplayJobEvents_MergedChronologically()
+    {
+        var nsId = Guid.NewGuid();
+        const string hash = "timeline-hash-with-replays";
+        var firstSeen = DateTimeOffset.UtcNow.AddDays(-10);
+        var lastSeen = DateTimeOffset.UtcNow.AddDays(-1);
+        var replayCreatedAt = DateTimeOffset.UtcNow.AddDays(-5);
+        var replayCompletedAt = DateTimeOffset.UtcNow.AddDays(-5).AddMinutes(2);
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NamespaceSignature
+            {
+                NamespaceId = nsId,
+                OwnerId = Namespace.SpaOwnerId,
+                SignatureHash = hash,
+                FirstSeenAt = firstSeen,
+                LastSeenAt = lastSeen,
+                OccurrenceCount = 4,
+                DominantDeadletterReason = "MaxDeliveryCountExceeded",
+                TopTermsJson = "[\"timeout\"]",
+            });
+        _knowledgeService.Setup(s => s.GetKnowledgeAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<FailureKnowledge>.Success(new FailureKnowledge(
+                null, null, null, null, null, null, null, 0, null, null)));
+        _lifecycleService.Setup(s => s.GetHistoryAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<SignatureLifecycleEvent>>.Success([]));
+        _signatureReplayService
+            .Setup(x => x.ListJobsAsync(It.IsAny<string>(), nsId, hash, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<PaginatedResponse<BulkOperationJobResponse>>.Success(
+                new PaginatedResponse<BulkOperationJobResponse>(
+                    [
+                        new BulkOperationJobResponse(
+                            Id: Guid.NewGuid(),
+                            OperationType: "Replay",
+                            Status: "Completed",
+                            NamespaceId: nsId,
+                            NamespaceDisplayName: "test-namespace",
+                            EntityNameFilter: null,
+                            StatusFilter: null,
+                            CategoryFilter: null,
+                            From: null,
+                            To: null,
+                            TotalMatched: 4,
+                            ProcessedCount: 4,
+                            SuccessCount: 4,
+                            FailureCount: 0,
+                            SkippedCount: 0,
+                            FailureSample: null,
+                            ErrorSummary: null,
+                            CreatedAt: replayCreatedAt,
+                            StartedAt: replayCreatedAt,
+                            CompletedAt: replayCompletedAt,
+                            IsCancellable: false),
+                    ],
+                    1, 1, 100, false, false)));
+
+        var result = await _controller.GetSignatureTimeline(nsId, hash);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<SignatureTimelineResponse>().Subject;
+        response.Events.Should().HaveCount(4);
+        response.Events.Select(e => e.Timestamp).Should().BeInAscendingOrder();
+        response.Events.Select(e => e.EventType).Should().Contain(["ReplayJobStarted", "ReplayJobCompleted"]);
+        response.Events.First(e => e.EventType == "ReplayJobStarted").Timestamp.Should().Be(replayCreatedAt);
+        response.Events.First(e => e.EventType == "ReplayJobCompleted").Timestamp.Should().Be(replayCompletedAt);
+    }
+
+    [Fact]
+    public async Task GetSignatureTimeline_ReplayJobStillRunning_OnlyEmitsStartedEvent()
+    {
+        var nsId = Guid.NewGuid();
+        const string hash = "timeline-hash-running-replay";
+        var firstSeen = DateTimeOffset.UtcNow.AddDays(-3);
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NamespaceSignature
+            {
+                NamespaceId = nsId,
+                OwnerId = Namespace.SpaOwnerId,
+                SignatureHash = hash,
+                FirstSeenAt = firstSeen,
+                LastSeenAt = firstSeen,
+                OccurrenceCount = 1,
+                DominantDeadletterReason = "MaxDeliveryCountExceeded",
+                TopTermsJson = "[\"timeout\"]",
+            });
+        _knowledgeService.Setup(s => s.GetKnowledgeAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<FailureKnowledge>.Success(new FailureKnowledge(
+                null, null, null, null, null, null, null, 0, null, null)));
+        _lifecycleService.Setup(s => s.GetHistoryAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<SignatureLifecycleEvent>>.Success([]));
+        _signatureReplayService
+            .Setup(x => x.ListJobsAsync(It.IsAny<string>(), nsId, hash, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<PaginatedResponse<BulkOperationJobResponse>>.Success(
+                new PaginatedResponse<BulkOperationJobResponse>(
+                    [
+                        new BulkOperationJobResponse(
+                            Id: Guid.NewGuid(),
+                            OperationType: "Replay",
+                            Status: "Running",
+                            NamespaceId: nsId,
+                            NamespaceDisplayName: "test-namespace",
+                            EntityNameFilter: null,
+                            StatusFilter: null,
+                            CategoryFilter: null,
+                            From: null,
+                            To: null,
+                            TotalMatched: 1,
+                            ProcessedCount: 0,
+                            SuccessCount: 0,
+                            FailureCount: 0,
+                            SkippedCount: 0,
+                            FailureSample: null,
+                            ErrorSummary: null,
+                            CreatedAt: DateTimeOffset.UtcNow.AddMinutes(-1),
+                            StartedAt: DateTimeOffset.UtcNow.AddMinutes(-1),
+                            CompletedAt: null,
+                            IsCancellable: true),
+                    ],
+                    1, 1, 100, false, false)));
+
+        var result = await _controller.GetSignatureTimeline(nsId, hash);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<SignatureTimelineResponse>().Subject;
+        response.Events.Should().ContainSingle(e => e.EventType == "ReplayJobStarted");
+        response.Events.Should().NotContain(e =>
+            e.EventType == "ReplayJobCompleted" || e.EventType == "ReplayJobFailed" || e.EventType == "ReplayJobCancelled");
     }
 
     [Fact]

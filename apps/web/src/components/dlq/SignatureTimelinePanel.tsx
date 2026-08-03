@@ -1,5 +1,6 @@
-import { Clock, AlertCircle, CheckCircle, XCircle, ArrowRight, FileText, Sparkles } from 'lucide-react';
+import { Clock, AlertCircle, AlertTriangle, CheckCircle, XCircle, ArrowRight, FileText, Sparkles, RefreshCw, StopCircle } from 'lucide-react';
 import type { DlqTimelineEvent } from '@servicehub/ui-shared/lib/api/dlqHistory';
+import { getTimelineCallout } from './timelineCallout';
 
 interface SignatureTimelinePanelProps {
   events: DlqTimelineEvent[];
@@ -13,6 +14,10 @@ const eventIcons: Record<string, { icon: typeof Clock; color: string }> = {
   ReplayedSuccess: { icon: CheckCircle, color: 'text-green-500' },
   ReplayedFailed: { icon: XCircle, color: 'text-red-500' },
   DeadLettered: { icon: AlertCircle, color: 'text-red-500' },
+  ReplayJobStarted: { icon: RefreshCw, color: 'text-sky-500' },
+  ReplayJobCompleted: { icon: CheckCircle, color: 'text-green-500' },
+  ReplayJobFailed: { icon: XCircle, color: 'text-red-500' },
+  ReplayJobCancelled: { icon: StopCircle, color: 'text-gray-500' },
 };
 
 function formatTimestamp(ts: string): string {
@@ -45,8 +50,24 @@ export function SignatureTimelinePanel({ events }: SignatureTimelinePanelProps) 
     return <p className="text-sm text-gray-500">No timeline events available.</p>;
   }
 
+  const callout = getTimelineCallout(events);
+
   return (
     <div className="relative">
+      {callout && (
+        <div
+          className={`flex items-center gap-2 mb-4 px-3 py-2 rounded-lg text-sm font-medium ${
+            callout.tone === 'attention' ? 'bg-amber-50 text-amber-700' : 'bg-green-50 text-green-700'
+          }`}
+        >
+          {callout.tone === 'attention' ? (
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+          ) : (
+            <CheckCircle className="w-4 h-4 shrink-0" />
+          )}
+          {callout.message}
+        </div>
+      )}
       <div className="absolute left-4 top-2 bottom-2 w-0.5 bg-gray-200" />
 
       <div className="space-y-4">

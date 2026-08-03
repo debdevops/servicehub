@@ -108,4 +108,30 @@ describe('signatureReplayApi', () => {
       expect(result).toEqual(job);
     });
   });
+
+  describe('history()', () => {
+    it('calls GET .../replay/history with default paging', async () => {
+      const page = { items: [], totalCount: 0, page: 1, pageSize: 20, hasNextPage: false, hasPreviousPage: false };
+      mocked.get.mockResolvedValueOnce({ data: page } as any);
+
+      const result = await signatureReplayApi.history('ns-1', 'hash-1');
+
+      expect(mocked.get).toHaveBeenCalledWith(
+        '/namespaces/ns-1/dlq/signatures/hash-1/replay/history',
+        { params: { page: 1, pageSize: 20 } },
+      );
+      expect(result).toEqual(page);
+    });
+
+    it('passes through explicit page/pageSize', async () => {
+      mocked.get.mockResolvedValueOnce({ data: {} } as any);
+
+      await signatureReplayApi.history('ns-1', 'hash-1', 2, 50);
+
+      expect(mocked.get).toHaveBeenCalledWith(
+        '/namespaces/ns-1/dlq/signatures/hash-1/replay/history',
+        { params: { page: 2, pageSize: 50 } },
+      );
+    });
+  });
 });
