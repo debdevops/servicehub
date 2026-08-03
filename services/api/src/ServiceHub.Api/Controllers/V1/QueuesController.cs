@@ -8,6 +8,7 @@ using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Shared.Constants;
+using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Api.Controllers.V1;
 
@@ -91,7 +92,10 @@ public sealed class QueuesController : ApiControllerBase
 
         if (ns.ConnectionString is null)
         {
-            return BadRequest("Namespace does not have a connection string configured.");
+            return ToActionResult<IReadOnlyList<QueueRuntimePropertiesDto>>(
+                Error.Validation(
+                    ErrorCodes.Namespace.ConnectionStringRequired,
+                    "Namespace does not have a connection string configured."));
         }
 
         var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
@@ -227,7 +231,10 @@ public sealed class QueuesController : ApiControllerBase
 
         if (ns.ConnectionString is null)
         {
-            return BadRequest("Namespace does not have a connection string configured.");
+            return ToActionResult<QueueRuntimePropertiesDto>(
+                Error.Validation(
+                    ErrorCodes.Namespace.ConnectionStringRequired,
+                    "Namespace does not have a connection string configured."));
         }
 
         var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);

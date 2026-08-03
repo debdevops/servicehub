@@ -287,6 +287,9 @@ public static class DependencyInjection
         services.TryAddScoped<ISignatureReplayService, SignatureReplay.SignatureReplayService>();
         services.TryAddScoped<ISignatureReplayExecutor, SignatureReplay.SignatureReplayExecutor>();
 
+        // Failure Intelligence Center — aggregation service for incident command center
+        services.TryAddScoped<IFailureIntelligenceCenterService, FailureIntelligenceCenterService>();
+
         return services;
     }
 

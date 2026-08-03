@@ -13,6 +13,7 @@ import {
   Cloud,
   Route,
   Pin,
+  AlertTriangle,
 } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
@@ -75,6 +76,20 @@ export function QuickAccessPanel() {
               {totalDlqCount}
             </span>
           )}
+        </NavLink>
+        <NavLink
+          to={`${navPrefix}/incidents`}
+          className={({ isActive }) =>
+            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isActive
+                ? 'bg-red-50 text-red-700 border-red-300 font-medium'
+                : 'bg-white hover:bg-red-50 text-gray-700 hover:text-red-700 border-gray-200 hover:border-red-300'
+            }`
+          }
+        >
+          <AlertTriangle className="w-4 h-4 text-red-500" />
+          <span className="flex-1 text-left">Incident Center</span>
+          <span className="text-xs text-red-600 font-medium">Ops</span>
         </NavLink>
         <NavLink
           to={`${navPrefix}/fleet`}

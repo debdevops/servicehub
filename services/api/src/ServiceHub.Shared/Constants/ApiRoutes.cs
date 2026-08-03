@@ -411,4 +411,14 @@ public static class ApiRoutes
         /// <summary>Base route for the caller-identity endpoint.</summary>
         public const string Base = $"{VersionedBase}/me";
     }
+
+    /// <summary>Routes for the Investigation Center — incident command for failure investigation.</summary>
+    public static class FailureIntelligence
+    {
+        /// <summary>Base route for failure intelligence operations.</summary>
+        public const string Base = $"{VersionedBase}/failure-intelligence";
+
+        /// <summary>Route for the investigation center aggregated data.</summary>
+        public const string InvestigationCenter = $"{Base}/investigation-center";
+    }
 }

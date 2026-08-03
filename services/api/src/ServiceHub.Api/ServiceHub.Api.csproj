@@ -21,7 +21,7 @@
     <PackageReference Include="Scalar.AspNetCore" Version="2.16.10" />
     <!-- Swashbuckle for Swagger UI -->
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
-    <!-- Explicit dependency override to fix vulnerability (CVE-2026-49451 / GHSA-v5pm-xwqc-g5wc) in transitively referenced Microsoft.OpenApi 2.4.1 -->
+    <!-- Explicit dependency override to fix vulnerability (GHSA-v5pm-xwqc-g5wc) in transitively referenced Microsoft.OpenApi 2.4.1 -->
     <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
     <!-- AspNetCore.HealthChecks.UI.Client: no .NET 10 release yet; 9.0.0 is the latest compatible version -->
     <PackageReference Include="AspNetCore.HealthChecks.UI.Client" Version="9.0.0" />
