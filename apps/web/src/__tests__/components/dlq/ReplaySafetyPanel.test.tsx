@@ -134,4 +134,90 @@ describe('ReplaySafetyPanel', () => {
 
     expect(screen.getByText('No replay attempts recorded for this signature yet.')).toBeInTheDocument();
   });
+
+  it('shows deterministic success/failure counts and a safe-to-replay recommendation', () => {
+    mockUseCapabilities.mockReturnValue({ data: AZURE_CAPABILITIES });
+    mockUseHistory.mockReturnValue({
+      data: {
+        items: [
+          makeJob({ status: 'Completed', successCount: 5, failureCount: 0 }),
+          makeJob({ status: 'Completed', successCount: 5, failureCount: 0 }),
+          makeJob({ status: 'Failed', successCount: 0, failureCount: 5 }),
+        ],
+        totalCount: 3,
+      },
+      isLoading: false,
+    });
+
+    render(
+      <ReplaySafetyPanel namespaceId="ns-1" signatureHash="hash-1" cloudProvider="azure" onStartReplay={vi.fn()} />,
+    );
+
+    expect(screen.getByText('2 successful, 1 failed')).toBeInTheDocument();
+    expect(screen.getByText('Replay can be attempted after verifying current namespace state.')).toBeInTheDocument();
+  });
+
+  it('shows a consecutive-failure streak and the investigate recommendation instead of the default one', () => {
+    mockUseCapabilities.mockReturnValue({ data: AZURE_CAPABILITIES });
+    mockUseHistory.mockReturnValue({
+      data: {
+        items: [makeJob({ status: 'Failed' }), makeJob({ status: 'Failed' }), makeJob({ status: 'Failed' })],
+        totalCount: 3,
+      },
+      isLoading: false,
+    });
+
+    render(
+      <ReplaySafetyPanel namespaceId="ns-1" signatureHash="hash-1" cloudProvider="azure" onStartReplay={vi.fn()} />,
+    );
+
+    expect(screen.getByText('Replay failed 3 consecutive times.')).toBeInTheDocument();
+    expect(screen.getByText('Investigate the underlying failure before replaying.')).toBeInTheDocument();
+  });
+
+  it('reports recurrence after replay when the signature was last seen after the last replay job completed', () => {
+    mockUseCapabilities.mockReturnValue({ data: AZURE_CAPABILITIES });
+    mockUseHistory.mockReturnValue({
+      data: {
+        items: [makeJob({ status: 'Completed', completedAt: '2026-07-01T00:00:00Z' })],
+        totalCount: 1,
+      },
+      isLoading: false,
+    });
+
+    render(
+      <ReplaySafetyPanel
+        namespaceId="ns-1"
+        signatureHash="hash-1"
+        cloudProvider="azure"
+        lastSeenAt="2026-08-01T00:00:00Z"
+        onStartReplay={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/recurred/)).toBeInTheDocument();
+  });
+
+  it('reports no recurrence when the signature has not been seen since the last replay job completed', () => {
+    mockUseCapabilities.mockReturnValue({ data: AZURE_CAPABILITIES });
+    mockUseHistory.mockReturnValue({
+      data: {
+        items: [makeJob({ status: 'Completed', completedAt: '2026-08-01T00:00:00Z' })],
+        totalCount: 1,
+      },
+      isLoading: false,
+    });
+
+    render(
+      <ReplaySafetyPanel
+        namespaceId="ns-1"
+        signatureHash="hash-1"
+        cloudProvider="azure"
+        lastSeenAt="2026-07-01T00:00:00Z"
+        onStartReplay={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('No recurrence since the last replay attempt.')).toBeInTheDocument();
+  });
 });

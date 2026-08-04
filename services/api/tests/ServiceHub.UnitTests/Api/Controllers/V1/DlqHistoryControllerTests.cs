@@ -1013,6 +1013,92 @@ public class DlqHistoryControllerTests
         response.Matches[0].Knowledge.Should().BeNull();
     }
 
+    [Fact]
+    public async Task GetSignatureRootCauseMatches_MatchWithNoReplayHistory_HasNullLastReplayOutcome()
+    {
+        var nsId = Guid.NewGuid();
+        var otherNsId = Guid.NewGuid();
+        const string hash = "shared-hash-no-replay";
+
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeSignature(nsId, hash));
+        var otherSignature = MakeSignature(otherNsId, hash);
+        _signatureLookupService.Setup(s => s.FindAcrossNamespacesAsync(It.IsAny<string>(), hash, nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<NamespaceSignature>)[otherSignature]);
+        _knowledgeService.Setup(s => s.GetKnowledgeAsync(It.IsAny<string>(), otherNsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<FailureKnowledge>.Success(new FailureKnowledge(
+                null, null, null, null, null, null, null, 1, null, null)));
+        _lifecycleService.Setup(s => s.GetStatusAsync(It.IsAny<string>(), otherNsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SignatureLifecycleSnapshot>.Success(
+                new SignatureLifecycleSnapshot(SignatureLifecycleStatus.Active, null, null, null)));
+        // Default constructor mock already returns an empty replay history for any args.
+
+        var result = await _controller.GetSignatureRootCauseMatches(nsId, hash);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RootCauseExplorerResponse>().Subject;
+        response.Matches.Should().ContainSingle();
+        response.Matches[0].LastReplayOutcome.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetSignatureRootCauseMatches_MatchWithReplayHistory_IncludesLastReplayOutcome()
+    {
+        var nsId = Guid.NewGuid();
+        var otherNsId = Guid.NewGuid();
+        const string hash = "shared-hash-with-replay";
+        var lastReplayAt = DateTimeOffset.UtcNow.AddDays(-2);
+
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeSignature(nsId, hash));
+        var otherSignature = MakeSignature(otherNsId, hash);
+        _signatureLookupService.Setup(s => s.FindAcrossNamespacesAsync(It.IsAny<string>(), hash, nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<NamespaceSignature>)[otherSignature]);
+        _knowledgeService.Setup(s => s.GetKnowledgeAsync(It.IsAny<string>(), otherNsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<FailureKnowledge>.Success(new FailureKnowledge(
+                null, null, null, null, null, null, null, 1, null, null)));
+        _lifecycleService.Setup(s => s.GetStatusAsync(It.IsAny<string>(), otherNsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SignatureLifecycleSnapshot>.Success(
+                new SignatureLifecycleSnapshot(SignatureLifecycleStatus.Active, null, null, null)));
+
+        var job = new BulkOperationJobResponse(
+            Id: Guid.NewGuid(),
+            OperationType: "Replay",
+            Status: "Completed",
+            NamespaceId: otherNsId,
+            NamespaceDisplayName: "other-namespace",
+            EntityNameFilter: null,
+            StatusFilter: null,
+            CategoryFilter: null,
+            From: null,
+            To: null,
+            TotalMatched: 5,
+            ProcessedCount: 5,
+            SuccessCount: 5,
+            FailureCount: 0,
+            SkippedCount: 0,
+            FailureSample: null,
+            ErrorSummary: null,
+            CreatedAt: lastReplayAt,
+            StartedAt: lastReplayAt,
+            CompletedAt: lastReplayAt.AddMinutes(1),
+            IsCancellable: false);
+        _signatureReplayService.Setup(s => s.ListJobsAsync(
+                It.IsAny<string>(), otherNsId, hash, 1, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<PaginatedResponse<BulkOperationJobResponse>>.Success(
+                new PaginatedResponse<BulkOperationJobResponse>([job], 1, 1, 1, false, false)));
+
+        var result = await _controller.GetSignatureRootCauseMatches(nsId, hash);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RootCauseExplorerResponse>().Subject;
+        response.Matches.Should().ContainSingle();
+        var outcome = response.Matches[0].LastReplayOutcome;
+        outcome.Should().NotBeNull();
+        outcome!.Status.Should().Be("Completed");
+        outcome.CreatedAt.Should().Be(lastReplayAt);
+    }
+
     // ── UpdateSignatureStatus ────────────────────────────────
 
     [Fact]

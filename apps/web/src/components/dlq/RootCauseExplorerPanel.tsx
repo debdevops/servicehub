@@ -1,8 +1,9 @@
-import { AlertCircle, MapPin } from 'lucide-react';
+import { AlertCircle, MapPin, RefreshCw } from 'lucide-react';
 import type { Namespace } from '@servicehub/ui-shared/lib/api/types';
 import { useRootCauseMatches } from '@servicehub/ui-shared/hooks/useDlqSignatures';
 import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import { StatusBadge } from './StatusBadge';
+import { JOB_STATUS_STYLES } from './replayStatusStyles';
 
 interface RootCauseExplorerPanelProps {
   namespaceId: string;
@@ -69,6 +70,24 @@ export function RootCauseExplorerPanel({
                   <p className="text-xs text-gray-500 mb-1.5">
                     {match.occurrenceCount} occurrence{match.occurrenceCount === 1 ? '' : 's'} · first seen{' '}
                     {formatDate(match.firstSeenAt)} · last seen {formatDate(match.lastSeenAt)}
+                  </p>
+                  <p className="text-xs text-gray-600 mb-1.5 flex items-center gap-1.5">
+                    <RefreshCw className="w-3 h-3 text-gray-400 shrink-0" />
+                    {match.lastReplayOutcome ? (
+                      <>
+                        Last replay:
+                        <span
+                          className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                            (JOB_STATUS_STYLES[match.lastReplayOutcome.status] || JOB_STATUS_STYLES.Pending).bg
+                          } ${(JOB_STATUS_STYLES[match.lastReplayOutcome.status] || JOB_STATUS_STYLES.Pending).text}`}
+                        >
+                          {match.lastReplayOutcome.status}
+                        </span>
+                        {formatDate(match.lastReplayOutcome.createdAt)}
+                      </>
+                    ) : (
+                      'Never replayed in this namespace.'
+                    )}
                   </p>
                   {match.knowledge?.rootCause ? (
                     <div className="text-sm bg-sky-50 border border-sky-100 rounded-lg p-2.5">

@@ -28,6 +28,7 @@ export interface InvestigationQueueItem {
 
 export interface FailedReplayItem {
   jobId: string;
+  namespaceId: string;
   signatureHash: string;
   signatureName: string;
   jobStatus: string;

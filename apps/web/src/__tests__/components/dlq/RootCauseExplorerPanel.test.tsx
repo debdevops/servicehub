@@ -20,6 +20,7 @@ function makeMatch(overrides: Partial<RootCauseMatch> = {}): RootCauseMatch {
     lastSeenAt: '2026-01-02T00:00:00Z',
     lifecycleStatus: 'Active',
     knowledge: null,
+    lastReplayOutcome: null,
     ...overrides,
   };
 }
@@ -173,5 +174,54 @@ describe('RootCauseExplorerPanel', () => {
     );
 
     expect(screen.getByText('No root cause recorded there yet.')).toBeInTheDocument();
+  });
+
+  it('shows the last replay outcome for a match that has been replayed', () => {
+    const response: RootCauseExplorerResponse = {
+      signatureHash: 'hash-1',
+      dominantDeadletterReason: 'PoisonMessage',
+      topTerms: ['schema'],
+      totalOccurrencesAcrossFleet: 6,
+      matches: [
+        makeMatch({
+          lastReplayOutcome: { status: 'Completed', createdAt: '2026-01-05T00:00:00Z' },
+        }),
+      ],
+    };
+    mockUseRootCauseMatches.mockReturnValue({ data: response, isLoading: false });
+
+    render(
+      <RootCauseExplorerPanel
+        namespaceId="ns-1"
+        signatureHash="hash-1"
+        dominantDeadletterReason="PoisonMessage"
+        namespaces={[makeNamespace()]}
+      />,
+    );
+
+    expect(screen.getByText(/Last replay:/)).toBeInTheDocument();
+    expect(screen.getByText('Completed')).toBeInTheDocument();
+  });
+
+  it('shows "never replayed" for a match with no replay history', () => {
+    const response: RootCauseExplorerResponse = {
+      signatureHash: 'hash-1',
+      dominantDeadletterReason: 'PoisonMessage',
+      topTerms: ['schema'],
+      totalOccurrencesAcrossFleet: 6,
+      matches: [makeMatch({ lastReplayOutcome: null })],
+    };
+    mockUseRootCauseMatches.mockReturnValue({ data: response, isLoading: false });
+
+    render(
+      <RootCauseExplorerPanel
+        namespaceId="ns-1"
+        signatureHash="hash-1"
+        dominantDeadletterReason="PoisonMessage"
+        namespaces={[makeNamespace()]}
+      />,
+    );
+
+    expect(screen.getByText('Never replayed in this namespace.')).toBeInTheDocument();
   });
 });

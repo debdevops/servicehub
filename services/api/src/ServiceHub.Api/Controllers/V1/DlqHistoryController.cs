@@ -847,13 +847,20 @@ public sealed class DlqHistoryController : ApiControllerBase
                 OwnerId, other.NamespaceId, signatureHash, cancellationToken);
             var status = statusResult.IsSuccess ? statusResult.Value.Status : SignatureLifecycleStatus.Active;
 
+            var replayResult = await _signatureReplayService.ListJobsAsync(
+                OwnerId, other.NamespaceId, signatureHash, page: 1, pageSize: 1, cancellationToken);
+            var lastReplayOutcome = replayResult.IsSuccess && replayResult.Value.Items.Count > 0
+                ? new LastReplayOutcomeResponse(replayResult.Value.Items[0].Status, replayResult.Value.Items[0].CreatedAt)
+                : null;
+
             matches.Add(new RootCauseMatchResponse(
                 NamespaceId: other.NamespaceId,
                 OccurrenceCount: other.OccurrenceCount,
                 FirstSeenAt: other.FirstSeenAt,
                 LastSeenAt: other.LastSeenAt,
                 LifecycleStatus: status.ToString(),
-                Knowledge: knowledge));
+                Knowledge: knowledge,
+                LastReplayOutcome: lastReplayOutcome));
         }
 
         var topTerms = JsonSerializer.Deserialize<List<string>>(current.TopTermsJson) ?? [];

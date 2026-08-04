@@ -180,6 +180,7 @@ export function SignatureDetailsPage() {
               namespaceId={namespaceId}
               signatureHash={signatureHash}
               cloudProvider={namespace?.cloudProvider}
+              lastSeenAt={detail.windowEnd}
               onStartReplay={() => setShowReplayPreview(true)}
             />
           </div>

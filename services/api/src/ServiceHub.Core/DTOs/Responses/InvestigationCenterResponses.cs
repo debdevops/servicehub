@@ -45,6 +45,7 @@ public sealed record InvestigationQueueItem(
 /// <summary>A replay job that failed in the monitoring window (last 7 days).</summary>
 public sealed record FailedReplayItem(
     Guid JobId,
+    Guid NamespaceId,
     string SignatureHash,
     string SignatureName,
     string JobStatus,

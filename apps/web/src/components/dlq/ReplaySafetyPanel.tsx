@@ -2,23 +2,27 @@ import { CheckCircle, AlertTriangle, History } from 'lucide-react';
 import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
 import { useSignatureReplayHistory } from '@servicehub/ui-shared/hooks/useSignatureReplay';
-import { computeReplaySafetyVerdict } from './replaySafetyVerdict';
+import { formatRelativeTime } from '@servicehub/ui-shared/lib/utils';
+import {
+  computeReplaySafetyVerdict,
+  summarizeReplayHistory,
+  computeReplayRecurrence,
+  computeReplayRecommendation,
+  CONSECUTIVE_FAILURE_THRESHOLD,
+} from './replaySafetyVerdict';
+import { JOB_STATUS_STYLES } from './replayStatusStyles';
 
 interface ReplaySafetyPanelProps {
   namespaceId: string;
   signatureHash: string;
   cloudProvider?: string;
+  /** The signature's own most recent observed occurrence — compared against the last replay's completion to answer "did it recur after replay." */
+  lastSeenAt?: string;
   onStartReplay: () => void;
 }
 
-const JOB_STATUS_STYLES: Record<string, { bg: string; text: string }> = {
-  Completed: { bg: 'bg-green-100', text: 'text-green-700' },
-  CompletedWithErrors: { bg: 'bg-orange-100', text: 'text-orange-700' },
-  Failed: { bg: 'bg-red-100', text: 'text-red-700' },
-  Cancelled: { bg: 'bg-gray-100', text: 'text-gray-600' },
-  Running: { bg: 'bg-blue-100', text: 'text-blue-700' },
-  Pending: { bg: 'bg-amber-100', text: 'text-amber-700' },
-};
+/** Replay Safety & History panel fetches more history than the raw list needs, so the counts and streak below reflect the signature's real history, not just a short page. */
+const HISTORY_PAGE_SIZE = 50;
 
 function formatDate(ts: string): string {
   return new Date(ts).toLocaleString(undefined, {
@@ -32,17 +36,21 @@ function formatDate(ts: string): string {
 
 /**
  * Replay Safety & History panel (§6.4) — the one genuinely new panel in the Investigation
- * Workspace. Surfaces the provider's replay-safety caveats and this signature's past replay
- * job outcomes, and points at Start Replay (safe) or the capability note / Root Cause &
- * Knowledge (review) instead of duplicating either flow.
+ * Workspace. Surfaces the provider's replay-safety caveats, deterministic counts/streak/recurrence
+ * evidence over this signature's past replay jobs, and points at Start Replay (safe) or the
+ * capability note / Root Cause & Knowledge (review) instead of duplicating either flow.
  */
-export function ReplaySafetyPanel({ namespaceId, signatureHash, cloudProvider, onStartReplay }: ReplaySafetyPanelProps) {
+export function ReplaySafetyPanel({ namespaceId, signatureHash, cloudProvider, lastSeenAt, onStartReplay }: ReplaySafetyPanelProps) {
   const { data: capabilitiesMap } = useProviderCapabilities();
   const capabilities = getProviderCapabilities(capabilitiesMap, cloudProvider);
-  const { data: history, isLoading } = useSignatureReplayHistory(namespaceId, signatureHash);
+  const { data: history, isLoading } = useSignatureReplayHistory(namespaceId, signatureHash, 1, HISTORY_PAGE_SIZE);
 
-  const mostRecentJob = history?.items[0];
+  const items = history?.items ?? [];
+  const mostRecentJob = items[0];
   const verdict = computeReplaySafetyVerdict(capabilities, mostRecentJob);
+  const summary = summarizeReplayHistory(items, history?.totalCount ?? 0);
+  const recurrence = computeReplayRecurrence(items, lastSeenAt);
+  const recommendation = computeReplayRecommendation(verdict, summary);
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5">
@@ -77,6 +85,35 @@ export function ReplaySafetyPanel({ namespaceId, signatureHash, cloudProvider, o
         )}
       </div>
 
+      {!isLoading && items.length > 0 && (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-4 space-y-1.5">
+          <p className="text-sm text-gray-800">
+            Replay history: <span className="font-medium">{summary.successCount} successful, {summary.failureCount} failed</span>
+            {summary.cancelledCount > 0 && <span>, {summary.cancelledCount} cancelled</span>}
+            {summary.skippedMessageCount > 0 && <span>, {summary.skippedMessageCount} message(s) skipped</span>}
+            {'. '}
+            {summary.lastReplayAt && <>Last replay {formatRelativeTime(new Date(summary.lastReplayAt))}.</>}
+            {summary.isTruncated && <span className="text-gray-500"> (showing the most recent {items.length})</span>}
+          </p>
+
+          {summary.consecutiveFailureCount >= CONSECUTIVE_FAILURE_THRESHOLD && (
+            <p className="text-sm text-red-700">
+              Replay failed {summary.consecutiveFailureCount} consecutive times.
+            </p>
+          )}
+
+          {recurrence && (
+            <p className="text-sm text-gray-800">
+              {recurrence.recurred
+                ? `This signature recurred ${formatRelativeTime(new Date(recurrence.replayCompletedAt))} after the last replay attempt.`
+                : 'No recurrence since the last replay attempt.'}
+            </p>
+          )}
+
+          {recommendation && <p className="text-sm font-medium text-gray-900">{recommendation}</p>}
+        </div>
+      )}
+
       <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
         <History className="w-3.5 h-3.5" />
         Past Replay Attempts
@@ -84,11 +121,11 @@ export function ReplaySafetyPanel({ namespaceId, signatureHash, cloudProvider, o
 
       {isLoading ? (
         <p className="text-sm text-gray-500">Loading replay history…</p>
-      ) : !history || history.items.length === 0 ? (
+      ) : items.length === 0 ? (
         <p className="text-sm text-gray-500">No replay attempts recorded for this signature yet.</p>
       ) : (
         <div className="divide-y divide-gray-100">
-          {history.items.map(job => {
+          {items.map(job => {
             const style = JOB_STATUS_STYLES[job.status] || JOB_STATUS_STYLES.Pending;
             return (
               <div key={job.id} className="py-2 flex items-center justify-between gap-3">

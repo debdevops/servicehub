@@ -4,9 +4,12 @@ import {
   useInvestigationQueue,
   type CompactMetricsSummary,
   type InvestigationQueueItem,
+  type FailedReplayItem,
   type KnowledgeReviewItem,
   type NewSignatureItem,
 } from '@servicehub/ui-shared/hooks/useInvestigationQueue';
+import { formatRelativeTime } from '@servicehub/ui-shared/lib/utils';
+import { JOB_STATUS_STYLES } from '@/components/dlq/replayStatusStyles';
 
 function getPriorityLevel(score: number): { level: string; color: { bg: string; text: string; dot: string; border: string } } {
   if (score >= 15) return {
@@ -335,6 +338,68 @@ function NewSignaturesSection({ items }: { items: NewSignatureItem[] | undefined
   );
 }
 
+function FailedReplaysSection({ items }: { items: FailedReplayItem[] | undefined }) {
+  const navigate = useNavigate();
+
+  if (!items || items.length === 0) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg p-8 text-center mb-6">
+        <RefreshCw className="w-8 h-8 text-green-500 mx-auto mb-2" />
+        <p className="text-gray-900 font-medium">No failed replays</p>
+        <p className="text-sm text-gray-600 mt-1">All recent signature replays have succeeded, or none have been attempted.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-6">
+      <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+        <RefreshCw className="w-4 h-4" /> Failed Replays
+      </h2>
+      <div className="space-y-2">
+        {items.map((item) => {
+          const style = JOB_STATUS_STYLES[item.jobStatus] || JOB_STATUS_STYLES.Pending;
+          return (
+            <div key={item.jobId} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow">
+              <div className="flex items-start justify-between gap-4 mb-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-2">
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                      <AlertTriangle className="w-3 h-3" />
+                      {item.jobStatus}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {item.createdAt && `Attempted ${formatRelativeTime(new Date(item.createdAt))}`}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {item.attemptedCount} attempted, {item.failedCount} failed
+                    </span>
+                  </div>
+                  <p className="font-medium text-gray-900 break-words">{item.signatureName}</p>
+                  {item.failureReason && <p className="text-sm text-gray-600 mt-1">{item.failureReason}</p>}
+                </div>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => navigate(`/signatures/${item.signatureHash}?namespace=${item.namespaceId}&tab=replay`)}
+                  className="text-xs px-3 py-1.5 bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 transition-colors font-medium"
+                  aria-label={`View details for ${item.signatureName}`}
+                >
+                  <Eye className="w-3 h-3 inline mr-1" />
+                  View Details
+                </button>
+              </div>
+              {item.recommendedNextAction && (
+                <p className="text-xs text-gray-600 mt-2 font-medium">Recommended: {item.recommendedNextAction}</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function FailureIntelligenceCenterPage() {
   const { data, isLoading, error, refetch } = useInvestigationQueue();
 
@@ -390,6 +455,7 @@ export function FailureIntelligenceCenterPage() {
         <>
           <MetricsHeader metrics={data.metrics} />
           <InvestigationQueueSection items={data.investigationQueue} />
+          <FailedReplaysSection items={data.failedReplays} />
           <KnowledgeReviewSection items={data.knowledgeReview} />
           <NewSignaturesSection items={data.newSignatures} />
         </>

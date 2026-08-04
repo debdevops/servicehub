@@ -107,9 +107,19 @@ export interface SignatureLifecycleStatusResponse {
 }
 
 /**
+ * The most recent signature-replay job's outcome for one namespace, if the signature has ever
+ * been replayed there — a single already-durable fact, never a computed safety score.
+ */
+export interface LastReplayOutcome {
+  status: string;
+  createdAt: string;
+}
+
+/**
  * One other namespace where this exact signature hash has also been observed — same dominant
  * deadletter reason and top terms as the signature being investigated, since the hash is
  * derived from those alone. `knowledge` is null when no root cause has been recorded there.
+ * `lastReplayOutcome` is null when the signature has never been replayed in that namespace.
  */
 export interface RootCauseMatch {
   namespaceId: string;
@@ -118,6 +128,7 @@ export interface RootCauseMatch {
   lastSeenAt: string;
   lifecycleStatus: string;
   knowledge: FailureKnowledge | null;
+  lastReplayOutcome: LastReplayOutcome | null;
 }
 
 /** Fleet-wide view of one failure signature: where else it has occurred, and the total. */

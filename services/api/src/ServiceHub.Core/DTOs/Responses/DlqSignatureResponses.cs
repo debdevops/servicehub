@@ -119,10 +119,21 @@ public sealed record SignatureLifecycleStatusResponse(
     string? Notes);
 
 /// <summary>
+/// The most recent signature-replay job's outcome for one namespace, if the signature has ever
+/// been replayed there — a single already-durable fact (job status + when it was created), never
+/// a computed safety score.
+/// </summary>
+public sealed record LastReplayOutcomeResponse(
+    string Status,
+    DateTimeOffset CreatedAt);
+
+/// <summary>
 /// One other namespace where this exact signature hash has also been observed — same
 /// dominant deadletter reason and top terms as the signature being investigated, since the
 /// hash is derived from those alone (see <c>ClusterSignatureHasher</c>). <see cref="Knowledge"/>
 /// is <see langword="null"/> when no root cause has been recorded for it in that namespace.
+/// <see cref="LastReplayOutcome"/> is <see langword="null"/> when the signature has never been
+/// replayed in that namespace.
 /// </summary>
 public sealed record RootCauseMatchResponse(
     Guid NamespaceId,
@@ -130,7 +141,8 @@ public sealed record RootCauseMatchResponse(
     DateTimeOffset FirstSeenAt,
     DateTimeOffset LastSeenAt,
     string LifecycleStatus,
-    KnowledgeResponse? Knowledge);
+    KnowledgeResponse? Knowledge,
+    LastReplayOutcomeResponse? LastReplayOutcome);
 
 /// <summary>
 /// Fleet-wide view of one failure signature: every other namespace it has also occurred in,

@@ -621,6 +621,10 @@ const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
           updatedBy: 'data-platform@example.com',
           isReviewOverdue: false,
         },
+        lastReplayOutcome: {
+          status: 'Completed',
+          createdAt: new Date(Date.now() - 54 * DAY_MS).toISOString(),
+        },
       },
     ],
     recentChanges: [
