@@ -10,6 +10,7 @@ import {
   useArchiveSignature,
 } from '@servicehub/ui-shared/hooks/useDlqSignatures';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import {
   StatusBadge,
@@ -44,6 +45,8 @@ export function SignatureDetailsPage() {
 
   const { data: namespaces } = useNamespaces();
   const namespace = namespaces?.find(ns => ns.id === namespaceId);
+  const { isDemoMode, cloudProvider } = useDemoContext();
+  const basePath = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
 
   const { data: detail, isLoading: detailLoading } = useDlqSignatureDetail(namespaceId, signatureHash);
   const { data: timeline, isLoading: timelineLoading } = useSignatureTimeline(namespaceId, signatureHash);
@@ -78,7 +81,7 @@ export function SignatureDetailsPage() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
-      <Link to={`/signatures?namespace=${namespaceId}`} className="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 mb-4">
+      <Link to={`${basePath}/signatures?namespace=${namespaceId}`} className="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 mb-4">
         <ArrowLeft className="w-4 h-4" />
         Back to signatures
       </Link>

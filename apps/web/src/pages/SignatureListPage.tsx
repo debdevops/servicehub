@@ -3,6 +3,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { Sparkles } from 'lucide-react';
 import { useDlqSignatures } from '@servicehub/ui-shared/hooks/useDlqSignatures';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import type { DlqClusterSignature } from '@servicehub/ui-shared/lib/api/dlqSignatures';
 import { StatusBadge, TrendBadge, FailureInvestigationPanel } from '@/components/dlq';
@@ -39,6 +40,8 @@ function matchesSearch(signature: DlqClusterSignature, query: string): boolean {
 }
 
 function SignatureListItem({ signature, namespaceId }: { signature: DlqClusterSignature; namespaceId: string }) {
+  const { isDemoMode, cloudProvider } = useDemoContext();
+  const basePath = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
   return (
     <div className="space-y-3">
       <div className="bg-white border border-gray-200 rounded-xl p-4">
@@ -51,7 +54,7 @@ function SignatureListItem({ signature, namespaceId }: { signature: DlqClusterSi
             </span>
           </div>
           <Link
-            to={`/signatures/${signature.signatureHash}?namespace=${namespaceId}`}
+            to={`${basePath}/signatures/${signature.signatureHash}?namespace=${namespaceId}`}
             className="text-xs text-primary-600 hover:text-primary-700 font-medium shrink-0"
           >
             View details →

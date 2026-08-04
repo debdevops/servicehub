@@ -16,6 +16,7 @@ import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import type { Message, ContentType } from '@servicehub/ui-shared/lib/mockData';
 import type { Message as APIMessage, CloudProviderType, ApiError } from '@servicehub/ui-shared/lib/api/types';
 import toast from 'react-hot-toast';
@@ -111,6 +112,8 @@ export function MessagesPage() {
 
   const demoParam = searchParams.get('demo');
   const navigate = useNavigate();
+  const { isDemoMode, cloudProvider } = useDemoContext();
+  const demoBasePath = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
 
   // Redirect legacy demo query parameter URLs to the new structured routes
   useEffect(() => {
@@ -717,7 +720,7 @@ export function MessagesPage() {
         {/* Scheduled Messages */}
         {canViewScheduled && (
           <button
-            onClick={() => navigate(`/scheduled?namespace=${namespaceId}&queue=${encodeURIComponent(queueName)}`)}
+            onClick={() => navigate(`${demoBasePath}/scheduled?namespace=${namespaceId}&queue=${encodeURIComponent(queueName)}`)}
             className="flex items-center gap-2 px-3 py-2 border border-gray-300 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium transition-colors"
             aria-label="View scheduled messages for this queue"
             title="View messages scheduled for future delivery in this queue"
@@ -730,7 +733,7 @@ export function MessagesPage() {
         {/* DLQ History */}
         {canViewDlqHistory && (
           <button
-            onClick={() => navigate(`/dlq-history?namespace=${namespaceId}&entity=${encodeURIComponent(entityName)}`)}
+            onClick={() => navigate(`${demoBasePath}/dlq-history?namespace=${namespaceId}&entity=${encodeURIComponent(entityName)}`)}
             className="flex items-center gap-2 px-3 py-2 border border-gray-300 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium transition-colors"
             aria-label="View DLQ history for this entity"
             title="View dead-letter history and replay tools for this entity"
