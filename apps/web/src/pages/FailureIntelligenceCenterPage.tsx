@@ -10,6 +10,7 @@ import {
 } from '@servicehub/ui-shared/hooks/useInvestigationQueue';
 import { formatRelativeTime } from '@servicehub/ui-shared/lib/utils';
 import { JOB_STATUS_STYLES } from '@/components/dlq/replayStatusStyles';
+import { FleetHealthSection } from '@/components/dlq/FleetHealthSection';
 
 function getPriorityLevel(score: number): { level: string; color: { bg: string; text: string; dot: string; border: string } } {
   if (score >= 15) return {
@@ -454,6 +455,7 @@ export function FailureIntelligenceCenterPage() {
       {data && (
         <>
           <MetricsHeader metrics={data.metrics} />
+          <FleetHealthSection fleetHealth={data.fleetHealth} />
           <InvestigationQueueSection items={data.investigationQueue} />
           <FailedReplaysSection items={data.failedReplays} />
           <KnowledgeReviewSection items={data.knowledgeReview} />

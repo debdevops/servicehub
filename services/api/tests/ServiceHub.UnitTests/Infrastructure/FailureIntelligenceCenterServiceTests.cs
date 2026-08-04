@@ -19,6 +19,7 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
     private readonly Mock<INamespaceSignatureLookupService> _signatureLookupMock = new();
     private readonly Mock<ISignatureLifecycleService> _lifecycleMock = new();
     private readonly Mock<IFailureKnowledgeService> _knowledgeMock = new();
+    private readonly Mock<IFleetOverviewService> _fleetOverviewMock = new();
     private readonly FailureIntelligenceCenterService _sut;
 
     public FailureIntelligenceCenterServiceTests()
@@ -35,8 +36,13 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
             .ReturnsAsync(Result<SignatureLifecycleSnapshot>.Success(
                 new SignatureLifecycleSnapshot(SignatureLifecycleStatus.Active, null, null, null)));
 
+        _fleetOverviewMock
+            .Setup(f => f.GetOverviewAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<FleetOverview>.Success(
+                new FleetOverview(DateTimeOffset.UtcNow, 24, 0, 0, 0, 0, [], new Dictionary<string, int>(), [])));
+
         _sut = new FailureIntelligenceCenterService(
-            _dbContext, _signatureLookupMock.Object, _lifecycleMock.Object, _knowledgeMock.Object);
+            _dbContext, _signatureLookupMock.Object, _lifecycleMock.Object, _knowledgeMock.Object, _fleetOverviewMock.Object);
     }
 
     public void Dispose()
@@ -176,4 +182,53 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
         result.Value.FailedReplays[0].SignatureHash.Should().Be(newerHash);
         result.Value.FailedReplays[1].SignatureHash.Should().Be(olderHash);
     }
+
+    [Fact]
+    public async Task GetInvestigationCenterAsync_FleetOverviewHasUnhealthyNamespaces_PopulatesFleetHealthWithWarningAndCriticalOnly()
+    {
+        var healthy = MakeNamespaceHealth("healthy-ns", FleetHealthSeverity.Healthy);
+        var warning = MakeNamespaceHealth("warning-ns", FleetHealthSeverity.Warning);
+        var critical = MakeNamespaceHealth("critical-ns", FleetHealthSeverity.Critical);
+        _fleetOverviewMock
+            .Setup(f => f.GetOverviewAsync(OwnerId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<FleetOverview>.Success(
+                new FleetOverview(DateTimeOffset.UtcNow, 24, 3, 7, 2, 1,
+                    [critical, warning, healthy], new Dictionary<string, int>(), [])));
+
+        var result = await _sut.GetInvestigationCenterAsync(OwnerId);
+
+        result.Value.FleetHealth.Should().NotBeNull();
+        result.Value.FleetHealth!.NamespaceCount.Should().Be(3);
+        result.Value.FleetHealth.TotalActive.Should().Be(7);
+        result.Value.FleetHealth.TopUnhealthyNamespaces.Should().HaveCount(2);
+        result.Value.FleetHealth.TopUnhealthyNamespaces.Should().NotContain(n => n.Severity == FleetHealthSeverity.Healthy);
+    }
+
+    [Fact]
+    public async Task GetInvestigationCenterAsync_FleetOverviewQueryFails_FleetHealthIsNullAndRestOfResponseUnaffected()
+    {
+        _fleetOverviewMock
+            .Setup(f => f.GetOverviewAsync(OwnerId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<FleetOverview>.Failure(Error.Internal("Fleet.OverviewFailed", "boom")));
+
+        var result = await _sut.GetInvestigationCenterAsync(OwnerId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.FleetHealth.Should().BeNull();
+    }
+
+    private static FleetNamespaceHealth MakeNamespaceHealth(string name, FleetHealthSeverity severity) => new(
+        NamespaceId: Guid.NewGuid(),
+        NamespaceName: name,
+        Provider: "Azure",
+        Environment: "Prod",
+        ActiveCount: 3,
+        NewInWindow: 1,
+        ResolvedInWindow: 0,
+        TotalCount: 3,
+        TopEntity: "queue-a",
+        TopEntityCount: 3,
+        TopCategory: "Timeout",
+        OldestActiveDetectedAt: DateTimeOffset.UtcNow.AddDays(-1),
+        Severity: severity);
 }

@@ -16,21 +16,26 @@ namespace ServiceHub.Infrastructure;
 /// </summary>
 public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCenterService
 {
+    private const int TopUnhealthyNamespaceCount = 5;
+
     private readonly DlqDbContext _dbContext;
     private readonly INamespaceSignatureLookupService _signatureLookup;
     private readonly ISignatureLifecycleService _lifecycle;
     private readonly IFailureKnowledgeService _knowledge;
+    private readonly IFleetOverviewService _fleetOverview;
 
     public FailureIntelligenceCenterService(
         DlqDbContext dbContext,
         INamespaceSignatureLookupService signatureLookup,
         ISignatureLifecycleService lifecycle,
-        IFailureKnowledgeService knowledge)
+        IFailureKnowledgeService knowledge,
+        IFleetOverviewService fleetOverview)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _signatureLookup = signatureLookup ?? throw new ArgumentNullException(nameof(signatureLookup));
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _knowledge = knowledge ?? throw new ArgumentNullException(nameof(knowledge));
+        _fleetOverview = fleetOverview ?? throw new ArgumentNullException(nameof(fleetOverview));
     }
 
     public async Task<Result<InvestigationCenterResponse>> GetInvestigationCenterAsync(
@@ -87,13 +92,43 @@ public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCente
         // Build recently changed section (recent lifecycle events, knowledge updates, replay completions)
         var recentlyChanged = await BuildRecentlyChangedAsync(ownerId, cancellationToken);
 
+        // Build fleet health summary (composes IFleetOverviewService; null if the query fails)
+        var fleetHealth = await BuildFleetHealthAsync(ownerId, cancellationToken);
+
         return Result.Success(new InvestigationCenterResponse(
             metrics,
             investigationQueue,
             failedReplays,
             knowledgeReview,
             newSignatures,
-            recentlyChanged));
+            recentlyChanged,
+            fleetHealth));
+    }
+
+    private async Task<FleetHealthSummary?> BuildFleetHealthAsync(
+        string ownerId,
+        CancellationToken cancellationToken)
+    {
+        var overviewResult = await _fleetOverview.GetOverviewAsync(ownerId, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!overviewResult.IsSuccess)
+        {
+            return null;
+        }
+
+        var overview = overviewResult.Value;
+        var topUnhealthy = overview.Namespaces
+            .Where(n => n.Severity is FleetHealthSeverity.Warning or FleetHealthSeverity.Critical)
+            .Take(TopUnhealthyNamespaceCount)
+            .ToList();
+
+        return new FleetHealthSummary(
+            overview.NamespaceCount,
+            overview.TotalActive,
+            overview.TotalNewInWindow,
+            overview.TotalResolvedInWindow,
+            topUnhealthy);
     }
 
     private static CompactMetricsSummary ComputeMetrics(

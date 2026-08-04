@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { FailureIntelligenceCenterPage } from '@/pages/FailureIntelligenceCenterPage';
-import type { InvestigationCenterResponse, FailedReplayItem } from '@servicehub/ui-shared/hooks/useInvestigationQueue';
+import type { InvestigationCenterResponse, FailedReplayItem, FleetHealthSummary } from '@servicehub/ui-shared/hooks/useInvestigationQueue';
 
 vi.mock('@servicehub/ui-shared/hooks/useInvestigationQueue', async () => {
   const actual = await vi.importActual('@servicehub/ui-shared/hooks/useInvestigationQueue');
@@ -22,7 +22,10 @@ const EMPTY_METRICS = {
   requiresAction: 0,
 };
 
-function makeResponse(failedReplays: FailedReplayItem[]): InvestigationCenterResponse {
+function makeResponse(
+  failedReplays: FailedReplayItem[],
+  fleetHealth: FleetHealthSummary | null = null,
+): InvestigationCenterResponse {
   return {
     metrics: EMPTY_METRICS,
     investigationQueue: [],
@@ -30,6 +33,7 @@ function makeResponse(failedReplays: FailedReplayItem[]): InvestigationCenterRes
     knowledgeReview: [],
     newSignatures: [],
     recentlyChanged: [],
+    fleetHealth,
   };
 }
 
@@ -42,6 +46,52 @@ function renderPage() {
 }
 
 beforeEach(() => vi.clearAllMocks());
+
+describe('FailureIntelligenceCenterPage — Fleet Health section', () => {
+  it('does not render the section when fleetHealth is null', () => {
+    mockUseInvestigationQueue.mockReturnValue({ data: makeResponse([], null), isLoading: false, error: null, refetch: vi.fn() });
+
+    renderPage();
+
+    expect(screen.queryByText('Fleet Health')).not.toBeInTheDocument();
+  });
+
+  it('renders unhealthy namespaces ahead of the Investigation Queue section', () => {
+    const fleetHealth: FleetHealthSummary = {
+      namespaceCount: 2,
+      totalActive: 9,
+      totalNewInWindow: 3,
+      totalResolvedInWindow: 0,
+      topUnhealthyNamespaces: [
+        {
+          namespaceId: 'ns-1',
+          namespaceName: 'prod-orders',
+          provider: 'Azure',
+          environment: 'Prod',
+          activeCount: 9,
+          newInWindow: 3,
+          resolvedInWindow: 0,
+          totalCount: 9,
+          topEntity: 'orders-queue',
+          topEntityCount: 9,
+          topCategory: 'Timeout',
+          oldestActiveDetectedAt: new Date().toISOString(),
+          severity: 'critical',
+        },
+      ],
+    };
+    mockUseInvestigationQueue.mockReturnValue({ data: makeResponse([], fleetHealth), isLoading: false, error: null, refetch: vi.fn() });
+
+    renderPage();
+
+    expect(screen.getByText('Fleet Health')).toBeInTheDocument();
+    expect(screen.getByText('prod-orders')).toBeInTheDocument();
+
+    const fleetHealthHeading = screen.getByText('Fleet Health');
+    const queueHeading = screen.getByText('No incidents require attention');
+    expect(fleetHealthHeading.compareDocumentPosition(queueHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
 
 describe('FailureIntelligenceCenterPage — Failed Replays section', () => {
   it('shows the empty state when there are no failed replays', () => {

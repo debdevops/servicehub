@@ -1,4 +1,5 @@
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Interfaces;
 
 namespace ServiceHub.Core.DTOs.Responses;
 
@@ -12,7 +13,21 @@ public sealed record InvestigationCenterResponse(
     IReadOnlyList<FailedReplayItem> FailedReplays,
     IReadOnlyList<KnowledgeReviewItem> KnowledgeReview,
     IReadOnlyList<NewSignatureItem> NewSignatures,
-    IReadOnlyList<RecentChangeItem> RecentlyChanged);
+    IReadOnlyList<RecentChangeItem> RecentlyChanged,
+    FleetHealthSummary? FleetHealth);
+
+/// <summary>
+/// Fleet-wide health signal for the Investigation Center's Fleet Health section, composed from
+/// <see cref="IFleetOverviewService"/> — the same <see cref="FleetNamespaceHealth"/>/severity data
+/// <c>FleetPage</c> already renders, capped to the worst-N namespaces. Null if the fleet overview
+/// query fails; the rest of the Investigation Center response is unaffected.
+/// </summary>
+public sealed record FleetHealthSummary(
+    int NamespaceCount,
+    int TotalActive,
+    int TotalNewInWindow,
+    int TotalResolvedInWindow,
+    IReadOnlyList<FleetNamespaceHealth> TopUnhealthyNamespaces);
 
 /// <summary>Compact aggregated metrics shown in the header.</summary>
 public sealed record CompactMetricsSummary(

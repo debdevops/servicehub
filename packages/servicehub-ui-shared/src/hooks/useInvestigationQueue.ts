@@ -1,5 +1,6 @@
 import { useQuery, UseQueryResult } from '@tanstack/react-query';
 import { apiClient } from '@servicehub/ui-shared/lib/api/client';
+import type { FleetNamespaceHealth } from '@servicehub/ui-shared/lib/api/fleet';
 
 export interface CompactMetricsSummary {
   totalSignatures: number;
@@ -76,6 +77,15 @@ export interface RecentChangeItem {
   actor: string | null;
 }
 
+/** Fleet-wide health signal for the Fleet Health section, composed server-side from IFleetOverviewService. */
+export interface FleetHealthSummary {
+  namespaceCount: number;
+  totalActive: number;
+  totalNewInWindow: number;
+  totalResolvedInWindow: number;
+  topUnhealthyNamespaces: FleetNamespaceHealth[];
+}
+
 export interface InvestigationCenterResponse {
   metrics: CompactMetricsSummary;
   investigationQueue: InvestigationQueueItem[];
@@ -83,6 +93,7 @@ export interface InvestigationCenterResponse {
   knowledgeReview: KnowledgeReviewItem[];
   newSignatures: NewSignatureItem[];
   recentlyChanged: RecentChangeItem[];
+  fleetHealth: FleetHealthSummary | null;
 }
 
 export function useInvestigationQueue(): UseQueryResult<InvestigationCenterResponse, Error> {

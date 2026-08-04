@@ -14,6 +14,7 @@ export { SignatureReplayProgressPanel } from './SignatureReplayProgressPanel';
 export { ReplaySafetyPanel } from './ReplaySafetyPanel';
 export { RootCauseExplorerPanel } from './RootCauseExplorerPanel';
 export { RecentChangesPanel } from './RecentChangesPanel';
+export { FleetHealthSection } from './FleetHealthSection';
 export { computeReplaySafetyVerdict } from './replaySafetyVerdict';
 export { computeRecentChangesVerdict } from './recentChangesVerdict';
 export { CrossCloudTraceLink } from './CrossCloudTraceLink';
