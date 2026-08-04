@@ -25,9 +25,19 @@ import type {
   RootCauseExplorerResponse,
   RootCauseMatch,
 } from '../api/dlqSignatures';
-import type { DlqTimelineEvent } from '../api/dlqHistory';
+import type { DlqTimelineEvent, DlqHistoryItem, PaginatedResponse as DlqHistoryPage } from '../api/dlqHistory';
 import type { BulkOperationJob, PaginatedBulkOperationJobs } from '../api/bulkOperations';
 import type { AuditLogItem, AuditPageResponse } from '../api/audit';
+import type { FleetOverview, FleetNamespaceHealth, FleetHealthSeverity } from '../api/fleet';
+import type { RuleResponse } from '../api/rules';
+import type {
+  InvestigationCenterResponse,
+  CompactMetricsSummary,
+  InvestigationQueueItem,
+  FailedReplayItem,
+  KnowledgeReviewItem,
+  NewSignatureItem,
+} from '../../hooks/useInvestigationQueue';
 
 // ─── Namespace IDs ──────────────────────────────────────────────────────────
 // Stable IDs used in URL query params and as namespace identifiers in demo mode
@@ -876,4 +886,201 @@ export function getMockRecentChanges(signatureHash: string): AuditPageResponse |
     hasNextPage: false,
     hasPreviousPage: false,
   };
+}
+
+// ─── Fleet Health ────────────────────────────────────────────────────────────
+// Demo mode simulates a single namespace per cloud provider, so fleet-wide health collapses to
+// that one namespace's rollup — derived from the same curated signature fixtures backing
+// Signature List/Details, so the two surfaces never disagree in demo mode.
+
+function buildDemoFleetNamespaceHealth(provider: CloudProviderType): FleetNamespaceHealth {
+  const clusters = getDemoClusters();
+  const activeClusters = clusters.filter((c) => c.status === 'Active' || c.status === 'Reopened');
+  const activeCount = activeClusters.reduce((sum, c) => sum + c.size, 0);
+  const newInWindow = clusters.filter((c) => c.isNew).reduce((sum, c) => sum + c.size, 0);
+  const totalCount = clusters.reduce((sum, c) => sum + c.size, 0);
+  const topActive = [...activeClusters].sort((a, b) => b.size - a.size)[0] ?? null;
+  const oldestActive =
+    [...activeClusters].sort((a, b) => new Date(a.firstSeenAt).getTime() - new Date(b.firstSeenAt).getTime())[0] ??
+    null;
+  // Mirrors FleetOverviewService.DetermineSeverity's thresholds (services/api).
+  const severity: FleetHealthSeverity =
+    newInWindow >= 10 || activeCount >= 50 ? 'critical' : activeCount > 0 || newInWindow > 0 ? 'warning' : 'healthy';
+  const namespace = getMockNamespaces(provider)[0];
+
+  return {
+    namespaceId: namespace.id,
+    namespaceName: namespace.displayName ?? namespace.name,
+    provider,
+    environment: namespace.environment ?? 'prod',
+    activeCount,
+    newInWindow,
+    resolvedInWindow: 0,
+    totalCount,
+    topEntity: topActive?.dominantEntity ?? null,
+    topEntityCount: topActive?.size ?? 0,
+    topCategory: topActive?.dominantDeadletterReason ?? null,
+    oldestActiveDetectedAt: oldestActive?.firstSeenAt ?? null,
+    severity,
+  };
+}
+
+/** Get the mock cross-namespace fleet overview for the standalone Fleet page. */
+export function getMockFleetOverview(provider: CloudProviderType): FleetOverview {
+  const nsHealth = buildDemoFleetNamespaceHealth(provider);
+  const topCategories = getDemoClusters()
+    .filter((c) => c.status === 'Active' || c.status === 'Reopened')
+    .reduce<Record<string, number>>((acc, c) => {
+      acc[c.dominantDeadletterReason] = (acc[c.dominantDeadletterReason] ?? 0) + c.size;
+      return acc;
+    }, {});
+
+  return {
+    generatedAt: new Date().toISOString(),
+    windowHours: 24,
+    namespaceCount: 1,
+    totalActive: nsHealth.activeCount,
+    totalNewInWindow: nsHealth.newInWindow,
+    totalResolvedInWindow: nsHealth.resolvedInWindow,
+    namespaces: [nsHealth],
+    topCategories,
+    dailyTrend: [],
+  };
+}
+
+// ─── Investigation Center (Incident Center) ─────────────────────────────────
+
+/**
+ * Get the mock Incident Center payload — derived entirely from the same curated
+ * `DEMO_SIGNATURE_DEFS` fixtures backing Signature List/Details, so the two surfaces never
+ * disagree in demo mode.
+ */
+export function getMockInvestigationQueue(provider: CloudProviderType): InvestigationCenterResponse {
+  const namespaceId = DEMO_NAMESPACE_IDS[provider];
+  const clusters = getDemoClusters();
+  const displayName = (c: DlqClusterSignature) => `${c.dominantDeadletterReason} · ${c.dominantEntity}`;
+
+  const metrics: CompactMetricsSummary = {
+    totalSignatures: clusters.length,
+    activeSignatures: clusters.filter((c) => c.status === 'Active' || c.status === 'Reopened').length,
+    resolvedSignatures: clusters.filter((c) => c.status === 'Resolved').length,
+    suppressedSignatures: clusters.filter((c) => c.status === 'Suppressed').length,
+    archivedSignatures: clusters.filter((c) => c.status === 'Archived').length,
+    requiresAction: clusters.filter((c) => c.status === 'Active' || c.status === 'Reopened').length,
+  };
+
+  const investigationQueue: InvestigationQueueItem[] = clusters
+    .filter((c) => c.status === 'Active' || c.status === 'Reopened')
+    .map((c) => ({
+      signatureHash: c.signatureHash,
+      namespaceId,
+      displayName: displayName(c),
+      dominantDeadletterReason: c.dominantDeadletterReason,
+      messageCount: c.size,
+      status: c.status,
+      trend: c.trend,
+      priorityScore: c.trend === 'Escalating' ? 18 : c.isNew ? 8 : 5,
+      hasKnowledge: c.knowledge != null,
+      isEscalating: c.trend === 'Escalating',
+      owner: c.knowledge?.owner ?? null,
+      recommendedNextAction:
+        c.trend === 'Escalating'
+          ? 'Escalating — review Replay Safety before replaying.'
+          : 'New signature — record root-cause knowledge.',
+      explanation: c.explanation,
+    }))
+    .sort((a, b) => b.priorityScore - a.priorityScore);
+
+  const failedReplays: FailedReplayItem[] = DEMO_SIGNATURE_DEFS.flatMap((def) =>
+    def.replayHistory
+      .filter((job) => job.status === 'Failed')
+      .map((job) => ({
+        jobId: job.id,
+        namespaceId,
+        signatureHash: def.hash,
+        signatureName: `${def.dominantDeadletterReason} · orders-processing`,
+        jobStatus: job.status,
+        failureReason: job.errorSummary,
+        createdAt: job.createdAt,
+        completedAt: job.completedAt,
+        attemptedCount: job.processedCount,
+        failedCount: job.failureCount,
+        recommendedNextAction: 'Review Replay Safety before retrying.',
+      })),
+  );
+
+  const knowledgeReview: KnowledgeReviewItem[] = DEMO_SIGNATURE_DEFS.filter(
+    (def) => def.knowledge?.isReviewOverdue,
+  ).map((def) => {
+    const cluster = clusters.find((c) => c.signatureHash === def.hash)!;
+    return {
+      signatureHash: def.hash,
+      namespaceId,
+      displayName: displayName(cluster),
+      messageCount: def.size,
+      status: def.status,
+      owner: def.knowledge?.owner ?? null,
+      hasKnowledge: def.knowledge != null,
+      isReviewOverdue: true,
+      reviewDueAt: def.knowledge?.reviewDueAt ?? null,
+      lastUpdatedAt: def.knowledge?.lastUpdatedAt ?? null,
+      recommendedNextAction: 'Knowledge review is overdue — confirm root cause is still accurate.',
+    };
+  });
+
+  const newSignatures: NewSignatureItem[] = DEMO_SIGNATURE_DEFS.filter((def) => def.isNew).map((def) => {
+    const cluster = clusters.find((c) => c.signatureHash === def.hash)!;
+    return {
+      signatureHash: def.hash,
+      namespaceId,
+      displayName: displayName(cluster),
+      dominantDeadletterReason: def.dominantDeadletterReason,
+      messageCount: def.size,
+      firstSeenAt: cluster.firstSeenAt,
+      lastSeenAt: cluster.windowEnd,
+      explanation: def.explanation,
+      recommendedNextAction: 'No knowledge on file yet — record root cause.',
+    };
+  });
+
+  const nsHealth = buildDemoFleetNamespaceHealth(provider);
+
+  return {
+    metrics,
+    investigationQueue,
+    failedReplays,
+    knowledgeReview,
+    newSignatures,
+    recentlyChanged: [],
+    fleetHealth: {
+      namespaceCount: 1,
+      totalActive: nsHealth.activeCount,
+      totalNewInWindow: nsHealth.newInWindow,
+      totalResolvedInWindow: nsHealth.resolvedInWindow,
+      topUnhealthyNamespaces: nsHealth.severity === 'healthy' ? [] : [nsHealth],
+    },
+  };
+}
+
+// ─── Auto Replay Rules ───────────────────────────────────────────────────────
+// No auto-replay rules are pre-configured in demo mode — this returns the real empty list so
+// the Rules page renders its own empty state instead of a query that never runs.
+export function getMockRules(): RuleResponse[] {
+  return [];
+}
+
+// ─── DLQ History ─────────────────────────────────────────────────────────────
+// Demo mode's DLQ story lives in Signature List/Details' curated clusters, not a separate
+// per-message history feed — this returns an empty page so the DLQ History table renders its
+// real empty state instead of a query that never runs.
+export function getMockDlqHistory(): DlqHistoryPage<DlqHistoryItem> {
+  return { items: [], totalCount: 0, page: 1, pageSize: 20, hasNextPage: false, hasPreviousPage: false };
+}
+
+// ─── Audit Trail ─────────────────────────────────────────────────────────────
+// General namespace-wide audit log, distinct from `getMockRecentChanges`' per-signature
+// pre-failure window — no fixture audit trail beyond the curated `recentChanges` entries exists
+// yet, so this returns an empty page so the Audit page renders its real empty state.
+export function getMockAuditLogs(): AuditPageResponse {
+  return { items: [], totalCount: 0, page: 1, pageSize: 20, hasNextPage: false, hasPreviousPage: false };
 }

@@ -1,11 +1,13 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
 import {
   rulesApi,
   type CreateRuleRequest,
+  type RuleResponse,
   type TestRuleRequest,
 } from '../lib/api/rules';
 import { type ApiError } from '../lib/api/types';
 import { useDemoContext, rejectDemoModeMutation } from '../lib/demo/DemoContext';
+import { getMockRules } from '../lib/demo/mockProviders';
 import toast from 'react-hot-toast';
 
 const RULES_KEY = ['rules'] as const;
@@ -16,22 +18,30 @@ const DLQ_KEYS = ['dlq-history', 'dlq-summary'] as const;
  * Auto-refreshes every 10s to show live pendingMatchCount updates.
  */
 export function useRules(enabledOnly?: boolean) {
-  const { isDemoMode } = useDemoContext();
+  const { isDemoMode, cloudProvider } = useDemoContext();
 
-  return useQuery({
-    queryKey: [...RULES_KEY, { enabledOnly }],
-    queryFn: () => rulesApi.getAll(enabledOnly),
-    enabled: !isDemoMode,
-    staleTime: 30_000,
-    refetchInterval: (query) => (query.state.status === 'error' ? false : 30_000),
-    refetchIntervalInBackground: false,
-    retry: (failureCount, error: ApiError) => {
-      if (error?.response?.status === 429) return false;
-      if (error?.response?.status === 404) return false;
-      if ((error?.response?.status ?? 0) >= 500) return false;
-      return failureCount < 2;
-    },
-  });
+  const options: UseQueryOptions<RuleResponse[]> =
+    isDemoMode && cloudProvider
+      ? {
+          queryKey: [...RULES_KEY, 'demo', cloudProvider],
+          queryFn: (): Promise<RuleResponse[]> => Promise.resolve(getMockRules()),
+        }
+      : {
+          queryKey: [...RULES_KEY, { enabledOnly }],
+          queryFn: () => rulesApi.getAll(enabledOnly),
+          enabled: !isDemoMode,
+          staleTime: 30_000,
+          refetchInterval: (query) => (query.state.status === 'error' ? false : 30_000),
+          refetchIntervalInBackground: false,
+          retry: (failureCount, error: ApiError) => {
+            if (error?.response?.status === 429) return false;
+            if (error?.response?.status === 404) return false;
+            if ((error?.response?.status ?? 0) >= 500) return false;
+            return failureCount < 2;
+          },
+        };
+
+  return useQuery(options);
 }
 
 /**

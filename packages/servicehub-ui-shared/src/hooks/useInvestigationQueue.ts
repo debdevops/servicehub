@@ -1,6 +1,8 @@
-import { useQuery, UseQueryResult } from '@tanstack/react-query';
+import { useQuery, UseQueryOptions, UseQueryResult } from '@tanstack/react-query';
 import { apiClient } from '@servicehub/ui-shared/lib/api/client';
 import type { FleetNamespaceHealth } from '@servicehub/ui-shared/lib/api/fleet';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
+import { getMockInvestigationQueue } from '@servicehub/ui-shared/lib/demo/mockProviders';
 
 export interface CompactMetricsSummary {
   totalSignatures: number;
@@ -97,16 +99,28 @@ export interface InvestigationCenterResponse {
 }
 
 export function useInvestigationQueue(): UseQueryResult<InvestigationCenterResponse, Error> {
-  return useQuery({
-    queryKey: ['investigation-center'],
-    queryFn: async () => {
-      const response = await apiClient.get<InvestigationCenterResponse>(
-        '/api/v1/failure-intelligence/investigation-center'
-      );
-      return response.data;
-    },
-    retry: 3,
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-    refetchInterval: 60000, // Refetch every 60 seconds
-  });
+  const { isDemoMode, cloudProvider } = useDemoContext();
+
+  const options: UseQueryOptions<InvestigationCenterResponse, Error> =
+    isDemoMode && cloudProvider
+      ? {
+          queryKey: ['investigation-center', 'demo', cloudProvider],
+          queryFn: (): Promise<InvestigationCenterResponse> =>
+            Promise.resolve(getMockInvestigationQueue(cloudProvider)),
+        }
+      : {
+          queryKey: ['investigation-center'],
+          queryFn: async () => {
+            const response = await apiClient.get<InvestigationCenterResponse>(
+              '/api/v1/failure-intelligence/investigation-center'
+            );
+            return response.data;
+          },
+          enabled: !isDemoMode,
+          retry: 3,
+          retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+          refetchInterval: 60000, // Refetch every 60 seconds
+        };
+
+  return useQuery(options);
 }
