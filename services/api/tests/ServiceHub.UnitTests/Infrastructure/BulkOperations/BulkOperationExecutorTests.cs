@@ -518,4 +518,92 @@ public sealed class BulkOperationExecutorTests : IDisposable
         var targetHistoryCount = await dbContext.ReplayHistories.CountAsync(h => h.DlqMessageId == target.Id);
         targetHistoryCount.Should().Be(0); // this job never wrote history for target — it never got that far
     }
+
+    // ── Crash-window checkpointing (H2) ─────────────────────────────────────
+
+    [Fact]
+    public async Task ExecuteAsync_EachMessageOutcomeIsDurablyPersistedBeforeTheNextMessageIsProcessed()
+    {
+        // Own shared-cache SQLite DB so a second, independent DlqDbContext can observe
+        // committed state mid-batch — standing in for "what a crash right now would leave
+        // behind". Regresses H2: progress used to be checkpointed only every 5 messages, so a
+        // crash between checkpoints could leave an already-replayed message's outcome
+        // unpersisted. If that were still true here, the first message's status would still
+        // read back as `Replaying` (its pre-outcome claim) instead of `Replayed` while the
+        // second message is being processed.
+        var connectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        using var keeperConnection = new SqliteConnection(connectionString);
+        keeperConnection.Open();
+
+        var options = new DbContextOptionsBuilder<DlqDbContext>().UseSqlite(connectionString).Options;
+        using var dbContext = new DlqDbContext(options);
+        dbContext.Database.EnsureCreated();
+
+        var namespaceId = Guid.NewGuid();
+        var ns = Namespace.Create("aws-ns", "akid:secret", environment: EnvironmentType.Dev,
+            provider: CloudProviderType.Aws, ownerId: OwnerId).Value;
+        typeof(Namespace).GetProperty(nameof(Namespace.Id))!.SetValue(ns, namespaceId);
+        var namespaceRepositoryMock = new Mock<INamespaceRepository>();
+        namespaceRepositoryMock
+            .Setup(r => r.GetByIdAsync(namespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var first = new DlqMessage
+        {
+            MessageId = "msg-1", SequenceNumber = 1, BodyHash = "hash-1",
+            NamespaceId = namespaceId, OwnerId = OwnerId, EntityName = "orders",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+            Status = DlqMessageStatus.Active,
+        };
+        var second = new DlqMessage
+        {
+            MessageId = "msg-2", SequenceNumber = 2, BodyHash = "hash-2",
+            NamespaceId = namespaceId, OwnerId = OwnerId, EntityName = "orders",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            Status = DlqMessageStatus.Active,
+        };
+        dbContext.DlqMessages.AddRange(first, second);
+
+        var job = new BulkOperationJob
+        {
+            OwnerId = OwnerId,
+            OperationType = BulkOperationType.Replay,
+            Status = BulkOperationStatus.Pending,
+            NamespaceId = namespaceId,
+            NamespaceDisplayName = "aws-ns",
+            StatusFilter = DlqMessageStatus.Active,
+            TotalMatched = 2,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        dbContext.BulkOperationJobs.Add(job);
+        await dbContext.SaveChangesAsync();
+
+        DlqMessageStatus? firstMessageStatusObservedDuringSecondMessage = null;
+
+        var messageOperationsMock = new Mock<IMessageOperationsService>();
+        messageOperationsMock
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, first.SequenceNumber, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+        messageOperationsMock
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, second.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                await using var observerContext = new DlqDbContext(options);
+                var observedFirst = await observerContext.DlqMessages.AsNoTracking().SingleAsync(m => m.Id == first.Id);
+                firstMessageStatusObservedDuringSecondMessage = observedFirst.Status;
+                return Result.Success();
+            });
+
+        var sut = new BulkOperationExecutor(
+            dbContext, namespaceRepositoryMock.Object, messageOperationsMock.Object,
+            Mock.Of<IAuditService>(), Mock.Of<IPlatformEventBus>(), NullLogger<BulkOperationExecutor>.Instance);
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        firstMessageStatusObservedDuringSecondMessage.Should().Be(DlqMessageStatus.Replayed);
+    }
 }

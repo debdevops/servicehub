@@ -27,7 +27,10 @@ namespace ServiceHub.Infrastructure.BulkOperations;
 /// </remarks>
 public sealed class BulkOperationExecutor : IBulkOperationExecutor
 {
-    private const int SaveProgressEveryNMessages = 5;
+    // Persisted after every message (not batched) so a process crash mid-batch never leaves a
+    // message's just-completed Replayed/ReplayFailed outcome unpersisted behind its already-
+    // committed Replaying claim — see RC1 review H2.
+    private const int SaveProgressEveryNMessages = 1;
     private const int MaxFailureSampleSize = 20;
     private const string SubscriptionPathSegment = "/subscriptions/";
 

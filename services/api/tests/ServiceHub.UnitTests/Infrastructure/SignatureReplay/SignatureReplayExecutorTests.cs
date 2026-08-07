@@ -406,4 +406,83 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         var targetHistoryCount = await dbContext.ReplayHistories.CountAsync(h => h.DlqMessageId == target.Id);
         targetHistoryCount.Should().Be(0); // this job never wrote history for target — it never got that far
     }
+
+    // ── Crash-window checkpointing (H2) ─────────────────────────────────────
+
+    [Fact]
+    public async Task ExecuteAsync_EachMessageOutcomeIsDurablyPersistedBeforeTheNextMessageIsProcessed()
+    {
+        // Own shared-cache SQLite DB so a second, independent DlqDbContext can observe
+        // committed state mid-batch — standing in for "what a crash right now would leave
+        // behind". Regresses H2: progress used to be checkpointed only every 5 messages, so a
+        // crash between checkpoints could leave an already-replayed message's outcome
+        // unpersisted. If that were still true here, the first message's status would still
+        // read back as `Replaying` (its pre-outcome claim) instead of `Replayed` while the
+        // second message is being processed.
+        var connectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        using var keeperConnection = new SqliteConnection(connectionString);
+        keeperConnection.Open();
+
+        var options = new DbContextOptionsBuilder<DlqDbContext>().UseSqlite(connectionString).Options;
+        using var dbContext = new DlqDbContext(options);
+        dbContext.Database.EnsureCreated();
+
+        var first = new DlqMessage
+        {
+            MessageId = "msg-1", SequenceNumber = 1, BodyHash = "hash-1",
+            NamespaceId = _namespaceId, OwnerId = OwnerId, EntityName = "orders",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+            Status = DlqMessageStatus.Active,
+        };
+        var second = new DlqMessage
+        {
+            MessageId = "msg-2", SequenceNumber = 2, BodyHash = "hash-2",
+            NamespaceId = _namespaceId, OwnerId = OwnerId, EntityName = "orders",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            Status = DlqMessageStatus.Active,
+        };
+        dbContext.DlqMessages.AddRange(first, second);
+        await dbContext.SaveChangesAsync(); // assigns real, database-generated Ids
+
+        var job = new SignatureReplayJob
+        {
+            Id = Guid.NewGuid(),
+            OwnerId = OwnerId,
+            Status = BulkOperationStatus.Pending,
+            NamespaceId = _namespaceId,
+            NamespaceDisplayName = "ns",
+            SignatureHash = "hash-1",
+            MessageIdsJson = JsonSerializer.Serialize(new List<long> { first.Id, second.Id }),
+            TotalMatched = 2,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        dbContext.SignatureReplayJobs.Add(job);
+        await dbContext.SaveChangesAsync();
+
+        DlqMessageStatus? firstMessageStatusObservedDuringSecondMessage = null;
+
+        var messageOperationsMock = new Mock<IMessageOperationsService>();
+        messageOperationsMock
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, first.SequenceNumber, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+        messageOperationsMock
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, second.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                await using var observerContext = new DlqDbContext(options);
+                var observedFirst = await observerContext.DlqMessages.AsNoTracking().SingleAsync(m => m.Id == first.Id);
+                firstMessageStatusObservedDuringSecondMessage = observedFirst.Status;
+                return Result.Success();
+            });
+
+        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        firstMessageStatusObservedDuringSecondMessage.Should().Be(DlqMessageStatus.Replayed);
+    }
 }

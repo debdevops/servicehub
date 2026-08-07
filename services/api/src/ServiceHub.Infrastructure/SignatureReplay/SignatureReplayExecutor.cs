@@ -22,7 +22,11 @@ namespace ServiceHub.Infrastructure.SignatureReplay;
 public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
 {
     private const int MaxFailureSampleSize = 20;
-    private const int SaveProgressEveryNMessages = 5;
+
+    // Persisted after every message (not batched) so a process crash mid-batch never leaves a
+    // message's just-completed Replayed/ReplayFailed outcome unpersisted behind its already-
+    // committed Replaying claim — see RC1 review H2.
+    private const int SaveProgressEveryNMessages = 1;
 
     private readonly DlqDbContext _dbContext;
     private readonly INamespaceRepository _namespaceRepository;
