@@ -14,6 +14,7 @@ public sealed class ServiceBusHealthCheckTests
 {
     private readonly Mock<IServiceBusClientCache> _cacheMock = new();
     private readonly Mock<INamespaceRepository> _repoMock = new();
+    private readonly Mock<IConnectionStringProtector> _protectorMock = new();
     private readonly ServiceBusHealthCheck _sut;
 
     private static readonly string ValidConnString =
@@ -21,9 +22,15 @@ public sealed class ServiceBusHealthCheckTests
 
     public ServiceBusHealthCheckTests()
     {
+        // Identity pass-through by default so existing tests that construct namespaces
+        // with a plaintext connection string continue to work unchanged.
+        _protectorMock.Setup(p => p.Unprotect(It.IsAny<string>()))
+            .Returns((string s) => Result.Success(s));
+
         _sut = new ServiceBusHealthCheck(
             _cacheMock.Object,
             _repoMock.Object,
+            _protectorMock.Object,
             NullLogger<ServiceBusHealthCheck>.Instance);
     }
 
@@ -32,21 +39,28 @@ public sealed class ServiceBusHealthCheckTests
     [Fact]
     public void Constructor_NullCache_Throws()
     {
-        var act = () => new ServiceBusHealthCheck(null!, _repoMock.Object, NullLogger<ServiceBusHealthCheck>.Instance);
+        var act = () => new ServiceBusHealthCheck(null!, _repoMock.Object, _protectorMock.Object, NullLogger<ServiceBusHealthCheck>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("clientCache");
     }
 
     [Fact]
     public void Constructor_NullRepo_Throws()
     {
-        var act = () => new ServiceBusHealthCheck(_cacheMock.Object, null!, NullLogger<ServiceBusHealthCheck>.Instance);
+        var act = () => new ServiceBusHealthCheck(_cacheMock.Object, null!, _protectorMock.Object, NullLogger<ServiceBusHealthCheck>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("namespaceRepository");
+    }
+
+    [Fact]
+    public void Constructor_NullConnectionStringProtector_Throws()
+    {
+        var act = () => new ServiceBusHealthCheck(_cacheMock.Object, _repoMock.Object, null!, NullLogger<ServiceBusHealthCheck>.Instance);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("connectionStringProtector");
     }
 
     [Fact]
     public void Constructor_NullLogger_Throws()
     {
-        var act = () => new ServiceBusHealthCheck(_cacheMock.Object, _repoMock.Object, null!);
+        var act = () => new ServiceBusHealthCheck(_cacheMock.Object, _repoMock.Object, _protectorMock.Object, null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -213,5 +227,51 @@ public sealed class ServiceBusHealthCheckTests
         var result = await _sut.CheckNamespaceHealthAsync(ns.Id);
 
         result.IsFailure.Should().BeTrue();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Connection string decryption (C3 regression coverage)
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task CheckNamespaceHealth_EncryptedConnectionString_UnprotectsBeforeConnecting()
+    {
+        const string encrypted = "ENC[v1]:ciphertext";
+        var ns = Namespace.Create("encrypted-ns", encrypted).Value;
+
+        _repoMock.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+        _protectorMock.Setup(p => p.Unprotect(encrypted))
+            .Returns(Result.Success(ValidConnString));
+
+        var wrapperMock = new Mock<IServiceBusClientWrapper>();
+        wrapperMock.Setup(w => w.TestConnectionAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+        _cacheMock.Setup(c => c.GetOrCreate(ns.Id, ValidConnString))
+            .Returns(wrapperMock.Object);
+
+        var result = await _sut.CheckNamespaceHealthAsync(ns.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeTrue();
+        // The cache must never see the raw ciphertext — only the decrypted value.
+        _cacheMock.Verify(c => c.GetOrCreate(ns.Id, encrypted), Times.Never);
+    }
+
+    [Fact]
+    public async Task CheckNamespaceHealth_UnprotectFails_ReturnsFailureWithoutConnecting()
+    {
+        const string encrypted = "ENC[v1]:corrupted";
+        var ns = Namespace.Create("bad-encryption-ns", encrypted).Value;
+
+        _repoMock.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+        _protectorMock.Setup(p => p.Unprotect(encrypted))
+            .Returns(Result.Failure<string>(Error.Internal("crypto.fail", "decryption failed")));
+
+        var result = await _sut.CheckNamespaceHealthAsync(ns.Id);
+
+        result.IsFailure.Should().BeTrue();
+        _cacheMock.Verify(c => c.GetOrCreate(It.IsAny<Guid>(), It.IsAny<string>()), Times.Never);
     }
 }
