@@ -402,12 +402,13 @@ public sealed class QueuesController : ApiControllerBase
 
         var fromDeadLetter = string.Equals(queueType, "deadletter", StringComparison.OrdinalIgnoreCase);
         var pageSize = Math.Clamp(take, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages);
+        var peekCount = Math.Clamp(Math.Max(skip, 0) + pageSize, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages);
         var request = new GetMessagesRequest(
             NamespaceId: namespaceId,
             EntityName: queueName,
             SubscriptionName: null,
             FromDeadLetter: fromDeadLetter,
-            MaxMessages: pageSize,
+            MaxMessages: peekCount,
             FromSequenceNumber: null);
 
         var result = fromDeadLetter
