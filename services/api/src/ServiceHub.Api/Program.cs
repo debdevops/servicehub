@@ -19,9 +19,10 @@ if (!builder.Configuration.GetValue("Configuration:SkipLocalSettings", false))
     builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
 }
 
-// Configure logging with redaction
+// Configure logging with redaction. RedactingLoggerProvider is the sole console
+// sink — do not also add the stock AddConsole() provider, which writes unredacted
+// log lines to the same destination and defeats the redaction guarantee.
 builder.Logging.ClearProviders();
-builder.Logging.AddConsole();
 builder.Services.AddSingleton<ILoggerProvider, RedactingLoggerProvider>();
 
 if (builder.Environment.IsDevelopment())
