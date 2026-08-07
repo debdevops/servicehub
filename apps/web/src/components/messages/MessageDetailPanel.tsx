@@ -150,6 +150,10 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
   };
 
   const handleConfirm = async () => {
+    if (replayMessage.isPending || purgeMessage.isPending) {
+      return;
+    }
+
     if (!namespaceId) {
       toast.error('Namespace context missing');
       return;
@@ -315,6 +319,7 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
         message={confirmState.message}
         variant={confirmState.variant}
         confirmLabel={confirmState.action === 'purge' ? 'Delete' : 'Confirm'}
+        isConfirming={replayMessage.isPending || purgeMessage.isPending}
         onConfirm={handleConfirm}
         onCancel={handleCancel}
       />

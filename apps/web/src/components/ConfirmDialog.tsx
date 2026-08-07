@@ -13,6 +13,8 @@ export interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   variant?: 'default' | 'danger';
+  /** True while the confirmed action is in flight — disables Confirm/Cancel and disarms Escape/backdrop dismissal to prevent duplicate submission. */
+  isConfirming?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -24,19 +26,21 @@ export function ConfirmDialog({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   variant = 'default',
+  isConfirming = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
-  // Handle Escape key to cancel
+  // Handle Escape key to cancel — disarmed while confirming, mirroring the Cancel button's
+  // own disabled state (the in-flight request can't be aborted by closing).
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape' && isOpen && !isConfirming) {
         onCancel();
       }
     };
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [isOpen, onCancel]);
+  }, [isOpen, isConfirming, onCancel]);
 
   if (!isOpen) return null;
 
@@ -47,7 +51,7 @@ export function ConfirmDialog({
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50"
-        onClick={onCancel}
+        onClick={isConfirming ? undefined : onCancel}
         aria-hidden="true"
       />
 
@@ -73,7 +77,8 @@ export function ConfirmDialog({
           </div>
           <button
             onClick={onCancel}
-            className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+            disabled={isConfirming}
+            className="p-1 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Close dialog"
           >
             <X className="w-5 h-5 text-gray-500" />
@@ -91,21 +96,23 @@ export function ConfirmDialog({
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
           <button
             onClick={onCancel}
-            className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            disabled={isConfirming}
+            className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             autoFocus={isDanger} // Focus Cancel for danger dialogs to prevent accidental confirmation
           >
             {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
-            className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors ${
+            disabled={isConfirming}
+            className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
               isDanger
                 ? 'bg-red-600 hover:bg-red-700'
                 : 'bg-primary-500 hover:bg-primary-600'
             }`}
             autoFocus={!isDanger} // Only auto-focus confirm for non-danger dialogs
           >
-            {confirmLabel}
+            {isConfirming ? 'Working…' : confirmLabel}
           </button>
         </div>
       </div>
