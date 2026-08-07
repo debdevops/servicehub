@@ -33,6 +33,10 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
     private const int MaxBodyPreviewLength = 500;
     private const int PeekBatchSize = 100;
+
+    // Safety cap mirroring ServiceBusClientWrapper.GetScheduledMessagesAsync's iterative-peek
+    // pattern: up to 50 batches of PeekBatchSize (5,000 messages/entity/scan cycle).
+    private const int MaxScanBatchesPerEntity = 50;
     private const string SubscriptionPathSegment = "/subscriptions/";
 
     /// <summary>
@@ -253,25 +257,55 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
         try
         {
-            var request = new GetMessagesRequest(
-                NamespaceId: namespaceId,
-                EntityName: topicName ?? entityName,
-                SubscriptionName: entityType == ServiceBusEntityType.Subscription ? entityName : null,
-                FromDeadLetter: true,
-                MaxMessages: PeekBatchSize);
+            var allPeekedMessages = new List<Message>();
+            long? fromSequenceNumber = null;
 
-            var messagesResult = await receiver.PeekDeadLetterMessagesAsync(request, cancellationToken);
-            if (messagesResult.IsFailure)
+            for (var batch = 0; batch < MaxScanBatchesPerEntity; batch++)
             {
-                _logger.LogWarning(
-                    "Failed to peek DLQ messages from {EntityType} {EntityName}: {Error}",
-                    entityType, LogRedactor.SanitiseForLog(entityName), messagesResult.Error.Message);
-                return (0, liveCount);
+                var request = new GetMessagesRequest(
+                    NamespaceId: namespaceId,
+                    EntityName: topicName ?? entityName,
+                    SubscriptionName: entityType == ServiceBusEntityType.Subscription ? entityName : null,
+                    FromDeadLetter: true,
+                    MaxMessages: PeekBatchSize,
+                    FromSequenceNumber: fromSequenceNumber);
+
+                var messagesResult = await receiver.PeekDeadLetterMessagesAsync(request, cancellationToken);
+                if (messagesResult.IsFailure)
+                {
+                    if (batch == 0)
+                    {
+                        _logger.LogWarning(
+                            "Failed to peek DLQ messages from {EntityType} {EntityName}: {Error}",
+                            entityType, LogRedactor.SanitiseForLog(entityName), messagesResult.Error.Message);
+                        return (0, liveCount);
+                    }
+
+                    _logger.LogWarning(
+                        "Failed to peek further DLQ batch from {EntityType} {EntityName} after {Count} messages: {Error}",
+                        entityType, LogRedactor.SanitiseForLog(entityName), allPeekedMessages.Count,
+                        messagesResult.Error.Message);
+                    break;
+                }
+
+                var batchMessages = messagesResult.Value;
+                if (batchMessages.Count == 0)
+                    break;
+
+                allPeekedMessages.AddRange(batchMessages);
+
+                // AWS/GCP sequence numbers are unstable per-peek hashes (see useSequenceKey
+                // comment above), so there is no cursor to advance past a single batch there —
+                // only Azure can page beyond PeekBatchSize within a scan cycle.
+                if (!useSequenceKey || batchMessages.Count < PeekBatchSize)
+                    break;
+
+                fromSequenceNumber = batchMessages[^1].SequenceNumber + 1;
             }
 
             var detectedAt = DateTimeOffset.UtcNow;
 
-            foreach (var msg in messagesResult.Value)
+            foreach (var msg in allPeekedMessages)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -378,7 +412,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
             List<DlqMessage> messagesNoLongerInDlq;
             if (useSequenceKey)
             {
-                var currentDlqSequenceNumbers = messagesResult.Value
+                var currentDlqSequenceNumbers = allPeekedMessages
                     .Select(m => m.SequenceNumber)
                     .ToHashSet();
                 messagesNoLongerInDlq = await _dbContext.DlqMessages
@@ -390,7 +424,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
             }
             else
             {
-                var currentDlqMessageIds = messagesResult.Value
+                var currentDlqMessageIds = allPeekedMessages
                     .Select(m => m.MessageId)
                     .ToHashSet();
                 messagesNoLongerInDlq = await _dbContext.DlqMessages
