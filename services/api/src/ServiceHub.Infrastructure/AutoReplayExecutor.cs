@@ -78,6 +78,27 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
             entityName = message.EntityName;
         }
 
+        // Claim the message via optimistic concurrency (Status is a concurrency token — see
+        // DlqDbContext.ConfigureDlqMessage) before calling the live provider, so a worker that
+        // loses the race against bulk-replay or signature-replay never sends a duplicate — not
+        // just avoids a duplicate DB row. A losing SaveChangesAsync throws
+        // DbUpdateConcurrencyException here, before ReplayMessageAsync is ever invoked. This
+        // also doubles as the eligibility re-check bulk/signature replay already do explicitly.
+        message.Status = DlqMessageStatus.Replaying;
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await _dbContext.Entry(message).ReloadAsync(cancellationToken);
+            _logger.LogInformation(
+                "Auto-replay for message {MessageId} skipped — claimed by another concurrent replay",
+                LogRedactor.SanitiseForLog(message.MessageId));
+            return Result<string>.Failure(
+                Error.Conflict("AutoReplay.ConcurrentReplay", "Message was claimed by another concurrent replay worker"));
+        }
+
         // Execute the replay
         try
         {

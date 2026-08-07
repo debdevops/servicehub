@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -251,5 +252,102 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         _messageOperationsMock.Verify(
             m => m.ReplayMessageAsync(_namespaceId, "orders-topic", "orders-sub", 1, It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    // ── Concurrency (C2) ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ExecuteAsync_TargetMessageClaimedByAnotherWorkerMidBatch_SkipsWithoutDuplicateReplay()
+    {
+        // Own shared-cache SQLite DB (not the class fixture's private ":memory:" one) so a
+        // second, independent DlqDbContext — standing in for a concurrent bulk-replay or
+        // auto-replay worker — can claim and complete the target message while this job's
+        // own batch is still mid-flight. RunAsync snapshots its message list once up front
+        // and processes it sequentially, so a message later in that snapshot can go stale
+        // before this job reaches it — the actual C2 race.
+        var connectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        using var keeperConnection = new SqliteConnection(connectionString);
+        keeperConnection.Open();
+
+        var options = new DbContextOptionsBuilder<DlqDbContext>().UseSqlite(connectionString).Options;
+        using var dbContext = new DlqDbContext(options);
+        dbContext.Database.EnsureCreated();
+
+        // Ordered ahead of `target` by DetectedAtUtc, so RunAsync processes it first.
+        var decoy = new DlqMessage
+        {
+            MessageId = "msg-decoy", SequenceNumber = 1, BodyHash = "hash-decoy",
+            NamespaceId = _namespaceId, OwnerId = OwnerId, EntityName = "orders",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+            Status = DlqMessageStatus.Active,
+        };
+        var target = new DlqMessage
+        {
+            MessageId = "msg-target", SequenceNumber = 2, BodyHash = "hash-target",
+            NamespaceId = _namespaceId, OwnerId = OwnerId, EntityName = "orders",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            Status = DlqMessageStatus.Active,
+        };
+        dbContext.DlqMessages.AddRange(decoy, target);
+        await dbContext.SaveChangesAsync(); // assigns real, database-generated Ids
+
+        var job = new SignatureReplayJob
+        {
+            Id = Guid.NewGuid(),
+            OwnerId = OwnerId,
+            Status = BulkOperationStatus.Pending,
+            NamespaceId = _namespaceId,
+            NamespaceDisplayName = "ns",
+            SignatureHash = "hash-1",
+            MessageIdsJson = JsonSerializer.Serialize(new List<long> { decoy.Id, target.Id }),
+            TotalMatched = 2,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        dbContext.SignatureReplayJobs.Add(job);
+        await dbContext.SaveChangesAsync();
+
+        var messageOperationsMock = new Mock<IMessageOperationsService>();
+        messageOperationsMock
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, decoy.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                // While this job is still processing the decoy, a different worker (its own
+                // context) claims and replays the target message underneath it.
+                await using var racingContext = new DlqDbContext(options);
+                var racingCopy = await racingContext.DlqMessages.SingleAsync(m => m.Id == target.Id);
+                racingCopy.Status = DlqMessageStatus.Replayed;
+                racingCopy.ReplayedAt = DateTimeOffset.UtcNow;
+                racingCopy.ReplaySuccess = true;
+                await racingContext.SaveChangesAsync();
+
+                return Result.Success();
+            });
+        messageOperationsMock
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, target.SequenceNumber, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var sut = new SignatureReplayExecutor(dbContext, messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        // This job's own claim attempt for `target` lost the race — it must never have
+        // reached the provider a second time.
+        messageOperationsMock.Verify(
+            m => m.ReplayMessageAsync(_namespaceId, "orders", null, target.SequenceNumber, It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        var reloaded = await dbContext.SignatureReplayJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
+        reloaded.SuccessCount.Should().Be(1); // decoy
+        reloaded.SkippedCount.Should().Be(1); // target — lost the claim race
+
+        var storedTarget = await dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == target.Id);
+        storedTarget.Status.Should().Be(DlqMessageStatus.Replayed); // the racing worker's write stands
+
+        var targetHistoryCount = await dbContext.ReplayHistories.CountAsync(h => h.DlqMessageId == target.Id);
+        targetHistoryCount.Should().Be(0); // this job never wrote history for target — it never got that far
     }
 }

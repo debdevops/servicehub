@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -411,4 +412,110 @@ public sealed class BulkOperationExecutorTests : IDisposable
 
     private static BulkOperationCompletedPayload GetPayload(PlatformEvent evt) =>
         (BulkOperationCompletedPayload)evt.Payload!;
+
+    // ── Concurrency (C2) ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ExecuteAsync_TargetMessageClaimedByAnotherWorkerMidBatch_SkipsWithoutDuplicateReplay()
+    {
+        // Own shared-cache SQLite DB (not the class fixture's private ":memory:" one) so a
+        // second, independent DlqDbContext — standing in for a concurrent signature-replay
+        // or auto-replay worker — can claim and complete the target message while this job's
+        // own batch is still mid-flight, reproducing the actual C2 race: RunAsync snapshots
+        // its eligible-message list once up front, then processes it sequentially, so a
+        // message near the back of that snapshot can go stale before this job reaches it.
+        var connectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        using var keeperConnection = new SqliteConnection(connectionString);
+        keeperConnection.Open();
+
+        var options = new DbContextOptionsBuilder<DlqDbContext>().UseSqlite(connectionString).Options;
+        using var dbContext = new DlqDbContext(options);
+        dbContext.Database.EnsureCreated();
+
+        var namespaceId = Guid.NewGuid();
+        var ns = Namespace.Create("aws-ns", "akid:secret", environment: EnvironmentType.Dev,
+            provider: CloudProviderType.Aws, ownerId: OwnerId).Value;
+        typeof(Namespace).GetProperty(nameof(Namespace.Id))!.SetValue(ns, namespaceId);
+        var namespaceRepositoryMock = new Mock<INamespaceRepository>();
+        namespaceRepositoryMock
+            .Setup(r => r.GetByIdAsync(namespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        // Ordered ahead of `target` by DetectedAtUtc, so RunAsync processes it first.
+        var decoy = new DlqMessage
+        {
+            MessageId = "msg-decoy", SequenceNumber = 1, BodyHash = "hash-decoy",
+            NamespaceId = namespaceId, OwnerId = OwnerId, EntityName = "orders",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+            Status = DlqMessageStatus.Active,
+        };
+        var target = new DlqMessage
+        {
+            MessageId = "msg-target", SequenceNumber = 2, BodyHash = "hash-target",
+            NamespaceId = namespaceId, OwnerId = OwnerId, EntityName = "orders",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            Status = DlqMessageStatus.Active,
+        };
+        dbContext.DlqMessages.AddRange(decoy, target);
+
+        var job = new BulkOperationJob
+        {
+            OwnerId = OwnerId,
+            OperationType = BulkOperationType.Replay,
+            Status = BulkOperationStatus.Pending,
+            NamespaceId = namespaceId,
+            NamespaceDisplayName = "aws-ns",
+            StatusFilter = DlqMessageStatus.Active,
+            TotalMatched = 2,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        dbContext.BulkOperationJobs.Add(job);
+        await dbContext.SaveChangesAsync();
+
+        var messageOperationsMock = new Mock<IMessageOperationsService>();
+        messageOperationsMock
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, decoy.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                // While this job is still processing the decoy, a different worker (its own
+                // context) claims and replays the target message underneath it.
+                await using var racingContext = new DlqDbContext(options);
+                var racingCopy = await racingContext.DlqMessages.SingleAsync(m => m.Id == target.Id);
+                racingCopy.Status = DlqMessageStatus.Replayed;
+                racingCopy.ReplayedAt = DateTimeOffset.UtcNow;
+                racingCopy.ReplaySuccess = true;
+                await racingContext.SaveChangesAsync();
+
+                return Result.Success();
+            });
+        messageOperationsMock
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, target.SequenceNumber, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var sut = new BulkOperationExecutor(
+            dbContext, namespaceRepositoryMock.Object, messageOperationsMock.Object,
+            Mock.Of<IAuditService>(), Mock.Of<IPlatformEventBus>(), NullLogger<BulkOperationExecutor>.Instance);
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        // This job's own claim attempt for `target` lost the race — it must never have
+        // reached the provider a second time.
+        messageOperationsMock.Verify(
+            m => m.ReplayMessageAsync(namespaceId, "orders", null, target.SequenceNumber, It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        var storedJob = await dbContext.BulkOperationJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
+        storedJob.SuccessCount.Should().Be(1); // decoy
+        storedJob.SkippedCount.Should().Be(1); // target — lost the claim race
+
+        var storedTarget = await dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == target.Id);
+        storedTarget.Status.Should().Be(DlqMessageStatus.Replayed); // the racing worker's write stands
+
+        var targetHistoryCount = await dbContext.ReplayHistories.CountAsync(h => h.DlqMessageId == target.Id);
+        targetHistoryCount.Should().Be(0); // this job never wrote history for target — it never got that far
+    }
 }

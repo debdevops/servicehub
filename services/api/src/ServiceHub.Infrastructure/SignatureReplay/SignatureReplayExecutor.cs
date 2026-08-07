@@ -161,6 +161,22 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
 
         var (entityName, subscriptionName) = BulkOperationExecutor.ResolveEntityAndSubscription(message);
 
+        // Claim the message via optimistic concurrency (Status is a concurrency token — see
+        // DlqDbContext.ConfigureDlqMessage) before calling the live provider, so a worker that
+        // loses the race never sends a duplicate — not just avoids a duplicate DB row. A
+        // losing SaveChangesAsync throws DbUpdateConcurrencyException here, before
+        // ReplayMessageAsync is ever invoked.
+        message.Status = DlqMessageStatus.Replaying;
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await _dbContext.Entry(message).ReloadAsync(cancellationToken);
+            return (MessageOutcome.Skipped, "Message was claimed by another concurrent replay — skipped");
+        }
+
         var result = await _messageOperationsService.ReplayMessageAsync(
             message.NamespaceId, entityName, subscriptionName, message.SequenceNumber, cancellationToken);
 

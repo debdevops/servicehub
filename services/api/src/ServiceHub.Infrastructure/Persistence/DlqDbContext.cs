@@ -156,9 +156,14 @@ public sealed class DlqDbContext : DbContext
             .HasConversion<string>()
             .HasMaxLength(32);
 
+        // Concurrency token: guards against two replay workers (bulk replay, signature
+        // replay, auto-replay) racing on the same row. EF adds the original Status value to
+        // the WHERE clause of every UPDATE/DELETE, so a losing writer gets
+        // DbUpdateConcurrencyException instead of silently overwriting the winner's write.
         entity.Property(e => e.Status)
             .HasConversion<string>()
-            .HasMaxLength(32);
+            .HasMaxLength(32)
+            .IsConcurrencyToken();
 
         entity.Property(e => e.UserNotes)
             .HasMaxLength(4096);

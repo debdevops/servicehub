@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
@@ -296,5 +297,89 @@ public class DlqDbContextTests : IDisposable
 
         var history = await _dbContext.ReplayHistories.FirstAsync();
         history.RuleId.Should().BeNull();
+    }
+
+    // ── C2: Status as an EF Core concurrency token ─────────────────────────────
+
+    [Fact]
+    public async Task DlqMessages_SingleContextStatusUpdate_SavesSuccessfully()
+    {
+        // Normal single-writer usage must be unaffected by Status becoming a concurrency
+        // token — only a genuine cross-context race should trigger a conflict.
+        var msg = new DlqMessage
+        {
+            MessageId = "msg-1", SequenceNumber = 1, BodyHash = "hash-1",
+            NamespaceId = Guid.NewGuid(), OwnerId = TestConstants.TestOwnerId, EntityName = "q1",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            DeliveryCount = 1, MessageSize = 50,
+            Status = DlqMessageStatus.Active
+        };
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        msg.Status = DlqMessageStatus.Replaying;
+        await _dbContext.SaveChangesAsync();
+
+        msg.Status = DlqMessageStatus.Replayed;
+        msg.ReplayedAt = DateTimeOffset.UtcNow;
+        await _dbContext.SaveChangesAsync();
+
+        var loaded = await _dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == msg.Id);
+        loaded.Status.Should().Be(DlqMessageStatus.Replayed);
+    }
+
+    [Fact]
+    public async Task DlqMessages_ConcurrentStatusUpdate_LoserThrowsDbUpdateConcurrencyException()
+    {
+        // Two independent DlqDbContext instances (standing in for two replay workers, e.g.
+        // bulk-replay and signature-replay) over the SAME underlying database — a
+        // shared-cache SQLite connection is required for a second context to see the first
+        // context's uncommitted-to-disk data, unlike the private ":memory:" DB the other
+        // tests in this class use.
+        var connectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        using var keeperConnection = new SqliteConnection(connectionString);
+        keeperConnection.Open();
+
+        var options = new DbContextOptionsBuilder<DlqDbContext>().UseSqlite(connectionString).Options;
+
+        using var contextA = new DlqDbContext(options);
+        contextA.Database.EnsureCreated();
+
+        var namespaceId = Guid.NewGuid();
+        var msg = new DlqMessage
+        {
+            MessageId = "msg-race", SequenceNumber = 1, BodyHash = "hash-race",
+            NamespaceId = namespaceId, OwnerId = TestConstants.TestOwnerId, EntityName = "q1",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            DeliveryCount = 1, MessageSize = 50,
+            Status = DlqMessageStatus.Active
+        };
+        contextA.DlqMessages.Add(msg);
+        await contextA.SaveChangesAsync();
+
+        using var contextB = new DlqDbContext(options);
+        var msgViaB = await contextB.DlqMessages.SingleAsync(m => m.Id == msg.Id);
+
+        // Worker B (via contextB) claims and completes the replay first.
+        msgViaB.Status = DlqMessageStatus.Replaying;
+        await contextB.SaveChangesAsync();
+        msgViaB.Status = DlqMessageStatus.Replayed;
+        msgViaB.ReplayedAt = DateTimeOffset.UtcNow;
+        await contextB.SaveChangesAsync();
+
+        // Worker A (via contextA) still holds its original, now-stale Active snapshot and
+        // attempts its own claim — the loser.
+        msg.Status = DlqMessageStatus.Replaying;
+        var act = async () => await contextA.SaveChangesAsync();
+
+        await act.Should().ThrowAsync<DbUpdateConcurrencyException>();
+
+        // Recovering (as the executors do) resyncs the loser with the real, winning state.
+        await contextA.Entry(msg).ReloadAsync();
+        msg.Status.Should().Be(DlqMessageStatus.Replayed);
     }
 }
