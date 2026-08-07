@@ -17,6 +17,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
 {
     private readonly DlqDbContext _dbContext;
     private readonly Mock<IMessageOperationsService> _messageOperationsMock = new();
+    private readonly Mock<INamespaceRepository> _namespaceRepositoryMock = new();
     private readonly Guid _namespaceId = Guid.NewGuid();
     private const string OwnerId = "entra:test-owner-123";
 
@@ -28,6 +29,8 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         _dbContext = new DlqDbContext(options);
         _dbContext.Database.OpenConnection();
         _dbContext.Database.EnsureCreated();
+
+        SetupNamespace(); // default: Dev, so existing behavioral tests aren't blocked
     }
 
     public void Dispose()
@@ -37,7 +40,19 @@ public sealed class SignatureReplayExecutorTests : IDisposable
     }
 
     private SignatureReplayExecutor CreateSut() =>
-        new(_dbContext, _messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+        new(_dbContext, _namespaceRepositoryMock.Object, _messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+
+    private Namespace SetupNamespace(Guid? namespaceId = null, EnvironmentType environment = EnvironmentType.Dev)
+    {
+        var ns = Namespace.Create("azure-ns", "Endpoint=sb://test/;SharedAccessKey=key", environment: environment,
+            provider: CloudProviderType.Azure, ownerId: OwnerId).Value;
+        var id = namespaceId ?? _namespaceId;
+        typeof(Namespace).GetProperty(nameof(Namespace.Id))!.SetValue(ns, id);
+        _namespaceRepositoryMock
+            .Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+        return ns;
+    }
 
     private DlqMessage AddDlqMessage(
         long seq = 1,
@@ -72,7 +87,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
             Id = Guid.NewGuid(),
             OwnerId = OwnerId,
             Status = status,
-            NamespaceId = Guid.NewGuid(),
+            NamespaceId = _namespaceId,
             NamespaceDisplayName = "ns",
             SignatureHash = "hash-1",
             MessageIdsJson = JsonSerializer.Serialize(messageIds),
@@ -116,6 +131,47 @@ public sealed class SignatureReplayExecutorTests : IDisposable
 
         var reloaded = await ReloadAsync(job.Id);
         reloaded.Status.Should().Be(BulkOperationStatus.Running);
+        _messageOperationsMock.Verify(
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    // ── Production re-check at execution time (H1) ──────────────────────────
+
+    [Fact]
+    public async Task ExecuteAsync_NamespacePromotedToProdSinceCreation_MarksJobFailedWithoutReplaying()
+    {
+        var sut = CreateSut();
+        SetupNamespace(environment: EnvironmentType.Prod);
+        var message = AddDlqMessage();
+        var job = CreateJob([message.Id]);
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        var reloaded = await ReloadAsync(job.Id);
+        reloaded.Status.Should().Be(BulkOperationStatus.Failed);
+        reloaded.ErrorSummary.Should().Contain("Production");
+        reloaded.ProcessedCount.Should().Be(0);
+        _messageOperationsMock.Verify(
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_NamespaceNoLongerExists_MarksJobFailedWithoutReplaying()
+    {
+        var sut = CreateSut();
+        var message = AddDlqMessage();
+        var job = CreateJob([message.Id]);
+        _namespaceRepositoryMock
+            .Setup(r => r.GetByIdAsync(_namespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("Namespace.NotFound", "not found")));
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        var reloaded = await ReloadAsync(job.Id);
+        reloaded.Status.Should().Be(BulkOperationStatus.Failed);
+        reloaded.ErrorSummary.Should().Contain("Namespace no longer exists");
         _messageOperationsMock.Verify(
             m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -330,7 +386,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
             .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, target.SequenceNumber, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
 
-        var sut = new SignatureReplayExecutor(dbContext, messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 

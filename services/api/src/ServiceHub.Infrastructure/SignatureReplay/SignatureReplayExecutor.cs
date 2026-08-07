@@ -25,16 +25,19 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
     private const int SaveProgressEveryNMessages = 5;
 
     private readonly DlqDbContext _dbContext;
+    private readonly INamespaceRepository _namespaceRepository;
     private readonly IMessageOperationsService _messageOperationsService;
     private readonly ILogger<SignatureReplayExecutor> _logger;
 
     /// <summary>Initialises a new instance of <see cref="SignatureReplayExecutor"/>.</summary>
     public SignatureReplayExecutor(
         DlqDbContext dbContext,
+        INamespaceRepository namespaceRepository,
         IMessageOperationsService messageOperationsService,
         ILogger<SignatureReplayExecutor> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _messageOperationsService = messageOperationsService ?? throw new ArgumentNullException(nameof(messageOperationsService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -104,6 +107,24 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
 
     private async Task RunAsync(SignatureReplayJob job, CancellationToken cancellationToken)
     {
+        var nsResult = await _namespaceRepository.GetByIdAsync(job.NamespaceId, cancellationToken);
+        if (nsResult.IsFailure)
+        {
+            job.Status = BulkOperationStatus.Failed;
+            job.ErrorSummary = $"Namespace no longer exists: {nsResult.Error.Message}";
+            return;
+        }
+
+        // Re-check the same guard StartAsync validated — defensive against the namespace's
+        // environment changing between job creation and the worker picking it up. Mirrors
+        // BulkOperationExecutor.RunAsync's execution-time re-check.
+        if (nsResult.Value.Environment == EnvironmentType.Prod)
+        {
+            job.Status = BulkOperationStatus.Failed;
+            job.ErrorSummary = "Namespace is now Production — signature replay blocked at execution time.";
+            return;
+        }
+
         var messageIds = JsonSerializer.Deserialize<List<long>>(job.MessageIdsJson) ?? [];
 
         var messages = await _dbContext.DlqMessages
