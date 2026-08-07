@@ -178,7 +178,9 @@ public sealed class DlqMonitorWorker : BackgroundService
                                 .Where(r => r.Enabled)
                                 .ToListAsync(stoppingToken);
 
-                            if (enabledRules.Count > 0)
+                            // Safety-by-default guard: auto-replay is blocked in production,
+                            // mirroring the human-initiated replay guard in MessagesController.
+                            if (enabledRules.Count > 0 && ns.Environment != Core.Enums.EnvironmentType.Prod)
                             {
                                 var activeMessages = await dbContext.DlqMessages
                                     .Where(m => m.NamespaceId == ns.Id

@@ -22,9 +22,10 @@ namespace ServiceHub.UnitTests.Infrastructure.BackgroundServices;
 /// </summary>
 public sealed class DlqMonitorWorkerRegressionTests
 {
-    private static Namespace BuildNamespace(string name = "reg-ns") =>
+    private static Namespace BuildNamespace(string name = "reg-ns", EnvironmentType environment = EnvironmentType.Dev) =>
         Namespace.Create(name,
-            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey12=").Value;
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey12=",
+            environment: environment).Value;
 
     private static DlqMessage BuildDlqMessage(Guid namespaceId, DateTimeOffset detectedAt, string messageId = "msg-1") =>
         new()
@@ -146,6 +147,68 @@ public sealed class DlqMonitorWorkerRegressionTests
         executor.Verify(e => e.ExecuteAsync(
                 It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
             Times.AtLeastOnce);
+
+        await db.Database.CloseConnectionAsync();
+        await db.DisposeAsync();
+        await sp.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task AutoReplay_DevelopmentNamespace_Fires()
+    {
+        var ns = BuildNamespace(environment: EnvironmentType.Dev);
+        var (db, sp, executor) = await BuildHarnessAsync(
+            ns,
+            new RuleAction { AutoReplay = true, DelaySeconds = 60 },
+            detectedAt: DateTimeOffset.UtcNow.AddHours(-2));
+
+        await RunOneCycleAsync(sp);
+
+        executor.Verify(e => e.ExecuteAsync(
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce);
+
+        await db.Database.CloseConnectionAsync();
+        await db.DisposeAsync();
+        await sp.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task AutoReplay_TestNamespace_Fires()
+    {
+        var ns = BuildNamespace(environment: EnvironmentType.Uat);
+        var (db, sp, executor) = await BuildHarnessAsync(
+            ns,
+            new RuleAction { AutoReplay = true, DelaySeconds = 60 },
+            detectedAt: DateTimeOffset.UtcNow.AddHours(-2));
+
+        await RunOneCycleAsync(sp);
+
+        executor.Verify(e => e.ExecuteAsync(
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce);
+
+        await db.Database.CloseConnectionAsync();
+        await db.DisposeAsync();
+        await sp.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task AutoReplay_ProductionNamespace_DoesNotFire()
+    {
+        var ns = BuildNamespace(environment: EnvironmentType.Prod);
+        // Grace period elapsed and rule matches — the only thing standing between
+        // this message and a replay must be the production guard.
+        var (db, sp, executor) = await BuildHarnessAsync(
+            ns,
+            new RuleAction { AutoReplay = true, DelaySeconds = 60 },
+            detectedAt: DateTimeOffset.UtcNow.AddHours(-2));
+
+        await RunOneCycleAsync(sp);
+
+        executor.Verify(e => e.ExecuteAsync(
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
+            Times.Never);
 
         await db.Database.CloseConnectionAsync();
         await db.DisposeAsync();
