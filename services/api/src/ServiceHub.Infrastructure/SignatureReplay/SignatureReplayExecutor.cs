@@ -165,7 +165,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         var messageIds = JsonSerializer.Deserialize<List<long>>(job.MessageIdsJson) ?? [];
 
         var messages = await _dbContext.DlqMessages
-            .Where(m => messageIds.Contains(m.Id))
+            .Where(m => messageIds.Contains(m.Id) && m.OwnerId == job.OwnerId)
             .OrderBy(m => m.DetectedAtUtc)
             .ToListAsync(cancellationToken);
 

@@ -102,7 +102,7 @@ public sealed class FailureKnowledgeService : IFailureKnowledgeService
                 Tags = entity.Tags,
                 ReviewDueAt = entity.ReviewDueAt,
                 UpdatedBy = entity.UpdatedBy,
-                UpdatedAt = entity.LastUpdatedAt ?? entity.CreatedAt,
+                UpdatedAt = now,
             });
 
             // Update existing
