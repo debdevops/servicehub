@@ -285,15 +285,18 @@ public sealed class Namespace
         string? awsRegion = null,
         string? gcpProjectId = null)
     {
-        // Allowlist: only accept known managed-identity types; reject ConnectionString
-        // and any future/unknown enum values to prevent user-controlled bypass.
+        // Allowlist: only accept known credential-free identity types; reject ConnectionString
+        // and any future/unknown enum values to prevent user-controlled bypass. Includes AWS/GCP's
+        // identity-federation equivalents (ambient host credentials) alongside Azure AD's.
         if (authType is not (ConnectionAuthType.ManagedIdentity
             or ConnectionAuthType.ServicePrincipal
-            or ConnectionAuthType.DefaultAzureCredential))
+            or ConnectionAuthType.DefaultAzureCredential
+            or ConnectionAuthType.AwsOidc
+            or ConnectionAuthType.GcpWorkloadIdentity))
         {
             return Result<Namespace>.Failure(Error.Validation(
                 ErrorCodes.Namespace.ConnectionStringRequired,
-                "Authentication type must be ManagedIdentity, ServicePrincipal, or DefaultAzureCredential. Use Create() for connection string authentication."));
+                "Authentication type must be ManagedIdentity, ServicePrincipal, DefaultAzureCredential, AwsOidc, or GcpWorkloadIdentity. Use Create() for connection string authentication."));
         }
 
         var validationResult = ValidateManagedIdentityAuth(name, displayName, description);

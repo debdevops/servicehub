@@ -120,6 +120,25 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             _logger.LogWarning(ex, "Pub/Sub subscription {Subscription} does not support Pull", SanitizeForLog(subscriptionId));
             return Result.Failure<IReadOnlyList<Message>>(UnsupportedSubscriptionTypeError(subscriptionId));
         }
+        catch (Grpc.Core.RpcException ex) when (ex.Status.StatusCode == Grpc.Core.StatusCode.Cancelled)
+        {
+            // gRPC wraps cancellation as RpcException(Cancelled) rather than a plain
+            // OperationCanceledException, for both causes linkedCts can carry: our own
+            // OperationTimeoutSeconds elapsing, or the caller (browser) disconnecting/superseding
+            // this request. The catch above never actually matches a gRPC-originated cancellation
+            // because of that wrapping, so both cases land here and are told apart the same way.
+            if (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning("GCP Pub/Sub peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, SanitizeForLog(request.EntityName));
+                return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
+                    "GCP.PubSub.Timeout", $"Pub/Sub operation timed out after {OperationTimeoutSeconds}s."));
+            }
+
+            // The client (browser) disconnected or superseded this request. Rethrow as
+            // OperationCanceledException so ErrorHandlingMiddleware's existing client-disconnect
+            // handling (499, no error-level log) takes over instead of this becoming a misleading 502.
+            throw new OperationCanceledException("Pub/Sub peek cancelled by client.", ex, cancellationToken);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error peeking Pub/Sub messages from {Subscription}", SanitizeForLog(request.EntityName));
@@ -173,6 +192,21 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         {
             _logger.LogWarning(ex, "Pub/Sub subscription {Subscription} does not support Pull", SanitizeForLog(subscriptionId));
             return Result.Failure<IReadOnlyList<Message>>(UnsupportedSubscriptionTypeError(subscriptionId));
+        }
+        catch (Grpc.Core.RpcException ex) when (ex.Status.StatusCode == Grpc.Core.StatusCode.Cancelled)
+        {
+            // See PeekMessagesAsync — gRPC wraps both our own timeout and a real client
+            // disconnect identically, so tell them apart the same way before deciding whether
+            // to rethrow as OperationCanceledException (client-disconnect path, 499) or report
+            // the timeout (502 GCP.PubSub.Timeout).
+            if (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning("GCP Pub/Sub DLQ peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, SanitizeForLog(subscriptionId));
+                return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
+                    "GCP.PubSub.Timeout", $"Pub/Sub DLQ operation timed out after {OperationTimeoutSeconds}s."));
+            }
+
+            throw new OperationCanceledException("Pub/Sub DLQ peek cancelled by client.", ex, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -687,10 +721,13 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         // pull) — the same sequence number must still resolve the message after the ack ID a
         // user's peek saw has been superseded by a later pull (e.g. DlqMonitorWorker's own scan).
         // SHA-256 keeps this consistent across process restarts (unlike GetHashCode, which is
-        // randomized) with negligible collision probability (2^63 space vs 2^31 for GetHashCode).
+        // randomized) with negligible collision probability for realistic queue depths. Masked to
+        // 53 bits so every value stays within Number.MAX_SAFE_INTEGER (9007199254740991) — the
+        // full 63-bit range silently corrupts in JS's double-precision Number, breaking
+        // replay/purge lookups on the JSON round-trip through the browser.
         var hash = System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(messageId));
-        return BitConverter.ToInt64(hash, 0) & long.MaxValue; // keep positive
+        return BitConverter.ToInt64(hash, 0) & ((1L << 53) - 1);
     }
 
     private static string GetSubscriptionResourceName(Core.Entities.Namespace ns, string subscriptionId)

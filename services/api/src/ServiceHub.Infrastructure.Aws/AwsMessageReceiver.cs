@@ -837,12 +837,15 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
 
     private static long ComputeSequenceNumber(string messageId)
     {
-        // Use a stable 64-bit hash derived from SHA-256 so sequence numbers:
+        // Use a stable hash derived from SHA-256 so sequence numbers:
         //  1. Are consistent across process restarts (unlike GetHashCode which is randomized)
-        //  2. Have negligible collision probability (2^63 space vs 2^31 for GetHashCode)
+        //  2. Have negligible collision probability for realistic queue depths
+        //  3. Survive the JSON round-trip through JS clients — masking to 53 bits keeps every
+        //     value within Number.MAX_SAFE_INTEGER (9007199254740991); the full 63-bit range
+        //     silently corrupts in JS's double-precision Number, breaking replay/purge lookups.
         var hash = System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(messageId));
-        return BitConverter.ToInt64(hash, 0) & long.MaxValue; // keep positive
+        return BitConverter.ToInt64(hash, 0) & ((1L << 53) - 1);
     }
 
     /// <summary>

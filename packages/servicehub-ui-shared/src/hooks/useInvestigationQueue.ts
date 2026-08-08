@@ -112,7 +112,7 @@ export function useInvestigationQueue(): UseQueryResult<InvestigationCenterRespo
           queryKey: ['investigation-center'],
           queryFn: async () => {
             const response = await apiClient.get<InvestigationCenterResponse>(
-              '/api/v1/failure-intelligence/investigation-center'
+              '/failure-intelligence/investigation-center'
             );
             return response.data;
           },

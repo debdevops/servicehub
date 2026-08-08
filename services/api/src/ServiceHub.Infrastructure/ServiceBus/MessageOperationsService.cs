@@ -84,7 +84,7 @@ public sealed class MessageOperationsService : IMessageOperationsService
             var result = await receiver.PeekMessagesAsync(request, cancellationToken).ConfigureAwait(false);
             return result;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return ConvertExceptionToResult<IReadOnlyList<Message>>(ex, ErrorCodes.Message.ReceiveFailed);
         }
@@ -258,7 +258,7 @@ public sealed class MessageOperationsService : IMessageOperationsService
             var receiver = GetReceiver(provider);
             return await receiver.PeekDeadLetterMessagesAsync(request, cancellationToken).ConfigureAwait(false);
         }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 return ConvertExceptionToResult<IReadOnlyList<Message>>(ex, ErrorCodes.Message.ReceiveFailed);
             }

@@ -231,6 +231,7 @@ TestResults/
 # User secrets
 secrets.json
 appsettings.Local.json
+appsettings.Local.json.bak
 
 # Operational runbook — contains resource names/URLs specific to your deployment
 docs/AZURE-KEYVAULT-SETUP.md
