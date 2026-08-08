@@ -1,7 +1,9 @@
 import { AlertTriangle, Info, ChevronRight, HelpCircle, GitMerge, ClipboardList } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { copyToClipboard } from '@servicehub/ui-shared/lib/clipboard';
+import { getProviderServiceName, getProviderConsoleName, getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
 import type { Message } from '@servicehub/ui-shared/lib/mockData';
+import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import toast from 'react-hot-toast';
 
 // ============================================================================
@@ -10,6 +12,7 @@ import toast from 'react-hot-toast';
 
 interface PropertiesTabProps {
   message: Message;
+  provider?: CloudProviderType;
 }
 
 function PropertyRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
@@ -65,9 +68,9 @@ function getDLQSeverity(message: Message): 'test' | 'warning' | 'critical' {
 }
 
 // Extract DLQ details and generate context-aware guidance
-function extractDLQDetails(message: Message): { 
-  reason: string; 
-  description: string; 
+function extractDLQDetails(message: Message, provider?: CloudProviderType): {
+  reason: string;
+  description: string;
   interpretation: string;
   guidance: string[];
   severity: 'test' | 'warning' | 'critical';
@@ -75,24 +78,27 @@ function extractDLQDetails(message: Message): {
 } | null {
   const isDLQ = message.queueType === 'deadletter' || !!message.deadLetterReason;
   if (!isDLQ) return null;
-  
+
+  const serviceName = getProviderServiceName(provider);
+  const consoleName = getProviderConsoleName(provider);
+
   // Explicit null checks with defensive defaults
   const rawReason = message.deadLetterReason?.trim();
   const rawDescription = message.deadLetterSource?.trim();
-  
-  const reason = rawReason || 'Not provided by Azure Service Bus';
-  const description = rawDescription || 'Not provided by Azure Service Bus';
+
+  const reason = rawReason || `Not provided by ${serviceName}`;
+  const description = rawDescription || `Not provided by ${serviceName}`;
   const hasIncompleteData = !rawReason || !rawDescription;
-  
+
   const severity = getDLQSeverity(message);
   let interpretation = '';
   const guidance: string[] = [];
-  
+
   // Handle incomplete metadata first
   if (hasIncompleteData) {
-    interpretation = 'Azure Service Bus did not provide complete dead-letter metadata. The message state information is incomplete.';
-    guidance.push('Check Azure Portal for additional message properties');
-    guidance.push('Verify Service Bus SDK version supports complete metadata');
+    interpretation = `${serviceName} did not provide complete dead-letter metadata. The message state information is incomplete.`;
+    guidance.push(`Check ${consoleName} for additional message properties`);
+    guidance.push('Verify the SDK version supports complete metadata');
     guidance.push('Consider checking application logs for the original failure context');
     return { reason, description, interpretation, guidance, severity: 'warning', hasIncompleteData };
   }
@@ -120,12 +126,13 @@ function extractDLQDetails(message: Message): {
   return { reason, description, interpretation, guidance, severity, hasIncompleteData };
 }
 
-export function PropertiesTab({ message }: PropertiesTabProps) {
+export function PropertiesTab({ message, provider }: PropertiesTabProps) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const correlationId = message.properties?.correlationId as string | undefined;
-  const dlqDetails = extractDLQDetails(message);
+  const dlqDetails = extractDLQDetails(message, provider);
   const severityInfo = dlqDetails ? SEVERITY_EXPLANATIONS[dlqDetails.severity] : null;
+  const serviceName = getProviderServiceName(provider);
   
   return (
     <div className="p-4 space-y-4">
@@ -136,10 +143,10 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
           <div className="mb-3 rounded-lg border-2 border-yellow-300 bg-yellow-50 px-4 py-3">
             <div className="flex items-center gap-2 text-yellow-800 text-sm font-medium">
               <AlertTriangle className="w-4 h-4" />
-              <span>Incomplete Azure Data</span>
+              <span>Incomplete {getProviderStyle(provider).label} Data</span>
             </div>
             <p className="text-xs text-yellow-700 mt-1">
-              Azure Service Bus did not provide complete dead-letter metadata. Analysis may be limited.
+              {serviceName} did not provide complete dead-letter metadata. Analysis may be limited.
             </p>
           </div>
         )}
@@ -182,7 +189,7 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
                   ? 'bg-red-200 text-red-800'
                   : 'bg-amber-200 text-amber-800'
               }`}
-              title={`⚠️ ServiceHub Assessment (Not Azure Data): ${severityInfo.description}`}
+              title={`⚠️ ServiceHub Assessment (Not ${getProviderStyle(provider).label} Data): ${severityInfo.description}`}
             >
               {severityInfo.label}
               <HelpCircle className="w-3 h-3 opacity-70" />
@@ -194,7 +201,7 @@ export function PropertiesTab({ message }: PropertiesTabProps) {
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1 text-gray-700">
                 <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[10px] font-bold">FACT</span>
-                Azure Service Bus Data
+                {serviceName} Data
               </div>
               <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
                 <div>

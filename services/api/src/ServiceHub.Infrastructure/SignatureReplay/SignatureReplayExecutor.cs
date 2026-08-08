@@ -221,12 +221,36 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             message.Status = DlqMessageStatus.Replayed;
             message.ReplayedAt = DateTimeOffset.UtcNow;
             message.ReplaySuccess = true;
-            return (MessageOutcome.Success, null);
+        }
+        else
+        {
+            message.Status = DlqMessageStatus.ReplayFailed;
+            message.ReplaySuccess = false;
         }
 
-        message.Status = DlqMessageStatus.ReplayFailed;
-        message.ReplaySuccess = false;
-        return (MessageOutcome.Failure, result.Error.Message);
+        // Same concurrency token as the claim above, but the other writer here is typically
+        // DlqMonitorService's reconciliation loop, not another replay worker: replaying this
+        // message can empty the live DLQ, and a scan landing mid-batch marks every remaining
+        // "Active" row for the entity Replayed — including ones this job has since moved past
+        // Active. That's a race on bookkeeping, not on the replay itself (which already
+        // happened via ReplayMessageAsync above), so a losing save here must not fail the
+        // message outcome or abort the rest of the batch — see RunAsync's per-message loop.
+        // CancellationToken.None, like the job-progress save in RunAsync: the provider call
+        // above already happened, so this outcome must be persisted even if cancellation was
+        // requested in the meantime — dropping it here would leave the message stuck
+        // "Replaying" despite having actually been replayed.
+        try
+        {
+            await _dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await _dbContext.Entry(message).ReloadAsync(CancellationToken.None);
+        }
+
+        return result.IsSuccess
+            ? (MessageOutcome.Success, null)
+            : (MessageOutcome.Failure, result.Error.Message);
     }
 
     private static void AddToSample(List<BulkOperationFailureSample> sample, DlqMessage message, string reason)

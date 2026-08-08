@@ -195,6 +195,7 @@ export function MessagesPage() {
   const canLiveTail = supportsRepeatablePeek && !isAwsTopicFanout && !!entityName;
   const supportsScheduledMessages = getProviderCapabilities(capabilitiesMap, currentProvider)?.supportsScheduledMessages ?? true;
   const canViewScheduled = entityType === 'queue' && !!namespaceId && !!queueName && supportsScheduledMessages;
+  const supportsMessageCounts = getProviderCapabilities(capabilitiesMap, currentProvider)?.supportsMessageCounts ?? true;
   const canViewDlqHistory = queueTab === 'deadletter' && !!namespaceId && !!entityName;
 
   // Pagination constants and state
@@ -802,6 +803,7 @@ export function MessagesPage() {
           onLoadMore={handleLoadMore}
           isSyncing={isTabSyncing}
           isFiltered={hasActiveFilter}
+          countsUnsupported={!supportsMessageCounts}
           tabLabels={isAwsNamespace ? {
             active: 'Queue',
             deadletter: 'DLQ',

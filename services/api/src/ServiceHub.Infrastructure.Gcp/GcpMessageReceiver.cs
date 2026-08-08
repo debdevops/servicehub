@@ -231,8 +231,14 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         "makes messages available to Pull/peek. Create a separate Pull subscription on the same topic to " +
         "inspect messages with ServiceHub.");
 
-    // Hard limit per individual Pub/Sub API call.
-    private const int OperationTimeoutSeconds = 15;
+    // Hard limit per individual Pub/Sub API call. Pub/Sub's synchronous Pull has no working
+    // "return immediately" option (the field is deprecated and ignored server-side), so an empty
+    // subscription can legitimately take ~20s to come back — confirmed against live Pub/Sub via
+    // both this receiver and `gcloud pubsub subscriptions pull`. 15s was cutting those off before
+    // they ever had a chance to return, misreporting healthy empty peeks as timeouts on every
+    // DlqMonitorWorker cycle. 25s comfortably covers that latency while staying under the SPA's
+    // 30s Axios timeout (packages/servicehub-ui-shared/src/lib/api/client.ts).
+    private const int OperationTimeoutSeconds = 25;
 
     /// <inheritdoc/>
     public Task<Result<long>> GetMessageCountAsync(

@@ -63,6 +63,31 @@ export function getProviderStyle(provider?: CloudProviderType): ProviderStyle {
   return PROVIDER_STYLES[provider ?? 'azure'];
 }
 
+// Full messaging-service and management-console names — used in copy that references where a
+// fact came from or where to verify it (e.g. "Not provided by {service}", "Check the {console}
+// for more"). Distinct from the short badge label above, which stays "AWS"/"GCP"/"Azure".
+const PROVIDER_SERVICE_NAMES: Record<CloudProviderType, string> = {
+  azure: 'Azure Service Bus',
+  aws: 'AWS SQS',
+  gcp: 'GCP Pub/Sub',
+};
+
+const PROVIDER_CONSOLE_NAMES: Record<CloudProviderType, string> = {
+  azure: 'Azure Portal',
+  aws: 'AWS Console',
+  gcp: 'GCP Console',
+};
+
+// eslint-disable-next-line react-refresh/only-export-components -- style map + badge belong together
+export function getProviderServiceName(provider?: CloudProviderType): string {
+  return PROVIDER_SERVICE_NAMES[provider ?? 'azure'];
+}
+
+// eslint-disable-next-line react-refresh/only-export-components -- style map + badge belong together
+export function getProviderConsoleName(provider?: CloudProviderType): string {
+  return PROVIDER_CONSOLE_NAMES[provider ?? 'azure'];
+}
+
 export function ProviderBadge({ provider }: { provider?: CloudProviderType }) {
   const style = getProviderStyle(provider);
   return (

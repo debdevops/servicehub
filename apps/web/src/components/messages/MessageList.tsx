@@ -29,6 +29,13 @@ interface MessageListProps {
    * AWS passes "Queue" / "DLQ" plus a tooltip naming the separate DLQ queue.
    */
   tabLabels?: { active: string; deadletter: string; deadletterTitle?: string };
+  /**
+   * True for providers with no message-count API (GCP Pub/Sub) — activeCounts is always {0, 0}
+   * there regardless of real backlog, so a bare "(0)" reads as "definitely empty" when it's
+   * really "unknown". Mirrors the same unsupported-count treatment used in NamespacesPanel and
+   * MessagesOverviewPage's CountBadge.
+   */
+  countsUnsupported?: boolean;
 }
 
 // ============================================================================
@@ -186,6 +193,7 @@ export function MessageList({
   isSyncing = false,
   isFiltered = false,
   tabLabels = { active: 'Active', deadletter: 'Dead-Letter' },
+  countsUnsupported = false,
 }: MessageListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -257,7 +265,7 @@ export function MessageList({
             }
           `}
         >
-          {tabLabels.active} ({activeCounts.active.toLocaleString()})
+          {tabLabels.active} ({countsUnsupported ? '—' : activeCounts.active.toLocaleString()})
         </button>
         <button
           onClick={() => onQueueTabChange('deadletter')}
@@ -269,9 +277,14 @@ export function MessageList({
             }
           `}
         >
-          <span className="flex items-center justify-center gap-2" title={tabLabels.deadletterTitle}>
-            {tabLabels.deadletter} ({activeCounts.deadletter.toLocaleString()})
-            {activeCounts.deadletter > 0 && (
+          <span
+            className="flex items-center justify-center gap-2"
+            title={countsUnsupported
+              ? 'This provider has no message-count API — the number shown reflects only what has been loaded so far'
+              : tabLabels.deadletterTitle}
+          >
+            {tabLabels.deadletter} ({countsUnsupported ? '—' : activeCounts.deadletter.toLocaleString()})
+            {!countsUnsupported && activeCounts.deadletter > 0 && (
               <span className="w-2 h-2 rounded-full bg-red-500" />
             )}
           </span>

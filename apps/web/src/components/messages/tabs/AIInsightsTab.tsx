@@ -3,7 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import type { Message } from '@servicehub/ui-shared/lib/mockData';
 import { useClientSideInsights } from '@servicehub/ui-shared/hooks/useInsights';
 import { useMessages } from '@servicehub/ui-shared/hooks/useMessages';
-import type { AIInsight } from '@servicehub/ui-shared/lib/api/types';
+import { getProviderStyle, getProviderConsoleName } from '@servicehub/ui-shared/lib/providerStyles';
+import type { AIInsight, CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 
 // ============================================================================
 // AIInsightsTab - Shows AI pattern membership for selected message
@@ -19,6 +20,7 @@ interface AIInsightsTabProps {
   message: Message;
   onViewPattern?: (messageIds: string[]) => void;
   insights?: AIInsight[];
+  provider?: CloudProviderType;
 }
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -98,8 +100,10 @@ function PatternCard({
   );
 }
 
-export function AIInsightsTab({ message, onViewPattern, insights: providedInsights }: AIInsightsTabProps) {
+export function AIInsightsTab({ message, onViewPattern, insights: providedInsights, provider }: AIInsightsTabProps) {
   const [searchParams] = useSearchParams();
+  const providerLabel = getProviderStyle(provider).label;
+  const consoleName = getProviderConsoleName(provider);
   const namespaceId = searchParams.get('namespace');
   const queueName = searchParams.get('queue');
   const topicName = searchParams.get('topic');
@@ -167,9 +171,9 @@ export function AIInsightsTab({ message, onViewPattern, insights: providedInsigh
           <div className="flex items-start gap-2">
             <Info size={14} className="text-blue-500 mt-0.5 shrink-0" />
             <p className="text-xs text-blue-700">
-              <strong>⚠️ ServiceHub Interpretation (Not Azure Data):</strong> These patterns are heuristic analysis 
-              based on message characteristics. They represent possible explanations, not confirmed facts. 
-              Always verify findings in Azure Portal before taking operational action.
+              <strong>⚠️ ServiceHub Interpretation (Not {providerLabel} Data):</strong> These patterns are heuristic analysis
+              based on message characteristics. They represent possible explanations, not confirmed facts.
+              Always verify findings in the {consoleName} before taking operational action.
             </p>
           </div>
         </div>
@@ -265,9 +269,9 @@ export function AIInsightsTab({ message, onViewPattern, insights: providedInsigh
         <div className="flex items-start gap-2">
           <Info size={14} className="text-blue-500 mt-0.5 shrink-0" />
           <p className="text-xs text-blue-700">
-            <strong>⚠️ ServiceHub Interpretation (Not Azure Data):</strong> These patterns are heuristic analysis 
-            based on message characteristics. They represent possible explanations, not confirmed facts. 
-            Always verify findings in Azure Portal before taking operational action.
+            <strong>⚠️ ServiceHub Interpretation (Not {providerLabel} Data):</strong> These patterns are heuristic analysis
+            based on message characteristics. They represent possible explanations, not confirmed facts.
+            Always verify findings in the {consoleName} before taking operational action.
           </p>
         </div>
       </div>
