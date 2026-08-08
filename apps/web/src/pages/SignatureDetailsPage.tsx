@@ -80,6 +80,7 @@ export function SignatureDetailsPage() {
   const trendRecommendation = detail ? getTrendRecommendation(detail.trend) : null;
 
   return (
+    <div className="flex-1 overflow-y-auto min-w-0">
     <div className="p-6 max-w-5xl mx-auto">
       <Link to={`${basePath}/signatures?namespace=${namespaceId}`} className="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 mb-4">
         <ArrowLeft className="w-4 h-4" />
@@ -267,6 +268,7 @@ export function SignatureDetailsPage() {
           )}
         </>
       )}
+    </div>
     </div>
   );
 }
