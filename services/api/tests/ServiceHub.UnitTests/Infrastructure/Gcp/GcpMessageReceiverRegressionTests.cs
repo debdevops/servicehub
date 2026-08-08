@@ -114,6 +114,42 @@ public sealed class GcpMessageReceiverRegressionTests
     }
 
     [Fact]
+    public async Task PeekMessagesAsync_MessageCarriesCorrelationIdAttribute_PopulatesCorrelationId()
+    {
+        // Regresses the Multi-Cloud Trace gap this fix closes: Pub/Sub (like SQS) has no
+        // dedicated SDK correlation field — unlike Azure Service Bus, whose native
+        // CorrelationId property was already mapped — so without this extraction,
+        // DlqMonitorService persisted every GCP DLQ message with CorrelationId=null, making
+        // it permanently unreachable via Cross-Cloud Trace's historical-DLQ lookup once it's
+        // no longer peekable live. Confirmed live: 0/24 GCP DLQ rows had CorrelationId set,
+        // vs 13/13 for Azure.
+        var ns = BuildNamespace();
+        var pull = new PullResponse
+        {
+            ReceivedMessages =
+            {
+                new ReceivedMessage
+                {
+                    AckId = "ack-1",
+                    DeliveryAttempt = 1,
+                    Message = new PubsubMessage
+                    {
+                        MessageId = "m1",
+                        Data = Google.Protobuf.ByteString.CopyFromUtf8("{}"),
+                        Attributes = { ["correlationId"] = "shs-abc123-0001" },
+                    },
+                },
+            },
+        };
+        var (sut, _) = BuildSut(ns, SubId, pull);
+
+        var result = await sut.PeekMessagesAsync(new GetMessagesRequest(TestNamespaceId, SubId, null, false, 10));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value[0].CorrelationId.Should().Be("shs-abc123-0001");
+    }
+
+    [Fact]
     public async Task PeekMessagesAsync_EmptySubscription_ReturnsEmptyWithoutNack()
     {
         var ns = BuildNamespace();

@@ -407,6 +407,193 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         targetHistoryCount.Should().Be(0); // this job never wrote history for target — it never got that far
     }
 
+    [Fact]
+    public async Task ExecuteAsync_CancelledMidCallWhileAnotherWriterMovedTheInFlightMessage_StillPersistsTerminalState()
+    {
+        // Reproduces the live bug behind jobs stuck reporting Running forever. The claim step
+        // (`message.Status = Replaying; SaveChangesAsync(cancellationToken)`) is the only save
+        // in this whole flow guarded solely by the job's own cancellable token — if
+        // cancellation fires mid-write, that save throws OperationCanceledException (not
+        // DbUpdateConcurrencyException, so ProcessMessageAsync's own concurrency handling for
+        // the claim never runs), leaving the claimed message tracked as dirty. If another
+        // writer (e.g. DlqMonitorWorker's reconciliation) has since moved that same row on, the
+        // finally block's own cleanup save — the only save left to persist the job's terminal
+        // status — hits that same conflict. This test forces the entity dirty via EF's tracking
+        // API rather than racing the real, narrow, timing-dependent window, then confirms the
+        // cleanup save survives the conflict instead of throwing DbUpdateConcurrencyException
+        // uncaught and silently abandoning the job (swallowed by SignatureReplayWorker's outer
+        // per-job catch, leaving the DB row at Status=Running forever with no further writer
+        // ever touching it again).
+        var connectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        using var keeperConnection = new SqliteConnection(connectionString);
+        keeperConnection.Open();
+
+        var options = new DbContextOptionsBuilder<DlqDbContext>().UseSqlite(connectionString).Options;
+        using var dbContext = new DlqDbContext(options);
+        dbContext.Database.EnsureCreated();
+
+        var target = new DlqMessage
+        {
+            MessageId = "msg-target", SequenceNumber = 1, BodyHash = "hash-target",
+            NamespaceId = _namespaceId, OwnerId = OwnerId, EntityName = "orders",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            Status = DlqMessageStatus.Active,
+        };
+        dbContext.DlqMessages.Add(target);
+        await dbContext.SaveChangesAsync(); // assigns a real, database-generated Id
+
+        var job = new SignatureReplayJob
+        {
+            Id = Guid.NewGuid(),
+            OwnerId = OwnerId,
+            Status = BulkOperationStatus.Pending,
+            NamespaceId = _namespaceId,
+            NamespaceDisplayName = "ns",
+            SignatureHash = "hash-1",
+            MessageIdsJson = JsonSerializer.Serialize(new List<long> { target.Id }),
+            TotalMatched = 1,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        dbContext.SignatureReplayJobs.Add(job);
+        await dbContext.SaveChangesAsync();
+
+        var messageOperationsMock = new Mock<IMessageOperationsService>();
+        messageOperationsMock
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, target.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                // By this point the real claim save has already committed (it runs before
+                // ReplayMessageAsync is invoked), so the tracked entity is Unchanged. Force it
+                // dirty again to fabricate the postcondition a claim save interrupted by
+                // cancellation mid-write leaves behind — real interleaving is a narrow,
+                // timing-dependent race between that save and the user's Cancel click, not
+                // reproducible deterministically here.
+                dbContext.Entry(target).State = EntityState.Modified;
+
+                // Meanwhile another writer (e.g. DlqMonitorWorker's reconciliation) moves the
+                // same row on, so the entry's now-stale original value no longer matches it.
+                await using var racingContext = new DlqDbContext(options);
+                var racingCopy = await racingContext.DlqMessages.SingleAsync(m => m.Id == target.Id);
+                racingCopy.Status = DlqMessageStatus.Replayed;
+                racingCopy.ReplayedAt = DateTimeOffset.UtcNow;
+                racingCopy.ReplaySuccess = true;
+                await racingContext.SaveChangesAsync();
+
+                // ...then cancellation fires mid-call, before this job's own outcome save (the
+                // one place that already knows how to reconcile a conflict) ever runs.
+                throw new OperationCanceledException();
+            });
+
+        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+
+        var act = async () => await sut.ExecuteAsync(job.Id, CancellationToken.None);
+        await act.Should().NotThrowAsync();
+
+        var reloaded = await dbContext.SignatureReplayJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
+        reloaded.Status.Should().Be(BulkOperationStatus.Cancelled);
+        reloaded.CompletedAt.Should().NotBeNull();
+
+        var storedTarget = await dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == target.Id);
+        storedTarget.Status.Should().Be(DlqMessageStatus.Replayed); // the racing writer's status stands
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_StaleEarlierMessageConflictsAtCheckpointSave_DoesNotAbortRestOfBatch()
+    {
+        // Regresses a variant of the same bug hit live: a second message's checkpoint save
+        // (the one right after ProcessMessageAsync returns, inside RunAsync's loop — the exact
+        // save that failed against real DEV DLQ traffic while validating the finally-block fix
+        // above) can find an *earlier*, already-processed message in the batch left dirty and
+        // stale by an unrelated concurrent writer. Before this fix, that aborted the whole
+        // remaining batch (job ends Failed after processing only part of TotalMatched) even
+        // though every individual message actually succeeded — violating ProcessMessageAsync's
+        // own documented contract that a losing save "must not fail the message outcome or
+        // abort the rest of the batch" (see its outcome-save comment). The checkpoint save must
+        // absorb the same class of conflict the finally-block save does.
+        var connectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        using var keeperConnection = new SqliteConnection(connectionString);
+        keeperConnection.Open();
+
+        var options = new DbContextOptionsBuilder<DlqDbContext>().UseSqlite(connectionString).Options;
+        using var dbContext = new DlqDbContext(options);
+        dbContext.Database.EnsureCreated();
+
+        var first = new DlqMessage
+        {
+            MessageId = "msg-first", SequenceNumber = 1, BodyHash = "hash-first",
+            NamespaceId = _namespaceId, OwnerId = OwnerId, EntityName = "orders",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+            Status = DlqMessageStatus.Active,
+        };
+        var second = new DlqMessage
+        {
+            MessageId = "msg-second", SequenceNumber = 2, BodyHash = "hash-second",
+            NamespaceId = _namespaceId, OwnerId = OwnerId, EntityName = "orders",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            Status = DlqMessageStatus.Active,
+        };
+        dbContext.DlqMessages.AddRange(first, second);
+        await dbContext.SaveChangesAsync(); // assigns real, database-generated Ids
+
+        var job = new SignatureReplayJob
+        {
+            Id = Guid.NewGuid(),
+            OwnerId = OwnerId,
+            Status = BulkOperationStatus.Pending,
+            NamespaceId = _namespaceId,
+            NamespaceDisplayName = "ns",
+            SignatureHash = "hash-1",
+            MessageIdsJson = JsonSerializer.Serialize(new List<long> { first.Id, second.Id }),
+            TotalMatched = 2,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        dbContext.SignatureReplayJobs.Add(job);
+        await dbContext.SaveChangesAsync();
+
+        var messageOperationsMock = new Mock<IMessageOperationsService>();
+        messageOperationsMock
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, first.SequenceNumber, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+        messageOperationsMock
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, second.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                // `first` already finished processing cleanly (its own outcome save committed,
+                // so it's tracked Unchanged). Fabricate it going stale again — standing in for
+                // a concurrent writer (e.g. DlqMonitorWorker) touching it mid-batch — so that
+                // `second`'s upcoming checkpoint save, which flushes the whole change tracker
+                // and so still includes `first`, hits the same conflict class as the
+                // finally-block fix above, but for an unrelated earlier message this time.
+                dbContext.Entry(first).State = EntityState.Modified;
+
+                await using var racingContext = new DlqDbContext(options);
+                var racingCopy = await racingContext.DlqMessages.SingleAsync(m => m.Id == first.Id);
+                racingCopy.Status = DlqMessageStatus.Replayed;
+                racingCopy.ReplayedAt = DateTimeOffset.UtcNow;
+                racingCopy.ReplaySuccess = true;
+                await racingContext.SaveChangesAsync();
+
+                return Result.Success();
+            });
+
+        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+
+        var act = async () => await sut.ExecuteAsync(job.Id, CancellationToken.None);
+        await act.Should().NotThrowAsync();
+
+        var reloaded = await dbContext.SignatureReplayJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
+        reloaded.Status.Should().Be(BulkOperationStatus.Completed);
+        reloaded.ProcessedCount.Should().Be(2);
+        reloaded.SuccessCount.Should().Be(2); // both messages actually succeeded — the batch was not aborted
+        reloaded.FailureCount.Should().Be(0);
+    }
+
     // ── Crash-window checkpointing (H2) ─────────────────────────────────────
 
     [Fact]

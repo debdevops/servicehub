@@ -117,9 +117,42 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
                     : BulkOperationStatus.Completed;
             }
 
-            await _dbContext.SaveChangesAsync(CancellationToken.None);
+            await SaveChangesTolerantOfStaleMessagesAsync();
             RecordCompletionAudit(job);
             await PublishCompletionEventAsync(job);
+        }
+    }
+
+    /// <summary>
+    /// Saves pending changes, tolerating a stale <see cref="DlqMessage"/> left dirty by a claim
+    /// that lost the race with cancellation. <see cref="ProcessMessageAsync"/> claims a message
+    /// via <c>SaveChangesAsync(cancellationToken)</c> — if cancellation fires mid-save, that
+    /// throws <see cref="OperationCanceledException"/> (not
+    /// <see cref="DbUpdateConcurrencyException"/>, so <see cref="ProcessMessageAsync"/>'s own
+    /// concurrency handling never runs) and leaves the message entity dirty with a now-stale
+    /// concurrency token. If another writer (e.g. <c>DlqMonitorWorker</c>'s reconciliation, or —
+    /// as seen live — a routine scan racing an unrelated earlier message in the same batch) has
+    /// since touched that row, the next save's own concurrency check on the leftover entry
+    /// fails. Called both after every message (so one stray conflict can never abort the rest
+    /// of the batch, matching <see cref="ProcessMessageAsync"/>'s own no-abort contract for
+    /// per-message races) and from the <c>finally</c> block (so a conflict can never block the
+    /// job's terminal status from being saved, which otherwise leaves the job stuck reporting
+    /// Running forever).
+    /// </summary>
+    private async Task SaveChangesTolerantOfStaleMessagesAsync()
+    {
+        try
+        {
+            await _dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            foreach (var entry in ex.Entries)
+            {
+                await entry.ReloadAsync(CancellationToken.None);
+            }
+
+            await _dbContext.SaveChangesAsync(CancellationToken.None);
         }
     }
 
@@ -180,7 +213,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
             if (++sinceLastSave >= SaveProgressEveryNMessages)
             {
                 job.FailureSampleJson = failureSample.Count > 0 ? JsonSerializer.Serialize(failureSample) : null;
-                await _dbContext.SaveChangesAsync(CancellationToken.None);
+                await SaveChangesTolerantOfStaleMessagesAsync();
                 sinceLastSave = 0;
             }
         }

@@ -132,6 +132,32 @@ public sealed class AwsMessageReceiverRegressionTests
     }
 
     [Fact]
+    public async Task PeekMessagesAsync_MessageCarriesCorrelationIdAttribute_PopulatesCorrelationId()
+    {
+        // Regresses the Multi-Cloud Trace gap this fix closes: SQS (like Pub/Sub) has no
+        // dedicated SDK correlation field — unlike Azure Service Bus, whose native
+        // CorrelationId property was already mapped — so without this extraction,
+        // DlqMonitorService persisted every AWS DLQ message with CorrelationId=null, making
+        // it permanently unreachable via Cross-Cloud Trace's historical-DLQ lookup once it's
+        // no longer peekable live.
+        var (sut, _, _) = BuildSut(new ReceiveMessageResponse
+        {
+            Messages =
+            [
+                BuildSqsMessage("m-1", "rh-1", attributes: new Dictionary<string, MessageAttributeValue>
+                {
+                    ["correlationId"] = new MessageAttributeValue { DataType = "String", StringValue = "shs-abc123-0001" },
+                }),
+            ],
+        });
+
+        var result = await sut.PeekMessagesAsync(new GetMessagesRequest(TestNamespaceId, QueueName, null, false, 50));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value[0].CorrelationId.Should().Be("shs-abc123-0001");
+    }
+
+    [Fact]
     public async Task PeekMessagesAsync_DeduplicatesRedeliveriesAndReleasesLatestHandle()
     {
         var (sut, _, releases) = BuildSut(

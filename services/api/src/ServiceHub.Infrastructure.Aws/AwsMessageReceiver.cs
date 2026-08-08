@@ -780,6 +780,10 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                 ApplicationProperties = appProps is { Count: > 0 }
                     ? appProps as IReadOnlyDictionary<string, object>
                     : null,
+                // SQS has no dedicated correlation field — pulled from message attributes so
+                // DlqMonitorService can persist it and Cross-Cloud Trace's historical-DLQ
+                // lookup can find this message after it's no longer peekable live.
+                CorrelationId = ServiceHub.Shared.Helpers.MessageCorrelationIdExtractor.Extract(appProps),
                 NamespaceId = namespaceId,
                 EntityName = entityName,
                 IsFromDeadLetter = fromDlq,
