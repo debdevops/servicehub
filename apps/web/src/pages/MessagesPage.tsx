@@ -771,6 +771,7 @@ export function MessagesPage() {
           <span className="text-xs text-blue-800 flex-1">
             <span className="font-semibold">More messages available:</span> Showing {messages.length.toLocaleString()} of {totalMessagesInQueue.toLocaleString()} messages.
             Scroll down or click "Load More" to view additional messages.
+            Search and filters only apply to the messages currently loaded.
           </span>
         </div>
       )}
