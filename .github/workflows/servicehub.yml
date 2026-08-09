@@ -426,6 +426,9 @@ jobs:
 
       - name: Tear down
         if: always()
+        env:
+          SECURITY__ENCRYPTIONKEY: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210  # 32-byte test key for CI only
+          SECURITY__SPATOKEN__SECRET: abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890  # test secret for CI only
         run: docker compose down -v
 
   production-configuration-validation:
