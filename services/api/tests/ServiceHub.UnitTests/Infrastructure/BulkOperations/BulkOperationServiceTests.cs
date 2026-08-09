@@ -215,6 +215,41 @@ public sealed class BulkOperationServiceTests : IDisposable
         result.Error.Code.Should().Contain("NotFound");
     }
 
+    [Fact]
+    public async Task PreviewAsync_NamespaceOutsideAllowList_ReturnsNotFound()
+    {
+        // A key restricted to a different namespace must not be able to preview a bulk operation
+        // against a namespace it truly owns but that's outside its allow-list — otherwise the
+        // namespace allow-list would restrict reads while leaving destructive-adjacent operations
+        // unrestricted.
+        var providerMock = BuildProviderMock(CloudProviderType.Aws, ProviderCapabilities.Aws);
+        var sut = CreateSut(providerMock.Object);
+        SetupNamespace(CloudProviderType.Aws);
+        AddDlqMessage(1);
+
+        var result = await sut.PreviewAsync(OwnerId,
+            new BulkOperationPreviewRequest(BulkOperationType.Replay, Filter(_namespaceId)),
+            allowedNamespaceIds: new HashSet<Guid> { Guid.NewGuid() });
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Contain("NotFound");
+    }
+
+    [Fact]
+    public async Task PreviewAsync_NamespaceInAllowList_Succeeds()
+    {
+        var providerMock = BuildProviderMock(CloudProviderType.Aws, ProviderCapabilities.Aws);
+        var sut = CreateSut(providerMock.Object);
+        SetupNamespace(CloudProviderType.Aws);
+        AddDlqMessage(1);
+
+        var result = await sut.PreviewAsync(OwnerId,
+            new BulkOperationPreviewRequest(BulkOperationType.Replay, Filter(_namespaceId)),
+            allowedNamespaceIds: new HashSet<Guid> { _namespaceId });
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
     // ── CreateJobAsync ───────────────────────────────────────────────────────
 
     [Fact]
@@ -269,6 +304,24 @@ public sealed class BulkOperationServiceTests : IDisposable
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("BulkOperation.NoMatches");
+    }
+
+    [Fact]
+    public async Task CreateJobAsync_NamespaceOutsideAllowList_ReturnsNotFoundAndDoesNotEnqueue()
+    {
+        var providerMock = BuildProviderMock(CloudProviderType.Aws, ProviderCapabilities.Aws);
+        var sut = CreateSut(providerMock.Object);
+        SetupNamespace(CloudProviderType.Aws);
+        AddDlqMessage(1);
+
+        var result = await sut.CreateJobAsync(OwnerId,
+            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null,
+            allowedNamespaceIds: new HashSet<Guid> { Guid.NewGuid() });
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Contain("NotFound");
+        (await _dbContext.BulkOperationJobs.CountAsync()).Should().Be(0);
+        _queueMock.Verify(q => q.Enqueue(It.IsAny<Guid>()), Times.Never);
     }
 
     [Fact]

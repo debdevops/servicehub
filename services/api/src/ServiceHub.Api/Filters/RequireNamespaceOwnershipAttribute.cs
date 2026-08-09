@@ -51,7 +51,11 @@ public sealed class RequireNamespaceOwnershipAttribute : Attribute, IAsyncAction
             ? ownerIdString
             : Namespace.SpaOwnerId;
 
-        if (namespaceResult.IsFailure || !namespaceResult.Value.IsAccessibleBy(ownerId))
+        var allowedNamespaceIds = context.HttpContext.Items.TryGetValue("AllowedNamespaceIds", out var allowedValue) && allowedValue is IReadOnlySet<Guid> allowedIds
+            ? allowedIds
+            : null;
+
+        if (namespaceResult.IsFailure || !namespaceResult.Value.IsAccessibleBy(ownerId, allowedNamespaceIds))
         {
             context.Result = BuildNotFoundResult(context.HttpContext, namespaceId);
             return;

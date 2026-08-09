@@ -22,5 +22,12 @@ public enum DlqMessageStatus
     ReplayFailed = 4,
 
     /// <summary>Message is no longer present in the DLQ (removed externally, expired, or consumed).</summary>
-    Resolved = 5
+    Resolved = 5,
+
+    /// <summary>
+    /// Transient claim state: a replay worker has exclusively claimed this message (via
+    /// optimistic concurrency) and is about to invoke the live provider. Guards against two
+    /// workers (bulk replay, signature replay, auto-replay) sending the same message twice.
+    /// </summary>
+    Replaying = 6
 }

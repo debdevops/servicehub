@@ -14,6 +14,7 @@ public sealed class ServiceBusHealthCheck : IHealthCheck
 {
     private readonly IServiceBusClientCache _clientCache;
     private readonly INamespaceRepository _namespaceRepository;
+    private readonly IConnectionStringProtector _connectionStringProtector;
     private readonly ILogger<ServiceBusHealthCheck> _logger;
 
     /// <summary>
@@ -21,14 +22,17 @@ public sealed class ServiceBusHealthCheck : IHealthCheck
     /// </summary>
     /// <param name="clientCache">The Service Bus client cache.</param>
     /// <param name="namespaceRepository">The namespace repository.</param>
+    /// <param name="connectionStringProtector">The connection string protector used to decrypt stored connection strings.</param>
     /// <param name="logger">The logger instance.</param>
     public ServiceBusHealthCheck(
         IServiceBusClientCache clientCache,
         INamespaceRepository namespaceRepository,
+        IConnectionStringProtector connectionStringProtector,
         ILogger<ServiceBusHealthCheck> logger)
     {
         _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
+        _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -176,9 +180,20 @@ public sealed class ServiceBusHealthCheck : IHealthCheck
                 "Connection string is not configured."));
         }
 
+        var unprotectResult = _connectionStringProtector.Unprotect(connectionString);
+        if (unprotectResult.IsFailure)
+        {
+            _logger.LogError(
+                "Failed to decrypt connection string for namespace {NamespaceId}: {Error}",
+                namespaceId,
+                unprotectResult.Error.Message);
+
+            return Result.Failure<bool>(unprotectResult.Error);
+        }
+
         try
         {
-            var clientWrapper = _clientCache.GetOrCreate(namespaceId, connectionString);
+            var clientWrapper = _clientCache.GetOrCreate(namespaceId, unprotectResult.Value);
             var result = await clientWrapper.TestConnectionAsync(cancellationToken).ConfigureAwait(false);
 
             if (result.IsSuccess)

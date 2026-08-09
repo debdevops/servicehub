@@ -27,7 +27,10 @@ namespace ServiceHub.Infrastructure.BulkOperations;
 /// </remarks>
 public sealed class BulkOperationExecutor : IBulkOperationExecutor
 {
-    private const int SaveProgressEveryNMessages = 5;
+    // Persisted after every message (not batched) so a process crash mid-batch never leaves a
+    // message's just-completed Replayed/ReplayFailed outcome unpersisted behind its already-
+    // committed Replaying claim — see RC1 review H2.
+    private const int SaveProgressEveryNMessages = 1;
     private const int MaxFailureSampleSize = 20;
     private const string SubscriptionPathSegment = "/subscriptions/";
 
@@ -114,9 +117,42 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
                     : BulkOperationStatus.Completed;
             }
 
-            await _dbContext.SaveChangesAsync(CancellationToken.None);
+            await SaveChangesTolerantOfStaleMessagesAsync();
             RecordCompletionAudit(job);
             await PublishCompletionEventAsync(job);
+        }
+    }
+
+    /// <summary>
+    /// Saves pending changes, tolerating a stale <see cref="DlqMessage"/> left dirty by a claim
+    /// that lost the race with cancellation. <see cref="ProcessMessageAsync"/> claims a message
+    /// via <c>SaveChangesAsync(cancellationToken)</c> — if cancellation fires mid-save, that
+    /// throws <see cref="OperationCanceledException"/> (not
+    /// <see cref="DbUpdateConcurrencyException"/>, so <see cref="ProcessMessageAsync"/>'s own
+    /// concurrency handling never runs) and leaves the message entity dirty with a now-stale
+    /// concurrency token. If another writer (e.g. <c>DlqMonitorWorker</c>'s reconciliation, or —
+    /// as seen live — a routine scan racing an unrelated earlier message in the same batch) has
+    /// since touched that row, the next save's own concurrency check on the leftover entry
+    /// fails. Called both after every message (so one stray conflict can never abort the rest
+    /// of the batch, matching <see cref="ProcessMessageAsync"/>'s own no-abort contract for
+    /// per-message races) and from the <c>finally</c> block (so a conflict can never block the
+    /// job's terminal status from being saved, which otherwise leaves the job stuck reporting
+    /// Running forever).
+    /// </summary>
+    private async Task SaveChangesTolerantOfStaleMessagesAsync()
+    {
+        try
+        {
+            await _dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            foreach (var entry in ex.Entries)
+            {
+                await entry.ReloadAsync(CancellationToken.None);
+            }
+
+            await _dbContext.SaveChangesAsync(CancellationToken.None);
         }
     }
 
@@ -177,7 +213,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
             if (++sinceLastSave >= SaveProgressEveryNMessages)
             {
                 job.FailureSampleJson = failureSample.Count > 0 ? JsonSerializer.Serialize(failureSample) : null;
-                await _dbContext.SaveChangesAsync(CancellationToken.None);
+                await SaveChangesTolerantOfStaleMessagesAsync();
                 sinceLastSave = 0;
             }
         }
@@ -201,6 +237,22 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
 
         if (operationType == BulkOperationType.Replay)
         {
+            // Claim the message via optimistic concurrency (Status is a concurrency token —
+            // see DlqDbContext.ConfigureDlqMessage) before calling the live provider, so a
+            // worker that loses the race never sends a duplicate — not just avoids a
+            // duplicate DB row. A losing SaveChangesAsync throws DbUpdateConcurrencyException
+            // here, before ReplayMessageAsync is ever invoked.
+            message.Status = DlqMessageStatus.Replaying;
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await _dbContext.Entry(message).ReloadAsync(cancellationToken);
+                return (MessageOutcome.Skipped, "Message was claimed by another concurrent replay — skipped");
+            }
+
             var result = await _messageOperationsService.ReplayMessageAsync(
                 message.NamespaceId, entityName, subscriptionName, message.SequenceNumber, cancellationToken);
 
@@ -246,9 +298,11 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
     /// Reconstructs the queue/subscription pair a live replay/purge call needs from the
     /// persisted <see cref="DlqMessage"/>'s combined <c>EntityName</c> + <c>TopicName</c> —
     /// mirroring the same convention <c>DlqMonitorService.ParseEntity</c> used to store it and
-    /// <c>RulesController.ReplayAll</c> used to reconstruct it.
+    /// <c>RulesController.ReplayAll</c> used to reconstruct it. Internal (not private) so
+    /// <see cref="SignatureReplay.SignatureReplayExecutor"/> can reuse it instead of duplicating
+    /// this parsing.
     /// </summary>
-    private static (string EntityName, string? SubscriptionName) ResolveEntityAndSubscription(DlqMessage message)
+    internal static (string EntityName, string? SubscriptionName) ResolveEntityAndSubscription(DlqMessage message)
     {
         if (message.EntityType != ServiceBusEntityType.Subscription || message.TopicName is null)
             return (message.EntityName, null);

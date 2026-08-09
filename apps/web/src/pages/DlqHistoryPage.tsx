@@ -302,7 +302,9 @@ export function DlqHistoryPage() {
       namespaceId &&
       summary &&
       summary.totalMessages === 0 &&
-      !isScanning
+      !isScanning &&
+      providerCapabilities !== undefined &&
+      !isNotMonitored
     ) {
       setAutoScanned(true);
       setIsScanning(true);
@@ -322,7 +324,7 @@ export function DlqHistoryPage() {
           setIsScanning(false);
         });
     }
-  }, [namespaceId, summary, autoScanned, isScanning, refetch, refetchSummary]);
+  }, [namespaceId, summary, autoScanned, isScanning, refetch, refetchSummary, providerCapabilities, isNotMonitored]);
 
   // Reset auto-scan flag when namespace changes
   useEffect(() => {
@@ -354,7 +356,7 @@ export function DlqHistoryPage() {
   };
 
   const handleScanNow = async () => {
-    if (!namespaceId || isScanning) return;
+    if (!namespaceId || isScanning || isNotMonitored) return;
     setIsScanning(true);
     try {
       const newCount = await dlqHistoryApi.triggerScan(namespaceId);
@@ -373,7 +375,7 @@ export function DlqHistoryPage() {
 
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-y-auto">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4 shrink-0">
         <div className="flex items-center justify-between mb-3">
@@ -440,9 +442,13 @@ export function DlqHistoryPage() {
             </button>
             <button
               onClick={handleScanNow}
-              disabled={isScanning}
+              disabled={isScanning || isNotMonitored}
               className="flex items-center gap-1.5 px-3 py-2 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-              title="Instantly scan DLQs for new messages"
+              title={
+                isNotMonitored
+                  ? providerCapabilities?.notes ?? 'DLQ scanning is not available for this namespace'
+                  : 'Instantly scan DLQs for new messages'
+              }
             >
               <Zap className={`w-4 h-4 ${isScanning ? 'animate-pulse' : ''}`} />
               {isScanning ? 'Scanning...' : 'Scan Now'}
@@ -556,7 +562,7 @@ export function DlqHistoryPage() {
               className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
             >
               <X className="w-3.5 h-3.5" />
-              Clear all
+              Clear filters
             </button>
           )}
 
@@ -629,7 +635,7 @@ export function DlqHistoryPage() {
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="p-6">
         <DlqHistoryTable
           items={data?.items ?? []}
           totalCount={data?.totalCount ?? 0}

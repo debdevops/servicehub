@@ -48,8 +48,16 @@ public sealed class FailureKnowledgeEntity
     /// <summary>When to review this knowledge next.</summary>
     public DateTimeOffset? ReviewDueAt { get; set; }
 
-    /// <summary>Semicolon-separated tags.</summary>
+    /// <summary>Comma-separated tags.</summary>
     public string? Tags { get; set; }
+
+    /// <summary>
+    /// Free-text identifier of who made the most recent edit. Optional — there is no
+    /// authenticated-user identity in ServiceHub today (API-key auth only), so this is
+    /// operator-supplied rather than derived. Designed to be populated automatically once
+    /// a real identity system exists, without any schema or API change.
+    /// </summary>
+    public string? UpdatedBy { get; set; }
 
     /// <summary>Created timestamp.</summary>
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;

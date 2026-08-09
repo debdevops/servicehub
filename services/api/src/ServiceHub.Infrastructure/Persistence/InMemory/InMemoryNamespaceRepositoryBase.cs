@@ -89,13 +89,14 @@ public abstract class InMemoryNamespaceRepositoryBase : INamespaceRepository
     }
 
     /// <inheritdoc/>
-    public Task<Result<IReadOnlyList<Namespace>>> GetByOwnerAsync(string ownerId, CancellationToken cancellationToken = default)
+    public Task<Result<IReadOnlyList<Namespace>>> GetByOwnerAsync(string ownerId, IReadOnlySet<Guid>? allowedNamespaceIds = null, CancellationToken cancellationToken = default)
     {
         // SPA owner also owns legacy namespaces that pre-date the OwnerId field
         // (they were written without an OwnerId and deserialise to the default value).
-        // IsAccessibleBy also includes namespaces explicitly shared with this owner.
+        // IsAccessibleBy also includes namespaces explicitly shared with this owner, further
+        // narrowed by allowedNamespaceIds when the caller's credential carries an allow-list.
         var namespaces = _namespaces.Values
-            .Where(n => n.IsAccessibleBy(ownerId))
+            .Where(n => n.IsAccessibleBy(ownerId, allowedNamespaceIds))
             .ToList();
 
         _logger.LogDebug(

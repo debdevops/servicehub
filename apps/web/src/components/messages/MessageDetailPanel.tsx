@@ -8,10 +8,11 @@ import { useReplayMessage, usePurgeMessage } from '@servicehub/ui-shared/hooks/u
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
+import { getProviderServiceName } from '@servicehub/ui-shared/lib/providerStyles';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CopyButton } from '@/components/CopyButton';
 import type { Message } from '@servicehub/ui-shared/lib/mockData';
-import type { AIInsight } from '@servicehub/ui-shared/lib/api/types';
+import type { AIInsight, CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import toast from 'react-hot-toast';
 
 // ============================================================================
@@ -57,18 +58,19 @@ function EmptyState() {
 // Tab Content Renderer
 // ============================================================================
 
-function TabContent({ tab, message, onViewPattern, insights }: { tab: DetailTab; message: Message; onViewPattern?: (messageIds: string[]) => void; insights?: AIInsight[] }) {
+function TabContent({ tab, message, onViewPattern, insights, provider }: { tab: DetailTab; message: Message; onViewPattern?: (messageIds: string[]) => void; insights?: AIInsight[]; provider?: CloudProviderType }) {
   switch (tab) {
     case 'properties':
-      return <PropertiesTab message={message} />;
+      return <PropertiesTab message={message} provider={provider} />;
     case 'body':
       return <BodyTab body={message.body} contentType={message.contentType} />;
     case 'ai':
       return (
-        <AIInsightsTab 
+        <AIInsightsTab
           message={message}
           onViewPattern={onViewPattern}
           insights={insights}
+          provider={provider}
         />
       );
     case 'headers':
@@ -150,6 +152,10 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
   };
 
   const handleConfirm = async () => {
+    if (replayMessage.isPending || purgeMessage.isPending) {
+      return;
+    }
+
     if (!namespaceId) {
       toast.error('Namespace context missing');
       return;
@@ -315,6 +321,7 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
         message={confirmState.message}
         variant={confirmState.variant}
         confirmLabel={confirmState.action === 'purge' ? 'Delete' : 'Confirm'}
+        isConfirming={replayMessage.isPending || purgeMessage.isPending}
         onConfirm={handleConfirm}
         onCancel={handleCancel}
       />
@@ -378,6 +385,9 @@ export function MessageDetailPanel({ message, onViewPattern, insights }: Message
   const [activeTab, setActiveTab] = useTabPersistence();
   const [searchParams] = useSearchParams();
   const namespaceId = searchParams.get('namespace');
+  const { data: namespaces } = useNamespaces();
+  const provider = namespaces?.find(ns => ns.id === namespaceId)?.cloudProvider;
+  const serviceName = getProviderServiceName(provider);
 
   if (!message) {
     return <EmptyState />;
@@ -445,7 +455,7 @@ export function MessageDetailPanel({ message, onViewPattern, insights }: Message
               <AlertTriangle size={12} className={dlqSeverity === 'critical' ? 'text-red-600' : 'text-amber-600'} />
               ServiceHub Assessment: {dlqSeverity === 'critical' ? 'Critical' : 'Warning'}
             </span>
-            <span className="text-sm text-gray-600" title="The reason provided by Azure Service Bus.">
+            <span className="text-sm text-gray-600" title={`The reason provided by ${serviceName}.`}>
               {message.deadLetterReason}
             </span>
           </div>
@@ -474,7 +484,7 @@ export function MessageDetailPanel({ message, onViewPattern, insights }: Message
 
       {/* Tab Content */}
       <div className="flex-1 overflow-auto bg-gray-50">
-        <TabContent tab={activeTab} message={message} onViewPattern={onViewPattern} insights={insights} />
+        <TabContent tab={activeTab} message={message} onViewPattern={onViewPattern} insights={insights} provider={provider} />
       </div>
 
       {/* Action Buttons */}

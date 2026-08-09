@@ -10,7 +10,7 @@ import { test, expect } from '../fixtures/base';
 test('cloud bridge page renders without crashing', async ({ page }) => {
   await page.goto('/cloud-bridge');
   // Page header must appear — text from CloudBridgePage.tsx
-  await expect(page.getByText(/Cloud Bridge/i)).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole('heading', { name: /Cloud Bridge/i })).toBeVisible({ timeout: 10_000 });
   // Error boundary must NOT be triggered
   await expect(page.getByText(/Something went wrong/i)).not.toBeVisible();
 });

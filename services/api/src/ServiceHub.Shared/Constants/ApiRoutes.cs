@@ -281,6 +281,57 @@ public static class ApiRoutes
         public const string Signatures = $"{VersionedBase}/namespaces/{{namespaceId:guid}}/dlq/signatures";
 
         /// <summary>
+        /// Route for a single failure signature's detail, by its stable hash.
+        /// </summary>
+        public const string SignatureById = $"{Signatures}/{{signatureHash}}";
+
+        /// <summary>
+        /// Route for a failure signature's merged, computed lifecycle timeline.
+        /// </summary>
+        public const string SignatureTimeline = $"{SignatureById}/timeline";
+
+        /// <summary>
+        /// Route for transitioning a failure signature's lifecycle status.
+        /// </summary>
+        public const string SignatureStatus = $"{SignatureById}/status";
+
+        /// <summary>
+        /// Route for creating or updating a failure signature's operational knowledge.
+        /// </summary>
+        public const string SignatureKnowledge = $"{SignatureById}/knowledge";
+
+        /// <summary>
+        /// Route for a failure signature's operational knowledge version history.
+        /// </summary>
+        public const string SignatureKnowledgeHistory = $"{SignatureKnowledge}/history";
+
+        /// <summary>
+        /// Route for marking a failure signature's knowledge as needing review.
+        /// </summary>
+        public const string SignatureKnowledgeReview = $"{SignatureKnowledge}/review";
+
+        /// <summary>
+        /// Route for dry-running a replay of a failure signature's member messages.
+        /// </summary>
+        public const string SignatureReplayPreview = $"{SignatureById}/replay/preview";
+
+        /// <summary>
+        /// Route for starting a replay of a failure signature's member messages.
+        /// </summary>
+        public const string SignatureReplay = $"{SignatureById}/replay";
+
+        /// <summary>
+        /// Route for listing a failure signature's past and in-flight replay jobs, most recent first.
+        /// </summary>
+        public const string SignatureReplayHistory = $"{SignatureReplay}/history";
+
+        /// <summary>
+        /// Route for finding this failure signature's occurrences in other namespaces in the
+        /// fleet (Root Cause Explorer).
+        /// </summary>
+        public const string SignatureRootCauseMatches = $"{SignatureById}/root-cause-matches";
+
+        /// <summary>
         /// Routes for auto-replay rule operations.
         /// </summary>
         public static class Rules
@@ -303,6 +354,23 @@ public static class ApiRoutes
             /// <summary>Route for rule execution statistics.</summary>
             public const string Stats = $"{Base}/{{id:long}}/stats";
         }
+    }
+
+    /// <summary>
+    /// Routes for polling/cancelling an in-flight signature-replay job. Not namespace-scoped
+    /// (like <see cref="Dlq.SignatureReplay"/>) — a job ID is already owner-scoped, matching the
+    /// shape of the bulk-operations job routes.
+    /// </summary>
+    public static class SignatureReplayJobs
+    {
+        /// <summary>Base route for signature-replay job operations.</summary>
+        public const string Base = $"{VersionedBase}/signature-replay-jobs";
+
+        /// <summary>Route for a specific signature-replay job by ID.</summary>
+        public const string ById = $"{Base}/{{id:guid}}";
+
+        /// <summary>Route for cancelling a signature-replay job.</summary>
+        public const string Cancel = $"{ById}/cancel";
     }
 
     /// <summary>Routes for the cross-namespace fleet operations overview.</summary>
@@ -353,5 +421,15 @@ public static class ApiRoutes
     {
         /// <summary>Base route for the caller-identity endpoint.</summary>
         public const string Base = $"{VersionedBase}/me";
+    }
+
+    /// <summary>Routes for the Investigation Center — incident command for failure investigation.</summary>
+    public static class FailureIntelligence
+    {
+        /// <summary>Base route for failure intelligence operations.</summary>
+        public const string Base = $"{VersionedBase}/failure-intelligence";
+
+        /// <summary>Route for the investigation center aggregated data.</summary>
+        public const string InvestigationCenter = $"{Base}/investigation-center";
     }
 }

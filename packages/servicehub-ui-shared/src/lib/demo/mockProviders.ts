@@ -16,6 +16,28 @@ import { generateAwsMockMessages } from '../awsMockData';
 import { generateGcpMockMessages } from '../gcpMockData';
 import type { Message as MockMessage } from '../mockData';
 import type { ProviderCapabilities, ProviderCapabilitiesMap } from '../api/cloudBridge';
+import type {
+  DlqSignaturesResponse,
+  DlqClusterSignature,
+  DlqSignatureDetail,
+  SignatureTimelineResponse,
+  FailureKnowledge,
+  RootCauseExplorerResponse,
+  RootCauseMatch,
+} from '../api/dlqSignatures';
+import type { DlqTimelineEvent, DlqHistoryItem, PaginatedResponse as DlqHistoryPage } from '../api/dlqHistory';
+import type { BulkOperationJob, PaginatedBulkOperationJobs } from '../api/bulkOperations';
+import type { AuditLogItem, AuditPageResponse } from '../api/audit';
+import type { FleetOverview, FleetNamespaceHealth, FleetHealthSeverity } from '../api/fleet';
+import type { RuleResponse } from '../api/rules';
+import type {
+  InvestigationCenterResponse,
+  CompactMetricsSummary,
+  InvestigationQueueItem,
+  FailedReplayItem,
+  KnowledgeReviewItem,
+  NewSignatureItem,
+} from '../../hooks/useInvestigationQueue';
 
 // ─── Namespace IDs ──────────────────────────────────────────────────────────
 // Stable IDs used in URL query params and as namespace identifiers in demo mode
@@ -376,4 +398,689 @@ export function getMockMessages(
     hasNextPage: skip + take < typed.length,
     hasPreviousPage: skip > 0,
   };
+}
+
+// ─── Failure Signatures & Knowledge ─────────────────────────────────────────
+// A small, curated set of failure signatures demonstrating ServiceHub's core
+// differentiator — Failure Intelligence — with populated operational knowledge,
+// version-appropriate review status, and a short timeline. Identical across all
+// three demo providers (the failure taxonomy here is cloud-agnostic); read-only,
+// matching the rest of Demo Mode. Not derived from the generated message fixtures
+// above — these are self-contained illustrative clusters, not tied to specific
+// generated message IDs.
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+interface DemoSignatureDefinition {
+  hash: string;
+  dominantDeadletterReason: string;
+  topTerms: string[];
+  explanation: string;
+  size: number;
+  isNew: boolean;
+  daysSinceFirstSeen: number;
+  status: DlqClusterSignature['status'];
+  trend: DlqClusterSignature['trend'];
+  knowledge: FailureKnowledge | null;
+  /** Past signature-replay job outcomes, most recent first — mirrors `knowledge`'s per-signature fixture pattern. */
+  replayHistory: BulkOperationJob[];
+  /** Occurrences of this same signature hash in other (fictional) namespaces in the fleet, for Root Cause Explorer. */
+  rootCauseMatches: RootCauseMatch[];
+  /** Namespace-wide audit entries in the 24h before firstSeenAt, for the Recent Changes Before Failure panel. */
+  recentChanges: AuditLogItem[];
+}
+
+const DEMO_SIGNATURE_DEFS: DemoSignatureDefinition[] = [
+  {
+    hash: 'demo-max-delivery-count-exceeded',
+    dominantDeadletterReason: 'MaxDeliveryCountExceeded',
+    topTerms: ['inventory-service', 'timeout', 'max-delivery-count'],
+    explanation:
+      'Messages exceeded the maximum delivery count without being completed — the consumer repeatedly abandons them.',
+    size: 42,
+    isNew: false,
+    daysSinceFirstSeen: 18,
+    status: 'Resolved',
+    trend: 'Recurring',
+    knowledge: {
+      rootCause:
+        'Downstream inventory service times out under load, causing the consumer to abandon the message repeatedly until MaxDeliveryCount is exceeded.',
+      resolutionNotes:
+        'Increased consumer visibility timeout and added exponential backoff; downstream inventory service was also scaled out.',
+      operationalNotes: 'Recurs during flash-sale traffic spikes — watch during planned promotions.',
+      runbookLink: 'https://wiki.example.com/runbooks/max-delivery-count',
+      owner: 'platform-team@example.com',
+      replayGuidance: 'Safe',
+      lastUpdatedAt: new Date(Date.now() - 3 * DAY_MS).toISOString(),
+      knowledgeVersion: 3,
+      reviewDueAt: new Date(Date.now() + 30 * DAY_MS).toISOString(),
+      tags: 'delivery,timeout,inventory',
+      updatedBy: 'alice@example.com',
+      isReviewOverdue: false,
+    },
+    replayHistory: [
+      {
+        id: 'demo-replay-job-max-delivery-1',
+        operationType: 'Replay',
+        status: 'Completed',
+        namespaceId: '',
+        namespaceDisplayName: '',
+        entityNameFilter: null,
+        statusFilter: null,
+        categoryFilter: null,
+        from: null,
+        to: null,
+        totalMatched: 42,
+        processedCount: 42,
+        successCount: 42,
+        failureCount: 0,
+        skippedCount: 0,
+        failureSample: null,
+        errorSummary: null,
+        createdAt: new Date(Date.now() - 3 * DAY_MS).toISOString(),
+        startedAt: new Date(Date.now() - 3 * DAY_MS).toISOString(),
+        completedAt: new Date(Date.now() - 3 * DAY_MS + 5 * 60_000).toISOString(),
+        isCancellable: false,
+      },
+    ],
+    rootCauseMatches: [],
+    recentChanges: [
+      {
+        id: 'demo-audit-max-delivery-1',
+        timestamp: new Date(Date.now() - 18 * DAY_MS - 5 * 60 * 60 * 1000).toISOString(),
+        userIdentity: 'alice@example.com',
+        action: 'Rule.Toggle',
+        outcome: 'Success',
+        namespaceId: null,
+        namespaceName: null,
+        entityName: null,
+        cloudProvider: null,
+        environment: null,
+        resourceName: 'Retry-on-timeout',
+        sequenceNumber: null,
+        detailsJson: null,
+        errorDetails: null,
+        clientIp: null,
+        userAgent: null,
+        correlationId: null,
+        httpMethod: null,
+        httpPath: null,
+      },
+      {
+        id: 'demo-audit-max-delivery-2',
+        timestamp: new Date(Date.now() - 18 * DAY_MS - 16 * 60 * 60 * 1000).toISOString(),
+        userIdentity: 'bob@example.com',
+        action: 'Namespace.Create',
+        outcome: 'Success',
+        namespaceId: null,
+        namespaceName: null,
+        entityName: null,
+        cloudProvider: null,
+        environment: null,
+        resourceName: 'prod-orders-eastus',
+        sequenceNumber: null,
+        detailsJson: null,
+        errorDetails: null,
+        clientIp: null,
+        userAgent: null,
+        correlationId: null,
+        httpMethod: null,
+        httpPath: null,
+      },
+    ],
+  },
+  {
+    hash: 'demo-poison-message',
+    dominantDeadletterReason: 'PoisonMessage',
+    topTerms: ['order-payload', 'schema-violation', 'sku'],
+    explanation: 'A single malformed message crashes the consumer on every delivery attempt.',
+    size: 7,
+    isNew: false,
+    daysSinceFirstSeen: 9,
+    status: 'Reopened',
+    trend: 'Escalating',
+    knowledge: {
+      rootCause: 'A malformed order payload (missing required `sku` field) crashes the consumer on every delivery attempt.',
+      resolutionNotes: 'Added schema validation at the producer boundary; the malformed payload was manually purged.',
+      operationalNotes: 'Reopened — a second, similarly malformed payload was seen from a different producer.',
+      runbookLink: 'https://wiki.example.com/runbooks/poison-message',
+      owner: 'checkout-team@example.com',
+      replayGuidance: 'Unsafe',
+      lastUpdatedAt: new Date(Date.now() - 1 * DAY_MS).toISOString(),
+      knowledgeVersion: 2,
+      reviewDueAt: new Date(Date.now() - 5 * DAY_MS).toISOString(),
+      tags: 'poison,schema,validation',
+      updatedBy: 'bob@example.com',
+      isReviewOverdue: true,
+    },
+    replayHistory: [
+      {
+        id: 'demo-replay-job-poison-message-1',
+        operationType: 'Replay',
+        status: 'Failed',
+        namespaceId: '',
+        namespaceDisplayName: '',
+        entityNameFilter: null,
+        statusFilter: null,
+        categoryFilter: null,
+        from: null,
+        to: null,
+        totalMatched: 7,
+        processedCount: 1,
+        successCount: 0,
+        failureCount: 1,
+        skippedCount: 0,
+        failureSample: [
+          { messageId: 'msg-poison-1', entityName: 'orders-processing', reason: 'Schema violation: missing sku field' },
+        ],
+        errorSummary: 'Replay rejected — signature is marked Unsafe for replay',
+        createdAt: new Date(Date.now() - 1 * DAY_MS).toISOString(),
+        startedAt: new Date(Date.now() - 1 * DAY_MS).toISOString(),
+        completedAt: new Date(Date.now() - 1 * DAY_MS + 60_000).toISOString(),
+        isCancellable: false,
+      },
+    ],
+    rootCauseMatches: [],
+    recentChanges: [],
+  },
+  {
+    hash: 'demo-deserialization-failure',
+    dominantDeadletterReason: 'DeserializationError',
+    topTerms: ['schema-version', 'json', 'consumer-mismatch'],
+    explanation: 'The producer emitted a message shape the consumer cannot deserialize.',
+    size: 15,
+    isNew: true,
+    daysSinceFirstSeen: 1,
+    status: 'Active',
+    trend: 'New',
+    knowledge: {
+      rootCause:
+        'Producer upgraded to a new message schema version without a compatible consumer deployed, so JSON deserialization throws on the new field shape.',
+      resolutionNotes: null,
+      operationalNotes: 'Under investigation — coordinating a compatible consumer rollout with the producer team.',
+      runbookLink: null,
+      owner: 'data-platform@example.com',
+      replayGuidance: 'Investigate',
+      lastUpdatedAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+      knowledgeVersion: 1,
+      reviewDueAt: null,
+      tags: 'schema,deserialization',
+      updatedBy: null,
+      isReviewOverdue: false,
+    },
+    replayHistory: [],
+    rootCauseMatches: [
+      {
+        namespaceId: 'demo-gcp-medstream-staging',
+        occurrenceCount: 9,
+        firstSeenAt: new Date(Date.now() - 60 * DAY_MS).toISOString(),
+        lastSeenAt: new Date(Date.now() - 55 * DAY_MS).toISOString(),
+        lifecycleStatus: 'Resolved',
+        knowledge: {
+          rootCause:
+            'Producer upgraded to a new message schema version without a compatible consumer deployed, so JSON deserialization throws on the new field shape.',
+          resolutionNotes: 'Pinned the consumer to the prior schema version until the compatible rollout shipped; then upgraded both together.',
+          operationalNotes: null,
+          runbookLink: 'https://wiki.example.com/runbooks/schema-deserialization',
+          owner: 'data-platform@example.com',
+          replayGuidance: 'Safe',
+          lastUpdatedAt: new Date(Date.now() - 55 * DAY_MS).toISOString(),
+          knowledgeVersion: 2,
+          reviewDueAt: null,
+          tags: 'schema,deserialization',
+          updatedBy: 'data-platform@example.com',
+          isReviewOverdue: false,
+        },
+        lastReplayOutcome: {
+          status: 'Completed',
+          createdAt: new Date(Date.now() - 54 * DAY_MS).toISOString(),
+        },
+      },
+    ],
+    recentChanges: [
+      {
+        id: 'demo-audit-deserialization-1',
+        timestamp: new Date(Date.now() - 1 * DAY_MS - 12 * 60 * 60 * 1000).toISOString(),
+        userIdentity: 'data-platform@example.com',
+        action: 'Rule.Create',
+        outcome: 'Success',
+        namespaceId: null,
+        namespaceName: null,
+        entityName: null,
+        cloudProvider: null,
+        environment: null,
+        resourceName: 'Schema-version-gate',
+        sequenceNumber: null,
+        detailsJson: null,
+        errorDetails: null,
+        clientIp: null,
+        userAgent: null,
+        correlationId: null,
+        httpMethod: null,
+        httpPath: null,
+      },
+    ],
+  },
+  {
+    hash: 'demo-authentication-failure',
+    dominantDeadletterReason: 'AuthenticationFailure',
+    topTerms: ['managed-identity', 'unauthorized', 'role-assignment'],
+    explanation: "The consumer's identity was rejected by a downstream dependency on every call.",
+    size: 63,
+    isNew: false,
+    daysSinceFirstSeen: 41,
+    status: 'Resolved',
+    trend: 'Recurring',
+    knowledge: {
+      rootCause:
+        "Consumer's managed identity role assignment was revoked during a permissions audit, causing every downstream call to fail with 401.",
+      resolutionNotes: 'Role assignment restored; added an alert on identity permission changes for this app.',
+      operationalNotes: 'Caused a full processing outage for ~40 minutes.',
+      runbookLink: 'https://wiki.example.com/runbooks/auth-failure',
+      owner: 'security-team@example.com',
+      replayGuidance: 'Safe',
+      lastUpdatedAt: new Date(Date.now() - 20 * DAY_MS).toISOString(),
+      knowledgeVersion: 2,
+      reviewDueAt: new Date(Date.now() + 14 * DAY_MS).toISOString(),
+      tags: 'auth,identity,security',
+      updatedBy: 'security-team@example.com',
+      isReviewOverdue: false,
+    },
+    replayHistory: [],
+    rootCauseMatches: [],
+    recentChanges: [],
+  },
+  {
+    hash: 'demo-duplicate-detection',
+    dominantDeadletterReason: 'DuplicateMessage',
+    topTerms: ['retry', 'duplicate-window', 'idempotency'],
+    explanation: 'Retried messages are arriving faster than the duplicate-detection window allows.',
+    size: 28,
+    isNew: false,
+    daysSinceFirstSeen: 25,
+    status: 'Suppressed',
+    trend: 'Recurring',
+    knowledge: {
+      rootCause:
+        'Producer retry logic re-sends the same message on ambiguous network timeouts, and the duplicate-detection window was shorter than the retry interval.',
+      resolutionNotes: 'Extended the duplicate-detection window from 10 minutes to 1 hour.',
+      operationalNotes: 'Known noisy signature — suppressed rather than resolved since occasional duplicates are expected and harmless.',
+      runbookLink: 'https://wiki.example.com/runbooks/duplicate-detection',
+      owner: 'platform-team@example.com',
+      replayGuidance: 'Safe',
+      lastUpdatedAt: new Date(Date.now() - 10 * DAY_MS).toISOString(),
+      knowledgeVersion: 2,
+      reviewDueAt: new Date(Date.now() + 60 * DAY_MS).toISOString(),
+      tags: 'duplicate,idempotency,retry',
+      updatedBy: 'alice@example.com',
+      isReviewOverdue: false,
+    },
+    replayHistory: [],
+    rootCauseMatches: [],
+    recentChanges: [],
+  },
+];
+
+function buildDemoCluster(def: DemoSignatureDefinition): DlqClusterSignature {
+  const firstSeenAt = new Date(Date.now() - def.daysSinceFirstSeen * DAY_MS);
+  const windowEnd = new Date();
+  return {
+    size: def.size,
+    messageIds: Array.from({ length: Math.min(def.size, 5) }, (_, i) => 900000 + i),
+    dominantEntity: 'orders-processing',
+    dominantDeadletterReason: def.dominantDeadletterReason,
+    dominantDeadletterReasonCount: def.size,
+    topTerms: def.topTerms,
+    isNew: def.isNew,
+    firstSeenAt: firstSeenAt.toISOString(),
+    occurrenceCount: def.size,
+    windowStart: firstSeenAt.toISOString(),
+    windowEnd: windowEnd.toISOString(),
+    explanation: def.explanation,
+    knowledge: def.knowledge,
+    signatureHash: def.hash,
+    status: def.status,
+    trend: def.trend,
+  };
+}
+
+let demoClusterCache: DlqClusterSignature[] | null = null;
+
+function getDemoClusters(): DlqClusterSignature[] {
+  if (!demoClusterCache) {
+    demoClusterCache = DEMO_SIGNATURE_DEFS.map(buildDemoCluster);
+  }
+  return demoClusterCache;
+}
+
+/**
+ * Get a namespace's mock DLQ failure signatures. Identical curated set across
+ * providers — read-only, matching the rest of Demo Mode.
+ */
+export function getMockDlqSignatures(_provider: CloudProviderType): DlqSignaturesResponse {
+  return {
+    available: true,
+    method: 'demo',
+    batchSize: 200,
+    clusters: getDemoClusters(),
+    singletons: [],
+  };
+}
+
+/**
+ * Get full mock detail for a single demo failure signature, or undefined if the
+ * hash doesn't match one of the curated demo signatures.
+ */
+export function getMockDlqSignatureDetail(
+  provider: CloudProviderType,
+  signatureHash: string,
+): DlqSignatureDetail | undefined {
+  const cluster = getDemoClusters().find((c) => c.signatureHash === signatureHash);
+  if (!cluster) return undefined;
+
+  return {
+    ...cluster,
+    namespaceId: DEMO_NAMESPACE_IDS[provider],
+    confidence: 'High',
+    isCurrentlyClustered: true,
+    relatedMessages: [],
+  };
+}
+
+/**
+ * Get a mock lifecycle timeline for a demo failure signature, or undefined if the
+ * hash doesn't match one of the curated demo signatures.
+ */
+export function getMockSignatureTimeline(signatureHash: string): SignatureTimelineResponse | undefined {
+  const cluster = getDemoClusters().find((c) => c.signatureHash === signatureHash);
+  if (!cluster) return undefined;
+
+  const events: DlqTimelineEvent[] = [
+    {
+      eventType: 'SignatureFirstObserved',
+      description: 'Signature first observed in this namespace\'s DLQ',
+      timestamp: cluster.firstSeenAt,
+      details: null,
+    },
+  ];
+
+  if (cluster.knowledge?.lastUpdatedAt) {
+    events.push({
+      eventType: 'KnowledgeRecorded',
+      description: 'Operational knowledge recorded for this signature',
+      timestamp: cluster.knowledge.lastUpdatedAt,
+      details: null,
+    });
+  }
+
+  if (cluster.status !== 'Active') {
+    events.push({
+      eventType: 'StatusChanged',
+      description: `Status changed to ${cluster.status}`,
+      timestamp: cluster.windowEnd,
+      details: { From: 'Active', To: cluster.status, Notes: '' },
+    });
+  }
+
+  return {
+    signatureHash,
+    events: events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()),
+  };
+}
+
+/**
+ * Get a mock replay-job history page for a demo failure signature, or undefined if the hash
+ * doesn't match one of the curated demo signatures. Backs the Replay Safety & History panel in
+ * demo mode, where real replay mutations reject but this read-only history list still renders.
+ */
+export function getMockSignatureReplayHistory(signatureHash: string): PaginatedBulkOperationJobs | undefined {
+  const def = DEMO_SIGNATURE_DEFS.find((d) => d.hash === signatureHash);
+  if (!def) return undefined;
+
+  return {
+    items: def.replayHistory,
+    totalCount: def.replayHistory.length,
+    page: 1,
+    pageSize: 20,
+    hasNextPage: false,
+    hasPreviousPage: false,
+  };
+}
+
+/**
+ * Root Cause Explorer, demo mode: this signature's occurrences in other (fictional) namespaces
+ * in the fleet, or undefined if the hash doesn't match one of the curated demo signatures.
+ * Demo mode simulates a single namespace per cloud provider, so most demo signatures have no
+ * fleet matches — one curated signature (`demo-deserialization-failure`) has a fixture match to
+ * demonstrate the populated state.
+ */
+export function getMockRootCauseMatches(signatureHash: string): RootCauseExplorerResponse | undefined {
+  const def = DEMO_SIGNATURE_DEFS.find((d) => d.hash === signatureHash);
+  if (!def) return undefined;
+
+  return {
+    signatureHash: def.hash,
+    dominantDeadletterReason: def.dominantDeadletterReason,
+    topTerms: def.topTerms,
+    totalOccurrencesAcrossFleet: def.size + def.rootCauseMatches.reduce((sum, m) => sum + m.occurrenceCount, 0),
+    matches: def.rootCauseMatches,
+  };
+}
+
+/**
+ * Recent Changes Before Failure, demo mode: this signature's fixture audit entries in the 24h
+ * before its firstSeenAt, or undefined if the hash doesn't match one of the curated demo
+ * signatures. Backs the Recent Changes Before Failure panel in demo mode, where `useAuditLogs`
+ * is disabled entirely (`enabled: !isDemoMode`) — most demo signatures have no fixture changes,
+ * matching `rootCauseMatches`' mostly-empty curated pattern.
+ */
+export function getMockRecentChanges(signatureHash: string): AuditPageResponse | undefined {
+  const def = DEMO_SIGNATURE_DEFS.find((d) => d.hash === signatureHash);
+  if (!def) return undefined;
+
+  return {
+    items: def.recentChanges,
+    totalCount: def.recentChanges.length,
+    page: 1,
+    pageSize: 20,
+    hasNextPage: false,
+    hasPreviousPage: false,
+  };
+}
+
+// ─── Fleet Health ────────────────────────────────────────────────────────────
+// Demo mode simulates a single namespace per cloud provider, so fleet-wide health collapses to
+// that one namespace's rollup — derived from the same curated signature fixtures backing
+// Signature List/Details, so the two surfaces never disagree in demo mode.
+
+function buildDemoFleetNamespaceHealth(provider: CloudProviderType): FleetNamespaceHealth {
+  const clusters = getDemoClusters();
+  const activeClusters = clusters.filter((c) => c.status === 'Active' || c.status === 'Reopened');
+  const activeCount = activeClusters.reduce((sum, c) => sum + c.size, 0);
+  const newInWindow = clusters.filter((c) => c.isNew).reduce((sum, c) => sum + c.size, 0);
+  const totalCount = clusters.reduce((sum, c) => sum + c.size, 0);
+  const topActive = [...activeClusters].sort((a, b) => b.size - a.size)[0] ?? null;
+  const oldestActive =
+    [...activeClusters].sort((a, b) => new Date(a.firstSeenAt).getTime() - new Date(b.firstSeenAt).getTime())[0] ??
+    null;
+  // Mirrors FleetOverviewService.DetermineSeverity's thresholds (services/api).
+  const severity: FleetHealthSeverity =
+    newInWindow >= 10 || activeCount >= 50 ? 'critical' : activeCount > 0 || newInWindow > 0 ? 'warning' : 'healthy';
+  const namespace = getMockNamespaces(provider)[0];
+
+  return {
+    namespaceId: namespace.id,
+    namespaceName: namespace.displayName ?? namespace.name,
+    provider,
+    environment: namespace.environment ?? 'prod',
+    activeCount,
+    newInWindow,
+    resolvedInWindow: 0,
+    totalCount,
+    topEntity: topActive?.dominantEntity ?? null,
+    topEntityCount: topActive?.size ?? 0,
+    topCategory: topActive?.dominantDeadletterReason ?? null,
+    oldestActiveDetectedAt: oldestActive?.firstSeenAt ?? null,
+    severity,
+  };
+}
+
+/** Get the mock cross-namespace fleet overview for the standalone Fleet page. */
+export function getMockFleetOverview(provider: CloudProviderType): FleetOverview {
+  const nsHealth = buildDemoFleetNamespaceHealth(provider);
+  const topCategories = getDemoClusters()
+    .filter((c) => c.status === 'Active' || c.status === 'Reopened')
+    .reduce<Record<string, number>>((acc, c) => {
+      acc[c.dominantDeadletterReason] = (acc[c.dominantDeadletterReason] ?? 0) + c.size;
+      return acc;
+    }, {});
+
+  return {
+    generatedAt: new Date().toISOString(),
+    windowHours: 24,
+    namespaceCount: 1,
+    totalActive: nsHealth.activeCount,
+    totalNewInWindow: nsHealth.newInWindow,
+    totalResolvedInWindow: nsHealth.resolvedInWindow,
+    namespaces: [nsHealth],
+    topCategories,
+    dailyTrend: [],
+  };
+}
+
+// ─── Investigation Center (Incident Center) ─────────────────────────────────
+
+/**
+ * Get the mock Incident Center payload — derived entirely from the same curated
+ * `DEMO_SIGNATURE_DEFS` fixtures backing Signature List/Details, so the two surfaces never
+ * disagree in demo mode.
+ */
+export function getMockInvestigationQueue(provider: CloudProviderType): InvestigationCenterResponse {
+  const namespaceId = DEMO_NAMESPACE_IDS[provider];
+  const clusters = getDemoClusters();
+  const displayName = (c: DlqClusterSignature) => `${c.dominantDeadletterReason} · ${c.dominantEntity}`;
+
+  const metrics: CompactMetricsSummary = {
+    totalSignatures: clusters.length,
+    activeSignatures: clusters.filter((c) => c.status === 'Active' || c.status === 'Reopened').length,
+    resolvedSignatures: clusters.filter((c) => c.status === 'Resolved').length,
+    suppressedSignatures: clusters.filter((c) => c.status === 'Suppressed').length,
+    archivedSignatures: clusters.filter((c) => c.status === 'Archived').length,
+    requiresAction: clusters.filter((c) => c.status === 'Active' || c.status === 'Reopened').length,
+  };
+
+  const investigationQueue: InvestigationQueueItem[] = clusters
+    .filter((c) => c.status === 'Active' || c.status === 'Reopened')
+    .map((c) => ({
+      signatureHash: c.signatureHash,
+      namespaceId,
+      displayName: displayName(c),
+      dominantDeadletterReason: c.dominantDeadletterReason,
+      messageCount: c.size,
+      status: c.status,
+      trend: c.trend,
+      priorityScore: c.trend === 'Escalating' ? 18 : c.isNew ? 8 : 5,
+      hasKnowledge: c.knowledge != null,
+      isEscalating: c.trend === 'Escalating',
+      owner: c.knowledge?.owner ?? null,
+      recommendedNextAction:
+        c.trend === 'Escalating'
+          ? 'Escalating — review Replay Safety before replaying.'
+          : 'New signature — record root-cause knowledge.',
+      explanation: c.explanation,
+    }))
+    .sort((a, b) => b.priorityScore - a.priorityScore);
+
+  const failedReplays: FailedReplayItem[] = DEMO_SIGNATURE_DEFS.flatMap((def) =>
+    def.replayHistory
+      .filter((job) => job.status === 'Failed')
+      .map((job) => ({
+        jobId: job.id,
+        namespaceId,
+        signatureHash: def.hash,
+        signatureName: `${def.dominantDeadletterReason} · orders-processing`,
+        jobStatus: job.status,
+        failureReason: job.errorSummary,
+        createdAt: job.createdAt,
+        completedAt: job.completedAt,
+        attemptedCount: job.processedCount,
+        failedCount: job.failureCount,
+        recommendedNextAction: 'Review Replay Safety before retrying.',
+      })),
+  );
+
+  const knowledgeReview: KnowledgeReviewItem[] = DEMO_SIGNATURE_DEFS.filter(
+    (def) => def.knowledge?.isReviewOverdue,
+  ).map((def) => {
+    const cluster = clusters.find((c) => c.signatureHash === def.hash)!;
+    return {
+      signatureHash: def.hash,
+      namespaceId,
+      displayName: displayName(cluster),
+      messageCount: def.size,
+      status: def.status,
+      owner: def.knowledge?.owner ?? null,
+      hasKnowledge: def.knowledge != null,
+      isReviewOverdue: true,
+      reviewDueAt: def.knowledge?.reviewDueAt ?? null,
+      lastUpdatedAt: def.knowledge?.lastUpdatedAt ?? null,
+      recommendedNextAction: 'Knowledge review is overdue — confirm root cause is still accurate.',
+    };
+  });
+
+  const newSignatures: NewSignatureItem[] = DEMO_SIGNATURE_DEFS.filter((def) => def.isNew).map((def) => {
+    const cluster = clusters.find((c) => c.signatureHash === def.hash)!;
+    return {
+      signatureHash: def.hash,
+      namespaceId,
+      displayName: displayName(cluster),
+      dominantDeadletterReason: def.dominantDeadletterReason,
+      messageCount: def.size,
+      firstSeenAt: cluster.firstSeenAt,
+      lastSeenAt: cluster.windowEnd,
+      explanation: def.explanation,
+      recommendedNextAction: 'No knowledge on file yet — record root cause.',
+    };
+  });
+
+  const nsHealth = buildDemoFleetNamespaceHealth(provider);
+
+  return {
+    metrics,
+    investigationQueue,
+    failedReplays,
+    knowledgeReview,
+    newSignatures,
+    recentlyChanged: [],
+    fleetHealth: {
+      namespaceCount: 1,
+      totalActive: nsHealth.activeCount,
+      totalNewInWindow: nsHealth.newInWindow,
+      totalResolvedInWindow: nsHealth.resolvedInWindow,
+      topUnhealthyNamespaces: nsHealth.severity === 'healthy' ? [] : [nsHealth],
+    },
+  };
+}
+
+// ─── Auto Replay Rules ───────────────────────────────────────────────────────
+// No auto-replay rules are pre-configured in demo mode — this returns the real empty list so
+// the Rules page renders its own empty state instead of a query that never runs.
+export function getMockRules(): RuleResponse[] {
+  return [];
+}
+
+// ─── DLQ History ─────────────────────────────────────────────────────────────
+// Demo mode's DLQ story lives in Signature List/Details' curated clusters, not a separate
+// per-message history feed — this returns an empty page so the DLQ History table renders its
+// real empty state instead of a query that never runs.
+export function getMockDlqHistory(): DlqHistoryPage<DlqHistoryItem> {
+  return { items: [], totalCount: 0, page: 1, pageSize: 20, hasNextPage: false, hasPreviousPage: false };
+}
+
+// ─── Audit Trail ─────────────────────────────────────────────────────────────
+// General namespace-wide audit log, distinct from `getMockRecentChanges`' per-signature
+// pre-failure window — no fixture audit trail beyond the curated `recentChanges` entries exists
+// yet, so this returns an empty page so the Audit page renders its real empty state.
+export function getMockAuditLogs(): AuditPageResponse {
+  return { items: [], totalCount: 0, page: 1, pageSize: 20, hasNextPage: false, hasPreviousPage: false };
 }

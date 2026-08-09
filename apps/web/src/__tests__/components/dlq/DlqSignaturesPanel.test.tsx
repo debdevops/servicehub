@@ -1,7 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { DlqSignaturesPanel } from '@/components/dlq/DlqSignaturesPanel';
 import type { DlqSignaturesResponse } from '@servicehub/ui-shared/lib/api/dlqSignatures';
+
+function renderWithRouter(ui: React.ReactElement) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
 
 vi.mock('@servicehub/ui-shared/hooks/useDlqSignatures', () => ({
   useDlqSignatures: vi.fn(),
@@ -30,6 +35,9 @@ function makeResponse(overrides: Partial<DlqSignaturesResponse> = {}): DlqSignat
         windowStart: '2026-01-01T00:00:00Z',
         windowEnd: '2026-01-01T01:00:00Z',
         explanation: '4 messages: max delivery count exceeded on orders-queue.',
+        signatureHash: 'hash-1',
+        status: 'Active',
+        trend: 'New',
       },
     ],
     singletons: [{ messageId: 5, dominantEntity: 'orders-queue', dominantDeadletterReason: 'TTLExpiredException' }],
@@ -40,7 +48,7 @@ function makeResponse(overrides: Partial<DlqSignaturesResponse> = {}): DlqSignat
 describe('DlqSignaturesPanel', () => {
   it('renders nothing while loading', () => {
     mockUseDlqSignatures.mockReturnValue({ data: undefined, loading: true, error: null, available: false });
-    const { container } = render(<DlqSignaturesPanel namespaceId="ns-1" />);
+    const { container } = renderWithRouter(<DlqSignaturesPanel namespaceId="ns-1" />);
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -51,7 +59,7 @@ describe('DlqSignaturesPanel', () => {
       error: null,
       available: false,
     });
-    const { container } = render(<DlqSignaturesPanel namespaceId="ns-1" />);
+    const { container } = renderWithRouter(<DlqSignaturesPanel namespaceId="ns-1" />);
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -62,14 +70,14 @@ describe('DlqSignaturesPanel', () => {
       error: null,
       available: true,
     });
-    const { container } = render(<DlqSignaturesPanel namespaceId="ns-1" />);
+    const { container } = renderWithRouter(<DlqSignaturesPanel namespaceId="ns-1" />);
     expect(container).toBeEmptyDOMElement();
   });
 
   it('renders cluster cards, singleton count, and filters on click', () => {
     mockUseDlqSignatures.mockReturnValue({ data: makeResponse(), loading: false, error: null, available: true });
     const onFilterEntity = vi.fn();
-    render(<DlqSignaturesPanel namespaceId="ns-1" onFilterEntity={onFilterEntity} />);
+    renderWithRouter(<DlqSignaturesPanel namespaceId="ns-1" onFilterEntity={onFilterEntity} />);
 
     expect(screen.getByText('Recurring Failure Signatures')).toBeInTheDocument();
     expect(screen.getByText(/4 messages: max delivery count exceeded/)).toBeInTheDocument();
@@ -77,5 +85,8 @@ describe('DlqSignaturesPanel', () => {
 
     fireEvent.click(screen.getByText('Filter table to orders-queue →'));
     expect(onFilterEntity).toHaveBeenCalledWith('orders-queue');
+
+    const detailsLink = screen.getByText('View details →');
+    expect(detailsLink).toHaveAttribute('href', '/signatures/hash-1?namespace=ns-1');
   });
 });

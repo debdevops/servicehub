@@ -132,6 +132,32 @@ public sealed class AwsMessageReceiverRegressionTests
     }
 
     [Fact]
+    public async Task PeekMessagesAsync_MessageCarriesCorrelationIdAttribute_PopulatesCorrelationId()
+    {
+        // Regresses the Multi-Cloud Trace gap this fix closes: SQS (like Pub/Sub) has no
+        // dedicated SDK correlation field — unlike Azure Service Bus, whose native
+        // CorrelationId property was already mapped — so without this extraction,
+        // DlqMonitorService persisted every AWS DLQ message with CorrelationId=null, making
+        // it permanently unreachable via Cross-Cloud Trace's historical-DLQ lookup once it's
+        // no longer peekable live.
+        var (sut, _, _) = BuildSut(new ReceiveMessageResponse
+        {
+            Messages =
+            [
+                BuildSqsMessage("m-1", "rh-1", attributes: new Dictionary<string, MessageAttributeValue>
+                {
+                    ["correlationId"] = new MessageAttributeValue { DataType = "String", StringValue = "shs-abc123-0001" },
+                }),
+            ],
+        });
+
+        var result = await sut.PeekMessagesAsync(new GetMessagesRequest(TestNamespaceId, QueueName, null, false, 50));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value[0].CorrelationId.Should().Be("shs-abc123-0001");
+    }
+
+    [Fact]
     public async Task PeekMessagesAsync_DeduplicatesRedeliveriesAndReleasesLatestHandle()
     {
         var (sut, _, releases) = BuildSut(
@@ -185,6 +211,31 @@ public sealed class AwsMessageReceiverRegressionTests
         // Identity derives from MessageId, not the per-receive receipt handle —
         // this is what makes replay/purge work without a prior-peek cache.
         first.Value[0].SequenceNumber.Should().Be(second.Value[0].SequenceNumber);
+    }
+
+    [Theory]
+    [InlineData("stable-id")]
+    [InlineData("0ee6c520-3396-4ba5-9724-5926f2afcc68")]
+    [InlineData("8a57b311-f56c-4cea-a814-65e4e7069393")]
+    [InlineData("another-message-id-entirely")]
+    public async Task PeekMessagesAsync_SequenceNumberSurvivesJsDoublePrecisionRoundTrip(string messageId)
+    {
+        // Regression for a real bug: sequence numbers are a SHA-256 hash of the
+        // MessageId with no native ordering, so the full 63-bit range produces values
+        // like 1650169100759989265 — outside JS's Number.MAX_SAFE_INTEGER (2^53-1).
+        // Browsers silently round such values on JSON.parse, so replay/purge requests
+        // echoed the corrupted number back and the backend's live re-scan never found
+        // a match (404 "MessageNotFound") even though the message was peeked seconds
+        // earlier. Masking to 53 bits keeps every value exactly representable as a
+        // JS double.
+        var (sut, _, _) = BuildSut(
+            new ReceiveMessageResponse { Messages = [BuildSqsMessage(messageId, "rh")] });
+
+        var result = await sut.PeekMessagesAsync(new GetMessagesRequest(TestNamespaceId, QueueName, null, false, 1));
+
+        var seq = result.Value[0].SequenceNumber;
+        seq.Should().BeLessThanOrEqualTo(9_007_199_254_740_991L); // Number.MAX_SAFE_INTEGER
+        ((double)seq).Should().Be(seq, "the value must round-trip exactly through a JS double");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -316,6 +367,6 @@ public sealed class AwsMessageReceiverRegressionTests
     {
         var hash = System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(messageId));
-        return BitConverter.ToInt64(hash, 0) & long.MaxValue;
+        return BitConverter.ToInt64(hash, 0) & ((1L << 53) - 1);
     }
 }

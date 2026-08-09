@@ -14,6 +14,7 @@ import {
   ScrollText,
   HelpCircle,
   Settings,
+  AlertTriangle,
 } from 'lucide-react';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 
@@ -35,6 +36,7 @@ export function IconRail() {
 
   const items: RailItem[] = [
     { to: `${navPrefix}/dashboard`, label: 'Namespace Overview', icon: LayoutDashboard },
+    { to: `${navPrefix}/incidents`, label: 'Incident Center', icon: AlertTriangle },
     { to: `${navPrefix}/fleet`, label: 'Fleet Health', icon: Layers },
     { to: `${navPrefix}/messages-overview?tab=active`, label: 'Active Messages', icon: Database },
     { to: `${navPrefix}/messages-overview?tab=deadletter`, label: 'Dead-Letter', icon: AlertCircle },

@@ -22,6 +22,14 @@ public sealed class ApiKeyConfiguration
     public string? Description { get; init; }
 
     /// <summary>
+    /// Gets or sets an optional namespace allow-list (GUID strings) restricting this key to a
+    /// subset of the namespaces its owner scope would otherwise grant access to. Null or empty
+    /// means unrestricted (today's behavior) — this can only narrow access, never widen it, since
+    /// enforcement always intersects with the existing owner/share check.
+    /// </summary>
+    public string[]? Namespaces { get; init; }
+
+    /// <summary>
     /// Checks if this API key has the specified scope.
     /// Keys with no scopes defined are treated as admin (all permissions).
     /// </summary>

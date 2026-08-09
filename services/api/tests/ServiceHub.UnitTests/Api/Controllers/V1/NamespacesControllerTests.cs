@@ -27,6 +27,7 @@ public class NamespacesControllerTests
     private readonly Mock<IConnectionStringProtector> _connectionStringProtector;
     private readonly Mock<ILogger<NamespacesController>> _logger;
     private readonly Mock<IPlatformEventBus> _eventBus;
+    private readonly Mock<IAuditLogger> _auditLogger;
     private readonly NamespacesController _controller;
 
     public NamespacesControllerTests()
@@ -37,6 +38,7 @@ public class NamespacesControllerTests
         _connectionStringProtector = new Mock<IConnectionStringProtector>();
         _logger = new Mock<ILogger<NamespacesController>>();
         _eventBus = new Mock<IPlatformEventBus>();
+        _auditLogger = new Mock<IAuditLogger>();
 
         // Default: PublishAsync is a no-op ValueTask — does not throw.
         _eventBus
@@ -49,7 +51,7 @@ public class NamespacesControllerTests
             _clientCache.Object,
             _connectionStringProtector.Object,
             _logger.Object,
-            auditLogger: null,
+            auditLogger: _auditLogger.Object,
             eventBus: _eventBus.Object)
         {
             ControllerContext = new ControllerContext
@@ -130,7 +132,7 @@ public class NamespacesControllerTests
     public async Task GetAll_Success_ShouldReturnOkWithNamespaces()
     {
         var ns = CreateTestNamespace();
-        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
 
         var result = await _controller.GetAll();
@@ -144,7 +146,7 @@ public class NamespacesControllerTests
     [Fact]
     public async Task GetAll_Failure_ShouldReturnError()
     {
-        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Failure(Error.Internal("ERR", "Failed")));
 
         var result = await _controller.GetAll();
@@ -200,7 +202,7 @@ public class NamespacesControllerTests
             "Test NS");
 
         // Controller now uses GetByOwnerAsync (owner-scoped) for all duplicate detection.
-        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
 
         _clientFactory.Setup(f => f.ValidateConnectionString(It.IsAny<string>()))
@@ -215,6 +217,10 @@ public class NamespacesControllerTests
         var result = await _controller.Create(request);
 
         result.Result.Should().BeOfType<CreatedAtActionResult>();
+        _auditLogger.Verify(a => a.LogCriticalAction(
+            It.IsAny<HttpContext>(), It.IsAny<string>(), "Namespace.Create", "Succeeded",
+            It.IsAny<Guid?>(), It.IsAny<EnvironmentType?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<string?>(), "test-namespace", It.IsAny<long?>(), It.IsAny<string?>()), Times.Once);
     }
 
     [Fact]
@@ -227,12 +233,16 @@ public class NamespacesControllerTests
 
         var existingNs = CreateTestNamespace(); // OwnerId = "__spa__", same as controller default
         // Return a list containing a namespace with the same name as the request.
-        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { existingNs }));
 
         var result = await _controller.Create(request);
 
         result.Result.Should().BeOfType<ConflictObjectResult>();
+        _auditLogger.Verify(a => a.LogCriticalAction(
+            It.IsAny<HttpContext>(), It.IsAny<string>(), "Namespace.Create", It.IsAny<string>(),
+            It.IsAny<Guid?>(), It.IsAny<EnvironmentType?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<long?>(), It.IsAny<string?>()), Times.Never);
     }
 
     [Fact]
@@ -243,7 +253,7 @@ public class NamespacesControllerTests
             null,
             ConnectionAuthType.ConnectionString);
 
-        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
 
         var result = await _controller.Create(request);
@@ -259,7 +269,7 @@ public class NamespacesControllerTests
             "invalid-conn-string",
             ConnectionAuthType.ConnectionString);
 
-        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
 
         _clientFactory.Setup(f => f.ValidateConnectionString(It.IsAny<string>()))
@@ -279,7 +289,7 @@ public class NamespacesControllerTests
             ConnectionAuthType.ManagedIdentity,
             "Test MI NS");
 
-        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
 
         _namespaceRepository.Setup(r => r.AddAsync(It.IsAny<Namespace>(), It.IsAny<CancellationToken>()))
@@ -742,7 +752,7 @@ public class NamespacesControllerTests
             "Event Test NS");
 
         _namespaceRepository
-            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
 
         _clientFactory
@@ -779,7 +789,7 @@ public class NamespacesControllerTests
             "Event Fail NS");
 
         _namespaceRepository
-            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
 
         _clientFactory
