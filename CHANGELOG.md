@@ -1,5 +1,14 @@
 # ServiceHub Changelog
 
+## [3.5.0] — 2026-08-09
+
+### Changed
+
+- Version bump only — begins the v3.5.0 Integration Baseline milestone (no functional changes; see release plan for v3.6.0 Stabilization/Bug Bash and v3.7.0 Release Candidate).
+- `.version` updated to `3.5.0`
+
+---
+
 ## [3.4.0] — 2026-08-02
 
 ### Removed
