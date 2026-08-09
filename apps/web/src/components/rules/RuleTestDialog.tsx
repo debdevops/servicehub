@@ -2,6 +2,7 @@ import { X, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import { useTestRule } from '@servicehub/ui-shared/hooks/useRules';
 import type { RuleCondition, RuleResponse, RuleTestResponse } from '@servicehub/ui-shared/lib/api/rules';
 import { useState, useEffect } from 'react';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 interface RuleTestDialogProps {
   open: boolean;
@@ -57,6 +58,9 @@ export function RuleTestDialog({
     return () => window.removeEventListener('keydown', handleEscape);
   }, [open, onClose]);
 
+  // Declared before the early return — hooks must run on every render.
+  const dialogRef = useFocusTrap<HTMLDivElement>(open);
+
   if (!open) return null;
 
   const title = rule ? `Test Rule: ${rule.name}` : 'Test Rule Conditions';
@@ -65,6 +69,7 @@ export function RuleTestDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div
         className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4"
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="rule-test-dialog-title"

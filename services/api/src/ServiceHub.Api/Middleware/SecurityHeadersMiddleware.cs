@@ -54,17 +54,25 @@ public sealed class SecurityHeadersMiddleware
 
             try
             {
+                // Assignment, not Append. Append adds a second value to a header that is already
+                // present, so anything set upstream (a reverse proxy, another middleware, a
+                // static-file handler) produced a duplicated header such as
+                // "X-Frame-Options: DENY, DENY". Browsers treat a conflicting duplicate of some
+                // of these as invalid and may ignore the header entirely — which would silently
+                // disable the protection this middleware exists to add. Assignment makes this
+                // middleware authoritative, which is the intent.
+
                 // Prevent MIME type sniffing
-                headers.Append("X-Content-Type-Options", _options.ContentTypeOptions);
+                headers["X-Content-Type-Options"] = _options.ContentTypeOptions;
 
                 // Prevent clickjacking
-                headers.Append("X-Frame-Options", _options.FrameOptions);
+                headers["X-Frame-Options"] = _options.FrameOptions;
 
                 // Control referrer information
-                headers.Append("Referrer-Policy", _options.ReferrerPolicy);
+                headers["Referrer-Policy"] = _options.ReferrerPolicy;
 
                 // Prevent XSS attacks (legacy header, but still useful)
-                headers.Append("X-XSS-Protection", _options.XssProtection);
+                headers["X-XSS-Protection"] = _options.XssProtection;
 
                 // Content Security Policy - permissive only in Development; every other
                 // environment (Production, Staging, any custom name) gets the
@@ -74,19 +82,19 @@ public sealed class SecurityHeadersMiddleware
                 var csp = _isDevelopment
                     ? _options.ContentSecurityPolicyDevelopment
                     : _options.ContentSecurityPolicyProduction;
-                headers.Append("Content-Security-Policy", csp);
+                headers["Content-Security-Policy"] = csp;
 
                 // Permissions Policy - disable unnecessary features
-                headers.Append("Permissions-Policy", _options.PermissionsPolicy);
+                headers["Permissions-Policy"] = _options.PermissionsPolicy;
 
                 // HSTS - only in production over HTTPS
                 if (_isProduction && context.Request.IsHttps)
                 {
-                    headers.Append("Strict-Transport-Security", _options.StrictTransportSecurity);
+                    headers["Strict-Transport-Security"] = _options.StrictTransportSecurity;
                 }
 
                 // Indicate this is an API (helps with caching proxies)
-                headers.Append("X-API-Version", _options.ApiVersion);
+                headers["X-API-Version"] = _options.ApiVersion;
 
                 // Remove potentially dangerous headers
                 headers.Remove("Server");

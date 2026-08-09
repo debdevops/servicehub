@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { tourSteps, type TourStep } from '@servicehub/ui-shared/lib/helpContent';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 const TOUR_COMPLETED_KEY = 'servicehub_tour_completed';
 
@@ -80,6 +81,12 @@ export function GuidedTour({ isActive, onComplete }: GuidedTourProps) {
     if (!isFirst) setCurrentStep((s) => s - 1);
   };
 
+  // Declared before the early return — hooks must run on every render. The only focusable
+  // elements inside the overlay are the tour's own Back/Next/Skip controls; the spotlight
+  // cutout is a non-interactive SVG, so trapping here keeps keyboard users on the tour
+  // controls rather than tabbing into the page the tour is describing.
+  const dialogRef = useFocusTrap<HTMLDivElement>(isActive && !!step);
+
   if (!isActive || !step) return null;
 
   // Default to center of screen if target not found
@@ -97,7 +104,7 @@ export function GuidedTour({ isActive, onComplete }: GuidedTourProps) {
   const popoverStyle = getPopoverPosition(step.placement, targetRect, spotlight);
 
   return (
-    <div className="fixed inset-0 z-[9999]" aria-modal="true" role="dialog">
+    <div ref={dialogRef} className="fixed inset-0 z-[9999]" aria-modal="true" role="dialog">
       {/* Overlay with spotlight cutout */}
       <svg className="absolute inset-0 w-full h-full" style={{ pointerEvents: 'none' }}>
         <defs>

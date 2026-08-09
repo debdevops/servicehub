@@ -93,7 +93,15 @@ what this does and doesn't support today.
 
 ## Try It
 
+ServiceHub encrypts stored connection strings at rest, so it needs two secrets generated on your
+machine before first run. There are no defaults — a shipped default key would be identical across
+every deployment that never overrode it.
+
 ```bash
+cp .env.example .env
+printf 'SECURITY__ENCRYPTIONKEY=%s\n'    "$(openssl rand -hex 32)" >> .env
+printf 'SECURITY__SPATOKEN__SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
+
 docker compose up --build
 ```
 
@@ -101,6 +109,9 @@ Open **[http://localhost:8080](http://localhost:8080)**, then connect a namespac
 cloud credentials. The port is bound to `127.0.0.1` (loopback) only by default, so it isn't
 reachable from your network until you deliberately change that — see
 [self-hosting/README.md](self-hosting/README.md) for a real deployment.
+
+If you skip the `.env` step, `docker compose` stops immediately and names the variable that is
+missing rather than starting a container that fails its configuration check.
 
 No credentials yet? The Welcome page's **"Try a live demo"** buttons open a fully client-side
 demo walkthrough per cloud (`/demo/azure`, `/demo/aws`, `/demo/gcp`) — no backend calls, no
@@ -290,27 +301,34 @@ Follow this path before connecting to a production namespace. This protects your
 ### Docker (fastest)
 
 ```bash
+cp .env.example .env
+printf 'SECURITY__ENCRYPTIONKEY=%s\n'    "$(openssl rand -hex 32)" >> .env
+printf 'SECURITY__SPATOKEN__SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
+
 docker compose up --build
 ```
 
 Open **[http://localhost:8080](http://localhost:8080)**, then connect a namespace with your own cloud credentials. One image serves both the SPA and the API.
 
-To point at real cloud messaging with persisted data and production hardening, run the image in Production mode with your own encryption key:
+To point at real cloud messaging with persisted data and production hardening, run the image in Production mode. Every variable below is **required** — the app validates its Production configuration at startup and refuses to start if any is missing or still holds a `SET_VIA_ENV_VAR` placeholder:
 
 ```bash
 docker build -t servicehub .
 docker run --rm -p 8080:8080 \
   -e ASPNETCORE_ENVIRONMENT=Production \
   -e SECURITY__ENCRYPTIONKEY="$(openssl rand -hex 32)" \
+  -e SECURITY__SPATOKEN__SECRET="$(openssl rand -hex 32)" \
+  -e SITEURL="http://localhost:8080" \
+  -e AllowedHosts="localhost" \
   -v servicehub-data:/var/servicehub/data \
   servicehub
 ```
 
 The namespace store and SQLite DLQ/audit database persist to the `servicehub-data` volume. This
-minimal example is enough to start the process — it is **not** the complete production
-checklist. `AllowedHosts`, `Cors:AllowedOrigins`, the SPA token secret, and at least one API key
-(or OIDC) also need setting before real users reach it; a leftover `SET_VIA_ENV_VAR` placeholder
-on `AllowedHosts` in particular causes the app to reject every request. See
+example starts the process correctly — it is **not** the complete production
+checklist. `Cors:AllowedOrigins` and at least one API key (or OIDC) also need setting before real
+users reach it, and `SITEURL`/`AllowedHosts` must name the hostname users actually visit rather
+than `localhost`. See
 [self-hosting/README.md](self-hosting/README.md) for the full checklist and
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for every option.
 

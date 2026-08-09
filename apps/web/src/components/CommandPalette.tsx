@@ -6,6 +6,7 @@ import {
   Database, ChevronRight, X, Layers, Cloud, Shield
 } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -329,6 +330,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     }
   }, [flatItems, activeIdx, onClose]);
 
+  // Declared before the early return — hooks must run on every render.
+  const dialogRef = useFocusTrap<HTMLDivElement>(open);
+
   if (!open) return null;
 
   let flatIdx = 0;
@@ -336,6 +340,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label="Command palette"

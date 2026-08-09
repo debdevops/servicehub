@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -103,7 +104,7 @@ public sealed class DlqMonitorWorkerRegressionTests
 
     private static async Task RunOneCycleAsync(ServiceProvider sp)
     {
-        var worker = new DlqMonitorWorker(sp, NullLogger<DlqMonitorWorker>.Instance);
+        var worker = new DlqMonitorWorker(sp, new ConfigurationBuilder().AddInMemoryCollection().Build(), NullLogger<DlqMonitorWorker>.Instance);
         // 5s initial delay + ~2s for at least one scan cycle (matches existing harness style).
         await worker.StartAsync(CancellationToken.None);
         await Task.Delay(TimeSpan.FromSeconds(7));

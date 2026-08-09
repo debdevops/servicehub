@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Api.Authorization;
 using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.Api.Controllers.V1;
@@ -29,6 +30,7 @@ public sealed class FailureIntelligenceCenterController : ApiControllerBase
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The investigation center response with all sections.</returns>
     [HttpGet("investigation-center")]
+    [RequireScope(ApiKeyScopes.DlqRead)]
     [ProducesResponseType(typeof(InvestigationCenterResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<InvestigationCenterResponse>> GetInvestigationCenterAsync(
         CancellationToken cancellationToken = default)

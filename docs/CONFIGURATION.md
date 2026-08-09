@@ -73,6 +73,21 @@ ServiceHub defaults to **not trusting** `X-Forwarded-For`, `X-Forwarded-Proto`, 
 
 Azure is always registered as the live provider.
 
+### Background DLQ scan cadence
+
+Every poll cycle issues one live provider call per active namespace, so on a large fleet — or a
+metered provider — this is real API spend. The defaults reproduce the previously hardcoded
+behaviour exactly, so leaving all three unset changes nothing.
+
+| Key | Env var | Default | Notes |
+|---|---|---|---|
+| `DlqMonitor:PollIntervalSeconds` | `DLQMONITOR__POLLINTERVALSECONDS` | `10` | Seconds between DLQ scan cycles. Clamped to 1–3600. Raise it to trade DLQ detection latency for fewer provider calls. |
+| `DlqMonitor:MaxParallelScans` | `DLQMONITOR__MAXPARALLELSCANS` | `10` | Namespaces scanned concurrently per cycle. Clamped to 1–100. Lower it if a provider throttles you. |
+| `DlqMonitor:MaxRuleEvaluationBatch` | `DLQMONITOR__MAXRULEEVALUATIONBATCH` | `500` | Maximum active DLQ messages evaluated against auto-replay rules per namespace per cycle, oldest-detected first. Bounds peak memory on a very large DLQ; the backlog advances across subsequent cycles rather than being skipped. Clamped to 1–100000. |
+
+Out-of-range values are clamped and logged rather than rejected — a typo in a tuning knob should
+not stop DLQ monitoring altogether. The effective values are written to the startup log.
+
 Both `CloudProviders:*:Enabled` flags default to `false` and are **absent from `appsettings.Production.json` entirely** — a production deployment only gets AWS/GCP by explicitly setting these via environment variable or `appsettings.Local.json`. See [docs/PROVIDER-SUPPORT.md](PROVIDER-SUPPORT.md) for what "preview" means concretely and the full capability matrix.
 
 ## Persistence (data directory)
@@ -99,8 +114,34 @@ In the Docker image both default to `/var/servicehub/data`, exposed as a volume.
 
 | Key | Default | Constraint |
 |---|---|---|
-| `RateLimit:MaxRequests` | `300` (Prod: `60`) | ≥ 1 |
+| `RateLimit:MaxRequests` | `300` | ≥ 1 |
 | `RateLimit:WindowDuration` | `00:01:00` | > 0 |
+
+### How the 300/minute default was derived
+
+The limit is keyed on `OwnerId`. In the default deployment **every browser session shares the
+single `__spa__` owner** (see `KNOWN-LIMITATIONS.md`), so this is one bucket for all UI users, not
+one per user. It therefore has to accommodate the SPA's own aggregate steady-state, which the
+previous `60` did not:
+
+| Source | Cadence | Requests/min |
+|---|---|---|
+| Namespace stats (`Header`, fleet-wide dead-letter total) | 1 per namespace / 60s | = namespace count |
+| DLQ history | 30s | 2 |
+| Audit trail | 60–120s | 1–2 |
+| Bulk / signature job progress (while a job runs) | adaptive | up to ~6 |
+| Page navigation burst | ~10–20 requests per page open | ~40–80 in an active minute |
+
+A 25-namespace fleet with two operators actively navigating therefore sits in the low hundreds per
+minute at peak, which `60` rejected outright — the app throttled itself and then told the user the
+app was "sending too many API calls". `300` covers that with headroom while still bounding abuse.
+
+Only visible tabs contribute: every polling query sets `refetchIntervalInBackground: false`, so
+background tabs are silent.
+
+Tune it down if you front ServiceHub with per-user identity (`Security:Oidc:*`), which gives each
+user their own bucket and makes a much smaller per-owner limit appropriate. Tune it up for a
+larger fleet — the dominant term is your namespace count.
 
 ## Webhooks (DLQ-spike + bulk operation alerts) — *validated at startup*
 

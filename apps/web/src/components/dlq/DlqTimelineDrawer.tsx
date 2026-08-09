@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { X, Clock, AlertCircle, CheckCircle, XCircle, ArrowRight, FileText } from 'lucide-react';
 import { useDlqTimeline, useDlqMessageDetail, useUpdateDlqNotes, useUpdateDlqStatus } from '@servicehub/ui-shared/hooks/useDlqHistory';
 import { StatusBadge, CategoryBadge } from './StatusBadge';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 interface DlqTimelineDrawerProps {
   messageId: number | null;
@@ -71,6 +72,9 @@ export function DlqTimelineDrawer({ messageId, onClose }: DlqTimelineDrawerProps
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
 
+  // Declared before the early return — hooks must run on every render.
+  const dialogRef = useFocusTrap<HTMLDivElement>(isOpen);
+
   if (!isOpen) return null;
 
   return (
@@ -85,6 +89,7 @@ export function DlqTimelineDrawer({ messageId, onClose }: DlqTimelineDrawerProps
       {/* Drawer */}
       <div
         className="fixed right-0 top-0 h-full w-[520px] max-w-[90vw] bg-white shadow-2xl z-50 flex flex-col"
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="dlq-timeline-drawer-title"

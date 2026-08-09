@@ -1,6 +1,7 @@
 import { X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { AIInsight } from '@servicehub/ui-shared/lib/api/types';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 // ============================================================================
 // AIFindingsDropdown - Dropdown showing active AI patterns
@@ -53,6 +54,9 @@ export function AIFindingsDropdown({ insights, onClose, onViewEvidence }: AIFind
     return () => window.removeEventListener('keydown', handleEscape);
   }, [onClose]);
 
+  // This component is mounted only while the dropdown is open, so the trap is always armed.
+  const dialogRef = useFocusTrap<HTMLDivElement>(true);
+
   return (
     <>
       {/* Backdrop */}
@@ -68,6 +72,7 @@ export function AIFindingsDropdown({ insights, onClose, onViewEvidence }: AIFind
       <div
         className="fixed w-[420px] max-w-[90vw] bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden"
         style={coords ? { top: coords.top, right: coords.right } : { top: 0, right: 0, opacity: 0 }}
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Active AI Patterns"

@@ -23,6 +23,7 @@ import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import { EnvironmentBadge } from '@/components/EnvironmentBadge';
 import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import toast from 'react-hot-toast';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -108,6 +109,9 @@ function AuditDetailDrawer({
     return () => window.removeEventListener('keydown', handleEscape);
   }, [entry, onClose]);
 
+  // Declared before the early return — hooks must run on every render.
+  const dialogRef = useFocusTrap<HTMLDivElement>(!!entry);
+
   if (!entry) return null;
 
   const detailsObj = (() => {
@@ -126,6 +130,7 @@ function AuditDetailDrawer({
       {/* Drawer */}
       <div
         className="fixed right-0 top-0 h-full w-full max-w-md bg-white z-50 shadow-2xl flex flex-col overflow-hidden"
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="audit-detail-drawer-title"
