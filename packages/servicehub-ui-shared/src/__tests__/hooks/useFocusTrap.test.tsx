@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import React from 'react';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 function Dialog({ isOpen, includeButtons = true }: { isOpen: boolean; includeButtons?: boolean }) {
@@ -52,7 +51,7 @@ describe('useFocusTrap', () => {
       return (
         <div ref={ref} role="dialog" aria-modal="true" aria-label="d">
           <button type="button">confirm</button>
-          {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
+          {/* autoFocus is the behaviour under test: the trap must not fight it. */}
           <button type="button" autoFocus>
             cancel
           </button>

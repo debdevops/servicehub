@@ -83,7 +83,7 @@ behaviour exactly, so leaving all three unset changes nothing.
 |---|---|---|---|
 | `DlqMonitor:PollIntervalSeconds` | `DLQMONITOR__POLLINTERVALSECONDS` | `10` | Seconds between DLQ scan cycles. Clamped to 1–3600. Raise it to trade DLQ detection latency for fewer provider calls. |
 | `DlqMonitor:MaxParallelScans` | `DLQMONITOR__MAXPARALLELSCANS` | `10` | Namespaces scanned concurrently per cycle. Clamped to 1–100. Lower it if a provider throttles you. |
-| `DlqMonitor:MaxRuleEvaluationBatch` | `DLQMONITOR__MAXRULEEVALUATIONBATCH` | `500` | Maximum active DLQ messages evaluated against auto-replay rules per namespace per cycle, oldest-detected first. Bounds peak memory on a very large DLQ; the backlog advances across subsequent cycles rather than being skipped. Clamped to 1–100000. |
+| `DlqMonitor:MaxRuleEvaluationBatch` | `DLQMONITOR__MAXRULEEVALUATIONBATCH` | `500` | Maximum active DLQ messages evaluated against auto-replay rules per namespace per cycle, oldest-detected first. Bounds peak memory on a very large DLQ. The batch is a moving window, not a fixed oldest-N prefix: each cycle resumes from where the previous one stopped and wraps back to the oldest message once the backlog has been swept, so messages that match no rule cannot hide later ones from evaluation. A restart rewinds the sweep to the oldest message (the window position is in-memory only), which delays but never skips evaluation. Clamped to 1–100000. |
 
 Out-of-range values are clamped and logged rather than rejected — a typo in a tuning knob should
 not stop DLQ monitoring altogether. The effective values are written to the startup log.
