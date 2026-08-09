@@ -14,13 +14,16 @@ import {
   GitMerge,
   TrendingUp,
   Zap,
+  Info,
 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useQueues, useAllNamespacesQueues, useNamespaceStats, NamespaceQueueStats } from '@servicehub/ui-shared/hooks/useQueues';
 import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
 import { useEventStream } from '@servicehub/ui-shared/hooks/useEventStream';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
 import { ProviderBadge, getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
 import { EnvironmentBadge } from '@/components/EnvironmentBadge';
 import { EmptyState } from '@/components/EmptyState';
@@ -366,6 +369,13 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
     sseConnected ? QUEUES_POLL_MS.relaxed : QUEUES_POLL_MS.normal,
   );
   const { data: topics } = useTopics(namespace.id, false);
+  // GCP Pub/Sub has no message-count API (ProviderCapabilities.Gcp), so its active/DLQ/scheduled
+  // totals are structurally 0 rather than measured. Rendering a bare "0" reads as "definitely
+  // empty" when it really means "unknown" — same dash convention NamespacesPanel and MessageList
+  // already use. Entity counts (queues/topics/subs) are real on every provider and stay numeric.
+  const { data: capabilitiesMap } = useProviderCapabilities();
+  const supportsCounts =
+    getProviderCapabilities(capabilitiesMap, namespace.cloudProvider)?.supportsMessageCounts ?? true;
 
   // Land the user on a concrete entity instead of the "No entity selected"
   // empty state: first browsable queue (skipping AWS companion DLQ queues),
@@ -446,7 +456,7 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
               </span>
             )}
           </div>
-          {!isError && (
+          {!isError && supportsCounts && (
             <HealthScoreBadge totalActive={totalActive} totalDlq={totalDlq} />
           )}
         </div>
@@ -460,17 +470,17 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
         <StatCell label="Subs" value={isError ? '—' : totalSubscriptions} colorClass="text-indigo-700" />
         <StatCell
           label="Active"
-          value={isError ? '—' : totalActive}
+          value={isError || !supportsCounts ? '—' : totalActive}
           colorClass="text-sky-700"
         />
         <StatCell
           label="DLQ"
-          value={isError ? '—' : totalDlq}
-          colorClass={totalDlq > 0 ? 'text-red-700' : undefined}
+          value={isError || !supportsCounts ? '—' : totalDlq}
+          colorClass={supportsCounts && totalDlq > 0 ? 'text-red-700' : undefined}
         />
         <StatCell
           label="Sched"
-          value={isError ? '—' : totalScheduled}
+          value={isError || !supportsCounts ? '—' : totalScheduled}
           colorClass="text-purple-700"
         />
       </div>
@@ -484,6 +494,13 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
           <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg text-red-600 text-sm">
             <AlertTriangle className="w-4 h-4 shrink-0" />
             <span>Unable to reach namespace</span>
+          </div>
+        ) : !supportsCounts ? (
+          // "Healthy" here would be an assertion derived from counts this provider never
+          // reports — the same misleading zero, one level of derivation removed.
+          <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-gray-600 text-sm">
+            <Info className="w-4 h-4 shrink-0" />
+            <span>Message counts unavailable for this provider</span>
           </div>
         ) : isDlqSpike ? (
           <div className="flex items-center gap-2 px-3 py-2 bg-red-100 border border-red-200 rounded-lg text-red-700 text-sm">
@@ -537,6 +554,22 @@ export function DashboardPage() {
       : undefined,
   );
   const statsLoading = allStats.some(s => s.isLoading);
+
+  // "Refresh" previously refetched only the namespace list, so every number on this page —
+  // queue counts, the stats rollup behind each card's Active/DLQ/Sched cells, the DLQ trend
+  // sparklines — kept whatever value it had while the badge reset to "Live · just now". The
+  // button claimed a refresh it had not performed. Invalidating by key prefix covers the live
+  // and demo variants of each key in one call, and TanStack Query dedupes the refetches across
+  // every card sharing a cached query, so this issues one request per namespace, not one per
+  // card. `refetchType: 'active'` keeps unmounted/background queries from being refetched too.
+  const queryClient = useQueryClient();
+  const handleRefresh = () => {
+    refetch();
+    for (const key of ['queues', 'namespace-stats', 'dlq-trend']) {
+      queryClient.invalidateQueries({ queryKey: [key], refetchType: 'active' });
+    }
+  };
+
   const lastUpdatedAt = useRef<number | null>(null);
   if (!statsLoading && allStats.length > 0) {
     lastUpdatedAt.current = Date.now();
@@ -657,7 +690,7 @@ export function DashboardPage() {
               </span>
             )}
             <button
-              onClick={() => refetch()}
+              onClick={handleRefresh}
               disabled={isFetching}
               className="flex items-center gap-2 px-3 py-1.5 bg-white/20 hover:bg-white/30 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
             >

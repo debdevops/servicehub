@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DashboardPage } from '@/pages/DashboardPage';
@@ -14,6 +14,10 @@ vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({
   useNamespaceStats: vi.fn(),
 }));
 
+vi.mock('@servicehub/ui-shared/hooks/useCloudBridge', () => ({
+  useProviderCapabilities: vi.fn(),
+}));
+
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -22,7 +26,9 @@ vi.mock('react-router-dom', async () => {
 
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useQueues, useAllNamespacesQueues, useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 
+const mockUseProviderCapabilities = useProviderCapabilities as ReturnType<typeof vi.fn>;
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;
 const mockUseAllNamespacesQueues = useAllNamespacesQueues as ReturnType<typeof vi.fn>;
@@ -63,9 +69,16 @@ function createWrapper() {
   );
 }
 
+const capabilitiesMap = {
+  Azure: { supportsMessageCounts: true },
+  Aws: { supportsMessageCounts: true },
+  Gcp: { supportsMessageCounts: false },
+};
+
 describe('DashboardPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseProviderCapabilities.mockReturnValue({ data: capabilitiesMap });
     mockUseNamespaces.mockReturnValue({
       data: [mockNamespace],
       isLoading: false,
@@ -282,5 +295,111 @@ describe('DashboardPage', () => {
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(await screen.findByText('—')).toBeInTheDocument();
+  });
+
+  // F3 — "Refresh" used to refetch only the namespace list while resetting the "Live · just now"
+  // badge, so every number on the page could stay stale behind a badge claiming it was fresh.
+  describe('Refresh refetches every metric it claims to refresh', () => {
+    it('refetches namespaces and invalidates the queue, stats, and trend queries', async () => {
+      const refetch = vi.fn();
+      mockUseNamespaces.mockReturnValue({
+        data: [mockNamespace],
+        isLoading: false,
+        isFetching: false,
+        refetch,
+      });
+      const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      fireEvent.click(await screen.findByRole('button', { name: /refresh/i }));
+
+      expect(refetch).toHaveBeenCalledTimes(1);
+      const invalidatedKeys = invalidateSpy.mock.calls.map(([arg]) => arg?.queryKey?.[0]);
+      expect(invalidatedKeys).toEqual(
+        expect.arrayContaining(['queues', 'namespace-stats', 'dlq-trend']),
+      );
+      invalidateSpy.mockRestore();
+    });
+
+    it('invalidates only active queries so background caches are not refetched needlessly', async () => {
+      const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      fireEvent.click(await screen.findByRole('button', { name: /refresh/i }));
+
+      for (const [arg] of invalidateSpy.mock.calls) {
+        expect(arg?.refetchType).toBe('active');
+      }
+      invalidateSpy.mockRestore();
+    });
+  });
+
+  // F4 — GCP Pub/Sub has no message-count API, so a "0" there means "unknown", not "empty".
+  describe('provider message-count capability', () => {
+    const gcpNamespace = { ...mockNamespace, id: 'ns-gcp', cloudProvider: 'gcp' as const };
+
+    function renderWithProviderNamespace(namespace: typeof mockNamespace) {
+      mockUseNamespaces.mockReturnValue({
+        data: [namespace],
+        isLoading: false,
+        isFetching: false,
+        refetch: vi.fn(),
+      });
+      mockUseNamespaceStats.mockReturnValue([
+        {
+          data: {
+            totalQueues: 3,
+            totalTopics: 2,
+            totalSubscriptions: 4,
+            totalActive: 0,
+            totalDlq: 0,
+            totalScheduled: 0,
+          },
+          isLoading: false,
+          isError: false,
+        },
+      ]);
+      return render(<DashboardPage />, { wrapper: createWrapper() });
+    }
+
+    // Reads a value from the namespace card's own stat grid. Scoped deliberately: the
+    // page-level aggregate bar reuses several of the same labels ("Active", "DLQ").
+    function statCellValue(container: HTMLElement, label: string): string | null {
+      const grid = container.querySelector('[class*="sm:grid-cols-6"]') as HTMLElement;
+      return within(grid).getByText(label).parentElement?.querySelector('p:last-child')?.textContent ?? null;
+    }
+
+    it('renders a dash instead of 0 for GCP message counts', async () => {
+      const { container } = renderWithProviderNamespace(gcpNamespace);
+
+      expect(await screen.findByText('Sched')).toBeInTheDocument();
+      // Active, DLQ, and Sched are all unknown on GCP — none of them may read "0".
+      expect(statCellValue(container, 'Active')).toBe('—');
+      expect(statCellValue(container, 'DLQ')).toBe('—');
+      expect(statCellValue(container, 'Sched')).toBe('—');
+    });
+
+    it('still renders real entity counts for GCP, which Pub/Sub does report', async () => {
+      const { container } = renderWithProviderNamespace(gcpNamespace);
+
+      expect(await screen.findByText('Queues')).toBeInTheDocument();
+      expect(statCellValue(container, 'Queues')).toBe('3');
+      expect(statCellValue(container, 'Topics')).toBe('2');
+      expect(statCellValue(container, 'Subs')).toBe('4');
+    });
+
+    it('does not assert a health grade or "Healthy" status from counts GCP never reports', async () => {
+      renderWithProviderNamespace(gcpNamespace);
+
+      expect(await screen.findByText('Message counts unavailable for this provider')).toBeInTheDocument();
+      expect(screen.queryByText('Healthy')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/Health grade/)).not.toBeInTheDocument();
+    });
+
+    it('renders numeric counts for a provider that does support them', async () => {
+      renderWithProviderNamespace({ ...mockNamespace, cloudProvider: 'azure' } as typeof mockNamespace);
+
+      expect(await screen.findByText('Healthy')).toBeInTheDocument();
+      expect(screen.getAllByText('0').length).toBeGreaterThan(0);
+    });
   });
 });

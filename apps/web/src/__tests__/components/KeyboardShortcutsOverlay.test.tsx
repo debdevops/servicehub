@@ -88,4 +88,62 @@ describe('KeyboardShortcutsOverlay', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  // ── Focus management ───────────────────────────────────────────────────────
+  // End-to-end proof that a real dialog — not just the useFocusTrap hook in isolation —
+  // keeps keyboard focus inside itself and hands it back on close.
+
+  describe('keyboard accessibility', () => {
+    function renderWithTrigger() {
+      const trigger = document.createElement('button');
+      trigger.textContent = 'Open shortcuts';
+      document.body.appendChild(trigger);
+      trigger.focus();
+      const outside = document.createElement('button');
+      outside.textContent = 'Behind the dialog';
+      document.body.appendChild(outside);
+      return { trigger, outside };
+    }
+
+    it('moves focus into the dialog when it opens', () => {
+      renderWithTrigger();
+      render(<KeyboardShortcutsOverlay open onClose={onClose} />);
+
+      const dialog = screen.getByRole('dialog');
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    });
+
+    it('keeps Tab inside the dialog instead of reaching the page behind it', async () => {
+      const { outside } = renderWithTrigger();
+      render(<KeyboardShortcutsOverlay open onClose={onClose} />);
+      const dialog = screen.getByRole('dialog');
+
+      for (let i = 0; i < 6; i++) {
+        await userEvent.tab();
+        expect(document.activeElement).not.toBe(outside);
+        expect(dialog.contains(document.activeElement)).toBe(true);
+      }
+    });
+
+    it('keeps Shift+Tab inside the dialog', async () => {
+      const { outside } = renderWithTrigger();
+      render(<KeyboardShortcutsOverlay open onClose={onClose} />);
+      const dialog = screen.getByRole('dialog');
+
+      for (let i = 0; i < 6; i++) {
+        await userEvent.tab({ shift: true });
+        expect(document.activeElement).not.toBe(outside);
+        expect(dialog.contains(document.activeElement)).toBe(true);
+      }
+    });
+
+    it('restores focus to the triggering element when it closes', () => {
+      const { trigger } = renderWithTrigger();
+      const { rerender } = render(<KeyboardShortcutsOverlay open onClose={onClose} />);
+      expect(document.activeElement).not.toBe(trigger);
+
+      rerender(<KeyboardShortcutsOverlay open={false} onClose={onClose} />);
+      expect(document.activeElement).toBe(trigger);
+    });
+  });
 });

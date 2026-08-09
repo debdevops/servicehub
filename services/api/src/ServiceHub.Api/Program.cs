@@ -44,6 +44,13 @@ builder.Services.AddSecureForwardedHeaders(builder.Configuration, builder.Enviro
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxRequestBodySize = 5 * 1024 * 1024; // 5 MB
+
+    // Suppress "Server: Kestrel" at the source. SecurityHeadersMiddleware also calls
+    // Headers.Remove("Server"), but that runs in an OnStarting callback while Kestrel writes
+    // its default Server header later, when the response is actually serialized — so the
+    // removal never took effect and every response still advertised the server product.
+    // This flag is the only thing that actually suppresses it.
+    options.AddServerHeader = false;
 });
 
 // Add Application Insights telemetry (cost-effective configuration)
