@@ -23,9 +23,19 @@ public abstract class ApiControllerBase : ControllerBase
             : Namespace.SpaOwnerId;
 
     /// <summary>
+    /// The namespace allow-list carried by the current caller's credential, if any — set by
+    /// <c>ApiKeyAuthenticationMiddleware</c>/<c>OidcBearerAuthenticationMiddleware</c> when the
+    /// key/token restricts access to a subset of namespaces. Null means unrestricted.
+    /// </summary>
+    protected IReadOnlySet<Guid>? AllowedNamespaceIds =>
+        HttpContext.Items.TryGetValue("AllowedNamespaceIds", out var v) && v is IReadOnlySet<Guid> ids
+            ? ids
+            : null;
+
+    /// <summary>
     /// Fetches a namespace by ID and verifies <see cref="OwnerId"/> may access it — either as
     /// the namespace's owner, or because the owner explicitly shared it (see
-    /// <see cref="Namespace.IsAccessibleBy"/>) — so every controller enforces tenant isolation
+    /// <see cref="Namespace.IsAccessibleBy(string)"/>) — so every controller enforces tenant isolation
     /// through this single, tested path instead of reimplementing the check inline. Returns the
     /// same NotFound failure whether the namespace doesn't exist or simply isn't accessible to
     /// the caller, so the two cases can't be distinguished from the response (avoids leaking
@@ -47,7 +57,7 @@ public abstract class ApiControllerBase : ControllerBase
             return namespaceResult;
         }
 
-        if (!namespaceResult.Value.IsAccessibleBy(OwnerId))
+        if (!namespaceResult.Value.IsAccessibleBy(OwnerId, AllowedNamespaceIds))
         {
             return Result.Failure<Namespace>(Error.NotFound(
                 ErrorCodes.Namespace.NotFound,
@@ -74,7 +84,9 @@ public abstract class ApiControllerBase : ControllerBase
             return namespaceResult;
         }
 
-        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
+        var allowedNamespaceIds = AllowedNamespaceIds;
+        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal)
+            || (allowedNamespaceIds is not null && !allowedNamespaceIds.Contains(namespaceResult.Value.Id)))
         {
             return Result.Failure<Namespace>(Error.NotFound(
                 ErrorCodes.Namespace.NotFound,

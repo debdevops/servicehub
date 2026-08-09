@@ -356,6 +356,46 @@ public class TopicsControllerTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task GetSubscriptionMessages_SkipBeyondFirstPage_RequestsEnoughMessagesAndReturnsItems()
+    {
+        var ns = CreateTestNamespace();
+        var nsId = ns.Id;
+        var allMessages = Enumerable.Range(1, 150)
+            .Select(i => new Message { MessageId = $"msg-{i}", SequenceNumber = i, EnqueuedTime = DateTimeOffset.UtcNow })
+            .ToList();
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        GetMessagesRequest? capturedRequest = null;
+        _messageOperationsService.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<GetMessagesRequest, CancellationToken>((req, _) => capturedRequest = req)
+            .ReturnsAsync((GetMessagesRequest req, CancellationToken _) =>
+                Result<IReadOnlyList<Message>>.Success(allMessages.Take(req.MaxMessages).ToList()));
+
+        _cloudProvider.Setup(p => p.ListEntitiesAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Success(
+                [new CloudEntity
+                {
+                    Name = "test-topic/subscriptions/test-sub",
+                    EntityType = "Subscription",
+                    ActiveMessageCount = 150,
+                    DeadLetterCount = 0,
+                    Provider = CloudProviderType.Azure,
+                }]));
+
+        var result = await _controller.GetSubscriptionMessages(nsId, "test-topic", "test-sub", skip: 100, take: 50);
+
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.MaxMessages.Should().Be(150);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<PaginatedResponse<MessageResponse>>().Subject;
+        response.Items.Should().HaveCount(50);
+        response.Items.First().MessageId.Should().Be("msg-101");
+    }
+
     #endregion
 
     #region DeadLetterSubscriptionMessages Tests

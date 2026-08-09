@@ -307,6 +307,58 @@ public class ApiKeyAuthenticationMiddlewareTests
     }
 
     [Fact]
+    public async Task LoadApiKeys_ScopedKeyWithNamespacesAndRoleName_CarriesNamespacesThroughScopeExpansion()
+    {
+        // Regression test: LoadApiKeys reconstructs a new ApiKeyConfiguration when Scopes is
+        // non-empty (to pre-expand role names). That reconstruction must also copy Namespaces —
+        // otherwise every key with explicit Scopes (i.e. every scoped key) would silently lose
+        // its namespace restriction at startup and become unrestricted.
+        var namespaceId = Guid.NewGuid();
+        var dict = new Dictionary<string, string?>
+        {
+            ["Security:Authentication:Enabled"] = "true",
+            ["Security:Authentication:ScopedApiKeys:0:Key"] = "restricted-viewer-key",
+            ["Security:Authentication:ScopedApiKeys:0:Scopes:0"] = "Viewer",
+            ["Security:Authentication:ScopedApiKeys:0:Namespaces:0"] = namespaceId.ToString(),
+            ["Security:Authentication:ScopedApiKeys:0:Description"] = "Namespace-restricted viewer key",
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Request.Headers["X-API-KEY"] = "restricted-viewer-key";
+
+        await middleware.InvokeAsync(context);
+
+        var keyConfig = (ApiKeyConfiguration)context.Items["ApiKeyConfig"]!;
+        keyConfig.Scopes.Should().Contain(ApiKeyScopes.DlqRead);
+        keyConfig.Namespaces.Should().ContainSingle().Which.Should().Be(namespaceId.ToString());
+
+        var allowedNamespaceIds = context.Items["AllowedNamespaceIds"].Should()
+            .BeAssignableTo<IReadOnlySet<Guid>>().Subject;
+        allowedNamespaceIds.Should().ContainSingle().Which.Should().Be(namespaceId);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_KeyWithoutNamespaces_DoesNotSetAllowedNamespaceIds()
+    {
+        var config = CreateConfig(enabled: true, apiKeys: ["unrestricted-key"]);
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Request.Headers["X-API-KEY"] = "unrestricted-key";
+
+        await middleware.InvokeAsync(context);
+
+        context.Items.Should().NotContainKey("AllowedNamespaceIds");
+    }
+
+    [Fact]
     public async Task LoadApiKeys_ScopedKeyWithPlaceholder_ShouldSkip()
     {
         var dict = new Dictionary<string, string?>

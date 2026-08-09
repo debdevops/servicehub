@@ -26,9 +26,12 @@ vi.mock('@/components/messages/tabs', () => ({
   HeadersTab: () => <div data-testid="headers-tab">Headers</div>,
 }));
 vi.mock('@/components/ConfirmDialog', () => ({
-  ConfirmDialog: ({ isOpen, title, onConfirm, onCancel }: any) =>
+  // Confirm is intentionally left non-disabled here (unlike the real component) so these
+  // tests exercise MessageDetailPanel's own re-entrancy guard in handleConfirm, independent
+  // of ConfirmDialog's UI-level disabling (covered separately in ConfirmDialog.test.tsx).
+  ConfirmDialog: ({ isOpen, title, isConfirming, onConfirm, onCancel }: any) =>
     isOpen ? (
-      <div data-testid="confirm-dialog">
+      <div data-testid="confirm-dialog" data-confirming={!!isConfirming}>
         <span>{title}</span>
         <button onClick={onConfirm}>Confirm</button>
         <button onClick={onCancel}>Cancel</button>
@@ -237,6 +240,38 @@ describe('MessageDetailPanel', () => {
     expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Cancel'));
     expect(screen.queryByTestId('confirm-dialog')).not.toBeInTheDocument();
+  });
+
+  it('passes isConfirming=true to the confirm dialog while replay is in flight', () => {
+    const mutateAsync = vi.fn().mockResolvedValue(undefined);
+    mockUseReplayMessage.mockReturnValue({ mutateAsync, isPending: false });
+    const Wrapper = createWrapper();
+    const { rerender } = render(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
+    fireEvent.click(screen.getByLabelText('Replay message'));
+
+    // Simulate the mutation becoming pending after Confirm is clicked.
+    mockUseReplayMessage.mockReturnValue({ mutateAsync, isPending: true });
+    rerender(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
+
+    expect(screen.getByTestId('confirm-dialog')).toHaveAttribute('data-confirming', 'true');
+  });
+
+  it('does not fire a duplicate replay request when handleConfirm re-enters while a replay is already pending', () => {
+    const mutateAsync = vi.fn().mockResolvedValue(undefined);
+    mockUseReplayMessage.mockReturnValue({ mutateAsync, isPending: false });
+    const Wrapper = createWrapper();
+    const { rerender } = render(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
+    fireEvent.click(screen.getByLabelText('Replay message'));
+    fireEvent.click(screen.getByText('Confirm'));
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
+
+    // The dialog stays open until the mutation settles; simulate a second Confirm
+    // arriving while the first request is still in flight.
+    mockUseReplayMessage.mockReturnValue({ mutateAsync, isPending: true });
+    rerender(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
+    fireEvent.click(screen.getByText('Confirm'));
+
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
   });
 
   it('renders payment transaction title from transactionId', () => {

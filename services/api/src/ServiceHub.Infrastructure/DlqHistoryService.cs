@@ -113,6 +113,28 @@ public sealed class DlqHistoryService : IDlqHistoryService
     }
 
     /// <inheritdoc />
+    public async Task<Result<IReadOnlyList<DlqMessage>>> GetByIdsAsync(
+        string ownerId, IReadOnlyList<long> ids, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var messages = await _dbContext.DlqMessages
+                .AsNoTracking()
+                .Where(m => ids.Contains(m.Id) && m.OwnerId == ownerId)
+                .OrderByDescending(m => m.DetectedAtUtc)
+                .ToListAsync(cancellationToken);
+
+            return Result<IReadOnlyList<DlqMessage>>.Success(messages);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get DLQ messages by ID");
+            return Result<IReadOnlyList<DlqMessage>>.Failure(
+                Error.Internal("Dlq.GetFailed", $"Failed to get DLQ messages: {ex.Message}"));
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<Result<IReadOnlyList<DlqTimelineEvent>>> GetTimelineAsync(
         string ownerId, long id, CancellationToken cancellationToken = default)
     {

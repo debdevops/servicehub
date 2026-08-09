@@ -6,9 +6,11 @@ export { useTopics } from './useTopics';
 export { useSubscriptions } from './useSubscriptions';
 export { useNamespaces } from './useNamespaces';
 export { useMessages } from './useMessages';
-export { 
-  useInsights, 
-  useInsightsSummary, 
+export {
+  useInsights,
+  useInsightsSummary,
   useClientSideInsights,
   useAIAvailability,
 } from './useInsights';
+export { useInvestigationQueue } from './useInvestigationQueue';
+export type { InvestigationCenterResponse, InvestigationQueueItem, KnowledgeReviewItem, NewSignatureItem } from './useInvestigationQueue';

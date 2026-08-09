@@ -149,6 +149,26 @@ public class RedactingLoggerTests
     }
 
     [Fact]
+    public void Log_WithException_RedactsSensitiveDataInExceptionText()
+    {
+        var logger = new RedactingLogger("Test", LogLevel.Error);
+        using var sw = new StringWriter();
+        Console.SetOut(sw);
+        try
+        {
+            var ex = new InvalidOperationException("failed for key=SharedAccessKey=mysecret");
+            logger.Log(LogLevel.Error, new EventId(0), "failure", ex, (s, e) => s);
+            var output = sw.ToString();
+            output.Should().NotContain("mysecret");
+            output.Should().Contain("REDACTED");
+        }
+        finally
+        {
+            Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
+        }
+    }
+
+    [Fact]
     public void Log_RedactsSensitiveData()
     {
         var logger = new RedactingLogger("Test", LogLevel.Information);

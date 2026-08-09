@@ -42,9 +42,10 @@ public sealed class BulkOperationService : IBulkOperationService
 
     /// <inheritdoc />
     public async Task<Result<BulkOperationPreviewResponse>> PreviewAsync(
-        string ownerId, BulkOperationPreviewRequest request, CancellationToken cancellationToken = default)
+        string ownerId, BulkOperationPreviewRequest request, IReadOnlySet<Guid>? allowedNamespaceIds = null,
+        CancellationToken cancellationToken = default)
     {
-        var nsResult = await ResolveOwnedNamespaceAsync(ownerId, request.Filter.NamespaceId, cancellationToken);
+        var nsResult = await ResolveOwnedNamespaceAsync(ownerId, request.Filter.NamespaceId, allowedNamespaceIds, cancellationToken);
         if (nsResult.IsFailure)
             return Result.Failure<BulkOperationPreviewResponse>(nsResult.Error);
 
@@ -83,9 +84,10 @@ public sealed class BulkOperationService : IBulkOperationService
     /// <inheritdoc />
     public async Task<Result<BulkOperationJobResponse>> CreateJobAsync(
         string ownerId, BulkOperationCreateRequest request, string? correlationId,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null,
         CancellationToken cancellationToken = default)
     {
-        var nsResult = await ResolveOwnedNamespaceAsync(ownerId, request.Filter.NamespaceId, cancellationToken);
+        var nsResult = await ResolveOwnedNamespaceAsync(ownerId, request.Filter.NamespaceId, allowedNamespaceIds, cancellationToken);
         if (nsResult.IsFailure)
             return Result.Failure<BulkOperationJobResponse>(nsResult.Error);
 
@@ -206,7 +208,7 @@ public sealed class BulkOperationService : IBulkOperationService
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private async Task<Result<Namespace>> ResolveOwnedNamespaceAsync(
-        string ownerId, Guid namespaceId, CancellationToken cancellationToken)
+        string ownerId, Guid namespaceId, IReadOnlySet<Guid>? allowedNamespaceIds, CancellationToken cancellationToken)
     {
         var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
         if (nsResult.IsFailure)
@@ -215,8 +217,11 @@ public sealed class BulkOperationService : IBulkOperationService
         var ns = nsResult.Value;
 
         // TENANT ISOLATION: return NotFound (not Forbidden) on owner mismatch, matching the
-        // convention used by every other namespace-scoped controller in this codebase.
-        if (!string.Equals(ns.OwnerId, ownerId, StringComparison.Ordinal))
+        // convention used by every other namespace-scoped controller in this codebase. Also
+        // rejects namespaces outside the caller's allow-list — without this, a key restricted to
+        // one namespace could still bulk replay/purge another namespace it truly owns.
+        if (!string.Equals(ns.OwnerId, ownerId, StringComparison.Ordinal)
+            || (allowedNamespaceIds is not null && !allowedNamespaceIds.Contains(namespaceId)))
         {
             return Result.Failure<Namespace>(Error.NotFound(
                 "Namespace.NotFound", $"Namespace {namespaceId} was not found"));

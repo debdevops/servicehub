@@ -81,7 +81,7 @@ public sealed class BulkOperationsControllerTests
         result.Result.Should().BeOfType<ObjectResult>()
             .Which.StatusCode.Should().Be(StatusCodes.Status428PreconditionRequired);
         _serviceMock.Verify(
-            s => s.CreateJobAsync(It.IsAny<string>(), It.IsAny<BulkOperationCreateRequest>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            s => s.CreateJobAsync(It.IsAny<string>(), It.IsAny<BulkOperationCreateRequest>(), It.IsAny<string?>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -92,7 +92,7 @@ public sealed class BulkOperationsControllerTests
         var request = new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId));
         var response = SampleJobResponse(_namespaceId);
         _serviceMock
-            .Setup(s => s.CreateJobAsync(It.IsAny<string>(), request, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.CreateJobAsync(It.IsAny<string>(), request, It.IsAny<string?>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<BulkOperationJobResponse>.Success(response));
 
         var result = await _controller.Create(request);
@@ -120,7 +120,7 @@ public sealed class BulkOperationsControllerTests
         var request = new BulkOperationCreateRequest(BulkOperationType.Purge, Filter(_namespaceId));
         var response = SampleJobResponse(_namespaceId) with { OperationType = nameof(BulkOperationType.Purge) };
         _serviceMock
-            .Setup(s => s.CreateJobAsync(It.IsAny<string>(), request, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.CreateJobAsync(It.IsAny<string>(), request, It.IsAny<string?>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<BulkOperationJobResponse>.Success(response));
 
         var result = await _controller.Create(request);
@@ -134,7 +134,7 @@ public sealed class BulkOperationsControllerTests
         SetIntentHeaders(IntentHeaders.IntentBulkReplay);
         var request = new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId));
         _serviceMock
-            .Setup(s => s.CreateJobAsync(It.IsAny<string>(), request, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.CreateJobAsync(It.IsAny<string>(), request, It.IsAny<string?>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<BulkOperationJobResponse>.Failure(
                 Error.Validation("BulkOperation.NoMatches", "No DLQ messages match this filter.")));
 
@@ -151,7 +151,7 @@ public sealed class BulkOperationsControllerTests
         var request = new BulkOperationPreviewRequest(BulkOperationType.Replay, Filter(_namespaceId));
         var response = new BulkOperationPreviewResponse(5, [], true, [], 0);
         _serviceMock
-            .Setup(s => s.PreviewAsync(It.IsAny<string>(), request, It.IsAny<CancellationToken>()))
+            .Setup(s => s.PreviewAsync(It.IsAny<string>(), request, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<BulkOperationPreviewResponse>.Success(response));
 
         var result = await _controller.Preview(request);

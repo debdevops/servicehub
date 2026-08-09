@@ -8,6 +8,7 @@ using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Shared.Constants;
+using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Api.Controllers.V1;
 
@@ -91,7 +92,10 @@ public sealed class QueuesController : ApiControllerBase
 
         if (ns.ConnectionString is null)
         {
-            return BadRequest("Namespace does not have a connection string configured.");
+            return ToActionResult<IReadOnlyList<QueueRuntimePropertiesDto>>(
+                Error.Validation(
+                    ErrorCodes.Namespace.ConnectionStringRequired,
+                    "Namespace does not have a connection string configured."));
         }
 
         var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
@@ -227,7 +231,10 @@ public sealed class QueuesController : ApiControllerBase
 
         if (ns.ConnectionString is null)
         {
-            return BadRequest("Namespace does not have a connection string configured.");
+            return ToActionResult<QueueRuntimePropertiesDto>(
+                Error.Validation(
+                    ErrorCodes.Namespace.ConnectionStringRequired,
+                    "Namespace does not have a connection string configured."));
         }
 
         var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
@@ -395,12 +402,13 @@ public sealed class QueuesController : ApiControllerBase
 
         var fromDeadLetter = string.Equals(queueType, "deadletter", StringComparison.OrdinalIgnoreCase);
         var pageSize = Math.Clamp(take, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages);
+        var peekCount = Math.Clamp(Math.Max(skip, 0) + pageSize, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages);
         var request = new GetMessagesRequest(
             NamespaceId: namespaceId,
             EntityName: queueName,
             SubscriptionName: null,
             FromDeadLetter: fromDeadLetter,
-            MaxMessages: pageSize,
+            MaxMessages: peekCount,
             FromSequenceNumber: null);
 
         var result = fromDeadLetter

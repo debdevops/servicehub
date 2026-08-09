@@ -1,3 +1,5 @@
+using ServiceHub.Core.Entities;
+
 namespace ServiceHub.Core.Interfaces;
 
 /// <summary>
@@ -18,6 +20,30 @@ public interface INamespaceSignatureLookupService
         string ownerId,
         Guid namespaceId,
         IReadOnlyList<ClusterSignatureObservation> observations,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads a single persisted signature record without recording an observation — unlike
+    /// <see cref="LookupAndRecordAsync"/>, this never increments <c>OccurrenceCount</c> or
+    /// moves <c>LastSeenAt</c>. Returns <see langword="null"/> if this hash has never been
+    /// observed for the given owner/namespace.
+    /// </summary>
+    Task<NamespaceSignature?> GetByHashAsync(
+        string ownerId,
+        Guid namespaceId,
+        string signatureHash,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finds every persisted record of this exact signature hash in namespaces other than
+    /// <paramref name="excludeNamespaceId"/>, scoped to <paramref name="ownerId"/> — the
+    /// fleet-wide counterpart to <see cref="GetByHashAsync"/>, answering "has this signature
+    /// been observed anywhere else in my fleet?"
+    /// </summary>
+    Task<IReadOnlyList<NamespaceSignature>> FindAcrossNamespacesAsync(
+        string ownerId,
+        string signatureHash,
+        Guid excludeNamespaceId,
         CancellationToken cancellationToken = default);
 }
 

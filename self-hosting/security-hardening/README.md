@@ -271,6 +271,29 @@ identity, `key_{hash}` for a scoped API key).
 > each action — a shared collaborator does not retroactively see another owner's past
 > investigation history for that namespace.
 
+### Per-namespace restriction
+
+`Scopes`/roles control *which operations* an identity can perform, instance-wide — they don't
+restrict *which namespaces*. `Namespaces` on a `ScopedApiKeys[]` entry (or a `namespaces` claim on
+an OIDC token, if your IdP is configured to emit one) narrows a credential to a specific subset of
+the namespaces it would otherwise see, for the common "give this contractor's key access to only
+their team's namespace" case even when its owner identity's pool includes others (e.g. a shared
+team API key that created or was shared several namespaces).
+
+```json
+"ScopedApiKeys": [
+  { "Key": "...", "Scopes": ["Viewer"], "Namespaces": ["<namespace-guid>"], "Description": "Contractor key — one namespace only" }
+]
+```
+
+`Namespaces` can only narrow access, never widen it — a namespace must still be owned by or shared
+with the caller's `OwnerId` *and* appear in the allow-list, and an out-of-list namespace returns
+the same `404` as one the caller doesn't own at all. It's enforced everywhere namespace ownership
+is already resolved (namespace/entity/message operations, bulk replay/purge, rule-triggered
+replay-all, the live SSE event stream) — **except** the cross-namespace Fleet overview and Audit
+log endpoints, which still reflect the caller's full `OwnerId` pool regardless of `Namespaces`. See
+`docs/CONFIGURATION.md` and `docs/KNOWN-LIMITATIONS.md`.
+
 ### Audit log retention
 
 - [ ] If your organization has a defined audit-log retention policy (a common SOC2/ISO 27001/GDPR

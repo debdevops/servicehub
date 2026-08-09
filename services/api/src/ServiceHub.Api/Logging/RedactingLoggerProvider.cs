@@ -97,7 +97,7 @@ public sealed class RedactingLogger : ILogger
         // Format and output the log message
         var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.fff");
         var levelString = logLevel.ToString().ToUpperInvariant();
-        var exceptionInfo = exception != null ? $"\n{exception}" : string.Empty;
+        var exceptionInfo = exception != null ? $"\n{LogRedactor.Redact(exception.ToString())}" : string.Empty;
 
         var logOutput = $"[{timestamp}] [{levelString}] [{_categoryName}] {redactedMessage}{exceptionInfo}";
         

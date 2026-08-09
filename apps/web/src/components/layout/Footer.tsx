@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { Heart, Github, BookOpen } from 'lucide-react';
 
 export function Footer() {
@@ -37,14 +38,14 @@ export function Footer() {
             <span>GitHub</span>
           </a>
           <span className="text-white/30">|</span>
-          <a
-            href="#help"
+          <Link
+            to="/help"
             className="text-white/70 hover:text-white transition-colors flex items-center gap-1"
             title="Help"
           >
             <BookOpen className="w-3.5 h-3.5" />
             <span>Help</span>
-          </a>
+          </Link>
         </div>
       </div>
     </footer>

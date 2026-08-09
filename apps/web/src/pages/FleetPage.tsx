@@ -162,6 +162,7 @@ export default function FleetPage() {
   };
 
   return (
+    <div className="flex-1 overflow-y-auto min-w-0">
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -450,6 +451,7 @@ export default function FleetPage() {
           </div>
         </>
       )}
+    </div>
     </div>
   );
 }

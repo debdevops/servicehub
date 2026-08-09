@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DlqHistoryPage } from '@/pages/DlqHistoryPage';
@@ -152,6 +152,47 @@ describe('DlqHistoryPage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><DlqHistoryPage /></Wrapper>);
     expect(screen.getByText('Scan Now')).toBeInTheDocument();
+  });
+
+  describe('DLQ scanning on an unmonitored provider (e.g. AWS SQS)', () => {
+    // mockCapabilitiesMap.Aws.supportsRepeatablePeek is false, and ns1 is an AWS
+    // namespace — this is the "not monitored" case the backend rejects with a 400
+    // Dlq.NotMonitored on every scan attempt.
+
+    it('disables the Scan Now button and never calls triggerScan, even when totalMessages is 0', async () => {
+      mockUseDlqSummary.mockReturnValue({ data: { ...mockSummary, totalMessages: 0 } });
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      const scanButton = screen.getByText('Scan Now').closest('button');
+      expect(scanButton).toBeDisabled();
+
+      if (scanButton) fireEvent.click(scanButton);
+
+      // Give the auto-scan effect a chance to fire too.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(dlqHistoryApi.triggerScan).not.toHaveBeenCalled();
+    });
+
+    it('enables Scan Now and auto-scans on zero messages when the provider supports repeatable peek', async () => {
+      mockUseProviderCapabilities.mockReturnValue({
+        data: {
+          Aws: { ...mockCapabilitiesMap.Aws, supportsRepeatablePeek: true },
+        },
+      });
+      mockUseDlqSummary.mockReturnValue({ data: { ...mockSummary, totalMessages: 0 }, refetch: vi.fn() });
+      vi.mocked(dlqHistoryApi.triggerScan).mockResolvedValue(0);
+      const Wrapper = createWrapper();
+      render(<Wrapper><DlqHistoryPage /></Wrapper>);
+
+      // Queried by title (stable) rather than disabled/text state, since the
+      // auto-scan effect may already be mid-flight (isScanning) by the time
+      // render() returns — the "not monitored" tooltip is what we're ruling out.
+      expect(screen.getByTitle('Instantly scan DLQs for new messages')).toBeInTheDocument();
+
+      await waitFor(() => expect(dlqHistoryApi.triggerScan).toHaveBeenCalledWith('ns1'));
+    });
   });
 
   it('renders CSV export button', () => {

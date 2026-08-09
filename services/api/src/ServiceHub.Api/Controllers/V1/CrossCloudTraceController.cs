@@ -90,7 +90,7 @@ public sealed class CrossCloudTraceController : ApiControllerBase
         var searchToken = linkedCts.Token;
 
         // ── Load all namespaces for this owner ────────────────────────────
-        var allNsResult = await _namespaceRepository.GetByOwnerAsync(OwnerId, cancellationToken);
+        var allNsResult = await _namespaceRepository.GetByOwnerAsync(OwnerId, AllowedNamespaceIds, cancellationToken);
         if (allNsResult.IsFailure)
         {
             return ToActionResult<CrossCloudTraceResponse>(allNsResult.Error);
@@ -285,9 +285,14 @@ public sealed class CrossCloudTraceController : ApiControllerBase
         var historyHops = new List<CrossCloudTraceHop>();
         try
         {
-            // TENANT ISOLATION: Filter DLQ records by owner
+            // TENANT ISOLATION: Filter DLQ records by owner, further narrowed by the caller's
+            // namespace allow-list — otherwise a restricted key could see historical hops for
+            // namespaces outside its allow-list even though the live search above already
+            // excludes them.
+            var allowedNamespaceIds = AllowedNamespaceIds;
             var dlqMessages = await _dlqContext.DlqMessages
-                .Where(m => m.CorrelationId == traceId && m.OwnerId == OwnerId)
+                .Where(m => m.CorrelationId == traceId && m.OwnerId == OwnerId
+                    && (allowedNamespaceIds == null || allowedNamespaceIds.Contains(m.NamespaceId)))
                 .OrderBy(m => m.DetectedAtUtc)
                 .Take(MaxHistoryEntries)
                 .ToListAsync(cancellationToken)

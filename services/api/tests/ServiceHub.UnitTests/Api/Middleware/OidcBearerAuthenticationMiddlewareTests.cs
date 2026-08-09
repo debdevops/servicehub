@@ -37,7 +37,8 @@ public sealed class OidcBearerAuthenticationMiddlewareTests
         string? subject = "user-123",
         DateTime? expires = null,
         SecurityKey? signingKey = null,
-        string? scope = null)
+        string? scope = null,
+        string? namespaces = null)
     {
         var handler = new JwtSecurityTokenHandler();
         var claims = new List<Claim>();
@@ -48,6 +49,10 @@ public sealed class OidcBearerAuthenticationMiddlewareTests
         if (scope is not null)
         {
             claims.Add(new Claim("scope", scope));
+        }
+        if (namespaces is not null)
+        {
+            claims.Add(new Claim("namespaces", namespaces));
         }
 
         var token = new JwtSecurityToken(
@@ -191,6 +196,41 @@ public sealed class OidcBearerAuthenticationMiddlewareTests
         var scopes = (string[])context.Items["OidcScopes"]!;
         scopes.Should().Contain("dlq:read");
         scopes.Should().Contain("namespaces:read");
+    }
+
+    // ── Optional 'namespaces' claim ──────────────────────────────────────────
+
+    [Fact]
+    public async Task InvokeAsync_ValidTokenWithoutNamespacesClaim_DoesNotSetAllowedNamespaceIds()
+    {
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = CreateMiddleware(next);
+
+        var context = new DefaultHttpContext();
+        context.Request.Headers.Authorization = $"Bearer {BuildToken()}";
+
+        await middleware.InvokeAsync(context);
+
+        context.Items.Should().NotContainKey("AllowedNamespaceIds");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ValidTokenWithNamespacesClaim_SetsAllowedNamespaceIds()
+    {
+        var namespaceId1 = Guid.NewGuid();
+        var namespaceId2 = Guid.NewGuid();
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = CreateMiddleware(next);
+
+        var context = new DefaultHttpContext();
+        context.Request.Headers.Authorization =
+            $"Bearer {BuildToken(namespaces: $"{namespaceId1} {namespaceId2}")}";
+
+        await middleware.InvokeAsync(context);
+
+        var allowedNamespaceIds = context.Items["AllowedNamespaceIds"].Should()
+            .BeAssignableTo<IReadOnlySet<Guid>>().Subject;
+        allowedNamespaceIds.Should().BeEquivalentTo([namespaceId1, namespaceId2]);
     }
 
     // ── Invalid tokens fall through gracefully (no hard 401 here) ──────────────

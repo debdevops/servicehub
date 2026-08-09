@@ -394,6 +394,38 @@ public class MessageOperationsServiceTests
     }
 
     [Fact]
+    public async Task PeekDeadLetterMessagesAsync_ReceiverThrowsOperationCanceled_PropagatesInsteadOfBecomingAResult()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Gcp);
+
+        receiverMock.Setup(r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException("cancelled"));
+
+        var req = new GetMessagesRequest(ns.Id, "queue");
+        Func<Task> act = () => svc.PeekDeadLetterMessagesAsync(req);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task PeekMessages_ReceiverThrowsOperationCanceled_PropagatesInsteadOfBecomingAResult()
+    {
+        // Regression: a client-cancelled peek (e.g. GCP's Cancelled RpcException, rethrown by the
+        // receiver as OperationCanceledException) must reach ErrorHandlingMiddleware's existing
+        // client-disconnect handling (499, no error log), not get swallowed here into a 500
+        // "UnexpectedError" for a client that already disconnected.
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Gcp);
+
+        receiverMock.Setup(r => r.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException("cancelled"));
+
+        var req = new GetMessagesRequest(ns.Id, "queue");
+        Func<Task> act = () => svc.PeekMessagesAsync(req);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task GetMessageCount_ReceiverThrows_ReturnsUnexpectedError()
     {
         var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);

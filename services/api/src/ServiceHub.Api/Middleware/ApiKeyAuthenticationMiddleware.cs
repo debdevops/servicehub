@@ -131,6 +131,7 @@ public sealed class ApiKeyAuthenticationMiddleware
                             Key = keyConfig.Key,
                             Scopes = ApiKeyRoles.Expand(keyConfig.Scopes),
                             Description = keyConfig.Description,
+                            Namespaces = keyConfig.Namespaces,
                         }
                         : keyConfig;
                 }
@@ -284,6 +285,12 @@ public sealed class ApiKeyAuthenticationMiddleware
         context.Items["OwnerId"] = keyConfig.IsAdminKey
             ? Namespace.SpaOwnerId
             : ComputeScopedOwnerId(apiKey);
+
+        var allowedNamespaceIds = NamespaceAllowList.Parse(keyConfig.Namespaces);
+        if (allowedNamespaceIds is not null)
+        {
+            context.Items["AllowedNamespaceIds"] = allowedNamespaceIds;
+        }
 
         _logger.LogDebug(
             "Authentication successful for {Method} {Path} with key {KeyPrefix}",

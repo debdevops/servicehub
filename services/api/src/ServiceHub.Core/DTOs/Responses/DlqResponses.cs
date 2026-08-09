@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using ServiceHub.Core.Enums;
 
 namespace ServiceHub.Core.DTOs.Responses;
@@ -127,11 +128,13 @@ public sealed record DlqTrendPointResponse(
 /// <summary>
 /// Request DTO for updating notes on a DLQ message.
 /// </summary>
-public sealed record UpdateDlqNotesRequest(string Notes);
+public sealed record UpdateDlqNotesRequest([property: StringLength(4096)] string Notes);
 
 /// <summary>
 /// Request DTO for triaging a DLQ message (status transition).
 /// </summary>
 /// <param name="Status">Target lifecycle status (Active, Archived, Discarded, Resolved).</param>
 /// <param name="Notes">Optional notes to record alongside the transition.</param>
-public sealed record UpdateDlqStatusRequest(DlqMessageStatus Status, string? Notes = null);
+public sealed record UpdateDlqStatusRequest(
+    DlqMessageStatus Status,
+    [property: StringLength(4096)] string? Notes = null);

@@ -1,32 +1,43 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
 import {
   dlqHistoryApi,
+  type DlqHistoryItem,
   type DlqHistoryParams,
   type DlqTriageStatus,
+  type PaginatedResponse,
 } from '../lib/api/dlqHistory';
 import { useDemoContext, rejectDemoModeMutation } from '../lib/demo/DemoContext';
+import { getMockDlqHistory } from '../lib/demo/mockProviders';
 import toast from 'react-hot-toast';
 
 /**
  * Hook for fetching paginated DLQ history.
  */
 export function useDlqHistory(params: DlqHistoryParams, enabled = true) {
-  const { isDemoMode } = useDemoContext();
+  const { isDemoMode, cloudProvider } = useDemoContext();
 
-  return useQuery({
-    queryKey: ['dlq-history', params],
-    queryFn: () => dlqHistoryApi.getHistory(params),
-    enabled: !isDemoMode && enabled,
-    staleTime: 15_000,
-    refetchInterval: 30_000,
-    refetchIntervalInBackground: false,
-    retry: (failureCount, error: unknown) => {
-      const err = error as { response?: { status?: number } };
-      if (err?.response?.status === 404) return false;
-      if (err?.response?.status === 429) return false;
-      return failureCount < 2;
-    },
-  });
+  const options: UseQueryOptions<PaginatedResponse<DlqHistoryItem>> =
+    isDemoMode && cloudProvider
+      ? {
+          queryKey: ['dlq-history', 'demo', cloudProvider],
+          queryFn: (): Promise<PaginatedResponse<DlqHistoryItem>> => Promise.resolve(getMockDlqHistory()),
+        }
+      : {
+          queryKey: ['dlq-history', params],
+          queryFn: () => dlqHistoryApi.getHistory(params),
+          enabled: !isDemoMode && enabled,
+          staleTime: 15_000,
+          refetchInterval: 30_000,
+          refetchIntervalInBackground: false,
+          retry: (failureCount, error: unknown) => {
+            const err = error as { response?: { status?: number } };
+            if (err?.response?.status === 404) return false;
+            if (err?.response?.status === 429) return false;
+            return failureCount < 2;
+          },
+        };
+
+  return useQuery(options);
 }
 
 /**

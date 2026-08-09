@@ -357,7 +357,7 @@ The API provides three health check endpoints:
 
 ---
 
-## 🐳 Docker Support (Coming Soon)
+## 🐳 Docker Support
 
 ```bash
 # Build image

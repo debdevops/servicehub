@@ -86,4 +86,33 @@ public sealed class NamespaceSignatureLookupService : INamespaceSignatureLookupS
 
         return results;
     }
+
+    /// <inheritdoc/>
+    public async Task<NamespaceSignature?> GetByHashAsync(
+        string ownerId,
+        Guid namespaceId,
+        string signatureHash,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.NamespaceSignatures
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                s => s.OwnerId == ownerId && s.NamespaceId == namespaceId && s.SignatureHash == signatureHash,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<NamespaceSignature>> FindAcrossNamespacesAsync(
+        string ownerId,
+        string signatureHash,
+        Guid excludeNamespaceId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.NamespaceSignatures
+            .AsNoTracking()
+            .Where(s => s.OwnerId == ownerId && s.SignatureHash == signatureHash && s.NamespaceId != excludeNamespaceId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
 }

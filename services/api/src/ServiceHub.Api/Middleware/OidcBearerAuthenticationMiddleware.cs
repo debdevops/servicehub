@@ -155,6 +155,22 @@ public sealed class OidcBearerAuthenticationMiddleware
                 }
             }
 
+            // Optional custom 'namespaces' claim — a space-delimited list of namespace GUIDs
+            // restricting this identity to a subset of the namespaces it would otherwise see.
+            // Absent (the common case) means unrestricted, unchanged from prior behaviour. Most
+            // IdPs require deliberate configuration to emit an app-specific claim like this one,
+            // same opt-in caveat as the 'scope' claim above.
+            var namespacesClaim = principal.FindFirst("namespaces")?.Value;
+            if (!string.IsNullOrWhiteSpace(namespacesClaim))
+            {
+                var rawNamespaceIds = namespacesClaim.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                var allowedNamespaceIds = NamespaceAllowList.Parse(rawNamespaceIds);
+                if (allowedNamespaceIds is not null)
+                {
+                    context.Items["AllowedNamespaceIds"] = allowedNamespaceIds;
+                }
+            }
+
             _logger.LogDebug(
                 "OIDC authentication successful for {Method} {Path}",
                 safeMethod, safePath);
