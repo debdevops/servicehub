@@ -459,7 +459,7 @@ jobs:
         run: |
           echo "Testing: App should fail to start with placeholder SECURITY__ENCRYPTIONKEY"
           # Start with a placeholder value that should be rejected in Production
-          SECURITY__ENCRYPTIONKEY="SET_VIA_ENV_VAR" docker compose up --build -d 2>&1
+          SECURITY__ENCRYPTIONKEY="SET_VIA_ENV_VAR" SECURITY__SPATOKEN__SECRET=$(openssl rand -hex 32) docker compose up --build -d 2>&1
 
           # Give it 10 seconds to fail
           sleep 10
