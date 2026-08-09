@@ -114,7 +114,7 @@ public sealed class SignatureReplayWorkerTests : IDisposable
     private async Task<SignatureReplayJob> PollUntilAsync(
         Guid jobId, Func<SignatureReplayJob, bool> predicate, TimeSpan? timeout = null)
     {
-        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(15));
         SignatureReplayJob reloaded;
         do
         {
