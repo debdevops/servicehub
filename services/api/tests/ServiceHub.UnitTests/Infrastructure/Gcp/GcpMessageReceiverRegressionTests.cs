@@ -114,6 +114,42 @@ public sealed class GcpMessageReceiverRegressionTests
     }
 
     [Fact]
+    public async Task PeekMessagesAsync_MessageCarriesCorrelationIdAttribute_PopulatesCorrelationId()
+    {
+        // Regresses the Multi-Cloud Trace gap this fix closes: Pub/Sub (like SQS) has no
+        // dedicated SDK correlation field — unlike Azure Service Bus, whose native
+        // CorrelationId property was already mapped — so without this extraction,
+        // DlqMonitorService persisted every GCP DLQ message with CorrelationId=null, making
+        // it permanently unreachable via Cross-Cloud Trace's historical-DLQ lookup once it's
+        // no longer peekable live. Confirmed live: 0/24 GCP DLQ rows had CorrelationId set,
+        // vs 13/13 for Azure.
+        var ns = BuildNamespace();
+        var pull = new PullResponse
+        {
+            ReceivedMessages =
+            {
+                new ReceivedMessage
+                {
+                    AckId = "ack-1",
+                    DeliveryAttempt = 1,
+                    Message = new PubsubMessage
+                    {
+                        MessageId = "m1",
+                        Data = Google.Protobuf.ByteString.CopyFromUtf8("{}"),
+                        Attributes = { ["correlationId"] = "shs-abc123-0001" },
+                    },
+                },
+            },
+        };
+        var (sut, _) = BuildSut(ns, SubId, pull);
+
+        var result = await sut.PeekMessagesAsync(new GetMessagesRequest(TestNamespaceId, SubId, null, false, 10));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value[0].CorrelationId.Should().Be("shs-abc123-0001");
+    }
+
+    [Fact]
     public async Task PeekMessagesAsync_EmptySubscription_ReturnsEmptyWithoutNack()
     {
         var ns = BuildNamespace();
@@ -139,6 +175,59 @@ public sealed class GcpMessageReceiverRegressionTests
         // Stable identity is what makes replay/purge targetable after any peek.
         first.Value[0].SequenceNumber.Should().Be(second.Value[0].SequenceNumber);
         first.Value[0].SequenceNumber.Should().BePositive();
+    }
+
+    [Theory]
+    [InlineData("m1")]
+    [InlineData("0ee6c520-3396-4ba5-9724-5926f2afcc68")]
+    [InlineData("8a57b311-f56c-4cea-a814-65e4e7069393")]
+    [InlineData("another-message-id-entirely")]
+    public async Task PeekMessagesAsync_SequenceNumberSurvivesJsDoublePrecisionRoundTrip(string messageId)
+    {
+        // Regression for the same class of bug fixed on the AWS receiver: sequence
+        // numbers are a SHA-256 hash of the MessageId, so the full 63-bit range
+        // produces values outside JS's Number.MAX_SAFE_INTEGER (2^53-1). Browsers
+        // silently round such values on JSON.parse, so a replay/purge request built
+        // from a peeked message would send back a different integer than the one the
+        // backend computes on its live re-scan. Masking to 53 bits keeps every value
+        // exactly representable as a JS double.
+        var ns = BuildNamespace();
+        var pull = new PullResponse { ReceivedMessages = { BuildReceived("ack-1", messageId, "body") } };
+        var (sut, _) = BuildSut(ns, SubId, pull);
+
+        var result = await sut.PeekMessagesAsync(new GetMessagesRequest(TestNamespaceId, SubId, null, false, 10));
+
+        var seq = result.Value[0].SequenceNumber;
+        seq.Should().BeLessThanOrEqualTo(9_007_199_254_740_991L); // Number.MAX_SAFE_INTEGER
+        ((double)seq).Should().Be(seq, "the value must round-trip exactly through a JS double");
+    }
+
+    [Fact]
+    public async Task PeekMessagesAsync_ClientCancellation_PropagatesAsOperationCanceled()
+    {
+        // Regression: gRPC surfaces a client-cancelled Pull as RpcException(Cancelled), not a
+        // plain OperationCanceledException. Left uncaught, this used to fall into the generic
+        // catch-all and come back as a 502 "PeekFailed" for a client that had already
+        // disconnected. It must now propagate as OperationCanceledException so
+        // ErrorHandlingMiddleware's existing client-disconnect handling (499, no error log)
+        // takes over instead.
+        var ns = BuildNamespace();
+        var subscriber = new Mock<SubscriberServiceApiClient>();
+        subscriber.Setup(s => s.PullAsync(It.IsAny<PullRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Grpc.Core.RpcException(new Grpc.Core.Status(Grpc.Core.StatusCode.Cancelled, "Call canceled by the client.")));
+
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetSubscriberClientAsync(ns, SubId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(subscriber.Object);
+
+        var sut = new GcpMessageReceiver(factory.Object, BuildRepo(ns).Object, NullLogger<GcpMessageReceiver>.Instance);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Func<Task> act = () => sut.PeekMessagesAsync(new GetMessagesRequest(TestNamespaceId, SubId, null, false, 10), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
     // ─────────────────────────────────────────────────────────────────────────

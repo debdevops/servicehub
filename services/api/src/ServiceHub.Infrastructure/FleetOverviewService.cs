@@ -59,7 +59,10 @@ public sealed class FleetOverviewService : IFleetOverviewService
             var trendCutoff = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero).AddDays(-(TrendDays - 1));
             var relevantCutoff = windowCutoff < trendCutoff ? windowCutoff : trendCutoff;
 
-            var namespacesResult = await _namespaceRepository.GetByOwnerAsync(ownerId, cancellationToken);
+            // Known limitation: fleet aggregation is not yet allow-list-aware — a
+            // namespace-restricted key still sees cross-namespace category/trend aggregates for
+            // its full owner pool here. See docs/KNOWN-LIMITATIONS.md.
+            var namespacesResult = await _namespaceRepository.GetByOwnerAsync(ownerId, allowedNamespaceIds: null, cancellationToken);
             var namespaces = namespacesResult.IsSuccess
                 ? namespacesResult.Value
                 : [];

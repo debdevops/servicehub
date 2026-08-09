@@ -178,8 +178,8 @@ public static class DependencyInjection
     }
 
     /// <summary>
-    /// Adds background services for anomaly detection, DLQ monitoring, bulk operations, and
-    /// audit-log retention.
+    /// Adds background services for anomaly detection, DLQ monitoring, bulk operations,
+    /// signature replay, and audit-log retention.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The service collection for chaining.</returns>
@@ -188,6 +188,7 @@ public static class DependencyInjection
         services.AddHostedService<AnomalyDetectionWorker>();
         services.AddHostedService<DlqMonitorWorker>();
         services.AddHostedService<BulkOperationWorker>();
+        services.AddHostedService<SignatureReplayWorker>();
         services.AddHostedService<AuditRetentionWorker>();
 
         return services;
@@ -248,6 +249,10 @@ public static class DependencyInjection
         // Failure Knowledge service for operational memory
         services.TryAddScoped<IFailureKnowledgeService, FailureKnowledgeService>();
 
+        // Failure Signature lifecycle (Active/Resolved/Reopened/Suppressed/Archived) — EF Core
+        // (DlqDbContext)-backed, so Scoped like every other DlqDbContext-backed service.
+        services.TryAddScoped<ISignatureLifecycleService, SignatureLifecycleService>();
+
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();
@@ -275,6 +280,17 @@ public static class DependencyInjection
         services.TryAddSingleton<IBulkOperationQueue, BulkOperationQueue>();
         services.TryAddScoped<IBulkOperationService, BulkOperationService>();
         services.TryAddScoped<IBulkOperationExecutor, BulkOperationExecutor>();
+
+        // Signature Replay — same queue/worker split as Bulk Operations: the queue is a
+        // singleton (process-wide hand-off + cancellation registry), the service and executor
+        // are scoped like every other DlqDbContext-backed service. The worker itself is
+        // registered by AddBackgroundWorkers(), not here.
+        services.TryAddSingleton<ISignatureReplayQueue, SignatureReplay.SignatureReplayQueue>();
+        services.TryAddScoped<ISignatureReplayService, SignatureReplay.SignatureReplayService>();
+        services.TryAddScoped<ISignatureReplayExecutor, SignatureReplay.SignatureReplayExecutor>();
+
+        // Failure Intelligence Center — aggregation service for incident command center
+        services.TryAddScoped<IFailureIntelligenceCenterService, FailureIntelligenceCenterService>();
 
         return services;
     }

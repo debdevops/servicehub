@@ -381,6 +381,34 @@ public sealed class InMemoryNamespaceRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task GetByOwnerAsync_WithAllowList_ReturnsOnlyAllowListedNamespace()
+    {
+        var ns1 = Namespace.Create(ValidName, ValidConnectionString, ownerId: "owner-a").Value;
+        var ns2 = Namespace.Create("test-namespace-2.servicebus.windows.net", ValidConnectionString, ownerId: "owner-a").Value;
+        await _sut.AddAsync(ns1);
+        await _sut.AddAsync(ns2);
+
+        var result = await _sut.GetByOwnerAsync("owner-a", new HashSet<Guid> { ns1.Id });
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle(n => n.Id == ns1.Id);
+    }
+
+    [Fact]
+    public async Task GetByOwnerAsync_WithNullAllowList_ReturnsAllOwnedNamespaces()
+    {
+        var ns1 = Namespace.Create(ValidName, ValidConnectionString, ownerId: "owner-a").Value;
+        var ns2 = Namespace.Create("test-namespace-2.servicebus.windows.net", ValidConnectionString, ownerId: "owner-a").Value;
+        await _sut.AddAsync(ns1);
+        await _sut.AddAsync(ns2);
+
+        var result = await _sut.GetByOwnerAsync("owner-a", allowedNamespaceIds: null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task UpdateAsync_PersistsSharedWithOwnerIds_NewInstanceLoadsThem()
     {
         var ns = Namespace.Create(ValidName, ValidConnectionString, ownerId: "owner-a").Value;

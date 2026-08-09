@@ -31,7 +31,8 @@ public sealed record FailureKnowledge(
     DateTimeOffset? LastUpdatedAt,
     int KnowledgeVersion,
     DateTimeOffset? ReviewDueAt,
-    string? Tags)
+    string? Tags,
+    string? UpdatedBy = null)
 {
     /// <summary>
     /// Friendly summary of this knowledge for logging and UI display.

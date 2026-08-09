@@ -99,6 +99,17 @@ public sealed class DlqMonitorServiceTests : IDisposable
             .ReturnsAsync(Result<IReadOnlyList<Message>>.Success(messages));
     }
 
+    /// <summary>Maps each peek's FromSequenceNumber (-1 for the initial, cursor-less peek) to the batch it should return.</summary>
+    private void SetupPeekBatches(Dictionary<long, Message[]> batchesByFromSequenceNumber)
+    {
+        _receiverMock.Setup(r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((GetMessagesRequest req, CancellationToken _) =>
+                Task.FromResult(Result<IReadOnlyList<Message>>.Success(
+                    batchesByFromSequenceNumber.TryGetValue(req.FromSequenceNumber ?? -1, out var msgs)
+                        ? msgs
+                        : Array.Empty<Message>())));
+    }
+
     private void SetupForensic()
     {
         _forensicMock.Setup(f => f.Analyse(It.IsAny<DlqMessage>()))
@@ -527,6 +538,89 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var msg = await _dbContext.DlqMessages.FirstAsync();
         msg.Status.Should().Be(DlqMessageStatus.Active);
         msg.ReplayedAt.Should().BeNull();
+    }
+
+    // ── C6 regression: paging past the first PeekBatchSize (100) messages ─
+
+    [Fact]
+    public async Task ScanNamespace_AzureBacklogBeyondFirstBatch_PagesWithAdvancedSequenceNumber_StoresAll()
+    {
+        var sut = CreateSut(CloudProviderType.Azure);
+        SetupNamespace(CloudProviderType.Azure);
+        SetupEntities(MakeEntity("test-queue", "Queue", 120, CloudProviderType.Azure));
+
+        var firstBatch = Enumerable.Range(1, 100).Select(i => MakeMessage(i)).ToArray();
+        var secondBatch = Enumerable.Range(101, 20).Select(i => MakeMessage(i)).ToArray();
+        SetupPeekBatches(new Dictionary<long, Message[]>
+        {
+            [-1L] = firstBatch,
+            [101L] = secondBatch,
+        });
+        SetupForensic();
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(120); // all 120, not capped at the first 100
+
+        _receiverMock.Verify(r => r.PeekDeadLetterMessagesAsync(
+            It.Is<GetMessagesRequest>(req => req.FromSequenceNumber == null),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _receiverMock.Verify(r => r.PeekDeadLetterMessagesAsync(
+            It.Is<GetMessagesRequest>(req => req.FromSequenceNumber == 101),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        var count = await _dbContext.DlqMessages.CountAsync();
+        count.Should().Be(120);
+    }
+
+    [Fact]
+    public async Task ScanNamespace_AzureUnboundedBacklog_StopsAtSafetyCap()
+    {
+        var sut = CreateSut(CloudProviderType.Azure);
+        SetupNamespace(CloudProviderType.Azure);
+        SetupEntities(MakeEntity("test-queue", "Queue", 100_000, CloudProviderType.Azure));
+        SetupForensic();
+
+        var callCount = 0;
+        _receiverMock.Setup(r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((GetMessagesRequest req, CancellationToken _) =>
+            {
+                callCount++;
+                var start = req.FromSequenceNumber ?? 1;
+                var batch = Enumerable.Range(0, 100).Select(i => MakeMessage(start + i)).ToArray();
+                return Task.FromResult(Result<IReadOnlyList<Message>>.Success((IReadOnlyList<Message>)batch));
+            });
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        callCount.Should().Be(50); // MaxScanBatchesPerEntity — always-full-batch backlog never self-terminates
+        result.Value.Should().Be(5000);
+    }
+
+    [Fact]
+    public async Task ScanNamespace_AwsFullBatch_DoesNotPageFurther_NoStableSequenceCursor()
+    {
+        // AWS/GCP sequence numbers are unstable per-peek hashes (see ScanEntityDlqAsync's
+        // useSequenceKey comment), so pagination must not be attempted for them even when a
+        // batch comes back full — unlike Azure, this must remain a single peek per scan.
+        var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
+        SetupNamespace(CloudProviderType.Aws);
+        SetupEntities(MakeEntity("orders", "Queue", 100, CloudProviderType.Aws));
+
+        var fullBatch = Enumerable.Range(1, 100).Select(i => MakeMessage(i, $"sqs-msg-{i}")).ToArray();
+        SetupPeek(fullBatch);
+        SetupForensic();
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(100);
+
+        _receiverMock.Verify(
+            r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]

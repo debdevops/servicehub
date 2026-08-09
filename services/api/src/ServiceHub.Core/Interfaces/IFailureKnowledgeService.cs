@@ -82,4 +82,18 @@ public interface IFailureKnowledgeService
         string signatureHash,
         DateTimeOffset reviewDueAt,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieve prior versions of a signature's knowledge, most recent first. Each entry is a
+    /// snapshot taken immediately before an update superseded it.
+    /// </summary>
+    /// <param name="ownerId">Owner for multi-tenant isolation.</param>
+    /// <param name="namespaceId">Namespace the signature belongs to.</param>
+    /// <param name="signatureHash">The signature's fingerprint hash.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<Result<IReadOnlyList<FailureKnowledgeHistoryEntry>>> GetKnowledgeHistoryAsync(
+        string ownerId,
+        Guid namespaceId,
+        string signatureHash,
+        CancellationToken cancellationToken = default);
 }

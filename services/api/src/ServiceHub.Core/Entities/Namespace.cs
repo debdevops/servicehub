@@ -134,7 +134,7 @@ public sealed class Namespace
     /// <summary>
     /// Gets the additional owner IDs this namespace has been explicitly shared with, granting
     /// live operational access (browse entities, peek/replay/purge messages, Live Tail) —
-    /// see <see cref="ShareWith"/>/<see cref="RevokeShare"/>/<see cref="IsAccessibleBy"/>.
+    /// see <see cref="ShareWith"/>/<see cref="RevokeShare"/>/<see cref="IsAccessibleBy(string)"/>.
     /// Empty by default; unlike <see cref="OwnerId"/>, this is mutable after creation.
     /// <para>
     /// <b>Known limitation (Preview):</b> DLQ Intelligence history, Bulk Operation job history,
@@ -285,15 +285,18 @@ public sealed class Namespace
         string? awsRegion = null,
         string? gcpProjectId = null)
     {
-        // Allowlist: only accept known managed-identity types; reject ConnectionString
-        // and any future/unknown enum values to prevent user-controlled bypass.
+        // Allowlist: only accept known credential-free identity types; reject ConnectionString
+        // and any future/unknown enum values to prevent user-controlled bypass. Includes AWS/GCP's
+        // identity-federation equivalents (ambient host credentials) alongside Azure AD's.
         if (authType is not (ConnectionAuthType.ManagedIdentity
             or ConnectionAuthType.ServicePrincipal
-            or ConnectionAuthType.DefaultAzureCredential))
+            or ConnectionAuthType.DefaultAzureCredential
+            or ConnectionAuthType.AwsOidc
+            or ConnectionAuthType.GcpWorkloadIdentity))
         {
             return Result<Namespace>.Failure(Error.Validation(
                 ErrorCodes.Namespace.ConnectionStringRequired,
-                "Authentication type must be ManagedIdentity, ServicePrincipal, or DefaultAzureCredential. Use Create() for connection string authentication."));
+                "Authentication type must be ManagedIdentity, ServicePrincipal, DefaultAzureCredential, AwsOidc, or GcpWorkloadIdentity. Use Create() for connection string authentication."));
         }
 
         var validationResult = ValidateManagedIdentityAuth(name, displayName, description);
@@ -504,6 +507,17 @@ public sealed class Namespace
     public bool IsAccessibleBy(string callerOwnerId) =>
         string.Equals(OwnerId, callerOwnerId, StringComparison.Ordinal)
         || SharedWithOwnerIds.Contains(callerOwnerId, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Same check as <see cref="IsAccessibleBy(string)"/>, additionally requiring this
+    /// namespace's <see cref="Id"/> to appear in <paramref name="allowedNamespaceIds"/> when the
+    /// caller's credential carries a namespace allow-list. A null allow-list means the caller is
+    /// unrestricted (today's behaviour); a non-null list can only narrow access, never widen it —
+    /// the owner/share check above must still pass regardless of list contents.
+    /// </summary>
+    public bool IsAccessibleBy(string callerOwnerId, IReadOnlySet<Guid>? allowedNamespaceIds) =>
+        IsAccessibleBy(callerOwnerId)
+        && (allowedNamespaceIds is null || allowedNamespaceIds.Contains(Id));
 
     /// <summary>
     /// Validates parameters for connection string authentication.

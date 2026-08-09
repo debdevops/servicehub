@@ -148,6 +148,52 @@ describe('ConfirmDialog', () => {
     const cancelBtn = screen.getByText('Cancel').closest('button') as HTMLElement;
     expect(document.activeElement).toBe(cancelBtn);
   });
+
+  // ── isConfirming — prevents duplicate submission (H6) ──────────────────────
+
+  it('disables the confirm button while isConfirming is true', () => {
+    render(<ConfirmDialog {...defaultProps} isConfirming />);
+    expect(screen.getByText('Working…').closest('button')).toBeDisabled();
+  });
+
+  it('disables the cancel button while isConfirming is true', () => {
+    render(<ConfirmDialog {...defaultProps} isConfirming />);
+    expect(screen.getByText('Cancel').closest('button')).toBeDisabled();
+  });
+
+  it('disables the X close button while isConfirming is true', () => {
+    render(<ConfirmDialog {...defaultProps} isConfirming />);
+    expect(screen.getByLabelText('Close dialog')).toBeDisabled();
+  });
+
+  it('does not call onConfirm again when the confirm button is clicked while isConfirming is true', async () => {
+    const onConfirm = vi.fn();
+    render(<ConfirmDialog {...defaultProps} onConfirm={onConfirm} isConfirming />);
+    await userEvent.click(screen.getByText('Working…'));
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call onCancel on Escape while isConfirming is true', async () => {
+    const onCancel = vi.fn();
+    render(<ConfirmDialog {...defaultProps} onCancel={onCancel} isConfirming />);
+    await userEvent.keyboard('{Escape}');
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call onCancel when the backdrop is clicked while isConfirming is true', async () => {
+    const onCancel = vi.fn();
+    render(<ConfirmDialog {...defaultProps} onCancel={onCancel} isConfirming />);
+    const backdrop = document.querySelector('[aria-hidden="true"]') as HTMLElement;
+    await userEvent.click(backdrop);
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it('re-enables the confirm button and restores its label once isConfirming becomes false', () => {
+    const { rerender } = render(<ConfirmDialog {...defaultProps} confirmLabel="Delete" isConfirming />);
+    expect(screen.getByText('Working…').closest('button')).toBeDisabled();
+    rerender(<ConfirmDialog {...defaultProps} confirmLabel="Delete" isConfirming={false} />);
+    expect(screen.getByText('Delete').closest('button')).not.toBeDisabled();
+  });
 });
 
 // ── useConfirmDialog hook ─────────────────────────────────────────────────────

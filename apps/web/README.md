@@ -26,18 +26,24 @@ apps/web/
 ├── src/
 │   ├── main.tsx              # Application entry point (StrictMode + QueryClientProvider)
 │   ├── router.tsx            # React Router DOM v7 setup
-│   ├── pages/                # Top-level route components (16 pages)
+│   ├── pages/                # Top-level route components (19 pages)
 │   │   ├── ConnectPage.tsx         # /connect  — namespace management
 │   │   ├── MessagesPage.tsx        # /messages — main message browser
+│   │   ├── MessagesOverviewPage.tsx # /messages-overview
 │   │   ├── DashboardPage.tsx       # /dashboard
+│   │   ├── FleetPage.tsx           # /fleet — cross-namespace dashboard
 │   │   ├── DlqHistoryPage.tsx      # /dlq-history — DLQ intelligence
+│   │   ├── SignatureListPage.tsx   # /signatures — failure signatures
+│   │   ├── SignatureDetailsPage.tsx # /signatures/:signatureHash
 │   │   ├── RulesPage.tsx           # /rules — auto-replay rules
 │   │   ├── HealthPage.tsx          # /health
 │   │   ├── HelpPage.tsx            # /help
+│   │   ├── AuditPage.tsx           # /audit — audit trail
 │   │   ├── ScheduledMessagesPage.tsx  # /scheduled
 │   │   ├── CorrelationExplorerPage.tsx # /correlation
 │   │   ├── SecurityPage.tsx        # /security
 │   │   ├── CrossCloudTracePage.tsx # /cross-cloud-trace
+│   │   ├── CloudBridgePage.tsx     # /cloud-bridge
 │   │   ├── AwsDemoPage.tsx         # /demo/aws
 │   │   └── GcpDemoPage.tsx         # /demo/gcp
 │   ├── components/           # Reusable UI components
@@ -654,6 +660,6 @@ AI Insights are computed entirely client-side (`lib/ai/`, `useInsights`) — the
 
 ---
 
-**Built with ❤️ for debugging Azure Service Bus**
+**Built with ❤️ for debugging cloud message queues**
 
-*Last Updated: January 26, 2026*
+*Last Updated: August 2, 2026*

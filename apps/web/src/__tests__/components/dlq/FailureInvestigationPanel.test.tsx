@@ -1,10 +1,17 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactElement } from 'react';
 import { FailureInvestigationPanel } from '@/components/dlq/FailureInvestigationPanel';
 import type { DlqClusterSignature, FailureKnowledge } from '@servicehub/ui-shared/lib/api/dlqSignatures';
 
 const NOW = new Date('2026-01-15T10:00:00Z');
+
+function renderPanel(ui: ReactElement) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+}
 
 const createMockKnowledge = (overrides?: Partial<FailureKnowledge>): FailureKnowledge => ({
   rootCause: 'Database connection pool exhaustion',
@@ -17,6 +24,8 @@ const createMockKnowledge = (overrides?: Partial<FailureKnowledge>): FailureKnow
   knowledgeVersion: 2,
   reviewDueAt: new Date(NOW.getTime() + 604800000).toISOString(),
   tags: 'database,critical,performance',
+  updatedBy: 'alice@example.com',
+  isReviewOverdue: false,
   ...overrides,
 });
 
@@ -34,25 +43,29 @@ const createMockCluster = (overrides?: Partial<DlqClusterSignature>): DlqCluster
   windowEnd: new Date(NOW.getTime() - 3600000).toISOString(), // 1 hour ago
   explanation: 'Connection timeouts during database maintenance windows',
   knowledge: createMockKnowledge(),
+  signatureHash: 'hash-1',
+  status: 'Active',
+  trend: 'Recurring',
   ...overrides,
 });
 
 describe('FailureInvestigationPanel', () => {
-  it('does not render when cluster is new and has no knowledge', () => {
+  it('renders an Add Knowledge entry point when cluster is new and has no knowledge', () => {
     const cluster = createMockCluster({ isNew: true, knowledge: null });
-    const { container } = render(<FailureInvestigationPanel cluster={cluster} />);
-    expect(container.firstChild).toBeNull();
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
+    expect(screen.getByText(/No operational knowledge has been recorded/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add knowledge/i })).toBeInTheDocument();
   });
 
   it('renders empty state when no knowledge recorded', () => {
     const cluster = createMockCluster({ isNew: false, knowledge: null });
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
     expect(screen.getByText(/No operational knowledge has been recorded/i)).toBeInTheDocument();
   });
 
   it('displays known failure and recurring badges for non-new recurring failures', () => {
     const cluster = createMockCluster();
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
     expect(screen.getByText('✓ Known Failure')).toBeInTheDocument();
     expect(screen.getByText('🔁 Recurring')).toBeInTheDocument();
   });
@@ -61,13 +74,13 @@ describe('FailureInvestigationPanel', () => {
     const cluster = createMockCluster({
       knowledge: createMockKnowledge({ replayGuidance: 'Safe' }),
     });
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
     expect(screen.getByText('Safe')).toBeInTheDocument();
   });
 
   it('displays key metrics: occurrence count and dates', () => {
     const cluster = createMockCluster();
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
     expect(screen.getByText('Occurrences')).toBeInTheDocument();
     expect(screen.getByText('15')).toBeInTheDocument();
     expect(screen.getByText('First Seen')).toBeInTheDocument();
@@ -76,7 +89,7 @@ describe('FailureInvestigationPanel', () => {
 
   it('collapses and expands details on button click', async () => {
     const cluster = createMockCluster();
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
 
     const expandButton = screen.getByRole('button', { name: /expand details/i });
     expect(screen.queryByText('Root Cause')).not.toBeInTheDocument();
@@ -88,7 +101,7 @@ describe('FailureInvestigationPanel', () => {
 
   it('displays root cause when expanded', async () => {
     const cluster = createMockCluster();
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
 
     await userEvent.click(screen.getByRole('button', { name: /expand details/i }));
     expect(screen.getByText('Database connection pool exhaustion')).toBeInTheDocument();
@@ -96,7 +109,7 @@ describe('FailureInvestigationPanel', () => {
 
   it('displays resolution notes when expanded', async () => {
     const cluster = createMockCluster();
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
 
     await userEvent.click(screen.getByRole('button', { name: /expand details/i }));
     expect(screen.getByText('How We Fixed It')).toBeInTheDocument();
@@ -105,7 +118,7 @@ describe('FailureInvestigationPanel', () => {
 
   it('displays owner information', async () => {
     const cluster = createMockCluster();
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
 
     await userEvent.click(screen.getByRole('button', { name: /expand details/i }));
     expect(screen.getByText('Owner')).toBeInTheDocument();
@@ -114,7 +127,7 @@ describe('FailureInvestigationPanel', () => {
 
   it('displays runbook link as clickable anchor', async () => {
     const cluster = createMockCluster();
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
 
     await userEvent.click(screen.getByRole('button', { name: /expand details/i }));
     const link = screen.getByRole('link', { name: /https:\/\/wiki\.example\.com/i });
@@ -124,7 +137,7 @@ describe('FailureInvestigationPanel', () => {
 
   it('displays operational notes', async () => {
     const cluster = createMockCluster();
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
 
     await userEvent.click(screen.getByRole('button', { name: /expand details/i }));
     expect(screen.getByText('Operational Notes')).toBeInTheDocument();
@@ -133,7 +146,7 @@ describe('FailureInvestigationPanel', () => {
 
   it('displays tags parsed from comma-separated string', async () => {
     const cluster = createMockCluster();
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
 
     await userEvent.click(screen.getByRole('button', { name: /expand details/i }));
     expect(screen.getByText('Tags')).toBeInTheDocument();
@@ -144,7 +157,7 @@ describe('FailureInvestigationPanel', () => {
 
   it('displays review due date', async () => {
     const cluster = createMockCluster();
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
 
     await userEvent.click(screen.getByRole('button', { name: /expand details/i }));
     expect(screen.getByText('Review Due')).toBeInTheDocument();
@@ -162,7 +175,7 @@ describe('FailureInvestigationPanel', () => {
         reviewDueAt: null,
       }),
     });
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
 
     await userEvent.click(screen.getByRole('button', { name: /expand details/i }));
     expect(screen.getByText('Test cause')).toBeInTheDocument();
@@ -173,7 +186,7 @@ describe('FailureInvestigationPanel', () => {
     const cluster = createMockCluster({
       knowledge: createMockKnowledge({ replayGuidance: 'Unsafe' }),
     });
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
     expect(screen.getByText('Unsafe')).toBeInTheDocument();
   });
 
@@ -181,7 +194,7 @@ describe('FailureInvestigationPanel', () => {
     const cluster = createMockCluster({
       knowledge: createMockKnowledge({ replayGuidance: 'Investigate' }),
     });
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
     expect(screen.getByText('Investigate')).toBeInTheDocument();
   });
 
@@ -189,7 +202,7 @@ describe('FailureInvestigationPanel', () => {
     const cluster = createMockCluster({
       knowledge: createMockKnowledge({ knowledgeVersion: 3 }),
     });
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
     expect(screen.getByText('Knowledge v3')).toBeInTheDocument();
   });
 
@@ -201,7 +214,7 @@ describe('FailureInvestigationPanel', () => {
         runbookLink: null,
       }),
     });
-    render(<FailureInvestigationPanel cluster={cluster} />);
+    renderPanel(<FailureInvestigationPanel cluster={cluster} namespaceId="ns-1" />);
 
     await userEvent.click(screen.getByRole('button', { name: /expand details/i }));
     expect(screen.queryByText('Root Cause')).not.toBeInTheDocument();

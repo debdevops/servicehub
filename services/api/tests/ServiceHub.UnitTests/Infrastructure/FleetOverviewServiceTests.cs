@@ -44,7 +44,7 @@ public class FleetOverviewServiceTests : IDisposable
         => Namespace.Create(name, ConnString, ownerId: TestConstants.TestOwnerId).Value;
 
     private void SetOwnedNamespaces(params Namespace[] namespaces)
-        => _namespaces.Setup(r => r.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+        => _namespaces.Setup(r => r.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success<IReadOnlyList<Namespace>>(namespaces));
 
     private DlqMessage Msg(

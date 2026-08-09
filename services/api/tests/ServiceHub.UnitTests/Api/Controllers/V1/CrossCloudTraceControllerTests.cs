@@ -114,7 +114,7 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
     {
         // Arrange
         _namespaceRepositoryMock
-            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Failure(Error.Internal("Repository.Error", "Database is down.")));
 
         // Act
@@ -131,7 +131,7 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
     {
         // Arrange
         _namespaceRepositoryMock
-            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
 
         // Act
@@ -152,7 +152,7 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
         // Arrange
         var ns = Namespace.CreateWithManagedIdentity("my-ns.servicebus.windows.net", ConnectionAuthType.ManagedIdentity).Value;
         _namespaceRepositoryMock
-            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
 
         // Act
@@ -173,7 +173,7 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
         // Arrange
         var ns = Namespace.Create("my-ns.servicebus.windows.net", "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=abc123=").Value;
         _namespaceRepositoryMock
-            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
 
         _connectionStringProtectorMock
@@ -198,7 +198,7 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
         // Arrange
         var ns = Namespace.Create("my-ns.servicebus.windows.net", "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=abc123=").Value;
         _namespaceRepositoryMock
-            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
 
         _connectionStringProtectorMock
@@ -381,7 +381,7 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
         // Arrange
         var ns = Namespace.Create("aws-queue", "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue", provider: CloudProviderType.Aws).Value;
         _namespaceRepositoryMock
-            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
 
         // Act
@@ -402,7 +402,7 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
         // Arrange
         var ns = Namespace.Create("aws-queue", "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue", provider: CloudProviderType.Aws).Value;
         _namespaceRepositoryMock
-            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
 
         var providerMock = new Mock<ICloudMessagingProvider>();
@@ -463,7 +463,7 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
         // DLQ too; before the fix, this controller's non-Azure path only peeked active messages.
         var ns = Namespace.Create("gcp-topic", "{\"type\":\"service_account\"}", provider: CloudProviderType.Gcp).Value;
         _namespaceRepositoryMock
-            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
 
         var providerMock = new Mock<ICloudMessagingProvider>();
@@ -523,7 +523,7 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
     {
         // Arrange — no live namespaces; only a historical GCP DLQ record matches.
         _namespaceRepositoryMock
-            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
 
         _dlqContext.DlqMessages.Add(MakeDlqRecord(
@@ -551,7 +551,7 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
         // MessageId must be superseded by the live hop.
         var ns = Namespace.Create("aws-queue", "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue", provider: CloudProviderType.Aws).Value;
         _namespaceRepositoryMock
-            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
 
         var providerMock = new Mock<ICloudMessagingProvider>();
@@ -602,7 +602,7 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
         // Arrange — a history record older than the live hop must sort first.
         var ns = Namespace.Create("aws-queue", "https://sqs.us-east-1.amazonaws.com/123456789012/my-queue", provider: CloudProviderType.Aws).Value;
         _namespaceRepositoryMock
-            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace> { ns }));
 
         var providerMock = new Mock<ICloudMessagingProvider>();
@@ -657,7 +657,7 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
     {
         // Arrange — tenant isolation: another owner's DLQ record must never leak.
         _namespaceRepositoryMock
-            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
 
         _dlqContext.DlqMessages.Add(MakeDlqRecord(
@@ -678,7 +678,7 @@ public sealed class CrossCloudTraceControllerTests : IDisposable
         // Arrange — closing the SQLite connection makes the history query throw;
         // the trace must degrade to live-only results, not fail.
         _namespaceRepositoryMock
-            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByOwnerAsync(TestConstants.TestOwnerId, It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
 
         _dlqContext.Database.CloseConnection();

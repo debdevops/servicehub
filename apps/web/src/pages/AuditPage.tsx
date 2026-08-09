@@ -534,6 +534,7 @@ export function AuditPage() {
           {search && (
             <button
               onClick={() => handleSearchChange('')}
+              aria-label="Clear search"
               className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
             >
               <X className="w-3.5 h-3.5" />
@@ -591,7 +592,15 @@ export function AuditPage() {
                 <tr
                   key={entry.id}
                   onClick={() => setSelectedEntry(entry)}
-                  className="hover:bg-violet-50/40 cursor-pointer transition-colors group"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedEntry(entry);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  className="hover:bg-violet-50/40 cursor-pointer transition-colors group focus:outline-none focus:ring-2 focus:ring-inset focus:ring-violet-500"
                 >
                   <td className="px-4 py-3 text-gray-500 whitespace-nowrap font-mono text-xs">
                     {new Date(entry.timestamp).toLocaleString(undefined, {

@@ -652,11 +652,12 @@ export function ConnectPage() {
 
             <form onSubmit={handleConnect}>
               <div className="mb-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="connect-display-name" className="block text-sm font-medium text-gray-700 mb-1">
                   Display Name <span className="text-red-500">*</span>
                   <HelpTooltip {...tooltips.connect.displayName} position="right" className="ml-1" />
                 </label>
                 <input
+                  id="connect-display-name"
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
@@ -674,12 +675,13 @@ export function ConnectPage() {
               {cloudProvider === 'azure' && (
                 <>
                   <div className="mb-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="connect-connection-string" className="block text-sm font-medium text-gray-700 mb-1">
                       Connection String <span className="text-red-500">*</span>
                       <HelpTooltip {...tooltips.connect.connectionString} position="right" className="ml-1" />
                     </label>
                     <div className="relative">
                       <input
+                        id="connect-connection-string"
                         type={showPassword ? 'text' : 'password'}
                         value={connectionString}
                         onChange={(e) => setConnectionString(e.target.value)}
@@ -708,7 +710,7 @@ export function ConnectPage() {
               {cloudProvider === 'aws' && (
                 <>
                   <div className="mb-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="connect-aws-access-key-id" className="block text-sm font-medium text-gray-700 mb-1">
                       AWS Access Key ID <span className="text-red-500">*</span>
                       <HelpTooltip
                         text="Your AWS IAM Access Key ID. Create a dedicated IAM user with sqs:ReceiveMessage and sqs:GetQueueAttributes permissions."
@@ -717,6 +719,7 @@ export function ConnectPage() {
                       />
                     </label>
                     <input
+                      id="connect-aws-access-key-id"
                       type="text"
                       value={awsAccessKeyId}
                       onChange={(e) => setAwsAccessKeyId(e.target.value)}
@@ -727,11 +730,12 @@ export function ConnectPage() {
                   </div>
 
                   <div className="mb-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="connect-aws-secret-key" className="block text-sm font-medium text-gray-700 mb-1">
                       AWS Secret Access Key <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <input
+                        id="connect-aws-secret-key"
                         type={showPassword ? 'text' : 'password'}
                         value={awsSecretKey}
                         onChange={(e) => setAwsSecretKey(e.target.value)}
@@ -751,7 +755,7 @@ export function ConnectPage() {
                   </div>
 
                   <div className="mb-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="connect-aws-region" className="block text-sm font-medium text-gray-700 mb-1">
                       AWS Region <span className="text-red-500">*</span>
                       <HelpTooltip
                         text="The AWS region where your SQS queues are located."
@@ -760,6 +764,7 @@ export function ConnectPage() {
                       />
                     </label>
                     <select
+                      id="connect-aws-region"
                       value={awsRegion}
                       onChange={(e) => setAwsRegion(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-300"
@@ -812,7 +817,7 @@ export function ConnectPage() {
               {cloudProvider === 'gcp' && (
                 <>
                   <div className="mb-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="connect-gcp-project-id" className="block text-sm font-medium text-gray-700 mb-1">
                       GCP Project ID <span className="text-red-500">*</span>
                       <HelpTooltip
                         text="Your Google Cloud project identifier (e.g., my-project-123). Found in the GCP Console header."
@@ -821,6 +826,7 @@ export function ConnectPage() {
                       />
                     </label>
                     <input
+                      id="connect-gcp-project-id"
                       type="text"
                       value={gcpProjectId}
                       onChange={(e) => setGcpProjectId(e.target.value)}
@@ -913,11 +919,12 @@ export function ConnectPage() {
               )}
 
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="connect-environment" className="block text-sm font-medium text-gray-700 mb-1">
                   Environment <span className="text-red-500">*</span>
                   <HelpTooltip {...tooltips.connect.environment} position="right" className="ml-1" />
                 </label>
                 <select
+                  id="connect-environment"
                   value={environment}
                   onChange={(e) => setEnvironment(e.target.value as EnvironmentType)}
                   className="w-full px-3 py-2 rounded-lg text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300"

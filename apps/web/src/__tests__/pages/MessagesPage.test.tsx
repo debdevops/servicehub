@@ -282,6 +282,27 @@ describe('MessagesPage', () => {
     }
   });
 
+  it('warns that search/filters only apply to loaded messages when more messages are available', () => {
+    mockUseMessages.mockReturnValue({
+      data: { ...mockMessagesData, totalCount: 100 },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+      dataUpdatedAt: Date.now(),
+    });
+    const Wrapper = createWrapper();
+    render(<Wrapper><MessagesPage /></Wrapper>);
+    expect(screen.getByText(/More messages available/)).toBeInTheDocument();
+    expect(screen.getByText(/Search and filters only apply to the messages currently loaded/)).toBeInTheDocument();
+  });
+
+  it('does not show the more-messages warning when the full queue is already loaded', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><MessagesPage /></Wrapper>);
+    expect(screen.queryByText(/More messages available/)).not.toBeInTheDocument();
+  });
+
   it('renders with topic subscription path', () => {
     const Wrapper = createWrapper('/messages?namespace=ns1&topic=orders&subscription=sub1');
     render(<Wrapper><MessagesPage /></Wrapper>);

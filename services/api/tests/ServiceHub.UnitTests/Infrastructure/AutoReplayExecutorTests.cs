@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -297,5 +298,74 @@ public class AutoReplayExecutorTests : IDisposable
         _messageOperations.Verify(
             m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    // ── C2: concurrent replay ───────────────────────────────
+
+    [Fact]
+    public async Task Execute_MessageClaimedByAnotherWorkerBeforeThisCall_SkipsWithoutCallingProvider()
+    {
+        // Own shared-cache SQLite DB (not the class fixture's private ":memory:" one) so a
+        // second, independent DlqDbContext can race against the message this call is about
+        // to process — simulating bulk-replay or signature-replay claiming it first.
+        var connectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        using var keeperConnection = new SqliteConnection(connectionString);
+        keeperConnection.Open();
+
+        var options = new DbContextOptionsBuilder<DlqDbContext>().UseSqlite(connectionString).Options;
+        using var dbContext = new DlqDbContext(options);
+        dbContext.Database.EnsureCreated();
+
+        var rule = new AutoReplayRule
+        {
+            Name = "Test Rule", OwnerId = TestConstants.TestOwnerId, Enabled = true,
+            ConditionsJson = "[]", ActionsJson = "{}",
+            CreatedAt = DateTimeOffset.UtcNow, MaxReplaysPerHour = 100
+        };
+        dbContext.AutoReplayRules.Add(rule);
+
+        var msg = new DlqMessage
+        {
+            MessageId = "msg-1", SequenceNumber = 1, BodyHash = "hash-1",
+            NamespaceId = Guid.NewGuid(), OwnerId = TestConstants.TestOwnerId, EntityName = "test-queue",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddHours(-1),
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            DeliveryCount = 5, MessageSize = 100,
+            Status = DlqMessageStatus.Active
+        };
+        dbContext.DlqMessages.Add(msg);
+        await dbContext.SaveChangesAsync();
+        // `dbContext` now tracks `msg` with original Status = Active — mirroring
+        // DlqMonitorWorker's own query, which is what hands AutoReplayExecutor its message.
+
+        // A different worker (its own context) claims and replays the same message first.
+        using (var racingContext = new DlqDbContext(options))
+        {
+            var racingCopy = await racingContext.DlqMessages.SingleAsync(m => m.Id == msg.Id);
+            racingCopy.Status = DlqMessageStatus.Replayed;
+            racingCopy.ReplayedAt = DateTimeOffset.UtcNow;
+            racingCopy.ReplaySuccess = true;
+            await racingContext.SaveChangesAsync();
+        }
+
+        var messageOperations = new Mock<IMessageOperationsService>();
+        var executor = new AutoReplayExecutor(dbContext, messageOperations.Object, _logger.Object);
+        var action = new RuleAction();
+
+        var result = await executor.ExecuteAsync(msg, rule, action);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.Conflict);
+
+        messageOperations.Verify(
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        var stored = await dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == msg.Id);
+        stored.Status.Should().Be(DlqMessageStatus.Replayed); // the racing worker's write stands, untouched by this call
+
+        var historyCount = await dbContext.ReplayHistories.CountAsync(h => h.DlqMessageId == msg.Id);
+        historyCount.Should().Be(0); // this call never wrote history — it never reached the provider
     }
 }

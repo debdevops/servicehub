@@ -4,7 +4,6 @@ using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure;
 using ServiceHub.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 
 namespace ServiceHub.UnitTests;
 
@@ -12,7 +11,6 @@ public sealed class FailureKnowledgeServiceTests
 {
     private readonly DlqDbContext _dbContext;
     private readonly FailureKnowledgeService _sut;
-    private readonly ILogger<FailureKnowledgeService> _logger;
 
     private const string OwnerId = "entra:test-owner";
     private static readonly Guid NamespaceId = Guid.NewGuid();
@@ -25,8 +23,7 @@ public sealed class FailureKnowledgeServiceTests
             .Options;
 
         _dbContext = new DlqDbContext(options);
-        _logger = Moq.Mock.Of<ILogger<FailureKnowledgeService>>();
-        _sut = new FailureKnowledgeService(_dbContext, _logger);
+        _sut = new FailureKnowledgeService(_dbContext);
     }
 
     [Fact]
@@ -141,6 +138,86 @@ public sealed class FailureKnowledgeServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.ReviewDueAt.Should().Be(reviewDate);
+    }
+
+    [Fact]
+    public async Task UpsertKnowledgeAsync_NewKnowledge_NoHistorySnapshotTaken()
+    {
+        var knowledge = new FailureKnowledge(
+            RootCause: "Cause", ResolutionNotes: null, OperationalNotes: null,
+            RunbookLink: null, Owner: null, ReplayGuidance: null, LastUpdatedAt: null,
+            KnowledgeVersion: 1, ReviewDueAt: null, Tags: null);
+
+        await _sut.UpsertKnowledgeAsync(OwnerId, NamespaceId, SignatureHash, knowledge);
+
+        var history = await _sut.GetKnowledgeHistoryAsync(OwnerId, NamespaceId, SignatureHash);
+
+        history.IsSuccess.Should().BeTrue();
+        history.Value.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UpsertKnowledgeAsync_UpdateExisting_SnapshotsPriorVersionIntoHistory()
+    {
+        var original = new FailureKnowledge(
+            RootCause: "Original cause", ResolutionNotes: null, OperationalNotes: null,
+            RunbookLink: null, Owner: null, ReplayGuidance: null, LastUpdatedAt: null,
+            KnowledgeVersion: 1, ReviewDueAt: null, Tags: null, UpdatedBy: "alice@example.com");
+
+        await _sut.UpsertKnowledgeAsync(OwnerId, NamespaceId, SignatureHash, original);
+
+        var updated = new FailureKnowledge(
+            RootCause: "Updated cause", ResolutionNotes: null, OperationalNotes: null,
+            RunbookLink: null, Owner: null, ReplayGuidance: null, LastUpdatedAt: null,
+            KnowledgeVersion: 1, ReviewDueAt: null, Tags: null, UpdatedBy: "bob@example.com");
+
+        await _sut.UpsertKnowledgeAsync(OwnerId, NamespaceId, SignatureHash, updated);
+
+        var history = await _sut.GetKnowledgeHistoryAsync(OwnerId, NamespaceId, SignatureHash);
+
+        history.IsSuccess.Should().BeTrue();
+        history.Value.Should().HaveCount(1);
+        history.Value[0].KnowledgeVersion.Should().Be(1);
+        history.Value[0].RootCause.Should().Be("Original cause");
+        history.Value[0].UpdatedBy.Should().Be("alice@example.com");
+    }
+
+    [Fact]
+    public async Task GetKnowledgeHistoryAsync_MultipleUpdates_OrdersMostRecentFirst()
+    {
+        var v1 = new FailureKnowledge(
+            RootCause: "v1", ResolutionNotes: null, OperationalNotes: null,
+            RunbookLink: null, Owner: null, ReplayGuidance: null, LastUpdatedAt: null,
+            KnowledgeVersion: 1, ReviewDueAt: null, Tags: null);
+        await _sut.UpsertKnowledgeAsync(OwnerId, NamespaceId, SignatureHash, v1);
+
+        var v2 = v1 with { RootCause = "v2" };
+        await _sut.UpsertKnowledgeAsync(OwnerId, NamespaceId, SignatureHash, v2);
+
+        var v3 = v1 with { RootCause = "v3" };
+        await _sut.UpsertKnowledgeAsync(OwnerId, NamespaceId, SignatureHash, v3);
+
+        var history = await _sut.GetKnowledgeHistoryAsync(OwnerId, NamespaceId, SignatureHash);
+
+        history.IsSuccess.Should().BeTrue();
+        history.Value.Should().HaveCount(2);
+        history.Value[0].KnowledgeVersion.Should().Be(2);
+        history.Value[0].RootCause.Should().Be("v2");
+        history.Value[1].KnowledgeVersion.Should().Be(1);
+        history.Value[1].RootCause.Should().Be("v1");
+    }
+
+    [Fact]
+    public async Task UpsertKnowledgeAsync_UpdatedByOmitted_PersistsNull()
+    {
+        var knowledge = new FailureKnowledge(
+            RootCause: "Cause", ResolutionNotes: null, OperationalNotes: null,
+            RunbookLink: null, Owner: null, ReplayGuidance: null, LastUpdatedAt: null,
+            KnowledgeVersion: 1, ReviewDueAt: null, Tags: null);
+
+        var result = await _sut.UpsertKnowledgeAsync(OwnerId, NamespaceId, SignatureHash, knowledge);
+
+        result.Value.UpdatedBy.Should().BeNull();
     }
 
     [Fact]
