@@ -456,10 +456,13 @@ jobs:
           docker compose down -v 2>/dev/null || true
 
       - name: Validate app fails with placeholder SECURITY__ENCRYPTIONKEY
+        env:
+          SECURITY__ENCRYPTIONKEY: SET_VIA_ENV_VAR
+          SECURITY__SPATOKEN__SECRET: abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890  # test secret for CI only
         run: |
           echo "Testing: App should fail to start with placeholder SECURITY__ENCRYPTIONKEY"
           # Start with a placeholder value that should be rejected in Production
-          SECURITY__ENCRYPTIONKEY="SET_VIA_ENV_VAR" SECURITY__SPATOKEN__SECRET=$(openssl rand -hex 32) docker compose up --build -d 2>&1
+          docker compose up --build -d 2>&1
 
           # Give it 10 seconds to fail
           sleep 10
@@ -478,9 +481,12 @@ jobs:
           fi
 
       - name: Validate app starts with valid SECURITY__ENCRYPTIONKEY
+        env:
+          SECURITY__ENCRYPTIONKEY: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210  # 32-byte test key for CI only
+          SECURITY__SPATOKEN__SECRET: abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890  # test secret for CI only
         run: |
           echo "Testing: App should start successfully with valid SECURITY__ENCRYPTIONKEY"
-          SECURITY__ENCRYPTIONKEY=$(openssl rand -hex 32) SECURITY__SPATOKEN__SECRET=$(openssl rand -hex 32) docker compose up --build -d 2>&1
+          docker compose up --build -d 2>&1
 
           echo "Waiting for container to become healthy..."
           for i in $(seq 1 60); do
