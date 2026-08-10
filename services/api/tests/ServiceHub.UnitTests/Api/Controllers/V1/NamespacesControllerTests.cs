@@ -557,6 +557,74 @@ public class NamespacesControllerTests
         response.TotalDlq.Should().Be(1);
     }
 
+    /// <summary>
+    /// Regression: AwsMessagingProvider labels SNS topics "SNS Topic", not "Topic", so the
+    /// original exact-equality count reported zero topics for every AWS namespace no matter how
+    /// many existed. The fixture above uses the literal string the provider actually emits.
+    /// </summary>
+    [Fact]
+    public async Task GetStats_AwsSnsTopicEntityType_ShouldBeCountedAsATopic()
+    {
+        var ns = Namespace.Create("aws-ns", "AKIAFAKE:secretkey", "AWS Test", provider: CloudProviderType.Aws, awsRegion: "us-east-1").Value;
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var entities = new List<CloudEntity>
+        {
+            new() { Name = "orders", EntityType = "Queue", ActiveMessageCount = 5, Provider = CloudProviderType.Aws },
+            new() { Name = "orders-events", EntityType = "SNS Topic", Provider = CloudProviderType.Aws },
+            new() { Name = "billing-events", EntityType = "SNS Topic", Provider = CloudProviderType.Aws },
+            new() { Name = "orders-events/orders", EntityType = "Subscription", Provider = CloudProviderType.Aws },
+        };
+
+        var awsProvider = new Mock<ICloudMessagingProvider>();
+        awsProvider.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Aws);
+        awsProvider.Setup(p => p.ListEntitiesAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Success(entities));
+
+        var controller = CreateController(messagingProviders: [awsProvider.Object]);
+
+        var result = await controller.GetStats(ns.Id);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<NamespaceStatsResponse>().Subject;
+        response.TotalTopics.Should().Be(2);
+        response.TotalQueues.Should().Be(1);
+        response.TotalSubscriptions.Should().Be(1);
+    }
+
+    /// <summary>
+    /// GCP Pub/Sub topics arrive as the bare "Topic" string, so the suffix match must not have
+    /// regressed the provider that was already counted correctly.
+    /// </summary>
+    [Fact]
+    public async Task GetStats_GcpTopicEntityType_ShouldStillBeCountedAsATopic()
+    {
+        var ns = Namespace.Create("gcp-ns", "{\"type\":\"service_account\"}", "GCP Test", provider: CloudProviderType.Gcp, gcpProjectId: "my-project").Value;
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var entities = new List<CloudEntity>
+        {
+            new() { Name = "patient-intake", EntityType = "Topic", Provider = CloudProviderType.Gcp },
+            new() { Name = "patient-intake/sub", EntityType = "Subscription", Provider = CloudProviderType.Gcp },
+        };
+
+        var gcpProvider = new Mock<ICloudMessagingProvider>();
+        gcpProvider.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Gcp);
+        gcpProvider.Setup(p => p.ListEntitiesAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Success(entities));
+
+        var controller = CreateController(messagingProviders: [gcpProvider.Object]);
+
+        var result = await controller.GetStats(ns.Id);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<NamespaceStatsResponse>().Subject;
+        response.TotalTopics.Should().Be(1);
+        response.TotalSubscriptions.Should().Be(1);
+    }
+
     [Fact]
     public async Task GetStats_GcpListEntitiesFails_ShouldReturnZeroedStats()
     {

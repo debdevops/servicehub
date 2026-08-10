@@ -24,6 +24,7 @@ import {
   useMessage,
   useSendMessage,
   useReplayMessage,
+  usePurgeMessage,
 } from '../../hooks/useMessages';
 
 function createWrapper() {
@@ -260,7 +261,9 @@ describe('useReplayMessage', () => {
     expect(messagesApi.replay).toHaveBeenCalledWith('ns-1', 42, 'my-queue', undefined);
   });
 
-  it('shows 404-specific toast when replay is not available', async () => {
+  // Replay has shipped for many releases; a 404 means the message is gone, not that the
+  // feature is missing. The previous assertion here asserted the defect itself.
+  it('explains a 404 as a missing message, never as a missing feature', async () => {
     vi.mocked(messagesApi.replay).mockRejectedValueOnce({ response: { status: 404 } });
 
     const { result } = renderHook(() => useReplayMessage(), { wrapper: createWrapper() });
@@ -274,10 +277,55 @@ describe('useReplayMessage', () => {
     });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
+    const [text] = vi.mocked(toast.error).mock.calls[0];
+    expect(text).toContain('Message not found');
+    expect(text).not.toContain('not yet available');
+  });
+
+  it('surfaces the ProblemDetails detail rather than the axios status message', async () => {
+    // The exact shape ApiControllerBase.CreateProblemDetails returns. Reading `data.message`
+    // here (the v3.6.0 P1-1 defect) discarded this and showed "Request failed with status
+    // code 400" instead.
+    vi.mocked(messagesApi.replay).mockRejectedValueOnce({
+      response: {
+        status: 400,
+        data: {
+          status: 400,
+          title: 'Bad Request',
+          detail: 'Namespace is Production — replay is disabled.',
+        },
+      },
+      message: 'Request failed with status code 400',
+    });
+
+    const { result } = renderHook(() => useReplayMessage(), { wrapper: createWrapper() });
+
+    await act(async () => {
+      result.current.mutate({ namespaceId: 'ns-1', sequenceNumber: 42, entityName: 'my-queue' });
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
     expect(toast.error).toHaveBeenCalledWith(
-      expect.stringContaining('not yet available'),
+      'Namespace is Production — replay is disabled.',
       expect.any(Object)
     );
+  });
+
+  it('never renders an error toast that cannot expire', async () => {
+    vi.mocked(messagesApi.replay).mockRejectedValueOnce({
+      response: { status: 500, data: { detail: 'Boom' } },
+    });
+
+    const { result } = renderHook(() => useReplayMessage(), { wrapper: createWrapper() });
+
+    await act(async () => {
+      result.current.mutate({ namespaceId: 'ns-1', sequenceNumber: 42, entityName: 'my-queue' });
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    const [, options] = vi.mocked(toast.error).mock.calls[0];
+    expect(options?.duration).toBeDefined();
+    expect(Number.isFinite(options!.duration!)).toBe(true);
   });
 
   it('shows generic error toast for non-404 failures', async () => {
@@ -295,5 +343,51 @@ describe('useReplayMessage', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(toast.error).toHaveBeenCalledWith('Server error', expect.any(Object));
+  });
+});
+
+// ─── usePurgeMessage ──────────────────────────────────────────────────────────
+
+describe('usePurgeMessage', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('surfaces the ProblemDetails detail on failure', async () => {
+    vi.mocked(messagesApi.purge).mockRejectedValueOnce({
+      response: {
+        status: 400,
+        data: {
+          detail: 'Azure Service Bus does not support single-message purge.',
+        },
+      },
+      message: 'Request failed with status code 400',
+    });
+
+    const { result } = renderHook(() => usePurgeMessage(), { wrapper: createWrapper() });
+
+    await act(async () => {
+      result.current.mutate({ namespaceId: 'ns-1', sequenceNumber: 42, entityName: 'my-queue' });
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(toast.error).toHaveBeenCalledWith(
+      'Azure Service Bus does not support single-message purge.',
+      expect.any(Object)
+    );
+  });
+
+  it('uses a finite toast duration', async () => {
+    vi.mocked(messagesApi.purge).mockRejectedValueOnce({
+      response: { status: 500, data: { detail: 'Boom' } },
+    });
+
+    const { result } = renderHook(() => usePurgeMessage(), { wrapper: createWrapper() });
+
+    await act(async () => {
+      result.current.mutate({ namespaceId: 'ns-1', sequenceNumber: 42, entityName: 'my-queue' });
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    const [, options] = vi.mocked(toast.error).mock.calls[0];
+    expect(Number.isFinite(options!.duration!)).toBe(true);
   });
 });

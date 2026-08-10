@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, RefreshCw, ShieldAlert, X } from 'lucide-react';
 import { useSignatureReplayPreview, useStartSignatureReplay } from '@servicehub/ui-shared/hooks/useSignatureReplay';
 import type { SignatureReplayScope } from '@servicehub/ui-shared/lib/api/signatureReplay';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 interface SignatureReplayPreviewModalProps {
   namespaceId: string;
@@ -64,9 +65,13 @@ export function SignatureReplayPreviewModal({
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isBusy, onClose]);
 
+  // This component is mounted only while the dialog is open, so the trap is always armed.
+  const dialogRef = useFocusTrap<HTMLDivElement>(true);
+
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label="Replay signature preview"

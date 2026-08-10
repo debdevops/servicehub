@@ -95,6 +95,19 @@ beforeEach(() => {
 });
 
 describe('AuditPage', () => {
+  it('does not filter by namespace when the URL has no namespace param, even though a namespace is isActive', () => {
+    // isActive means "not deleted," not "currently selected" — every registered namespace
+    // has isActive: true, so defaulting to namespaces.find(isActive) would silently scope
+    // this page (whose own subtitle promises "all critical operations") to one arbitrary
+    // namespace and hide every other namespace's audit events.
+    const Wrapper = createWrapper('/audit');
+    render(<Wrapper><AuditPage /></Wrapper>);
+
+    expect(mockUseAuditLogs).toHaveBeenCalled();
+    const params = mockUseAuditLogs.mock.calls[0][0];
+    expect(params.namespaceId).toBeUndefined();
+  });
+
   it('renders page title and subtitle', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><AuditPage /></Wrapper>);

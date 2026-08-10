@@ -172,7 +172,7 @@ public class ApiKeyAuthenticationMiddlewareTests
     }
 
     [Fact]
-    public async Task InvokeAsync_InvalidApiKey_ShouldReturn403()
+    public async Task InvokeAsync_InvalidApiKey_ShouldReturn401()
     {
         RequestDelegate next = _ => Task.CompletedTask;
         var config = CreateConfig(enabled: true, apiKeys: ["test-key-12345"]);
@@ -185,7 +185,7 @@ public class ApiKeyAuthenticationMiddlewareTests
 
         await middleware.InvokeAsync(context);
 
-        context.Response.StatusCode.Should().Be(403);
+        context.Response.StatusCode.Should().Be(401);
     }
 
     [Fact]
@@ -237,7 +237,7 @@ public class ApiKeyAuthenticationMiddlewareTests
 
         await middleware.InvokeAsync(context);
 
-        context.Response.StatusCode.Should().Be(403);
+        context.Response.StatusCode.Should().Be(401);
     }
 
     [Fact]
@@ -275,8 +275,8 @@ public class ApiKeyAuthenticationMiddlewareTests
 
         await middleware.InvokeAsync(context);
 
-        // Placeholder keys should be rejected (403 = not in lookup)
-        context.Response.StatusCode.Should().Be(403);
+        // Placeholder keys should be rejected (401 = credential not recognised)
+        context.Response.StatusCode.Should().Be(401);
     }
 
     [Fact]
@@ -388,7 +388,7 @@ public class ApiKeyAuthenticationMiddlewareTests
         context2.Request.Headers["X-API-KEY"] = "REPLACED_BY_KEYVAULT_servicehub_api_key_admin";
         context2.Response.Body = new MemoryStream();
         await middleware.InvokeAsync(context2);
-        context2.Response.StatusCode.Should().Be(403);
+        context2.Response.StatusCode.Should().Be(401);
     }
 
     // ── SPA Token Authentication ─────────────────────────────────────
@@ -624,7 +624,7 @@ public class ApiKeyAuthenticationMiddlewareTests
         {
             var context = CreateApiContext("wrong-key");
             await middleware.InvokeAsync(context);
-            context.Response.StatusCode.Should().Be(403, $"attempt {i + 1} is under the lockout threshold");
+            context.Response.StatusCode.Should().Be(401, $"attempt {i + 1} is under the lockout threshold");
         }
 
         var lockedOutContext = CreateApiContext("wrong-key");
@@ -653,7 +653,7 @@ public class ApiKeyAuthenticationMiddlewareTests
 
         var recoveredContext = CreateApiContext("wrong-key");
         await middleware.InvokeAsync(recoveredContext);
-        recoveredContext.Response.StatusCode.Should().Be(403, "the window has expired, so this is back to a plain invalid-key rejection, not a lockout");
+        recoveredContext.Response.StatusCode.Should().Be(401, "the window has expired, so this is back to a plain invalid-key rejection, not a lockout");
     }
 
     [Fact]
@@ -673,7 +673,7 @@ public class ApiKeyAuthenticationMiddlewareTests
         // Threshold is 2; without the reset this would be failure #2 and lock out.
         var afterSuccessContext = CreateApiContext("wrong-key");
         await middleware.InvokeAsync(afterSuccessContext);
-        afterSuccessContext.Response.StatusCode.Should().Be(403, "the successful auth cleared the prior failure, so this is only failure #1 again");
+        afterSuccessContext.Response.StatusCode.Should().Be(401, "the successful auth cleared the prior failure, so this is only failure #1 again");
     }
 
     [Fact]

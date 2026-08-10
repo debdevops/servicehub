@@ -824,7 +824,10 @@ public sealed class NamespacesController : ApiControllerBase
 
             var entities = entitiesResult.Value;
             var totalQueuesLive = entities.Count(e => string.Equals(e.EntityType, "Queue", StringComparison.OrdinalIgnoreCase));
-            var totalTopicsLive = entities.Count(e => string.Equals(e.EntityType, "Topic", StringComparison.OrdinalIgnoreCase));
+            // Suffix match, not equality: AWS labels its topics "SNS Topic" while GCP uses "Topic",
+            // so an exact comparison counted every AWS namespace as having zero topics. Mirrors the
+            // "*Topic" match TopicsController.ListTopics already uses as the canonical convention.
+            var totalTopicsLive = entities.Count(e => e.EntityType.EndsWith("Topic", StringComparison.OrdinalIgnoreCase));
             var totalSubscriptionsLive = entities.Count(e => string.Equals(e.EntityType, "Subscription", StringComparison.OrdinalIgnoreCase));
 
             return Ok(new NamespaceStatsResponse(

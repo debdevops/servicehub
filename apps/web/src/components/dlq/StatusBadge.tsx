@@ -12,6 +12,11 @@ const statusStyles: Record<string, { bg: string; text: string; dot: string }> = 
   Resolved: { bg: 'bg-sky-100', text: 'text-sky-700', dot: 'bg-sky-500' },
   Suppressed: { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500' },
   Reopened: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
+  // Transient claim states: a worker holds this message and is calling the provider right now.
+  // Briefly visible if the UI refreshes mid-operation. Without these they fell through to the
+  // Active style, showing a message as red/"needs attention" while it was actively being handled.
+  Replaying: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
+  Purging: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
 };
 
 const trendStyles: Record<string, { bg: string; text: string }> = {

@@ -21,6 +21,7 @@ import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
 import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
 import { messagesApi } from '@servicehub/ui-shared/lib/api/messages';
 import toast from 'react-hot-toast';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 import {
   generateMessages,
   getDefaultScenarios,
@@ -136,6 +137,9 @@ export function MessageGeneratorModal({
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
+
+  // Declared before the early return — hooks must run on every render.
+  const dialogRef = useFocusTrap<HTMLDivElement>(isOpen);
 
   if (!isOpen) return null;
 
@@ -283,6 +287,7 @@ export function MessageGeneratorModal({
       {/* Modal */}
       <div
         className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="message-generator-modal-title"

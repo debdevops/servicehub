@@ -1,11 +1,23 @@
 import axios, { AxiosError } from 'axios';
 import toast from 'react-hot-toast';
+import { extractApiError } from './errors';
 
 // Extend AxiosRequestConfig so hooks can mark background-polling requests
 // as silent — the error interceptor skips toast notifications for these.
 declare module 'axios' {
   interface AxiosRequestConfig {
     _silent?: boolean;
+    /**
+     * The calling hook reports this request's failures itself (typically a mutation whose
+     * `onError` renders an operation-specific message via `extractApiError`). The interceptor
+     * suppresses only its *generic* toast for these; session-level handling — the 401 SPA-token
+     * refresh-and-retry in particular — still runs.
+     *
+     * This exists because the interceptor and the hook otherwise both fire for one failure,
+     * showing two contradictory messages. `_silent` cannot be used for that: it returns before
+     * the 401 refresh, so a mutation marked `_silent` would stop recovering from token expiry.
+     */
+    _ownErrorToast?: boolean;
   }
 }
 
@@ -177,7 +189,9 @@ apiClient.interceptors.response.use(
     captureCorrelationId(response.headers);
     return response;
   },
-  async (error: AxiosError<{ message?: string; errors?: Record<string, string[]> }>) => {
+  // `detail`/`title` are the ProblemDetails fields controllers return; `message` is the
+  // ErrorHandlingMiddleware `ErrorResponse` field for unhandled exceptions. Both are real.
+  async (error: AxiosError<{ detail?: string; title?: string; message?: string; errors?: Record<string, string[]> }>) => {
     captureCorrelationId(error.response?.headers);
 
     // Silent mode: skip all toast notifications.
@@ -187,13 +201,17 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    // When the caller renders its own error, suppress the generic toasts below but keep the
+    // session-level recovery (401 refresh-and-retry) running.
+    const ownsErrorToast = error.config?._ownErrorToast === true;
+
     // Network error (includes timeout, connection refused, etc.)
     if (!error.response) {
       const errorKey = error.code === 'ECONNABORTED' || error.message?.includes('timeout')
         ? 'timeout-error'
         : 'network-error';
       
-      if (shouldShowError(errorKey)) {
+      if (!ownsErrorToast && shouldShowError(errorKey)) {
         const message = errorKey === 'timeout-error'
           ? 'Request timed out (30s). The API server may be busy or unresponsive. Try again in a moment.'
           : 'Cannot reach the API. If running on a remote server, ensure port 5153 is accessible.';
@@ -208,7 +226,7 @@ apiClient.interceptors.response.use(
     // Handle specific status codes with recovery guidance
     const status = error.response.status;
     const url = error.config?.url || 'unknown';
-    
+
     switch (status) {
       case 429: {
         // Rate limit exceeded — show user feedback for non-silent requests
@@ -217,9 +235,10 @@ apiClient.interceptors.response.use(
         const retryAfterRaw = error.response.headers['retry-after'];
         const retryAfterSec = retryAfterRaw ? parseInt(retryAfterRaw, 10) : 30;
         const errorKey = '429-rate-limit';
-        if (shouldShowError(errorKey)) {
+        if (!ownsErrorToast && shouldShowError(errorKey)) {
           toast.error(
-            `Too many requests. The app is sending too many API calls. Please wait ${retryAfterSec}s.`,
+            `Rate limit reached — the server is asking clients to slow down. Retrying is safe in ${retryAfterSec}s. ` +
+            `If this recurs, raise RateLimit:MaxRequests (see docs/CONFIGURATION.md).`,
             { duration: Math.max(retryAfterSec * 1000, 8000) }
           );
         }
@@ -247,7 +266,7 @@ apiClient.interceptors.response.use(
         }
 
         const errorKey = `${status}-${url}`;
-        if (shouldShowError(errorKey)) {
+        if (!ownsErrorToast && shouldShowError(errorKey)) {
           toast.error('Session expired. Please refresh the page to continue.', {
             duration: 5000,
           });
@@ -256,10 +275,18 @@ apiClient.interceptors.response.use(
       }
       case 403: {
         const errorKey = `${status}-${url}`;
-        if (shouldShowError(errorKey)) {
-          toast.error('Access denied. Verify your connection string has the required permissions.', {
-            duration: 5000,
-          });
+        if (!ownsErrorToast && shouldShowError(errorKey)) {
+          // Prefer the server's own explanation. A 403 here is usually ScopeAuthorizationFilter
+          // rejecting an API key that lacks a scope ("Insufficient permissions. Required scope:
+          // dlq:read"), which the previous hardcoded connection-string wording described
+          // incorrectly. The connection-string phrasing survives only as the fallback.
+          toast.error(
+            extractApiError(
+              error,
+              'Access denied. Verify your connection string has the required permissions.',
+            ),
+            { duration: 5000 },
+          );
         }
         break;
       }
@@ -268,7 +295,7 @@ apiClient.interceptors.response.use(
           // Show feedback for message operation 404s (replay, dead-letter, cancel)
           const isMessageOp = url.match(/\/messages\/[a-f0-9-]+/i);
           const errorKey = `404-${url}`;
-          if (shouldShowError(errorKey)) {
+          if (!ownsErrorToast && shouldShowError(errorKey)) {
             toast.error(
               isMessageOp
                 ? 'Message not found — it may have been consumed, expired, or already replayed.'
@@ -284,7 +311,7 @@ apiClient.interceptors.response.use(
         const validationErrors = error.response.data.errors;
         if (validationErrors) {
           const errorKey = `${status}-validation`;
-          if (shouldShowError(errorKey)) {
+          if (!ownsErrorToast && shouldShowError(errorKey)) {
             Object.values(validationErrors).flat().forEach(msg => toast.error(msg, { duration: 5000 }));
           }
         }
@@ -294,7 +321,7 @@ apiClient.interceptors.response.use(
       case 502:
       case 503: {
         const errorKey = `${status}-server`;
-        if (shouldShowError(errorKey)) {
+        if (!ownsErrorToast && shouldShowError(errorKey)) {
           toast.error('Server error. Try refreshing or restart the API server.', {
             duration: 5000,
           });

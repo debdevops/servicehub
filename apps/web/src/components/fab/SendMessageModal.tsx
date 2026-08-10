@@ -5,6 +5,7 @@ import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
 import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
 import { useSendMessage } from '@servicehub/ui-shared/hooks/useMessages';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 // ============================================================================
 // SendMessageModal - Modal for composing and sending messages
@@ -85,6 +86,9 @@ export function SendMessageModal({
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
+
+  // Declared before the early return — hooks must run on every render.
+  const dialogRef = useFocusTrap<HTMLDivElement>(isOpen);
 
   if (!isOpen) return null;
 
@@ -178,6 +182,7 @@ export function SendMessageModal({
       {/* Modal */}
       <div
         className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="send-message-modal-title"

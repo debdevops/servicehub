@@ -56,6 +56,12 @@ public class DlqHistoryControllerTests
             .ReturnsAsync(Result<PaginatedResponse<BulkOperationJobResponse>>.Success(
                 new PaginatedResponse<BulkOperationJobResponse>([], 0, 1, 100, false, false)));
 
+        // Default namespace registry: empty. Tests that need a cross-namespace root-cause match
+        // to survive the orphan filter register that namespace explicitly.
+        _namespaceRepository
+            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
+
         _controller = new DlqHistoryController(
             _historyService.Object,
             _logger.Object,
@@ -955,6 +961,8 @@ public class DlqHistoryControllerTests
         var otherSignature = MakeSignature(otherNsId, hash, occurrenceCount: 7);
         _signatureLookupService.Setup(s => s.FindAcrossNamespacesAsync(It.IsAny<string>(), hash, nsId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<NamespaceSignature>)[otherSignature]);
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success([CreateOwnedNamespace(otherNsId)]));
         _knowledgeService.Setup(s => s.GetKnowledgeAsync(It.IsAny<string>(), otherNsId, hash, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<FailureKnowledge>.Success(new FailureKnowledge(
                 RootCause: "Downstream service returned 500s during deploy window",
@@ -987,6 +995,32 @@ public class DlqHistoryControllerTests
     }
 
     [Fact]
+    public async Task GetSignatureRootCauseMatches_MatchNamespaceNoLongerRegistered_ExcludesOrphanedMatch()
+    {
+        // Deleting a namespace does not cascade-delete its NamespaceSignature rows. Without
+        // filtering matches against the live namespace registry, a deleted namespace's stale
+        // signature would keep surfacing in Root Cause Explorer as a dead-end match.
+        var nsId = Guid.NewGuid();
+        var deletedNsId = Guid.NewGuid();
+        const string hash = "shared-hash-orphaned";
+
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeSignature(nsId, hash, occurrenceCount: 3));
+        var orphanedSignature = MakeSignature(deletedNsId, hash, occurrenceCount: 7);
+        _signatureLookupService.Setup(s => s.FindAcrossNamespacesAsync(It.IsAny<string>(), hash, nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<NamespaceSignature>)[orphanedSignature]);
+        // deletedNsId is deliberately absent from the registered-namespace list; the default
+        // constructor setup already returns an empty registry, so no override is needed here.
+
+        var result = await _controller.GetSignatureRootCauseMatches(nsId, hash);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RootCauseExplorerResponse>().Subject;
+        response.Matches.Should().BeEmpty();
+        response.TotalOccurrencesAcrossFleet.Should().Be(3);
+    }
+
+    [Fact]
     public async Task GetSignatureRootCauseMatches_MatchWithNoRecordedRootCause_HasNullKnowledge()
     {
         var nsId = Guid.NewGuid();
@@ -998,6 +1032,8 @@ public class DlqHistoryControllerTests
         var otherSignature = MakeSignature(otherNsId, hash);
         _signatureLookupService.Setup(s => s.FindAcrossNamespacesAsync(It.IsAny<string>(), hash, nsId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<NamespaceSignature>)[otherSignature]);
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success([CreateOwnedNamespace(otherNsId)]));
         _knowledgeService.Setup(s => s.GetKnowledgeAsync(It.IsAny<string>(), otherNsId, hash, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<FailureKnowledge>.Success(new FailureKnowledge(
                 null, null, null, null, null, null, null, 1, null, null)));
@@ -1025,6 +1061,8 @@ public class DlqHistoryControllerTests
         var otherSignature = MakeSignature(otherNsId, hash);
         _signatureLookupService.Setup(s => s.FindAcrossNamespacesAsync(It.IsAny<string>(), hash, nsId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<NamespaceSignature>)[otherSignature]);
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success([CreateOwnedNamespace(otherNsId)]));
         _knowledgeService.Setup(s => s.GetKnowledgeAsync(It.IsAny<string>(), otherNsId, hash, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<FailureKnowledge>.Success(new FailureKnowledge(
                 null, null, null, null, null, null, null, 1, null, null)));
@@ -1054,6 +1092,8 @@ public class DlqHistoryControllerTests
         var otherSignature = MakeSignature(otherNsId, hash);
         _signatureLookupService.Setup(s => s.FindAcrossNamespacesAsync(It.IsAny<string>(), hash, nsId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<NamespaceSignature>)[otherSignature]);
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success([CreateOwnedNamespace(otherNsId)]));
         _knowledgeService.Setup(s => s.GetKnowledgeAsync(It.IsAny<string>(), otherNsId, hash, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<FailureKnowledge>.Success(new FailureKnowledge(
                 null, null, null, null, null, null, null, 1, null, null)));
