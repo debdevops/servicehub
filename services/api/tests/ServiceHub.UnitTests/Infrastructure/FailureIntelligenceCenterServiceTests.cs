@@ -20,6 +20,7 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
     private readonly Mock<ISignatureLifecycleService> _lifecycleMock = new();
     private readonly Mock<IFailureKnowledgeService> _knowledgeMock = new();
     private readonly Mock<IFleetOverviewService> _fleetOverviewMock = new();
+    private readonly Mock<INamespaceRepository> _namespaceRepositoryMock = new();
     private readonly FailureIntelligenceCenterService _sut;
 
     public FailureIntelligenceCenterServiceTests()
@@ -41,8 +42,28 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
             .ReturnsAsync(Result<FleetOverview>.Success(
                 new FleetOverview(DateTimeOffset.UtcNow, 24, 0, 0, 0, 0, [], new Dictionary<string, int>(), [])));
 
+        // Default: every namespace referenced by a seeded signature is still registered, so
+        // existing tests (which never exercise deletion) are unaffected by the namespace-registry
+        // filter. Tests that specifically cover orphaned signatures override this per-call.
+        _namespaceRepositoryMock
+            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => Result<IReadOnlyList<Namespace>>.Success(
+                _dbContext.NamespaceSignatures
+                    .Select(s => s.NamespaceId)
+                    .Distinct()
+                    .Select(MakeNamespace)
+                    .ToList()));
+
         _sut = new FailureIntelligenceCenterService(
-            _dbContext, _signatureLookupMock.Object, _lifecycleMock.Object, _knowledgeMock.Object, _fleetOverviewMock.Object);
+            _dbContext, _signatureLookupMock.Object, _lifecycleMock.Object, _knowledgeMock.Object,
+            _fleetOverviewMock.Object, _namespaceRepositoryMock.Object);
+    }
+
+    private static Namespace MakeNamespace(Guid id)
+    {
+        var ns = Namespace.Create("test-ns", "PROTECTED:encrypted-data").Value;
+        typeof(Namespace).GetProperty("Id")!.SetValue(ns, id);
+        return ns;
     }
 
     public void Dispose()
@@ -80,6 +101,31 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
         FailureCount = failureCount,
         SuccessCount = totalMatched - failureCount,
     };
+
+    [Fact]
+    public async Task GetInvestigationCenterAsync_SignatureNamespaceNoLongerRegistered_ExcludesOrphanedSignature()
+    {
+        // Deleting a namespace does not cascade-delete its NamespaceSignature rows. Without
+        // filtering against the live namespace registry, a deleted namespace's stale signature
+        // would keep surfacing in the investigation queue with a dead-end "Investigate" link.
+        var deletedNamespaceId = Guid.NewGuid();
+        var liveNamespaceId = Guid.NewGuid();
+        _dbContext.NamespaceSignatures.Add(MakeSignature(deletedNamespaceId, "hash-orphaned"));
+        _dbContext.NamespaceSignatures.Add(MakeSignature(liveNamespaceId, "hash-live"));
+        await _dbContext.SaveChangesAsync();
+
+        // Only liveNamespaceId is still registered.
+        _namespaceRepositoryMock
+            .Setup(r => r.GetByOwnerAsync(OwnerId, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(
+                new List<Namespace> { MakeNamespace(liveNamespaceId) }));
+
+        var result = await _sut.GetInvestigationCenterAsync(OwnerId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.InvestigationQueue.Should().NotContain(i => i.NamespaceId == deletedNamespaceId);
+        result.Value.InvestigationQueue.Should().Contain(i => i.NamespaceId == liveNamespaceId);
+    }
 
     [Fact]
     public async Task GetInvestigationCenterAsync_NoReplayJobs_ReturnsEmptyFailedReplays()

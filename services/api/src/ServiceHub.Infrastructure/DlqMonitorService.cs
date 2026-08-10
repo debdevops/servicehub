@@ -422,8 +422,14 @@ public sealed class DlqMonitorService : IDlqMonitorService
                                 && !currentDlqSequenceNumbers.Contains(m.SequenceNumber))
                     .ToListAsync(cancellationToken);
             }
-            else
+            else if (allPeekedMessages.Count < PeekBatchSize)
             {
+                // AWS/GCP have no stable pagination cursor (see useSequenceKey comment above),
+                // so a single scan only ever samples up to PeekBatchSize messages. A batch at
+                // the cap doesn't prove the DLQ is empty beyond it, so reconciling against a
+                // possibly-truncated sample would falsely mark still-present messages as
+                // Replayed. Only reconcile when this scan came in under the cap — the closest
+                // signal available that it saw the entity's full live DLQ.
                 var currentDlqMessageIds = allPeekedMessages
                     .Select(m => m.MessageId)
                     .ToHashSet();
@@ -433,6 +439,13 @@ public sealed class DlqMonitorService : IDlqMonitorService
                                 && m.Status == DlqMessageStatus.Active
                                 && !currentDlqMessageIds.Contains(m.MessageId))
                     .ToListAsync(cancellationToken);
+            }
+            else
+            {
+                messagesNoLongerInDlq = [];
+                _logger.LogInformation(
+                    "Skipping DLQ reconciliation for {EntityType} {EntityName}: peek sample hit the {Cap}-message cap, so it may not reflect the full live DLQ",
+                    entityType, LogRedactor.SanitiseForLog(entityName), PeekBatchSize);
             }
 
             foreach (var removedMessage in messagesNoLongerInDlq)

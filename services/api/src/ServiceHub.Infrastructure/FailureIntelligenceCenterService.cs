@@ -23,19 +23,22 @@ public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCente
     private readonly ISignatureLifecycleService _lifecycle;
     private readonly IFailureKnowledgeService _knowledge;
     private readonly IFleetOverviewService _fleetOverview;
+    private readonly INamespaceRepository _namespaceRepository;
 
     public FailureIntelligenceCenterService(
         DlqDbContext dbContext,
         INamespaceSignatureLookupService signatureLookup,
         ISignatureLifecycleService lifecycle,
         IFailureKnowledgeService knowledge,
-        IFleetOverviewService fleetOverview)
+        IFleetOverviewService fleetOverview,
+        INamespaceRepository namespaceRepository)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _signatureLookup = signatureLookup ?? throw new ArgumentNullException(nameof(signatureLookup));
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _knowledge = knowledge ?? throw new ArgumentNullException(nameof(knowledge));
         _fleetOverview = fleetOverview ?? throw new ArgumentNullException(nameof(fleetOverview));
+        _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
     }
 
     public async Task<Result<InvestigationCenterResponse>> GetInvestigationCenterAsync(
@@ -50,6 +53,18 @@ public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCente
             .Where(s => s.OwnerId == ownerId)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+
+        // Deleting a namespace does not cascade-delete its signature rows, so without this
+        // filter a deleted namespace's stale signatures would keep surfacing here (and in the
+        // "Investigate" deep link) indefinitely. Mirrors FleetOverviewService.GetOverviewAsync's
+        // namespace-registry filtering.
+        var registeredNamespacesResult = await _namespaceRepository.GetByOwnerAsync(
+            ownerId, allowedNamespaceIds: null, cancellationToken).ConfigureAwait(false);
+        if (registeredNamespacesResult.IsSuccess)
+        {
+            var registeredNamespaceIds = registeredNamespacesResult.Value.Select(n => n.Id).ToHashSet();
+            signatures = signatures.Where(s => registeredNamespaceIds.Contains(s.NamespaceId)).ToList();
+        }
 
         // Get all knowledge records for this owner
         var allKnowledge = await _dbContext.FailureKnowledgeEntities

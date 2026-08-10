@@ -739,6 +739,34 @@ public sealed class DlqMonitorServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ScanNamespace_AwsFullBatchAtCap_DoesNotFalselyReconcileGoneMessage()
+    {
+        // A single AWS/GCP peek is capped at PeekBatchSize (100) with no stable pagination
+        // cursor, so a full batch does not prove the live DLQ has nothing beyond it. Reconciling
+        // against that possibly-truncated sample would falsely mark a still-present message
+        // (simply not sampled this cycle) as Replayed.
+        var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
+        SetupNamespace(CloudProviderType.Aws);
+
+        _dbContext.DlqMessages.Add(MakeStoredMessage("gone-msg", 111, "orders", CloudProviderType.Aws));
+        await _dbContext.SaveChangesAsync();
+
+        SetupEntities(MakeEntity("orders", "Queue", 100, CloudProviderType.Aws));
+        var fullBatch = Enumerable.Range(1, 100).Select(i => MakeMessage(i, $"sqs-msg-{i}")).ToArray();
+        SetupPeek(fullBatch);
+        SetupForensic();
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(100);
+
+        var goneMsg = await _dbContext.DlqMessages.FirstAsync(m => m.MessageId == "gone-msg");
+        goneMsg.Status.Should().Be(DlqMessageStatus.Active);
+        goneMsg.ReplayedAt.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ScanNamespace_AwsSnsTopicEntity_NotScanned()
     {
         var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);

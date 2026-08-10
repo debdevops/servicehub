@@ -17,7 +17,6 @@ import {
   Clock,
 } from 'lucide-react';
 import { useAuditLogs, useAuditSummary } from '@servicehub/ui-shared/hooks/useAudit';
-import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { auditApi, type AuditLogItem, type AuditParams } from '@servicehub/ui-shared/lib/api/audit';
 import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import { EnvironmentBadge } from '@/components/EnvironmentBadge';
@@ -255,11 +254,11 @@ function Row({
 
 export function AuditPage() {
   const [searchParams] = useSearchParams();
-  const urlNamespaceId = searchParams.get('namespace') || undefined;
-
-  const { data: namespaces } = useNamespaces();
-  const activeNamespace = namespaces?.find(ns => ns.isActive);
-  const namespaceId = urlNamespaceId || activeNamespace?.id;
+  // No namespace filter unless the URL explicitly requests one (e.g. a deep link from a
+  // namespace-scoped page) — this page's own scope is "all critical operations," and
+  // `isActive` on a Namespace means "not deleted," not "currently selected," so defaulting
+  // to namespaces.find(isActive) silently hid every other namespace's audit events.
+  const namespaceId = searchParams.get('namespace') || undefined;
 
   // ─── Filters ────────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
