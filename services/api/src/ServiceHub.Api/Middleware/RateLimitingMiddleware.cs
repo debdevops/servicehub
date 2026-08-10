@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net;
 using Microsoft.Extensions.Options;
 using ServiceHub.Api.Configuration;
@@ -56,8 +57,12 @@ public sealed class RateLimitingMiddleware
         // "health-events"), so this reuses ApiKeyAuthenticationMiddleware's exact health-path
         // set as the authority, plus a "/health" prefix for any health subroute not yet enumerated there.
         var path = context.Request.Path.Value ?? string.Empty;
+        // "/health/" prefix, not "/health" — the bare prefix also matched sibling paths that
+        // merely start with those characters ("/healthz-admin", "/health-internal"), letting an
+        // unrelated route opt itself out of rate limiting by name alone. The exact-match
+        // BypassPaths set remains the authority; the prefix only covers real health subroutes.
         if (ApiKeyAuthenticationMiddleware.BypassPaths.Contains(path)
-            || path.StartsWith("/health", StringComparison.OrdinalIgnoreCase))
+            || path.StartsWith("/health/", StringComparison.OrdinalIgnoreCase))
         {
             await _next(context);
             return;
@@ -112,7 +117,13 @@ public sealed class RateLimitingMiddleware
                 _options.MaxRequests);
 
             context.Response.StatusCode = (int)HttpStatusCode.TooManyRequests;
-            context.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString();
+            // Clamped to >= 1, matching WriteTooManyRequestsResponse in
+            // ApiKeyAuthenticationMiddleware. The window can roll between the count check and
+            // this line, making the remainder zero or negative and emitting "Retry-After: 0"
+            // (or "-1"), which invites an immediate retry — the opposite of what a 429 is asking
+            // for, and what the SPA's interceptor would have rendered as "wait 0s".
+            var retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds));
+            context.Response.Headers.RetryAfter = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
             context.Response.Headers[_headersOptions.RateLimitLimit] = _options.MaxRequests.ToString();
             context.Response.Headers[_headersOptions.RateLimitRemaining] = "0";
             context.Response.Headers[_headersOptions.RateLimitReset] = windowStart.Add(_options.WindowDuration).ToString("O");

@@ -137,21 +137,19 @@ public sealed class ScopeAuthorizationFilter : IAsyncAuthorizationFilter
 
     private static string? GetRequiredScope(AuthorizationFilterContext context)
     {
-        // Check action-level attribute first
-        var actionAttribute = context.ActionDescriptor.EndpointMetadata
+        // EndpointMetadata already contains both controller-level and action-level attributes,
+        // ordered controller-first, so LastOrDefault() gives the action-level attribute when one
+        // exists and falls back to the controller-level one otherwise — which is exactly the
+        // intended precedence.
+        //
+        // This previously ran FirstOrDefault() and then, if that returned null, LastOrDefault()
+        // over the same collection as a "controller-level fallback". The second lookup was
+        // unreachable: if FirstOrDefault() found nothing the collection was empty, so
+        // LastOrDefault() found nothing either. It read as though controller-level scopes were
+        // handled by a separate path when they were not.
+        return context.ActionDescriptor.EndpointMetadata
             .OfType<RequireScopeAttribute>()
-            .FirstOrDefault();
-
-        if (actionAttribute != null)
-        {
-            return actionAttribute.Scope;
-        }
-
-        // Check controller-level attribute
-        var controllerAttribute = context.ActionDescriptor.EndpointMetadata
-            .OfType<RequireScopeAttribute>()
-            .LastOrDefault();
-
-        return controllerAttribute?.Scope;
+            .LastOrDefault()
+            ?.Scope;
     }
 }

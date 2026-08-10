@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Telemetry;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Api.Authorization;
 using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.Api.Controllers.V1;
@@ -31,6 +32,7 @@ public sealed class FleetController : ApiControllerBase
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The fleet overview snapshot.</returns>
     [HttpGet("overview")]
+    [RequireScope(ApiKeyScopes.DlqRead)]
     [ProducesResponseType(typeof(FleetOverview), StatusCodes.Status200OK)]
     public async Task<ActionResult<FleetOverview>> GetOverviewAsync(
         [FromQuery] int windowHours = 24,

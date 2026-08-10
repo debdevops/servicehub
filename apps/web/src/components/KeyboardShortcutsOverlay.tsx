@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { X, Keyboard } from 'lucide-react';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 interface ShortcutRow {
   keys: string[];
@@ -46,11 +47,15 @@ export function KeyboardShortcutsOverlay({ open, onClose }: KeyboardShortcutsOve
     return () => window.removeEventListener('keydown', handler);
   }, [open, onClose]);
 
+  // Declared before the early return — hooks must run on every render.
+  const dialogRef = useFocusTrap<HTMLDivElement>(open);
+
   if (!open) return null;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label="Keyboard shortcuts"

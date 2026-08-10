@@ -17,12 +17,12 @@ import {
   Clock,
 } from 'lucide-react';
 import { useAuditLogs, useAuditSummary } from '@servicehub/ui-shared/hooks/useAudit';
-import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { auditApi, type AuditLogItem, type AuditParams } from '@servicehub/ui-shared/lib/api/audit';
 import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import { EnvironmentBadge } from '@/components/EnvironmentBadge';
 import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import toast from 'react-hot-toast';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -108,6 +108,9 @@ function AuditDetailDrawer({
     return () => window.removeEventListener('keydown', handleEscape);
   }, [entry, onClose]);
 
+  // Declared before the early return — hooks must run on every render.
+  const dialogRef = useFocusTrap<HTMLDivElement>(!!entry);
+
   if (!entry) return null;
 
   const detailsObj = (() => {
@@ -126,6 +129,7 @@ function AuditDetailDrawer({
       {/* Drawer */}
       <div
         className="fixed right-0 top-0 h-full w-full max-w-md bg-white z-50 shadow-2xl flex flex-col overflow-hidden"
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="audit-detail-drawer-title"
@@ -250,11 +254,11 @@ function Row({
 
 export function AuditPage() {
   const [searchParams] = useSearchParams();
-  const urlNamespaceId = searchParams.get('namespace') || undefined;
-
-  const { data: namespaces } = useNamespaces();
-  const activeNamespace = namespaces?.find(ns => ns.isActive);
-  const namespaceId = urlNamespaceId || activeNamespace?.id;
+  // No namespace filter unless the URL explicitly requests one (e.g. a deep link from a
+  // namespace-scoped page) — this page's own scope is "all critical operations," and
+  // `isActive` on a Namespace means "not deleted," not "currently selected," so defaulting
+  // to namespaces.find(isActive) silently hid every other namespace's audit events.
+  const namespaceId = searchParams.get('namespace') || undefined;
 
   // ─── Filters ────────────────────────────────────────────────────────
   const [search, setSearch] = useState('');

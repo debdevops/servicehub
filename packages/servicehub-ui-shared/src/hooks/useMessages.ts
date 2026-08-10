@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
 import { messagesApi } from '../lib/api/messages';
 import { GetMessagesParams, PaginatedResponse, Message, ApiError } from '../lib/api/types';
+import { extractApiError } from '../lib/api/errors';
 import { useDemoContext, rejectDemoModeMutation } from '../lib/demo/DemoContext';
 import { getMockMessages } from '../lib/demo/mockProviders';
 import toast from 'react-hot-toast';
@@ -130,8 +131,7 @@ export function useSendMessage() {
       toast.success('Message sent successfully');
     },
     onError: (error: ApiError) => {
-      const errorMsg = error?.response?.data?.message || error?.message || 'Failed to send message';
-      toast.error(errorMsg, { duration: Infinity });
+      toast.error(extractApiError(error, 'Failed to send message'), { duration: 8000 });
     },
   });
 }
@@ -169,15 +169,13 @@ export function useReplayMessage() {
       toast.success('Message replayed successfully');
     },
     onError: (error: ApiError) => {
-      if (error?.response?.status === 404) {
-        toast.error('Replay feature is not yet available in the API', {
-          duration: 4000,
-          icon: '🚧',
-        });
-      } else {
-        const errorMsg = error?.response?.data?.message || error?.message || 'Failed to replay message';
-        toast.error(errorMsg, { duration: Infinity });
-      }
+      // A 404 means the message is gone, not that replay is unimplemented — replay has
+      // shipped for many releases. The old "not yet available" copy read as an unfinished
+      // product at the exact moment a user was exercising the flagship operation.
+      const fallback = error?.response?.status === 404
+        ? 'Message not found — it may have been consumed, expired, or already replayed.'
+        : 'Failed to replay message';
+      toast.error(extractApiError(error, fallback), { duration: 8000 });
     },
   });
 }
@@ -216,8 +214,10 @@ export function usePurgeMessage() {
       toast.success('Message purged successfully');
     },
     onError: (error: ApiError) => {
-      const errorMsg = error?.response?.data?.message || error?.message || 'Failed to purge message';
-      toast.error(errorMsg, { duration: Infinity });
+      const fallback = error?.response?.status === 404
+        ? 'Message not found — it may have been consumed, expired, or already purged.'
+        : 'Failed to purge message';
+      toast.error(extractApiError(error, fallback), { duration: 8000 });
     },
   });
 }

@@ -4,6 +4,7 @@ import { Info } from 'lucide-react';
 import { useUpsertKnowledge } from '@servicehub/ui-shared/hooks/useDlqSignatures';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import type { FailureKnowledge } from '@servicehub/ui-shared/lib/api/dlqSignatures';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 interface KnowledgeEditDialogProps {
   namespaceId: string;
@@ -122,10 +123,14 @@ export function KnowledgeEditDialog({ namespaceId, signatureHash, knowledge, onC
     );
   };
 
+  // This component is mounted only while the dialog is open, so the trap is always armed.
+  const dialogRef = useFocusTrap<HTMLDivElement>(true);
+
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div
         className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col mx-4"
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="knowledge-edit-dialog-title"

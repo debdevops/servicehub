@@ -9,6 +9,7 @@ on:
       - 'release'
       - 'bugfix/**'
       - 'feature/**'
+      - 'fix/**'
       - 'hotfix/**'
   pull_request:
     branches:
@@ -17,6 +18,7 @@ on:
       - 'release'
       - 'bugfix/**'
       - 'feature/**'
+      - 'fix/**'
       - 'hotfix/**'
 
 
@@ -276,6 +278,12 @@ jobs:
           path: apps/web/coverage/
           retention-days: 14
 
+      - name: Run shared UI package tests (@servicehub/ui-shared)
+        # apps/web consumes this workspace package, but its ~500 tests were never executed in
+        # CI — only apps/web's own suite was. Same command developers run locally, so a green
+        # local run and a green CI run now mean the same thing for the shared package.
+        run: npm run -w packages/servicehub-ui-shared test
+
       - name: Type check with TypeScript
         run: npm exec -w apps/web -- tsc -b
 
@@ -353,6 +361,30 @@ jobs:
           fi
           echo "✅ PASSED: No hardcoded encryption key or fallback in docker-compose.yml"
 
+      - name: Regression check - a fresh clone with no .env must fail fast, not crash-loop
+        # The steps below inject the secrets via `env:`, so they exercise the maintainer's
+        # path, never a true fresh clone (`.env` is gitignored and absent on a new checkout).
+        # That is precisely how the v3.6.0 P0-1 defect survived this smoke test: the compose
+        # file interpolated both secrets to empty strings and the container then crash-looped
+        # on the Production configuration validator with `restart: unless-stopped` hiding it.
+        # This step runs deliberately WITHOUT those env vars.
+        run: |
+          set +e
+          OUTPUT=$(docker compose config 2>&1)
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 0 ]; then
+            echo "❌ REGRESSION: docker compose accepted a fresh clone with no secrets set."
+            echo "   It must fail fast so a new user sees the cause instead of a restart loop."
+            exit 1
+          fi
+          if ! echo "$OUTPUT" | grep -qE 'SECURITY__(ENCRYPTIONKEY|SPATOKEN__SECRET)'; then
+            echo "❌ REGRESSION: the failure does not name the missing variable."
+            echo "$OUTPUT"
+            exit 1
+          fi
+          echo "✅ PASSED: fresh clone fails fast and names the missing variable"
+
       - name: Build and start container (docker compose up --build)
         env:
           SECURITY__ENCRYPTIONKEY: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210  # 32-byte test key for CI only
@@ -394,6 +426,9 @@ jobs:
 
       - name: Tear down
         if: always()
+        env:
+          SECURITY__ENCRYPTIONKEY: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210  # 32-byte test key for CI only
+          SECURITY__SPATOKEN__SECRET: abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890  # test secret for CI only
         run: docker compose down -v
 
   production-configuration-validation:
@@ -424,10 +459,13 @@ jobs:
           docker compose down -v 2>/dev/null || true
 
       - name: Validate app fails with placeholder SECURITY__ENCRYPTIONKEY
+        env:
+          SECURITY__ENCRYPTIONKEY: SET_VIA_ENV_VAR
+          SECURITY__SPATOKEN__SECRET: abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890  # test secret for CI only
         run: |
           echo "Testing: App should fail to start with placeholder SECURITY__ENCRYPTIONKEY"
           # Start with a placeholder value that should be rejected in Production
-          SECURITY__ENCRYPTIONKEY="SET_VIA_ENV_VAR" docker compose up --build -d 2>&1
+          docker compose up --build -d 2>&1
 
           # Give it 10 seconds to fail
           sleep 10
@@ -446,9 +484,12 @@ jobs:
           fi
 
       - name: Validate app starts with valid SECURITY__ENCRYPTIONKEY
+        env:
+          SECURITY__ENCRYPTIONKEY: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210  # 32-byte test key for CI only
+          SECURITY__SPATOKEN__SECRET: abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890  # test secret for CI only
         run: |
           echo "Testing: App should start successfully with valid SECURITY__ENCRYPTIONKEY"
-          SECURITY__ENCRYPTIONKEY=$(openssl rand -hex 32) SECURITY__SPATOKEN__SECRET=$(openssl rand -hex 32) docker compose up --build -d 2>&1
+          docker compose up --build -d 2>&1
 
           echo "Waiting for container to become healthy..."
           for i in $(seq 1 60); do

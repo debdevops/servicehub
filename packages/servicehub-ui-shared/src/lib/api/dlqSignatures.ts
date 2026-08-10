@@ -159,7 +159,11 @@ export const dlqSignaturesApi = {
    */
   getSignatureDetail: async (namespaceId: string, signatureHash: string): Promise<DlqSignatureDetail> => {
     const response = await apiClient.get<DlqSignatureDetail>(
-      `/namespaces/${namespaceId}/dlq/signatures/${signatureHash}`
+      `/namespaces/${namespaceId}/dlq/signatures/${signatureHash}`,
+      {
+        // SignatureDetailsPage renders its own "Signature not found" state for a 404.
+        _ownErrorToast: true,
+      }
     );
     return response.data;
   },
@@ -169,7 +173,12 @@ export const dlqSignaturesApi = {
    */
   getSignatureTimeline: async (namespaceId: string, signatureHash: string): Promise<SignatureTimelineResponse> => {
     const response = await apiClient.get<SignatureTimelineResponse>(
-      `/namespaces/${namespaceId}/dlq/signatures/${signatureHash}/timeline`
+      `/namespaces/${namespaceId}/dlq/signatures/${signatureHash}/timeline`,
+      {
+        // Fetched alongside getSignatureDetail for the same signature — a missing signature
+        // 404s both requests, and without this the generic interceptor toast would fire twice.
+        _ownErrorToast: true,
+      }
     );
     return response.data;
   },

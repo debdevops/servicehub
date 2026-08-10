@@ -4,7 +4,14 @@ export type EnvironmentType = 'dev' | 'uat' | 'prod';
 /** Cloud provider type — mirrors backend CloudProviderType enum (camelCase serialization). */
 export type CloudProviderType = 'azure' | 'aws' | 'gcp';
 
-/** Shape of errors returned by the axios API client. Used for typed error handling in hooks. */
+/**
+ * Shape of errors returned by the axios API client. Used for typed error handling in hooks.
+ *
+ * `data.detail`/`data.title` come from RFC 7807 ProblemDetails (the `Result<T>` expected-failure
+ * path); `data.message` comes from ErrorHandlingMiddleware's `ErrorResponse` (unhandled
+ * exceptions only). Both are real wire formats — do not read one without the other. Use
+ * `extractApiError()` from `./errors` rather than reaching into these fields directly.
+ */
 export type ApiError = {
   response?: {
     status?: number;

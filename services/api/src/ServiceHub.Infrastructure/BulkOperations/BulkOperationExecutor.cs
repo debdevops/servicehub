@@ -227,10 +227,19 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         // A message already moved on (e.g. replayed manually between job creation and
         // execution) is skipped rather than re-attempted — the filter matched it at creation
         // time, but its current status may no longer reflect that.
-        if (operationType == BulkOperationType.Replay && message.Status != DlqMessageStatus.Active
+        //
+        // This guard applies to purge as well as replay. It was previously Replay-only, while
+        // BulkOperationMatching.BuildQuery only constrains status when the caller supplied a
+        // filter — so a purge job created without one matched Replayed, Discarded and Archived
+        // rows too. Purging an already-Discarded message failed at the provider and inflated the
+        // job's FailureCount; purging a successfully-Replayed one overwrote its status to
+        // Discarded, corrupting the DLQ history and the replay audit narrative.
+        if (message.Status != DlqMessageStatus.Active
             && message.Status != DlqMessageStatus.ReplayFailed)
         {
-            return (MessageOutcome.Skipped, $"Message status is now '{message.Status}', no longer eligible for replay");
+            var operationNoun = operationType == BulkOperationType.Replay ? "replay" : "purge";
+            return (MessageOutcome.Skipped,
+                $"Message status is now '{message.Status}', no longer eligible for {operationNoun}");
         }
 
         var (entityName, subscriptionName) = ResolveEntityAndSubscription(message);
@@ -280,7 +289,23 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
             return (MessageOutcome.Failure, result.Error.Message);
         }
 
-        // Purge
+        // Purge — claimed exactly the way replay is, for the same reason. Status is an EF
+        // concurrency token, so committing the claim before the provider call means a worker
+        // that loses the race never issues a second delete; its SaveChangesAsync throws here,
+        // before PurgeMessageAsync is invoked. Previously the purge branch had no claim at all,
+        // so two concurrent jobs both called the provider for the same message and the loser
+        // recorded a spurious failure against a message that had been purged correctly.
+        message.Status = DlqMessageStatus.Purging;
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await _dbContext.Entry(message).ReloadAsync(cancellationToken);
+            return (MessageOutcome.Skipped, "Message was claimed by another concurrent purge — skipped");
+        }
+
         var purgeResult = await _messageOperationsService.PurgeMessageAsync(
             message.NamespaceId, entityName, subscriptionName, message.SequenceNumber,
             fromDeadLetter: true, cancellationToken);
@@ -291,6 +316,9 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
             return (MessageOutcome.Success, null);
         }
 
+        // Release the claim so a retry can pick the message up again. Leaving it Purging would
+        // reproduce the stranded-claim defect that InterruptedOperationRecovery exists to fix.
+        message.Status = DlqMessageStatus.Active;
         return (MessageOutcome.Failure, purgeResult.Error.Message);
     }
 

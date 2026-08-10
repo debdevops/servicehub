@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, X } from 'lucide-react';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 // ============================================================================
 // ConfirmDialog - Styled confirmation modal replacing native confirm()
@@ -42,6 +43,9 @@ export function ConfirmDialog({
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isOpen, isConfirming, onCancel]);
 
+  // Declared before the early return — hooks must run on every render.
+  const dialogRef = useFocusTrap<HTMLDivElement>(isOpen);
+
   if (!isOpen) return null;
 
   const isDanger = variant === 'danger';
@@ -57,6 +61,7 @@ export function ConfirmDialog({
 
       {/* Dialog */}
       <div
+        ref={dialogRef}
         className="relative bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
         role="alertdialog"
         aria-modal="true"

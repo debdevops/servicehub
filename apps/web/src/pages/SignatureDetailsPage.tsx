@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
-import { ArrowLeft, RefreshCw, Lightbulb } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Lightbulb, AlertCircle } from 'lucide-react';
 import {
   useDlqSignatureDetail,
   useSignatureTimeline,
@@ -11,6 +11,8 @@ import {
 } from '@servicehub/ui-shared/hooks/useDlqSignatures';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
+import { extractApiError } from '@servicehub/ui-shared/lib/api/errors';
+import type { ApiError } from '@servicehub/ui-shared/lib/api/types';
 import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import {
   StatusBadge,
@@ -48,7 +50,13 @@ export function SignatureDetailsPage() {
   const { isDemoMode, cloudProvider } = useDemoContext();
   const basePath = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
 
-  const { data: detail, isLoading: detailLoading } = useDlqSignatureDetail(namespaceId, signatureHash);
+  const {
+    data: detail,
+    isLoading: detailLoading,
+    isError: detailFailed,
+    error: detailError,
+    refetch: refetchDetail,
+  } = useDlqSignatureDetail(namespaceId, signatureHash);
   const { data: timeline, isLoading: timelineLoading } = useSignatureTimeline(namespaceId, signatureHash);
 
   const [selectedMessageId, setSelectedMessageId] = useState<number | null>(null);
@@ -76,6 +84,13 @@ export function SignatureDetailsPage() {
     );
   }
 
+  // A live 404 is the terminal case: the signature is genuinely gone, so there is nothing to
+  // retry. A settled query holding neither data nor an error means the same thing. Every other
+  // failure — including Demo Mode's plain `Error('Signature not found')`, which carries no HTTP
+  // status — falls through to the retryable branch, which surfaces its message verbatim.
+  const isNotFound =
+    (detailError as ApiError | undefined)?.response?.status === 404 || (!detailFailed && !detail);
+
   const correlationId = detail?.relatedMessages.find(m => m.correlationId)?.correlationId ?? null;
   const trendRecommendation = detail ? getTrendRecommendation(detail.trend) : null;
 
@@ -87,8 +102,35 @@ export function SignatureDetailsPage() {
         Back to signatures
       </Link>
 
-      {detailLoading || !detail ? (
+      {detailLoading ? (
         <div className="text-sm text-gray-500">Loading signature…</div>
+      ) : detailFailed || !detail ? (
+        // Previously `detailLoading || !detail` drove the spinner, so a failed request — a 404
+        // for a signature whose namespace was deleted, an auth rejection, an unreachable API —
+        // left "Loading signature…" on screen forever with no way out. A 404 is terminal, so it
+        // gets a plain not-found message; anything else is worth retrying.
+        isNotFound ? (
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center">
+            <p className="text-sm font-medium text-gray-700">Signature not found</p>
+            <p className="text-sm text-gray-500 mt-1">
+              This failure signature is no longer available. Its namespace may have been removed,
+              or the signature may have aged out of the retained history.
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-start gap-2 rounded-lg bg-red-50 border border-red-200 p-4 text-sm text-red-700">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            <span className="flex-1">
+              {extractApiError(detailError, 'Failed to load this failure signature.')}
+            </span>
+            <button
+              className="text-xs font-medium underline shrink-0"
+              onClick={() => refetchDetail()}
+            >
+              Try Again
+            </button>
+          </div>
+        )
       ) : (
         <>
           {/* Header / Identity */}

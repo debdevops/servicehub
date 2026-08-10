@@ -296,6 +296,119 @@ public sealed class BulkOperationExecutorTests : IDisposable
         storedJob.SuccessCount.Should().Be(1);
     }
 
+    // ── Purge eligibility (v3.6.0 P2-2) ──────────────────────────────────────
+    //
+    // The executor's eligibility re-check used to be Replay-only, while a purge job created
+    // without a status filter matches every status. A purge could therefore overwrite a
+    // successfully-Replayed message to Discarded (corrupting the replay audit narrative) and
+    // report already-Discarded messages as provider failures.
+
+    [Theory]
+    [InlineData(DlqMessageStatus.Replayed)]
+    [InlineData(DlqMessageStatus.Discarded)]
+    [InlineData(DlqMessageStatus.Archived)]
+    [InlineData(DlqMessageStatus.Resolved)]
+    public async Task ExecuteAsync_Purge_SkipsIneligibleStatus_WithoutCallingProvider(
+        DlqMessageStatus ineligibleStatus)
+    {
+        var sut = CreateSut();
+        SetupNamespace();
+        var message = AddDlqMessage(7, status: ineligibleStatus);
+        var job = await AddJobAsync(operationType: BulkOperationType.Purge, statusFilter: null);
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        var storedJob = await _dbContext.BulkOperationJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
+        storedJob.SkippedCount.Should().Be(1, "an ineligible message is skipped, not attempted");
+        storedJob.FailureCount.Should().Be(0,
+            "reporting a provider failure for a message that was never eligible is misleading");
+        storedJob.SuccessCount.Should().Be(0);
+
+        var storedMessage = await _dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == message.Id);
+        storedMessage.Status.Should().Be(ineligibleStatus, "the original status must be preserved");
+
+        _messageOperationsMock.Verify(
+            m => m.PurgeMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<long>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Purge_NeverOverwritesAReplayedMessageWithDiscarded()
+    {
+        var sut = CreateSut();
+        SetupNamespace();
+        var replayed = AddDlqMessage(8, status: DlqMessageStatus.Replayed);
+        var job = await AddJobAsync(operationType: BulkOperationType.Purge, statusFilter: null);
+
+        _messageOperationsMock
+            .Setup(m => m.PurgeMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<long>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        var stored = await _dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == replayed.Id);
+        stored.Status.Should().Be(DlqMessageStatus.Replayed,
+            "overwriting Replayed with Discarded destroys the record that the replay succeeded");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Purge_ClaimsMessageBeforeCallingProvider()
+    {
+        // Status is an EF concurrency token; the claim is what stops a second concurrent job
+        // issuing a duplicate provider delete. Observed by checking the persisted status at the
+        // moment the provider call is made.
+        var sut = CreateSut();
+        SetupNamespace();
+        var message = AddDlqMessage(9);
+        var job = await AddJobAsync(operationType: BulkOperationType.Purge);
+
+        DlqMessageStatus? statusWhenProviderCalled = null;
+        _messageOperationsMock
+            .Setup(m => m.PurgeMessageAsync(_namespaceId, "orders", null, 9, true, It.IsAny<CancellationToken>()))
+            .Callback(() =>
+            {
+                using var probe = new DlqDbContext(
+                    new DbContextOptionsBuilder<DlqDbContext>()
+                        .UseSqlite(_dbContext.Database.GetDbConnection())
+                        .Options);
+                statusWhenProviderCalled = probe.DlqMessages.AsNoTracking()
+                    .First(m => m.Id == message.Id).Status;
+            })
+            .ReturnsAsync(Result.Success());
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        statusWhenProviderCalled.Should().Be(DlqMessageStatus.Purging,
+            "the claim must be committed before the provider is called, not after");
+
+        var stored = await _dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == message.Id);
+        stored.Status.Should().Be(DlqMessageStatus.Discarded);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Purge_ProviderFailure_ReleasesClaimSoRetryIsPossible()
+    {
+        var sut = CreateSut();
+        SetupNamespace();
+        var message = AddDlqMessage(10);
+        var job = await AddJobAsync(operationType: BulkOperationType.Purge);
+
+        _messageOperationsMock
+            .Setup(m => m.PurgeMessageAsync(_namespaceId, "orders", null, 10, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Internal("Purge.Failed", "provider exploded")));
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        var stored = await _dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == message.Id);
+        stored.Status.Should().Be(DlqMessageStatus.Active,
+            "a failed purge must release its claim — leaving it Purging strands the message");
+
+        var storedJob = await _dbContext.BulkOperationJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
+        storedJob.FailureCount.Should().Be(1);
+    }
+
     // ── Cancellation mid-batch ───────────────────────────────────────────────
 
     [Fact]

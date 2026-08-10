@@ -201,8 +201,7 @@ graph LR
 ```
 
 "Replay/purge these 3,000 messages matching this filter" was explicitly deferred out of Phase 2
-pending "a durable job/operation abstraction + safety rails" (`docs-private/technical-review/21-
-PHASE2-IMPLEMENTATION-PLAN.md`) — a single HTTP request can't safely process an unbounded batch
+pending "a durable job/operation abstraction + safety rails" — a single HTTP request can't safely process an unbounded batch
 (the existing `RulesController.ReplayAll` hits exactly this limit today: a hard-coded 30-second
 `CancellationTokenSource`, no progress reporting, no cancellation). Bulk Operations solves this
 with a persisted job row polled to completion instead of one long-lived request.
