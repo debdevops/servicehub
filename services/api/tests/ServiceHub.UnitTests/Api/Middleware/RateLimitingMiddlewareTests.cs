@@ -1,3 +1,4 @@
+using System.Globalization;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -216,6 +217,39 @@ public class RateLimitingMiddlewareTests
         context2.Response.Headers.RetryAfter.ToString().Should().NotBeEmpty();
     }
 
+    /// <summary>
+    /// Retry-After must always name a future instant. The value is derived from the remainder of
+    /// the current window, which can compute to zero or negative when the window rolls between the
+    /// count check and the header write — "Retry-After: 0" invites the immediate retry a 429 is
+    /// explicitly asking the client not to make, and the SPA renders it as "wait 0s".
+    /// </summary>
+    [Fact]
+    public async Task InvokeAsync_OverLimit_RetryAfterShouldBeAtLeastOneSecond()
+    {
+        RequestDelegate next = _ => Task.CompletedTask;
+        // A sub-second window makes the raw remainder round down to 0 without the clamp.
+        var options = new RateLimitOptions { MaxRequests = 1, WindowDuration = TimeSpan.FromMilliseconds(200) };
+        var middleware = new RateLimitingMiddleware(next, _logger.Object, options);
+
+        HttpContext? limited = null;
+        for (var i = 0; i < 2; i++)
+        {
+            var context = new DefaultHttpContext();
+            context.Request.Path = "/api/test";
+            context.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("10.0.0.21");
+            await middleware.InvokeAsync(context);
+            if (context.Response.StatusCode == 429)
+            {
+                limited = context;
+                break;
+            }
+        }
+
+        limited.Should().NotBeNull("two requests against a 1-request limit must produce a 429");
+        var retryAfter = int.Parse(limited!.Response.Headers.RetryAfter.ToString(), CultureInfo.InvariantCulture);
+        retryAfter.Should().BeGreaterThanOrEqualTo(1, "Retry-After must never tell a client to retry immediately");
+    }
+
     [Fact]
     public void RateLimitOptions_ShouldHaveDefaults()
     {
@@ -255,6 +289,59 @@ public class RateLimitingMiddlewareTests
             var context = new DefaultHttpContext();
             context.Request.Path = path;
             context.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("10.0.0.30");
+            await middleware.InvokeAsync(context);
+        }
+
+        callCount.Should().Be(2);
+    }
+
+    /// <summary>
+    /// The health bypass is a "/health/" subroute prefix, not a bare "/health" prefix. With the
+    /// bare prefix any sibling route whose name merely started with those characters
+    /// ("/healthz-admin", "/health-internal") opted itself out of rate limiting by name alone.
+    /// </summary>
+    [Theory]
+    [InlineData("/healthz-admin")]
+    [InlineData("/health-internal")]
+    [InlineData("/healthcheck-debug")]
+    public async Task InvokeAsync_PathMerelyPrefixedWithHealth_ShouldNotBypassRateLimiting(string path)
+    {
+        RequestDelegate next = _ => Task.CompletedTask;
+        var options = new RateLimitOptions { MaxRequests = 1 };
+        var middleware = new RateLimitingMiddleware(next, _logger.Object, options);
+
+        var first = new DefaultHttpContext();
+        first.Request.Path = path;
+        first.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("10.0.0.32");
+        await middleware.InvokeAsync(first);
+
+        var second = new DefaultHttpContext();
+        second.Request.Path = path;
+        second.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("10.0.0.32");
+        await middleware.InvokeAsync(second);
+
+        second.Response.StatusCode.Should().Be(429);
+    }
+
+    /// <summary>
+    /// The genuine health subroutes must still bypass, so the tightened prefix cannot be
+    /// "fixed" by removing the prefix check altogether.
+    /// </summary>
+    [Theory]
+    [InlineData("/health/ready")]
+    [InlineData("/health/live")]
+    public async Task InvokeAsync_RealHealthSubroute_ShouldStillBypassRateLimiting(string path)
+    {
+        var callCount = 0;
+        RequestDelegate next = _ => { callCount++; return Task.CompletedTask; };
+        var options = new RateLimitOptions { MaxRequests = 1 };
+        var middleware = new RateLimitingMiddleware(next, _logger.Object, options);
+
+        for (var i = 0; i < 2; i++)
+        {
+            var context = new DefaultHttpContext();
+            context.Request.Path = path;
+            context.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("10.0.0.33");
             await middleware.InvokeAsync(context);
         }
 

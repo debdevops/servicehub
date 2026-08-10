@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Trash2, Info, AlertTriangle } from 'lucide-react';
 import type { RuleCondition, RuleAction, RuleResponse, CreateRuleRequest } from '@servicehub/ui-shared/lib/api/rules';
 import { findRuleEntityWarnings, type KnownEntities } from '@servicehub/ui-shared/lib/ruleValidation';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 const FIELD_OPTIONS = [
   { value: 'DeadLetterReason', label: 'Dead Letter Reason' },
@@ -150,12 +151,16 @@ export function RuleBuilderDialog({
     return () => window.removeEventListener('keydown', handleEscape);
   }, [open, onClose]);
 
+  // Declared before the early return — hooks must run on every render.
+  const dialogRef = useFocusTrap<HTMLDivElement>(open);
+
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div
         className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col mx-4"
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="rule-builder-dialog-title"

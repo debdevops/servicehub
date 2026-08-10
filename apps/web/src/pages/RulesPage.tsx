@@ -12,6 +12,7 @@ import { apiClient } from '@servicehub/ui-shared/lib/api/client';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { findRuleEntityWarnings, type KnownEntities } from '@servicehub/ui-shared/lib/ruleValidation';
 import type { Topic } from '@servicehub/ui-shared/lib/api/types';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 import {
   useRules,
   useCreateRule,
@@ -554,6 +555,9 @@ function ReplayAllConfirmDialog({
     return () => window.removeEventListener('keydown', handleEscape);
   }, [rule, isExecuting, onCancel]);
 
+  // Declared before the early return — hooks must run on every render.
+  const dialogRef = useFocusTrap<HTMLDivElement>(!!rule);
+
   if (!rule) return null;
 
   return createPortal(
@@ -564,6 +568,7 @@ function ReplayAllConfirmDialog({
       {/* Dialog */}
       <div
         className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden"
+        ref={dialogRef}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="replay-all-dialog-title"

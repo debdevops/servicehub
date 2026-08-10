@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -19,17 +20,27 @@ namespace ServiceHub.UnitTests.Infrastructure.SignatureReplay;
 /// </summary>
 public sealed class SignatureReplayWorkerTests : IDisposable
 {
-    private readonly SqliteConnection _connection;
+    // A uniquely named shared-cache in-memory database, not "DataSource=:memory:" over one shared
+    // SqliteConnection. Sharing a single open connection across scopes made every DbContext EF
+    // built on the worker thread call sqlite3_create_function on a handle the test thread might
+    // have an open reader on, which fails with SQLITE_BUSY ("unable to delete/modify user-function
+    // due to active statements"). Each scope now opens its own connection, matching production,
+    // where DlqDbContext is registered against a file path.
+    private readonly string _connectionString =
+        $"Data Source=signature-replay-worker-{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
+
+    // Shared-cache in-memory databases live only while at least one connection to them is open.
+    private readonly SqliteConnection _keepAliveConnection;
     private readonly ServiceProvider _serviceProvider;
 
     public SignatureReplayWorkerTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        _keepAliveConnection = new SqliteConnection(_connectionString);
+        _keepAliveConnection.Open();
 
         var services = new ServiceCollection();
-        services.AddDbContext<DlqDbContext>(options => options.UseSqlite(_connection));
-        services.AddSingleton<ISignatureReplayQueue, SignatureReplayQueue>();
+        services.AddDbContext<DlqDbContext>(options => options.UseSqlite(_connectionString));
+        services.AddSingleton<ISignatureReplayQueue, RecoverySignallingQueue>();
         _serviceProvider = services.BuildServiceProvider();
 
         using var scope = _serviceProvider.CreateScope();
@@ -39,7 +50,43 @@ public sealed class SignatureReplayWorkerTests : IDisposable
     public void Dispose()
     {
         _serviceProvider.Dispose();
-        _connection.Dispose();
+        _keepAliveConnection.Dispose();
+    }
+
+    /// <summary>
+    /// Wraps the real <see cref="SignatureReplayQueue"/> and exposes the exact moment startup
+    /// recovery finished. <c>ExecuteAsync</c> awaits <c>RecoverInterruptedJobsAsync</c> to
+    /// completion and only then calls <see cref="DequeueAllAsync"/>, so that call is a precise
+    /// happens-after signal — no polling, sleeping, or timeout guessing required.
+    /// </summary>
+    private sealed class RecoverySignallingQueue : ISignatureReplayQueue
+    {
+        private readonly SignatureReplayQueue _inner = new();
+        private readonly TaskCompletionSource _recoveryCompleted =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly ConcurrentQueue<Guid> _enqueued = new();
+
+        public Task RecoveryCompleted => _recoveryCompleted.Task;
+
+        public IReadOnlyCollection<Guid> Enqueued => _enqueued.ToArray();
+
+        public void Enqueue(Guid jobId)
+        {
+            _enqueued.Enqueue(jobId);
+            _inner.Enqueue(jobId);
+        }
+
+        public IAsyncEnumerable<Guid> DequeueAllAsync(CancellationToken cancellationToken)
+        {
+            _recoveryCompleted.TrySetResult();
+            return _inner.DequeueAllAsync(cancellationToken);
+        }
+
+        public CancellationToken RegisterRunning(Guid jobId) => _inner.RegisterRunning(jobId);
+
+        public void RequestCancellation(Guid jobId) => _inner.RequestCancellation(jobId);
+
+        public void Complete(Guid jobId) => _inner.Complete(jobId);
     }
 
     private SignatureReplayJob SeedJob(BulkOperationStatus status)
@@ -75,13 +122,14 @@ public sealed class SignatureReplayWorkerTests : IDisposable
     public async Task Startup_InterruptedRunningJob_IsMarkedFailedWithExplanatoryMessage()
     {
         var runningJob = SeedJob(BulkOperationStatus.Running);
-        var queue = _serviceProvider.GetRequiredService<ISignatureReplayQueue>();
+        var queue = (RecoverySignallingQueue)_serviceProvider.GetRequiredService<ISignatureReplayQueue>();
         var worker = new SignatureReplayWorker(_serviceProvider, queue, NullLogger<SignatureReplayWorker>.Instance);
 
         using var cts = new CancellationTokenSource();
         await worker.StartAsync(cts.Token);
+        await queue.RecoveryCompleted;
 
-        var reloaded = await PollUntilAsync(runningJob.Id, j => j.Status != BulkOperationStatus.Running);
+        var reloaded = await ReloadAsync(runningJob.Id);
 
         reloaded.Status.Should().Be(BulkOperationStatus.Failed);
         reloaded.ErrorSummary.Should().Contain("restart");
@@ -95,36 +143,24 @@ public sealed class SignatureReplayWorkerTests : IDisposable
     public async Task Startup_PendingJob_IsReenqueuedNotMutated()
     {
         var pendingJob = SeedJob(BulkOperationStatus.Pending);
-        var queue = _serviceProvider.GetRequiredService<ISignatureReplayQueue>();
+        var queue = (RecoverySignallingQueue)_serviceProvider.GetRequiredService<ISignatureReplayQueue>();
         var worker = new SignatureReplayWorker(_serviceProvider, queue, NullLogger<SignatureReplayWorker>.Instance);
 
         using var cts = new CancellationTokenSource();
         await worker.StartAsync(cts.Token);
+        await queue.RecoveryCompleted;
 
-        // No executor is registered in this DI container, so a dequeued Pending job will fail
-        // DI resolution inside ProcessJobAsync — the worker's outer catch logs it and continues,
-        // proving re-enqueue happened without needing a full executor pipeline in this test.
-        var reloaded = await PollUntilAsync(pendingJob.Id, _ => true, timeout: TimeSpan.FromSeconds(1));
+        // Recovery re-enqueues rather than mutating: the job is handed back to the queue for a
+        // fresh run, and its row is left untouched so the executor still sees a Pending job.
+        queue.Enqueued.Should().ContainSingle().Which.Should().Be(pendingJob.Id);
+
+        var reloaded = await ReloadAsync(pendingJob.Id);
         reloaded.Status.Should().Be(BulkOperationStatus.Pending);
+        reloaded.StartedAt.Should().BeNull();
+        reloaded.CompletedAt.Should().BeNull();
+        reloaded.ErrorSummary.Should().BeNull();
 
         cts.Cancel();
         await worker.StopAsync(CancellationToken.None);
-    }
-
-    private async Task<SignatureReplayJob> PollUntilAsync(
-        Guid jobId, Func<SignatureReplayJob, bool> predicate, TimeSpan? timeout = null)
-    {
-        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(15));
-        SignatureReplayJob reloaded;
-        do
-        {
-            reloaded = await ReloadAsync(jobId);
-            if (predicate(reloaded))
-                return reloaded;
-
-            await Task.Delay(25);
-        } while (DateTime.UtcNow < deadline);
-
-        return reloaded;
     }
 }

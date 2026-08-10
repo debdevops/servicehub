@@ -126,6 +126,73 @@ describe('ConfirmDialog', () => {
     expect(onCancel).not.toHaveBeenCalled();
   });
 
+  // ── Focus management (v3.6.0 P2-4) ────────────────────────────────────────
+  //
+  // The dialog already had role/aria-modal/aria-labelledby/Escape. What it lacked was focus
+  // management: Tab walked straight out into the page behind, and closing dropped focus to
+  // <body>. aria-modal tells a screen reader the background is inert; it does not make it so
+  // for the Tab key.
+
+  it('moves focus into the dialog when it opens', () => {
+    render(<ConfirmDialog {...defaultProps} />);
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
+  it('focuses Cancel for the danger variant rather than the first control', () => {
+    // Deliberate: makes accidental confirmation of a destructive action harder. The focus trap
+    // must not override a dialog's own considered choice of initial focus.
+    render(<ConfirmDialog {...defaultProps} variant="danger" cancelLabel="Cancel" />);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
+  });
+
+  it('keeps Tab inside the dialog', async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <button type="button">outside</button>
+        <ConfirmDialog {...defaultProps} />
+      </>
+    );
+
+    const outside = screen.getByRole('button', { name: 'outside' });
+    const dialog = screen.getByRole('alertdialog');
+
+    for (let i = 0; i < 6; i++) {
+      await user.tab();
+      expect(document.activeElement).not.toBe(outside);
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    }
+  });
+
+  it('returns focus to the triggering element when it closes', () => {
+    const { rerender } = render(
+      <>
+        <button type="button">trigger</button>
+        <ConfirmDialog {...defaultProps} isOpen={false} />
+      </>
+    );
+
+    const trigger = screen.getByRole('button', { name: 'trigger' });
+    trigger.focus();
+
+    rerender(
+      <>
+        <button type="button">trigger</button>
+        <ConfirmDialog {...defaultProps} isOpen />
+      </>
+    );
+    expect(document.activeElement).not.toBe(trigger);
+
+    rerender(
+      <>
+        <button type="button">trigger</button>
+        <ConfirmDialog {...defaultProps} isOpen={false} />
+      </>
+    );
+    expect(document.activeElement).toBe(trigger);
+  });
+
   // ── Variant: default ──────────────────────────────────────────────────────
 
   it('does NOT show the AlertTriangle icon for the default variant', () => {

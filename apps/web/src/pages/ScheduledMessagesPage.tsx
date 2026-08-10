@@ -15,6 +15,7 @@ import { ProviderBadge, getProviderStyle } from '@servicehub/ui-shared/lib/provi
 import { apiClient } from '@servicehub/ui-shared/lib/api/client';
 import { Message, Namespace } from '@servicehub/ui-shared/lib/api/types';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 import toast from 'react-hot-toast';
 
 /**
@@ -144,6 +145,8 @@ interface ScheduledMessageRowProps {
 function RescheduleModal({ message, namespaceId, queueName, onClose }: RescheduleModalProps) {
   const cancel = useCancelScheduledMessage();
   const send = useSendMessage();
+  // Mounted only while open, so the trap is always armed.
+  const rescheduleDialogRef = useFocusTrap<HTMLDivElement>(true);
 
   // Pre-fill with the existing scheduled time (or 1 hour from now)
   const defaultValue = message.scheduledEnqueueTime
@@ -192,6 +195,7 @@ function RescheduleModal({ message, namespaceId, queueName, onClose }: Reschedul
 
   return createPortal(
     <div
+      ref={rescheduleDialogRef}
       className="fixed inset-0 z-50 flex items-center justify-center"
       role="dialog"
       aria-modal="true"
@@ -255,6 +259,8 @@ interface ScheduleNewMessageModalProps {
 
 function ScheduleNewMessageModal({ namespaceId, queueName, onClose }: ScheduleNewMessageModalProps) {
   const send = useSendMessage();
+  // Mounted only while open, so the trap is always armed.
+  const scheduleDialogRef = useFocusTrap<HTMLDivElement>(true);
   const [messageBody, setMessageBody] = useState('');
   const [scheduledTime, setScheduledTime] = useState(
     new Date(Date.now() + 60 * 60_000).toISOString().slice(0, 16)
@@ -317,6 +323,7 @@ function ScheduleNewMessageModal({ namespaceId, queueName, onClose }: ScheduleNe
 
   return createPortal(
     <div
+      ref={scheduleDialogRef}
       className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
       role="dialog"
       aria-modal="true"

@@ -177,13 +177,30 @@ public sealed class InMemoryNamespaceRepository : InMemoryNamespaceRepositoryBas
                 // valid-looking but empty or truncated file at the destination. File.Move is
                 // then a single atomic rename syscall on the same volume.
                 var tempPath = $"{_storagePath}.{Guid.NewGuid():N}.tmp";
-                using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                try
                 {
-                    stream.Write(bytes, 0, bytes.Length);
-                    stream.Flush(flushToDisk: true);
-                }
+                    using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        stream.Write(bytes, 0, bytes.Length);
+                        stream.Flush(flushToDisk: true);
+                    }
 
-                File.Move(tempPath, _storagePath, overwrite: true);
+                    // Restrict to owner-only before the rename, never after: this file holds every
+                    // stored connection string (encrypted, but still credential material), and
+                    // default permissions on a typical host leave it group- and world-readable.
+                    // Setting the mode on the temp file means the destination is never briefly
+                    // readable by other local accounts.
+                    RestrictToOwnerOnly(tempPath);
+
+                    File.Move(tempPath, _storagePath, overwrite: true);
+                }
+                catch
+                {
+                    // Don't leave a .{guid}.tmp file behind holding a full copy of the namespace
+                    // store — they accumulate silently and each one is credential material.
+                    TryDeleteTempFile(tempPath);
+                    throw;
+                }
 
                 _logger.LogDebug("Persisted {Count} namespace(s) to {Path}", snapshots.Count, _storagePath);
             }
@@ -191,6 +208,48 @@ public sealed class InMemoryNamespaceRepository : InMemoryNamespaceRepositoryBas
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to persist namespaces to {Path}", _storagePath);
+        }
+    }
+
+    /// <summary>
+    /// Restricts a file to owner read/write only (0600 on Unix). No-ops on Windows, where the
+    /// inherited directory ACL governs access and there is no direct equivalent to set here.
+    /// Failure is logged and swallowed: tightening permissions is defence in depth, and a
+    /// filesystem that refuses it (a mounted volume with fixed permissions, for example) must
+    /// not stop namespaces from being persisted at all.
+    /// </summary>
+    private void RestrictToOwnerOnly(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        try
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Could not restrict permissions on the namespace store file; it may be readable "
+                + "by other local accounts on this host");
+        }
+    }
+
+    private void TryDeleteTempFile(string tempPath)
+    {
+        try
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to remove the temporary namespace store file left by a failed write");
         }
     }
 

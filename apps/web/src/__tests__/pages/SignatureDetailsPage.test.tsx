@@ -264,4 +264,105 @@ describe('SignatureDetailsPage', () => {
       expect(screen.getByTestId('replay-progress-panel')).toHaveTextContent('Progress for job-123');
     });
   });
+
+  // F5 — `detailLoading || !detail` used to drive the spinner, so any failed fetch left
+  // "Loading signature…" on screen permanently with no error and no way to retry.
+  describe('load states', () => {
+    it('shows the loading text only while the request is in flight', () => {
+      mockUseDlqSignatureDetail.mockReturnValue({ data: undefined, isLoading: true });
+      const Wrapper = createWrapper();
+      render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+
+      expect(screen.getByText('Loading signature…')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Try Again' })).not.toBeInTheDocument();
+    });
+
+    it('renders the signature on a successful load and shows no loading or error state', () => {
+      const Wrapper = createWrapper();
+      render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+
+      expect(screen.getByText(/Fingerprint: hash-1/)).toBeInTheDocument();
+      expect(screen.queryByText('Loading signature…')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Try Again' })).not.toBeInTheDocument();
+    });
+
+    it('shows a terminal not-found message for a 404 rather than an infinite spinner', () => {
+      mockUseDlqSignatureDetail.mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        isError: true,
+        error: { response: { status: 404, data: { detail: 'Failure signature was not found.' } } },
+        refetch: vi.fn(),
+      });
+      const Wrapper = createWrapper();
+      render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+
+      expect(screen.queryByText('Loading signature…')).not.toBeInTheDocument();
+      expect(screen.getByText('Signature not found')).toBeInTheDocument();
+      // A 404 is terminal — retrying it would just fail again.
+      expect(screen.queryByRole('button', { name: 'Try Again' })).not.toBeInTheDocument();
+    });
+
+    it('surfaces the API error message with a retry when the request fails', () => {
+      mockUseDlqSignatureDetail.mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        isError: true,
+        error: { response: { status: 500, data: { detail: 'Namespace is unreachable.' } } },
+        refetch: vi.fn(),
+      });
+      const Wrapper = createWrapper();
+      render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+
+      expect(screen.queryByText('Loading signature…')).not.toBeInTheDocument();
+      expect(screen.getByText('Namespace is unreachable.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Try Again' })).toBeInTheDocument();
+    });
+
+    it('falls back to generic copy when the failure carries no server explanation', () => {
+      mockUseDlqSignatureDetail.mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        isError: true,
+        error: {},
+        refetch: vi.fn(),
+      });
+      const Wrapper = createWrapper();
+      render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+
+      expect(screen.getByText('Failed to load this failure signature.')).toBeInTheDocument();
+    });
+
+    it('refetches the signature when Try Again is clicked', () => {
+      const refetch = vi.fn();
+      mockUseDlqSignatureDetail.mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        isError: true,
+        error: { response: { status: 503, data: { detail: 'Provider unavailable.' } } },
+        refetch,
+      });
+      const Wrapper = createWrapper();
+      render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Try Again' }));
+      expect(refetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats a settled query with no data as not found rather than still loading', () => {
+      mockUseDlqSignatureDetail.mockReturnValue({ data: undefined, isLoading: false });
+      const Wrapper = createWrapper();
+      render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+
+      expect(screen.queryByText('Loading signature…')).not.toBeInTheDocument();
+      expect(screen.getByText('Signature not found')).toBeInTheDocument();
+    });
+
+    it('still reports the missing-reference guard when the namespace query param is absent', () => {
+      const Wrapper = createWrapper('/signatures/hash-1');
+      render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+
+      expect(screen.getByText('Missing namespace or signature reference.')).toBeInTheDocument();
+    });
+  });
 });

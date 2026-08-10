@@ -35,7 +35,13 @@ export function QuickAccessPanel() {
   const demoStats = isDemoMode && cloudProvider ? getMockStats(cloudProvider) : null;
 
   const allNamespaceIds = isDemoMode ? [] : (namespaces?.map((ns) => ns.id) ?? []);
-  const allStatsResults = useNamespaceStats(allNamespaceIds);
+  // autoRefresh: false — Header renders the same fleet-wide dead-letter total from the same
+  // ['namespace-stats', id] cache entries and is mounted on every page alongside this panel.
+  // Both registering a refetch interval made two always-mounted components each own a poll
+  // cadence for one number; Header is the single owner and this panel reads what it warms.
+  // Each entry is a live cloud-provider call, so the cadence is real API spend, not just a
+  // local counter.
+  const allStatsResults = useNamespaceStats(allNamespaceIds, false);
   const totalDlqCount = demoStats
     ? demoStats.totalDlq
     : allStatsResults.reduce((total, result) => {

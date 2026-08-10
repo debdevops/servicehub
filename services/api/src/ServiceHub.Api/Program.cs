@@ -44,6 +44,13 @@ builder.Services.AddSecureForwardedHeaders(builder.Configuration, builder.Enviro
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxRequestBodySize = 5 * 1024 * 1024; // 5 MB
+
+    // Suppress "Server: Kestrel" at the source. SecurityHeadersMiddleware also calls
+    // Headers.Remove("Server"), but that runs in an OnStarting callback while Kestrel writes
+    // its default Server header later, when the response is actually serialized — so the
+    // removal never took effect and every response still advertised the server product.
+    // This flag is the only thing that actually suppresses it.
+    options.AddServerHeader = false;
 });
 
 // Add Application Insights telemetry (cost-effective configuration)
@@ -121,6 +128,23 @@ using (var scope = app.Services.CreateScope())
 
         await dlqDbContext.Database.MigrateAsync();
         app.Logger.LogInformation("DLQ Intelligence database schema is up to date");
+
+        // Reconcile messages stranded mid-replay or mid-purge by a previous process. This must
+        // run here — after the schema is ready but before any hosted service starts — so that
+        // every claimed row it sees is provably abandoned rather than actively in flight. See
+        // InterruptedOperationRecovery for the full rationale.
+        try
+        {
+            await InterruptedOperationRecovery.ReconcileInterruptedOperationsAsync(
+                dlqDbContext, app.Logger);
+        }
+        catch (Exception recoveryEx)
+        {
+            // A failed reconciliation must not stop the app: the stranded rows stay stranded,
+            // which is the pre-existing behaviour, and the operator gets a logged reason.
+            app.Logger.LogError(
+                recoveryEx, "Failed to reconcile DLQ messages stranded mid-operation at startup");
+        }
     }
     catch (Exception ex)
     {

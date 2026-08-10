@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { X, Star, Zap } from 'lucide-react';
 import { useRuleTemplates } from '@servicehub/ui-shared/hooks/useRules';
 import type { RuleTemplateResponse } from '@servicehub/ui-shared/lib/api/rules';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 interface TemplateGalleryDialogProps {
   open: boolean;
@@ -39,6 +40,9 @@ export function TemplateGalleryDialog({ open, onClose, onSelect }: TemplateGalle
     return () => window.removeEventListener('keydown', handleEscape);
   }, [open, onClose]);
 
+  // Declared before the early return — hooks must run on every render.
+  const dialogRef = useFocusTrap<HTMLDivElement>(open);
+
   if (!open) return null;
 
   return (
@@ -48,6 +52,7 @@ export function TemplateGalleryDialog({ open, onClose, onSelect }: TemplateGalle
     >
       <div
         className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col mx-4"
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="template-gallery-title"

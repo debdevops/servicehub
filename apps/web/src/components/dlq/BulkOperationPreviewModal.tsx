@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, RefreshCw, Trash2, X, ShieldAlert } from 'lucide-react';
 import { useBulkOperationPreview, useCreateBulkOperation } from '@servicehub/ui-shared/hooks/useBulkOperations';
 import type { BulkOperationFilter, BulkOperationType } from '@servicehub/ui-shared/lib/api/bulkOperations';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 interface BulkOperationPreviewModalProps {
   operationType: BulkOperationType;
@@ -52,9 +53,13 @@ export function BulkOperationPreviewModal({
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isBusy, onClose]);
 
+  // This component is mounted only while the dialog is open, so the trap is always armed.
+  const dialogRef = useFocusTrap<HTMLDivElement>(true);
+
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label={`Bulk ${operationType.toLowerCase()} preview`}

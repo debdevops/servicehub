@@ -29,5 +29,13 @@ public enum DlqMessageStatus
     /// optimistic concurrency) and is about to invoke the live provider. Guards against two
     /// workers (bulk replay, signature replay, auto-replay) sending the same message twice.
     /// </summary>
-    Replaying = 6
+    Replaying = 6,
+
+    /// <summary>
+    /// Transient claim state: a bulk-purge worker has exclusively claimed this message (via
+    /// optimistic concurrency) and is about to invoke the live provider. The purge counterpart
+    /// of <see cref="Replaying"/> — without it, two concurrent purge jobs both issued a provider
+    /// delete for the same message and the loser recorded a spurious failure.
+    /// </summary>
+    Purging = 7
 }

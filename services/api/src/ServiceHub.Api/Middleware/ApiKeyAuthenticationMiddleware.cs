@@ -269,7 +269,13 @@ public sealed class ApiKeyAuthenticationMiddleware
             LogRedactor.SanitiseForLog(context.Request.Method),
             LogRedactor.SanitiseForLog(path));
 
-            await WriteForbiddenResponse(context, "Invalid API key.");
+            // 401, not 403. A rejected credential means "we do not know who you are" —
+            // 403 means "we know who you are and you may not do this", which is what
+            // ScopeAuthorizationFilter returns for an authenticated-but-underscoped key.
+            // Returning 403 here made a bad key indistinguishable from an insufficiently
+            // scoped one, and disagreed with the missing-credential path directly above,
+            // which already returned 401 for the same class of failure.
+            await WriteUnauthorizedResponse(context, "Invalid API key.");
             return;
         }
 
@@ -329,25 +335,6 @@ public sealed class ApiKeyAuthenticationMiddleware
             type = "https://tools.ietf.org/html/rfc7235#section-3.1",
             title = "Unauthorized",
             status = 401,
-            detail = message,
-            correlationId
-        };
-
-        await context.Response.WriteAsJsonAsync(response);
-    }
-
-    private static async Task WriteForbiddenResponse(HttpContext context, string message)
-    {
-        context.Response.StatusCode = StatusCodes.Status403Forbidden;
-        context.Response.ContentType = "application/json";
-
-        var correlationId = context.Items["CorrelationId"]?.ToString() ?? "unknown";
-
-        var response = new
-        {
-            type = "https://tools.ietf.org/html/rfc7231#section-6.5.3",
-            title = "Forbidden",
-            status = 403,
             detail = message,
             correlationId
         };

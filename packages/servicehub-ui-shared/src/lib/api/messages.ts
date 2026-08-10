@@ -81,6 +81,8 @@ export const messagesApi = {
       payload,
       {
         headers: withRiskIntent(riskIntent.sendMessage),
+        // useSendMessage's onError renders the server's explanation itself.
+        _ownErrorToast: true,
       }
     );
   },
@@ -94,6 +96,8 @@ export const messagesApi = {
   ): Promise<void> => {
     await apiClient.post('/messages/replay', null, {
       headers: withRiskIntent(riskIntent.replayMessage),
+      // useReplayMessage's onError renders the server's explanation itself.
+      _ownErrorToast: true,
       params: {
         namespaceId,
         sequenceNumber,
@@ -115,6 +119,8 @@ export const messagesApi = {
   ): Promise<void> => {
     await apiClient.delete('/messages/purge', {
       headers: withRiskIntent(riskIntent.purgeMessage),
+      // usePurgeMessage's onError renders the server's explanation itself.
+      _ownErrorToast: true,
       params: {
         namespaceId,
         sequenceNumber,
