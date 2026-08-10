@@ -102,8 +102,19 @@ describe('dlqSignaturesApi', () => {
 
       const result = await dlqSignaturesApi.getSignatureDetail('ns-1', 'hash-1');
 
-      expect(mocked.get).toHaveBeenCalledWith('/namespaces/ns-1/dlq/signatures/hash-1');
+      expect(mocked.get).toHaveBeenCalledWith('/namespaces/ns-1/dlq/signatures/hash-1', {
+        _ownErrorToast: true,
+      });
       expect(result).toEqual(response);
+    });
+
+    it('opts out of the generic 404 toast since the caller renders its own not-found state', async () => {
+      mocked.get.mockResolvedValueOnce({ data: {} } as any);
+
+      await dlqSignaturesApi.getSignatureDetail('ns-1', 'hash-1');
+
+      const [, config] = mocked.get.mock.calls[0];
+      expect(config).toMatchObject({ _ownErrorToast: true });
     });
   });
 
@@ -119,8 +130,19 @@ describe('dlqSignaturesApi', () => {
 
       const result = await dlqSignaturesApi.getSignatureTimeline('ns-1', 'hash-1');
 
-      expect(mocked.get).toHaveBeenCalledWith('/namespaces/ns-1/dlq/signatures/hash-1/timeline');
+      expect(mocked.get).toHaveBeenCalledWith('/namespaces/ns-1/dlq/signatures/hash-1/timeline', {
+        _ownErrorToast: true,
+      });
       expect(result).toEqual(response);
+    });
+
+    it('opts out of the generic 404 toast so a missing signature does not double-toast alongside getSignatureDetail', async () => {
+      mocked.get.mockResolvedValueOnce({ data: {} } as any);
+
+      await dlqSignaturesApi.getSignatureTimeline('ns-1', 'hash-1');
+
+      const [, config] = mocked.get.mock.calls[0];
+      expect(config).toMatchObject({ _ownErrorToast: true });
     });
   });
 

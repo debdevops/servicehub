@@ -834,6 +834,17 @@ public sealed class DlqHistoryController : ApiControllerBase
         var others = await _signatureLookupService.FindAcrossNamespacesAsync(
             OwnerId, signatureHash, namespaceId, cancellationToken);
 
+        // Deleting a namespace does not cascade-delete its NamespaceSignature rows, so without
+        // this filter a deleted namespace's stale match would keep surfacing here indefinitely
+        // as a dead-end entry. Mirrors FailureIntelligenceCenterService.GetInvestigationCenterAsync.
+        var registeredNamespacesResult = await _namespaceRepository.GetByOwnerAsync(
+            OwnerId, allowedNamespaceIds: null, cancellationToken);
+        if (registeredNamespacesResult.IsSuccess)
+        {
+            var registeredNamespaceIds = registeredNamespacesResult.Value.Select(n => n.Id).ToHashSet();
+            others = others.Where(o => registeredNamespaceIds.Contains(o.NamespaceId)).ToList();
+        }
+
         var matches = new List<RootCauseMatchResponse>(others.Count);
         foreach (var other in others)
         {
