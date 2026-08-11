@@ -657,7 +657,7 @@ echo ""
 if [ "${ASPNETCORE_ENVIRONMENT:-Development}" = "Production" ]; then
     echo -e "${YELLOW}⚠ Warning: ASPNETCORE_ENVIRONMENT is set to Production.${NC}"
     echo -e "   run.sh is intended for local development only."
-    echo -e "   For Azure deployment, use the self-hosting guide: ./self-hosting/README.md${NC}"
+    echo -e "   For a real deployment, see the Quick Start and Security sections in README.md${NC}"
     read -r -p "Continue anyway? (y/N): " confirm
     [[ "$confirm" =~ ^[Yy]$ ]] || exit 0
 fi

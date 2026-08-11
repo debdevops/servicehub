@@ -75,8 +75,6 @@ cd servicehub
 
 The React UI is served at **http://localhost:3000** and the API at **http://localhost:5153** (proxied via Vite).
 
-See [self-hosting/README.md](self-hosting/README.md) for full local development instructions.
-
 ---
 
 ## Running Tests
@@ -178,10 +176,7 @@ servicehub/
 │       ├── ServiceHub.Infrastructure.Gcp/  # GCP Pub/Sub
 │       └── ServiceHub.Shared/         # Result<T>, constants, helpers
 │
-├── self-hosting/          # Deployment guides (local, Azure, AWS, GCP)
 └── run.sh / run.ps1       # One-command local dev launcher
 ```
 
 The API uses a **Result/Error pattern** (no exceptions for business logic), **AES-256-GCM** for connection string encryption, and **tenant isolation** via `OwnerId` on every data access. The SPA authenticates via an ephemeral SPA token injected into `<meta>` at page load time.
-
-Interested in adding a new messaging provider (Kafka, RabbitMQ, IBM MQ, ActiveMQ, ...)? See [docs/EXTENDING-PROVIDERS.md](docs/EXTENDING-PROVIDERS.md) for the extension seam, what's already generic, and the constraints the existing three providers hit.

@@ -1058,7 +1058,7 @@ export function ConnectPage() {
                     Your data never leaves your infrastructure.
                   </p>
                   <a
-                    href="https://github.com/debdevops/servicehub/blob/main/self-hosting/README.md"
+                    href="https://github.com/debdevops/servicehub#quick-start"
                     target="_blank" rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800"
                   >

@@ -86,8 +86,7 @@ directory.
 This is a **deliberate choice for this release, not an omission**. It keeps the architecture
 simple, the data local, and the operational surface small — the trade-off is no horizontal
 scaling and no built-in multi-tenant isolation beyond the per-owner scoping OIDC/API keys already
-provide. See [docs/KNOWN-LIMITATIONS.md](docs/KNOWN-LIMITATIONS.md) for the complete list of
-what this does and doesn't support today.
+provide.
 
 ---
 
@@ -107,8 +106,7 @@ docker compose up --build
 
 Open **[http://localhost:8080](http://localhost:8080)**, then connect a namespace with your own
 cloud credentials. The port is bound to `127.0.0.1` (loopback) only by default, so it isn't
-reachable from your network until you deliberately change that — see
-[self-hosting/README.md](self-hosting/README.md) for a real deployment.
+reachable from your network until you deliberately change that.
 
 If you skip the `.env` step, `docker compose` stops immediately and names the variable that is
 missing rather than starting a container that fails its configuration check.
@@ -211,7 +209,7 @@ ServiceHub extends beyond Azure Service Bus to support **AWS SQS/SNS** and **GCP
 ² GCP Pub/Sub dead-lettering is policy-driven via `MaxDeliveryAttempts`; ServiceHub reads the DLQ through the subscription's configured dead-letter topic, and its test tooling moves messages there by republishing through the subscription's dead-letter policy. Message counts are unavailable via the Pub/Sub API and are reported as `0`.
 ³ Test tools (send a message, generate realistic test data, push messages to the DLQ) are available only on **DEV** namespaces with a Manage-level connection — never in UAT or production.
 
-**Preview** means: implemented and unit-tested, not validated against live AWS/GCP services in this project's own CI, capability-gated, no parity guarantee with Azure. See [docs/PROVIDER-SUPPORT.md](docs/PROVIDER-SUPPORT.md) for the full capability matrix, required IAM permissions, and the enabling flags — and [docs/KNOWN-LIMITATIONS.md](docs/KNOWN-LIMITATIONS.md) for every deliberate architectural trade-off in one place.
+**Preview** means: implemented and unit-tested, not validated against live AWS/GCP services in this project's own CI, capability-gated, no parity guarantee with Azure.
 
 ### 🌐 Cross-Cloud Trace
 Connect namespaces from two or more cloud providers and use **Multi-Cloud Trace** to trace a single Correlation ID or message GUID as it routes from Azure $\rightarrow$ AWS $\rightarrow$ GCP (or any combination). The result is a visual routing path diagram, a chronological hop timeline, and a namespace search-coverage panel.
@@ -328,9 +326,7 @@ The namespace store and SQLite DLQ/audit database persist to the `servicehub-dat
 example starts the process correctly — it is **not** the complete production
 checklist. `Cors:AllowedOrigins` and at least one API key (or OIDC) also need setting before real
 users reach it, and `SITEURL`/`AllowedHosts` must name the hostname users actually visit rather
-than `localhost`. See
-[self-hosting/README.md](self-hosting/README.md) for the full checklist and
-[docs/CONFIGURATION.md](docs/CONFIGURATION.md) for every option.
+than `localhost`.
 
 ### One-Command Setup (from source)
 
@@ -367,7 +363,7 @@ ServiceHub is built for strict enterprise environments.
 - **Log redaction** — Backend logging pipeline strips connection strings, API keys, and access tokens (best-effort pattern matching, not a formal guarantee).
 
 ### What ServiceHub does not do by default
-- **No per-user authentication out of the box** — every browser session shares one built-in admin identity. Enable **OIDC** (any standards-compliant identity provider) or **Azure Easy Auth**, both off by default, to isolate individual users. The browser's SPA token is a CSRF/casual-automation mitigation, not an identity boundary — see [Security Hardening](self-hosting/security-hardening/README.md) for the full threat model and setup steps.
+- **No per-user authentication out of the box** — every browser session shares one built-in admin identity. Enable **OIDC** (any standards-compliant identity provider) or **Azure Easy Auth**, both off by default, to isolate individual users. The browser's SPA token is a CSRF/casual-automation mitigation, not an identity boundary.
 
 ### Telemetry (opt-in, vendor-neutral)
 ServiceHub can emit operational telemetry two ways, **both disabled by default**:
@@ -405,8 +401,6 @@ Browser (React 19 SPA)
                                                             └── Google.Cloud.PubSub.V1
 ```
 
-For deep-dive architecture details, see [ARCHITECTURE.md](services/api/ARCHITECTURE.md) and the [Comprehensive Guide](docs/COMPREHENSIVE-GUIDE.md). For exactly which controllers share a routing path today (and which don't yet), see [docs/FLOW.md](docs/FLOW.md). Building a new messaging provider (Kafka, RabbitMQ, IBM MQ, ...)? See [docs/EXTENDING-PROVIDERS.md](docs/EXTENDING-PROVIDERS.md). What each provider genuinely supports? See [docs/PROVIDER-SUPPORT.md](docs/PROVIDER-SUPPORT.md). Deliberate trade-offs and constraints? See [docs/KNOWN-LIMITATIONS.md](docs/KNOWN-LIMITATIONS.md).
-
 ---
 
 ## API Documentation
@@ -424,7 +418,7 @@ ServiceHub exposes a full REST API with interactive documentation interfaces acc
 No. ServiceHub only uses `PeekMessagesAsync`. Your consumers continue processing normally, unaffected.
 
 **Is it safe to point at production?**
-Yes. Listen-only mode is fully read-only. Deploy ServiceHub inside your private network for extra safety. Check out the [Self-Hosting Guide](self-hosting/README.md).
+Yes. Listen-only mode is fully read-only. Deploy ServiceHub inside your private network for extra safety.
 
 **How does AI analysis work without an API key?**
 ServiceHub uses client-side heuristic pattern detection — pure JavaScript in your browser. No GPT, no external service, no data exfiltration.
@@ -449,7 +443,6 @@ dotnet test services/api/tests/ServiceHub.IntegrationTests
 # E2E tests (Playwright)
 npm run -w apps/web test:e2e
 ```
-For deep backend developer guidelines, refer to the [API README](services/api/README.md).
 
 ---
 
