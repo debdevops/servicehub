@@ -55,7 +55,7 @@ function ClusterCard({
           {onFilterEntity && (
             <button
               onClick={() => onFilterEntity(cluster.dominantEntity)}
-              className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+              className="text-xs text-primary-700 hover:text-primary-700 font-medium"
             >
               Filter table to {cluster.dominantEntity} →
             </button>
@@ -63,7 +63,7 @@ function ClusterCard({
           {namespaceId && (
             <Link
               to={`/signatures/${cluster.signatureHash}?namespace=${namespaceId}`}
-              className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+              className="text-xs text-primary-700 hover:text-primary-700 font-medium"
             >
               View details →
             </Link>
@@ -88,7 +88,7 @@ export function DlqSignaturesPanel({ namespaceId, onFilterEntity }: DlqSignature
       <div className="flex items-center gap-2 mb-3">
         <Sparkles className="w-4 h-4 text-primary-500" />
         <h3 className="text-sm font-semibold text-primary-900">Recurring Failure Signatures</h3>
-        <span className="text-xs text-primary-600">
+        <span className="text-xs text-primary-700">
           ServiceHub Interpretation — {data.clusters.length} cluster{data.clusters.length === 1 ? '' : 's'} detected
         </span>
       </div>
@@ -105,7 +105,7 @@ export function DlqSignaturesPanel({ namespaceId, onFilterEntity }: DlqSignature
       </div>
 
       {data.singletons.length > 0 && (
-        <p className="text-xs text-primary-600 mt-3">
+        <p className="text-xs text-primary-700 mt-3">
           + {data.singletons.length} additional one-off failure{data.singletons.length === 1 ? '' : 's'} not part of a recurring pattern.
         </p>
       )}
