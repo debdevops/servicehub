@@ -1,5 +1,24 @@
 # ServiceHub Changelog
 
+## [3.7.0] — 2026-08-11
+
+Release-candidate hardening. Cross-cloud production validation, bulk-operation safety guarding, and Rules Builder accessibility fixes ahead of RC1.
+
+### Added
+
+- **Bulk Replay/Purge production-namespace E2E guard** — new Playwright suite proves the Bulk Replay/Bulk Purge buttons on DLQ History are disabled outright (not merely rejected after the fact) against a production namespace, and their confirmation modal never mounts.
+- **Accessibility smoke coverage** — automated axe-core (WCAG2 A/AA) scan of the DLQ History page and the Auto-Replay Rules Builder dialog, added as a Playwright suite via the new `@axe-core/playwright` dev dependency.
+
+### Fixed
+
+- **Rules Builder form controls missing programmatic labels** — the Field, Operator, Delay, Max Retries, and Max Replays Per Hour inputs had visual `<label>`s not associated with their controls via `htmlFor`/`id`, failing WCAG 2.4.6/1.3.1 for screen-reader users. Also raised two low-contrast text/button color pairs (`primary-500/600`, `amber-500/600`) to `-700/800` to clear WCAG AA contrast minimums.
+
+### Validated
+
+- **Cross-cloud production confidence** — live end-to-end validation against real Azure, AWS, and GCP infrastructure: auth, connectivity, discovery, DLQ, and replay all PASS on all three providers (200 messages each, 0 errors); GCP's manual-DLQ restriction correctly rejected as documented. All 33 temporary cloud resources cleanly destroyed post-validation (`verify-cloud-resources.sh` PASS, 0 residual Terraform state).
+
+---
+
 ## [3.6.0] — 2026-08-10
 
 Stabilization and bug-bash release. No new features, no architectural change — every entry below

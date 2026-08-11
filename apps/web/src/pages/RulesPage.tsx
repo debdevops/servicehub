@@ -173,7 +173,7 @@ export function RulesPage() {
             </button>
             <button
               onClick={handleCreate}
-              className="flex items-center gap-1.5 px-3 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 bg-primary-700 hover:bg-primary-800 text-white rounded-lg text-sm font-medium transition-colors"
             >
               <Plus className="w-4 h-4" />
               Create Rule
@@ -505,7 +505,7 @@ function EmptyState({
         <button
           onClick={onGenerateRules}
           disabled={isGenerating}
-          className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+          className="flex items-center gap-1.5 px-4 py-2 bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
         >
           <Brain className={`w-4 h-4 ${isGenerating ? 'animate-pulse' : ''}`} />
           {isGenerating ? 'Analysing DLQ Patterns...' : 'Generate Intelligent Rules'}

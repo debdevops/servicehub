@@ -239,7 +239,7 @@ export function RuleBuilderDialog({
               </label>
               <button
                 onClick={addCondition}
-                className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
+                className="flex items-center gap-1 text-xs text-primary-700 hover:text-primary-800 font-medium"
               >
                 <Plus className="w-3.5 h-3.5" />
                 Add Condition
@@ -255,10 +255,11 @@ export function RuleBuilderDialog({
                   <div className="flex items-center gap-2">
                     <div className="flex-1 grid grid-cols-3 gap-2">
                       <div>
-                        <label className="block text-[10px] text-gray-500 uppercase mb-0.5">
+                        <label htmlFor={`condition-field-${i}`} className="block text-[10px] text-gray-500 uppercase mb-0.5">
                           Field
                         </label>
                         <select
+                          id={`condition-field-${i}`}
                           value={condition.field}
                           onChange={(e) => updateCondition(i, { field: e.target.value })}
                           className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
@@ -271,10 +272,11 @@ export function RuleBuilderDialog({
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[10px] text-gray-500 uppercase mb-0.5">
+                        <label htmlFor={`condition-operator-${i}`} className="block text-[10px] text-gray-500 uppercase mb-0.5">
                           Operator
                         </label>
                         <select
+                          id={`condition-operator-${i}`}
                           value={condition.operator}
                           onChange={(e) => updateCondition(i, { operator: e.target.value })}
                           className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
@@ -350,10 +352,11 @@ export function RuleBuilderDialog({
               {action.autoReplay && (
                 <div className="grid grid-cols-2 gap-3 pl-6">
                   <div>
-                    <label className="block text-[10px] text-gray-500 uppercase mb-0.5">
+                    <label htmlFor="action-delay-seconds" className="block text-[10px] text-gray-500 uppercase mb-0.5">
                       Delay (seconds)
                     </label>
                     <input
+                      id="action-delay-seconds"
                       type="number"
                       min={0}
                       max={86400}
@@ -365,10 +368,11 @@ export function RuleBuilderDialog({
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-gray-500 uppercase mb-0.5">
+                    <label htmlFor="action-max-retries" className="block text-[10px] text-gray-500 uppercase mb-0.5">
                       Max Retries
                     </label>
                     <input
+                      id="action-max-retries"
                       type="number"
                       min={1}
                       max={10}
@@ -414,10 +418,11 @@ export function RuleBuilderDialog({
 
           {/* Rate Limiting */}
           <div>
-            <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">
+            <label htmlFor="max-replays-per-hour" className="block text-xs font-semibold text-gray-600 uppercase mb-1">
               Max Replays Per Hour
             </label>
             <input
+              id="max-replays-per-hour"
               type="number"
               min={1}
               max={10000}
