@@ -10,6 +10,7 @@ using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Infrastructure.BackgroundServices;
@@ -126,8 +127,8 @@ public sealed class DlqMonitorWorkerStarvationTests : IAsyncLifetime
 
         var executor = new Mock<IAutoReplayExecutor>();
         executor.Setup(e => e.ExecuteAsync(
-                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()))
-            .Returns(async (DlqMessage msg, AutoReplayRule _, RuleAction _, CancellationToken ct) =>
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Returns(async (DlqMessage msg, AutoReplayRule _, RuleAction _, Namespace _, Guid _, CancellationToken ct) =>
             {
                 msg.Status = DlqMessageStatus.Replayed;
                 msg.ReplayedAt = DateTimeOffset.UtcNow;
@@ -141,6 +142,7 @@ public sealed class DlqMonitorWorkerStarvationTests : IAsyncLifetime
         services.AddSingleton(ruleEngine.Object);
         services.AddSingleton(executor.Object);
         services.AddSingleton(Mock.Of<IPlatformEventBus>());
+        services.AddSingleton<IRecoveryLedger>(new RecoveryLedgerService(_db));
         var sp = services.BuildServiceProvider();
 
         var config = new ConfigurationBuilder()
@@ -223,7 +225,7 @@ public sealed class DlqMonitorWorkerStarvationTests : IAsyncLifetime
 
         executor.Verify(e => e.ExecuteAsync(
                 It.Is<DlqMessage>(m => m.MessageId == matching),
-                It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
+                It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Once,
             "a replayed message leaves the Active set and must never be replayed again by a later sweep");
 
@@ -323,7 +325,7 @@ public sealed class DlqMonitorWorkerStarvationTests : IAsyncLifetime
             "an already-replayed message is no longer Active and must not re-enter evaluation");
         executor2.Verify(e => e.ExecuteAsync(
                 It.Is<DlqMessage>(m => m.MessageId == earlyMatch),
-                It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
+                It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never, "restart must not cause a duplicate replay");
 
         var rows = await _db.DlqMessages.AsNoTracking().ToListAsync();

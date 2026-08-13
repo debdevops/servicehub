@@ -557,4 +557,42 @@ public sealed class DlqHistoryService : IDlqHistoryService
                 Error.Internal("Dlq.LookupFailed", $"Failed to lookup DLQ message: {ex.Message}"));
         }
     }
+
+    /// <inheritdoc />
+    public async Task<Result<DlqMessage>> ClaimForRecoveryAsync(
+        long id,
+        string dlqMessageOwnerId,
+        DlqMessageStatus claimStatus,
+        CancellationToken cancellationToken = default)
+    {
+        var message = await _dbContext.DlqMessages
+            .FirstOrDefaultAsync(m => m.Id == id && m.OwnerId == dlqMessageOwnerId, cancellationToken);
+
+        if (message is null)
+        {
+            return Result<DlqMessage>.Failure(
+                Error.NotFound("Dlq.NotFound", $"DLQ message with ID {id} was not found"));
+        }
+
+        if (message.Status != DlqMessageStatus.Active && message.Status != DlqMessageStatus.ReplayFailed)
+        {
+            return Result<DlqMessage>.Failure(Error.Conflict(
+                "Dlq.NotClaimable",
+                $"Message status is now '{message.Status}', no longer eligible for this operation."));
+        }
+
+        message.Status = claimStatus;
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await _dbContext.Entry(message).ReloadAsync(cancellationToken);
+            return Result<DlqMessage>.Failure(Error.Conflict(
+                "Dlq.ClaimLost", "Message was claimed by another concurrent operation."));
+        }
+
+        return message;
+    }
 }

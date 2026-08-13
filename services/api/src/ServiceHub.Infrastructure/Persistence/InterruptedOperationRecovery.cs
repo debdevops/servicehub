@@ -2,6 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
+using ServiceHub.Infrastructure.RecoveryLedger;
 
 namespace ServiceHub.Infrastructure.Persistence;
 
@@ -66,15 +69,24 @@ public static class InterruptedOperationRecovery
     /// records an explanatory <see cref="ReplayHistory"/> entry for each interrupted replay.
     /// </summary>
     /// <param name="dbContext">The DLQ database context.</param>
+    /// <param name="recoveryLedger">
+    /// The Recovery Evidence Ledger — used to close any <see cref="RecoveryLedgerEntry"/> left in
+    /// <see cref="RecoveryEntryState.Executing"/> by the same crash, as
+    /// <see cref="RecoveryEntryState.ExecutionUnknown"/>. This is the one legitimate use of
+    /// that outcome in the whole Recovery Evidence Ledger: every other path knows whether the
+    /// provider accepted or rejected the call; only a process death mid-call genuinely doesn't.
+    /// </param>
     /// <param name="logger">Logger for the recovery summary.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The number of messages reconciled.</returns>
     public static async Task<int> ReconcileInterruptedOperationsAsync(
         DlqDbContext dbContext,
+        IRecoveryLedger recoveryLedger,
         ILogger logger,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(recoveryLedger);
         ArgumentNullException.ThrowIfNull(logger);
 
         var stranded = await dbContext.DlqMessages
@@ -121,13 +133,55 @@ public static class InterruptedOperationRecovery
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        // Close out any RecoveryLedgerEntry the same crash left stranded in Executing — the
+        // ledger's own record of "a claim was committed but we never learned the provider's
+        // answer," parallel to the DlqMessage reconciliation above. DlqMessageId is a soft
+        // reference (no FK — see RecoveryLedgerEntry), so this is a plain query, not a join the
+        // schema enforces.
+        var strandedIds = stranded.Select(m => m.Id).ToHashSet();
+        var orphanedEntries = await dbContext.RecoveryLedgerEntries
+            .Where(e => e.DlqMessageId != null
+                        && strandedIds.Contains(e.DlqMessageId!.Value)
+                        && e.State == RecoveryEntryState.Executing)
+            .ToListAsync(cancellationToken);
+
+        var actor = ActorIdentityResolver.ResolveSystemActor("startup-recovery");
+        var closedLedgerEntries = 0;
+
+        foreach (var entry in orphanedEntries)
+        {
+            var result = await recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
+            {
+                EntryId = entry.Id,
+                OwnerId = entry.OwnerId,
+                Actor = actor,
+                Outcome = RecoveryExecutionOutcome.Unknown,
+            }, cancellationToken);
+
+            if (result.IsSuccess)
+            {
+                closedLedgerEntries++;
+            }
+            else
+            {
+                // Not fatal to startup — an entry left at Executing is honestly ambiguous, not
+                // silently wrong, and a later restart's sweep gets another chance to close it.
+                logger.LogWarning(
+                    "Failed to close orphaned recovery ledger entry {EntryId} as ExecutionUnknown: {Error}",
+                    entry.Id, result.Error.Message);
+            }
+        }
+
         logger.LogWarning(
             "Recovered {Total} DLQ message(s) stranded by a prior restart: {ReplayCount} " +
             "interrupted replay(s) are now ReplayFailed and carry a replay-history entry recording " +
-            "that the original outcome is unknown; {PurgeCount} interrupted purge(s) are now Active.",
+            "that the original outcome is unknown; {PurgeCount} interrupted purge(s) are now Active; " +
+            "{LedgerCount} orphaned recovery ledger entr{Plural} closed as ExecutionUnknown.",
             stranded.Count,
             replayCount,
-            purgeCount);
+            purgeCount,
+            closedLedgerEntries,
+            closedLedgerEntries == 1 ? "y" : "ies");
 
         return stranded.Count;
     }

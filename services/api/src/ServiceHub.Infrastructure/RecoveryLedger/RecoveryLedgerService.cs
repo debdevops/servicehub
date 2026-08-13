@@ -25,7 +25,11 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     private static readonly TimeSpan DefaultObservationWindow = TimeSpan.FromHours(24);
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> OwnerLocks = new();
 
-    private static readonly IReadOnlySet<RecoveryEntryState> NonTerminalStates = new HashSet<RecoveryEntryState>
+    // Concretely typed as HashSet<T>, not IReadOnlySet<T>: GetAgeingAsync's query below uses
+    // NonTerminalStates.Contains(e.State) inside a LINQ-to-SQL expression, and EF Core's query
+    // translator only recognises the Contains pattern on concrete collection types — the
+    // interface-typed overload fails to translate against the SQLite provider.
+    private static readonly HashSet<RecoveryEntryState> NonTerminalStates = new()
     {
         RecoveryEntryState.Executing,
         RecoveryEntryState.Observing,
@@ -392,6 +396,23 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
             .FirstOrDefaultAsync(o => o.Id == operationId, cancellationToken);
 
         return operation is not null && operation.OwnerId == ownerId ? operation : null;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<RecoveryOperation>> QueryOperationsAsync(
+        string ownerId, Guid? namespaceId, int limit, CancellationToken cancellationToken = default)
+    {
+        var operations = _dbContext.RecoveryOperations.AsNoTracking().Where(o => o.OwnerId == ownerId);
+
+        if (namespaceId is { } id)
+        {
+            operations = operations.Where(o => o.NamespaceId == id);
+        }
+
+        return await operations
+            .OrderByDescending(o => o.OpenedAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
     }
 
     /// <inheritdoc />

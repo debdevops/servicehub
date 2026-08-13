@@ -5,8 +5,10 @@ using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.BulkOperations;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 
 namespace ServiceHub.Infrastructure.SignatureReplay;
 
@@ -31,6 +33,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
     private readonly DlqDbContext _dbContext;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IMessageOperationsService _messageOperationsService;
+    private readonly IRecoveryLedger _recoveryLedger;
     private readonly ILogger<SignatureReplayExecutor> _logger;
 
     /// <summary>Initialises a new instance of <see cref="SignatureReplayExecutor"/>.</summary>
@@ -38,13 +41,22 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         DlqDbContext dbContext,
         INamespaceRepository namespaceRepository,
         IMessageOperationsService messageOperationsService,
+        IRecoveryLedger recoveryLedger,
         ILogger<SignatureReplayExecutor> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _messageOperationsService = messageOperationsService ?? throw new ArgumentNullException(nameof(messageOperationsService));
+        _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
+
+    /// <summary>
+    /// The recovery-ledger context threaded through <see cref="ProcessMessageAsync"/> for every
+    /// message in one job — one <see cref="RecoveryOperation"/> per job, opened once in
+    /// <see cref="RunAsync"/>, not per message.
+    /// </summary>
+    private sealed record RecoveryContext(string OwnerId, Guid OperationId, RecoveryActor Actor, Namespace Namespace, string SignatureHash);
 
     /// <inheritdoc />
     public async Task ExecuteAsync(Guid jobId, CancellationToken cancellationToken)
@@ -152,10 +164,12 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             return;
         }
 
+        var ns = nsResult.Value;
+
         // Re-check the same guard StartAsync validated — defensive against the namespace's
         // environment changing between job creation and the worker picking it up. Mirrors
         // BulkOperationExecutor.RunAsync's execution-time re-check.
-        if (nsResult.Value.Environment == EnvironmentType.Prod)
+        if (ns.Environment == EnvironmentType.Prod)
         {
             job.Status = BulkOperationStatus.Failed;
             job.ErrorSummary = "Namespace is now Production — signature replay blocked at execution time.";
@@ -169,6 +183,35 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             .OrderBy(m => m.DetectedAtUtc)
             .ToListAsync(cancellationToken);
 
+        var actor = ActorIdentityResolver.ResolveAutomationActor("SignatureJob", job.Id.ToString(), job.SignatureHash);
+
+        var operationResult = await _recoveryLedger.OpenOperationAsync(new OpenRecoveryOperationRequest
+        {
+            OwnerId = job.OwnerId,
+            Kind = RecoveryOperationKind.Replay,
+            Trigger = RecoveryTrigger.SignatureJob,
+            Actor = actor,
+            // SourceJobId is long? (matching AutoReplayRule.Id's type) but SignatureReplayJob.Id
+            // is a Guid — same type-mismatch limitation as BulkOperationExecutor; the job's id is
+            // embedded in ScopeDescription instead.
+            NamespaceId = job.NamespaceId,
+            NamespaceNameSnapshot = job.NamespaceDisplayName,
+            ProviderSnapshot = ns.Provider,
+            EnvironmentSnapshot = ns.Environment,
+            ScopeDescription = $"signature replay job {job.Id}; signatureHash={job.SignatureHash}",
+            CorrelationId = null,
+            TargetCount = messages.Count,
+        }, cancellationToken);
+
+        if (operationResult.IsFailure)
+        {
+            job.Status = BulkOperationStatus.Failed;
+            job.ErrorSummary = $"Failed to open recovery ledger operation: {operationResult.Error.Message}";
+            return;
+        }
+
+        var recovery = new RecoveryContext(job.OwnerId, operationResult.Value.Id, actor, ns, job.SignatureHash);
+
         var failureSample = new List<BulkOperationFailureSample>();
         var sinceLastSave = 0;
 
@@ -176,7 +219,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var (outcome, reason) = await ProcessMessageAsync(message, cancellationToken);
+            var (outcome, reason) = await ProcessMessageAsync(message, recovery, cancellationToken);
             job.ProcessedCount++;
 
             switch (outcome)
@@ -206,7 +249,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
     }
 
     private async Task<(MessageOutcome Outcome, string? Reason)> ProcessMessageAsync(
-        DlqMessage message, CancellationToken cancellationToken)
+        DlqMessage message, RecoveryContext recovery, CancellationToken cancellationToken)
     {
         // A message already moved on (e.g. replayed manually between job creation and
         // execution) is skipped rather than re-attempted — the filter matched it at creation
@@ -235,8 +278,36 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             return (MessageOutcome.Skipped, "Message was claimed by another concurrent replay — skipped");
         }
 
+        var beginResult = await _recoveryLedger.BeginEntryAsync(
+            RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
+                message, recovery.Namespace, recovery.OperationId, recovery.OwnerId, recovery.Actor, entityName,
+                signatureHashSnapshot: recovery.SignatureHash),
+            cancellationToken);
+
+        if (beginResult.IsFailure)
+        {
+            // No message movement without ledger coverage: release the claim so a retry can pick
+            // the message up again rather than call the provider unrecorded.
+            message.Status = DlqMessageStatus.Active;
+            return (MessageOutcome.Skipped, $"Recovery ledger error: {beginResult.Error.Message}");
+        }
+
+        var entry = beginResult.Value;
+
         var result = await _messageOperationsService.ReplayMessageAsync(
             message.NamespaceId, entityName, subscriptionName, message.SequenceNumber, cancellationToken);
+
+        // CancellationToken.None: the provider call above already happened, so this outcome must
+        // be recorded even if cancellation was requested in the meantime — same reasoning as the
+        // final DlqMessage save below.
+        await _recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id,
+            OwnerId = recovery.OwnerId,
+            Actor = recovery.Actor,
+            Outcome = result.IsSuccess ? RecoveryExecutionOutcome.Accepted : RecoveryExecutionOutcome.Rejected,
+            ProviderDetailJson = result.IsSuccess ? null : result.Error.Message,
+        }, CancellationToken.None);
 
         _dbContext.ReplayHistories.Add(new ReplayHistory
         {

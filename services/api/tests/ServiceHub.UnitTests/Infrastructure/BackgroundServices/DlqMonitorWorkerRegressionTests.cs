@@ -10,6 +10,7 @@ using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Infrastructure.BackgroundServices;
@@ -88,7 +89,7 @@ public sealed class DlqMonitorWorkerRegressionTests
 
         var executor = new Mock<IAutoReplayExecutor>();
         executor.Setup(e => e.ExecuteAsync(
-                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()))
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<string>.Success("replayed"));
 
         var services = new ServiceCollection();
@@ -98,6 +99,7 @@ public sealed class DlqMonitorWorkerRegressionTests
         services.AddSingleton(Mock.Of<IPlatformEventBus>());
         services.AddSingleton(ruleEngine.Object);
         services.AddSingleton(executor.Object);
+        services.AddSingleton<IRecoveryLedger>(new RecoveryLedgerService(db));
         var sp = services.BuildServiceProvider();
 
         return (db, sp, executor);
@@ -126,7 +128,7 @@ public sealed class DlqMonitorWorkerRegressionTests
 
         // The whole point of the grace period: nothing replays before it elapses.
         executor.Verify(e => e.ExecuteAsync(
-                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
         await db.Database.CloseConnectionAsync();
@@ -147,7 +149,7 @@ public sealed class DlqMonitorWorkerRegressionTests
         await RunOneCycleAsync(sp);
 
         executor.Verify(e => e.ExecuteAsync(
-                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.AtLeastOnce);
 
         await db.Database.CloseConnectionAsync();
@@ -167,7 +169,7 @@ public sealed class DlqMonitorWorkerRegressionTests
         await RunOneCycleAsync(sp);
 
         executor.Verify(e => e.ExecuteAsync(
-                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.AtLeastOnce);
 
         await db.Database.CloseConnectionAsync();
@@ -187,7 +189,7 @@ public sealed class DlqMonitorWorkerRegressionTests
         await RunOneCycleAsync(sp);
 
         executor.Verify(e => e.ExecuteAsync(
-                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.AtLeastOnce);
 
         await db.Database.CloseConnectionAsync();
@@ -209,7 +211,7 @@ public sealed class DlqMonitorWorkerRegressionTests
         await RunOneCycleAsync(sp);
 
         executor.Verify(e => e.ExecuteAsync(
-                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
         await db.Database.CloseConnectionAsync();
@@ -273,7 +275,7 @@ public sealed class DlqMonitorWorkerRegressionTests
 
         var executor = new Mock<IAutoReplayExecutor>();
         executor.Setup(e => e.ExecuteAsync(
-                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()))
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<string>.Success("replayed"));
 
         var services = new ServiceCollection();
@@ -281,6 +283,7 @@ public sealed class DlqMonitorWorkerRegressionTests
         services.AddSingleton(ruleEngine.Object);
         services.AddSingleton(executor.Object);
         services.AddSingleton(Mock.Of<IPlatformEventBus>());
+        services.AddSingleton<IRecoveryLedger>(new RecoveryLedgerService(db));
         var sp = services.BuildServiceProvider();
 
         var worker = new DlqMonitorWorker(
@@ -290,7 +293,7 @@ public sealed class DlqMonitorWorkerRegressionTests
 
         // No cross-owner replay: Owner A's rule is invisible to Owner B's evaluation.
         executor.Verify(e => e.ExecuteAsync(
-                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);
         ruleEngine.Verify(e => e.FindMatchingRules(It.IsAny<DlqMessage>(), It.IsAny<IReadOnlyList<AutoReplayRule>>()),
             Times.Never);

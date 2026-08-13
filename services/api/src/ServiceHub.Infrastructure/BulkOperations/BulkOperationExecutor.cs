@@ -7,7 +7,9 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Events;
 using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 
 namespace ServiceHub.Infrastructure.BulkOperations;
 
@@ -37,6 +39,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
     private readonly DlqDbContext _dbContext;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IMessageOperationsService _messageOperationsService;
+    private readonly IRecoveryLedger _recoveryLedger;
     private readonly IAuditService _auditService;
     private readonly IPlatformEventBus _eventBus;
     private readonly ILogger<BulkOperationExecutor> _logger;
@@ -46,6 +49,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         DlqDbContext dbContext,
         INamespaceRepository namespaceRepository,
         IMessageOperationsService messageOperationsService,
+        IRecoveryLedger recoveryLedger,
         IAuditService auditService,
         IPlatformEventBus eventBus,
         ILogger<BulkOperationExecutor> logger)
@@ -53,10 +57,18 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _messageOperationsService = messageOperationsService ?? throw new ArgumentNullException(nameof(messageOperationsService));
+        _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _auditService = auditService ?? throw new ArgumentNullException(nameof(auditService));
         _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
+
+    /// <summary>
+    /// The recovery-ledger context threaded through <see cref="ProcessMessageAsync"/> for every
+    /// message in one job — one <see cref="RecoveryOperation"/> per job, opened once in
+    /// <see cref="RunAsync"/>, not per message.
+    /// </summary>
+    private sealed record RecoveryContext(string OwnerId, Guid OperationId, RecoveryActor Actor, Namespace Namespace);
 
     /// <inheritdoc />
     public async Task ExecuteAsync(Guid jobId, CancellationToken cancellationToken)
@@ -185,6 +197,43 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
             .OrderBy(m => m.DetectedAtUtc)
             .ToListAsync(cancellationToken);
 
+        var actor = ActorIdentityResolver.ResolveAutomationActor("BulkJob", job.Id.ToString(), job.OperationType.ToString());
+        var kind = job.OperationType == BulkOperationType.Replay ? RecoveryOperationKind.Replay : RecoveryOperationKind.Purge;
+
+        var operationResult = await _recoveryLedger.OpenOperationAsync(new OpenRecoveryOperationRequest
+        {
+            OwnerId = job.OwnerId,
+            Kind = kind,
+            Trigger = RecoveryTrigger.BulkJob,
+            Actor = actor,
+            // BulkOperationJob has no dedicated operator-reason field yet (adding one is a schema
+            // change, out of scope for this phase — see Phase 3 plan). The job's own persisted
+            // filter is a truthful, if system-derived rather than operator-typed, description of
+            // what was targeted, and satisfies the ledger's non-empty-Reason-for-Purge rule
+            // without fabricating an operator's words.
+            Reason = kind == RecoveryOperationKind.Purge ? BuildFilterDescription(job) : null,
+            NamespaceId = job.NamespaceId,
+            NamespaceNameSnapshot = job.NamespaceDisplayName,
+            ProviderSnapshot = ns.Provider,
+            EnvironmentSnapshot = ns.Environment,
+            // SourceJobId is long? (matching AutoReplayRule.Id's type) but BulkOperationJob.Id is
+            // a Guid — no type-compatible way to populate it without a schema change, out of
+            // scope this phase. The job's Guid id is embedded in ScopeDescription instead, so the
+            // provenance is still recorded, just not as a queryable typed column.
+            ScopeDescription = BuildFilterDescription(job),
+            CorrelationId = job.CorrelationId,
+            TargetCount = messages.Count,
+        }, cancellationToken);
+
+        if (operationResult.IsFailure)
+        {
+            job.Status = BulkOperationStatus.Failed;
+            job.ErrorSummary = $"Failed to open recovery ledger operation: {operationResult.Error.Message}";
+            return;
+        }
+
+        var recovery = new RecoveryContext(job.OwnerId, operationResult.Value.Id, actor, ns);
+
         var failureSample = new List<BulkOperationFailureSample>();
         var sinceLastSave = 0;
 
@@ -192,7 +241,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var (outcome, reason) = await ProcessMessageAsync(job.OperationType, message, cancellationToken);
+            var (outcome, reason) = await ProcessMessageAsync(job.OperationType, message, recovery, cancellationToken);
             job.ProcessedCount++;
 
             switch (outcome)
@@ -221,8 +270,32 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         job.FailureSampleJson = failureSample.Count > 0 ? JsonSerializer.Serialize(failureSample) : null;
     }
 
+    /// <summary>
+    /// A factual, non-fabricated description of what a job targeted, built from its own
+    /// persisted filter fields — used both as the ledger operation's <c>ScopeDescription</c> and,
+    /// for purge jobs, as its <c>Reason</c> (see <see cref="RecoveryContext"/> and the comment at
+    /// its call site in <see cref="RunAsync"/>).
+    /// </summary>
+    private static string BuildFilterDescription(BulkOperationJob job)
+    {
+        var parts = new List<string> { $"bulk {job.OperationType.ToString().ToLowerInvariant()} job {job.Id}" };
+
+        if (!string.IsNullOrEmpty(job.EntityNameFilter))
+            parts.Add($"entity~={job.EntityNameFilter}");
+        if (job.StatusFilter is { } status)
+            parts.Add($"status={status}");
+        if (job.CategoryFilter is { } category)
+            parts.Add($"category={category}");
+        if (job.FromFilter is { } from)
+            parts.Add($"from={from:O}");
+        if (job.ToFilter is { } to)
+            parts.Add($"to={to:O}");
+
+        return string.Join("; ", parts);
+    }
+
     private async Task<(MessageOutcome Outcome, string? Reason)> ProcessMessageAsync(
-        BulkOperationType operationType, DlqMessage message, CancellationToken cancellationToken)
+        BulkOperationType operationType, DlqMessage message, RecoveryContext recovery, CancellationToken cancellationToken)
     {
         // A message already moved on (e.g. replayed manually between job creation and
         // execution) is skipped rather than re-attempted — the filter matched it at creation
@@ -262,8 +335,37 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
                 return (MessageOutcome.Skipped, "Message was claimed by another concurrent replay — skipped");
             }
 
+            var beginResult = await _recoveryLedger.BeginEntryAsync(
+                RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
+                    message, recovery.Namespace, recovery.OperationId, recovery.OwnerId, recovery.Actor, entityName),
+                cancellationToken);
+
+            if (beginResult.IsFailure)
+            {
+                // No message movement without ledger coverage: release the claim so a retry can
+                // pick the message up again rather than call the provider unrecorded.
+                message.Status = DlqMessageStatus.Active;
+                return (MessageOutcome.Skipped, $"Recovery ledger error: {beginResult.Error.Message}");
+            }
+
+            var entry = beginResult.Value;
+
             var result = await _messageOperationsService.ReplayMessageAsync(
                 message.NamespaceId, entityName, subscriptionName, message.SequenceNumber, cancellationToken);
+
+            // CancellationToken.None: the provider call above already happened, so this outcome
+            // must be recorded even if cancellation was requested in the meantime — the same
+            // reasoning SignatureReplayExecutor.ProcessMessageAsync's post-provider-call save
+            // uses. A cancelled RecordExecutionAsync here would throw past this method's return,
+            // silently dropping ProcessedCount/SuccessCount for a replay that already succeeded.
+            await _recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
+            {
+                EntryId = entry.Id,
+                OwnerId = recovery.OwnerId,
+                Actor = recovery.Actor,
+                Outcome = result.IsSuccess ? RecoveryExecutionOutcome.Accepted : RecoveryExecutionOutcome.Rejected,
+                ProviderDetailJson = result.IsSuccess ? null : result.Error.Message,
+            }, CancellationToken.None);
 
             _dbContext.ReplayHistories.Add(new ReplayHistory
             {
@@ -306,9 +408,34 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
             return (MessageOutcome.Skipped, "Message was claimed by another concurrent purge — skipped");
         }
 
+        var purgeBeginResult = await _recoveryLedger.BeginEntryAsync(
+            RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
+                message, recovery.Namespace, recovery.OperationId, recovery.OwnerId, recovery.Actor, entityName),
+            cancellationToken);
+
+        if (purgeBeginResult.IsFailure)
+        {
+            message.Status = DlqMessageStatus.Active;
+            return (MessageOutcome.Skipped, $"Recovery ledger error: {purgeBeginResult.Error.Message}");
+        }
+
+        var purgeEntry = purgeBeginResult.Value;
+
         var purgeResult = await _messageOperationsService.PurgeMessageAsync(
             message.NamespaceId, entityName, subscriptionName, message.SequenceNumber,
             fromDeadLetter: true, cancellationToken);
+
+        // CancellationToken.None — same reasoning as the replay branch above: the provider call
+        // already happened, so its outcome must be recorded regardless of cancellation requested
+        // in the meantime.
+        await _recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = purgeEntry.Id,
+            OwnerId = recovery.OwnerId,
+            Actor = recovery.Actor,
+            Outcome = purgeResult.IsSuccess ? RecoveryExecutionOutcome.Accepted : RecoveryExecutionOutcome.Rejected,
+            ProviderDetailJson = purgeResult.IsSuccess ? null : purgeResult.Error.Message,
+        }, CancellationToken.None);
 
         if (purgeResult.IsSuccess)
         {

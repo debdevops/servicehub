@@ -423,6 +423,26 @@ public static class ApiRoutes
         public const string Base = $"{VersionedBase}/me";
     }
 
+    /// <summary>Routes for the Recovery Evidence Ledger — read-only in this phase; export,
+    /// verify-chain, and write-off are added when their controller actions ship.</summary>
+    public static class Recovery
+    {
+        /// <summary>Base route for recovery operation queries.</summary>
+        public const string Base = $"{VersionedBase}/recovery";
+
+        /// <summary>Route for listing recovery operations.</summary>
+        public const string Operations = $"{Base}/operations";
+
+        /// <summary>Route for a specific recovery operation by ID.</summary>
+        public const string OperationById = $"{Operations}/{{id:guid}}";
+
+        /// <summary>Route for listing recovery ledger entries.</summary>
+        public const string Entries = $"{Base}/entries";
+
+        /// <summary>Route for the ageing report of open (non-terminal) entries.</summary>
+        public const string Ageing = $"{Base}/ageing";
+    }
+
     /// <summary>Routes for the Investigation Center — incident command for failure investigation.</summary>
     public static class FailureIntelligence
     {

@@ -82,6 +82,14 @@ public interface IRecoveryLedger
         string ownerId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Queries operations for one owner, optionally filtered by namespace, most
+    /// recently opened first.</summary>
+    Task<IReadOnlyList<RecoveryOperation>> QueryOperationsAsync(
+        string ownerId,
+        Guid? namespaceId,
+        int limit,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Queries ledger entries for one owner, optionally filtered by operation,
     /// namespace, and/or state.</summary>
     Task<IReadOnlyList<RecoveryLedgerEntry>> QueryEntriesAsync(

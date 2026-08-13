@@ -9,6 +9,7 @@ using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Infrastructure;
@@ -18,7 +19,11 @@ public class AutoReplayExecutorTests : IDisposable
     private readonly DlqDbContext _dbContext;
     private readonly Mock<IMessageOperationsService> _messageOperations = new();
     private readonly Mock<ILogger<AutoReplayExecutor>> _logger = new();
+    private readonly IRecoveryLedger _recoveryLedger;
     private readonly AutoReplayExecutor _executor;
+    private readonly Namespace _testNamespace = Namespace.Create(
+        "test-namespace", "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
+        ownerId: TestConstants.TestOwnerId).Value;
 
     public AutoReplayExecutorTests()
     {
@@ -29,8 +34,29 @@ public class AutoReplayExecutorTests : IDisposable
         _dbContext.Database.OpenConnection();
         _dbContext.Database.EnsureCreated();
 
+        _recoveryLedger = new RecoveryLedgerService(_dbContext);
         _executor = new AutoReplayExecutor(
-            _dbContext, _messageOperations.Object, _logger.Object);
+            _dbContext, _messageOperations.Object, _recoveryLedger, _logger.Object);
+    }
+
+    /// <summary>
+    /// Opens a real <see cref="RecoveryOperation"/> so <c>ExecuteAsync</c>'s
+    /// <c>BeginEntryAsync</c> call has something to attach to — a random Guid would fail
+    /// with <c>RecoveryLedger.OperationNotFound</c> before the replay is ever attempted.
+    /// </summary>
+    private async Task<Guid> OpenOperationAsync(AutoReplayRule rule)
+    {
+        var result = await _recoveryLedger.OpenOperationAsync(new OpenRecoveryOperationRequest
+        {
+            OwnerId = rule.OwnerId,
+            Kind = RecoveryOperationKind.Replay,
+            Trigger = RecoveryTrigger.AutoRule,
+            Actor = new RecoveryActor("test-rule", RecoveryActorKind.Automation),
+            ScopeDescription = "test",
+            SourceRuleId = rule.Id,
+            TargetCount = 1,
+        });
+        return result.Value.Id;
     }
 
     public void Dispose()
@@ -84,21 +110,24 @@ public class AutoReplayExecutorTests : IDisposable
     [Fact]
     public void Constructor_NullDbContext_Throws()
     {
-        var act = () => new AutoReplayExecutor(null!, _messageOperations.Object, _logger.Object);
+        var act = () => new AutoReplayExecutor(
+            null!, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("dbContext");
     }
 
     [Fact]
     public void Constructor_NullMessageOperations_Throws()
     {
-        var act = () => new AutoReplayExecutor(_dbContext, null!, _logger.Object);
+        var act = () => new AutoReplayExecutor(
+            _dbContext, null!, new RecoveryLedgerService(_dbContext), _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("messageOperations");
     }
 
     [Fact]
     public void Constructor_NullLogger_Throws()
     {
-        var act = () => new AutoReplayExecutor(_dbContext, _messageOperations.Object, null!);
+        var act = () => new AutoReplayExecutor(
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -161,7 +190,7 @@ public class AutoReplayExecutorTests : IDisposable
         });
         await _dbContext.SaveChangesAsync();
 
-        var result = await _executor.ExecuteAsync(msg, rule, action);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
         result.IsFailure.Should().BeTrue();
     }
 
@@ -176,7 +205,7 @@ public class AutoReplayExecutorTests : IDisposable
             .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
 
-        var result = await _executor.ExecuteAsync(msg, rule, action);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
         result.IsSuccess.Should().BeTrue();
         msg.Status.Should().Be(DlqMessageStatus.Replayed);
@@ -202,7 +231,7 @@ public class AutoReplayExecutorTests : IDisposable
             .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Failure(Error.NotFound("NS_NOT_FOUND", "Namespace not found")));
 
-        var result = await _executor.ExecuteAsync(msg, rule, action);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
         result.IsFailure.Should().BeTrue();
         msg.Status.Should().Be(DlqMessageStatus.ReplayFailed);
@@ -226,7 +255,7 @@ public class AutoReplayExecutorTests : IDisposable
             .Setup(m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("boom"));
 
-        var result = await _executor.ExecuteAsync(msg, rule, action);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
         result.IsFailure.Should().BeTrue();
         msg.Status.Should().Be(DlqMessageStatus.ReplayFailed);
@@ -247,7 +276,7 @@ public class AutoReplayExecutorTests : IDisposable
             .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "retry-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
 
-        var result = await _executor.ExecuteAsync(msg, rule, action);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
         result.IsSuccess.Should().BeTrue();
         var history = _dbContext.ReplayHistories.Single();
@@ -270,7 +299,7 @@ public class AutoReplayExecutorTests : IDisposable
             .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "orders-topic", "orders-sub", msg.SequenceNumber, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
 
-        var result = await _executor.ExecuteAsync(msg, rule, action);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
         result.IsSuccess.Should().BeTrue();
         _messageOperations.Verify(
@@ -291,7 +320,7 @@ public class AutoReplayExecutorTests : IDisposable
             .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
 
-        var result = await _executor.ExecuteAsync(msg, rule, action);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
         result.IsSuccess.Should().BeTrue();
         msg.Status.Should().Be(DlqMessageStatus.Replayed);
@@ -350,10 +379,11 @@ public class AutoReplayExecutorTests : IDisposable
         }
 
         var messageOperations = new Mock<IMessageOperationsService>();
-        var executor = new AutoReplayExecutor(dbContext, messageOperations.Object, _logger.Object);
+        var executor = new AutoReplayExecutor(
+            dbContext, messageOperations.Object, new RecoveryLedgerService(dbContext), _logger.Object);
         var action = new RuleAction();
 
-        var result = await executor.ExecuteAsync(msg, rule, action);
+        var result = await executor.ExecuteAsync(msg, rule, action, _testNamespace, Guid.NewGuid());
 
         result.IsFailure.Should().BeTrue();
         result.Error.Type.Should().Be(ErrorType.Conflict);

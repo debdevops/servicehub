@@ -16,12 +16,25 @@ public interface IAutoReplayExecutor
     /// <param name="message">The DLQ message to replay.</param>
     /// <param name="rule">The matched rule.</param>
     /// <param name="action">The parsed action configuration.</param>
+    /// <param name="ns">
+    /// The namespace <paramref name="message"/> belongs to — already loaded by the caller
+    /// (<c>DlqMonitorWorker.EvaluateAutoReplayRulesAsync</c>), passed through rather than
+    /// re-resolved here, for the recovery ledger entry's namespace/provider/environment snapshot.
+    /// </param>
+    /// <param name="operationId">
+    /// The <see cref="Entities.RecoveryOperation"/> this replay's <see cref="Entities.RecoveryLedgerEntry"/>
+    /// belongs to. One operation covers every message this rule replays within one scan cycle —
+    /// the caller opens it once per firing rule and reuses it across messages, rather than this
+    /// method opening one per message.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Success with outcome description, or failure.</returns>
     Task<Result<string>> ExecuteAsync(
         DlqMessage message,
         AutoReplayRule rule,
         RuleAction action,
+        Namespace ns,
+        Guid operationId,
         CancellationToken cancellationToken = default);
 
     /// <summary>

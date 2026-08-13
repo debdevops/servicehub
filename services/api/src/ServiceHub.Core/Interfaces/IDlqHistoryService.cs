@@ -100,6 +100,31 @@ public interface IDlqHistoryService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Claims a tracked DLQ message for a recovery operation by transitioning it to a transient
+    /// claim status (<see cref="DlqMessageStatus.Replaying"/> or <see cref="DlqMessageStatus.Purging"/>),
+    /// using <see cref="DlqMessage.Status"/> as an EF Core concurrency token — the same
+    /// claim-before-provider-call protocol <c>BulkOperationExecutor</c>, <c>SignatureReplayExecutor</c>
+    /// and <c>AutoReplayExecutor</c> already use, exposed through the Core layer so API-layer
+    /// callers (which may not depend on <c>DlqDbContext</c> directly) can participate in it too.
+    /// Fails with a conflict if the message is not currently eligible (<c>Active</c> or
+    /// <c>ReplayFailed</c>) or if another caller wins the claim race concurrently.
+    /// </summary>
+    /// <param name="id">The DLQ message's primary key.</param>
+    /// <param name="dlqMessageOwnerId">
+    /// The message row's own <see cref="DlqMessage.OwnerId"/> — <b>not necessarily the acting
+    /// caller's owner ID</b>. For a shared namespace, the message's owner is the namespace owner,
+    /// while the caller performing the claim may be a different, shared-with owner (see roadmap
+    /// §14.8: ledger entries attribute to the acting owner, not the namespace owner).
+    /// </param>
+    /// <param name="claimStatus">The transient status to claim into.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<Result<DlqMessage>> ClaimForRecoveryAsync(
+        long id,
+        string dlqMessageOwnerId,
+        DlqMessageStatus claimStatus,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets multiple DLQ messages by ID in one query, scoped to the owner. Missing or
     /// out-of-tenant IDs are silently omitted from the result rather than failing the call —
     /// used to resolve a failure signature's related messages, where some IDs may no longer

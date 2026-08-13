@@ -8,6 +8,7 @@ using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.SignatureReplay;
 using ServiceHub.Shared.Results;
 
@@ -40,7 +41,8 @@ public sealed class SignatureReplayExecutorTests : IDisposable
     }
 
     private SignatureReplayExecutor CreateSut() =>
-        new(_dbContext, _namespaceRepositoryMock.Object, _messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+        new(_dbContext, _namespaceRepositoryMock.Object, _messageOperationsMock.Object,
+            new RecoveryLedgerService(_dbContext), NullLogger<SignatureReplayExecutor>.Instance);
 
     private Namespace SetupNamespace(Guid? namespaceId = null, EnvironmentType environment = EnvironmentType.Dev)
     {
@@ -386,7 +388,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
             .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, target.SequenceNumber, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
 
-        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, new RecoveryLedgerService(dbContext), NullLogger<SignatureReplayExecutor>.Instance);
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
@@ -486,7 +488,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
                 throw new OperationCanceledException();
             });
 
-        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, new RecoveryLedgerService(dbContext), NullLogger<SignatureReplayExecutor>.Instance);
 
         var act = async () => await sut.ExecuteAsync(job.Id, CancellationToken.None);
         await act.Should().NotThrowAsync();
@@ -582,7 +584,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
                 return Result.Success();
             });
 
-        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, new RecoveryLedgerService(dbContext), NullLogger<SignatureReplayExecutor>.Instance);
 
         var act = async () => await sut.ExecuteAsync(job.Id, CancellationToken.None);
         await act.Should().NotThrowAsync();
@@ -666,7 +668,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
                 return Result.Success();
             });
 
-        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, new RecoveryLedgerService(dbContext), NullLogger<SignatureReplayExecutor>.Instance);
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 

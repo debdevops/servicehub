@@ -24,6 +24,8 @@ public class MessagesControllerTests
     private readonly CloudProviderRouter _providerRouter;
     private readonly Mock<ILiveTailSessionFactory> _liveTailSessionFactory;
     private readonly Mock<ILiveTailConnectionLimiter> _liveTailConnectionLimiter;
+    private readonly Mock<IDlqHistoryService> _dlqHistoryService;
+    private readonly Mock<IRecoveryLedger> _recoveryLedger;
     private readonly Mock<ILogger<MessagesController>> _logger;
     private readonly MessagesController _controller;
 
@@ -39,12 +41,58 @@ public class MessagesControllerTests
         _liveTailConnectionLimiter = new Mock<ILiveTailConnectionLimiter>();
         _logger = new Mock<ILogger<MessagesController>>();
 
+        // Default: no tracked DlqMessage row (the common "untracked" path — see
+        // MessagesController.TryBeginRecoveryAsync), and every ledger call succeeds. Tests that
+        // care about ledger interaction override these explicitly.
+        _dlqHistoryService = new Mock<IDlqHistoryService>();
+        _dlqHistoryService
+            .Setup(s => s.LookupAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqMessage>.Failure(Error.NotFound("Dlq.NotFound", "not tracked")));
+
+        _recoveryLedger = new Mock<IRecoveryLedger>();
+        _recoveryLedger
+            .Setup(l => l.OpenOperationAsync(It.IsAny<OpenRecoveryOperationRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((OpenRecoveryOperationRequest req, CancellationToken _) => Result<RecoveryOperation>.Success(new RecoveryOperation
+            {
+                OwnerId = req.OwnerId,
+                Kind = req.Kind,
+                Trigger = req.Trigger,
+                ActorIdentity = req.Actor.Identity,
+                ActorKind = req.Actor.Kind,
+                ScopeDescription = req.ScopeDescription,
+                ServiceVersion = "test",
+                OpenedAt = DateTimeOffset.UtcNow,
+                TargetCount = req.TargetCount,
+            }));
+        _recoveryLedger
+            .Setup(l => l.BeginEntryAsync(It.IsAny<BeginRecoveryEntryRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((BeginRecoveryEntryRequest req, CancellationToken _) => Result<RecoveryLedgerEntry>.Success(new RecoveryLedgerEntry
+            {
+                OperationId = req.OperationId,
+                OwnerId = req.OwnerId,
+                BodyHash = req.BodyHash,
+                TargetEntity = req.TargetEntity,
+                BegunAt = DateTimeOffset.UtcNow,
+            }));
+        _recoveryLedger
+            .Setup(l => l.RecordExecutionAsync(It.IsAny<RecordExecutionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((RecordExecutionRequest req, CancellationToken _) => Result<RecoveryLedgerEntry>.Success(new RecoveryLedgerEntry
+            {
+                OperationId = Guid.NewGuid(),
+                OwnerId = req.OwnerId,
+                BodyHash = "test",
+                TargetEntity = "test",
+                BegunAt = DateTimeOffset.UtcNow,
+            }));
+
         _controller = new MessagesController(
             _messageOperationsService.Object,
             _namespaceRepository.Object,
             _providerRouter,
             _liveTailSessionFactory.Object,
             _liveTailConnectionLimiter.Object,
+            _dlqHistoryService.Object,
+            _recoveryLedger.Object,
             _logger.Object)
         {
             ControllerContext = new ControllerContext
@@ -66,6 +114,22 @@ public class MessagesControllerTests
         return result.Value;
     }
 
+    private static DlqMessage CreateTrackedMessage(Namespace ns, string entityName, long sequenceNumber)
+    {
+        return new DlqMessage
+        {
+            MessageId = Guid.NewGuid().ToString(),
+            SequenceNumber = sequenceNumber,
+            BodyHash = "test-body-hash",
+            NamespaceId = ns.Id,
+            OwnerId = ns.OwnerId,
+            EntityName = entityName,
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+        };
+    }
+
     private void SetIntentHeaders(string intent)
     {
         _controller.ControllerContext.HttpContext.Request.Headers[IntentHeaders.IntentHeaderName] = intent;
@@ -79,7 +143,8 @@ public class MessagesControllerTests
     {
         var act = () => new MessagesController(
             null!, _namespaceRepository.Object, _providerRouter,
-            _liveTailSessionFactory.Object, _liveTailConnectionLimiter.Object, _logger.Object);
+            _liveTailSessionFactory.Object, _liveTailConnectionLimiter.Object,
+            _dlqHistoryService.Object, _recoveryLedger.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -88,7 +153,8 @@ public class MessagesControllerTests
     {
         var act = () => new MessagesController(
             _messageOperationsService.Object, _namespaceRepository.Object, _providerRouter,
-            _liveTailSessionFactory.Object, _liveTailConnectionLimiter.Object, null!);
+            _liveTailSessionFactory.Object, _liveTailConnectionLimiter.Object,
+            _dlqHistoryService.Object, _recoveryLedger.Object, null!);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -281,6 +347,82 @@ public class MessagesControllerTests
         result.Should().BeOfType<AcceptedResult>();
     }
 
+    [Fact]
+    public async Task ReplayMessage_TrackedMessage_ShouldClaimAndRecordAcceptedExecution()
+    {
+        SetIntentHeaders(IntentHeaders.IntentReplayMessage);
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var tracked = CreateTrackedMessage(ns, "my-queue", 42);
+        _dlqHistoryService
+            .Setup(s => s.LookupAsync(ns.Id, "my-queue", 42, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqMessage>.Success(tracked));
+        _dlqHistoryService
+            .Setup(s => s.ClaimForRecoveryAsync(tracked.Id, tracked.OwnerId, DlqMessageStatus.Replaying, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqMessage>.Success(tracked));
+
+        _messageOperationsService.Setup(r => r.ReplayMessageAsync(ns.Id, "my-queue", null, 42, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var result = await _controller.ReplayMessage(ns.Id, 42, "my-queue");
+
+        result.Should().BeOfType<AcceptedResult>();
+        _dlqHistoryService.Verify(
+            s => s.ClaimForRecoveryAsync(tracked.Id, tracked.OwnerId, DlqMessageStatus.Replaying, It.IsAny<CancellationToken>()),
+            Times.Once);
+        _recoveryLedger.Verify(
+            l => l.RecordExecutionAsync(
+                It.Is<RecordExecutionRequest>(req => req.Outcome == RecoveryExecutionOutcome.Accepted),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplayMessage_LedgerOperationOpenFails_ShouldNotCallProvider()
+    {
+        SetIntentHeaders(IntentHeaders.IntentReplayMessage);
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _recoveryLedger
+            .Setup(l => l.OpenOperationAsync(It.IsAny<OpenRecoveryOperationRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<RecoveryOperation>.Failure(Error.Internal("Ledger.Down", "ledger unavailable")));
+
+        var result = await _controller.ReplayMessage(ns.Id, 42, "my-queue");
+
+        result.Should().NotBeOfType<AcceptedResult>();
+        _messageOperationsService.Verify(
+            r => r.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ReplayMessage_ClaimLost_ShouldReturnConflictWithoutCallingProvider()
+    {
+        SetIntentHeaders(IntentHeaders.IntentReplayMessage);
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var tracked = CreateTrackedMessage(ns, "my-queue", 42);
+        _dlqHistoryService
+            .Setup(s => s.LookupAsync(ns.Id, "my-queue", 42, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqMessage>.Success(tracked));
+        _dlqHistoryService
+            .Setup(s => s.ClaimForRecoveryAsync(tracked.Id, tracked.OwnerId, DlqMessageStatus.Replaying, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqMessage>.Failure(Error.Conflict("Dlq.ClaimLost", "claimed by another concurrent operation")));
+
+        var result = await _controller.ReplayMessage(ns.Id, 42, "my-queue");
+
+        result.Should().NotBeOfType<AcceptedResult>();
+        _messageOperationsService.Verify(
+            r => r.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     #endregion
 
     #region PurgeMessage Tests
@@ -371,6 +513,70 @@ public class MessagesControllerTests
         var result = await _controller.PurgeMessage(ns.Id, 42, "my-queue");
 
         result.Should().NotBeOfType<AcceptedResult>();
+    }
+
+    [Fact]
+    public async Task PurgeMessage_ProviderRejects_ShouldRecordRejectedExecution()
+    {
+        SetIntentHeaders(IntentHeaders.IntentPurgeMessage);
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _messageOperationsService.Setup(r => r.PurgeMessageAsync(ns.Id, "my-queue", null, 42, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.ExternalService("AWS.SQS.PurgeFailed", "SQS error")));
+
+        var result = await _controller.PurgeMessage(ns.Id, 42, "my-queue");
+
+        result.Should().NotBeOfType<AcceptedResult>();
+        _recoveryLedger.Verify(
+            l => l.RecordExecutionAsync(
+                It.Is<RecordExecutionRequest>(req => req.Outcome == RecoveryExecutionOutcome.Rejected),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task PurgeMessage_NoReasonSupplied_ShouldOpenOperationWithPlaceholderReason()
+    {
+        SetIntentHeaders(IntentHeaders.IntentPurgeMessage);
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _messageOperationsService.Setup(r => r.PurgeMessageAsync(ns.Id, "my-queue", null, 42, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var result = await _controller.PurgeMessage(ns.Id, 42, "my-queue");
+
+        result.Should().BeOfType<AcceptedResult>();
+        _recoveryLedger.Verify(
+            l => l.OpenOperationAsync(
+                It.Is<OpenRecoveryOperationRequest>(req =>
+                    req.Kind == RecoveryOperationKind.Purge && !string.IsNullOrWhiteSpace(req.Reason)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task PurgeMessage_ReasonSupplied_ShouldOpenOperationWithThatReason()
+    {
+        SetIntentHeaders(IntentHeaders.IntentPurgeMessage);
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _messageOperationsService.Setup(r => r.PurgeMessageAsync(ns.Id, "my-queue", null, 42, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var result = await _controller.PurgeMessage(ns.Id, 42, "my-queue", reason: "Confirmed duplicate — INC-1234");
+
+        result.Should().BeOfType<AcceptedResult>();
+        _recoveryLedger.Verify(
+            l => l.OpenOperationAsync(
+                It.Is<OpenRecoveryOperationRequest>(req => req.Reason == "Confirmed duplicate — INC-1234"),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     #endregion

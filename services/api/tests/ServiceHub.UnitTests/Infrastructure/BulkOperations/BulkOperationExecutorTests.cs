@@ -10,6 +10,7 @@ using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.BulkOperations;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Infrastructure.BulkOperations;
@@ -42,6 +43,7 @@ public sealed class BulkOperationExecutorTests : IDisposable
 
     private BulkOperationExecutor CreateSut() => new(
         _dbContext, _namespaceRepositoryMock.Object, _messageOperationsMock.Object,
+        new RecoveryLedgerService(_dbContext),
         _auditServiceMock.Object, _eventBusMock.Object, NullLogger<BulkOperationExecutor>.Instance);
 
     private Namespace SetupNamespace(EnvironmentType environment = EnvironmentType.Dev)
@@ -611,6 +613,7 @@ public sealed class BulkOperationExecutorTests : IDisposable
 
         var sut = new BulkOperationExecutor(
             dbContext, namespaceRepositoryMock.Object, messageOperationsMock.Object,
+            new RecoveryLedgerService(dbContext),
             Mock.Of<IAuditService>(), Mock.Of<IPlatformEventBus>(), NullLogger<BulkOperationExecutor>.Instance);
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
@@ -719,6 +722,7 @@ public sealed class BulkOperationExecutorTests : IDisposable
 
         var sut = new BulkOperationExecutor(
             dbContext, namespaceRepositoryMock.Object, messageOperationsMock.Object,
+            new RecoveryLedgerService(dbContext),
             Mock.Of<IAuditService>(), Mock.Of<IPlatformEventBus>(), NullLogger<BulkOperationExecutor>.Instance);
 
         var act = async () => await sut.ExecuteAsync(job.Id, CancellationToken.None);
@@ -824,6 +828,7 @@ public sealed class BulkOperationExecutorTests : IDisposable
 
         var sut = new BulkOperationExecutor(
             dbContext, namespaceRepositoryMock.Object, messageOperationsMock.Object,
+            new RecoveryLedgerService(dbContext),
             Mock.Of<IAuditService>(), Mock.Of<IPlatformEventBus>(), NullLogger<BulkOperationExecutor>.Instance);
 
         var act = async () => await sut.ExecuteAsync(job.Id, CancellationToken.None);
@@ -917,6 +922,7 @@ public sealed class BulkOperationExecutorTests : IDisposable
 
         var sut = new BulkOperationExecutor(
             dbContext, namespaceRepositoryMock.Object, messageOperationsMock.Object,
+            new RecoveryLedgerService(dbContext),
             Mock.Of<IAuditService>(), Mock.Of<IPlatformEventBus>(), NullLogger<BulkOperationExecutor>.Instance);
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);

@@ -33,6 +33,10 @@ public static class ApiKeyScopes
     // Audit trail scopes
     public const string AuditRead = "audit:read";
 
+    // Recovery Evidence Ledger scopes
+    public const string RecoveryRead = "recovery:read";
+    public const string RecoveryWrite = "recovery:write";
+
     // Administrative access (all operations)
     public const string Admin = "admin";
 

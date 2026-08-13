@@ -5,6 +5,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Results;
 
@@ -19,6 +20,7 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
 {
     private readonly DlqDbContext _dbContext;
     private readonly IMessageOperationsService _messageOperations;
+    private readonly IRecoveryLedger _recoveryLedger;
     private readonly ILogger<AutoReplayExecutor> _logger;
 
     /// <summary>
@@ -27,10 +29,12 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
     public AutoReplayExecutor(
         DlqDbContext dbContext,
         IMessageOperationsService messageOperations,
+        IRecoveryLedger recoveryLedger,
         ILogger<AutoReplayExecutor> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _messageOperations = messageOperations ?? throw new ArgumentNullException(nameof(messageOperations));
+        _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -39,6 +43,8 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         DlqMessage message,
         AutoReplayRule rule,
         RuleAction action,
+        Namespace ns,
+        Guid operationId,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
@@ -99,11 +105,49 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
                 Error.Conflict("AutoReplay.ConcurrentReplay", "Message was claimed by another concurrent replay worker"));
         }
 
+        var actor = ActorIdentityResolver.ResolveAutomationActor("Rule", rule.Id.ToString(), rule.Name);
+
+        var beginResult = await _recoveryLedger.BeginEntryAsync(
+            RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
+                message, ns, operationId, rule.OwnerId, actor, entityName),
+            cancellationToken);
+
+        if (beginResult.IsFailure)
+        {
+            // No message movement without ledger coverage: release the claim so a retry can pick
+            // the message up again rather than call the provider unrecorded.
+            message.Status = DlqMessageStatus.Active;
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await _dbContext.Entry(message).ReloadAsync(cancellationToken);
+            }
+
+            return Result<string>.Failure(Error.Internal(
+                "AutoReplay.LedgerError", $"Failed to open recovery ledger entry: {beginResult.Error.Message}"));
+        }
+
+        var entry = beginResult.Value;
+
         // Execute the replay
         try
         {
             var replayResult = await _messageOperations.ReplayMessageAsync(
                 message.NamespaceId, entityName, subscriptionName, message.SequenceNumber, cancellationToken);
+
+            // CancellationToken.None: the provider call above already happened, so this outcome
+            // must be recorded even if cancellation was requested in the meantime.
+            await _recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
+            {
+                EntryId = entry.Id,
+                OwnerId = rule.OwnerId,
+                Actor = actor,
+                Outcome = replayResult.IsSuccess ? RecoveryExecutionOutcome.Accepted : RecoveryExecutionOutcome.Rejected,
+                ProviderDetailJson = replayResult.IsSuccess ? null : replayResult.Error.Message,
+            }, CancellationToken.None);
 
             var outcome = replayResult.IsSuccess ? "Success" : "Failed";
 
@@ -152,6 +196,21 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         catch (Exception ex)
         {
             _logger.LogError(ex, "Auto-replay failed for message {MessageId}", LogRedactor.SanitiseForLog(message.MessageId));
+
+            // Best-effort: if the try block reached ReplayMessageAsync and RecordExecutionAsync
+            // already succeeded, the entry is no longer Executing and this call harmlessly fails
+            // with a conflict (RecoveryLedgerService rejects a second RecordExecutionAsync on an
+            // already-recorded entry) — it is not double-counted. If the exception happened
+            // before that point, this is what actually closes the entry out as Rejected rather
+            // than leaving it stranded in Executing until the next restart's reconciliation.
+            await _recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
+            {
+                EntryId = entry.Id,
+                OwnerId = rule.OwnerId,
+                Actor = actor,
+                Outcome = RecoveryExecutionOutcome.Rejected,
+                ProviderDetailJson = ex.Message,
+            }, CancellationToken.None);
 
             // Record the failure in history
             var history = new ReplayHistory

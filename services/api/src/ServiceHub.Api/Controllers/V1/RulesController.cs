@@ -11,6 +11,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 
@@ -544,18 +545,50 @@ public sealed class RulesController : ApiControllerBase
                     )).ToList()));
             }
 
-            // Resolve services for efficient batch replay
+            // Resolve services — routed entirely through IMessageOperationsService (the same
+            // provider-neutral facade every other replay path uses) rather than
+            // IServiceBusClientCache directly, which was Azure-only and never claimed a message
+            // before sending it (roadmap P6: multicloud-broken and racy).
             var nsRepo = HttpContext.RequestServices.GetRequiredService<INamespaceRepository>();
-            var protector = HttpContext.RequestServices.GetRequiredService<IConnectionStringProtector>();
-            var clientCache = HttpContext.RequestServices.GetRequiredService<IServiceBusClientCache>();
+            var messageOperationsService = HttpContext.RequestServices.GetRequiredService<IMessageOperationsService>();
+            var recoveryLedger = HttpContext.RequestServices.GetRequiredService<IRecoveryLedger>();
 
             var results = new List<ReplayAllItemResponse>();
             var replayed = 0;
             var failed = 0;
             var skipped = 0;
 
-            // Group messages by (NamespaceId, EntityPath) for batch replay.
-            // This creates ONE DLQ receiver per entity instead of one per message (O(N) vs O(N²)).
+            var actor = ResolveRecoveryActor();
+            var operationResult = await recoveryLedger.OpenOperationAsync(new OpenRecoveryOperationRequest
+            {
+                OwnerId = OwnerId,
+                Kind = RecoveryOperationKind.Replay,
+                Trigger = RecoveryTrigger.RuleReplayAll,
+                Actor = actor,
+                IntentHeader = IntentHeaders.IntentReplayAllRules,
+                ScopeDescription = $"rule {rule.Id} ({rule.Name}) replay-all",
+                SourceRuleId = rule.Id,
+                CorrelationId = HttpContext.Items.TryGetValue("CorrelationId", out var cid) ? cid?.ToString() : null,
+                TargetCount = matched.Count,
+            }, ct);
+
+            if (operationResult.IsFailure)
+            {
+                _auditLogger.LogCriticalAction(
+                    HttpContext,
+                    OwnerId,
+                    action: IntentHeaders.IntentReplayAllRules,
+                    outcome: "Failed",
+                    detail: $"Recovery ledger error: {operationResult.Error.Message}");
+                return ToActionResult<ReplayAllResponse>(operationResult.Error);
+            }
+
+            var operationId = operationResult.Value.Id;
+
+            // Group messages by (NamespaceId, EntityPath) so the namespace/scope guard checks
+            // below run once per entity rather than once per message. The provider call itself is
+            // per message now — IMessageOperationsService has no batch API — but the guard
+            // evaluation stays O(entities), matching the original batch grouping's intent.
             var entityGroups = matched.GroupBy(m =>
             {
                 string entity;
@@ -585,7 +618,7 @@ public sealed class RulesController : ApiControllerBase
             {
                 ct.ThrowIfCancellationRequested();
 
-                // Resolve namespace connection once per group
+                // Resolve namespace once per group
                 var nsResult = await nsRepo.GetByIdAsync(group.Key.NamespaceId, ct);
                 if (nsResult.IsFailure)
                 {
@@ -637,48 +670,71 @@ public sealed class RulesController : ApiControllerBase
                     continue;
                 }
 
-                if (string.IsNullOrWhiteSpace(ns.ConnectionString))
-                {
-                    foreach (var msg in group)
-                    {
-                        failed++;
-                        results.Add(new ReplayAllItemResponse(
-                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
-                            Outcome: "Failed", Error: "Namespace has no connection string"));
-                    }
-                    continue;
-                }
-
-                var unprotectResult = protector.Unprotect(ns.ConnectionString);
-                if (unprotectResult.IsFailure)
-                {
-                    foreach (var msg in group)
-                    {
-                        failed++;
-                        results.Add(new ReplayAllItemResponse(
-                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
-                            Outcome: "Failed", Error: $"Connection string error: {unprotectResult.Error.Message}"));
-                    }
-                    continue;
-                }
-
-                var client = clientCache.GetOrCreate(group.Key.NamespaceId, unprotectResult.Value);
                 var entityName = group.Key.Entity;
                 var subscriptionName = string.IsNullOrEmpty(group.Key.Subscription) ? null : group.Key.Subscription;
-                var messagesInGroup = group.ToList();
-                var sequenceNumbers = messagesInGroup.Select(m => m.SequenceNumber).ToList();
 
-                // Batch replay: ONE DLQ receiver, finds all targets at once, replays all
-                var batchResults = await client.ReplayMessagesAsync(
-                    entityName, subscriptionName, sequenceNumbers, ct);
-
-                // Process results and record history
-                foreach (var msg in messagesInGroup)
+                // Per message: claim (Status = Replaying, the same EF concurrency-token protocol
+                // BulkOperationExecutor/SignatureReplayExecutor/AutoReplayExecutor already use) →
+                // ledger entry → provider call → recorded outcome. This replaces the old batch
+                // ReplayMessagesAsync call and fixes P6 on both counts: routed through the same
+                // provider-neutral facade every other replay path uses (multicloud, not
+                // Azure-only), and no longer able to double-send against a concurrent bulk/auto
+                // replay on the same message — a lost claim here is skipped, not retried.
+                foreach (var msg in group)
                 {
-                    var isSuccess = batchResults.TryGetValue(msg.SequenceNumber, out var replayResult)
-                                    && replayResult.IsSuccess;
+                    ct.ThrowIfCancellationRequested();
 
-                    if (isSuccess)
+                    msg.Status = DlqMessageStatus.Replaying;
+                    try
+                    {
+                        await _dbContext.SaveChangesAsync(ct);
+                    }
+                    catch (DbUpdateConcurrencyException)
+                    {
+                        await _dbContext.Entry(msg).ReloadAsync(ct);
+                        skipped++;
+                        results.Add(new ReplayAllItemResponse(
+                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
+                            Outcome: "Skipped", Error: "Message was claimed by another concurrent replay"));
+                        continue;
+                    }
+
+                    var beginResult = await recoveryLedger.BeginEntryAsync(
+                        RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
+                            msg, ns, operationId, OwnerId, actor, entityName),
+                        ct);
+
+                    if (beginResult.IsFailure)
+                    {
+                        // No message movement without ledger coverage: release the claim so a
+                        // retry can pick the message up again rather than call the provider
+                        // unrecorded.
+                        msg.Status = DlqMessageStatus.Active;
+                        failed++;
+                        results.Add(new ReplayAllItemResponse(
+                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
+                            Outcome: "Failed", Error: $"Recovery ledger error: {beginResult.Error.Message}"));
+                        continue;
+                    }
+
+                    var entry = beginResult.Value;
+
+                    var replayResult = await messageOperationsService.ReplayMessageAsync(
+                        group.Key.NamespaceId, entityName, subscriptionName, msg.SequenceNumber, ct);
+
+                    // CancellationToken.None: the provider call above already happened, so this
+                    // outcome must be recorded even if the 30-second request timeout fires in the
+                    // meantime.
+                    await recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
+                    {
+                        EntryId = entry.Id,
+                        OwnerId = OwnerId,
+                        Actor = actor,
+                        Outcome = replayResult.IsSuccess ? RecoveryExecutionOutcome.Accepted : RecoveryExecutionOutcome.Rejected,
+                        ProviderDetailJson = replayResult.IsSuccess ? null : replayResult.Error.Message,
+                    }, CancellationToken.None);
+
+                    if (replayResult.IsSuccess)
                     {
                         replayed++;
                         msg.Status = DlqMessageStatus.Replayed;
@@ -692,14 +748,11 @@ public sealed class RulesController : ApiControllerBase
                     else
                     {
                         failed++;
-                        var errorMsg = batchResults.TryGetValue(msg.SequenceNumber, out var r)
-                            ? r.Error.Message
-                            : "Message not found in DLQ";
                         msg.Status = DlqMessageStatus.ReplayFailed;
                         msg.ReplaySuccess = false;
                         results.Add(new ReplayAllItemResponse(
                             DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
-                            Outcome: "Failed", Error: errorMsg));
+                            Outcome: "Failed", Error: replayResult.Error.Message));
                     }
 
                     rule.MatchCount++;
@@ -713,9 +766,8 @@ public sealed class RulesController : ApiControllerBase
                         ReplayedBy = $"manual-replay-all:{rule.Name}",
                         ReplayStrategy = action.TargetEntity is not null ? "alternate-entity" : "original-entity",
                         ReplayedToEntity = entityName,
-                        OutcomeStatus = isSuccess ? "Success" : "Failed",
-                        ErrorDetails = isSuccess ? null
-                            : (batchResults.TryGetValue(msg.SequenceNumber, out var er) ? er.Error.Message : "Not found"),
+                        OutcomeStatus = replayResult.IsSuccess ? "Success" : "Failed",
+                        ErrorDetails = replayResult.IsSuccess ? null : replayResult.Error.Message,
                     });
                 }
             }
