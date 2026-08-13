@@ -26,6 +26,10 @@ export interface DlqHistoryItem {
   replaySuccess: boolean | null;
   archivedAt: string | null;
   resolvedAt: string | null;
+  /** Why a Resolved message left the DLQ — null on rows recorded before the Recovery Evidence
+   * Ledger shipped, and on rows still Active. Never inferred; only ever what the backend
+   * actually determined (roadmap P2: replaces the old, sometimes-fabricated "Replayed" reading). */
+  resolutionCause: string | null;
   userNotes: string | null;
   correlationId: string | null;
   topicName: string | null;

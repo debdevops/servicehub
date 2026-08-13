@@ -27,6 +27,9 @@ const FailureIntelligenceCenterPageLazy = lazy(() => import('./pages/FailureInte
 const CloudBridgePageLazy = lazy(() => import('./pages/CloudBridgePage').then(m => ({ default: m.CloudBridgePage })));
 const CrossCloudTracePageLazy = lazy(() => import('./pages/CrossCloudTracePage').then(m => ({ default: m.CrossCloudTracePage })));
 const AuditPageLazy = lazy(() => import('./pages/AuditPage').then(m => ({ default: m.AuditPage })));
+const RecoveryLedgerPageLazy = lazy(() => import('./pages/RecoveryLedgerPage'));
+const RecoveryAgeingPageLazy = lazy(() => import('./pages/RecoveryAgeingPage'));
+const RecoveryOperationDetailPageLazy = lazy(() => import('./pages/RecoveryOperationDetailPage'));
 const MessagesOverviewPageLazy = lazy(() => import('./pages/MessagesOverviewPage'));
 const MessagesPageLazy = lazy(() => import('./pages/MessagesPage').then(m => ({ default: m.MessagesPage })));
 const ConnectPageLazy = lazy(() => import('./pages/ConnectPage').then(m => ({ default: m.ConnectPage })));
@@ -191,6 +194,30 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <AuditPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'recovery',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <RecoveryLedgerPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'recovery/ageing',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <RecoveryAgeingPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'recovery/:operationId',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <RecoveryOperationDetailPageLazy />
       </Suspense>
     ),
   },

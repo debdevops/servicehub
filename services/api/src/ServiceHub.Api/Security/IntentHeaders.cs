@@ -20,6 +20,7 @@ public static class IntentHeaders
     public const string IntentBulkPurge = "bulk:purge";
     public const string IntentSignatureReplay = "signature:replay";
     public const string IntentPurgeAuditLogs = "audit:purge";
+    public const string IntentWriteOffRecovery = "recovery:write-off";
 
     /// <summary>
     /// Validates that the caller supplied explicit intent headers for a risky operation.

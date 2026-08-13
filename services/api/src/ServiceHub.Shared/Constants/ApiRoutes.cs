@@ -423,8 +423,7 @@ public static class ApiRoutes
         public const string Base = $"{VersionedBase}/me";
     }
 
-    /// <summary>Routes for the Recovery Evidence Ledger — read-only in this phase; export,
-    /// verify-chain, and write-off are added when their controller actions ship.</summary>
+    /// <summary>Routes for the Recovery Evidence Ledger.</summary>
     public static class Recovery
     {
         /// <summary>Base route for recovery operation queries.</summary>
@@ -436,8 +435,17 @@ public static class ApiRoutes
         /// <summary>Route for a specific recovery operation by ID.</summary>
         public const string OperationById = $"{Operations}/{{id:guid}}";
 
+        /// <summary>Route for exporting one recovery operation's evidence.</summary>
+        public const string OperationExport = $"{OperationById}/export";
+
+        /// <summary>Route for verifying the caller's hash chain, from one operation's context.</summary>
+        public const string OperationVerify = $"{OperationById}/verify";
+
         /// <summary>Route for listing recovery ledger entries.</summary>
         public const string Entries = $"{Base}/entries";
+
+        /// <summary>Route for writing off a single recovery ledger entry.</summary>
+        public const string EntryWriteOff = $"{Entries}/{{id:guid}}/write-off";
 
         /// <summary>Route for the ageing report of open (non-terminal) entries.</summary>
         public const string Ageing = $"{Base}/ageing";

@@ -192,6 +192,7 @@ public static class DependencyInjection
         services.AddHostedService<SignatureReplayWorker>();
         services.AddHostedService<AuditRetentionWorker>();
         services.AddHostedService<RecoveryVerificationWorker>();
+        services.AddHostedService<RecoveryAgeingWorker>();
 
         return services;
     }
@@ -258,6 +259,7 @@ public static class DependencyInjection
         // Recovery Evidence Ledger — EF Core (DlqDbContext)-backed, so Scoped like every other
         // DlqDbContext-backed service. No callers yet; wired to the recovery paths in a later phase.
         services.TryAddScoped<IRecoveryLedger, RecoveryLedgerService>();
+        services.TryAddScoped<IRecoveryEvidenceExporter, RecoveryEvidenceExporter>();
 
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();

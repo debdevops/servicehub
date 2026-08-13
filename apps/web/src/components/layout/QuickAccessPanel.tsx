@@ -10,6 +10,7 @@ import {
   Activity,
   HelpCircle,
   Shield,
+  ShieldCheck,
   Cloud,
   Route,
   Pin,
@@ -211,6 +212,19 @@ export function QuickAccessPanel() {
           <Shield className="w-4 h-4 text-primary-500" />
           <span className="flex-1 text-left">Audit Trail</span>
           <span className="text-xs text-primary-600 font-medium">Logs</span>
+        </NavLink>
+        <NavLink
+          to={`${navPrefix}/recovery`}
+          className={({ isActive }) =>
+            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isActive
+                ? 'bg-teal-50 text-teal-700 border-teal-300 font-medium'
+                : 'bg-white hover:bg-teal-50 text-gray-700 hover:text-teal-700 border-gray-200 hover:border-teal-300'
+            }`
+          }
+        >
+          <ShieldCheck className="w-4 h-4 text-teal-500" />
+          <span className="flex-1 text-left">Recovery Evidence</span>
         </NavLink>
         <NavLink
           to={`${navPrefix}/security`}

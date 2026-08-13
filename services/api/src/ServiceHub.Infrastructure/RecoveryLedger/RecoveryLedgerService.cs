@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
@@ -431,6 +432,11 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
             entries = entries.Where(e => e.NamespaceId == namespaceId);
         }
 
+        if (query.DlqMessageId is { } dlqMessageId)
+        {
+            entries = entries.Where(e => e.DlqMessageId == dlqMessageId);
+        }
+
         if (query.States is { Count: > 0 })
         {
             entries = entries.Where(e => query.States.Contains(e.State));
@@ -478,6 +484,116 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
                         && e.BodyHash == bodyHash
                         && e.BegunAt < beganBefore)
             .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<RecoveryEvent>> GetEventsForOperationAsync(
+        Guid operationId, string ownerId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.RecoveryEvents
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.OperationId == operationId)
+            .OrderBy(e => e.Seq)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> HasAgeingFlagAsync(Guid entryId, string ownerId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.RecoveryEvents
+            .AsNoTracking()
+            .AnyAsync(e => e.OwnerId == ownerId && e.EntryId == entryId && e.EventType == RecoveryEventType.AgeingFlagged,
+                cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<RecoveryLedgerEntry>> FlagAgeingAsync(
+        Guid entryId, string ownerId, RecoveryActor actor, int ageInDays, CancellationToken cancellationToken = default)
+    {
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+
+        var entry = await _dbContext.RecoveryLedgerEntries
+            .FirstOrDefaultAsync(e => e.Id == entryId, cancellationToken);
+
+        if (entry is null || entry.OwnerId != ownerId)
+        {
+            return Result<RecoveryLedgerEntry>.Failure(Error.NotFound(
+                "RecoveryLedger.EntryNotFound", "Recovery ledger entry not found."));
+        }
+
+        if (!NonTerminalStates.Contains(entry.State))
+        {
+            // Already resolved itself — a normal race against verification/interrupted-operation
+            // recovery closing the entry between the ageing worker's query and this call. Not an
+            // error; nothing left to flag.
+            return Result<RecoveryLedgerEntry>.Success(entry);
+        }
+
+        var alreadyFlagged = await _dbContext.RecoveryEvents
+            .AsNoTracking()
+            .AnyAsync(e => e.EntryId == entryId && e.EventType == RecoveryEventType.AgeingFlagged, cancellationToken);
+
+        if (alreadyFlagged)
+        {
+            // Idempotent: a restarted or overlapping sweep must not double-flag.
+            return Result<RecoveryLedgerEntry>.Success(entry);
+        }
+
+        var evt = await AppendEventAsync(
+            entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.AgeingFlagged, actor,
+            JsonSerializer.Serialize(new { ageInDays }), cancellationToken);
+        entry.LastEventSeq = evt.Seq;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return Result<RecoveryLedgerEntry>.Success(entry);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<RecoveryLedgerEntry>> ExpireEntryAsync(
+        Guid entryId, string ownerId, RecoveryActor actor, CancellationToken cancellationToken = default)
+    {
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+
+        var entry = await _dbContext.RecoveryLedgerEntries
+            .FirstOrDefaultAsync(e => e.Id == entryId, cancellationToken);
+
+        if (entry is null || entry.OwnerId != ownerId)
+        {
+            return Result<RecoveryLedgerEntry>.Failure(Error.NotFound(
+                "RecoveryLedger.EntryNotFound", "Recovery ledger entry not found."));
+        }
+
+        if (!NonTerminalStates.Contains(entry.State))
+        {
+            return Result<RecoveryLedgerEntry>.Failure(Error.Conflict(
+                "RecoveryLedger.InvalidTransition",
+                $"Cannot expire an entry already in terminal state '{entry.State}'."));
+        }
+
+        var lastEvent = await _dbContext.RecoveryEvents
+            .AsNoTracking()
+            .Where(e => e.EntryId == entryId)
+            .OrderByDescending(e => e.Seq)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (lastEvent is null || lastEvent.EventType != RecoveryEventType.AgeingFlagged)
+        {
+            return Result<RecoveryLedgerEntry>.Failure(Error.Conflict(
+                "RecoveryLedger.NotFlagged",
+                "An entry can only expire immediately after being flagged by the ageing worker — its most recent event must be AgeingFlagged."));
+        }
+
+        entry.State = RecoveryEntryState.Expired;
+        entry.Disposition = RecoveryDisposition.Expired;
+        entry.ClosedAt = DateTimeOffset.UtcNow;
+
+        var evt = await AppendEventAsync(
+            entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.DispositionSet, actor,
+            detail: "Expired: aged past the ageing threshold with no further recovery activity.", cancellationToken);
+        entry.LastEventSeq = evt.Seq;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return Result<RecoveryLedgerEntry>.Success(entry);
     }
 
     /// <summary>

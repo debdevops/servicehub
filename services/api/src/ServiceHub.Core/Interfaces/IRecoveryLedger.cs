@@ -127,4 +127,52 @@ public interface IRecoveryLedger
         string bodyHash,
         DateTimeOffset beganBefore,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets every event belonging to one operation (across all its entries plus the
+    /// operation-level <see cref="Enums.RecoveryEventType.OperationOpened"/> event),
+    /// <see cref="RecoveryEvent.Seq"/>-ordered — the evidence export's <c>events.json</c> source
+    /// and the operation detail page's event-chain view.
+    /// </summary>
+    Task<IReadOnlyList<RecoveryEvent>> GetEventsForOperationAsync(
+        Guid operationId,
+        string ownerId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Whether an <see cref="Enums.RecoveryEventType.AgeingFlagged"/> event already exists for
+    /// this entry — lets the ageing worker decide whether its next call should be
+    /// <see cref="FlagAgeingAsync"/> or <see cref="ExpireEntryAsync"/>.
+    /// </summary>
+    Task<bool> HasAgeingFlagAsync(
+        Guid entryId,
+        string ownerId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Idempotently flags a non-terminal entry as having passed the ageing threshold — the
+    /// event <see cref="Enums.RecoveryEntryState.Expired"/> must be preceded by (roadmap §7.2).
+    /// Does not change <see cref="RecoveryLedgerEntry.State"/>. A no-op (returns the entry
+    /// unchanged, no duplicate event) if the entry was already flagged or is already terminal, so
+    /// a restarted or overlapping ageing sweep cannot double-flag it.
+    /// </summary>
+    Task<Result<RecoveryLedgerEntry>> FlagAgeingAsync(
+        Guid entryId,
+        string ownerId,
+        RecoveryActor actor,
+        int ageInDays,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Transitions an already-flagged, still-non-terminal entry to
+    /// <see cref="Enums.RecoveryEntryState.Expired"/>. Fails if the entry is already terminal, or
+    /// if its most recent event is not <see cref="Enums.RecoveryEventType.AgeingFlagged"/> —
+    /// structurally enforcing that <c>Expired</c> is reachable only through a transition whose
+    /// preceding event flagged it first.
+    /// </summary>
+    Task<Result<RecoveryLedgerEntry>> ExpireEntryAsync(
+        Guid entryId,
+        string ownerId,
+        RecoveryActor actor,
+        CancellationToken cancellationToken = default);
 }

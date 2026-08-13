@@ -638,6 +638,34 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
         resultA.Should().NotContain(e => e.Id == entryB.Id);
     }
 
+    [Fact]
+    public async Task QueryEntriesAsync_DlqMessageIdFilter_ReturnsOnlyThatMessagesEntries()
+    {
+        var operation = await OpenOperationAsync();
+        var matching = await _service.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            Actor = Actor(),
+            DlqMessageId = 42,
+            BodyHash = "hash-42",
+            TargetEntity = "orders-dlq",
+        });
+        await _service.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            Actor = Actor(),
+            DlqMessageId = 43,
+            BodyHash = "hash-43",
+            TargetEntity = "orders-dlq",
+        });
+
+        var result = await _service.QueryEntriesAsync(new RecoveryEntryQuery { OwnerId = OwnerA, DlqMessageId = 42 });
+
+        result.Should().ContainSingle(e => e.Id == matching.Value.Id);
+    }
+
     // ── Bookkeeping ──────────────────────────────────────────────────────────
 
     [Fact]
@@ -732,5 +760,182 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
                 }
             }
         }
+    }
+
+    // ── GetEventsForOperationAsync ──────────────────────────────────────────
+
+    [Fact]
+    public async Task GetEventsForOperationAsync_ReturnsSeqOrderedEventsForThatOperationOnly()
+    {
+        var (operationA, entryA) = await OpenAndBeginAsync();
+        var operationB = await OpenOperationAsync();
+
+        var events = await _service.GetEventsForOperationAsync(operationA.Id, OwnerA);
+
+        events.Should().HaveCount(2); // OperationOpened + EntryBegun
+        events.Should().BeInAscendingOrder(e => e.Seq);
+        events.Should().OnlyContain(e => e.OperationId == operationA.Id);
+        events.Should().NotContain(e => e.OperationId == operationB.Id);
+    }
+
+    [Fact]
+    public async Task GetEventsForOperationAsync_DifferentOwner_ReturnsEmpty()
+    {
+        var (operation, _) = await OpenAndBeginAsync(OwnerB);
+
+        var events = await _service.GetEventsForOperationAsync(operation.Id, OwnerA);
+
+        events.Should().BeEmpty();
+    }
+
+    // ── FlagAgeingAsync / HasAgeingFlagAsync / ExpireEntryAsync ─────────────
+
+    [Fact]
+    public async Task FlagAgeingAsync_NonTerminalEntry_AppendsAgeingFlaggedEvent()
+    {
+        var (_, entry) = await OpenAndBeginAsync();
+
+        var result = await _service.FlagAgeingAsync(entry.Id, OwnerA, Actor(), ageInDays: 10);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.State.Should().Be(RecoveryEntryState.Executing); // unchanged
+        (await _service.HasAgeingFlagAsync(entry.Id, OwnerA)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task FlagAgeingAsync_CalledTwice_IsIdempotent_NoDuplicateEvent()
+    {
+        var (_, entry) = await OpenAndBeginAsync();
+
+        await _service.FlagAgeingAsync(entry.Id, OwnerA, Actor(), ageInDays: 10);
+        await _service.FlagAgeingAsync(entry.Id, OwnerA, Actor(), ageInDays: 11);
+
+        var flagEvents = await _dbContext.RecoveryEvents
+            .Where(e => e.EntryId == entry.Id && e.EventType == RecoveryEventType.AgeingFlagged)
+            .ToListAsync();
+        flagEvents.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task FlagAgeingAsync_AlreadyTerminalEntry_NoOpsWithoutError()
+    {
+        var (_, entry) = await OpenAndBeginAsync();
+        await _service.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id,
+            OwnerId = OwnerA,
+            Actor = Actor(),
+            Outcome = RecoveryExecutionOutcome.Rejected,
+        });
+
+        var result = await _service.FlagAgeingAsync(entry.Id, OwnerA, Actor(), ageInDays: 10);
+
+        result.IsSuccess.Should().BeTrue();
+        (await _service.HasAgeingFlagAsync(entry.Id, OwnerA)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task FlagAgeingAsync_DifferentOwner_ReturnsNotFound()
+    {
+        var (_, entry) = await OpenAndBeginAsync(OwnerB);
+
+        var result = await _service.FlagAgeingAsync(entry.Id, OwnerA, Actor(), ageInDays: 10);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.NotFound);
+    }
+
+    [Fact]
+    public async Task ExpireEntryAsync_WithoutPriorFlag_Fails()
+    {
+        var (_, entry) = await OpenAndBeginAsync();
+
+        var result = await _service.ExpireEntryAsync(entry.Id, OwnerA, Actor());
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.Conflict);
+        entry = (await _dbContext.RecoveryLedgerEntries.FindAsync(entry.Id))!;
+        entry.State.Should().NotBe(RecoveryEntryState.Expired);
+    }
+
+    [Fact]
+    public async Task ExpireEntryAsync_AfterFlag_TransitionsToExpired()
+    {
+        var (_, entry) = await OpenAndBeginAsync();
+        await _service.FlagAgeingAsync(entry.Id, OwnerA, Actor(), ageInDays: 10);
+
+        var result = await _service.ExpireEntryAsync(entry.Id, OwnerA, Actor());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.State.Should().Be(RecoveryEntryState.Expired);
+        result.Value.Disposition.Should().Be(RecoveryDisposition.Expired);
+        result.Value.ClosedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ExpireEntryAsync_WhenFlagIsNotTheMostRecentEvent_Fails()
+    {
+        // Roadmap §7.2: Expired is reachable only through a transition whose *immediately
+        // preceding* event is AgeingFlagged — an event appended afterwards (e.g. an operator
+        // note) breaks that adjacency and must block expiry.
+        var (_, entry) = await OpenAndBeginAsync();
+        await _service.FlagAgeingAsync(entry.Id, OwnerA, Actor(), ageInDays: 10);
+        await _service.AppendNoteAsync(entry.Id, OwnerA, Actor(), "operator is investigating");
+
+        var result = await _service.ExpireEntryAsync(entry.Id, OwnerA, Actor());
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.Conflict);
+    }
+
+    [Fact]
+    public async Task ExpireEntryAsync_AlreadyTerminalEntry_Fails()
+    {
+        var (_, entry) = await OpenAndBeginAsync();
+        await _service.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id,
+            OwnerId = OwnerA,
+            Actor = Actor(),
+            Outcome = RecoveryExecutionOutcome.Rejected,
+        });
+
+        var result = await _service.ExpireEntryAsync(entry.Id, OwnerA, Actor());
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.Conflict);
+    }
+
+    [Fact]
+    public async Task ExpireEntryAsync_DifferentOwner_ReturnsNotFound()
+    {
+        var (_, entry) = await OpenAndBeginAsync(OwnerB);
+
+        var result = await _service.ExpireEntryAsync(entry.Id, OwnerA, Actor());
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.NotFound);
+    }
+
+    [Fact]
+    public async Task FlagThenExpire_ConcurrentDuplicateCalls_ProduceOnlyOneExpiryEvent()
+    {
+        var (_, entry) = await OpenAndBeginAsync();
+        await _service.FlagAgeingAsync(entry.Id, OwnerA, Actor(), ageInDays: 10);
+
+        // Two "workers" racing to expire the same already-flagged entry — the ledger's per-owner
+        // serialisation means the second call observes the first's completed transition and must
+        // fail cleanly rather than double-close it.
+        var results = await Task.WhenAll(
+            _service.ExpireEntryAsync(entry.Id, OwnerA, Actor()),
+            _service.ExpireEntryAsync(entry.Id, OwnerA, Actor()));
+
+        results.Count(r => r.IsSuccess).Should().Be(1);
+        results.Count(r => r.IsFailure).Should().Be(1);
+
+        var dispositionEvents = await _dbContext.RecoveryEvents
+            .Where(e => e.EntryId == entry.Id && e.EventType == RecoveryEventType.DispositionSet)
+            .ToListAsync();
+        dispositionEvents.Should().ContainSingle();
     }
 }

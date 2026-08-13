@@ -51,3 +51,35 @@ public sealed record RecoveryLedgerEntryResponse(
     string? VerificationConfidence,
     DateTimeOffset? ObservationWindowEndsAt,
     DateTimeOffset? ClosedAt);
+
+/// <summary>
+/// Response DTO for a <see cref="Entities.RecoveryEvent"/> — one append-only, hash-chained fact.
+/// Exposes <c>Seq</c>/<c>PrevHash</c>/<c>EntryHash</c> so the operation detail page can render the
+/// chain an auditor would recompute by hand.
+/// </summary>
+public sealed record RecoveryEventResponse(
+    Guid Id,
+    string OwnerId,
+    long Seq,
+    Guid? EntryId,
+    Guid OperationId,
+    string EventType,
+    DateTimeOffset OccurredAt,
+    string ActorIdentity,
+    string ActorKind,
+    string? DetailJson,
+    string PrevHash,
+    string EntryHash,
+    int SchemaVersion);
+
+/// <summary>
+/// Response DTO for <c>GET /api/v1/recovery/operations/{id}</c> — the operation header plus its
+/// full evidence: every entry begun under it and every event in its chain, Seq-ordered. The list
+/// endpoint (<c>GET /api/v1/recovery/operations</c>) still returns the lighter
+/// <see cref="RecoveryOperationResponse"/> alone; this composite is for the one-operation detail
+/// view, which needs the per-entry table and the event chain in a single round trip.
+/// </summary>
+public sealed record RecoveryOperationDetailResponse(
+    RecoveryOperationResponse Operation,
+    IReadOnlyList<RecoveryLedgerEntryResponse> Entries,
+    IReadOnlyList<RecoveryEventResponse> Events);

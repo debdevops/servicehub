@@ -15,6 +15,11 @@ public sealed class RecoveryEntryQuery
     /// <summary>Restrict to entries in a specific namespace.</summary>
     public Guid? NamespaceId { get; init; }
 
+    /// <summary>Restrict to entries for one <c>DlqMessage</c> — the message-detail "recovery
+    /// record" lookup (roadmap §13.2). Matches the soft reference
+    /// <see cref="Entities.RecoveryLedgerEntry.DlqMessageId"/>, not a foreign key.</summary>
+    public long? DlqMessageId { get; init; }
+
     /// <summary>Restrict to entries currently in one of these states. Null means no restriction.</summary>
     public IReadOnlyCollection<RecoveryEntryState>? States { get; init; }
 
