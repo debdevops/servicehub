@@ -53,6 +53,16 @@ public sealed class DlqDbContext : DbContext
     /// <summary>Signature-replay operation jobs.</summary>
     public DbSet<SignatureReplayJob> SignatureReplayJobs => Set<SignatureReplayJob>();
 
+    /// <summary>Recovery Evidence Ledger: immutable headers, one per operator/automation decision.</summary>
+    public DbSet<RecoveryOperation> RecoveryOperations => Set<RecoveryOperation>();
+
+    /// <summary>Recovery Evidence Ledger: one row per (operation, message), mostly immutable
+    /// with a small mutable lifecycle projection.</summary>
+    public DbSet<RecoveryLedgerEntry> RecoveryLedgerEntries => Set<RecoveryLedgerEntry>();
+
+    /// <summary>Recovery Evidence Ledger: append-only, hash-chained events — the evidence itself.</summary>
+    public DbSet<RecoveryEvent> RecoveryEvents => Set<RecoveryEvent>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -72,6 +82,23 @@ public sealed class DlqDbContext : DbContext
         ConfigureSignatureLifecycleState(modelBuilder);
         ConfigureSignatureLifecycleHistoryEntry(modelBuilder);
         ConfigureSignatureReplayJob(modelBuilder);
+        ConfigureRecoveryOperation(modelBuilder);
+        ConfigureRecoveryLedgerEntry(modelBuilder);
+        ConfigureRecoveryEvent(modelBuilder);
+    }
+
+    /// <inheritdoc />
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        RecoveryLedgerAppendOnlyGuard.Enforce(ChangeTracker);
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    /// <inheritdoc />
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        RecoveryLedgerAppendOnlyGuard.Enforce(ChangeTracker);
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
     private static void ApplyUtcDateTimeConverters(ModelBuilder modelBuilder)
@@ -754,5 +781,219 @@ public sealed class DlqDbContext : DbContext
         // Worker startup scan for jobs left Pending/Running across a restart.
         entity.HasIndex(e => e.Status)
             .HasDatabaseName("IX_SignatureReplayJobs_Status");
+    }
+
+    private static void ConfigureRecoveryOperation(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<RecoveryOperation>();
+
+        entity.ToTable("RecoveryOperations");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.Kind)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.Trigger)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.ActorIdentity)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.ActorKind)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.ActorScopes)
+            .HasMaxLength(1024);
+
+        entity.Property(e => e.Reason)
+            .HasMaxLength(2048);
+
+        entity.Property(e => e.IntentHeader)
+            .HasMaxLength(128);
+
+        entity.Property(e => e.NamespaceNameSnapshot)
+            .HasMaxLength(256);
+
+        entity.Property(e => e.ProviderSnapshot)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        entity.Property(e => e.EnvironmentSnapshot)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
+        entity.Property(e => e.ScopeDescription)
+            .HasMaxLength(1024)
+            .IsRequired();
+
+        entity.Property(e => e.CorrelationId)
+            .HasMaxLength(256);
+
+        entity.Property(e => e.ServiceVersion)
+            .HasMaxLength(32)
+            .IsRequired();
+
+        // Owner-scoped operation history, most recent first — the ledger list endpoint's
+        // primary access path (a later phase).
+        entity.HasIndex(e => new { e.OwnerId, e.OpenedAt })
+            .HasDatabaseName("IX_RecoveryOperations_Owner_OpenedAt");
+
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.OpenedAt })
+            .HasDatabaseName("IX_RecoveryOperations_Owner_Namespace_OpenedAt");
+    }
+
+    private static void ConfigureRecoveryLedgerEntry(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<RecoveryLedgerEntry>();
+
+        entity.ToTable("RecoveryLedgerEntries");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.NamespaceNameSnapshot)
+            .HasMaxLength(256);
+
+        entity.Property(e => e.ProviderSnapshot)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        entity.Property(e => e.EnvironmentSnapshot)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
+        entity.Property(e => e.EntityNameSnapshot)
+            .HasMaxLength(512);
+
+        entity.Property(e => e.EntityTypeSnapshot)
+            .HasMaxLength(32);
+
+        entity.Property(e => e.TopicNameSnapshot)
+            .HasMaxLength(512);
+
+        entity.Property(e => e.SourceMessageIdSnapshot)
+            .HasMaxLength(256);
+
+        entity.Property(e => e.BodyHash)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        entity.Property(e => e.FailureCategorySnapshot)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        entity.Property(e => e.DeadLetterReasonSnapshot)
+            .HasMaxLength(1024);
+
+        entity.Property(e => e.SignatureHashSnapshot)
+            .HasMaxLength(64);
+
+        entity.Property(e => e.RecoveryMarker)
+            .HasMaxLength(64);
+
+        entity.Property(e => e.TargetEntity)
+            .HasMaxLength(512)
+            .IsRequired();
+
+        entity.Property(e => e.State)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.Disposition)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
+        entity.Property(e => e.VerificationResult)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
+        entity.Property(e => e.VerificationConfidence)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
+        // Deliberately NO relationship to DlqMessage: DlqMessageId is a soft reference so that
+        // cascade delete of a DlqMessage can never destroy ledger evidence (see RecoveryLedgerEntry
+        // doc comment and LedgerNoForeignKeyTests).
+
+        // Ageing report and open-entry lookups.
+        entity.HasIndex(e => new { e.OwnerId, e.State, e.BegunAt })
+            .HasDatabaseName("IX_RecoveryLedgerEntries_Owner_State_BegunAt");
+
+        entity.HasIndex(e => e.OperationId)
+            .HasDatabaseName("IX_RecoveryLedgerEntries_OperationId");
+
+        // Body-hash recurrence lookup (heuristic verification fallback).
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.EntityNameSnapshot, e.BodyHash })
+            .HasDatabaseName("IX_RecoveryLedgerEntries_Owner_Namespace_Entity_BodyHash");
+
+        // Exact-match recurrence lookup via the stamped marker; unique only where the marker was
+        // actually applied.
+        entity.HasIndex(e => e.RecoveryMarker)
+            .IsUnique()
+            .HasFilter("[RecoveryMarker] IS NOT NULL")
+            .HasDatabaseName("IX_RecoveryLedgerEntries_RecoveryMarker");
+    }
+
+    private static void ConfigureRecoveryEvent(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<RecoveryEvent>();
+
+        entity.ToTable("RecoveryEvents");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.EventType)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.ActorIdentity)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.ActorKind)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.DetailJson)
+            .HasMaxLength(8192);
+
+        entity.Property(e => e.PrevHash)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        entity.Property(e => e.EntryHash)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        // The hash chain's ordering key: one contiguous, gap-free sequence per owner. Also the
+        // backstop against concurrent appends racing past the in-process per-owner semaphore.
+        entity.HasIndex(e => new { e.OwnerId, e.Seq })
+            .IsUnique()
+            .HasDatabaseName("IX_RecoveryEvents_Owner_Seq");
+
+        entity.HasIndex(e => new { e.EntryId, e.Seq })
+            .HasDatabaseName("IX_RecoveryEvents_EntryId_Seq");
+
+        entity.HasIndex(e => new { e.OperationId, e.Seq })
+            .HasDatabaseName("IX_RecoveryEvents_OperationId_Seq");
     }
 }

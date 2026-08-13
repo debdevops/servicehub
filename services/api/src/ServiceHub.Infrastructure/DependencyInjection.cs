@@ -12,6 +12,7 @@ using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.BulkOperations;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Persistence.InMemory;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Infrastructure.Events;
@@ -252,6 +253,10 @@ public static class DependencyInjection
         // Failure Signature lifecycle (Active/Resolved/Reopened/Suppressed/Archived) — EF Core
         // (DlqDbContext)-backed, so Scoped like every other DlqDbContext-backed service.
         services.TryAddScoped<ISignatureLifecycleService, SignatureLifecycleService>();
+
+        // Recovery Evidence Ledger — EF Core (DlqDbContext)-backed, so Scoped like every other
+        // DlqDbContext-backed service. No callers yet; wired to the recovery paths in a later phase.
+        services.TryAddScoped<IRecoveryLedger, RecoveryLedgerService>();
 
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();
