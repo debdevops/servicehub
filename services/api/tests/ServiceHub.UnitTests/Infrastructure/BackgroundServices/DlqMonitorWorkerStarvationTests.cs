@@ -51,7 +51,8 @@ public sealed class DlqMonitorWorkerStarvationTests : IAsyncLifetime
     private static Namespace BuildNamespace(string name = "starve-ns") =>
         Namespace.Create(name,
             "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey12=",
-            environment: EnvironmentType.Dev).Value;
+            environment: EnvironmentType.Dev,
+            ownerId: "owner").Value;
 
     private async Task<AutoReplayRule> AddRuleAsync()
     {
