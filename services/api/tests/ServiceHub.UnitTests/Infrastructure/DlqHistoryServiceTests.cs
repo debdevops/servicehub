@@ -573,7 +573,6 @@ public class DlqHistoryServiceTests : IDisposable
 
     [Theory]
     [InlineData(DlqMessageStatus.Archived)]
-    [InlineData(DlqMessageStatus.Discarded)]
     [InlineData(DlqMessageStatus.Resolved)]
     public async Task UpdateStatusAsync_ValidTarget_TransitionsAndStampsTimestamps(DlqMessageStatus target)
     {
@@ -589,6 +588,34 @@ public class DlqHistoryServiceTests : IDisposable
             result.Value.ArchivedAt.Should().NotBeNull();
         else
             result.Value.ResolvedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_ResolvedTarget_RecordsDeclaredByOperatorCause()
+    {
+        var msg = CreateMessage(seq: 1, status: DlqMessageStatus.Active);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.UpdateStatusAsync(TestConstants.TestOwnerId, msg.Id, DlqMessageStatus.Resolved);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ResolutionCause.Should().Be(DlqResolutionCause.DeclaredByOperator);
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_DiscardedTarget_IsRejected()
+    {
+        // Discarded must mean "ServiceHub destroyed this via a provider call" (P8) — manual
+        // triage has no such call to point to, so it can no longer declare Discarded by hand.
+        var msg = CreateMessage(seq: 1, status: DlqMessageStatus.Active);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.UpdateStatusAsync(TestConstants.TestOwnerId, msg.Id, DlqMessageStatus.Discarded);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Dlq.InvalidStatusTransition");
     }
 
     [Fact]

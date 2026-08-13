@@ -177,6 +177,10 @@ public sealed class DlqDbContext : DbContext
         entity.Property(e => e.ReplaySafety)
             .HasMaxLength(32);
 
+        entity.Property(e => e.ResolutionCause)
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
         entity.Property(e => e.CorrelationId)
             .HasMaxLength(256);
 

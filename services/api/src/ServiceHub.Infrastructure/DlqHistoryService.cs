@@ -263,12 +263,14 @@ public sealed class DlqHistoryService : IDlqHistoryService
 
     // Manual triage may only move a message to one of these lifecycle states. Replayed /
     // ReplayFailed are outcomes of the replay flow and must not be settable by hand, so a
-    // "Replayed" status always corresponds to a real replay attempt.
+    // "Replayed" status always corresponds to a real replay attempt. Discarded must mean
+    // "ServiceHub destroyed this message via a provider call" — an operator has no such call to
+    // point to, so manual triage cannot declare it; Resolved (with ResolutionCause.DeclaredByOperator)
+    // is the honest equivalent for a human-observed removal.
     private static readonly HashSet<DlqMessageStatus> ManualTriageTargets =
     [
         DlqMessageStatus.Active,
         DlqMessageStatus.Archived,
-        DlqMessageStatus.Discarded,
         DlqMessageStatus.Resolved
     ];
 
@@ -284,7 +286,7 @@ public sealed class DlqHistoryService : IDlqHistoryService
         {
             return Result<DlqMessage>.Failure(Error.Validation(
                 "Dlq.InvalidStatusTransition",
-                $"'{newStatus}' is not a valid triage status. Allowed: Active, Archived, Discarded, Resolved."));
+                $"'{newStatus}' is not a valid triage status. Allowed: Active, Archived, Resolved."));
         }
 
         try
@@ -304,16 +306,20 @@ public sealed class DlqHistoryService : IDlqHistoryService
                 case DlqMessageStatus.Archived:
                     message.ArchivedAt = now;
                     message.ResolvedAt = null;
+                    message.ResolutionCause = null;
                     break;
                 case DlqMessageStatus.Resolved:
-                case DlqMessageStatus.Discarded:
                     message.ResolvedAt = now;
                     message.ArchivedAt = null;
+                    // The operator is declaring this resolved on their own observation, not a
+                    // ServiceHub provider call — that is the honest cause, not a guess.
+                    message.ResolutionCause = DlqResolutionCause.DeclaredByOperator;
                     break;
                 case DlqMessageStatus.Active:
                     // Re-opening a triaged message: clear the resolution stamps.
                     message.ArchivedAt = null;
                     message.ResolvedAt = null;
+                    message.ResolutionCause = null;
                     break;
             }
 

@@ -134,6 +134,15 @@ public sealed class DlqMonitorService : IDlqMonitorService
             if (ns.Provider == CloudProviderType.Gcp && entity.Name.EndsWith("-dlq", StringComparison.Ordinal))
                 continue;
 
+            // Parsed and normalized up front so the reconcile key below (scannedEntities) always
+            // matches the EntityName format DlqMessage rows are stored under — Azure lists
+            // subscriptions as "topic/subscriptions/sub" already, but AWS/GCP list them as
+            // "topic/sub", and only the normalized "topic/subscriptions/sub" form is ever
+            // persisted (see fullEntityName in ScanEntityDlqAsync). Keying on the raw
+            // entity.Name here made the AWS/GCP reconcile never fire (P9).
+            var (entityName, topicName, entityType) = ParseEntity(entity.Name, entity.EntityType);
+            var fullEntityName = topicName != null ? $"{topicName}{SubscriptionPathSegment}{entityName}" : entityName;
+
             // A provider that genuinely reports live message counts (Azure, AWS — both populate
             // DeadLetterCount reliably in ListEntitiesAsync) means entities with 0 can be skipped
             // without peeking. GCP's Capabilities.SupportsMessageCounts is false (Pub/Sub has no
@@ -142,11 +151,9 @@ public sealed class DlqMonitorService : IDlqMonitorService
             // CrossCloudTraceController uses for its own dead-letter-peek gate.
             if (provider.Capabilities.SupportsMessageCounts && entity.DeadLetterCount == 0)
             {
-                scannedEntities[entity.Name] = 0;
+                scannedEntities[fullEntityName] = 0;
                 continue;
             }
-
-            var (entityName, topicName, entityType) = ParseEntity(entity.Name, entity.EntityType);
 
             if (entity.DeadLetterCount > 0)
             {
@@ -158,10 +165,15 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 receiver, namespaceId, entityName, topicName,
                 entityType, ns.OwnerId, ns.Provider, cancellationToken);
             totalNew += newCount;
-            scannedEntities[entity.Name] = liveCount;
+            scannedEntities[fullEntityName] = liveCount;
         }
 
-        // Reconcile: for entities with 0 DLQ messages, mark any remaining Active DB records as Replayed
+        // Reconcile: for entities with 0 DLQ messages, mark any remaining Active DB records as
+        // Resolved. This scan only proves the message is no longer in the DLQ — it cannot tell
+        // whether ServiceHub replayed it, an operator drained it externally, it expired, or
+        // another tool consumed it. Absence must never be reported as "Replayed" (that is a
+        // specific, unverified claim); VanishedExternally is the truthful cause until a Recovery
+        // Evidence Ledger (a later phase) can attribute the disappearance to a ServiceHub action.
         var reconciledCount = 0;
         try
         {
@@ -177,8 +189,9 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
                     foreach (var record in staleRecords)
                     {
-                        record.Status = DlqMessageStatus.Replayed;
-                        record.ReplayedAt = DateTimeOffset.UtcNow;
+                        record.Status = DlqMessageStatus.Resolved;
+                        record.ResolvedAt = DateTimeOffset.UtcNow;
+                        record.ResolutionCause = DlqResolutionCause.VanishedExternally;
                         reconciledCount++;
                     }
                 }
@@ -188,7 +201,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
             {
                 await _dbContext.SaveChangesAsync(cancellationToken);
                 _logger.LogInformation(
-                    "Reconciled {Count} stale DLQ messages as Replayed for namespace {NamespaceId}",
+                    "Reconciled {Count} stale DLQ messages as Resolved (vanished externally) for namespace {NamespaceId}",
                     reconciledCount, namespaceId);
             }
         }
@@ -250,9 +263,12 @@ public sealed class DlqMonitorService : IDlqMonitorService
         var liveCount = 0;
         var fullEntityName = topicName != null ? $"{topicName}{SubscriptionPathSegment}{entityName}" : entityName;
 
-        // Azure sequence numbers are stable identifiers; AWS/GCP sequence numbers are hashes
-        // of per-delivery receipt handles / ack IDs and change on every peek, so those
-        // providers must dedup and reconcile by MessageId instead.
+        // Azure sequence numbers are real broker-assigned identifiers. AWS/GCP sequence numbers
+        // are a stable SHA-256 hash of the message's own (also stable) broker MessageId — they
+        // do not change between peeks of the same message, but they carry no ordering relative
+        // to arrival, so they cannot serve as a paging cursor (see ComputeSequenceNumber in
+        // AwsMessageReceiver/GcpMessageReceiver). Those providers must dedup and reconcile by
+        // MessageId instead.
         var useSequenceKey = provider == CloudProviderType.Azure;
 
         try
@@ -294,9 +310,9 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
                 allPeekedMessages.AddRange(batchMessages);
 
-                // AWS/GCP sequence numbers are unstable per-peek hashes (see useSequenceKey
-                // comment above), so there is no cursor to advance past a single batch there —
-                // only Azure can page beyond PeekBatchSize within a scan cycle.
+                // AWS/GCP sequence numbers carry no ordering relative to arrival (see
+                // useSequenceKey comment above), so there is no cursor to advance past a single
+                // batch there — only Azure can page beyond PeekBatchSize within a scan cycle.
                 if (!useSequenceKey || batchMessages.Count < PeekBatchSize)
                     break;
 
@@ -330,13 +346,14 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
                 if (existingMessage != null)
                 {
-                    // Message already tracked — ensure it's marked as Active
+                    // Message already tracked — ensure it's marked as Active. The prior
+                    // ResolvedAt/ReplayedAt/ReplaySuccess/ResolutionCause are left untouched:
+                    // they are evidence of what was previously recorded, and erasing them here
+                    // would destroy a real recovery record for the sake of a message that turned
+                    // out to have come back.
                     if (existingMessage.Status != DlqMessageStatus.Active)
                     {
                         existingMessage.Status = DlqMessageStatus.Active;
-                        existingMessage.ResolvedAt = null;
-                        existingMessage.ReplayedAt = null;
-                        existingMessage.ReplaySuccess = null;
                         _logger.LogInformation(
                             "Message {MessageId} returned to DLQ, status updated to Active",
                             LogRedactor.SanitiseForLog(msg.MessageId));
@@ -408,7 +425,10 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 newCount++;
             }
 
-            // CRITICAL: Mark messages that are NO LONGER in DLQ as Replayed
+            // Mark messages that are NO LONGER in the DLQ as Resolved. This scan cannot tell why
+            // they left — ServiceHub replay, external drain, TTL expiry, or another tool are all
+            // indistinguishable from here — so the cause is recorded as VanishedExternally, not
+            // asserted as a replay ServiceHub never observed.
             List<DlqMessage> messagesNoLongerInDlq;
             if (useSequenceKey)
             {
@@ -428,7 +448,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 // so a single scan only ever samples up to PeekBatchSize messages. A batch at
                 // the cap doesn't prove the DLQ is empty beyond it, so reconciling against a
                 // possibly-truncated sample would falsely mark still-present messages as
-                // Replayed. Only reconcile when this scan came in under the cap — the closest
+                // Resolved. Only reconcile when this scan came in under the cap — the closest
                 // signal available that it saw the entity's full live DLQ.
                 var currentDlqMessageIds = allPeekedMessages
                     .Select(m => m.MessageId)
@@ -450,17 +470,18 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
             foreach (var removedMessage in messagesNoLongerInDlq)
             {
-                removedMessage.Status = DlqMessageStatus.Replayed;
-                removedMessage.ReplayedAt = DateTimeOffset.UtcNow;
+                removedMessage.Status = DlqMessageStatus.Resolved;
+                removedMessage.ResolvedAt = DateTimeOffset.UtcNow;
+                removedMessage.ResolutionCause = DlqResolutionCause.VanishedExternally;
                 _logger.LogInformation(
-                    "Message {MessageId} no longer in DLQ — marked as Replayed",
+                    "Message {MessageId} no longer in DLQ — marked as Resolved (vanished externally)",
                     LogRedactor.SanitiseForLog(removedMessage.MessageId));
             }
 
             if (messagesNoLongerInDlq.Count > 0)
             {
                 _logger.LogInformation(
-                    "Marked {Count} messages as Replayed for {EntityType} {EntityName}",
+                    "Marked {Count} messages as Resolved for {EntityType} {EntityName}",
                     messagesNoLongerInDlq.Count, entityType, LogRedactor.SanitiseForLog(entityName));
             }
 
