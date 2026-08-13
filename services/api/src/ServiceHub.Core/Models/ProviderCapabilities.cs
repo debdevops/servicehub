@@ -45,13 +45,32 @@ namespace ServiceHub.Core.Models;
 /// A short, human-readable explanation of the provider's constraints, suitable for a UI
 /// tooltip or disabled-state message.
 /// </param>
+/// <param name="SupportsRecoveryMarker">
+/// Whether the provider's message envelope can carry the <c>x-servicehub-recovery-id</c>
+/// application property/attribute stamped on replay (see the Recovery Evidence Ledger's
+/// verification model). True for all three providers at the envelope level; AWS SQS additionally
+/// enforces a 10-attribute cap checked per-message at replay time — when a specific message is
+/// already at the cap, the marker is not applied to that message even though the provider
+/// generally supports it.
+/// </param>
+/// <param name="CanProveDlqAbsence">
+/// Whether a background scan can establish that a replayed message did **not** return to the
+/// DLQ. True only for Azure, whose peek can page up to 5,000 messages/entity/cycle
+/// uncapped. False for AWS (background scanning is off by default, and every peek is a
+/// destructive single 100-message receive) and GCP (a single 100-message batch per cycle, with
+/// reconciliation skipped at the cap) — a capped sample can never prove a message is truly gone.
+/// The Recovery Verification Worker consults this to decide between
+/// <see cref="Enums.RecoveryEntryState.Recovered"/> and <see cref="Enums.RecoveryEntryState.Unverified"/>.
+/// </param>
 public sealed record ProviderCapabilities(
     bool SupportsMessageCounts,
     bool SupportsManualDeadLetter,
     bool SupportsPurge,
     bool SupportsScheduledMessages,
     bool SupportsRepeatablePeek,
-    string Notes)
+    string Notes,
+    bool SupportsRecoveryMarker,
+    bool CanProveDlqAbsence)
 {
     /// <summary>Capabilities of Microsoft Azure Service Bus.</summary>
     public static readonly ProviderCapabilities Azure = new(
@@ -60,7 +79,9 @@ public sealed record ProviderCapabilities(
         SupportsPurge: false,
         SupportsScheduledMessages: true,
         SupportsRepeatablePeek: true,
-        Notes: "Purge is not supported — the SDK has no reliable single-message delete by sequence number.");
+        Notes: "Purge is not supported — the SDK has no reliable single-message delete by sequence number.",
+        SupportsRecoveryMarker: true,
+        CanProveDlqAbsence: true);
 
     /// <summary>Capabilities of Amazon SQS/SNS.</summary>
     public static readonly ProviderCapabilities Aws = new(
@@ -69,7 +90,9 @@ public sealed record ProviderCapabilities(
         SupportsPurge: true,
         SupportsScheduledMessages: false,
         SupportsRepeatablePeek: false,
-        Notes: "Scheduled messages are not supported — SQS only offers DelaySeconds (max 15 minutes) at send time. Repeated/live polling is also not supported — SQS has no non-destructive peek, so every call is a receive that counts toward the queue's maxReceiveCount.");
+        Notes: "Scheduled messages are not supported — SQS only offers DelaySeconds (max 15 minutes) at send time. Repeated/live polling is also not supported — SQS has no non-destructive peek, so every call is a receive that counts toward the queue's maxReceiveCount.",
+        SupportsRecoveryMarker: true,
+        CanProveDlqAbsence: false);
 
     /// <summary>Capabilities of Google Cloud Pub/Sub.</summary>
     public static readonly ProviderCapabilities Gcp = new(
@@ -78,5 +101,7 @@ public sealed record ProviderCapabilities(
         SupportsPurge: true,
         SupportsScheduledMessages: false,
         SupportsRepeatablePeek: true,
-        Notes: "Message counts and manual dead-lettering are not supported — Pub/Sub has no count API and dead-lettering is policy-driven via MaxDeliveryAttempts. Scheduled messages are not supported either.");
+        Notes: "Message counts and manual dead-lettering are not supported — Pub/Sub has no count API and dead-lettering is policy-driven via MaxDeliveryAttempts. Scheduled messages are not supported either.",
+        SupportsRecoveryMarker: true,
+        CanProveDlqAbsence: false);
 }

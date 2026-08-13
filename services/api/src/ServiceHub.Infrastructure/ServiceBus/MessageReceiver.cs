@@ -373,23 +373,24 @@ public sealed class MessageReceiver : IMessageReceiver
     }
 
     /// <inheritdoc/>
-    public async Task<Result> ReplayMessageAsync(
+    public async Task<Result<bool>> ReplayMessageAsync(
         Guid namespaceId,
         string entityName,
         string? subscriptionName,
         long sequenceNumber,
+        string? recoveryMarker,
         CancellationToken cancellationToken = default)
     {
         if (namespaceId == Guid.Empty)
         {
-            return Result.Failure(Error.Validation(
+            return Result<bool>.Failure(Error.Validation(
                 ErrorCodes.Namespace.NotFound,
                 "Namespace ID is required."));
         }
 
         if (string.IsNullOrWhiteSpace(entityName))
         {
-            return Result.Failure(Error.Validation(
+            return Result<bool>.Failure(Error.Validation(
                 ErrorCodes.Message.QueueNameRequired,
                 "Queue or topic name is required."));
         }
@@ -397,7 +398,7 @@ public sealed class MessageReceiver : IMessageReceiver
         var clientResult = await GetClientWrapperAsync(namespaceId, cancellationToken).ConfigureAwait(false);
         if (clientResult.IsFailure)
         {
-            return Result.Failure(clientResult.Error);
+            return Result<bool>.Failure(clientResult.Error);
         }
 
         try
@@ -406,6 +407,7 @@ public sealed class MessageReceiver : IMessageReceiver
                 entityName,
                 subscriptionName,
                 sequenceNumber,
+                recoveryMarker,
                 cancellationToken).ConfigureAwait(false);
 
             if (result.IsSuccess)
@@ -422,7 +424,7 @@ public sealed class MessageReceiver : IMessageReceiver
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error replaying message");
-            return Result.Failure(Error.Internal(
+            return Result<bool>.Failure(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
                 "An unexpected error occurred while replaying the message."));
         }

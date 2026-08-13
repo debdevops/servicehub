@@ -116,12 +116,20 @@ public interface IServiceBusClientWrapper : IAsyncDisposable
     /// <param name="entityName">The queue or topic name.</param>
     /// <param name="subscriptionName">Optional subscription name for topics.</param>
     /// <param name="sequenceNumber">The sequence number of the message to replay.</param>
+    /// <param name="recoveryMarker">
+    /// The <c>x-servicehub-recovery-id</c> value to stamp onto the replayed message's application
+    /// properties, or null to skip stamping.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A result indicating success or failure.</returns>
-    Task<Result> ReplayMessageAsync(
+    /// <returns>
+    /// A result indicating success or failure. On success, the value is whether
+    /// <paramref name="recoveryMarker"/> was actually applied.
+    /// </returns>
+    Task<Result<bool>> ReplayMessageAsync(
         string entityName,
         string? subscriptionName,
         long sequenceNumber,
+        string? recoveryMarker,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -585,6 +585,7 @@ public sealed class MessagesController : ApiControllerBase
             entityName,
             subscriptionName,
             sequenceNumber,
+            recoveryEntry.Id,
             cancellationToken);
 
         // CancellationToken.None: the provider call above already happened, so its outcome must
@@ -597,6 +598,8 @@ public sealed class MessagesController : ApiControllerBase
             Actor = actor,
             Outcome = result.IsSuccess ? RecoveryExecutionOutcome.Accepted : RecoveryExecutionOutcome.Rejected,
             ProviderDetailJson = result.IsSuccess ? null : result.Error.Message,
+            RecoveryMarker = result.IsSuccess && result.Value ? recoveryEntry.Id.ToString() : null,
+            MarkerApplied = result.IsSuccess && result.Value,
         }, CancellationToken.None);
 
         if (result.IsFailure)
@@ -611,7 +614,7 @@ public sealed class MessagesController : ApiControllerBase
                 resourceName: entityName,
                 sequenceNumber: sequenceNumber,
                 detail: result.Error.Message);
-            return ToActionResult(result);
+            return ToActionResult(Shared.Results.Result.Failure(result.Error));
         }
 
         _auditLogger.LogCriticalAction(

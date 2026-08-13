@@ -311,8 +311,8 @@ public class MessagesControllerTests
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        _messageOperationsService.Setup(r => r.ReplayMessageAsync(ns.Id, "my-queue", null, 42, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+        _messageOperationsService.Setup(r => r.ReplayMessageAsync(ns.Id, "my-queue", null, 42, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         var result = await _controller.ReplayMessage(ns.Id, 42, "my-queue");
 
@@ -339,8 +339,8 @@ public class MessagesControllerTests
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        _messageOperationsService.Setup(r => r.ReplayMessageAsync(ns.Id, "my-topic", "my-sub", 42, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+        _messageOperationsService.Setup(r => r.ReplayMessageAsync(ns.Id, "my-topic", "my-sub", 42, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         var result = await _controller.ReplayMessage(ns.Id, 42, "my-topic", "my-sub");
 
@@ -363,8 +363,8 @@ public class MessagesControllerTests
             .Setup(s => s.ClaimForRecoveryAsync(tracked.Id, tracked.OwnerId, DlqMessageStatus.Replaying, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DlqMessage>.Success(tracked));
 
-        _messageOperationsService.Setup(r => r.ReplayMessageAsync(ns.Id, "my-queue", null, 42, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+        _messageOperationsService.Setup(r => r.ReplayMessageAsync(ns.Id, "my-queue", null, 42, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         var result = await _controller.ReplayMessage(ns.Id, 42, "my-queue");
 
@@ -395,7 +395,7 @@ public class MessagesControllerTests
 
         result.Should().NotBeOfType<AcceptedResult>();
         _messageOperationsService.Verify(
-            r => r.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            r => r.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -419,7 +419,7 @@ public class MessagesControllerTests
 
         result.Should().NotBeOfType<AcceptedResult>();
         _messageOperationsService.Verify(
-            r => r.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            r => r.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 

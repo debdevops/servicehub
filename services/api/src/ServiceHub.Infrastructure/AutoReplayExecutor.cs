@@ -136,7 +136,7 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         try
         {
             var replayResult = await _messageOperations.ReplayMessageAsync(
-                message.NamespaceId, entityName, subscriptionName, message.SequenceNumber, cancellationToken);
+                message.NamespaceId, entityName, subscriptionName, message.SequenceNumber, entry.Id, cancellationToken);
 
             // CancellationToken.None: the provider call above already happened, so this outcome
             // must be recorded even if cancellation was requested in the meantime.
@@ -147,6 +147,8 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
                 Actor = actor,
                 Outcome = replayResult.IsSuccess ? RecoveryExecutionOutcome.Accepted : RecoveryExecutionOutcome.Rejected,
                 ProviderDetailJson = replayResult.IsSuccess ? null : replayResult.Error.Message,
+                RecoveryMarker = replayResult.IsSuccess && replayResult.Value ? entry.Id.ToString() : null,
+                MarkerApplied = replayResult.IsSuccess && replayResult.Value,
             }, CancellationToken.None);
 
             var outcome = replayResult.IsSuccess ? "Success" : "Failed";

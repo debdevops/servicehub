@@ -191,6 +191,7 @@ public static class DependencyInjection
         services.AddHostedService<BulkOperationWorker>();
         services.AddHostedService<SignatureReplayWorker>();
         services.AddHostedService<AuditRetentionWorker>();
+        services.AddHostedService<RecoveryVerificationWorker>();
 
         return services;
     }

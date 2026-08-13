@@ -720,7 +720,7 @@ public sealed class RulesController : ApiControllerBase
                     var entry = beginResult.Value;
 
                     var replayResult = await messageOperationsService.ReplayMessageAsync(
-                        group.Key.NamespaceId, entityName, subscriptionName, msg.SequenceNumber, ct);
+                        group.Key.NamespaceId, entityName, subscriptionName, msg.SequenceNumber, entry.Id, ct);
 
                     // CancellationToken.None: the provider call above already happened, so this
                     // outcome must be recorded even if the 30-second request timeout fires in the
@@ -732,6 +732,8 @@ public sealed class RulesController : ApiControllerBase
                         Actor = actor,
                         Outcome = replayResult.IsSuccess ? RecoveryExecutionOutcome.Accepted : RecoveryExecutionOutcome.Rejected,
                         ProviderDetailJson = replayResult.IsSuccess ? null : replayResult.Error.Message,
+                        RecoveryMarker = replayResult.IsSuccess && replayResult.Value ? entry.Id.ToString() : null,
+                        MarkerApplied = replayResult.IsSuccess && replayResult.Value,
                     }, CancellationToken.None);
 
                     if (replayResult.IsSuccess)

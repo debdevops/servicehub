@@ -281,7 +281,7 @@ public sealed class GcpMessageReceiverRegressionTests
             .ReturnsAsync(subscriber.Object);
         var sut = new GcpMessageReceiver(factory.Object, BuildRepo(ns).Object, NullLogger<GcpMessageReceiver>.Instance);
 
-        var replay = await sut.ReplayMessageAsync(TestNamespaceId, SubId, null, sequenceNumber: 123456);
+        var replay = await sut.ReplayMessageAsync(TestNamespaceId, SubId, null, sequenceNumber: 123456, recoveryMarker: null);
 
         replay.IsSuccess.Should().BeFalse();
         replay.Error.Code.Should().Be("GCP.PubSub.NoDlq");

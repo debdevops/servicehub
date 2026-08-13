@@ -62,6 +62,8 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
 
     private const string DeadLetterDescriptionAttribute = "DeadLetterErrorDescription";
 
+    private const string RecoveryMarkerAttribute = "x-servicehub-recovery-id";
+
     /// <summary>Upper bound of receive batches when scanning for a target message.</summary>
     private const int MaxScanBatches = 20;
 
@@ -376,11 +378,12 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
     }
 
     /// <inheritdoc/>
-    public async Task<Result> ReplayMessageAsync(
+    public async Task<Result<bool>> ReplayMessageAsync(
         Guid namespaceId,
         string entityName,
         string? subscriptionName,
         long sequenceNumber,
+        string? recoveryMarker,
         CancellationToken cancellationToken = default)
     {
         if (!string.IsNullOrEmpty(subscriptionName))
@@ -388,7 +391,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
 
         var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken).ConfigureAwait(false);
         if (nsResult.IsFailure)
-            return Result.Failure(nsResult.Error);
+            return Result<bool>.Failure(nsResult.Error);
 
         var sqs = _clientFactory.GetSqsClient(nsResult.Value);
 
@@ -398,7 +401,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             var dlqUrl = await ResolveDlqUrlAsync(sqs, sourceUrl, cancellationToken).ConfigureAwait(false);
 
             if (dlqUrl is null)
-                return Result.Failure(Error.Validation("AWS.SQS.NoDlq",
+                return Result<bool>.Failure(Error.Validation("AWS.SQS.NoDlq",
                     $"Queue {entityName} has no DLQ configured."));
 
             // Sequence numbers are derived from the stable SQS MessageId, so the target
@@ -407,8 +410,24 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             if (target is null)
             {
                 _logger.LogWarning("Message with sequence {Seq} not found in DLQ for {QueueName}", sequenceNumber, SanitizeForLog(entityName));
-                return Result.Failure(Error.NotFound("AWS.SQS.MessageNotFound",
+                return Result<bool>.Failure(Error.NotFound("AWS.SQS.MessageNotFound",
                     $"Message {sequenceNumber} was not found in the DLQ — it may have been consumed, replayed, or expired."));
+            }
+
+            // Recovery Evidence Ledger marker — the one behavioural change replay makes for
+            // verification (see RecoveryLedgerEntry.RecoveryMarker). SQS caps messages at 10
+            // attributes; when the target is already at the cap, the marker is not applied
+            // rather than displacing an existing attribute — MarkerApplied=false records that
+            // honestly, and verification falls back to the body-hash heuristic for this entry.
+            var attributes = target.MessageAttributes;
+            var markerApplied = false;
+            if (!string.IsNullOrEmpty(recoveryMarker) && attributes.Count < MaxMessageAttributes)
+            {
+                attributes = new Dictionary<string, MessageAttributeValue>(target.MessageAttributes)
+                {
+                    [RecoveryMarkerAttribute] = new MessageAttributeValue { DataType = "String", StringValue = recoveryMarker }
+                };
+                markerApplied = true;
             }
 
             // CRITICAL ORDER: Send to source BEFORE deleting from DLQ
@@ -416,7 +435,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             {
                 QueueUrl = sourceUrl,
                 MessageBody = target.Body,
-                MessageAttributes = target.MessageAttributes
+                MessageAttributes = attributes
             }, cancellationToken).ConfigureAwait(false);
 
             await sqs.DeleteMessageAsync(new DeleteMessageRequest
@@ -426,12 +445,12 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             }, cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation("Replayed message {Seq} from DLQ to {QueueName}", sequenceNumber, SanitizeForLog(entityName));
-            return Result.Success();
+            return Result<bool>.Success(markerApplied);
         }
         catch (AmazonSQSException ex)
         {
             _logger.LogError(ex, "SQS error replaying message {Seq} for {QueueName}", sequenceNumber, SanitizeForLog(entityName));
-            return Result.Failure(Error.ExternalService("AWS.SQS.ReplayFailed", ex.Message));
+            return Result<bool>.Failure(Error.ExternalService("AWS.SQS.ReplayFailed", ex.Message));
         }
     }
 

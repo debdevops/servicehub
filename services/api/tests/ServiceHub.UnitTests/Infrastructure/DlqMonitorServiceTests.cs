@@ -23,6 +23,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
     private readonly Mock<IForensicEngineRouter> _forensicMock = new();
     private readonly Mock<ICloudMessagingProvider> _providerMock = new();
     private readonly Mock<IMessageReceiver> _receiverMock = new();
+    private readonly Mock<IRecoveryLedger> _recoveryLedgerMock = new();
 
     private readonly Guid _namespaceId = Guid.NewGuid();
 
@@ -34,6 +35,17 @@ public sealed class DlqMonitorServiceTests : IDisposable
         _dbContext = new DlqDbContext(options);
         _dbContext.Database.OpenConnection();
         _dbContext.Database.EnsureCreated();
+
+        // Default: no open recovery ledger entries anywhere — matches every test's synthetic
+        // messages, which carry no x-servicehub-recovery-id marker and correlate to no entry.
+        // Tests exercising recurrence detection override these explicitly.
+        _recoveryLedgerMock
+            .Setup(x => x.FindByMarkerAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((RecoveryLedgerEntry?)null);
+        _recoveryLedgerMock
+            .Setup(x => x.FindHeuristicRecurrenceCandidatesAsync(
+                It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<RecoveryLedgerEntry>());
     }
 
     public void Dispose()
@@ -67,7 +79,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
 
         return new DlqMonitorService(
             _dbContext, _repoMock.Object, router, _forensicMock.Object,
-            configuration, logGuard ?? new DlqNotMonitoredLogGuard(),
+            configuration, _recoveryLedgerMock.Object, logGuard ?? new DlqNotMonitoredLogGuard(),
             logger ?? NullLogger<DlqMonitorService>.Instance);
     }
 
@@ -170,7 +182,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
         var act = () => new DlqMonitorService(
             null!, _repoMock.Object, router, _forensicMock.Object,
-            EmptyConfig(), new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
+            EmptyConfig(), _recoveryLedgerMock.Object, new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("dbContext");
     }
 
@@ -180,7 +192,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
         var act = () => new DlqMonitorService(
             _dbContext, null!, router, _forensicMock.Object,
-            EmptyConfig(), new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
+            EmptyConfig(), _recoveryLedgerMock.Object, new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("namespaceRepository");
     }
 
@@ -189,7 +201,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
     {
         var act = () => new DlqMonitorService(
             _dbContext, _repoMock.Object, null!, _forensicMock.Object,
-            EmptyConfig(), new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
+            EmptyConfig(), _recoveryLedgerMock.Object, new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("router");
     }
 
@@ -199,7 +211,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
         var act = () => new DlqMonitorService(
             _dbContext, _repoMock.Object, router, null!,
-            EmptyConfig(), new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
+            EmptyConfig(), _recoveryLedgerMock.Object, new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("forensicEngine");
     }
 
@@ -209,8 +221,18 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
         var act = () => new DlqMonitorService(
             _dbContext, _repoMock.Object, router, _forensicMock.Object,
-            null!, new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
+            null!, _recoveryLedgerMock.Object, new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("configuration");
+    }
+
+    [Fact]
+    public void Constructor_NullRecoveryLedger_Throws()
+    {
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var act = () => new DlqMonitorService(
+            _dbContext, _repoMock.Object, router, _forensicMock.Object,
+            EmptyConfig(), null!, new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("recoveryLedger");
     }
 
     [Fact]
@@ -219,7 +241,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
         var act = () => new DlqMonitorService(
             _dbContext, _repoMock.Object, router, _forensicMock.Object,
-            EmptyConfig(), null!, NullLogger<DlqMonitorService>.Instance);
+            EmptyConfig(), _recoveryLedgerMock.Object, null!, NullLogger<DlqMonitorService>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("notMonitoredLogGuard");
     }
 
@@ -229,7 +251,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
         var act = () => new DlqMonitorService(
             _dbContext, _repoMock.Object, router, _forensicMock.Object,
-            EmptyConfig(), new DlqNotMonitoredLogGuard(), null!);
+            EmptyConfig(), _recoveryLedgerMock.Object, new DlqNotMonitoredLogGuard(), null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 

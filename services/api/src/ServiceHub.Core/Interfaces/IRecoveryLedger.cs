@@ -101,4 +101,30 @@ public interface IRecoveryLedger
     Task<IReadOnlyList<RecoveryLedgerEntry>> GetAgeingAsync(
         string ownerId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finds the <see cref="Enums.RecoveryEntryState.Observing"/> entry carrying this exact
+    /// <c>x-servicehub-recovery-id</c> marker, if any — the exact-match arm of recurrence
+    /// detection (§8.5). Backed by the unique-where-not-null index on
+    /// <see cref="RecoveryLedgerEntry.RecoveryMarker"/>, so at most one entry can ever match.
+    /// </summary>
+    Task<RecoveryLedgerEntry?> FindByMarkerAsync(
+        string ownerId,
+        string marker,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finds every <see cref="Enums.RecoveryEntryState.Observing"/> entry in one entity that
+    /// could not have its marker applied (<see cref="RecoveryLedgerEntry.MarkerApplied"/> is
+    /// false) and shares the given body hash — the heuristic-fallback candidate set for
+    /// recurrence detection (§8.3). More than one result means the match is ambiguous; the
+    /// caller records that collision count rather than picking one candidate arbitrarily.
+    /// </summary>
+    Task<IReadOnlyList<RecoveryLedgerEntry>> FindHeuristicRecurrenceCandidatesAsync(
+        string ownerId,
+        Guid? namespaceId,
+        string entityName,
+        string bodyHash,
+        DateTimeOffset beganBefore,
+        CancellationToken cancellationToken = default);
 }

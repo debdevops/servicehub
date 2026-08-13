@@ -202,8 +202,8 @@ public class AutoReplayExecutorTests : IDisposable
         var action = new RuleAction();
 
         _messageOperations
-            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
@@ -228,8 +228,8 @@ public class AutoReplayExecutorTests : IDisposable
         var action = new RuleAction();
 
         _messageOperations
-            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Failure(Error.NotFound("NS_NOT_FOUND", "Namespace not found")));
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Failure(Error.NotFound("NS_NOT_FOUND", "Namespace not found")));
 
         var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
@@ -252,7 +252,7 @@ public class AutoReplayExecutorTests : IDisposable
         var action = new RuleAction();
 
         _messageOperations
-            .Setup(m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("boom"));
 
         var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
@@ -273,8 +273,8 @@ public class AutoReplayExecutorTests : IDisposable
         var action = new RuleAction { TargetEntity = "retry-queue" };
 
         _messageOperations
-            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "retry-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "retry-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
@@ -296,14 +296,14 @@ public class AutoReplayExecutorTests : IDisposable
         var action = new RuleAction();
 
         _messageOperations
-            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "orders-topic", "orders-sub", msg.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "orders-topic", "orders-sub", msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
         result.IsSuccess.Should().BeTrue();
         _messageOperations.Verify(
-            m => m.ReplayMessageAsync(msg.NamespaceId, "orders-topic", "orders-sub", msg.SequenceNumber, It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(msg.NamespaceId, "orders-topic", "orders-sub", msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -317,15 +317,15 @@ public class AutoReplayExecutorTests : IDisposable
         var action = new RuleAction();
 
         _messageOperations
-            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
         result.IsSuccess.Should().BeTrue();
         msg.Status.Should().Be(DlqMessageStatus.Replayed);
         _messageOperations.Verify(
-            m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -389,7 +389,7 @@ public class AutoReplayExecutorTests : IDisposable
         result.Error.Type.Should().Be(ErrorType.Conflict);
 
         messageOperations.Verify(
-            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
         var stored = await dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == msg.Id);

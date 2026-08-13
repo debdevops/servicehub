@@ -349,17 +349,20 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         }
     }
 
+    private const string RecoveryMarkerAttribute = "x-servicehub-recovery-id";
+
     /// <inheritdoc/>
-    public async Task<Result> ReplayMessageAsync(
+    public async Task<Result<bool>> ReplayMessageAsync(
         Guid namespaceId,
         string entityName,
         string? subscriptionName,
         long sequenceNumber,
+        string? recoveryMarker,
         CancellationToken cancellationToken = default)
     {
         var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken).ConfigureAwait(false);
         if (nsResult.IsFailure)
-            return Result.Failure(nsResult.Error);
+            return Result<bool>.Failure(nsResult.Error);
 
         var baseSubscriptionId = subscriptionName ?? entityName;
 
@@ -373,7 +376,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 nsResult.Value, baseSubscriptionId, cancellationToken).ConfigureAwait(false);
             if (dlqSubscriptionId is null || sourceTopicId is null)
             {
-                return Result.Failure(Error.Validation("GCP.PubSub.NoDlq",
+                return Result<bool>.Failure(Error.Validation("GCP.PubSub.NoDlq",
                     $"Subscription {baseSubscriptionId} has no dead-letter subscription to replay from."));
             }
 
@@ -385,7 +388,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 .ConfigureAwait(false);
             if (target is null)
             {
-                return Result.Failure(Error.NotFound("GCP.PubSub.MessageNotFound",
+                return Result<bool>.Failure(Error.NotFound("GCP.PubSub.MessageNotFound",
                     $"Message {sequenceNumber} not found in DLQ subscription {dlqSubscriptionId}."));
             }
 
@@ -394,6 +397,18 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             var republished = new PubsubMessage { Data = target.Message.Data };
             foreach (var attribute in target.Message.Attributes)
                 republished.Attributes[attribute.Key] = attribute.Value;
+
+            // Recovery Evidence Ledger marker — the one behavioural change replay makes for
+            // verification (see RecoveryLedgerEntry.RecoveryMarker). Pub/Sub allows up to 100
+            // attributes per message, far above what a dead-lettered message would realistically
+            // carry, so this is unconditional whenever a marker is supplied.
+            var markerApplied = false;
+            if (!string.IsNullOrEmpty(recoveryMarker))
+            {
+                republished.Attributes[RecoveryMarkerAttribute] = recoveryMarker;
+                markerApplied = true;
+            }
+
             await publisher.PublishAsync(republished).ConfigureAwait(false);
 
             // Acknowledge = permanently remove the DLQ copy now that a fresh one has been published.
@@ -406,12 +421,12 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             _logger.LogInformation(
                 "Replayed Pub/Sub message {Seq} from {DlqSubscription} to topic {Topic}",
                 sequenceNumber, SanitizeForLog(dlqSubscriptionId), SanitizeForLog(sourceTopicId));
-            return Result.Success();
+            return Result<bool>.Success(markerApplied);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error replaying Pub/Sub message {Seq} for {Subscription}", sequenceNumber, SanitizeForLog(baseSubscriptionId));
-            return Result.Failure(Error.ExternalService("GCP.PubSub.ReplayFailed", ex.Message));
+            return Result<bool>.Failure(Error.ExternalService("GCP.PubSub.ReplayFailed", ex.Message));
         }
     }
 

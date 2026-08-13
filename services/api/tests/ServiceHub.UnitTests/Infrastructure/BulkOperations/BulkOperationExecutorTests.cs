@@ -132,7 +132,7 @@ public sealed class BulkOperationExecutorTests : IDisposable
         var stored = await _dbContext.BulkOperationJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
         stored.Status.Should().Be(BulkOperationStatus.Completed);
         _messageOperationsMock.Verify(
-            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -191,8 +191,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
         var job = await AddJobAsync();
 
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 42, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 42, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
@@ -220,8 +220,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
         var job = await AddJobAsync();
 
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 7, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Failure(Error.ExternalService("Provider.Error", "message not found")));
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 7, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Failure(Error.ExternalService("Provider.Error", "message not found")));
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
@@ -244,13 +244,13 @@ public sealed class BulkOperationExecutorTests : IDisposable
         var job = await AddJobAsync();
 
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders-topic", "orders-sub", 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders-topic", "orders-sub", 1, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
         _messageOperationsMock.Verify(
-            m => m.ReplayMessageAsync(_namespaceId, "orders-topic", "orders-sub", 1, It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(_namespaceId, "orders-topic", "orders-sub", 1, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -271,7 +271,7 @@ public sealed class BulkOperationExecutorTests : IDisposable
         storedJob.SkippedCount.Should().Be(1);
         storedJob.SuccessCount.Should().Be(0);
         _messageOperationsMock.Verify(
-            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -427,12 +427,12 @@ public sealed class BulkOperationExecutorTests : IDisposable
         // Cancel after the first message is processed, before the second.
         var callCount = 0;
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
                 callCount++;
                 if (callCount == 1) cts.Cancel();
-                return Result.Success();
+                return Result<bool>.Success(true);
             });
 
         await sut.ExecuteAsync(job.Id, cts.Token);
@@ -454,8 +454,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
         var job = await AddJobAsync();
 
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 1, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
@@ -476,8 +476,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
         var job = await AddJobAsync(operationType: BulkOperationType.Replay);
 
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 1, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
@@ -503,8 +503,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
         var job = await AddJobAsync();
 
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 7, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Failure(Error.ExternalService("Provider.Error", "message not found")));
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 7, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Failure(Error.ExternalService("Provider.Error", "message not found")));
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
@@ -593,7 +593,7 @@ public sealed class BulkOperationExecutorTests : IDisposable
 
         var messageOperationsMock = new Mock<IMessageOperationsService>();
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, decoy.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, decoy.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .Returns(async () =>
             {
                 // While this job is still processing the decoy, a different worker (its own
@@ -605,11 +605,11 @@ public sealed class BulkOperationExecutorTests : IDisposable
                 racingCopy.ReplaySuccess = true;
                 await racingContext.SaveChangesAsync();
 
-                return Result.Success();
+                return Result<bool>.Success(true);
             });
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, target.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, target.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         var sut = new BulkOperationExecutor(
             dbContext, namespaceRepositoryMock.Object, messageOperationsMock.Object,
@@ -621,7 +621,7 @@ public sealed class BulkOperationExecutorTests : IDisposable
         // This job's own claim attempt for `target` lost the race — it must never have
         // reached the provider a second time.
         messageOperationsMock.Verify(
-            m => m.ReplayMessageAsync(namespaceId, "orders", null, target.SequenceNumber, It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(namespaceId, "orders", null, target.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
         var storedJob = await dbContext.BulkOperationJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
@@ -695,7 +695,7 @@ public sealed class BulkOperationExecutorTests : IDisposable
 
         var messageOperationsMock = new Mock<IMessageOperationsService>();
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, target.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, target.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .Returns(async () =>
             {
                 // By this point the real claim save has already committed (it runs before
@@ -802,10 +802,10 @@ public sealed class BulkOperationExecutorTests : IDisposable
 
         var messageOperationsMock = new Mock<IMessageOperationsService>();
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, first.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, first.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, second.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, second.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .Returns(async () =>
             {
                 // `first` already finished processing cleanly (its own outcome save committed,
@@ -823,7 +823,7 @@ public sealed class BulkOperationExecutorTests : IDisposable
                 racingCopy.ReplaySuccess = true;
                 await racingContext.SaveChangesAsync();
 
-                return Result.Success();
+                return Result<bool>.Success(true);
             });
 
         var sut = new BulkOperationExecutor(
@@ -908,16 +908,16 @@ public sealed class BulkOperationExecutorTests : IDisposable
 
         var messageOperationsMock = new Mock<IMessageOperationsService>();
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, first.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, first.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, second.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, second.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .Returns(async () =>
             {
                 await using var observerContext = new DlqDbContext(options);
                 var observedFirst = await observerContext.DlqMessages.AsNoTracking().SingleAsync(m => m.Id == first.Id);
                 firstMessageStatusObservedDuringSecondMessage = observedFirst.Status;
-                return Result.Success();
+                return Result<bool>.Success(true);
             });
 
         var sut = new BulkOperationExecutor(

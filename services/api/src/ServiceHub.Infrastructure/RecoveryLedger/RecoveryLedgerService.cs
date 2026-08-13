@@ -452,6 +452,34 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
             .ToListAsync(cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<RecoveryLedgerEntry?> FindByMarkerAsync(string ownerId, string marker, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.RecoveryLedgerEntries
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.OwnerId == ownerId
+                                       && e.State == RecoveryEntryState.Observing
+                                       && e.RecoveryMarker == marker,
+                cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<RecoveryLedgerEntry>> FindHeuristicRecurrenceCandidatesAsync(
+        string ownerId, Guid? namespaceId, string entityName, string bodyHash, DateTimeOffset beganBefore,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.RecoveryLedgerEntries
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId
+                        && e.State == RecoveryEntryState.Observing
+                        && !e.MarkerApplied
+                        && e.NamespaceId == namespaceId
+                        && e.EntityNameSnapshot == entityName
+                        && e.BodyHash == bodyHash
+                        && e.BegunAt < beganBefore)
+            .ToListAsync(cancellationToken);
+    }
+
     /// <summary>
     /// Appends one event to <paramref name="ownerId"/>'s chain. Must be called while holding
     /// that owner's lock (see <see cref="AcquireOwnerLockAsync"/>) — sequencing considers both

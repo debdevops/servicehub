@@ -224,10 +224,88 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
             .Returns(Task.CompletedTask);
 
         // Act
-        var result = await _sut.ReplayMessageAsync(TestQueueName, null, sequenceNumber);
+        var result = await _sut.ReplayMessageAsync(TestQueueName, null, sequenceNumber, null);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_WithRecoveryMarker_StampsApplicationPropertyAndReportsApplied()
+    {
+        // Arrange
+        const long sequenceNumber = 1L;
+        var recoveryMarker = Guid.NewGuid().ToString();
+        var targetMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: new BinaryData("replay body"),
+            messageId: "test-msg-id",
+            sequenceNumber: sequenceNumber);
+
+        _serviceBusClientMock
+            .Setup(x => x.CreateReceiver(TestQueueName, It.IsAny<ServiceBusReceiverOptions>()))
+            .Returns(_receiverMock.Object);
+        _serviceBusClientMock
+            .Setup(x => x.CreateSender(TestQueueName))
+            .Returns(_senderMock.Object);
+        _receiverMock
+            .Setup(x => x.ReceiveMessagesAsync(It.IsAny<int>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ServiceBusReceivedMessage> { targetMessage });
+        _receiverMock
+            .Setup(x => x.CompleteMessageAsync(targetMessage, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        ServiceBusMessage? sentMessage = null;
+        _senderMock
+            .Setup(x => x.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()))
+            .Callback<ServiceBusMessage, CancellationToken>((msg, _) => sentMessage = msg)
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _sut.ReplayMessageAsync(TestQueueName, null, sequenceNumber, recoveryMarker);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeTrue(); // marker applied
+        sentMessage.Should().NotBeNull();
+        sentMessage!.ApplicationProperties["x-servicehub-recovery-id"].Should().Be(recoveryMarker);
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_WithoutRecoveryMarker_DoesNotStampProperty()
+    {
+        // Arrange
+        const long sequenceNumber = 1L;
+        var targetMessage = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: new BinaryData("replay body"),
+            messageId: "test-msg-id",
+            sequenceNumber: sequenceNumber);
+
+        _serviceBusClientMock
+            .Setup(x => x.CreateReceiver(TestQueueName, It.IsAny<ServiceBusReceiverOptions>()))
+            .Returns(_receiverMock.Object);
+        _serviceBusClientMock
+            .Setup(x => x.CreateSender(TestQueueName))
+            .Returns(_senderMock.Object);
+        _receiverMock
+            .Setup(x => x.ReceiveMessagesAsync(It.IsAny<int>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ServiceBusReceivedMessage> { targetMessage });
+        _receiverMock
+            .Setup(x => x.CompleteMessageAsync(targetMessage, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        ServiceBusMessage? sentMessage = null;
+        _senderMock
+            .Setup(x => x.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()))
+            .Callback<ServiceBusMessage, CancellationToken>((msg, _) => sentMessage = msg)
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _sut.ReplayMessageAsync(TestQueueName, null, sequenceNumber, null);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeFalse(); // no marker requested, none applied
+        sentMessage!.ApplicationProperties.Should().NotContainKey("x-servicehub-recovery-id");
     }
 
     [Fact]
@@ -263,7 +341,7 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
             .Returns(Task.CompletedTask);
 
         // Act
-        var result = await _sut.ReplayMessageAsync(topicName, subscriptionName, sequenceNumber);
+        var result = await _sut.ReplayMessageAsync(topicName, subscriptionName, sequenceNumber, null);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -295,7 +373,7 @@ public sealed class ServiceBusClientWrapperTests : IAsyncLifetime
         // Arrange - ReplayMessageAsync should handle null parameters gracefully
 
         // Act
-        var result = await _sut.ReplayMessageAsync(null!, null, 1L);
+        var result = await _sut.ReplayMessageAsync(null!, null, 1L, null);
 
         // Assert
         result.IsSuccess.Should().BeFalse();

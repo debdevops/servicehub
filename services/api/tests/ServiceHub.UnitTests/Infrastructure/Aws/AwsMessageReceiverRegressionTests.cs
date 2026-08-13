@@ -296,7 +296,7 @@ public sealed class AwsMessageReceiverRegressionTests
             .ReturnsAsync(new DeleteMessageResponse());
 
         var seq = ComputeSequenceNumber("m-replay");
-        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq);
+        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq, null);
 
         result.IsSuccess.Should().BeTrue();
         // If the process dies between the two calls the message still exists in
@@ -310,6 +310,70 @@ public sealed class AwsMessageReceiverRegressionTests
             It.IsAny<CancellationToken>()), Times.Once);
         // The non-target message inspected during the scan must be released.
         releases.SelectMany(r => r.Entries).Select(e => e.ReceiptHandle).Should().Contain("rh-other");
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_WithRecoveryMarker_UnderAttributeCap_StampsAttributeAndReportsApplied()
+    {
+        var target = BuildSqsMessage("m-marker", "rh-marker", "marker body",
+            attributes: new Dictionary<string, MessageAttributeValue>
+            {
+                ["existing-attr"] = new MessageAttributeValue { DataType = "String", StringValue = "keep-me" },
+            });
+        var (sut, sqs, _) = BuildSut(new ReceiveMessageResponse { Messages = [target] });
+
+        SqsSendRequest? sent = null;
+        sqs.Setup(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<SqsSendRequest, CancellationToken>((req, _) => sent = req)
+            .ReturnsAsync(new SendMessageResponse());
+        sqs.Setup(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteMessageResponse());
+
+        var seq = ComputeSequenceNumber("m-marker");
+        var recoveryMarker = Guid.NewGuid().ToString();
+        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq, recoveryMarker);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeTrue(); // marker applied
+        sent.Should().NotBeNull();
+        sent!.MessageAttributes["x-servicehub-recovery-id"].StringValue.Should().Be(recoveryMarker);
+        // The existing attribute must survive — the marker is added, not swapped in.
+        sent.MessageAttributes["existing-attr"].StringValue.Should().Be("keep-me");
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_WithRecoveryMarker_AtAttributeCap_SkipsMarker_NeverDisplacesExisting()
+    {
+        // SQS caps messages at 10 attributes. With 10 already present, the marker must not be
+        // applied — and, critically, none of the 10 existing attributes may be dropped to make
+        // room for it.
+        var existingAttributes = Enumerable.Range(0, 10)
+            .ToDictionary(
+                i => $"attr-{i}",
+                i => new MessageAttributeValue { DataType = "String", StringValue = $"value-{i}" });
+
+        var target = BuildSqsMessage("m-full", "rh-full", "full body", attributes: existingAttributes);
+        var (sut, sqs, _) = BuildSut(new ReceiveMessageResponse { Messages = [target] });
+
+        SqsSendRequest? sent = null;
+        sqs.Setup(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<SqsSendRequest, CancellationToken>((req, _) => sent = req)
+            .ReturnsAsync(new SendMessageResponse());
+        sqs.Setup(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteMessageResponse());
+
+        var seq = ComputeSequenceNumber("m-full");
+        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq, Guid.NewGuid().ToString());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeFalse(); // marker not applied — the cap was already reached
+        sent.Should().NotBeNull();
+        sent!.MessageAttributes.Should().NotContainKey("x-servicehub-recovery-id");
+        sent.MessageAttributes.Should().HaveCount(10);
+        foreach (var (key, value) in existingAttributes)
+        {
+            sent.MessageAttributes[key].StringValue.Should().Be(value.StringValue);
+        }
     }
 
     [Fact]

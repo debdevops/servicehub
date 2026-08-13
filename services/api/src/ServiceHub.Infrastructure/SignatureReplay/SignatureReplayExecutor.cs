@@ -295,7 +295,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         var entry = beginResult.Value;
 
         var result = await _messageOperationsService.ReplayMessageAsync(
-            message.NamespaceId, entityName, subscriptionName, message.SequenceNumber, cancellationToken);
+            message.NamespaceId, entityName, subscriptionName, message.SequenceNumber, entry.Id, cancellationToken);
 
         // CancellationToken.None: the provider call above already happened, so this outcome must
         // be recorded even if cancellation was requested in the meantime — same reasoning as the
@@ -307,6 +307,8 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             Actor = recovery.Actor,
             Outcome = result.IsSuccess ? RecoveryExecutionOutcome.Accepted : RecoveryExecutionOutcome.Rejected,
             ProviderDetailJson = result.IsSuccess ? null : result.Error.Message,
+            RecoveryMarker = result.IsSuccess && result.Value ? entry.Id.ToString() : null,
+            MarkerApplied = result.IsSuccess && result.Value,
         }, CancellationToken.None);
 
         _dbContext.ReplayHistories.Add(new ReplayHistory

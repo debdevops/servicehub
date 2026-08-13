@@ -8,8 +8,10 @@ using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.AI;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Results;
@@ -28,6 +30,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
     private readonly CloudProviderRouter _router;
     private readonly IForensicEngineRouter _forensicEngine;
     private readonly IConfiguration _configuration;
+    private readonly IRecoveryLedger _recoveryLedger;
     private readonly DlqNotMonitoredLogGuard _notMonitoredLogGuard;
     private readonly ILogger<DlqMonitorService> _logger;
 
@@ -40,6 +43,14 @@ public sealed class DlqMonitorService : IDlqMonitorService
     private const string SubscriptionPathSegment = "/subscriptions/";
 
     /// <summary>
+    /// The application property/attribute a replay stamps to attribute an eventual recurrence
+    /// back to the exact <see cref="RecoveryLedgerEntry"/> that produced it (§8.2 of the
+    /// Recovery Evidence Ledger verification model). See the provider <c>ReplayMessageAsync</c>
+    /// implementations for where this is written.
+    /// </summary>
+    internal const string RecoveryMarkerPropertyKey = "x-servicehub-recovery-id";
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="DlqMonitorService"/> class.
     /// </summary>
     public DlqMonitorService(
@@ -48,6 +59,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
         CloudProviderRouter router,
         IForensicEngineRouter forensicEngine,
         IConfiguration configuration,
+        IRecoveryLedger recoveryLedger,
         DlqNotMonitoredLogGuard notMonitoredLogGuard,
         ILogger<DlqMonitorService> logger)
     {
@@ -56,6 +68,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
         _router = router ?? throw new ArgumentNullException(nameof(router));
         _forensicEngine = forensicEngine ?? throw new ArgumentNullException(nameof(forensicEngine));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _notMonitoredLogGuard = notMonitoredLogGuard ?? throw new ArgumentNullException(nameof(notMonitoredLogGuard));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -397,6 +410,12 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
                 _dbContext.DlqMessages.Add(dlqMessage);
 
+                // Recurrence detection: a message replayed by ServiceHub gets a brand-new
+                // provider identity on every provider (P4), so a genuine return lands here, as a
+                // "new" message, never in the existingMessage branch above. Detection only
+                // applies to newly-detected messages for the same reason.
+                await DetectRecurrenceAsync(ownerId, namespaceId, fullEntityName, bodyHash, msg, detectedAt, cancellationToken);
+
                 var features = SignalExtractor.ExtractFeatures(dlqMessage);
                 _dbContext.MessageFeatureRecords.Add(new MessageFeatureRecord
                 {
@@ -506,6 +525,80 @@ public sealed class DlqMonitorService : IDlqMonitorService
         }
 
         return (newCount, liveCount);
+    }
+
+    /// <summary>
+    /// Attributes a newly-detected DLQ message to an open <see cref="RecoveryLedgerEntry"/> it
+    /// may be a recurrence of — the scan-time half of the verification model's shipping
+    /// algorithm (§8.5). Exact match via the stamped marker takes priority; when the marker
+    /// could not be applied (<see cref="ProviderCapabilities.SupportsRecoveryMarker"/> was false
+    /// for this provider, the SQS attribute cap was hit, or the flag was disabled at replay
+    /// time), falls back to a body-hash heuristic that may match more than one open entry — every
+    /// match is recorded, each with its own collision count, rather than guessing which one it was.
+    /// </summary>
+    private async Task DetectRecurrenceAsync(
+        string ownerId, Guid namespaceId, string fullEntityName, string bodyHash,
+        Message msg, DateTimeOffset detectedAt, CancellationToken cancellationToken)
+    {
+        string? marker = null;
+        if (msg.ApplicationProperties is { } props
+            && props.TryGetValue(RecoveryMarkerPropertyKey, out var rawMarker))
+        {
+            marker = rawMarker as string ?? rawMarker?.ToString();
+        }
+
+        if (!string.IsNullOrEmpty(marker))
+        {
+            var exactMatch = await _recoveryLedger.FindByMarkerAsync(ownerId, marker, cancellationToken);
+            if (exactMatch is not null)
+            {
+                await RecordRecurrenceAsync(exactMatch, VerificationConfidence.Exact, collisionCount: 0, cancellationToken);
+                return;
+            }
+        }
+
+        var heuristicCandidates = await _recoveryLedger.FindHeuristicRecurrenceCandidatesAsync(
+            ownerId, namespaceId, fullEntityName, bodyHash, detectedAt, cancellationToken);
+
+        foreach (var candidate in heuristicCandidates)
+        {
+            await RecordRecurrenceAsync(candidate, VerificationConfidence.Heuristic, heuristicCandidates.Count, cancellationToken);
+        }
+    }
+
+    private async Task RecordRecurrenceAsync(
+        RecoveryLedgerEntry entry, VerificationConfidence confidence, int collisionCount, CancellationToken cancellationToken)
+    {
+        var actor = ActorIdentityResolver.ResolveSystemActor("DlqMonitorService");
+        var detail = collisionCount > 0
+            ? JsonSerializer.Serialize(new { collisionCount })
+            : null;
+
+        var result = await _recoveryLedger.RecordObservationAsync(new RecordObservationRequest
+        {
+            EntryId = entry.Id,
+            OwnerId = entry.OwnerId,
+            Actor = actor,
+            Outcome = RecoveryObservationOutcome.RecurrenceObserved,
+            Confidence = confidence,
+            DetailJson = detail,
+        }, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            // Not fatal to the scan — most commonly means a concurrent scan or the verification
+            // worker's window-close sweep already closed this entry first; a lost race, not an
+            // error. The entry's own state is authoritative either way.
+            _logger.LogDebug(
+                "Skipped recording recurrence for recovery ledger entry {EntryId}: {Error}",
+                entry.Id, result.Error.Message);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Recovery ledger entry {EntryId} returned to the DLQ ({Confidence} match)",
+                entry.Id, confidence);
+        }
     }
 
     private static string ComputeBodyHash(string? body)

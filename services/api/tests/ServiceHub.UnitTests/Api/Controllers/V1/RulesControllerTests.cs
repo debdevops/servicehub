@@ -738,8 +738,8 @@ public class RulesControllerTests : IDisposable
 
         var messageOperations = new Mock<IMessageOperationsService>();
         messageOperations
-            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, message.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, message.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         SetUpReplayAllServices(ns, messageOperations);
         SetIntentHeaders(IntentHeaders.IntentReplayAllRules);
@@ -753,7 +753,7 @@ public class RulesControllerTests : IDisposable
 
         // Never resolved via the service locator — proves the Azure-only client-cache path is gone.
         messageOperations.Verify(
-            m => m.ReplayMessageAsync(ns.Id, "test-queue", null, message.SequenceNumber, It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(ns.Id, "test-queue", null, message.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Once);
 
         var reloaded = await _dbContext.DlqMessages.AsNoTracking().SingleAsync(m => m.Id == message.Id);
@@ -791,8 +791,8 @@ public class RulesControllerTests : IDisposable
 
         var messageOperations = new Mock<IMessageOperationsService>();
         messageOperations
-            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, message.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, message.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         SetUpReplayAllServices(ns, messageOperations);
         SetIntentHeaders(IntentHeaders.IntentReplayAllRules);
@@ -804,7 +804,7 @@ public class RulesControllerTests : IDisposable
         response.Replayed.Should().Be(1);
 
         messageOperations.Verify(
-            m => m.ReplayMessageAsync(ns.Id, "test-queue", null, message.SequenceNumber, It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(ns.Id, "test-queue", null, message.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -829,8 +829,8 @@ public class RulesControllerTests : IDisposable
 
         var messageOperations = new Mock<IMessageOperationsService>();
         messageOperations
-            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, message.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Failure(Error.ExternalService("Provider.Rejected", "provider declined")));
+            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, message.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Failure(Error.ExternalService("Provider.Rejected", "provider declined")));
 
         SetUpReplayAllServices(ns, messageOperations);
         SetIntentHeaders(IntentHeaders.IntentReplayAllRules);
@@ -884,7 +884,7 @@ public class RulesControllerTests : IDisposable
 
         var messageOperations = new Mock<IMessageOperationsService>();
         messageOperations
-            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, decoy.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, decoy.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .Returns(async () =>
             {
                 // While this request is still processing the decoy, a different worker (its own
@@ -893,11 +893,11 @@ public class RulesControllerTests : IDisposable
                 var racingCopy = await racingContext.DlqMessages.SingleAsync(m => m.Id == target.Id);
                 racingCopy.Status = DlqMessageStatus.Replaying;
                 await racingContext.SaveChangesAsync();
-                return Result.Success();
+                return Result<bool>.Success(true);
             });
         messageOperations
-            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, target.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, target.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         SetUpReplayAllServices(ns, messageOperations);
         SetIntentHeaders(IntentHeaders.IntentReplayAllRules);
@@ -912,7 +912,7 @@ public class RulesControllerTests : IDisposable
         // This request's own claim attempt for `target` lost the race — it must never have
         // reached the provider a second time.
         messageOperations.Verify(
-            m => m.ReplayMessageAsync(ns.Id, "test-queue", null, target.SequenceNumber, It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(ns.Id, "test-queue", null, target.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
         var entries = await _dbContext.RecoveryLedgerEntries.AsNoTracking().Where(e => e.DlqMessageId == target.Id).ToListAsync();
