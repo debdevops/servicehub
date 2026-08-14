@@ -256,13 +256,39 @@ public interface IRecoveryLedger
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The most recent <paramref name="count"/> terminal outcomes carrying real verification
+    /// signal for one signature — <see cref="Enums.RecoveryDisposition.Recovered"/> or
+    /// <see cref="Enums.RecoveryDisposition.Returned"/> only — ordered by
+    /// <see cref="RecoveryLedgerEntry.LastEventSeq"/> descending, the per-owner monotonic
+    /// hash-chain sequence, not wall-clock time (roadmap §7.6/§8.5/§8.6's "two consecutive
+    /// verified `Returned` outcomes" fast-demotion source query). <see cref="Enums.RecoveryDisposition.Unverified"/>
+    /// entries are excluded entirely rather than treated as a streak-breaking value — the same
+    /// exclusion §8.10 applies to <c>verified_success_rate</c>, since a provider's inability to
+    /// prove absence is not evidence against the signature (§14). <see cref="Enums.RecoveryDisposition.Failed"/>
+    /// can never appear here: it is only ever set by <see cref="RecordExecutionAsync"/>'s
+    /// rejection branch, before any observation window opens, never by
+    /// <see cref="RecordObservationAsync"/> — this query only reads verification-window outcomes.
+    /// </summary>
+    Task<IReadOnlyList<RecoveryDisposition>> GetRecentVerifiedDispositionsAsync(
+        string ownerId,
+        string signatureHash,
+        RecoveryOperationKind actionKind,
+        int count,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Records an <see cref="Entities.AutonomyGrant"/> promotion or demotion — updates (or, on
     /// first promotion, inserts) the grant's current-level projection and appends the paired,
     /// immutable <see cref="Enums.RecoveryEventType.AutonomyGrantPromoted"/>/
     /// <see cref="Enums.RecoveryEventType.AutonomyGrantDemoted"/> forensic event, atomically in
     /// one <c>SaveChanges</c> (roadmap §9.4.3). Fails validation if <paramref name="reason"/> is
-    /// empty or <paramref name="previousLevel"/> equals <paramref name="newLevel"/> (not a real
-    /// transition). A losing concurrent write — either a first-creation uniqueness race or a
+    /// empty, <paramref name="previousLevel"/> equals <paramref name="newLevel"/> (not a real
+    /// transition), or an existing grant's actual <see cref="Entities.AutonomyGrant.CurrentLevel"/>
+    /// no longer matches <paramref name="previousLevel"/> — the second case guards against two
+    /// independent callers (e.g. the hourly sweep and an event-time fast-demotion check) both
+    /// deciding to write the same transition from a snapshot read before either one wrote: without
+    /// this check the second write would silently re-apply, logging a duplicate forensic event
+    /// with a stale <paramref name="previousLevel"/>. A losing concurrent write — either a first-creation uniqueness race or a
     /// mutation-concurrency-token race (roadmap §9.4.4) — throws
     /// <c>DbUpdateException</c>/<c>DbUpdateConcurrencyException</c> rather than
     /// returning a <see cref="Result{T}"/> failure, matching this codebase's existing convention

@@ -1653,4 +1653,243 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
 
         result.Should().BeFalse("owner isolation must hold even when the signature hash matches");
     }
+
+    // ── GetRecentVerifiedDispositionsAsync (Phase D fast-demotion source query, roadmap §7.6/§8.5/§8.6) ──
+
+    private async Task<RecoveryLedgerEntry> CloseAsRecoveredAsync(RecoveryLedgerEntry entry, string ownerId = OwnerA)
+    {
+        await _service.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id, OwnerId = ownerId, Actor = Actor(), Outcome = RecoveryExecutionOutcome.Accepted,
+        });
+        var result = await _service.RecordObservationAsync(new RecordObservationRequest
+        {
+            EntryId = entry.Id, OwnerId = ownerId, Actor = Actor(),
+            Outcome = RecoveryObservationOutcome.NoRecurrenceObserved,
+        });
+        result.IsSuccess.Should().BeTrue();
+        return result.Value;
+    }
+
+    private async Task<RecoveryLedgerEntry> CloseAsReturnedAsync(RecoveryLedgerEntry entry, string ownerId = OwnerA)
+    {
+        await _service.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id, OwnerId = ownerId, Actor = Actor(), Outcome = RecoveryExecutionOutcome.Accepted,
+        });
+        var result = await _service.RecordObservationAsync(new RecordObservationRequest
+        {
+            EntryId = entry.Id, OwnerId = ownerId, Actor = Actor(),
+            Outcome = RecoveryObservationOutcome.RecurrenceObserved, Confidence = VerificationConfidence.Exact,
+        });
+        result.IsSuccess.Should().BeTrue();
+        return result.Value;
+    }
+
+    private async Task<RecoveryLedgerEntry> CloseAsUnverifiedAsync(RecoveryLedgerEntry entry, string ownerId = OwnerA)
+    {
+        await _service.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id, OwnerId = ownerId, Actor = Actor(), Outcome = RecoveryExecutionOutcome.Accepted,
+        });
+        var result = await _service.RecordObservationAsync(new RecordObservationRequest
+        {
+            EntryId = entry.Id, OwnerId = ownerId, Actor = Actor(),
+            Outcome = RecoveryObservationOutcome.ObservationUnavailable,
+        });
+        result.IsSuccess.Should().BeTrue();
+        return result.Value;
+    }
+
+    private async Task<RecoveryLedgerEntry> CloseAsFailedAsync(RecoveryLedgerEntry entry, string ownerId = OwnerA)
+    {
+        var result = await _service.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id, OwnerId = ownerId, Actor = Actor(), Outcome = RecoveryExecutionOutcome.Rejected,
+        });
+        result.IsSuccess.Should().BeTrue();
+        return result.Value;
+    }
+
+    [Fact]
+    public async Task GetRecentVerifiedDispositionsAsync_NoEntries_ReturnsEmpty()
+    {
+        var result = await _service.GetRecentVerifiedDispositionsAsync(OwnerA, "sig-none", RecoveryOperationKind.Replay, 2);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetRecentVerifiedDispositionsAsync_OrdersByLastEventSeq_NotByBegunAt()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry1 = await BeginEntryAsync(operation, "sig-order", "body-1"); // begins 1st
+        var entry2 = await BeginEntryAsync(operation, "sig-order", "body-2"); // begins 2nd
+        var entry3 = await BeginEntryAsync(operation, "sig-order", "body-3"); // begins 3rd
+
+        await CloseAsRecoveredAsync(entry2); // closes 1st
+        await CloseAsReturnedAsync(entry3);  // closes 2nd
+        await CloseAsReturnedAsync(entry1);  // closes 3rd (last) — begun first, closed last
+
+        var recent = await _service.GetRecentVerifiedDispositionsAsync(OwnerA, "sig-order", RecoveryOperationKind.Replay, 2);
+
+        // Closure order (most-recent-first) is entry1, entry3 — both Returned. Ordering by
+        // BegunAt descending would instead yield entry3, entry2 — Returned, Recovered — a
+        // different answer, so this assertion only holds if the query truly orders by the
+        // authoritative closure sequence (LastEventSeq), not by begin time.
+        recent.Should().Equal(RecoveryDisposition.Returned, RecoveryDisposition.Returned);
+    }
+
+    [Fact]
+    public async Task GetRecentVerifiedDispositionsAsync_UnverifiedEntry_ExcludedEntirely_NotStreakBreaking()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry1 = await BeginEntryAsync(operation, "sig-unverified", "body-1");
+        var entry2 = await BeginEntryAsync(operation, "sig-unverified", "body-2");
+        var entry3 = await BeginEntryAsync(operation, "sig-unverified", "body-3");
+
+        await CloseAsReturnedAsync(entry1);
+        await CloseAsUnverifiedAsync(entry2);
+        await CloseAsReturnedAsync(entry3);
+
+        var recent = await _service.GetRecentVerifiedDispositionsAsync(OwnerA, "sig-unverified", RecoveryOperationKind.Replay, 2);
+
+        // A provider's inability to prove absence is not evidence against the signature (§8.10,
+        // §14) — Unverified must not appear in the population at all, so the two most recent
+        // *verified* outcomes are the two Returned entries either side of it.
+        recent.Should().Equal(RecoveryDisposition.Returned, RecoveryDisposition.Returned);
+    }
+
+    [Fact]
+    public async Task GetRecentVerifiedDispositionsAsync_FailedEntry_NeverAppears()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry1 = await BeginEntryAsync(operation, "sig-failed", "body-1");
+        var entry2 = await BeginEntryAsync(operation, "sig-failed", "body-2");
+
+        await CloseAsFailedAsync(entry1);
+        await CloseAsReturnedAsync(entry2);
+
+        var recent = await _service.GetRecentVerifiedDispositionsAsync(OwnerA, "sig-failed", RecoveryOperationKind.Replay, 2);
+
+        // ExecutionFailed is only ever set by RecordExecutionAsync's rejection branch, before any
+        // observation window opens — never by RecordObservationAsync — so it can never be part of
+        // "two consecutive verified Returned outcomes" (roadmap: demotion is "driven solely by
+        // verified RecordObservationAsync outcomes — two consecutive Returned").
+        recent.Should().Equal(RecoveryDisposition.Returned);
+    }
+
+    [Fact]
+    public async Task GetRecentVerifiedDispositionsAsync_RecoveredBreaksTheStreak()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry1 = await BeginEntryAsync(operation, "sig-reset", "body-1");
+        var entry2 = await BeginEntryAsync(operation, "sig-reset", "body-2");
+        var entry3 = await BeginEntryAsync(operation, "sig-reset", "body-3");
+
+        await CloseAsReturnedAsync(entry1);
+        await CloseAsRecoveredAsync(entry2);
+        await CloseAsReturnedAsync(entry3);
+
+        var recent = await _service.GetRecentVerifiedDispositionsAsync(OwnerA, "sig-reset", RecoveryOperationKind.Replay, 2);
+
+        recent.Should().Equal(RecoveryDisposition.Returned, RecoveryDisposition.Recovered);
+    }
+
+    [Fact]
+    public async Task GetRecentVerifiedDispositionsAsync_DifferentSignature_Isolated()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entryX = await BeginEntryAsync(operation, "sig-x", "body-x");
+        var entryY = await BeginEntryAsync(operation, "sig-y", "body-y");
+
+        await CloseAsReturnedAsync(entryX);
+        await CloseAsReturnedAsync(entryY);
+
+        var recent = await _service.GetRecentVerifiedDispositionsAsync(OwnerA, "sig-x", RecoveryOperationKind.Replay, 2);
+
+        recent.Should().Equal(RecoveryDisposition.Returned);
+    }
+
+    [Fact]
+    public async Task GetRecentVerifiedDispositionsAsync_DifferentOwner_Isolated()
+    {
+        var operationA = await OpenOperationAsync(OwnerA);
+        var entryA = await BeginEntryAsync(operationA, "sig-shared", "body-a");
+        await CloseAsReturnedAsync(entryA, OwnerA);
+
+        var operationB = await OpenOperationAsync(OwnerB);
+        var entryB = await BeginEntryAsync(operationB, "sig-shared", "body-b");
+        await CloseAsReturnedAsync(entryB, OwnerB);
+
+        var recentA = await _service.GetRecentVerifiedDispositionsAsync(OwnerA, "sig-shared", RecoveryOperationKind.Replay, 2);
+
+        recentA.Should().Equal(RecoveryDisposition.Returned);
+    }
+
+    [Fact]
+    public async Task GetRecentVerifiedDispositionsAsync_DifferentActionKind_Isolated()
+    {
+        var replayOperation = await OpenOperationAsync(OwnerA, RecoveryOperationKind.Replay);
+        var replayEntry = await BeginEntryAsync(replayOperation, "sig-kind", "body-replay");
+        await CloseAsReturnedAsync(replayEntry);
+
+        var purgeOperation = await OpenOperationAsync(OwnerA, RecoveryOperationKind.Purge, "test purge");
+        var purgeEntry = await BeginEntryAsync(purgeOperation, "sig-kind", "body-purge");
+        await _service.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = purgeEntry.Id, OwnerId = OwnerA, Actor = Actor(), Outcome = RecoveryExecutionOutcome.Accepted,
+        });
+
+        var recentReplay = await _service.GetRecentVerifiedDispositionsAsync(OwnerA, "sig-kind", RecoveryOperationKind.Replay, 2);
+        var recentPurge = await _service.GetRecentVerifiedDispositionsAsync(OwnerA, "sig-kind", RecoveryOperationKind.Purge, 2);
+
+        recentReplay.Should().Equal(RecoveryDisposition.Returned);
+        recentPurge.Should().BeEmpty("a Discarded purge disposition is neither Recovered nor Returned");
+    }
+
+    // ── RecordAutonomyGrantTransitionAsync stale-previousLevel guard (Phase D fast-demotion increment) ──
+
+    [Fact]
+    public async Task RecordAutonomyGrantTransitionAsync_StalePreviousLevel_ReturnsConflict_NoOrphanedEvent()
+    {
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-race", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "promoted for test", null);
+
+        // The winning writer (e.g. event-time fast demotion) already demoted the grant.
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-race", RecoveryOperationKind.Replay,
+            AutonomyLevel.Standing, AutonomyLevel.Approve, "winner: two consecutive Returned", null);
+
+        // A second, independent writer (e.g. the hourly sweep) still holding a stale snapshot
+        // that believes the grant is Standing attempts the very same transition.
+        var result = await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-race", RecoveryOperationKind.Replay,
+            AutonomyLevel.Standing, AutonomyLevel.Approve, "loser: stale snapshot", null);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.Conflict);
+
+        var demotedEvents = await _dbContext.RecoveryEvents
+            .Where(e => e.OwnerId == OwnerA && e.EventType == RecoveryEventType.AutonomyGrantDemoted)
+            .ToListAsync();
+        demotedEvents.Should().ContainSingle(
+            "the losing writer's stale-snapshot transition must not log a duplicate forensic event");
+
+        var grant = await _service.GetAutonomyGrantAsync(OwnerA, "sig-race", RecoveryOperationKind.Replay);
+        grant!.CurrentLevel.Should().Be(AutonomyLevel.Approve);
+    }
+
+    [Fact]
+    public async Task RecordAutonomyGrantTransitionAsync_FirstCreation_UnaffectedByStaleGuard()
+    {
+        // First-creation (no existing grant row) has nothing to validate previousLevel against —
+        // only an update against an already-existing row is checked.
+        var result = await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-fresh", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "first promotion", null);
+
+        result.IsSuccess.Should().BeTrue();
+    }
 }

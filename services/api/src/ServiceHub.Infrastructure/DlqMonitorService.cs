@@ -592,12 +592,93 @@ public sealed class DlqMonitorService : IDlqMonitorService
             _logger.LogDebug(
                 "Skipped recording recurrence for recovery ledger entry {EntryId}: {Error}",
                 entry.Id, result.Error.Message);
+            return;
         }
-        else
+
+        _logger.LogInformation(
+            "Recovery ledger entry {EntryId} returned to the DLQ ({Confidence} match)",
+            entry.Id, confidence);
+
+        await EvaluateFastDemotionAsync(entry, cancellationToken);
+    }
+
+    /// <summary>
+    /// Roadmap §7.6/§8.5/§8.6's fast-demotion path: two consecutive verified <c>Returned</c>
+    /// outcomes for a signature currently holding L4/L5 standing demote it to L3 immediately,
+    /// rather than waiting for <c>AutonomyEvaluationWorker</c>'s hourly sweep — the only call site
+    /// in the codebase that can ever produce a <c>Returned</c> disposition is this method, so this
+    /// is the sole place that needs to check. Never touches rate-based or duplicate-association
+    /// demotion, promotion, or any other <c>AutonomyGrant</c> transition — those remain the sweep's
+    /// exclusive responsibility, untouched by this method.
+    /// </summary>
+    private async Task EvaluateFastDemotionAsync(RecoveryLedgerEntry entry, CancellationToken cancellationToken)
+    {
+        var signatureHash = entry.SignatureHashSnapshot;
+        if (string.IsNullOrEmpty(signatureHash))
         {
-            _logger.LogInformation(
-                "Recovery ledger entry {EntryId} returned to the DLQ ({Confidence} match)",
-                entry.Id, confidence);
+            // No stable per-signature trust identity to demote (roadmap §4) — same null-handling
+            // as predicate 5 and Evidence-Derived Trust Scoring.
+            return;
+        }
+
+        var grant = await _recoveryLedger.GetAutonomyGrantAsync(
+            entry.OwnerId, signatureHash, RecoveryOperationKind.Replay, cancellationToken);
+
+        if (grant is null || grant.CurrentLevel is not (AutonomyLevel.Standing or AutonomyLevel.Unattended))
+        {
+            // Already at/below L3, or never granted — nothing to fast-demote.
+            return;
+        }
+
+        var recent = await _recoveryLedger.GetRecentVerifiedDispositionsAsync(
+            entry.OwnerId, signatureHash, RecoveryOperationKind.Replay, count: 2, cancellationToken);
+
+        if (recent.Count < 2 || recent.Any(d => d != RecoveryDisposition.Returned))
+        {
+            return;
+        }
+
+        var fromLevel = grant.CurrentLevel;
+        var reason = $"Demoted {fromLevel}→{AutonomyLevel.Approve}: two consecutive verified " +
+            "Returned outcomes — the currently trusted signature failed to resolve recurrence " +
+            "twice in a row (roadmap §7.6, §8.5, §8.6). Non-disableable.";
+        var evidenceJson = JsonSerializer.Serialize(new
+        {
+            trigger = "fast_demotion_two_consecutive_returned",
+            recentDispositions = recent.Select(d => d.ToString()),
+        });
+
+        try
+        {
+            var transitionResult = await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+                entry.OwnerId, signatureHash, RecoveryOperationKind.Replay,
+                fromLevel, AutonomyLevel.Approve, reason, evidenceJson, cancellationToken);
+
+            if (transitionResult.IsFailure)
+            {
+                // Most commonly a losing snapshot race against a concurrent AutonomyEvaluationWorker
+                // sweep (roadmap §9.4.4) — the grant is already at or past L3 via another writer;
+                // not an error, nothing left to do.
+                _logger.LogDebug(
+                    "Skipped fast-demotion transition for owner {OwnerId} signature {SignatureHash}: {Error}",
+                    entry.OwnerId, signatureHash, transitionResult.Error.Message);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "AutonomyGrant fast-demoted {FromLevel}→{ToLevel} for owner {OwnerId} signature " +
+                    "{SignatureHash}: two consecutive verified Returned outcomes",
+                    fromLevel, AutonomyLevel.Approve, entry.OwnerId, signatureHash);
+            }
+        }
+        catch (DbUpdateException ex)
+        {
+            // A losing concurrent writer (roadmap §9.4.4) — the next Returned observation or the
+            // next sweep re-evaluates from the ledger's current state.
+            _logger.LogWarning(ex,
+                "AutonomyGrant fast-demotion lost a concurrency race for owner {OwnerId} signature " +
+                "{SignatureHash}; will re-evaluate on next trigger",
+                entry.OwnerId, signatureHash);
         }
     }
 

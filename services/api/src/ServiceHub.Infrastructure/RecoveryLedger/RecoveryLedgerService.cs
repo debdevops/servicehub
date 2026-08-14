@@ -677,6 +677,27 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<RecoveryDisposition>> GetRecentVerifiedDispositionsAsync(
+        string ownerId, string signatureHash, RecoveryOperationKind actionKind, int count,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.RecoveryLedgerEntries
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId
+                        && e.SignatureHashSnapshot == signatureHash
+                        && (e.Disposition == RecoveryDisposition.Recovered || e.Disposition == RecoveryDisposition.Returned))
+            .Join(
+                _dbContext.RecoveryOperations.AsNoTracking().Where(o => o.Kind == actionKind),
+                e => e.OperationId,
+                o => o.Id,
+                (e, _) => e)
+            .OrderByDescending(e => e.LastEventSeq)
+            .Take(count)
+            .Select(e => e.Disposition!.Value)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<Result<RecoveryLedgerEntry>> RecordDeclinedAsync(
         BeginRecoveryEntryRequest request, string reasonCode, string? detailJson,
         CancellationToken cancellationToken = default)
@@ -774,6 +795,18 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
         }
         else
         {
+            if (grant.CurrentLevel != previousLevel)
+            {
+                // A losing snapshot race between two independent callers deciding a transition
+                // from the same stale read (e.g. the hourly sweep and an event-time fast-demotion
+                // check) — not a caller error. The winner already applied a transition; re-applying
+                // this one would log a duplicate forensic event against a previousLevel that no
+                // longer reflects the grant's real history.
+                return Result<AutonomyGrant>.Failure(Error.Conflict(
+                    "RecoveryLedger.StaleAutonomyGrantTransition",
+                    $"AutonomyGrant for signature {signatureHash} is currently at {grant.CurrentLevel}, not the expected {previousLevel}; another writer already transitioned it."));
+            }
+
             grant.CurrentLevel = newLevel;
             grant.UpdatedAtUtc = now;
         }
