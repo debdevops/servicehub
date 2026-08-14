@@ -24,6 +24,8 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
     private readonly IMessageOperationsService _messageOperations;
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly IRecoveryEligibilityGate _eligibilityGate;
+    private readonly IFailureFeatureExtractor _featureExtractor;
+    private readonly IFailureFingerprintBuilder _fingerprintBuilder;
     private readonly ILogger<AutoReplayExecutor> _logger;
 
     /// <summary>
@@ -34,12 +36,16 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         IMessageOperationsService messageOperations,
         IRecoveryLedger recoveryLedger,
         IRecoveryEligibilityGate eligibilityGate,
+        IFailureFeatureExtractor featureExtractor,
+        IFailureFingerprintBuilder fingerprintBuilder,
         ILogger<AutoReplayExecutor> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _messageOperations = messageOperations ?? throw new ArgumentNullException(nameof(messageOperations));
         _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _eligibilityGate = eligibilityGate ?? throw new ArgumentNullException(nameof(eligibilityGate));
+        _featureExtractor = featureExtractor ?? throw new ArgumentNullException(nameof(featureExtractor));
+        _fingerprintBuilder = fingerprintBuilder ?? throw new ArgumentNullException(nameof(fingerprintBuilder));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -86,16 +92,18 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         // inline check, now generalized into the gate with no behavior change; predicate 4 (rate
         // limit) wraps the existing CanReplayAsync — pre-computed here since only a rule-driven
         // caller has a per-rule limit for the gate to consult; predicate 5 (autonomy lookup) is
-        // log-only per §29.6 and never affects this call's returned verdict. Evaluated in that
-        // fixed order, so if recurrence would already block, the rate-limit query still runs
-        // (harmless — read-only) but its result is discarded exactly as before: the gate reports
-        // whichever predicate fires first.
+        // enforced (roadmap §9.4.3) against the SignatureHash computed below — this call only
+        // reaches the provider once its signature has earned AutonomyGrant Standing/Unattended.
+        // Evaluated in that fixed order, so if recurrence would already block, the rate-limit
+        // query still runs (harmless — read-only) but its result is discarded exactly as before:
+        // the gate reports whichever predicate fires first.
         var rateLimitExceeded = !await CanReplayAsync(rule.Id, cancellationToken);
+        var signatureHash = await ComputeSignatureHashAsync(message, cancellationToken);
 
         var decision = await _eligibilityGate.EvaluateAsync(
             new RecoveryEligibilityRequest(
                 rule.OwnerId, RecoveryOperationKind.Replay, RecoveryActorKind.Automation, RecoveryTrigger.AutoRule,
-                ns.Id, message.EntityName, message.BodyHash, SignatureHash: null, ns.Environment,
+                ns.Id, message.EntityName, message.BodyHash, signatureHash, ns.Environment,
                 RateLimitExceeded: rateLimitExceeded),
             cancellationToken);
 
@@ -116,7 +124,8 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
 
             var declineActor = ActorIdentityResolver.ResolveAutomationActor("Rule", rule.Id.ToString(), rule.Name);
             var declineRequest = RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
-                message, ns, operationId, rule.OwnerId, declineActor, entityName);
+                message, ns, operationId, rule.OwnerId, declineActor, entityName,
+                signatureHashSnapshot: signatureHash);
 
             try
             {
@@ -166,7 +175,8 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
 
         var beginResult = await _recoveryLedger.BeginEntryAsync(
             RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
-                message, ns, operationId, rule.OwnerId, actor, entityName),
+                message, ns, operationId, rule.OwnerId, actor, entityName,
+                signatureHashSnapshot: signatureHash),
             cancellationToken);
 
         if (beginResult.IsFailure)
@@ -294,6 +304,37 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
 
             return Result<string>.Failure(Error.Internal("AutoReplay.Exception", ex.Message));
         }
+    }
+
+    /// <summary>
+    /// Computes the same deterministic failure-signature hash the signature-analysis pipeline uses
+    /// (roadmap §4) — <see cref="IFailureFeatureExtractor"/> extracts the message's observable
+    /// failure characteristics, <see cref="IFailureFingerprintBuilder"/> hashes them into a stable
+    /// identity, independent of provider-generated <see cref="DlqMessage.MessageId"/>/
+    /// <see cref="DlqMessage.SequenceNumber"/>. Returns <see langword="null"/> on extraction/hashing
+    /// failure so predicate 5 escalates rather than executing with an unidentified signature.
+    /// </summary>
+    private async Task<string?> ComputeSignatureHashAsync(DlqMessage message, CancellationToken cancellationToken)
+    {
+        var featuresResult = await _featureExtractor.ExtractAsync(message, cancellationToken);
+        if (featuresResult.IsFailure)
+        {
+            _logger.LogWarning(
+                "Failed to extract failure features for message {MessageId}: {Error}",
+                LogRedactor.SanitiseForLog(message.MessageId), featuresResult.Error.Message);
+            return null;
+        }
+
+        var fingerprintResult = await _fingerprintBuilder.ComputeAsync(featuresResult.Value, cancellationToken);
+        if (fingerprintResult.IsFailure)
+        {
+            _logger.LogWarning(
+                "Failed to compute failure fingerprint for message {MessageId}: {Error}",
+                LogRedactor.SanitiseForLog(message.MessageId), fingerprintResult.Error.Message);
+            return null;
+        }
+
+        return fingerprintResult.Value.Hash;
     }
 
     /// <inheritdoc />

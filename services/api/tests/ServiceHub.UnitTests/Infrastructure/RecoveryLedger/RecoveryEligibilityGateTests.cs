@@ -130,7 +130,9 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
     [Fact]
     public async Task EmergencyStopNeverActivated_AutomationActor_NotBlockedByPredicate0()
     {
-        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation));
+        await SeedGrantAsync("sig-1", AutonomyLevel.Standing);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1"));
 
         decision.Verdict.Should().Be(EligibilityVerdict.Allow);
     }
@@ -138,10 +140,11 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
     [Fact]
     public async Task EmergencyStopActivatedThenCleared_AutomationActor_NoLongerBlocked()
     {
+        await SeedGrantAsync("sig-1", AutonomyLevel.Standing);
         await _ledger.RecordEmergencyControlEventAsync(OwnerId, new RecoveryActor("admin", RecoveryActorKind.User), activate: true, reason: null);
         await _ledger.RecordEmergencyControlEventAsync(OwnerId, new RecoveryActor("admin", RecoveryActorKind.User), activate: false, reason: null);
 
-        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation));
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1"));
 
         decision.Verdict.Should().Be(EligibilityVerdict.Allow);
     }
@@ -149,10 +152,11 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
     [Fact]
     public async Task EmergencyStopActiveForDifferentOwner_DoesNotBlockThisOwnersAutomation()
     {
+        await SeedGrantAsync("sig-1", AutonomyLevel.Standing);
         await _ledger.RecordEmergencyControlEventAsync(
             "a-different-owner", new RecoveryActor("admin", RecoveryActorKind.User), activate: true, reason: null);
 
-        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation));
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1"));
 
         decision.Verdict.Should().Be(EligibilityVerdict.Allow);
     }
@@ -228,7 +232,10 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
     public async Task Replay_AutomationActor_NotDeniedByPredicate1()
     {
         // Predicate 1 targets Purge only — Automation may still replay (AutoReplayExecutor).
-        var decision = await _gate.EvaluateAsync(BuildRequest(RecoveryOperationKind.Replay, RecoveryActorKind.Automation));
+        await SeedGrantAsync("sig-1", AutonomyLevel.Standing);
+
+        var decision = await _gate.EvaluateAsync(
+            BuildRequest(RecoveryOperationKind.Replay, RecoveryActorKind.Automation, signatureHash: "sig-1"));
 
         decision.Verdict.Should().Be(EligibilityVerdict.Allow);
     }
@@ -261,10 +268,12 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
     [InlineData(RecoveryActorKind.ApiKey)]
     public async Task FewerThanThreePriorMatches_NotBlockedForAnyActor(RecoveryActorKind actorKind)
     {
+        // Harmless for the non-Automation cases: predicate 5 only reads this grant for Automation.
+        await SeedGrantAsync("sig-1", AutonomyLevel.Standing);
         SeedLineageEntry("orders", "hash-1", DateTimeOffset.UtcNow.AddDays(-1), confidence: VerificationConfidence.Exact);
         SeedLineageEntry("orders", "hash-1", DateTimeOffset.UtcNow.AddDays(-2), confidence: VerificationConfidence.Exact);
 
-        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: actorKind));
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: actorKind, signatureHash: "sig-1"));
 
         decision.Verdict.Should().Be(EligibilityVerdict.Allow);
     }
@@ -375,22 +384,178 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
         decision.Verdict.Should().Be(EligibilityVerdict.Allow);
     }
 
-    // ── Predicate 5: autonomy lookup — log-only per §29.6 until Phase D ─────────
+    // ── Predicate 5: autonomy lookup — enforced per §9.4.3 ──────────────────────
+
+    private async Task SeedGrantAsync(string signatureHash, AutonomyLevel level, string ownerId = OwnerId)
+    {
+        await _ledger.RecordAutonomyGrantTransitionAsync(
+            ownerId, signatureHash, RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, level, "test", evidenceJson: null);
+    }
 
     [Fact]
-    public async Task AutomationActorWithNoSignatureHash_StillAllowedBecausePredicate5IsLogOnly()
+    public async Task AutomationActor_NullSignatureHash_Escalates()
     {
         var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation, signatureHash: null));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be("AUTONOMY_SIGNATURE_HASH_MISSING");
+    }
+
+    [Fact]
+    public async Task AutomationActor_NoGrantForSignature_Escalates()
+    {
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1"));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be("AUTONOMY_GRANT_INSUFFICIENT");
+    }
+
+    [Fact]
+    public async Task AutomationActor_GrantAtL3Approve_Escalates()
+    {
+        // L3 is the permanent human-approved floor — a row does not need to exist for a signature
+        // to be "at L3"; this proves an explicit Approve row (e.g. after a demotion) escalates the
+        // same as no row at all.
+        await SeedGrantAsync("sig-1", AutonomyLevel.Standing);
+        await _ledger.RecordAutonomyGrantTransitionAsync(
+            OwnerId, "sig-1", RecoveryOperationKind.Replay,
+            AutonomyLevel.Standing, AutonomyLevel.Approve, "demoted for test", evidenceJson: null);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1"));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be("AUTONOMY_GRANT_INSUFFICIENT");
+    }
+
+    [Fact]
+    public async Task AutomationActor_GrantAtL4Standing_Allows()
+    {
+        await SeedGrantAsync("sig-1", AutonomyLevel.Standing);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1"));
 
         decision.Verdict.Should().Be(EligibilityVerdict.Allow);
     }
 
     [Fact]
-    public async Task AutomationActorWithSignatureHash_StillAllowedBecausePredicate5IsLogOnly()
+    public async Task AutomationActor_GrantAtL5Unattended_Allows()
     {
+        await SeedGrantAsync("sig-1", AutonomyLevel.Unattended);
+
         var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1"));
 
         decision.Verdict.Should().Be(EligibilityVerdict.Allow);
+    }
+
+    [Fact]
+    public async Task AutomationActor_GrantExistsForDifferentActionKind_Escalates()
+    {
+        // The grant lookup is scoped to (OwnerId, SignatureHash, ActionKind) — a Standing grant
+        // earned for Replay must never authorize a Purge attempt under the same signature.
+        await _ledger.RecordAutonomyGrantTransitionAsync(
+            OwnerId, "sig-1", RecoveryOperationKind.Purge,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "test", evidenceJson: null);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(
+            actionKind: RecoveryOperationKind.Replay, actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1"));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be("AUTONOMY_GRANT_INSUFFICIENT");
+    }
+
+    [Fact]
+    public async Task AutomationActor_GrantExistsForDifferentOwner_Escalates()
+    {
+        await SeedGrantAsync("sig-1", AutonomyLevel.Standing, ownerId: "entra:a-different-owner");
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1"));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be("AUTONOMY_GRANT_INSUFFICIENT");
+    }
+
+    [Theory]
+    [InlineData(RecoveryActorKind.User)]
+    [InlineData(RecoveryActorKind.ApiKey)]
+    [InlineData(RecoveryActorKind.System)]
+    public async Task NonAutomationActor_NoGrantAndNoSignatureHash_NeverBlockedByPredicate5(RecoveryActorKind actorKind)
+    {
+        // A human (or System) is never subject to predicate 5 — only unattended Automation needs
+        // an earned grant. L3 (manual/human recovery) must keep working exactly as today.
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: actorKind, signatureHash: null));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Allow);
+    }
+
+    [Fact]
+    public async Task AutomationActor_GrantQueryThrows_FailsClosedToEscalate()
+    {
+        var ledgerMock = new Mock<IRecoveryLedger>();
+        ledgerMock
+            .Setup(l => l.GetAutonomyGrantAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<RecoveryOperationKind>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("simulated query failure"));
+        var gate = new RecoveryEligibilityGate(ledgerMock.Object, NullLogger<RecoveryEligibilityGate>.Instance);
+
+        // bodyHash: null skips predicate 3's lineage query, which this mock never configured —
+        // this test is isolating predicate 5's own fail-closed behavior only.
+        var decision = await gate.EvaluateAsync(
+            BuildRequest(actorKind: RecoveryActorKind.Automation, bodyHash: null, signatureHash: "sig-1"));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be("AUTONOMY_GRANT_QUERY_ERROR");
+    }
+
+    [Fact]
+    public async Task AutomationActor_EmergencyStopActive_Predicate0FiresBeforePredicate5EvenWithValidGrant()
+    {
+        await SeedGrantAsync("sig-1", AutonomyLevel.Unattended);
+        await _ledger.RecordEmergencyControlEventAsync(OwnerId, new RecoveryActor("admin", RecoveryActorKind.User), activate: true, reason: null);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1"));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be("EMERGENCY_STOP_ACTIVE");
+    }
+
+    [Fact]
+    public async Task AutomationActor_RecurrenceCapExceeded_Predicate3FiresBeforePredicate5EvenWithValidGrant()
+    {
+        await SeedGrantAsync("sig-1", AutonomyLevel.Unattended);
+        for (var i = 0; i < 3; i++)
+            SeedLineageEntry("orders", "hash-1", DateTimeOffset.UtcNow.AddDays(-i - 1), confidence: VerificationConfidence.Exact);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1"));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be("RECURRENCE_CAP_EXCEEDED");
+    }
+
+    [Fact]
+    public async Task AutomationActor_RateLimitExceeded_Predicate4FiresBeforePredicate5EvenWithValidGrant()
+    {
+        await SeedGrantAsync("sig-1", AutonomyLevel.Unattended);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(
+            actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1", rateLimitExceeded: true));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be(RecoveryEligibilityGate.ReasonRateLimited);
+    }
+
+    [Fact]
+    public async Task AutomationActor_ValidGrantAndHumanRecurrenceContextNotApplicable_PlainAllow()
+    {
+        // Predicate 5 passing must still surface as a plain Allow (no leftover ReasonCode) when
+        // there is no recurrence context to carry — Automation never reaches Option B's carried
+        // context since predicate 3 hard-stops it before predicate 5 is ever evaluated.
+        await SeedGrantAsync("sig-1", AutonomyLevel.Standing);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1"));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Allow);
+        decision.ReasonCode.Should().BeNull();
     }
 
     // ── Predicate ordering ───────────────────────────────────────────────────

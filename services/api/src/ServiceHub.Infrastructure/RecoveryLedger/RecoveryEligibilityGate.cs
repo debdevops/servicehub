@@ -39,6 +39,9 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
     private const string ReasonExceededExact = "RECURRENCE_CAP_EXCEEDED";
     private const string ReasonExceededHeuristic = "RECURRENCE_CAP_EXCEEDED_HEURISTIC";
     private const string ReasonQueryError = "RECURRENCE_CAP_QUERY_ERROR";
+    private const string ReasonAutonomySignatureHashMissing = "AUTONOMY_SIGNATURE_HASH_MISSING";
+    private const string ReasonAutonomyGrantQueryError = "AUTONOMY_GRANT_QUERY_ERROR";
+    private const string ReasonAutonomyGrantInsufficient = "AUTONOMY_GRANT_INSUFFICIENT";
 
     /// <summary>
     /// Predicate 4's reason code. Never <c>Declined</c>-recorded (roadmap §9.3): "routine
@@ -139,19 +142,59 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
             return new EligibilityDecision(EligibilityVerdict.Escalate, ReasonRateLimited);
         }
 
-        // Predicate 5 — autonomy lookup (§9, soft-launch per §29.6): log-only until Phase D ships
-        // AutonomyGrant. No grant infrastructure exists yet, so an Automation actor would
-        // unconditionally escalate if this predicate were enforced — logged for visibility, never
-        // returned as the gate's verdict this phase.
+        // Predicate 5 — autonomy lookup (§9, enforced per §9.4.3): an Automation actor may only
+        // execute unattended once its exact (OwnerId, SignatureHash, ActionKind) triple has earned
+        // AutonomyGrant.CurrentLevel Standing (L4) or Unattended (L5) — L3 (Approve, the permanent
+        // human floor) and no-grant-at-all both escalate identically, since neither has earned
+        // unattended execution. Never applies to User/ApiKey — a human remains free to act at any
+        // time regardless of grant state; only unattended automation needs one.
         if (request.ActorKind == RecoveryActorKind.Automation)
         {
-            _logger.LogInformation(
-                "Eligibility Gate predicate 5 (autonomy lookup) would escalate for owner {OwnerId} — " +
-                "no AutonomyGrant exists yet (log-only until Phase D, roadmap §29.6); proceeding as Allow",
-                request.OwnerId);
+            var autonomyDecision = await EvaluateAutonomyGrantAsync(request, cancellationToken);
+            if (autonomyDecision is not null)
+            {
+                return autonomyDecision;
+            }
         }
 
         return recurrenceContext ?? EligibilityDecision.Allow;
+    }
+
+    private async Task<EligibilityDecision?> EvaluateAutonomyGrantAsync(
+        RecoveryEligibilityRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(request.SignatureHash))
+        {
+            return new EligibilityDecision(EligibilityVerdict.Escalate, ReasonAutonomySignatureHashMissing);
+        }
+
+        AutonomyGrant? grant;
+        try
+        {
+            grant = await _recoveryLedger.GetAutonomyGrantAsync(
+                request.OwnerId, request.SignatureHash, request.ActionKind, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Fail closed on a query error (roadmap §18): an unrunnable safety check must block
+            // automation, never silently allow it through.
+            _logger.LogError(ex,
+                "AutonomyGrant query failed for owner {OwnerId} signature {SignatureHash}; failing closed",
+                request.OwnerId, request.SignatureHash);
+            return new EligibilityDecision(EligibilityVerdict.Escalate, ReasonAutonomyGrantQueryError);
+        }
+
+        var currentLevel = grant?.CurrentLevel ?? AutonomyLevel.Approve;
+        if (currentLevel is AutonomyLevel.Standing or AutonomyLevel.Unattended)
+        {
+            return null;
+        }
+
+        _logger.LogInformation(
+            "Eligibility Gate predicate 5 (autonomy lookup) escalating for owner {OwnerId} signature " +
+            "{SignatureHash} — current level {Level} has not earned unattended execution (roadmap §9.4.3)",
+            request.OwnerId, request.SignatureHash, currentLevel);
+        return new EligibilityDecision(EligibilityVerdict.Escalate, ReasonAutonomyGrantInsufficient);
     }
 
     private async Task<EligibilityDecision?> EvaluateRecurrenceLineageAsync(

@@ -283,11 +283,9 @@ public interface IRecoveryLedger
     /// Reads the current <see cref="Entities.AutonomyGrant"/> projection for one
     /// <c>(OwnerId, SignatureHash, ActionKind)</c> triple, or <see langword="null"/> if none has
     /// ever been created — a signature with no row has never been promoted past L3, the floor
-    /// every signature can always stand on (roadmap §8.4). This is the gate's future predicate 5
-    /// read (§9.4.3); this increment wires it as <c>AutonomyEvaluationWorker</c>'s own read of
-    /// current standing before deciding a promotion/demotion — predicate 5 itself remains
-    /// log-only (§29.6) until a later increment also resolves <c>AutoReplayExecutor</c>'s
-    /// null-<c>SignatureHash</c> gap.
+    /// every signature can always stand on (roadmap §8.4). Read by both the Eligibility Gate's
+    /// predicate 5 (§9.4.3, enforced) and <c>AutonomyEvaluationWorker</c>'s own read of current
+    /// standing before deciding a promotion/demotion.
     /// </summary>
     Task<AutonomyGrant?> GetAutonomyGrantAsync(
         string ownerId,

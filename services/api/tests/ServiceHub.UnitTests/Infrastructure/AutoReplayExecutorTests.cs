@@ -9,6 +9,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure;
+using ServiceHub.Infrastructure.AI;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Shared.Results;
@@ -22,6 +23,8 @@ public class AutoReplayExecutorTests : IDisposable
     private readonly Mock<ILogger<AutoReplayExecutor>> _logger = new();
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly IRecoveryEligibilityGate _eligibilityGate;
+    private readonly IFailureFeatureExtractor _featureExtractor = new FailureFeatureExtractor();
+    private readonly IFailureFingerprintBuilder _fingerprintBuilder = new FailureFingerprintBuilder();
     private readonly AutoReplayExecutor _executor;
     private readonly Namespace _testNamespace = Namespace.Create(
         "test-namespace", "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
@@ -39,7 +42,24 @@ public class AutoReplayExecutorTests : IDisposable
         _recoveryLedger = new RecoveryLedgerService(_dbContext);
         _eligibilityGate = new RecoveryEligibilityGate(_recoveryLedger, NullLogger<RecoveryEligibilityGate>.Instance);
         _executor = new AutoReplayExecutor(
-            _dbContext, _messageOperations.Object, _recoveryLedger, _eligibilityGate, _logger.Object);
+            _dbContext, _messageOperations.Object, _recoveryLedger, _eligibilityGate,
+            _featureExtractor, _fingerprintBuilder, _logger.Object);
+    }
+
+    /// <summary>
+    /// Seeds an <c>AutonomyGrant</c> at Standing (L4) for the exact SignatureHash the executor
+    /// will independently compute for <paramref name="message"/> — predicate 5 (roadmap §9.4.3)
+    /// now requires an earned grant before <c>AutoReplayExecutor</c> may execute unattended, so
+    /// every test exercising the actual replay/provider path must earn one first.
+    /// </summary>
+    private async Task SeedStandingGrantAsync(DlqMessage message, string ownerId = TestConstants.TestOwnerId)
+    {
+        var features = (await _featureExtractor.ExtractAsync(message)).Value;
+        var fingerprint = (await _fingerprintBuilder.ComputeAsync(features)).Value;
+        var result = await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+            ownerId, fingerprint.Hash, RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "test: earned standing", evidenceJson: null);
+        result.IsSuccess.Should().BeTrue(result.IsFailure ? result.Error.Message : null);
     }
 
     /// <summary>
@@ -114,7 +134,8 @@ public class AutoReplayExecutorTests : IDisposable
     public void Constructor_NullDbContext_Throws()
     {
         var act = () => new AutoReplayExecutor(
-            null!, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate, _logger.Object);
+            null!, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            _featureExtractor, _fingerprintBuilder, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("dbContext");
     }
 
@@ -122,7 +143,8 @@ public class AutoReplayExecutorTests : IDisposable
     public void Constructor_NullMessageOperations_Throws()
     {
         var act = () => new AutoReplayExecutor(
-            _dbContext, null!, new RecoveryLedgerService(_dbContext), _eligibilityGate, _logger.Object);
+            _dbContext, null!, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            _featureExtractor, _fingerprintBuilder, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("messageOperations");
     }
 
@@ -130,15 +152,35 @@ public class AutoReplayExecutorTests : IDisposable
     public void Constructor_NullEligibilityGate_Throws()
     {
         var act = () => new AutoReplayExecutor(
-            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), null!, _logger.Object);
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), null!,
+            _featureExtractor, _fingerprintBuilder, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("eligibilityGate");
+    }
+
+    [Fact]
+    public void Constructor_NullFeatureExtractor_Throws()
+    {
+        var act = () => new AutoReplayExecutor(
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            null!, _fingerprintBuilder, _logger.Object);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("featureExtractor");
+    }
+
+    [Fact]
+    public void Constructor_NullFingerprintBuilder_Throws()
+    {
+        var act = () => new AutoReplayExecutor(
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            _featureExtractor, null!, _logger.Object);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("fingerprintBuilder");
     }
 
     [Fact]
     public void Constructor_NullLogger_Throws()
     {
         var act = () => new AutoReplayExecutor(
-            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate, null!);
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            _featureExtractor, _fingerprintBuilder, null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -211,6 +253,7 @@ public class AutoReplayExecutorTests : IDisposable
         var rule = CreateRule();
         var msg = CreateMessage(1);
         var action = new RuleAction();
+        await SeedStandingGrantAsync(msg);
 
         _messageOperations
             .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
@@ -237,6 +280,7 @@ public class AutoReplayExecutorTests : IDisposable
         var rule = CreateRule();
         var msg = CreateMessage(1);
         var action = new RuleAction();
+        await SeedStandingGrantAsync(msg);
 
         _messageOperations
             .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
@@ -261,6 +305,7 @@ public class AutoReplayExecutorTests : IDisposable
         var rule = CreateRule();
         var msg = CreateMessage(1);
         var action = new RuleAction();
+        await SeedStandingGrantAsync(msg);
 
         _messageOperations
             .Setup(m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
@@ -282,6 +327,7 @@ public class AutoReplayExecutorTests : IDisposable
         var rule = CreateRule();
         var msg = CreateMessage(1);
         var action = new RuleAction { TargetEntity = "retry-queue" };
+        await SeedStandingGrantAsync(msg);
 
         _messageOperations
             .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "retry-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
@@ -305,6 +351,7 @@ public class AutoReplayExecutorTests : IDisposable
             entityName: "orders-topic/subscriptions/orders-sub",
             topicName: "orders-topic");
         var action = new RuleAction();
+        await SeedStandingGrantAsync(msg);
 
         _messageOperations
             .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "orders-topic", "orders-sub", msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
@@ -326,6 +373,7 @@ public class AutoReplayExecutorTests : IDisposable
         var rule = CreateRule();
         var msg = CreateMessage(1, provider: provider);
         var action = new RuleAction();
+        await SeedStandingGrantAsync(msg);
 
         _messageOperations
             .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
@@ -393,8 +441,17 @@ public class AutoReplayExecutorTests : IDisposable
         var racingLedger = new RecoveryLedgerService(dbContext);
         var executor = new AutoReplayExecutor(
             dbContext, messageOperations.Object, racingLedger,
-            new RecoveryEligibilityGate(racingLedger, NullLogger<RecoveryEligibilityGate>.Instance), _logger.Object);
+            new RecoveryEligibilityGate(racingLedger, NullLogger<RecoveryEligibilityGate>.Instance),
+            _featureExtractor, _fingerprintBuilder, _logger.Object);
         var action = new RuleAction();
+
+        // Earn predicate 5's grant against the same ledger this executor reads from — this test
+        // is exercising the concurrency claim, not autonomy enforcement.
+        var features = (await _featureExtractor.ExtractAsync(msg)).Value;
+        var fingerprint = (await _fingerprintBuilder.ComputeAsync(features)).Value;
+        await racingLedger.RecordAutonomyGrantTransitionAsync(
+            TestConstants.TestOwnerId, fingerprint.Hash, RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "test: earned standing", evidenceJson: null);
 
         var result = await executor.ExecuteAsync(msg, rule, action, _testNamespace, Guid.NewGuid());
 
@@ -479,6 +536,7 @@ public class AutoReplayExecutorTests : IDisposable
 
         SeedLineageEntry(TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1", DateTimeOffset.UtcNow.AddDays(-1));
         SeedLineageEntry(TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1", DateTimeOffset.UtcNow.AddDays(-2));
+        await SeedStandingGrantAsync(msg);
 
         _messageOperations
             .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
@@ -542,6 +600,7 @@ public class AutoReplayExecutorTests : IDisposable
                 TestConstants.AltOwnerId, _testNamespace.Id, "test-queue", "hash-1",
                 DateTimeOffset.UtcNow.AddDays(-i - 1), confidence: VerificationConfidence.Exact);
         }
+        await SeedStandingGrantAsync(msg);
 
         _messageOperations
             .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
@@ -565,6 +624,7 @@ public class AutoReplayExecutorTests : IDisposable
                 TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1",
                 DateTimeOffset.UtcNow.AddDays(-91 - i), confidence: VerificationConfidence.Exact);
         }
+        await SeedStandingGrantAsync(msg);
 
         _messageOperations
             .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
@@ -653,5 +713,96 @@ public class AutoReplayExecutorTests : IDisposable
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("AutoReplay.RecurrenceCapExceeded");
+    }
+
+    // ── Deterministic SignatureHash (roadmap: close the autonomous recovery loop) ────
+
+    private async Task<string> ComputeExpectedHashAsync(DlqMessage message)
+    {
+        var features = (await _featureExtractor.ExtractAsync(message)).Value;
+        return (await _fingerprintBuilder.ComputeAsync(features)).Value.Hash;
+    }
+
+    [Fact]
+    public async Task Execute_SuccessfulReplay_LedgerEntrySignatureHashIsNonNullAndMatchesEligibilityGateInput()
+    {
+        // Proves the gate-hash == ledger-hash invariant: predicate 5 could only have Allowed
+        // using this exact hash (the seeded grant is keyed on it), and the persisted
+        // RecoveryLedgerEntry must carry that same value — never a null/second hash.
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+        await SeedStandingGrantAsync(msg);
+
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        var operationId = await OpenOperationAsync(rule);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, operationId);
+
+        result.IsSuccess.Should().BeTrue();
+
+        var expectedHash = await ComputeExpectedHashAsync(msg);
+        expectedHash.Should().NotBeNullOrEmpty();
+
+        var entries = await _recoveryLedger.QueryEntriesAsync(new RecoveryEntryQuery
+        {
+            OwnerId = TestConstants.TestOwnerId,
+            OperationId = operationId,
+        });
+        entries.Should().ContainSingle(e => e.SignatureHashSnapshot == expectedHash);
+    }
+
+    [Fact]
+    public async Task Execute_NoAutonomyGrant_DeclinedLedgerEntryStillCarriesTheComputedSignatureHash()
+    {
+        // Predicate 5 escalating (no grant yet) must not fall back to a null SignatureHash on the
+        // Declined entry either — the hash is computed unconditionally, before the gate call.
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+
+        var operationId = await OpenOperationAsync(rule);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, operationId);
+
+        result.IsFailure.Should().BeTrue();
+
+        var expectedHash = await ComputeExpectedHashAsync(msg);
+
+        var entries = await _recoveryLedger.QueryEntriesAsync(new RecoveryEntryQuery
+        {
+            OwnerId = TestConstants.TestOwnerId,
+            OperationId = operationId,
+        });
+        entries.Should().ContainSingle(e => e.State == RecoveryEntryState.Declined
+                                             && e.SignatureHashSnapshot == expectedHash);
+    }
+
+    [Fact]
+    public async Task ComputedSignatureHash_TwoMessagesWithIdenticalFailureCharacteristics_AreEqual()
+    {
+        var msg1 = CreateMessage(1, entityName: "orders-queue");
+        var msg2 = CreateMessage(2, entityName: "orders-queue");
+
+        var hash1 = await ComputeExpectedHashAsync(msg1);
+        var hash2 = await ComputeExpectedHashAsync(msg2);
+
+        hash1.Should().Be(hash2);
+        // ...despite carrying distinct provider-generated identity.
+        msg1.MessageId.Should().NotBe(msg2.MessageId);
+        msg1.SequenceNumber.Should().NotBe(msg2.SequenceNumber);
+    }
+
+    [Fact]
+    public async Task ComputedSignatureHash_MessagesWithDifferentEntityName_AreDifferent()
+    {
+        var msg1 = CreateMessage(1, entityName: "orders-queue");
+        var msg2 = CreateMessage(2, entityName: "payments-queue");
+
+        var hash1 = await ComputeExpectedHashAsync(msg1);
+        var hash2 = await ComputeExpectedHashAsync(msg2);
+
+        hash1.Should().NotBe(hash2);
     }
 }

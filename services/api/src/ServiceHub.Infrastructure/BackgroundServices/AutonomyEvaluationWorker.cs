@@ -12,16 +12,15 @@ namespace ServiceHub.Infrastructure.BackgroundServices;
 
 /// <summary>
 /// Periodically recomputes Evidence-Derived Trust Scoring (roadmap §8.10, Phase C) for every
-/// signature with replay evidence and — as of this increment — writes the resulting
-/// promotion/demotion to <c>AutonomyGrant</c> via <see cref="IRecoveryLedger.RecordAutonomyGrantTransitionAsync"/>
+/// signature with replay evidence and writes the resulting promotion/demotion to
+/// <c>AutonomyGrant</c> via <see cref="IRecoveryLedger.RecordAutonomyGrantTransitionAsync"/>
 /// whenever the evidence genuinely earns or forfeits standing (roadmap §8.7, §9.4.3). Still
 /// "learning" as recomputed aggregation over the same scheduled-job pattern as
 /// <see cref="RecoveryAgeingWorker"/>, not a Learning Engine subsystem (roadmap §13) — every
 /// number driving a transition is a deterministic ledger query, never a model output. The
-/// Eligibility Gate's predicate 5 does not yet consult the grants this worker writes — it
-/// remains log-only (roadmap §29.6) pending a later increment that also resolves
-/// <c>AutoReplayExecutor</c>'s null-<c>SignatureHash</c> gap — so this worker's writes are
-/// authoritative evidence with no execution-authority effect yet.
+/// Eligibility Gate's predicate 5 (§9.4.3) now enforces the grants this worker writes against
+/// <c>AutoReplayExecutor</c>'s computed <c>SignatureHash</c>, so a transition written here has
+/// immediate execution-authority effect on the next auto-replay evaluation for that signature.
 /// </summary>
 /// <remarks>
 /// Purely a query-driven sweep over durable ledger state, like <see cref="RecoveryAgeingWorker"/>
