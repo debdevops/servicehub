@@ -261,6 +261,10 @@ public static class DependencyInjection
         services.TryAddScoped<IRecoveryLedger, RecoveryLedgerService>();
         services.TryAddScoped<IRecoveryEvidenceExporter, RecoveryEvidenceExporter>();
 
+        // Deterministic Eligibility Gate (roadmap §9/Phase B) — the single safety-decision point
+        // every recovery attempt passes through before a provider call.
+        services.TryAddScoped<IRecoveryEligibilityGate, RecoveryEligibilityGate>();
+
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();

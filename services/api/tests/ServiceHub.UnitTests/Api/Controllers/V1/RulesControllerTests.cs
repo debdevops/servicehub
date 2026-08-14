@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Controllers.V1;
@@ -707,10 +708,14 @@ public class RulesControllerTests : IDisposable
             .Setup(e => e.CanReplayAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(!rateLimited);
 
+        var ledger = new RecoveryLedgerService(_dbContext);
+
         var services = new ServiceCollection();
         services.AddSingleton(namespaceRepository.Object);
         services.AddSingleton(messageOperations.Object);
-        services.AddSingleton<IRecoveryLedger>(new RecoveryLedgerService(_dbContext));
+        services.AddSingleton<IRecoveryLedger>(ledger);
+        services.AddSingleton<IRecoveryEligibilityGate>(
+            new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance));
         services.AddSingleton(autoReplayExecutor.Object);
         _controller.ControllerContext.HttpContext.RequestServices = services.BuildServiceProvider();
     }

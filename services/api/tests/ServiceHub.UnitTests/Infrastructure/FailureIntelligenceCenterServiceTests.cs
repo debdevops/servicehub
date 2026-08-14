@@ -100,6 +100,8 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
         ProcessedCount = totalMatched,
         FailureCount = failureCount,
         SuccessCount = totalMatched - failureCount,
+        RequestedByIdentity = OwnerId,
+        RequestedByActorKind = RecoveryActorKind.User,
     };
 
     [Fact]

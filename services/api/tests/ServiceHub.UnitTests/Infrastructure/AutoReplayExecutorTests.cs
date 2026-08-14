@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
@@ -20,6 +21,7 @@ public class AutoReplayExecutorTests : IDisposable
     private readonly Mock<IMessageOperationsService> _messageOperations = new();
     private readonly Mock<ILogger<AutoReplayExecutor>> _logger = new();
     private readonly IRecoveryLedger _recoveryLedger;
+    private readonly IRecoveryEligibilityGate _eligibilityGate;
     private readonly AutoReplayExecutor _executor;
     private readonly Namespace _testNamespace = Namespace.Create(
         "test-namespace", "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
@@ -35,8 +37,9 @@ public class AutoReplayExecutorTests : IDisposable
         _dbContext.Database.EnsureCreated();
 
         _recoveryLedger = new RecoveryLedgerService(_dbContext);
+        _eligibilityGate = new RecoveryEligibilityGate(_recoveryLedger, NullLogger<RecoveryEligibilityGate>.Instance);
         _executor = new AutoReplayExecutor(
-            _dbContext, _messageOperations.Object, _recoveryLedger, _logger.Object);
+            _dbContext, _messageOperations.Object, _recoveryLedger, _eligibilityGate, _logger.Object);
     }
 
     /// <summary>
@@ -111,7 +114,7 @@ public class AutoReplayExecutorTests : IDisposable
     public void Constructor_NullDbContext_Throws()
     {
         var act = () => new AutoReplayExecutor(
-            null!, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _logger.Object);
+            null!, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("dbContext");
     }
 
@@ -119,15 +122,23 @@ public class AutoReplayExecutorTests : IDisposable
     public void Constructor_NullMessageOperations_Throws()
     {
         var act = () => new AutoReplayExecutor(
-            _dbContext, null!, new RecoveryLedgerService(_dbContext), _logger.Object);
+            _dbContext, null!, new RecoveryLedgerService(_dbContext), _eligibilityGate, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("messageOperations");
+    }
+
+    [Fact]
+    public void Constructor_NullEligibilityGate_Throws()
+    {
+        var act = () => new AutoReplayExecutor(
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), null!, _logger.Object);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("eligibilityGate");
     }
 
     [Fact]
     public void Constructor_NullLogger_Throws()
     {
         var act = () => new AutoReplayExecutor(
-            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), null!);
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate, null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -379,8 +390,10 @@ public class AutoReplayExecutorTests : IDisposable
         }
 
         var messageOperations = new Mock<IMessageOperationsService>();
+        var racingLedger = new RecoveryLedgerService(dbContext);
         var executor = new AutoReplayExecutor(
-            dbContext, messageOperations.Object, new RecoveryLedgerService(dbContext), _logger.Object);
+            dbContext, messageOperations.Object, racingLedger,
+            new RecoveryEligibilityGate(racingLedger, NullLogger<RecoveryEligibilityGate>.Instance), _logger.Object);
         var action = new RuleAction();
 
         var result = await executor.ExecuteAsync(msg, rule, action, _testNamespace, Guid.NewGuid());

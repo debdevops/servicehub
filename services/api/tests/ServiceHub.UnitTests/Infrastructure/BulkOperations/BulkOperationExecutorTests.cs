@@ -8,6 +8,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Events;
 using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.BulkOperations;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.RecoveryLedger;
@@ -41,10 +42,14 @@ public sealed class BulkOperationExecutorTests : IDisposable
         _dbContext.Dispose();
     }
 
-    private BulkOperationExecutor CreateSut() => new(
-        _dbContext, _namespaceRepositoryMock.Object, _messageOperationsMock.Object,
-        new RecoveryLedgerService(_dbContext),
-        _auditServiceMock.Object, _eventBusMock.Object, NullLogger<BulkOperationExecutor>.Instance);
+    private BulkOperationExecutor CreateSut()
+    {
+        var ledger = new RecoveryLedgerService(_dbContext);
+        return new BulkOperationExecutor(
+            _dbContext, _namespaceRepositoryMock.Object, _messageOperationsMock.Object,
+            ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance),
+            _auditServiceMock.Object, _eventBusMock.Object, NullLogger<BulkOperationExecutor>.Instance);
+    }
 
     private Namespace SetupNamespace(EnvironmentType environment = EnvironmentType.Dev)
     {
@@ -90,7 +95,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
         BulkOperationStatus status = BulkOperationStatus.Pending,
         int totalMatched = 1,
         DateTimeOffset? cancellationRequestedAt = null,
-        DlqMessageStatus? statusFilter = DlqMessageStatus.Active)
+        DlqMessageStatus? statusFilter = DlqMessageStatus.Active,
+        RecoveryActorKind requestedByActorKind = RecoveryActorKind.User)
     {
         var job = new BulkOperationJob
         {
@@ -103,6 +109,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
             TotalMatched = totalMatched,
             CreatedAt = DateTimeOffset.UtcNow,
             CancellationRequestedAt = cancellationRequestedAt,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = requestedByActorKind,
         };
         _dbContext.BulkOperationJobs.Add(job);
         await _dbContext.SaveChangesAsync();
@@ -296,6 +304,74 @@ public sealed class BulkOperationExecutorTests : IDisposable
 
         var storedJob = await _dbContext.BulkOperationJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
         storedJob.SuccessCount.Should().Be(1);
+    }
+
+    // ── Eligibility Gate wiring (roadmap §9/§29.10, Phase B) ──────────────────
+    //
+    // BulkOperationExecutor used to resolve every job's actor as ActorKind=Automation
+    // unconditionally (ActorIdentityResolver.ResolveAutomationActor), even for a bulk-purge job a
+    // human requested through the UI — which the Eligibility Gate's predicate 1 (purge-origin
+    // prohibition) would then permanently deny once wired, a real regression of a shipped
+    // feature (roadmap §29.10, Changelog Pass 6). These two tests prove the fix: a job whose
+    // RequestedByActorKind reflects the true (human) requester still succeeds, while a job
+    // genuinely actored as Automation/System — the only case predicate 1 is meant to foreclose —
+    // is still denied and durably recorded as Declined.
+
+    [Fact]
+    public async Task ExecuteAsync_PurgeRequestedByHuman_SucceedsNotDeniedByEligibilityGate()
+    {
+        var sut = CreateSut();
+        SetupNamespace();
+        var message = AddDlqMessage(3);
+        var job = await AddJobAsync(
+            operationType: BulkOperationType.Purge, requestedByActorKind: RecoveryActorKind.User);
+
+        _messageOperationsMock
+            .Setup(m => m.PurgeMessageAsync(_namespaceId, "orders", null, 3, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        var storedMessage = await _dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == message.Id);
+        storedMessage.Status.Should().Be(DlqMessageStatus.Discarded);
+
+        var storedJob = await _dbContext.BulkOperationJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
+        storedJob.SuccessCount.Should().Be(1);
+        storedJob.SkippedCount.Should().Be(0);
+
+        _messageOperationsMock.Verify(
+            m => m.PurgeMessageAsync(_namespaceId, "orders", null, 3, true, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_PurgeActoredAsAutomation_DeniedAndRecordsDeclinedEntry()
+    {
+        var sut = CreateSut();
+        var ns = SetupNamespace();
+        AddDlqMessage(3);
+        var job = await AddJobAsync(
+            operationType: BulkOperationType.Purge, requestedByActorKind: RecoveryActorKind.Automation);
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        var storedJob = await _dbContext.BulkOperationJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
+        storedJob.SuccessCount.Should().Be(0);
+        storedJob.SkippedCount.Should().Be(1);
+
+        _messageOperationsMock.Verify(
+            m => m.PurgeMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        var ledger = new RecoveryLedgerService(_dbContext);
+        var operations = await ledger.QueryOperationsAsync(OwnerId, ns.Id, limit: 10);
+        var entries = await ledger.QueryEntriesAsync(new RecoveryEntryQuery
+        {
+            OwnerId = OwnerId,
+            OperationId = operations.Single().Id,
+        });
+        entries.Should().ContainSingle(e => e.State == RecoveryEntryState.Declined
+                                             && e.Disposition == RecoveryDisposition.Declined);
     }
 
     // ── Purge eligibility (v3.6.0 P2-2) ──────────────────────────────────────
@@ -587,6 +663,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
             StatusFilter = DlqMessageStatus.Active,
             TotalMatched = 2,
             CreatedAt = DateTimeOffset.UtcNow,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = RecoveryActorKind.User,
         };
         dbContext.BulkOperationJobs.Add(job);
         await dbContext.SaveChangesAsync();
@@ -611,9 +689,10 @@ public sealed class BulkOperationExecutorTests : IDisposable
             .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, target.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<bool>.Success(true));
 
+        var ledger = new RecoveryLedgerService(dbContext);
         var sut = new BulkOperationExecutor(
             dbContext, namespaceRepositoryMock.Object, messageOperationsMock.Object,
-            new RecoveryLedgerService(dbContext),
+            ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance),
             Mock.Of<IAuditService>(), Mock.Of<IPlatformEventBus>(), NullLogger<BulkOperationExecutor>.Instance);
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
@@ -689,6 +768,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
             StatusFilter = DlqMessageStatus.Active,
             TotalMatched = 1,
             CreatedAt = DateTimeOffset.UtcNow,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = RecoveryActorKind.User,
         };
         dbContext.BulkOperationJobs.Add(job);
         await dbContext.SaveChangesAsync();
@@ -720,9 +801,10 @@ public sealed class BulkOperationExecutorTests : IDisposable
                 throw new OperationCanceledException();
             });
 
+        var ledger = new RecoveryLedgerService(dbContext);
         var sut = new BulkOperationExecutor(
             dbContext, namespaceRepositoryMock.Object, messageOperationsMock.Object,
-            new RecoveryLedgerService(dbContext),
+            ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance),
             Mock.Of<IAuditService>(), Mock.Of<IPlatformEventBus>(), NullLogger<BulkOperationExecutor>.Instance);
 
         var act = async () => await sut.ExecuteAsync(job.Id, CancellationToken.None);
@@ -796,6 +878,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
             StatusFilter = DlqMessageStatus.Active,
             TotalMatched = 2,
             CreatedAt = DateTimeOffset.UtcNow,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = RecoveryActorKind.User,
         };
         dbContext.BulkOperationJobs.Add(job);
         await dbContext.SaveChangesAsync();
@@ -826,9 +910,10 @@ public sealed class BulkOperationExecutorTests : IDisposable
                 return Result<bool>.Success(true);
             });
 
+        var ledger = new RecoveryLedgerService(dbContext);
         var sut = new BulkOperationExecutor(
             dbContext, namespaceRepositoryMock.Object, messageOperationsMock.Object,
-            new RecoveryLedgerService(dbContext),
+            ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance),
             Mock.Of<IAuditService>(), Mock.Of<IPlatformEventBus>(), NullLogger<BulkOperationExecutor>.Instance);
 
         var act = async () => await sut.ExecuteAsync(job.Id, CancellationToken.None);
@@ -900,6 +985,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
             StatusFilter = DlqMessageStatus.Active,
             TotalMatched = 2,
             CreatedAt = DateTimeOffset.UtcNow,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = RecoveryActorKind.User,
         };
         dbContext.BulkOperationJobs.Add(job);
         await dbContext.SaveChangesAsync();
@@ -920,9 +1007,10 @@ public sealed class BulkOperationExecutorTests : IDisposable
                 return Result<bool>.Success(true);
             });
 
+        var ledger = new RecoveryLedgerService(dbContext);
         var sut = new BulkOperationExecutor(
             dbContext, namespaceRepositoryMock.Object, messageOperationsMock.Object,
-            new RecoveryLedgerService(dbContext),
+            ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance),
             Mock.Of<IAuditService>(), Mock.Of<IPlatformEventBus>(), NullLogger<BulkOperationExecutor>.Instance);
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);

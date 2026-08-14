@@ -45,6 +45,7 @@ public sealed class MessagesController : ApiControllerBase
     private readonly ILiveTailConnectionLimiter _liveTailConnectionLimiter;
     private readonly IDlqHistoryService _dlqHistoryService;
     private readonly IRecoveryLedger _recoveryLedger;
+    private readonly IRecoveryEligibilityGate _eligibilityGate;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<MessagesController> _logger;
 
@@ -58,6 +59,7 @@ public sealed class MessagesController : ApiControllerBase
     /// <param name="liveTailConnectionLimiter">Caps concurrent Live Tail connections.</param>
     /// <param name="dlqHistoryService">Looks up and claims a message's tracked DLQ history row.</param>
     /// <param name="recoveryLedger">The Recovery Evidence Ledger.</param>
+    /// <param name="eligibilityGate">The deterministic Eligibility Gate every recovery attempt passes through.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="auditLogger">The security audit logger.</param>
     public MessagesController(
@@ -68,6 +70,7 @@ public sealed class MessagesController : ApiControllerBase
         ILiveTailConnectionLimiter liveTailConnectionLimiter,
         IDlqHistoryService dlqHistoryService,
         IRecoveryLedger recoveryLedger,
+        IRecoveryEligibilityGate eligibilityGate,
         ILogger<MessagesController> logger,
         IAuditLogger? auditLogger = null)
     {
@@ -78,6 +81,7 @@ public sealed class MessagesController : ApiControllerBase
         _liveTailConnectionLimiter = liveTailConnectionLimiter ?? throw new ArgumentNullException(nameof(liveTailConnectionLimiter));
         _dlqHistoryService = dlqHistoryService ?? throw new ArgumentNullException(nameof(dlqHistoryService));
         _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
+        _eligibilityGate = eligibilityGate ?? throw new ArgumentNullException(nameof(eligibilityGate));
         _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -435,6 +439,41 @@ public sealed class MessagesController : ApiControllerBase
                 BodyHash = RecoveryHashChain.GenesisHash,
                 TargetEntity = entityName,
             };
+
+        // Eligibility Gate (roadmap §9/Phase B) — the same gate instance every recovery path
+        // shares. An untracked message's BodyHash is RecoveryHashChain.GenesisHash, a shared
+        // "body unavailable" placeholder, not real message content — trackedMessage?.BodyHash
+        // (not beginRequest.BodyHash) is passed here so predicate 3 (recurrence cap) never treats
+        // that sentinel as a lineage-matching identity.
+        var decision = await _eligibilityGate.EvaluateAsync(
+            new RecoveryEligibilityRequest(
+                OwnerId, kind, actor.Kind, RecoveryTrigger.Manual,
+                ns.Id, combinedEntityName, trackedMessage?.BodyHash, SignatureHash: null, ns.Environment),
+            cancellationToken);
+
+        if (decision.Verdict != EligibilityVerdict.Allow)
+        {
+            await ReleaseClaimIfNeededAsync(trackedMessage, cancellationToken);
+
+            try
+            {
+                await _recoveryLedger.RecordDeclinedAsync(
+                    beginRequest,
+                    decision.ReasonCode ?? "ELIGIBILITY_GATE_DENIED",
+                    JsonSerializer.Serialize(new { reasonCode = decision.ReasonCode, matchedCount = decision.MatchedCount }),
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Failed to record Declined ledger entry for entity {Entity}",
+                    LogRedactor.SanitiseForLog(combinedEntityName));
+            }
+
+            return Result<(RecoveryActor, RecoveryLedgerEntry, string)>.Failure(Error.Validation(
+                "Recovery.EligibilityDenied",
+                $"Blocked by the Eligibility Gate ({decision.ReasonCode}) — escalate for manual review."));
+        }
 
         var beginResult = await _recoveryLedger.BeginEntryAsync(beginRequest, cancellationToken);
         if (beginResult.IsFailure)

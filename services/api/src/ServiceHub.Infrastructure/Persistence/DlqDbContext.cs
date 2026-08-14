@@ -439,6 +439,18 @@ public sealed class DlqDbContext : DbContext
         entity.Property(e => e.CorrelationId)
             .HasMaxLength(256);
 
+        entity.Property(e => e.RequestedByIdentity)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.RequestedByActorKind)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.RequestedByScopes)
+            .HasMaxLength(1024);
+
         // Owner-scoped job history, most recent first — the list endpoint's primary access path.
         entity.HasIndex(e => new { e.OwnerId, e.CreatedAt })
             .HasDatabaseName("IX_BulkOperationJobs_Owner_CreatedAt");
@@ -772,6 +784,18 @@ public sealed class DlqDbContext : DbContext
 
         entity.Property(e => e.CorrelationId)
             .HasMaxLength(256);
+
+        entity.Property(e => e.RequestedByIdentity)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.RequestedByActorKind)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.RequestedByScopes)
+            .HasMaxLength(1024);
 
         // Owner+signature-scoped job history, most recent first — the history list endpoint's
         // primary access path.

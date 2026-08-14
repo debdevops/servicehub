@@ -552,6 +552,7 @@ public sealed class RulesController : ApiControllerBase
             var nsRepo = HttpContext.RequestServices.GetRequiredService<INamespaceRepository>();
             var messageOperationsService = HttpContext.RequestServices.GetRequiredService<IMessageOperationsService>();
             var recoveryLedger = HttpContext.RequestServices.GetRequiredService<IRecoveryLedger>();
+            var eligibilityGate = HttpContext.RequestServices.GetRequiredService<IRecoveryEligibilityGate>();
 
             var results = new List<ReplayAllItemResponse>();
             var replayed = 0;
@@ -683,6 +684,42 @@ public sealed class RulesController : ApiControllerBase
                 foreach (var msg in group)
                 {
                     ct.ThrowIfCancellationRequested();
+
+                    // Eligibility Gate (roadmap §9/Phase B) — the same gate instance every
+                    // recovery path shares (Pass 6 correction: this call site was omitted from
+                    // every prior wiring draft despite §27 acceptance criterion 1's unqualified
+                    // "no code path" wording).
+                    var decision = await eligibilityGate.EvaluateAsync(
+                        new RecoveryEligibilityRequest(
+                            OwnerId, RecoveryOperationKind.Replay, actor.Kind, RecoveryTrigger.RuleReplayAll,
+                            ns.Id, msg.EntityName, msg.BodyHash, SignatureHash: null, ns.Environment),
+                        ct);
+
+                    if (decision.Verdict != EligibilityVerdict.Allow)
+                    {
+                        skipped++;
+                        results.Add(new ReplayAllItemResponse(
+                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
+                            Outcome: "Skipped", Error: $"Blocked by the Eligibility Gate ({decision.ReasonCode})"));
+
+                        try
+                        {
+                            await recoveryLedger.RecordDeclinedAsync(
+                                RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
+                                    msg, ns, operationId, OwnerId, actor, entityName),
+                                decision.ReasonCode ?? "ELIGIBILITY_GATE_DENIED",
+                                JsonSerializer.Serialize(new { reasonCode = decision.ReasonCode, matchedCount = decision.MatchedCount }),
+                                ct);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex,
+                                "Failed to record Declined ledger entry for message {MessageId}",
+                                LogRedactor.SanitiseForLog(msg.MessageId));
+                        }
+
+                        continue;
+                    }
 
                     msg.Status = DlqMessageStatus.Replaying;
                     try

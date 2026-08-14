@@ -26,6 +26,7 @@ public class MessagesControllerTests
     private readonly Mock<ILiveTailConnectionLimiter> _liveTailConnectionLimiter;
     private readonly Mock<IDlqHistoryService> _dlqHistoryService;
     private readonly Mock<IRecoveryLedger> _recoveryLedger;
+    private readonly Mock<IRecoveryEligibilityGate> _eligibilityGate;
     private readonly Mock<ILogger<MessagesController>> _logger;
     private readonly MessagesController _controller;
 
@@ -85,6 +86,13 @@ public class MessagesControllerTests
                 BegunAt = DateTimeOffset.UtcNow,
             }));
 
+        // Default: every recovery attempt is Allowed — matches every existing test's
+        // expectation that the gate is a no-op unless a test explicitly overrides it to Deny/Escalate.
+        _eligibilityGate = new Mock<IRecoveryEligibilityGate>();
+        _eligibilityGate
+            .Setup(g => g.EvaluateAsync(It.IsAny<RecoveryEligibilityRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(EligibilityDecision.Allow);
+
         _controller = new MessagesController(
             _messageOperationsService.Object,
             _namespaceRepository.Object,
@@ -93,6 +101,7 @@ public class MessagesControllerTests
             _liveTailConnectionLimiter.Object,
             _dlqHistoryService.Object,
             _recoveryLedger.Object,
+            _eligibilityGate.Object,
             _logger.Object)
         {
             ControllerContext = new ControllerContext
@@ -144,7 +153,7 @@ public class MessagesControllerTests
         var act = () => new MessagesController(
             null!, _namespaceRepository.Object, _providerRouter,
             _liveTailSessionFactory.Object, _liveTailConnectionLimiter.Object,
-            _dlqHistoryService.Object, _recoveryLedger.Object, _logger.Object);
+            _dlqHistoryService.Object, _recoveryLedger.Object, _eligibilityGate.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -154,7 +163,7 @@ public class MessagesControllerTests
         var act = () => new MessagesController(
             _messageOperationsService.Object, _namespaceRepository.Object, _providerRouter,
             _liveTailSessionFactory.Object, _liveTailConnectionLimiter.Object,
-            _dlqHistoryService.Object, _recoveryLedger.Object, null!);
+            _dlqHistoryService.Object, _recoveryLedger.Object, _eligibilityGate.Object, null!);
         act.Should().Throw<ArgumentNullException>();
     }
 

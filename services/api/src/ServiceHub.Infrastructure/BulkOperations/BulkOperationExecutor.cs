@@ -10,6 +10,7 @@ using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.RecoveryLedger;
+using ServiceHub.Infrastructure.Security;
 
 namespace ServiceHub.Infrastructure.BulkOperations;
 
@@ -40,6 +41,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IMessageOperationsService _messageOperationsService;
     private readonly IRecoveryLedger _recoveryLedger;
+    private readonly IRecoveryEligibilityGate _eligibilityGate;
     private readonly IAuditService _auditService;
     private readonly IPlatformEventBus _eventBus;
     private readonly ILogger<BulkOperationExecutor> _logger;
@@ -50,6 +52,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         INamespaceRepository namespaceRepository,
         IMessageOperationsService messageOperationsService,
         IRecoveryLedger recoveryLedger,
+        IRecoveryEligibilityGate eligibilityGate,
         IAuditService auditService,
         IPlatformEventBus eventBus,
         ILogger<BulkOperationExecutor> logger)
@@ -58,6 +61,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _messageOperationsService = messageOperationsService ?? throw new ArgumentNullException(nameof(messageOperationsService));
         _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
+        _eligibilityGate = eligibilityGate ?? throw new ArgumentNullException(nameof(eligibilityGate));
         _auditService = auditService ?? throw new ArgumentNullException(nameof(auditService));
         _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -197,7 +201,13 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
             .OrderBy(m => m.DetectedAtUtc)
             .ToListAsync(cancellationToken);
 
-        var actor = ActorIdentityResolver.ResolveAutomationActor("BulkJob", job.Id.ToString(), job.OperationType.ToString());
+        // Execution mechanism is not the actor of record (roadmap §29.10): this job may have been
+        // requested by a human through the UI, even though a background worker with no
+        // HttpContext performs the actual provider call. The requester's real actor was resolved
+        // and persisted at job-creation time (BulkOperationService.CreateJobAsync) — reconstructed
+        // here instead of synthesizing an Automation actor, so the Eligibility Gate's predicate 1
+        // (purge-origin prohibition) and every ledger write reflect who actually asked for this.
+        var actor = new RecoveryActor(job.RequestedByIdentity, job.RequestedByActorKind, job.RequestedByScopes);
         var kind = job.OperationType == BulkOperationType.Replay ? RecoveryOperationKind.Replay : RecoveryOperationKind.Purge;
 
         var operationResult = await _recoveryLedger.OpenOperationAsync(new OpenRecoveryOperationRequest
@@ -316,6 +326,21 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         }
 
         var (entityName, subscriptionName) = ResolveEntityAndSubscription(message);
+
+        var actionKind = operationType == BulkOperationType.Replay ? RecoveryOperationKind.Replay : RecoveryOperationKind.Purge;
+        var decision = await _eligibilityGate.EvaluateAsync(
+            new RecoveryEligibilityRequest(
+                recovery.OwnerId, actionKind, recovery.Actor.Kind, RecoveryTrigger.BulkJob,
+                recovery.Namespace.Id, message.EntityName, message.BodyHash, SignatureHash: null,
+                recovery.Namespace.Environment),
+            cancellationToken);
+
+        if (decision.Verdict != EligibilityVerdict.Allow)
+        {
+            await RecordDeclinedAsync(message, recovery, entityName, decision, cancellationToken);
+            return (MessageOutcome.Skipped,
+                $"Blocked by the Eligibility Gate ({decision.ReasonCode}) — escalate for manual review");
+        }
 
         if (operationType == BulkOperationType.Replay)
         {
@@ -449,6 +474,34 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         // reproduce the stranded-claim defect that InterruptedOperationRecovery exists to fix.
         message.Status = DlqMessageStatus.Active;
         return (MessageOutcome.Failure, purgeResult.Error.Message);
+    }
+
+    /// <summary>
+    /// Records a truthful <c>Declined</c> ledger entry for an Eligibility Gate verdict that
+    /// blocked this message (roadmap §9.3) — never called for a rate limit, since bulk jobs have
+    /// no per-rule rate-limit concept, so every non-<c>Allow</c> verdict reaching this executor is
+    /// a real safety escalation, not routine throttling. Best-effort: a ledger-write failure never
+    /// changes the underlying skip decision (roadmap §18), matching Phase A's same guarantee.
+    /// </summary>
+    private async Task RecordDeclinedAsync(
+        DlqMessage message, RecoveryContext recovery, string entityName, EligibilityDecision decision,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _recoveryLedger.RecordDeclinedAsync(
+                RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
+                    message, recovery.Namespace, recovery.OperationId, recovery.OwnerId, recovery.Actor, entityName),
+                decision.ReasonCode ?? "ELIGIBILITY_GATE_DENIED",
+                JsonSerializer.Serialize(new { reasonCode = decision.ReasonCode, matchedCount = decision.MatchedCount }),
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to record Declined ledger entry for message {MessageId}",
+                LogRedactor.SanitiseForLog(message.MessageId));
+        }
     }
 
     /// <summary>

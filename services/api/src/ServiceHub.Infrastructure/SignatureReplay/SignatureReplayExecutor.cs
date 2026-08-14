@@ -9,6 +9,7 @@ using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.BulkOperations;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.RecoveryLedger;
+using ServiceHub.Infrastructure.Security;
 
 namespace ServiceHub.Infrastructure.SignatureReplay;
 
@@ -34,6 +35,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IMessageOperationsService _messageOperationsService;
     private readonly IRecoveryLedger _recoveryLedger;
+    private readonly IRecoveryEligibilityGate _eligibilityGate;
     private readonly ILogger<SignatureReplayExecutor> _logger;
 
     /// <summary>Initialises a new instance of <see cref="SignatureReplayExecutor"/>.</summary>
@@ -42,12 +44,14 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         INamespaceRepository namespaceRepository,
         IMessageOperationsService messageOperationsService,
         IRecoveryLedger recoveryLedger,
+        IRecoveryEligibilityGate eligibilityGate,
         ILogger<SignatureReplayExecutor> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _messageOperationsService = messageOperationsService ?? throw new ArgumentNullException(nameof(messageOperationsService));
         _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
+        _eligibilityGate = eligibilityGate ?? throw new ArgumentNullException(nameof(eligibilityGate));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -183,7 +187,10 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             .OrderBy(m => m.DetectedAtUtc)
             .ToListAsync(cancellationToken);
 
-        var actor = ActorIdentityResolver.ResolveAutomationActor("SignatureJob", job.Id.ToString(), job.SignatureHash);
+        // Execution mechanism is not the actor of record (roadmap §29.10) — see
+        // BulkOperationExecutor.RunAsync's identical comment. The requester's real actor was
+        // resolved and persisted at job-creation time (SignatureReplayService.StartAsync).
+        var actor = new RecoveryActor(job.RequestedByIdentity, job.RequestedByActorKind, job.RequestedByScopes);
 
         var operationResult = await _recoveryLedger.OpenOperationAsync(new OpenRecoveryOperationRequest
         {
@@ -261,6 +268,20 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         }
 
         var (entityName, subscriptionName) = BulkOperationExecutor.ResolveEntityAndSubscription(message);
+
+        var decision = await _eligibilityGate.EvaluateAsync(
+            new RecoveryEligibilityRequest(
+                recovery.OwnerId, RecoveryOperationKind.Replay, recovery.Actor.Kind, RecoveryTrigger.SignatureJob,
+                recovery.Namespace.Id, message.EntityName, message.BodyHash, recovery.SignatureHash,
+                recovery.Namespace.Environment),
+            cancellationToken);
+
+        if (decision.Verdict != EligibilityVerdict.Allow)
+        {
+            await RecordDeclinedAsync(message, recovery, entityName, decision, cancellationToken);
+            return (MessageOutcome.Skipped,
+                $"Blocked by the Eligibility Gate ({decision.ReasonCode}) — escalate for manual review");
+        }
 
         // Claim the message via optimistic concurrency (Status is a concurrency token — see
         // DlqDbContext.ConfigureDlqMessage) before calling the live provider, so a worker that
@@ -357,6 +378,35 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         return result.IsSuccess
             ? (MessageOutcome.Success, null)
             : (MessageOutcome.Failure, result.Error.Message);
+    }
+
+    /// <summary>
+    /// Records a truthful <c>Declined</c> ledger entry for an Eligibility Gate verdict that
+    /// blocked this message (roadmap §9.3) — never called for a rate limit, since signature
+    /// replay jobs have no per-rule rate-limit concept, so every non-<c>Allow</c> verdict reaching
+    /// this executor is a real safety escalation. Best-effort: a ledger-write failure never
+    /// changes the underlying skip decision (roadmap §18).
+    /// </summary>
+    private async Task RecordDeclinedAsync(
+        DlqMessage message, RecoveryContext recovery, string entityName, EligibilityDecision decision,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _recoveryLedger.RecordDeclinedAsync(
+                RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
+                    message, recovery.Namespace, recovery.OperationId, recovery.OwnerId, recovery.Actor, entityName,
+                    signatureHashSnapshot: recovery.SignatureHash),
+                decision.ReasonCode ?? "ELIGIBILITY_GATE_DENIED",
+                JsonSerializer.Serialize(new { reasonCode = decision.ReasonCode, matchedCount = decision.MatchedCount }),
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to record Declined ledger entry for message {MessageId}",
+                LogRedactor.SanitiseForLog(message.MessageId));
+        }
     }
 
     private static void AddToSample(List<BulkOperationFailureSample> sample, DlqMessage message, string reason)

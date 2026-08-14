@@ -6,6 +6,7 @@ using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Results;
@@ -84,6 +85,7 @@ public sealed class BulkOperationService : IBulkOperationService
     /// <inheritdoc />
     public async Task<Result<BulkOperationJobResponse>> CreateJobAsync(
         string ownerId, BulkOperationCreateRequest request, string? correlationId,
+        RecoveryActor requestedBy,
         IReadOnlySet<Guid>? allowedNamespaceIds = null,
         CancellationToken cancellationToken = default)
     {
@@ -122,6 +124,9 @@ public sealed class BulkOperationService : IBulkOperationService
             TotalMatched = totalMatched,
             CreatedAt = DateTimeOffset.UtcNow,
             CorrelationId = correlationId,
+            RequestedByIdentity = requestedBy.Identity,
+            RequestedByActorKind = requestedBy.Kind,
+            RequestedByScopes = requestedBy.Scopes,
         };
 
         _dbContext.BulkOperationJobs.Add(job);
