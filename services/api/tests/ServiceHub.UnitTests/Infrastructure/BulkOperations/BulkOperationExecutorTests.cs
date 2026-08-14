@@ -374,6 +374,80 @@ public sealed class BulkOperationExecutorTests : IDisposable
                                              && e.Disposition == RecoveryDisposition.Declined);
     }
 
+    // ── Recurrence cap (§7.5), actor-conditional per the accepted Option B roadmap decision ───
+    //
+    // Predicate 3 used to escalate/deny any actor once 3+ prior lineage-matched attempts existed.
+    // Option B makes it actor-conditional: Automation/System still hard-stops (proven at the gate
+    // level and by AutoReplayExecutorTests), but a human (User/ApiKey) actor is not auto-denied —
+    // the gate keeps evaluating, and if every other predicate passes, the recovery proceeds and is
+    // recorded as its own real outcome, never a fabricated Declined entry.
+
+    private void SeedLineageEntry(string entityName, string bodyHash, DateTimeOffset begunAt)
+    {
+        var operation = new RecoveryOperation
+        {
+            OwnerId = OwnerId,
+            Kind = RecoveryOperationKind.Replay,
+            Trigger = RecoveryTrigger.AutoRule,
+            ActorIdentity = "test-rule",
+            ActorKind = RecoveryActorKind.Automation,
+            ScopeDescription = "test",
+            ServiceVersion = "test",
+            OpenedAt = begunAt,
+            TargetCount = 1,
+        };
+        _dbContext.RecoveryOperations.Add(operation);
+
+        var entry = new RecoveryLedgerEntry
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerId,
+            NamespaceId = _namespaceId,
+            EntityNameSnapshot = entityName,
+            BodyHash = bodyHash,
+            TargetEntity = entityName,
+            BegunAt = begunAt,
+            State = RecoveryEntryState.Recovered,
+            MarkerApplied = true,
+            VerificationConfidence = VerificationConfidence.Exact,
+            SourceMessageIdSnapshot = $"provider-msg-{Guid.NewGuid():N}",
+            SourceSequenceNumberSnapshot = Random.Shared.NextInt64(),
+        };
+        _dbContext.RecoveryLedgerEntries.Add(entry);
+        _dbContext.SaveChanges();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReplayRequestedByHumanAtRecurrenceCap_SucceedsNotDeniedByEligibilityGate()
+    {
+        var sut = CreateSut();
+        SetupNamespace();
+        var message = AddDlqMessage(3);
+        for (var i = 0; i < 3; i++)
+            SeedLineageEntry("orders", "hash-3", DateTimeOffset.UtcNow.AddDays(-i - 1));
+        var job = await AddJobAsync(requestedByActorKind: RecoveryActorKind.User);
+
+        _messageOperationsMock
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 3, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        var storedJob = await _dbContext.BulkOperationJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
+        storedJob.SuccessCount.Should().Be(1);
+        storedJob.SkippedCount.Should().Be(0);
+
+        var storedMessage = await _dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == message.Id);
+        storedMessage.Status.Should().Be(DlqMessageStatus.Replayed);
+
+        // The 3 seeded lineage rows remain untouched, and this run added its own real entry —
+        // never a Declined one.
+        var entries = await _dbContext.RecoveryLedgerEntries.AsNoTracking()
+            .Where(e => e.OwnerId == OwnerId).ToListAsync();
+        entries.Should().HaveCount(4);
+        entries.Should().NotContain(e => e.State == RecoveryEntryState.Declined);
+    }
+
     // ── Purge eligibility (v3.6.0 P2-2) ──────────────────────────────────────
     //
     // The executor's eligibility re-check used to be Replay-only, while a purge job created

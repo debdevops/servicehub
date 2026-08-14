@@ -11,8 +11,11 @@ namespace ServiceHub.Infrastructure.RecoveryLedger;
 /// </summary>
 /// <remarks>
 /// Predicate 3 (recurrence cap) is Phase A's inline <c>AutoReplayExecutor</c> lineage check,
-/// relocated here unchanged (roadmap §26 Phase B) so every caller shares it, not just
-/// auto-replay. Predicate 4 (rate limit) deliberately does not re-implement
+/// relocated here (roadmap §26 Phase B) so every caller shares it, not just auto-replay, and
+/// made actor-conditional per the accepted Option B roadmap decision: Automation/System hits a
+/// hard stop at the cap, while User/ApiKey continues through the rest of the gate — a human
+/// remains the actor of record and is not auto-denied merely for repeating an attempt a human
+/// chose to make again. Predicate 4 (rate limit) deliberately does not re-implement
 /// <c>IAutoReplayExecutor.CanReplayAsync</c> — it consumes that method's existing result via
 /// <see cref="RecoveryEligibilityRequest.RateLimitExceeded"/>, since only rule-driven callers have
 /// a per-rule limit to check and duplicating that query here would violate the "don't duplicate
@@ -83,7 +86,8 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
             && !string.IsNullOrEmpty(request.BodyHash))
         {
             var lineageDecision = await EvaluateRecurrenceLineageAsync(
-                request.OwnerId, namespaceId, request.EntityNameSnapshot, request.BodyHash, cancellationToken);
+                request.OwnerId, namespaceId, request.EntityNameSnapshot, request.BodyHash,
+                request.ActorKind, cancellationToken);
             if (lineageDecision is not null)
             {
                 return lineageDecision;
@@ -113,7 +117,8 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
     }
 
     private async Task<EligibilityDecision?> EvaluateRecurrenceLineageAsync(
-        string ownerId, Guid namespaceId, string entityName, string bodyHash, CancellationToken cancellationToken)
+        string ownerId, Guid namespaceId, string entityName, string bodyHash,
+        RecoveryActorKind actorKind, CancellationToken cancellationToken)
     {
         IReadOnlyList<RecoveryLedgerEntry> matches;
         try
@@ -125,13 +130,25 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
         catch (Exception ex)
         {
             // Fail closed on a query error (roadmap §18): an unrunnable safety check must block,
-            // not silently allow the attempt through.
+            // not silently allow the attempt through. Actor-unconditional — this is an
+            // infrastructure failure, not the recurrence-cap-reached case Option B addresses.
             _logger.LogError(ex,
                 "Recurrence-lineage query failed for owner {OwnerId}; failing closed", ownerId);
             return new EligibilityDecision(EligibilityVerdict.Escalate, ReasonQueryError);
         }
 
         if (matches.Count < RecurrenceLineageCap)
+        {
+            return null;
+        }
+
+        // Option B (accepted roadmap decision): the cap is a hard stop only for an unattended
+        // actor. A human (User/ApiKey) hitting the cap does not get auto-denied by this
+        // predicate — the gate continues to predicate 4/5, and if those pass, the human's
+        // recovery proceeds and is recorded as its own real outcome, not a fabricated Declined
+        // entry. The lineage rows themselves are untouched and remain queryable evidence either
+        // way.
+        if (actorKind is RecoveryActorKind.User or RecoveryActorKind.ApiKey)
         {
             return null;
         }
