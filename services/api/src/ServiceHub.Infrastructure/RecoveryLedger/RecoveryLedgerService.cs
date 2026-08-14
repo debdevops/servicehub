@@ -596,6 +596,79 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
         return Result<RecoveryLedgerEntry>.Success(entry);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<RecoveryLedgerEntry>> FindLineageMatchesAsync(
+        string ownerId, Guid? namespaceId, string entityName, string bodyHash, DateTimeOffset since,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.RecoveryLedgerEntries
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId
+                        && e.NamespaceId == namespaceId
+                        && e.EntityNameSnapshot == entityName
+                        && e.BodyHash == bodyHash
+                        && e.BegunAt >= since)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<RecoveryLedgerEntry>> RecordDeclinedAsync(
+        BeginRecoveryEntryRequest request, string reasonCode, string? detailJson,
+        CancellationToken cancellationToken = default)
+    {
+        using var _ = await AcquireOwnerLockAsync(request.OwnerId, cancellationToken);
+
+        var operation = await _dbContext.RecoveryOperations
+            .AsNoTracking()
+            .FirstOrDefaultAsync(o => o.Id == request.OperationId, cancellationToken);
+
+        if (operation is null || operation.OwnerId != request.OwnerId)
+        {
+            return Result<RecoveryLedgerEntry>.Failure(Error.NotFound(
+                "RecoveryLedger.OperationNotFound", "Recovery operation not found."));
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var entry = new RecoveryLedgerEntry
+        {
+            OperationId = request.OperationId,
+            OwnerId = request.OwnerId,
+            DlqMessageId = request.DlqMessageId,
+            NamespaceId = request.NamespaceId,
+            NamespaceNameSnapshot = request.NamespaceNameSnapshot,
+            ProviderSnapshot = request.ProviderSnapshot,
+            EnvironmentSnapshot = request.EnvironmentSnapshot,
+            EntityNameSnapshot = request.EntityNameSnapshot,
+            EntityTypeSnapshot = request.EntityTypeSnapshot,
+            TopicNameSnapshot = request.TopicNameSnapshot,
+            SourceMessageIdSnapshot = request.SourceMessageIdSnapshot,
+            SourceSequenceNumberSnapshot = request.SourceSequenceNumberSnapshot,
+            BodyHash = request.BodyHash,
+            FailureCategorySnapshot = request.FailureCategorySnapshot,
+            DeadLetterReasonSnapshot = request.DeadLetterReasonSnapshot,
+            SignatureHashSnapshot = request.SignatureHashSnapshot,
+            TargetEntity = request.TargetEntity,
+            BegunAt = now,
+            State = RecoveryEntryState.Declined,
+            Disposition = RecoveryDisposition.Declined,
+            ClosedAt = now,
+        };
+
+        _dbContext.RecoveryLedgerEntries.Add(entry);
+
+        var detail = string.IsNullOrEmpty(detailJson)
+            ? JsonSerializer.Serialize(new { reasonCode })
+            : detailJson;
+
+        var evt = await AppendEventAsync(
+            entry.OwnerId, entry.Id, entry.OperationId,
+            RecoveryEventType.EligibilityDeclined, request.Actor, detail, cancellationToken);
+        entry.LastEventSeq = evt.Seq;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return Result<RecoveryLedgerEntry>.Success(entry);
+    }
+
     /// <summary>
     /// Appends one event to <paramref name="ownerId"/>'s chain. Must be called while holding
     /// that owner's lock (see <see cref="AcquireOwnerLockAsync"/>) — sequencing considers both

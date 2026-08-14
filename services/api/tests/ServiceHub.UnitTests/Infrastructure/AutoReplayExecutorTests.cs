@@ -398,4 +398,247 @@ public class AutoReplayExecutorTests : IDisposable
         var historyCount = await dbContext.ReplayHistories.CountAsync(h => h.DlqMessageId == msg.Id);
         historyCount.Should().Be(0); // this call never wrote history — it never reached the provider
     }
+
+    // ── Recurrence-lineage safety cap (Phase A) ──────────────
+
+    /// <summary>
+    /// Seeds a prior <see cref="RecoveryLedgerEntry"/> directly against the DbContext (bypassing
+    /// the executor) so its lineage-relevant fields — <see cref="RecoveryLedgerEntry.BegunAt"/>,
+    /// <see cref="RecoveryLedgerEntry.MarkerApplied"/>,
+    /// <see cref="RecoveryLedgerEntry.VerificationConfidence"/>,
+    /// <see cref="RecoveryLedgerEntry.SignatureHashSnapshot"/> — can be set precisely, simulating
+    /// a past automatic-replay attempt on this lineage.
+    /// </summary>
+    private RecoveryLedgerEntry SeedLineageEntry(
+        string ownerId,
+        Guid namespaceId,
+        string entityName,
+        string bodyHash,
+        DateTimeOffset begunAt,
+        bool markerApplied = true,
+        VerificationConfidence? confidence = null,
+        string? signatureHash = null)
+    {
+        var operation = new RecoveryOperation
+        {
+            OwnerId = ownerId,
+            Kind = RecoveryOperationKind.Replay,
+            Trigger = RecoveryTrigger.AutoRule,
+            ActorIdentity = "test-rule",
+            ActorKind = RecoveryActorKind.Automation,
+            ScopeDescription = "test",
+            ServiceVersion = "test",
+            OpenedAt = begunAt,
+            TargetCount = 1,
+        };
+        _dbContext.RecoveryOperations.Add(operation);
+
+        var entry = new RecoveryLedgerEntry
+        {
+            OperationId = operation.Id,
+            OwnerId = ownerId,
+            NamespaceId = namespaceId,
+            EntityNameSnapshot = entityName,
+            BodyHash = bodyHash,
+            TargetEntity = entityName,
+            BegunAt = begunAt,
+            State = RecoveryEntryState.Recovered,
+            MarkerApplied = markerApplied,
+            VerificationConfidence = confidence,
+            SignatureHashSnapshot = signatureHash,
+            // Distinct provider identity per seeded entry — proves the lineage match never
+            // depends on these fields (roadmap: provider MessageId/SequenceNumber are never
+            // recovery identity).
+            SourceMessageIdSnapshot = $"provider-msg-{Guid.NewGuid():N}",
+            SourceSequenceNumberSnapshot = Random.Shared.NextInt64(),
+        };
+        _dbContext.RecoveryLedgerEntries.Add(entry);
+        _dbContext.SaveChanges();
+        return entry;
+    }
+
+    [Fact]
+    public async Task Execute_FewerThanThreePriorLineageMatches_NotBlocked()
+    {
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+
+        SeedLineageEntry(TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1", DateTimeOffset.UtcNow.AddDays(-1));
+        SeedLineageEntry(TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1", DateTimeOffset.UtcNow.AddDays(-2));
+
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Execute_ThreePriorExactConfidenceLineageMatches_BlocksAndRecordsDeclinedEntry()
+    {
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+
+        for (var i = 0; i < 3; i++)
+        {
+            SeedLineageEntry(
+                TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+                DateTimeOffset.UtcNow.AddDays(-i - 1), confidence: VerificationConfidence.Exact);
+        }
+
+        var operationId = await OpenOperationAsync(rule);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, operationId);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("AutoReplay.RecurrenceCapExceeded");
+
+        _messageOperations.Verify(
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        var stored = await _dbContext.DlqMessages.AsNoTracking().SingleAsync(m => m.Id == msg.Id);
+        stored.Status.Should().Be(DlqMessageStatus.Active); // untouched — manual replay remains available
+
+        var events = await _recoveryLedger.GetEventsForOperationAsync(operationId, TestConstants.TestOwnerId);
+        events.Should().ContainSingle(e => e.EventType == RecoveryEventType.EligibilityDeclined
+                                            && e.DetailJson!.Contains("RECURRENCE_CAP_EXCEEDED"));
+
+        var entries = await _recoveryLedger.QueryEntriesAsync(new RecoveryEntryQuery
+        {
+            OwnerId = TestConstants.TestOwnerId,
+            OperationId = operationId,
+        });
+        entries.Should().ContainSingle(e => e.State == RecoveryEntryState.Declined
+                                             && e.Disposition == RecoveryDisposition.Declined);
+    }
+
+    [Fact]
+    public async Task Execute_ThreePriorLineageMatchesForDifferentOwner_DoesNotBlock()
+    {
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+
+        for (var i = 0; i < 3; i++)
+        {
+            SeedLineageEntry(
+                TestConstants.AltOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+                DateTimeOffset.UtcNow.AddDays(-i - 1), confidence: VerificationConfidence.Exact);
+        }
+
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Execute_ThreePriorLineageMatchesOutsideNinetyDayWindow_DoesNotBlock()
+    {
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+
+        for (var i = 0; i < 3; i++)
+        {
+            SeedLineageEntry(
+                TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+                DateTimeOffset.UtcNow.AddDays(-91 - i), confidence: VerificationConfidence.Exact);
+        }
+
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Execute_ThreePriorLineageMatchesJustInsideNinetyDayWindow_Blocks()
+    {
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+
+        for (var i = 0; i < 3; i++)
+        {
+            SeedLineageEntry(
+                TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+                DateTimeOffset.UtcNow.AddDays(-89 - (i * 0.1)), confidence: VerificationConfidence.Exact);
+        }
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("AutoReplay.RecurrenceCapExceeded");
+    }
+
+    [Fact]
+    public async Task Execute_AmbiguousBodyHashCollisionAcrossDistinctSignatures_FailsSafeAndBlocks()
+    {
+        // Roadmap §7.5 item 5's "200 identical test payloads" scenario: entries sharing BodyHash
+        // but carrying different SignatureHashSnapshot values are independent messages that
+        // happen to hash the same body, not the same lineage — but the cap still fails safe and
+        // counts them, under a distinct reason code, rather than silently allowing an unbounded
+        // replay loop through.
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+
+        SeedLineageEntry(
+            TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+            DateTimeOffset.UtcNow.AddDays(-1), markerApplied: false, confidence: null, signatureHash: "sig-A");
+        SeedLineageEntry(
+            TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+            DateTimeOffset.UtcNow.AddDays(-2), markerApplied: false, confidence: null, signatureHash: "sig-B");
+        SeedLineageEntry(
+            TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+            DateTimeOffset.UtcNow.AddDays(-3), markerApplied: false, confidence: null, signatureHash: "sig-B");
+
+        var operationId = await OpenOperationAsync(rule);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, operationId);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("AutoReplay.RecurrenceCapExceeded");
+
+        var events = await _recoveryLedger.GetEventsForOperationAsync(operationId, TestConstants.TestOwnerId);
+        events.Should().ContainSingle(e => e.EventType == RecoveryEventType.EligibilityDeclined
+                                            && e.DetailJson!.Contains("RECURRENCE_CAP_AMBIGUOUS_COLLISION"));
+    }
+
+    [Fact]
+    public async Task Execute_ReturnedMessageWithNewProviderIdentitySameBodyHash_StillBlockedAfterCap()
+    {
+        // A replayed message returns to the DLQ as a brand-new DlqMessage row (new MessageId,
+        // new SequenceNumber, new Id) — the exact gap roadmap §7.3 describes. Three prior entries
+        // for the same lineage (matched purely on BodyHash/EntityName, never provider identity)
+        // must still block a 4th attempt against this freshly-arrived row.
+        var rule = CreateRule();
+        // Fresh DlqMessage row (its own Id/MessageId/SequenceNumber) carrying the same BodyHash
+        // as the seeded lineage below — simulating the row DlqMonitorWorker sees after a replayed
+        // message returns to the DLQ under a brand-new provider identity.
+        var returnedMsg = CreateMessage(1);
+
+        for (var i = 0; i < 3; i++)
+        {
+            SeedLineageEntry(
+                TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+                DateTimeOffset.UtcNow.AddDays(-i - 1), confidence: VerificationConfidence.Exact);
+        }
+
+        var action = new RuleAction();
+        var result = await _executor.ExecuteAsync(returnedMsg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("AutoReplay.RecurrenceCapExceeded");
+    }
 }

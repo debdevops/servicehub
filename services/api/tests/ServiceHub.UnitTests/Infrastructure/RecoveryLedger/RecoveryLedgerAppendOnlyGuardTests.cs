@@ -159,6 +159,23 @@ public sealed class RecoveryLedgerAppendOnlyGuardTests : IDisposable
     }
 
     [Fact]
+    public void SaveChanges_ModifyDeclinedEntryImmutableProperty_Throws()
+    {
+        var operation = SeedOperation();
+        var entry = SeedEntry(operation.Id);
+        entry.State = RecoveryEntryState.Declined;
+        entry.Disposition = RecoveryDisposition.Declined;
+        entry.ClosedAt = DateTimeOffset.UtcNow;
+        _dbContext.SaveChanges();
+
+        _dbContext.Entry(entry).Property(nameof(RecoveryLedgerEntry.BodyHash)).CurrentValue = "changed-hash";
+
+        var act = () => _dbContext.SaveChanges();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*BodyHash*");
+    }
+
+    [Fact]
     public void SaveChanges_ModifyRecoveryLedgerEntryMutableProjectionOnly_Succeeds()
     {
         var operation = SeedOperation();

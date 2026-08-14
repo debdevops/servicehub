@@ -177,4 +177,34 @@ public interface IRecoveryLedger
         string ownerId,
         RecoveryActor actor,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finds every <see cref="RecoveryLedgerEntry"/> sharing the recurrence-lineage key
+    /// (<paramref name="ownerId"/>, <paramref name="namespaceId"/>, <paramref name="entityName"/>,
+    /// <paramref name="bodyHash"/>) begun on or after <paramref name="since"/> — the read-only
+    /// lookback roadmap §7.5 defines for the auto-replay recurrence-cap check. Regardless of
+    /// entry state: each matched row represents one past recovery attempt against this lineage.
+    /// </summary>
+    Task<IReadOnlyList<RecoveryLedgerEntry>> FindLineageMatchesAsync(
+        string ownerId,
+        Guid? namespaceId,
+        string entityName,
+        string bodyHash,
+        DateTimeOffset since,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Writes a new <see cref="RecoveryLedgerEntry"/> already in terminal
+    /// <see cref="Enums.RecoveryEntryState.Declined"/> state, plus its
+    /// <see cref="Enums.RecoveryEventType.EligibilityDeclined"/> event, atomically in one
+    /// <c>SaveChanges</c> — the roadmap §9.3 mechanism for durably recording a safety-gate
+    /// decision in the Recovery Evidence Ledger instead of <c>AuditService</c>. Unlike
+    /// <see cref="BeginEntryAsync"/>, this never implies a provider call: no
+    /// <see cref="Enums.RecoveryEntryState.Executing"/> phase exists for a declined attempt.
+    /// </summary>
+    Task<Result<RecoveryLedgerEntry>> RecordDeclinedAsync(
+        BeginRecoveryEntryRequest request,
+        string reasonCode,
+        string? detailJson,
+        CancellationToken cancellationToken = default);
 }

@@ -43,5 +43,10 @@ public enum RecoveryEventType
     AgeingFlagged = 10,
 
     /// <summary>A free-text operator annotation, appended without changing entry state.</summary>
-    OperatorNote = 11
+    OperatorNote = 11,
+
+    /// <summary>A deterministic eligibility check blocked a recovery attempt before any provider
+    /// was contacted — e.g. the recurrence-lineage cap (roadmap §7.5, §9.3). Recorded instead of
+    /// <c>AuditService</c>, which is a bounded, lossy channel unsuitable as forensic evidence.</summary>
+    EligibilityDeclined = 12
 }

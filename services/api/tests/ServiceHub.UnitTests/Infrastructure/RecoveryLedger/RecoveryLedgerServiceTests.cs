@@ -480,6 +480,144 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
         candidatesForOwnerB.Should().BeEmpty();
     }
 
+    // ── RecordDeclinedAsync / FindLineageMatchesAsync (Phase A) ──────────────
+
+    [Fact]
+    public async Task RecordDeclinedAsync_WritesTerminalDeclinedEntryWithEligibilityDeclinedEvent()
+    {
+        var operation = await OpenOperationAsync();
+
+        var result = await _service.RecordDeclinedAsync(
+            new BeginRecoveryEntryRequest
+            {
+                OperationId = operation.Id,
+                OwnerId = OwnerA,
+                Actor = Actor(),
+                NamespaceId = operation.NamespaceId,
+                EntityNameSnapshot = "orders-dlq",
+                BodyHash = "shared-hash",
+                TargetEntity = "orders-dlq",
+            },
+            "RECURRENCE_CAP_EXCEEDED",
+            detailJson: null);
+
+        result.IsSuccess.Should().BeTrue();
+        var entry = result.Value;
+        entry.State.Should().Be(RecoveryEntryState.Declined);
+        entry.Disposition.Should().Be(RecoveryDisposition.Declined);
+        entry.ClosedAt.Should().NotBeNull();
+
+        var events = await _service.GetEventsForOperationAsync(operation.Id, OwnerA);
+        events.Should().ContainSingle(e => e.EventType == RecoveryEventType.EligibilityDeclined
+                                            && e.EntryId == entry.Id
+                                            && e.DetailJson!.Contains("RECURRENCE_CAP_EXCEEDED"));
+    }
+
+    [Fact]
+    public async Task RecordDeclinedAsync_ParticipatesInHashChain()
+    {
+        var operation = await OpenOperationAsync();
+
+        await _service.RecordDeclinedAsync(
+            new BeginRecoveryEntryRequest
+            {
+                OperationId = operation.Id,
+                OwnerId = OwnerA,
+                Actor = Actor(),
+                BodyHash = "shared-hash",
+                TargetEntity = "orders-dlq",
+            },
+            "RECURRENCE_CAP_EXCEEDED",
+            detailJson: null);
+
+        var chain = await _service.VerifyChainAsync(OwnerA);
+        chain.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RecordDeclinedAsync_OperationBelongsToDifferentOwner_ReturnsNotFound()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+
+        var result = await _service.RecordDeclinedAsync(
+            new BeginRecoveryEntryRequest
+            {
+                OperationId = operation.Id,
+                OwnerId = OwnerB,
+                Actor = Actor(),
+                BodyHash = "shared-hash",
+                TargetEntity = "orders-dlq",
+            },
+            "RECURRENCE_CAP_EXCEEDED",
+            detailJson: null);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.NotFound);
+    }
+
+    [Fact]
+    public async Task RecordDeclinedAsync_DifferentOwner_NotVisibleViaOwnerScopedQueries()
+    {
+        var opA = await OpenOperationAsync(OwnerA);
+        await _service.RecordDeclinedAsync(
+            new BeginRecoveryEntryRequest
+            {
+                OperationId = opA.Id,
+                OwnerId = OwnerA,
+                Actor = Actor(),
+                BodyHash = "shared-hash",
+                TargetEntity = "orders-dlq",
+            },
+            "RECURRENCE_CAP_EXCEEDED",
+            detailJson: null);
+
+        var ownerBEntries = await _service.QueryEntriesAsync(new RecoveryEntryQuery { OwnerId = OwnerB });
+        ownerBEntries.Should().BeEmpty();
+
+        var ownerBEvents = await _service.GetEventsForOperationAsync(opA.Id, OwnerB);
+        ownerBEvents.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task FindLineageMatchesAsync_ReturnsOwnerAndWindowScopedSet()
+    {
+        var operation = await OpenOperationAsync();
+        var now = DateTimeOffset.UtcNow;
+
+        // Seeded directly against the DbContext (bypassing BeginEntryAsync, which always stamps
+        // BegunAt = UtcNow) so each entry can simulate a specific point in the past for the
+        // 90-day window-boundary assertion. Insert is unrestricted by the append-only guard —
+        // only Modified/Deleted are — so this is a legitimate way to seed fixture data.
+        RecoveryLedgerEntry Seed(DateTimeOffset begunAt, string ownerId = OwnerA, string bodyHash = "shared-hash")
+        {
+            var entry = new RecoveryLedgerEntry
+            {
+                OperationId = operation.Id,
+                OwnerId = ownerId,
+                NamespaceId = operation.NamespaceId,
+                EntityNameSnapshot = "orders-dlq",
+                BodyHash = bodyHash,
+                TargetEntity = "orders-dlq",
+                BegunAt = begunAt,
+                State = RecoveryEntryState.Observing,
+            };
+            _dbContext.RecoveryLedgerEntries.Add(entry);
+            return entry;
+        }
+
+        var withinWindow = Seed(now.AddDays(-89));
+        var outsideWindow = Seed(now.AddDays(-91));
+        var otherOwner = Seed(now, ownerId: OwnerB);
+        var otherHash = Seed(now, bodyHash: "different-hash");
+        await _dbContext.SaveChangesAsync();
+
+        var matches = await _service.FindLineageMatchesAsync(
+            OwnerA, operation.NamespaceId, "orders-dlq", "shared-hash", now.AddDays(-90));
+
+        matches.Select(m => m.Id).Should().BeEquivalentTo(new[] { withinWindow.Id });
+        matches.Select(m => m.Id).Should().NotContain(new[] { outsideWindow.Id, otherOwner.Id, otherHash.Id });
+    }
+
     // ── Illegal transitions ─────────────────────────────────────────────────
 
     [Fact]

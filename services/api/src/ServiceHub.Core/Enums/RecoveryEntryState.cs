@@ -40,5 +40,11 @@ public enum RecoveryEntryState
     /// Terminal. Reachable only via <see cref="Interfaces.IRecoveryLedger.ExpireEntryAsync"/>,
     /// called by the ageing worker after an <see cref="RecoveryEventType.AgeingFlagged"/> event
     /// exists for the entry.</summary>
-    Expired = 9
+    Expired = 9,
+
+    /// <summary>An eligibility check blocked this attempt before any provider was contacted —
+    /// e.g. the recurrence-lineage cap (roadmap §7.5). Terminal from the start; there is no
+    /// preceding <see cref="Executing"/>/<see cref="Observing"/> phase, since no provider call
+    /// was ever made. Reachable only via <see cref="Interfaces.IRecoveryLedger.RecordDeclinedAsync"/>.</summary>
+    Declined = 10
 }

@@ -28,5 +28,8 @@ public enum RecoveryDisposition
     WrittenOff = 5,
 
     /// <summary>Mirrors <see cref="RecoveryEntryState.Expired"/>. Reserved, unused this phase.</summary>
-    Expired = 6
+    Expired = 6,
+
+    /// <summary>Mirrors <see cref="RecoveryEntryState.Declined"/>.</summary>
+    Declined = 7
 }
