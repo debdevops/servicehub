@@ -1356,4 +1356,63 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
             }
         }
     }
+
+    // ── RecordRecurrenceContextAsync (roadmap §9.4.1) ─────────────────────────
+
+    [Fact]
+    public async Task RecordRecurrenceContextAsync_WritesRecurrenceCapObservedEventOnTheRealEntry()
+    {
+        var operation = await OpenOperationAsync();
+        var entry = await BeginEntryAsync(operation);
+
+        var result = await _service.RecordRecurrenceContextAsync(
+            entry.Id, OwnerA, Actor(), "RECURRENCE_CAP_EXCEEDED", matchedCount: 3);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.EventType.Should().Be(RecoveryEventType.RecurrenceCapObserved);
+        result.Value.EntryId.Should().Be(entry.Id);
+        result.Value.DetailJson.Should().Contain("RECURRENCE_CAP_EXCEEDED").And.Contain("3");
+
+        // Never a fabricated Declined entry (§29.11 rule 2) — the real entry's own state is
+        // untouched by recording this context.
+        var reloaded = await _dbContext.RecoveryLedgerEntries.FindAsync(entry.Id);
+        reloaded!.State.Should().Be(entry.State);
+        reloaded.Disposition.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RecordRecurrenceContextAsync_ParticipatesInHashChain()
+    {
+        var operation = await OpenOperationAsync();
+        var entry = await BeginEntryAsync(operation);
+
+        await _service.RecordRecurrenceContextAsync(
+            entry.Id, OwnerA, Actor(), "RECURRENCE_CAP_EXCEEDED_HEURISTIC", matchedCount: 5);
+
+        var chain = await _service.VerifyChainAsync(OwnerA);
+        chain.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RecordRecurrenceContextAsync_UnknownEntry_ReturnsNotFound()
+    {
+        var result = await _service.RecordRecurrenceContextAsync(
+            Guid.NewGuid(), OwnerA, Actor(), "RECURRENCE_CAP_EXCEEDED", matchedCount: 3);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.NotFound);
+    }
+
+    [Fact]
+    public async Task RecordRecurrenceContextAsync_DifferentOwner_ReturnsNotFound()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry = await BeginEntryAsync(operation);
+
+        var result = await _service.RecordRecurrenceContextAsync(
+            entry.Id, OwnerB, Actor(), "RECURRENCE_CAP_EXCEEDED", matchedCount: 3);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.NotFound);
+    }
 }

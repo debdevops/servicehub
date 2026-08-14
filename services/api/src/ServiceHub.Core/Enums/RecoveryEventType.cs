@@ -61,8 +61,15 @@ public enum RecoveryEventType
     /// itself un-demote any grant the independent, always-on demotion rules already caught.</summary>
     EmergencyStopCleared = 14,
 
-    // 15 (OutcomeFlagged) and 16 (RecurrenceCapObserved) are reserved by the roadmap (§8.10,
-    // §9.4.1) — not yet implemented; later Phase D tasks.
+    // 15 (OutcomeFlagged) is reserved by the roadmap (§8.10) — not yet implemented; a later
+    // Phase D task.
+
+    /// <summary>A recurrence-lineage cap (roadmap §7.5) was reached for this attempt's lineage,
+    /// but the actor was <c>User</c>/<c>ApiKey</c> and predicate 3 did not auto-deny it (§29.11
+    /// Option B) — recorded as observability context on the real entry the attempt produced.
+    /// Never a state transition, never implying the entry itself is anomalous (roadmap
+    /// §9.4.1).</summary>
+    RecurrenceCapObserved = 16,
 
     /// <summary>An <see cref="Entities.AutonomyGrant"/> was promoted to a higher
     /// <see cref="AutonomyLevel"/> (roadmap §9.4.3).</summary>

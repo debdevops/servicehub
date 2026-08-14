@@ -756,6 +756,20 @@ public sealed class RulesController : ApiControllerBase
 
                     var entry = beginResult.Value;
 
+                    if (decision.ReasonCode is not null)
+                    {
+                        try
+                        {
+                            await recoveryLedger.RecordRecurrenceContextAsync(
+                                entry.Id, OwnerId, actor, decision.ReasonCode, decision.MatchedCount, ct);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex,
+                                "Failed to record RecurrenceCapObserved ledger event for entry {EntryId}", entry.Id);
+                        }
+                    }
+
                     var replayResult = await messageOperationsService.ReplayMessageAsync(
                         group.Key.NamespaceId, entityName, subscriptionName, msg.SequenceNumber, entry.Id, ct);
 

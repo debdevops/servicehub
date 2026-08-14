@@ -430,4 +430,34 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
         decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
         decision.ReasonCode.Should().Be(RecoveryEligibilityGate.ReasonRateLimited);
     }
+
+    // ── Predicate 3 human-recurrence observability (roadmap §9.4.1) ────────────
+
+    [Theory]
+    [InlineData(RecoveryActorKind.User)]
+    [InlineData(RecoveryActorKind.ApiKey)]
+    public async Task RecurrenceCapReachedByHumanActor_AllowedButCarriesReasonCodeAndMatchedCount(
+        RecoveryActorKind actorKind)
+    {
+        for (var i = 0; i < 3; i++)
+            SeedLineageEntry("orders", "hash-1", DateTimeOffset.UtcNow.AddDays(-i - 1), confidence: VerificationConfidence.Exact);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: actorKind));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Allow);
+        decision.ReasonCode.Should().Be("RECURRENCE_CAP_EXCEEDED");
+        decision.MatchedCount.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task RecurrenceCapNotReachedByHumanActor_PlainAllowWithNoReasonCode()
+    {
+        SeedLineageEntry("orders", "hash-1", DateTimeOffset.UtcNow.AddDays(-1), confidence: VerificationConfidence.Exact);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.User));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Allow);
+        decision.ReasonCode.Should().BeNull();
+        decision.MatchedCount.Should().Be(0);
+    }
 }

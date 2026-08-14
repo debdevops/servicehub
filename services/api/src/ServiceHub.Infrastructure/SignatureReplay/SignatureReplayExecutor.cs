@@ -315,6 +315,11 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
 
         var entry = beginResult.Value;
 
+        if (decision.ReasonCode is not null)
+        {
+            await RecordRecurrenceContextAsync(entry.Id, recovery, decision, cancellationToken);
+        }
+
         var result = await _messageOperationsService.ReplayMessageAsync(
             message.NamespaceId, entityName, subscriptionName, message.SequenceNumber, entry.Id, cancellationToken);
 
@@ -406,6 +411,26 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             _logger.LogError(ex,
                 "Failed to record Declined ledger entry for message {MessageId}",
                 LogRedactor.SanitiseForLog(message.MessageId));
+        }
+    }
+
+    /// <summary>
+    /// Records a human actor's recurrence-cap-reached-but-allowed attempt as observability
+    /// evidence (roadmap §9.4.1). Best-effort: a ledger-write failure never blocks the recovery
+    /// attempt itself, matching <see cref="RecordDeclinedAsync"/>'s same guarantee.
+    /// </summary>
+    private async Task RecordRecurrenceContextAsync(
+        Guid entryId, RecoveryContext recovery, EligibilityDecision decision, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _recoveryLedger.RecordRecurrenceContextAsync(
+                entryId, recovery.OwnerId, recovery.Actor, decision.ReasonCode!, decision.MatchedCount,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to record RecurrenceCapObserved ledger event for entry {EntryId}", entryId);
         }
     }
 

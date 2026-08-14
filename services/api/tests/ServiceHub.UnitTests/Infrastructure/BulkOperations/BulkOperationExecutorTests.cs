@@ -446,6 +446,16 @@ public sealed class BulkOperationExecutorTests : IDisposable
             .Where(e => e.OwnerId == OwnerId).ToListAsync();
         entries.Should().HaveCount(4);
         entries.Should().NotContain(e => e.State == RecoveryEntryState.Declined);
+
+        // §9.4.1 / acceptance criteria: the cap being reached-but-allowed for a human actor is
+        // still evidenced — exactly one RecurrenceCapObserved event on the real entry, never a
+        // fabricated Declined entry.
+        var realEntry = entries.Single(e => e.State != RecoveryEntryState.Recovered);
+        var events = await _dbContext.RecoveryEvents.AsNoTracking()
+            .Where(e => e.OwnerId == OwnerId && e.EntryId == realEntry.Id).ToListAsync();
+        events.Should().ContainSingle(e => e.EventType == RecoveryEventType.RecurrenceCapObserved
+                                            && e.DetailJson!.Contains("RECURRENCE_CAP_EXCEEDED")
+                                            && e.DetailJson.Contains("3"));
     }
 
     // ── Purge eligibility (v3.6.0 P2-2) ──────────────────────────────────────

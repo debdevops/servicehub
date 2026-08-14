@@ -482,6 +482,11 @@ public sealed class MessagesController : ApiControllerBase
             return Result<(RecoveryActor, RecoveryLedgerEntry, string)>.Failure(beginResult.Error);
         }
 
+        if (decision.ReasonCode is not null)
+        {
+            await RecordRecurrenceContextAsync(beginResult.Value.Id, actor, decision, cancellationToken);
+        }
+
         return Result<(RecoveryActor, RecoveryLedgerEntry, string)>.Success((actor, beginResult.Value, combinedEntityName));
     }
 
@@ -501,6 +506,26 @@ public sealed class MessagesController : ApiControllerBase
 
         await _dlqHistoryService.UpdateStatusAsync(
             claimedMessage.OwnerId, claimedMessage.Id, DlqMessageStatus.Active, cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Records a human actor's recurrence-cap-reached-but-allowed attempt as observability
+    /// evidence (roadmap §9.4.1) — best-effort: a ledger-write failure never blocks the recovery
+    /// attempt itself, matching this codebase's existing evidence-write failure handling.
+    /// </summary>
+    private async Task RecordRecurrenceContextAsync(
+        Guid entryId, RecoveryActor actor, EligibilityDecision decision, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _recoveryLedger.RecordRecurrenceContextAsync(
+                entryId, OwnerId, actor, decision.ReasonCode!, decision.MatchedCount, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to record RecurrenceCapObserved ledger event for entry {EntryId}", entryId);
+        }
     }
 
     /// <summary>

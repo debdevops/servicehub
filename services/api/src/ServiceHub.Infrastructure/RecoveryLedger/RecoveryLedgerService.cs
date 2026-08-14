@@ -378,6 +378,33 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     }
 
     /// <inheritdoc />
+    public async Task<Result<RecoveryEvent>> RecordRecurrenceContextAsync(
+        Guid entryId, string ownerId, RecoveryActor actor, string reasonCode, int matchedCount,
+        CancellationToken cancellationToken = default)
+    {
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+
+        var entry = await _dbContext.RecoveryLedgerEntries
+            .FirstOrDefaultAsync(e => e.Id == entryId, cancellationToken);
+
+        if (entry is null || entry.OwnerId != ownerId)
+        {
+            return Result<RecoveryEvent>.Failure(Error.NotFound(
+                "RecoveryLedger.EntryNotFound", "Recovery ledger entry not found."));
+        }
+
+        var detail = JsonSerializer.Serialize(new { reasonCode, matchedCount });
+
+        var evt = await AppendEventAsync(
+            entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.RecurrenceCapObserved, actor,
+            detail, cancellationToken);
+        entry.LastEventSeq = evt.Seq;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return Result<RecoveryEvent>.Success(evt);
+    }
+
+    /// <inheritdoc />
     public async Task<ChainVerificationResult> VerifyChainAsync(string ownerId, CancellationToken cancellationToken = default)
     {
         var events = await _dbContext.RecoveryEvents

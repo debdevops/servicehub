@@ -72,6 +72,24 @@ public interface IRecoveryLedger
         string note,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Records that predicate 3's recurrence-lineage cap (roadmap §7.5) was reached for this
+    /// entry's lineage but a <c>User</c>/<c>ApiKey</c> actor was not auto-denied (§29.11 Option
+    /// B, §9.4.1) — appends a <see cref="Enums.RecoveryEventType.RecurrenceCapObserved"/> event
+    /// carrying <paramref name="reasonCode"/>/<paramref name="matchedCount"/> as structured
+    /// <c>DetailJson</c>. A direct sibling of <see cref="AppendNoteAsync"/>: does not change
+    /// entry state and is legal regardless of the entry's current state — additional
+    /// observability evidence, never a state transition, never implying the entry itself is
+    /// anomalous.
+    /// </summary>
+    Task<Result<RecoveryEvent>> RecordRecurrenceContextAsync(
+        Guid entryId,
+        string ownerId,
+        RecoveryActor actor,
+        string reasonCode,
+        int matchedCount,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Recomputes and compares one owner's hash chain, returning the first divergent
     /// <see cref="RecoveryEvent.Seq"/> if any is found. Tamper-EVIDENT, not tamper-PROOF.</summary>
     Task<ChainVerificationResult> VerifyChainAsync(

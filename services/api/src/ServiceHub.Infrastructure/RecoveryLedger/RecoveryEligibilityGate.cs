@@ -110,6 +110,10 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
 
         // Predicate 3 — recurrence cap (§7.5): only evaluable when the caller supplied a real
         // message identity, which every current wiring target does.
+        // §9.4.1: a User/ApiKey actor hitting the cap is not auto-denied (Option B) — the
+        // reason/count are carried forward as observability context on the eventual Allow verdict
+        // rather than silently discarded, and evaluation continues through predicates 4/5.
+        EligibilityDecision? recurrenceContext = null;
         if (request.NamespaceId is { } namespaceId
             && !string.IsNullOrEmpty(request.EntityNameSnapshot)
             && !string.IsNullOrEmpty(request.BodyHash))
@@ -119,7 +123,12 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
                 request.ActorKind, cancellationToken);
             if (lineageDecision is not null)
             {
-                return lineageDecision;
+                if (lineageDecision.Verdict != EligibilityVerdict.Allow)
+                {
+                    return lineageDecision;
+                }
+
+                recurrenceContext = lineageDecision;
             }
         }
 
@@ -142,7 +151,7 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
                 request.OwnerId);
         }
 
-        return EligibilityDecision.Allow;
+        return recurrenceContext ?? EligibilityDecision.Allow;
     }
 
     private async Task<EligibilityDecision?> EvaluateRecurrenceLineageAsync(
@@ -171,17 +180,6 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
             return null;
         }
 
-        // Option B (accepted roadmap decision): the cap is a hard stop only for an unattended
-        // actor. A human (User/ApiKey) hitting the cap does not get auto-denied by this
-        // predicate — the gate continues to predicate 4/5, and if those pass, the human's
-        // recovery proceeds and is recorded as its own real outcome, not a fabricated Declined
-        // entry. The lineage rows themselves are untouched and remain queryable evidence either
-        // way.
-        if (actorKind is RecoveryActorKind.User or RecoveryActorKind.ApiKey)
-        {
-            return null;
-        }
-
         var distinctSignatures = matches
             .Select(e => e.SignatureHashSnapshot)
             .Where(s => s is not null)
@@ -201,6 +199,17 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
             : matches.Any(e => e.VerificationConfidence == VerificationConfidence.Exact)
                 ? ReasonExceededExact
                 : ReasonExceededHeuristic;
+
+        // Option B (accepted roadmap decision): the cap is a hard stop only for an unattended
+        // actor. A human (User/ApiKey) hitting the cap does not get auto-denied by this
+        // predicate — the same reasonCode/matchedCount are instead carried forward on an Allow
+        // verdict (§9.4.1) so the fact remains observable evidence rather than silently
+        // discarded, and the gate continues to predicates 4/5. The lineage rows themselves are
+        // untouched and remain queryable evidence either way.
+        if (actorKind is RecoveryActorKind.User or RecoveryActorKind.ApiKey)
+        {
+            return new EligibilityDecision(EligibilityVerdict.Allow, reasonCode, MatchedCount: matches.Count);
+        }
 
         return new EligibilityDecision(EligibilityVerdict.Escalate, reasonCode, MatchedCount: matches.Count);
     }
