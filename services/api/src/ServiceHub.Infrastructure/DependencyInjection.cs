@@ -193,6 +193,7 @@ public static class DependencyInjection
         services.AddHostedService<AuditRetentionWorker>();
         services.AddHostedService<RecoveryVerificationWorker>();
         services.AddHostedService<RecoveryAgeingWorker>();
+        services.AddHostedService<AutonomyEvaluationWorker>();
 
         return services;
     }
@@ -264,6 +265,10 @@ public static class DependencyInjection
         // Deterministic Eligibility Gate (roadmap §9/Phase B) — the single safety-decision point
         // every recovery attempt passes through before a provider call.
         services.TryAddScoped<IRecoveryEligibilityGate, RecoveryEligibilityGate>();
+
+        // Evidence-Derived Trust Scoring (roadmap §8.10/Phase C) — read-only aggregation over
+        // the ledger; never writes, never grants autonomy.
+        services.TryAddScoped<IRecoveryTrustScoringService, RecoveryTrustScoringService>();
 
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();

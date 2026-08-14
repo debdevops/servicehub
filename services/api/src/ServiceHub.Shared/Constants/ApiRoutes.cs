@@ -449,6 +449,9 @@ public static class ApiRoutes
 
         /// <summary>Route for the ageing report of open (non-terminal) entries.</summary>
         public const string Ageing = $"{Base}/ageing";
+
+        /// <summary>Route for one signature's Evidence-Derived Trust Scoring report (roadmap §8.10).</summary>
+        public const string Trust = $"{Base}/trust/{{signatureHash}}";
     }
 
     /// <summary>Routes for the Investigation Center — incident command for failure investigation.</summary>

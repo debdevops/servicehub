@@ -612,6 +612,44 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<RecoveryDisposition, int>> GetDispositionCountsAsync(
+        string ownerId, string signatureHash, RecoveryOperationKind actionKind,
+        CancellationToken cancellationToken = default)
+    {
+        var counts = await _dbContext.RecoveryLedgerEntries
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId
+                        && e.SignatureHashSnapshot == signatureHash
+                        && e.Disposition != null)
+            .Join(
+                _dbContext.RecoveryOperations.AsNoTracking().Where(o => o.Kind == actionKind),
+                e => e.OperationId,
+                o => o.Id,
+                (e, _) => e.Disposition!.Value)
+            .GroupBy(disposition => disposition)
+            .Select(g => new { Disposition = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        return counts.ToDictionary(x => x.Disposition, x => x.Count);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> GetDistinctSignatureHashesAsync(
+        string ownerId, RecoveryOperationKind actionKind, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.RecoveryLedgerEntries
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.SignatureHashSnapshot != null)
+            .Join(
+                _dbContext.RecoveryOperations.AsNoTracking().Where(o => o.Kind == actionKind),
+                e => e.OperationId,
+                o => o.Id,
+                (e, _) => e.SignatureHashSnapshot!)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<Result<RecoveryLedgerEntry>> RecordDeclinedAsync(
         BeginRecoveryEntryRequest request, string reasonCode, string? detailJson,
         CancellationToken cancellationToken = default)

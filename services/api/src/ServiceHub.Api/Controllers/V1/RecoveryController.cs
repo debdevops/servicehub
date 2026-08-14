@@ -7,6 +7,7 @@ using ServiceHub.Api.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Shared.Constants;
@@ -32,12 +33,17 @@ public sealed class RecoveryController : ApiControllerBase
 
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly IRecoveryEvidenceExporter _evidenceExporter;
+    private readonly IRecoveryTrustScoringService _trustScoring;
 
     /// <summary>Initializes a new instance of the <see cref="RecoveryController"/> class.</summary>
-    public RecoveryController(IRecoveryLedger recoveryLedger, IRecoveryEvidenceExporter evidenceExporter)
+    public RecoveryController(
+        IRecoveryLedger recoveryLedger,
+        IRecoveryEvidenceExporter evidenceExporter,
+        IRecoveryTrustScoringService trustScoring)
     {
         _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _evidenceExporter = evidenceExporter ?? throw new ArgumentNullException(nameof(evidenceExporter));
+        _trustScoring = trustScoring ?? throw new ArgumentNullException(nameof(trustScoring));
     }
 
     /// <summary>
@@ -250,6 +256,35 @@ public sealed class RecoveryController : ApiControllerBase
         return Ok(entries.Select(MapToResponse).ToList());
     }
 
+    /// <summary>
+    /// Evidence-Derived Trust Scoring for one signature (roadmap §8.10, Phase C): verified
+    /// success rate, sample size, and whether the L3→L4/L4→L5 sample-and-rate thresholds are
+    /// met — purely a report of what the ledger already shows. Never implies an
+    /// <c>AutonomyGrant</c> exists; that write path is Phase D's, not this endpoint's.
+    /// </summary>
+    /// <param name="signatureHash">The failure signature to evaluate.</param>
+    /// <param name="actionKind">The recovery action to evaluate. Defaults to <see cref="RecoveryOperationKind.Replay"/> —
+    /// <see cref="RecoveryOperationKind.Purge"/> is never autonomous (§9.1) and always reports zero evidence.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.RecoveryRead)]
+    [HttpGet("trust/{signatureHash}")]
+    [ProducesResponseType(typeof(SignatureTrustEvidenceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<SignatureTrustEvidenceResponse>> GetTrustEvidence(
+        string signatureHash,
+        [FromQuery] RecoveryOperationKind actionKind = RecoveryOperationKind.Replay,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _trustScoring.EvaluateAsync(OwnerId, signatureHash, actionKind, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ToActionResult<SignatureTrustEvidenceResponse>(result.Error);
+        }
+
+        return Ok(MapToResponse(result.Value));
+    }
+
     private static int ClampLimit(int limit) => Math.Clamp(limit, 1, MaxLimit);
 
     private static byte[] BuildPackageZip(RecoveryEvidenceExport export)
@@ -317,6 +352,22 @@ public sealed class RecoveryController : ApiControllerBase
         VerificationConfidence: entry.VerificationConfidence?.ToString(),
         ObservationWindowEndsAt: entry.ObservationWindowEndsAt,
         ClosedAt: entry.ClosedAt);
+
+    private static SignatureTrustEvidenceResponse MapToResponse(SignatureTrustEvidence evidence) => new(
+        SignatureHash: evidence.SignatureHash,
+        ActionKind: evidence.ActionKind.ToString(),
+        RecoveredCount: evidence.RecoveredCount,
+        ReturnedCount: evidence.ReturnedCount,
+        FailedCount: evidence.FailedCount,
+        UnverifiedCount: evidence.UnverifiedCount,
+        DeclinedCount: evidence.DeclinedCount,
+        SampleSize: evidence.SampleSize,
+        VerifiedSuccessRate: evidence.VerifiedSuccessRate,
+        MeetsL4SampleAndRate: evidence.MeetsL4SampleAndRate,
+        MeetsL5SampleAndRate: evidence.MeetsL5SampleAndRate,
+        UnsafeOutcomePresent: evidence.UnsafeOutcomePresent,
+        DuplicateAssociationPresent: evidence.DuplicateAssociationPresent,
+        Reasons: evidence.Reasons);
 
     private static RecoveryEventResponse MapToResponse(RecoveryEvent evt) => new(
         Id: evt.Id,

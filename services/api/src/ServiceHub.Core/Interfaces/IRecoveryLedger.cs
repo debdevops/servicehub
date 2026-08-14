@@ -1,4 +1,5 @@
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Models;
 using ServiceHub.Shared.Results;
 
@@ -206,5 +207,33 @@ public interface IRecoveryLedger
         BeginRecoveryEntryRequest request,
         string reasonCode,
         string? detailJson,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Database-side aggregation of terminal <see cref="Enums.RecoveryDisposition"/> counts for
+    /// one signature's evidence population under one <see cref="Enums.RecoveryOperationKind"/> —
+    /// the source query for Evidence-Derived Trust Scoring (roadmap §8.10). Joined to the parent
+    /// <see cref="RecoveryOperation.Kind"/> so a rejected purge attempt sharing the same
+    /// <paramref name="signatureHash"/> can never be counted toward a replay trust score (both
+    /// can independently produce <see cref="Enums.RecoveryDisposition.Failed"/>). Entries with a
+    /// null <see cref="RecoveryLedgerEntry.Disposition"/> (non-terminal) are excluded.
+    /// </summary>
+    Task<IReadOnlyDictionary<RecoveryDisposition, int>> GetDispositionCountsAsync(
+        string ownerId,
+        string signatureHash,
+        RecoveryOperationKind actionKind,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every distinct, non-null <see cref="RecoveryLedgerEntry.SignatureHashSnapshot"/> value
+    /// with at least one entry under one <see cref="Enums.RecoveryOperationKind"/>, scoped to
+    /// <paramref name="ownerId"/> — the sweep set for <c>AutonomyEvaluationWorker</c>. A
+    /// null <c>SignatureHashSnapshot</c> is never returned: it has no per-signature trust
+    /// identity to evaluate (roadmap §4 — <c>BodyHash</c> lineage and <c>SignatureHash</c> trust
+    /// semantics are kept separate).
+    /// </summary>
+    Task<IReadOnlyList<string>> GetDistinctSignatureHashesAsync(
+        string ownerId,
+        RecoveryOperationKind actionKind,
         CancellationToken cancellationToken = default);
 }

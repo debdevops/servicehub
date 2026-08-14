@@ -83,3 +83,26 @@ public sealed record RecoveryOperationDetailResponse(
     RecoveryOperationResponse Operation,
     IReadOnlyList<RecoveryLedgerEntryResponse> Entries,
     IReadOnlyList<RecoveryEventResponse> Events);
+
+/// <summary>
+/// Response DTO for <c>GET /api/v1/recovery/trust/{signatureHash}</c> — a
+/// <see cref="Models.SignatureTrustEvidence"/> report. <c>UnsafeOutcomePresent</c> and
+/// <c>DuplicateAssociationPresent</c> are <see langword="null"/>, never <see langword="false"/>,
+/// whenever that evidence cannot yet be checked (see the model's doc comment) — never read a
+/// <see langword="null"/> here as "confirmed absent."
+/// </summary>
+public sealed record SignatureTrustEvidenceResponse(
+    string SignatureHash,
+    string ActionKind,
+    int RecoveredCount,
+    int ReturnedCount,
+    int FailedCount,
+    int UnverifiedCount,
+    int DeclinedCount,
+    int SampleSize,
+    double? VerifiedSuccessRate,
+    bool MeetsL4SampleAndRate,
+    bool MeetsL5SampleAndRate,
+    bool? UnsafeOutcomePresent,
+    bool? DuplicateAssociationPresent,
+    IReadOnlyList<string> Reasons);

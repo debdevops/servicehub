@@ -24,6 +24,7 @@ public sealed class RecoveryControllerTests : IDisposable
     private readonly DlqDbContext _dbContext;
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly IRecoveryEvidenceExporter _evidenceExporter;
+    private readonly IRecoveryTrustScoringService _trustScoring;
     private readonly RecoveryController _controller;
 
     public RecoveryControllerTests()
@@ -37,10 +38,11 @@ public sealed class RecoveryControllerTests : IDisposable
 
         _recoveryLedger = new RecoveryLedgerService(_dbContext);
         _evidenceExporter = new RecoveryEvidenceExporter(_recoveryLedger);
+        _trustScoring = new RecoveryTrustScoringService(_recoveryLedger);
         _controller = CreateController(OwnerA);
     }
 
-    private RecoveryController CreateController(string ownerId) => new(_recoveryLedger, _evidenceExporter)
+    private RecoveryController CreateController(string ownerId) => new(_recoveryLedger, _evidenceExporter, _trustScoring)
     {
         ControllerContext = new ControllerContext
         {
@@ -81,15 +83,22 @@ public sealed class RecoveryControllerTests : IDisposable
     [Fact]
     public void Constructor_NullRecoveryLedger_Throws()
     {
-        var act = () => new RecoveryController(null!, _evidenceExporter);
+        var act = () => new RecoveryController(null!, _evidenceExporter, _trustScoring);
         act.Should().Throw<ArgumentNullException>().WithParameterName("recoveryLedger");
     }
 
     [Fact]
     public void Constructor_NullEvidenceExporter_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, null!);
+        var act = () => new RecoveryController(_recoveryLedger, null!, _trustScoring);
         act.Should().Throw<ArgumentNullException>().WithParameterName("evidenceExporter");
+    }
+
+    [Fact]
+    public void Constructor_NullTrustScoring_Throws()
+    {
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, null!);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("trustScoring");
     }
 
     [Fact]
