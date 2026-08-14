@@ -1076,4 +1076,126 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
             .ToListAsync();
         dispositionEvents.Should().ContainSingle();
     }
+
+    // ── RecordAutonomyGrantTransitionAsync (Phase D Task 1) ───────────────────
+
+    [Fact]
+    public async Task RecordAutonomyGrantTransitionAsync_FirstPromotion_CreatesGrantAndPromotedEvent()
+    {
+        var result = await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-1", RecoveryOperationKind.Replay,
+            AutonomyLevel.Observe, AutonomyLevel.Approve, "earned via L1 knowledge entry", null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.OwnerId.Should().Be(OwnerA);
+        result.Value.SignatureHash.Should().Be("sig-1");
+        result.Value.ActionKind.Should().Be(RecoveryOperationKind.Replay);
+        result.Value.CurrentLevel.Should().Be(AutonomyLevel.Approve);
+
+        var grants = await _dbContext.AutonomyGrants.Where(g => g.SignatureHash == "sig-1").ToListAsync();
+        grants.Should().ContainSingle();
+
+        var events = await _dbContext.RecoveryEvents
+            .Where(e => e.EventType == RecoveryEventType.AutonomyGrantPromoted)
+            .ToListAsync();
+        var promoted = events.Should().ContainSingle().Subject;
+        promoted.EntryId.Should().BeNull();
+        promoted.DetailJson.Should().Contain("sig-1").And.Contain("earned via L1 knowledge entry");
+
+        var operation = await _dbContext.RecoveryOperations.SingleAsync(o => o.Id == promoted.OperationId);
+        operation.Kind.Should().Be(RecoveryOperationKind.AutonomyGrantChange);
+        operation.Trigger.Should().Be(RecoveryTrigger.AutonomyEvaluation);
+        operation.ActorKind.Should().Be(RecoveryActorKind.System);
+    }
+
+    [Fact]
+    public async Task RecordAutonomyGrantTransitionAsync_Demotion_UpdatesExistingGrantAndWritesDemotedEvent()
+    {
+        var first = await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-2", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "10 verified successes", null);
+        first.IsSuccess.Should().BeTrue();
+        var grantId = first.Value.Id;
+
+        var second = await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-2", RecoveryOperationKind.Replay,
+            AutonomyLevel.Standing, AutonomyLevel.Approve, "verified_success_rate dropped below 95%", null);
+
+        second.IsSuccess.Should().BeTrue();
+        second.Value.Id.Should().Be(grantId, "a demotion updates the existing projection row, never inserts a second one");
+        second.Value.CurrentLevel.Should().Be(AutonomyLevel.Approve);
+
+        (await _dbContext.AutonomyGrants.CountAsync(g => g.SignatureHash == "sig-2")).Should().Be(1);
+
+        var demotedEvents = await _dbContext.RecoveryEvents
+            .Where(e => e.EventType == RecoveryEventType.AutonomyGrantDemoted)
+            .ToListAsync();
+        demotedEvents.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task RecordAutonomyGrantTransitionAsync_EmptyReason_Fails()
+    {
+        var result = await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-3", RecoveryOperationKind.Replay,
+            AutonomyLevel.Observe, AutonomyLevel.Approve, "  ", null);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.Validation);
+        (await _dbContext.AutonomyGrants.AnyAsync(g => g.SignatureHash == "sig-3")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RecordAutonomyGrantTransitionAsync_SameLevel_Fails()
+    {
+        var result = await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-4", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Approve, "not a real transition", null);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.Validation);
+    }
+
+    [Fact]
+    public async Task RecordAutonomyGrantTransitionAsync_DifferentOwners_ProduceIsolatedGrants()
+    {
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "shared-sig", RecoveryOperationKind.Replay,
+            AutonomyLevel.Observe, AutonomyLevel.Approve, "owner A earns it", null);
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerB, "shared-sig", RecoveryOperationKind.Replay,
+            AutonomyLevel.Observe, AutonomyLevel.Standing, "owner B earns it independently", null);
+
+        var grantA = await _dbContext.AutonomyGrants.SingleAsync(g => g.OwnerId == OwnerA && g.SignatureHash == "shared-sig");
+        var grantB = await _dbContext.AutonomyGrants.SingleAsync(g => g.OwnerId == OwnerB && g.SignatureHash == "shared-sig");
+
+        grantA.CurrentLevel.Should().Be(AutonomyLevel.Approve);
+        grantB.CurrentLevel.Should().Be(AutonomyLevel.Standing);
+    }
+
+    [Fact]
+    public async Task RecordAutonomyGrantTransitionAsync_ParticipatesInHashChain()
+    {
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-5", RecoveryOperationKind.Replay,
+            AutonomyLevel.Observe, AutonomyLevel.Approve, "reason", null);
+
+        var chain = await _service.VerifyChainAsync(OwnerA);
+        chain.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RecordAutonomyGrantTransitionAsync_WithEvidenceJson_EmbedsEvidenceAsNestedJson()
+    {
+        var result = await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-6", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "reason",
+            evidenceJson: "{\"n\":12,\"verifiedSuccessRate\":0.95}");
+
+        var evt = await _dbContext.RecoveryEvents.SingleAsync(e => e.EventType == RecoveryEventType.AutonomyGrantPromoted);
+        evt.DetailJson.Should().Contain("\"verifiedSuccessRate\":0.95");
+        // Nested as a real JSON object, not a double-escaped string.
+        evt.DetailJson.Should().NotContain("\\\"n\\\"");
+        result.IsSuccess.Should().BeTrue();
+    }
 }

@@ -48,5 +48,17 @@ public enum RecoveryEventType
     /// <summary>A deterministic eligibility check blocked a recovery attempt before any provider
     /// was contacted — e.g. the recurrence-lineage cap (roadmap §7.5, §9.3). Recorded instead of
     /// <c>AuditService</c>, which is a bounded, lossy channel unsuitable as forensic evidence.</summary>
-    EligibilityDeclined = 12
+    EligibilityDeclined = 12,
+
+    // 13 (EmergencyStopActivated), 14 (EmergencyStopCleared), 15 (OutcomeFlagged), and 16
+    // (RecurrenceCapObserved) are reserved by the roadmap (§9.4.1, §9.4.2, §8.10) — not yet
+    // implemented; later Phase D tasks.
+
+    /// <summary>An <see cref="Entities.AutonomyGrant"/> was promoted to a higher
+    /// <see cref="AutonomyLevel"/> (roadmap §9.4.3).</summary>
+    AutonomyGrantPromoted = 17,
+
+    /// <summary>An <see cref="Entities.AutonomyGrant"/> was demoted to a lower
+    /// <see cref="AutonomyLevel"/> (roadmap §9.4.3).</summary>
+    AutonomyGrantDemoted = 18
 }

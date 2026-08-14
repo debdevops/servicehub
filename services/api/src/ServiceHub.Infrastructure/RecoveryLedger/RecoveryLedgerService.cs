@@ -707,6 +707,89 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
         return Result<RecoveryLedgerEntry>.Success(entry);
     }
 
+    /// <inheritdoc />
+    public async Task<Result<AutonomyGrant>> RecordAutonomyGrantTransitionAsync(
+        string ownerId, string signatureHash, RecoveryOperationKind actionKind,
+        AutonomyLevel previousLevel, AutonomyLevel newLevel, string reason, string? evidenceJson,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return Result<AutonomyGrant>.Failure(Error.Validation(
+                "RecoveryLedger.ReasonRequired", "A reason is required to record an autonomy grant transition."));
+        }
+
+        if (previousLevel == newLevel)
+        {
+            return Result<AutonomyGrant>.Failure(Error.Validation(
+                "RecoveryLedger.NotATransition", "previousLevel and newLevel must differ."));
+        }
+
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+
+        var grant = await _dbContext.AutonomyGrants.FirstOrDefaultAsync(
+            g => g.OwnerId == ownerId && g.SignatureHash == signatureHash && g.ActionKind == actionKind,
+            cancellationToken);
+
+        var now = DateTimeOffset.UtcNow;
+
+        if (grant is null)
+        {
+            grant = new AutonomyGrant
+            {
+                OwnerId = ownerId,
+                SignatureHash = signatureHash,
+                ActionKind = actionKind,
+                CurrentLevel = newLevel,
+                UpdatedAtUtc = now,
+            };
+            _dbContext.AutonomyGrants.Add(grant);
+        }
+        else
+        {
+            grant.CurrentLevel = newLevel;
+            grant.UpdatedAtUtc = now;
+        }
+
+        var actor = ActorIdentityResolver.ResolveSystemActor("AutonomyEvaluationWorker");
+
+        var operation = new RecoveryOperation
+        {
+            OwnerId = ownerId,
+            Kind = RecoveryOperationKind.AutonomyGrantChange,
+            Trigger = RecoveryTrigger.AutonomyEvaluation,
+            ActorIdentity = actor.Identity,
+            ActorKind = actor.Kind,
+            ActorScopes = actor.Scopes,
+            NamespaceId = null,
+            ScopeDescription = $"signature={signatureHash}; action={actionKind}",
+            ServiceVersion = GetServiceVersion(),
+            OpenedAt = now,
+            TargetCount = 0,
+        };
+        _dbContext.RecoveryOperations.Add(operation);
+
+        var evidence = evidenceJson is null ? (JsonElement?)null : JsonSerializer.Deserialize<JsonElement>(evidenceJson);
+        var detail = JsonSerializer.Serialize(new
+        {
+            signatureHash,
+            actionKind = actionKind.ToString(),
+            previousLevel = previousLevel.ToString(),
+            newLevel = newLevel.ToString(),
+            reason,
+            evidence,
+        });
+
+        var eventType = newLevel > previousLevel
+            ? RecoveryEventType.AutonomyGrantPromoted
+            : RecoveryEventType.AutonomyGrantDemoted;
+
+        await AppendEventAsync(ownerId, entryId: null, operation.Id, eventType, actor, detail, cancellationToken);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return Result<AutonomyGrant>.Success(grant);
+    }
+
     /// <summary>
     /// Appends one event to <paramref name="ownerId"/>'s chain. Must be called while holding
     /// that owner's lock (see <see cref="AcquireOwnerLockAsync"/>) — sequencing considers both

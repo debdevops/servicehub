@@ -382,4 +382,181 @@ public class DlqDbContextTests : IDisposable
         await contextA.Entry(msg).ReloadAsync();
         msg.Status.Should().Be(DlqMessageStatus.Replayed);
     }
+
+    private static AutonomyGrant NewGrant(
+        string ownerId = "owner-a", string signatureHash = "sig-1",
+        RecoveryOperationKind actionKind = RecoveryOperationKind.Replay,
+        AutonomyLevel level = AutonomyLevel.Approve) => new()
+    {
+        OwnerId = ownerId,
+        SignatureHash = signatureHash,
+        ActionKind = actionKind,
+        CurrentLevel = level,
+        UpdatedAtUtc = DateTimeOffset.UtcNow,
+    };
+
+    [Fact]
+    public async Task AutonomyGrants_CanInsertAndQuery()
+    {
+        _dbContext.AutonomyGrants.Add(NewGrant());
+        await _dbContext.SaveChangesAsync();
+
+        var loaded = await _dbContext.AutonomyGrants.FirstAsync();
+        loaded.OwnerId.Should().Be("owner-a");
+        loaded.SignatureHash.Should().Be("sig-1");
+        loaded.ActionKind.Should().Be(RecoveryOperationKind.Replay);
+        loaded.CurrentLevel.Should().Be(AutonomyLevel.Approve);
+        loaded.ConcurrencyStamp.Should().NotBe(Guid.Empty);
+    }
+
+    [Fact]
+    public async Task AutonomyGrants_EnforcesUniqueConstraintOnOwnerSignatureAction()
+    {
+        _dbContext.AutonomyGrants.Add(NewGrant());
+        await _dbContext.SaveChangesAsync();
+
+        // Same (OwnerId, SignatureHash, ActionKind) triple — must be rejected even though it's a
+        // distinct row (different Id, different CurrentLevel).
+        _dbContext.AutonomyGrants.Add(NewGrant(level: AutonomyLevel.Standing));
+        var act = () => _dbContext.SaveChangesAsync();
+        await act.Should().ThrowAsync<DbUpdateException>();
+    }
+
+    [Fact]
+    public async Task AutonomyGrants_ConcurrencyStamp_ChangesOnEveryInsertAndUpdate()
+    {
+        var grant = NewGrant();
+        _dbContext.AutonomyGrants.Add(grant);
+        await _dbContext.SaveChangesAsync();
+        var afterInsert = grant.ConcurrencyStamp;
+        afterInsert.Should().NotBe(Guid.Empty);
+
+        grant.CurrentLevel = AutonomyLevel.Standing;
+        await _dbContext.SaveChangesAsync();
+        var afterUpdate = grant.ConcurrencyStamp;
+
+        afterUpdate.Should().NotBe(afterInsert);
+    }
+
+    /// <summary>Builds the minimal operation+event pair <c>RecordAutonomyGrantTransitionAsync</c>
+    /// itself writes alongside a grant mutation, for tests that need to prove the two are written
+    /// atomically without going through <c>RecoveryLedgerService</c> — whose per-owner semaphore
+    /// otherwise serialises same-owner calls in-process, meaning it cannot be made to race itself
+    /// here (roadmap §9.4.4's protections exist for the cross-process case that serialisation
+    /// can't cover).</summary>
+    private static RecoveryOperation NewGrantChangeOperation(string ownerId = "owner-a") => new()
+    {
+        OwnerId = ownerId,
+        Kind = RecoveryOperationKind.AutonomyGrantChange,
+        Trigger = RecoveryTrigger.AutonomyEvaluation,
+        ActorIdentity = "System:AutonomyEvaluationWorker",
+        ActorKind = RecoveryActorKind.System,
+        ScopeDescription = "signature=sig-race; action=Replay",
+        ServiceVersion = "test",
+        OpenedAt = DateTimeOffset.UtcNow,
+        TargetCount = 0,
+    };
+
+    private static RecoveryEvent NewGrantChangeEvent(Guid operationId, string ownerId, long seq) => new()
+    {
+        OwnerId = ownerId,
+        Seq = seq,
+        EntryId = null,
+        OperationId = operationId,
+        EventType = RecoveryEventType.AutonomyGrantPromoted,
+        OccurredAt = DateTimeOffset.UtcNow,
+        ActorIdentity = "System:AutonomyEvaluationWorker",
+        ActorKind = RecoveryActorKind.System,
+        PrevHash = new string('0', 64),
+        EntryHash = new string(seq == 1 ? '1' : '2', 64),
+        SchemaVersion = 1,
+    };
+
+    [Fact]
+    public async Task AutonomyGrants_ConcurrentFirstCreation_LoserThrowsDbUpdateException()
+    {
+        // Two independent DlqDbContext instances over a shared-cache SQLite DB, standing in for
+        // two AutonomyEvaluationWorker sweep cycles both deciding — for the first time — that the
+        // same (OwnerId, SignatureHash, ActionKind) triple has earned a grant (roadmap §9.4.4
+        // Correction, protection A). Each side also writes the operation+event pair the real
+        // transition method bundles with the grant write, to prove the whole unit of work — not
+        // just the grant row — rolls back together for the loser.
+        var connectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        using var keeperConnection = new SqliteConnection(connectionString);
+        keeperConnection.Open();
+
+        var options = new DbContextOptionsBuilder<DlqDbContext>().UseSqlite(connectionString).Options;
+
+        using var contextA = new DlqDbContext(options);
+        contextA.Database.EnsureCreated();
+        using var contextB = new DlqDbContext(options);
+
+        var opA = NewGrantChangeOperation();
+        contextA.RecoveryOperations.Add(opA);
+        contextA.RecoveryEvents.Add(NewGrantChangeEvent(opA.Id, opA.OwnerId, seq: 1));
+        contextA.AutonomyGrants.Add(NewGrant(signatureHash: "sig-race", level: AutonomyLevel.Approve));
+
+        var opB = NewGrantChangeOperation();
+        contextB.RecoveryOperations.Add(opB);
+        contextB.RecoveryEvents.Add(NewGrantChangeEvent(opB.Id, opB.OwnerId, seq: 1));
+        contextB.AutonomyGrants.Add(NewGrant(signatureHash: "sig-race", level: AutonomyLevel.Standing));
+
+        await contextA.SaveChangesAsync();
+        var act = () => contextB.SaveChangesAsync();
+        await act.Should().ThrowAsync<DbUpdateException>();
+
+        (await contextA.AutonomyGrants.CountAsync(g => g.SignatureHash == "sig-race")).Should().Be(1);
+        // B's operation+event never committed either — the whole SaveChanges call rolled back
+        // together, not just the grant insert that triggered the failure.
+        (await contextA.RecoveryOperations.CountAsync(o => o.Id == opB.Id)).Should().Be(0);
+        (await contextA.RecoveryEvents.CountAsync(e => e.OperationId == opB.Id)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AutonomyGrants_ConcurrentUpdate_LoserThrowsDbUpdateConcurrencyException()
+    {
+        // Two independent DlqDbContext instances over a shared-cache SQLite DB, standing in for
+        // two AutonomyEvaluationWorker sweep cycles both mutating the same, already-existing
+        // grant row (roadmap §9.4.4 Correction, protection B). Each side also writes the
+        // operation+event pair the real transition method bundles with the grant mutation, to
+        // prove the whole unit of work rolls back together for the loser, not just the grant row.
+        var connectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        using var keeperConnection = new SqliteConnection(connectionString);
+        keeperConnection.Open();
+
+        var options = new DbContextOptionsBuilder<DlqDbContext>().UseSqlite(connectionString).Options;
+
+        using var contextA = new DlqDbContext(options);
+        contextA.Database.EnsureCreated();
+
+        var grant = NewGrant(signatureHash: "sig-update-race");
+        contextA.AutonomyGrants.Add(grant);
+        await contextA.SaveChangesAsync();
+
+        using var contextB = new DlqDbContext(options);
+        var grantViaB = await contextB.AutonomyGrants.SingleAsync(g => g.Id == grant.Id);
+
+        // Worker B claims first and saves — its own operation+event pair too.
+        var opB = NewGrantChangeOperation();
+        contextB.RecoveryOperations.Add(opB);
+        contextB.RecoveryEvents.Add(NewGrantChangeEvent(opB.Id, opB.OwnerId, seq: 1));
+        grantViaB.CurrentLevel = AutonomyLevel.Standing;
+        await contextB.SaveChangesAsync();
+
+        // Worker A still holds its original, now-stale ConcurrencyStamp snapshot, and attempts
+        // its own competing operation+event pair alongside its (losing) grant mutation.
+        var opA = NewGrantChangeOperation();
+        contextA.RecoveryOperations.Add(opA);
+        contextA.RecoveryEvents.Add(NewGrantChangeEvent(opA.Id, opA.OwnerId, seq: 2));
+        grant.CurrentLevel = AutonomyLevel.Unattended;
+        var act = async () => await contextA.SaveChangesAsync();
+
+        await act.Should().ThrowAsync<DbUpdateConcurrencyException>();
+
+        await contextA.Entry(grant).ReloadAsync();
+        grant.CurrentLevel.Should().Be(AutonomyLevel.Standing);
+        // A's operation+event never committed either — rolled back with the losing grant update.
+        (await contextB.RecoveryOperations.CountAsync(o => o.Id == opA.Id)).Should().Be(0);
+        (await contextB.RecoveryEvents.CountAsync(e => e.OperationId == opA.Id)).Should().Be(0);
+    }
 }

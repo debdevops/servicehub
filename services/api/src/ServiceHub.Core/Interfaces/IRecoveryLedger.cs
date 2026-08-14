@@ -236,4 +236,28 @@ public interface IRecoveryLedger
         string ownerId,
         RecoveryOperationKind actionKind,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records an <see cref="Entities.AutonomyGrant"/> promotion or demotion — updates (or, on
+    /// first promotion, inserts) the grant's current-level projection and appends the paired,
+    /// immutable <see cref="Enums.RecoveryEventType.AutonomyGrantPromoted"/>/
+    /// <see cref="Enums.RecoveryEventType.AutonomyGrantDemoted"/> forensic event, atomically in
+    /// one <c>SaveChanges</c> (roadmap §9.4.3). Fails validation if <paramref name="reason"/> is
+    /// empty or <paramref name="previousLevel"/> equals <paramref name="newLevel"/> (not a real
+    /// transition). A losing concurrent write — either a first-creation uniqueness race or a
+    /// mutation-concurrency-token race (roadmap §9.4.4) — throws
+    /// <c>DbUpdateException</c>/<c>DbUpdateConcurrencyException</c> rather than
+    /// returning a <see cref="Result{T}"/> failure, matching this codebase's existing convention
+    /// for genuine concurrent-write races (see <c>DlqMessage.Status</c>): the caller is expected
+    /// to catch it and simply re-evaluate on its next sweep, never treating it as a caller error.
+    /// </summary>
+    Task<Result<AutonomyGrant>> RecordAutonomyGrantTransitionAsync(
+        string ownerId,
+        string signatureHash,
+        RecoveryOperationKind actionKind,
+        AutonomyLevel previousLevel,
+        AutonomyLevel newLevel,
+        string reason,
+        string? evidenceJson,
+        CancellationToken cancellationToken = default);
 }

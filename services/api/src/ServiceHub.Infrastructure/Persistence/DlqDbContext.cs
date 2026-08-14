@@ -63,6 +63,10 @@ public sealed class DlqDbContext : DbContext
     /// <summary>Recovery Evidence Ledger: append-only, hash-chained events — the evidence itself.</summary>
     public DbSet<RecoveryEvent> RecoveryEvents => Set<RecoveryEvent>();
 
+    /// <summary>Current earned-autonomy projection per (owner, signature, action) — the sole
+    /// mutable table in the Recovery Evidence Ledger family. See <see cref="AutonomyGrant"/>.</summary>
+    public DbSet<AutonomyGrant> AutonomyGrants => Set<AutonomyGrant>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -85,12 +89,14 @@ public sealed class DlqDbContext : DbContext
         ConfigureRecoveryOperation(modelBuilder);
         ConfigureRecoveryLedgerEntry(modelBuilder);
         ConfigureRecoveryEvent(modelBuilder);
+        ConfigureAutonomyGrant(modelBuilder);
     }
 
     /// <inheritdoc />
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         RecoveryLedgerAppendOnlyGuard.Enforce(ChangeTracker);
+        StampAutonomyGrantConcurrencyTokens();
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
@@ -98,7 +104,24 @@ public sealed class DlqDbContext : DbContext
     public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
         RecoveryLedgerAppendOnlyGuard.Enforce(ChangeTracker);
+        StampAutonomyGrantConcurrencyTokens();
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    /// <summary>
+    /// Assigns a fresh <see cref="AutonomyGrant.ConcurrencyStamp"/> to every tracked
+    /// <see cref="AutonomyGrant"/> being inserted or updated, before the base save runs —
+    /// structural, not a convention any caller must remember (roadmap §9.4.4 Correction).
+    /// </summary>
+    private void StampAutonomyGrantConcurrencyTokens()
+    {
+        foreach (var entry in ChangeTracker.Entries<AutonomyGrant>())
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified)
+            {
+                entry.Entity.ConcurrencyStamp = Guid.NewGuid();
+            }
+        }
     }
 
     private static void ApplyUtcDateTimeConverters(ModelBuilder modelBuilder)
@@ -1019,5 +1042,45 @@ public sealed class DlqDbContext : DbContext
 
         entity.HasIndex(e => new { e.OperationId, e.Seq })
             .HasDatabaseName("IX_RecoveryEvents_OperationId_Seq");
+    }
+
+    private static void ConfigureAutonomyGrant(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<AutonomyGrant>();
+
+        entity.ToTable("AutonomyGrants");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.SignatureHash)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        entity.Property(e => e.ActionKind)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.CurrentLevel)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        // Concurrency token: guards against two AutonomyEvaluationWorker instances (or two
+        // overlapping sweep cycles) racing on the same row's UPDATE. Deliberately not
+        // UpdatedAtUtc — see AutonomyGrant.ConcurrencyStamp's doc comment (roadmap §9.4.4
+        // Correction). Stamped centrally in SaveChanges/SaveChangesAsync, never by a caller.
+        entity.Property(e => e.ConcurrencyStamp)
+            .IsConcurrencyToken();
+
+        // Protects the first-creation race: .IsConcurrencyToken() governs UPDATE conflicts
+        // only, so two workers independently deciding this triple has newly earned a grant and
+        // both attempting an INSERT need a separate, additive guard (roadmap §9.4.4 Correction).
+        entity.HasIndex(e => new { e.OwnerId, e.SignatureHash, e.ActionKind })
+            .IsUnique()
+            .HasDatabaseName("IX_AutonomyGrants_Owner_SignatureHash_ActionKind");
     }
 }
