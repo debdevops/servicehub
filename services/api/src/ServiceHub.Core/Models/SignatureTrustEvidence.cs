@@ -33,15 +33,16 @@ namespace ServiceHub.Core.Models;
 /// <c>SampleSize ≥ 30</c> and <c>VerifiedSuccessRate ≥ 0.99</c> (§8.7, §8.10).</param>
 /// <param name="UnsafeOutcomePresent">
 /// §8.10's <c>unsafe_outcome_count &gt; 0</c> disqualifier, sourced from operator-attested
-/// <c>RecoveryEventType.OutcomeFlagged</c> events. <see langword="null"/> — never
-/// <see langword="false"/> — in this release: that event type ships in Phase D, so ServiceHub
-/// cannot yet check for this disqualifier at all. A <see langword="null"/> here must never be
-/// read as "confirmed absent"; it means the gate cannot be honestly evaluated yet, matching the
-/// fail-safe rule that insufficient evidence is never reported as trust.
+/// <c>RecoveryEventType.OutcomeFlagged</c> events with <c>FlagKind = Unsafe</c>. Fleet-level, not
+/// scoped to <see cref="SignatureHash"/> — a confirmed unsafe outcome anywhere in
+/// <see cref="OwnerId"/>'s fleet disqualifies every signature under that owner, not only the
+/// flagged one (§8.10).
 /// </param>
 /// <param name="DuplicateAssociationPresent">§8.10's <c>duplicate_association</c> permanent
-/// disqualifier. Same <see langword="null"/>-means-not-yet-trackable semantics as
-/// <see cref="UnsafeOutcomePresent"/>, for the same reason (Phase D's <c>OutcomeFlagged</c>).</param>
+/// disqualifier, sourced from <c>OutcomeFlagged</c> events with
+/// <c>FlagKind = DuplicateBusinessEffect</c>. Per-signature, unlike
+/// <see cref="UnsafeOutcomePresent"/> — scoped strictly to <see cref="SignatureHash"/>, never
+/// diluted by volume and never bleeding into an unrelated signature under the same owner.</param>
 /// <param name="Reasons">Human-readable statements of what evidence exists and what is
 /// missing — the explainability surface for "why is this signature at its current level" and
 /// "why has it not earned a higher one" (roadmap §22, Phase G).</param>
@@ -58,6 +59,6 @@ public sealed record SignatureTrustEvidence(
     double? VerifiedSuccessRate,
     bool MeetsL4SampleAndRate,
     bool MeetsL5SampleAndRate,
-    bool? UnsafeOutcomePresent,
-    bool? DuplicateAssociationPresent,
+    bool UnsafeOutcomePresent,
+    bool DuplicateAssociationPresent,
     IReadOnlyList<string> Reasons);

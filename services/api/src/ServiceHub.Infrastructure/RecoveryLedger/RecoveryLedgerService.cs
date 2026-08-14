@@ -866,6 +866,82 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
         return Result<RecoveryOperation>.Success(operation);
     }
 
+    /// <inheritdoc />
+    public async Task<Result<RecoveryEvent>> RecordOutcomeFlagAsync(
+        Guid entryId, string ownerId, RecoveryActor actor, RecoveryOutcomeFlagKind flagKind, string reason,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return Result<RecoveryEvent>.Failure(Error.Validation(
+                "RecoveryLedger.OutcomeFlagReasonRequired", "A reason is required to flag a recovery outcome."));
+        }
+
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+
+        var entry = await _dbContext.RecoveryLedgerEntries
+            .FirstOrDefaultAsync(e => e.Id == entryId, cancellationToken);
+
+        if (entry is null || entry.OwnerId != ownerId)
+        {
+            return Result<RecoveryEvent>.Failure(Error.NotFound(
+                "RecoveryLedger.EntryNotFound", "Recovery ledger entry not found."));
+        }
+
+        var detail = JsonSerializer.Serialize(new { flagKind = flagKind.ToString(), reason });
+
+        var evt = await AppendEventAsync(
+            entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.OutcomeFlagged, actor,
+            detail, cancellationToken);
+        entry.LastEventSeq = evt.Seq;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return Result<RecoveryEvent>.Success(evt);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> HasUnsafeOutcomeFlagAsync(string ownerId, CancellationToken cancellationToken = default)
+    {
+        var detailJsonValues = await _dbContext.RecoveryEvents
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.EventType == RecoveryEventType.OutcomeFlagged)
+            .Select(e => e.DetailJson)
+            .ToListAsync(cancellationToken);
+
+        return detailJsonValues.Any(json => TryParseFlagKind(json) == RecoveryOutcomeFlagKind.Unsafe);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> HasDuplicateAssociationAsync(
+        string ownerId, string signatureHash, CancellationToken cancellationToken = default)
+    {
+        var detailJsonValues = await _dbContext.RecoveryEvents
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.EventType == RecoveryEventType.OutcomeFlagged && e.EntryId != null)
+            .Join(
+                _dbContext.RecoveryLedgerEntries.AsNoTracking().Where(entry => entry.SignatureHashSnapshot == signatureHash),
+                e => e.EntryId,
+                entry => entry.Id,
+                (e, _) => e.DetailJson)
+            .ToListAsync(cancellationToken);
+
+        return detailJsonValues.Any(json => TryParseFlagKind(json) == RecoveryOutcomeFlagKind.DuplicateBusinessEffect);
+    }
+
+    private static RecoveryOutcomeFlagKind? TryParseFlagKind(string? detailJson)
+    {
+        if (detailJson is null)
+        {
+            return null;
+        }
+
+        using var document = JsonDocument.Parse(detailJson);
+        return document.RootElement.TryGetProperty("flagKind", out var value)
+            && Enum.TryParse<RecoveryOutcomeFlagKind>(value.GetString(), out var flagKind)
+            ? flagKind
+            : null;
+    }
+
     /// <summary>
     /// Appends one event to <paramref name="ownerId"/>'s chain. Must be called while holding
     /// that owner's lock (see <see cref="AcquireOwnerLockAsync"/>) — sequencing considers both

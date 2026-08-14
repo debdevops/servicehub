@@ -74,7 +74,7 @@ public sealed class RecoveryTrustScoringServiceTests : IDisposable
     }
 
     /// <summary>Drives one Replay entry to a terminal disposition end-to-end.</summary>
-    private async Task CreateReplayEntryAsync(
+    private async Task<Guid> CreateReplayEntryAsync(
         string ownerId, string? signatureHash, RecoveryDisposition disposition, string bodyHash = "body-hash")
     {
         var operation = await OpenOperationAsync(ownerId, RecoveryOperationKind.Replay);
@@ -90,7 +90,7 @@ public sealed class RecoveryTrustScoringServiceTests : IDisposable
                 Outcome = RecoveryExecutionOutcome.Rejected,
             });
             execResult.IsSuccess.Should().BeTrue();
-            return;
+            return entry.Id;
         }
 
         var accepted = await _ledger.RecordExecutionAsync(new RecordExecutionRequest
@@ -119,6 +119,7 @@ public sealed class RecoveryTrustScoringServiceTests : IDisposable
             Confidence = outcome == RecoveryObservationOutcome.RecurrenceObserved ? VerificationConfidence.Exact : null,
         });
         observed.IsSuccess.Should().BeTrue();
+        return entry.Id;
     }
 
     private async Task CreateRejectedPurgeEntryAsync(string ownerId, string signatureHash)
@@ -385,10 +386,10 @@ public sealed class RecoveryTrustScoringServiceTests : IDisposable
         first.Value.Should().BeEquivalentTo(second.Value);
     }
 
-    // ── 13. unsafe/duplicate evidence reported as NotYetTrackable, never false ──
+    // ── 13. unsafe/duplicate evidence — fleet-level vs per-signature (§8.10) ──
 
     [Fact]
-    public async Task EvaluateAsync_UnsafeAndDuplicateEvidence_ReportedAsNotYetTrackable()
+    public async Task EvaluateAsync_NoOutcomeFlags_ReportsBothDisqualifiersAbsent()
     {
         for (var i = 0; i < 50; i++)
         {
@@ -397,12 +398,61 @@ public sealed class RecoveryTrustScoringServiceTests : IDisposable
 
         var result = await _service.EvaluateAsync(OwnerA, SignatureX, RecoveryOperationKind.Replay);
 
-        // Even a signature that otherwise clears every L4/L5 sample-and-rate bar must never report
-        // these two disqualifiers as a confirmed "false" — the source event type (OutcomeFlagged)
-        // does not exist until Phase D, so ServiceHub cannot check for them yet.
-        result.Value.UnsafeOutcomePresent.Should().BeNull();
-        result.Value.DuplicateAssociationPresent.Should().BeNull();
-        result.Value.Reasons.Should().Contain(r => r.Contains("Phase D", StringComparison.Ordinal));
+        result.Value.UnsafeOutcomePresent.Should().BeFalse();
+        result.Value.DuplicateAssociationPresent.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_UnsafeFlagOnAnyEntry_DisqualifiesEveryOwnerSignature_FleetLevel()
+    {
+        var flaggedEntryId = await CreateReplayEntryAsync(OwnerA, SignatureX, RecoveryDisposition.Recovered);
+        await CreateReplayEntryAsync(OwnerA, SignatureY, RecoveryDisposition.Recovered);
+
+        var flagResult = await _ledger.RecordOutcomeFlagAsync(
+            flaggedEntryId, OwnerA, Actor(), RecoveryOutcomeFlagKind.Unsafe, "customer reported data loss");
+        flagResult.IsSuccess.Should().BeTrue();
+
+        var evidenceForFlaggedSignature = await _service.EvaluateAsync(OwnerA, SignatureX, RecoveryOperationKind.Replay);
+        var evidenceForOtherSignature = await _service.EvaluateAsync(OwnerA, SignatureY, RecoveryOperationKind.Replay);
+
+        evidenceForFlaggedSignature.Value.UnsafeOutcomePresent.Should().BeTrue();
+        evidenceForOtherSignature.Value.UnsafeOutcomePresent.Should().BeTrue(
+            "an unsafe outcome disqualifies the owner's whole fleet, not only the flagged signature (§8.10)");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_DuplicateFlagOnOneSignature_DoesNotDisqualifyAnotherSignature_PerSignature()
+    {
+        var flaggedEntryId = await CreateReplayEntryAsync(OwnerA, SignatureX, RecoveryDisposition.Recovered);
+        await CreateReplayEntryAsync(OwnerA, SignatureY, RecoveryDisposition.Recovered);
+
+        var flagResult = await _ledger.RecordOutcomeFlagAsync(
+            flaggedEntryId, OwnerA, Actor(), RecoveryOutcomeFlagKind.DuplicateBusinessEffect, "double-charged customer");
+        flagResult.IsSuccess.Should().BeTrue();
+
+        var evidenceForFlaggedSignature = await _service.EvaluateAsync(OwnerA, SignatureX, RecoveryOperationKind.Replay);
+        var evidenceForOtherSignature = await _service.EvaluateAsync(OwnerA, SignatureY, RecoveryOperationKind.Replay);
+
+        evidenceForFlaggedSignature.Value.DuplicateAssociationPresent.Should().BeTrue();
+        evidenceForOtherSignature.Value.DuplicateAssociationPresent.Should().BeFalse(
+            "duplicate_association is a per-signature disqualifier, never bleeding into an unrelated signature (§8.10)");
+        evidenceForFlaggedSignature.Value.UnsafeOutcomePresent.Should().BeFalse(
+            "a DuplicateBusinessEffect flag must never be mistaken for an Unsafe flag");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_UnsafeFlagUnderOneOwner_DoesNotLeakToAnotherOwner()
+    {
+        var flaggedEntryId = await CreateReplayEntryAsync(OwnerA, SignatureX, RecoveryDisposition.Recovered);
+        await CreateReplayEntryAsync(OwnerB, SignatureX, RecoveryDisposition.Recovered);
+
+        var flagResult = await _ledger.RecordOutcomeFlagAsync(
+            flaggedEntryId, OwnerA, Actor(), RecoveryOutcomeFlagKind.Unsafe, "owner A incident");
+        flagResult.IsSuccess.Should().BeTrue();
+
+        var evidenceOwnerB = await _service.EvaluateAsync(OwnerB, SignatureX, RecoveryOperationKind.Replay);
+
+        evidenceOwnerB.Value.UnsafeOutcomePresent.Should().BeFalse("owner isolation must hold for fleet-level flags too");
     }
 
     // ── 14. AWS/GCP-style unverifiable evidence is represented honestly ────

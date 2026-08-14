@@ -11,11 +11,9 @@ namespace ServiceHub.Infrastructure.RecoveryLedger;
 /// <remarks>
 /// Every number here is a deterministic query or ratio over <see cref="IRecoveryLedger"/> data —
 /// no ML-based definition appears anywhere (roadmap §8.10). <c>unsafe_outcome_count</c> and
-/// <c>duplicate_association</c> are reported as <see langword="null"/> ("not yet trackable"),
-/// not <see langword="false"/>/zero: their source event type
-/// (<c>RecoveryEventType.OutcomeFlagged</c>) does not exist in this release — it ships in
-/// Phase D. Reporting a confirmed-absent disqualifier this service structurally cannot check for
-/// would violate the fail-safe rule that insufficient evidence is never reported as trust.
+/// <c>duplicate_association</c> are sourced from operator-attested
+/// <c>RecoveryEventType.OutcomeFlagged</c> events — <c>Unsafe</c> is checked fleet-wide for the
+/// owner, <c>DuplicateBusinessEffect</c> per-signature (§8.10).
 /// </remarks>
 public sealed class RecoveryTrustScoringService : IRecoveryTrustScoringService
 {
@@ -54,6 +52,9 @@ public sealed class RecoveryTrustScoringService : IRecoveryTrustScoringService
 
         var counts = await _recoveryLedger.GetDispositionCountsAsync(
             ownerId, signatureHash, actionKind, cancellationToken);
+        var unsafeOutcomePresent = await _recoveryLedger.HasUnsafeOutcomeFlagAsync(ownerId, cancellationToken);
+        var duplicateAssociationPresent = await _recoveryLedger.HasDuplicateAssociationAsync(
+            ownerId, signatureHash, cancellationToken);
 
         var recovered = counts.GetValueOrDefault(RecoveryDisposition.Recovered);
         var returned = counts.GetValueOrDefault(RecoveryDisposition.Returned);
@@ -72,7 +73,8 @@ public sealed class RecoveryTrustScoringService : IRecoveryTrustScoringService
         var meetsL4 = sampleSize >= L4MinimumSample && verifiedSuccessRate >= L4MinimumRate;
         var meetsL5 = sampleSize >= L5MinimumSample && verifiedSuccessRate >= L5MinimumRate;
 
-        var reasons = BuildReasons(sampleSize, verifiedSuccessRate, meetsL4, meetsL5);
+        var reasons = BuildReasons(
+            sampleSize, verifiedSuccessRate, meetsL4, meetsL5, unsafeOutcomePresent, duplicateAssociationPresent);
 
         var evidence = new SignatureTrustEvidence(
             OwnerId: ownerId,
@@ -87,15 +89,16 @@ public sealed class RecoveryTrustScoringService : IRecoveryTrustScoringService
             VerifiedSuccessRate: verifiedSuccessRate,
             MeetsL4SampleAndRate: meetsL4,
             MeetsL5SampleAndRate: meetsL5,
-            UnsafeOutcomePresent: null,
-            DuplicateAssociationPresent: null,
+            UnsafeOutcomePresent: unsafeOutcomePresent,
+            DuplicateAssociationPresent: duplicateAssociationPresent,
             Reasons: reasons);
 
         return Result<SignatureTrustEvidence>.Success(evidence);
     }
 
     private static List<string> BuildReasons(
-        int sampleSize, double? verifiedSuccessRate, bool meetsL4, bool meetsL5)
+        int sampleSize, double? verifiedSuccessRate, bool meetsL4, bool meetsL5,
+        bool unsafeOutcomePresent, bool duplicateAssociationPresent)
     {
         var reasons = new List<string>();
 
@@ -122,7 +125,15 @@ public sealed class RecoveryTrustScoringService : IRecoveryTrustScoringService
             }
         }
 
-        reasons.Add("unsafe_outcome_count and duplicate_association cannot be checked yet — that evidence (RecoveryEventType.OutcomeFlagged) ships in Phase D. No L4/L5 grant can be honestly claimed from this evidence alone.");
+        if (unsafeOutcomePresent)
+        {
+            reasons.Add("An operator has flagged an unsafe outcome somewhere in this owner's fleet — L4/L5 are withheld fleet-wide until resolved (§8.10).");
+        }
+
+        if (duplicateAssociationPresent)
+        {
+            reasons.Add("An operator has flagged a duplicate business effect for this signature — a permanent L4/L5 disqualifier, not restorable without a separate explicit human act (§8.10).");
+        }
 
         return reasons;
     }

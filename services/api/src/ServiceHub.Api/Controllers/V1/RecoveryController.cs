@@ -17,10 +17,11 @@ namespace ServiceHub.Api.Controllers.V1;
 
 /// <summary>
 /// Surface over the Recovery Evidence Ledger: read queries, evidence export, chain verification,
-/// and write-off — the one <c>recovery:write</c>-gated action, for a non-terminal entry an
-/// operator declares unrecoverable. Every write remains inside <see cref="IRecoveryLedger"/>;
-/// this controller only translates HTTP concerns (scopes, intent headers, actor resolution) and
-/// never mutates ledger state itself.
+/// and the <c>recovery:write</c>-gated actions — write-off, for a non-terminal entry an operator
+/// declares unrecoverable, and outcome-flagging, an operator's <c>Unsafe</c>/
+/// <c>DuplicateBusinessEffect</c> attestation (roadmap §8.10). Every write remains inside
+/// <see cref="IRecoveryLedger"/>; this controller only translates HTTP concerns (scopes, intent
+/// headers, actor resolution) and never mutates ledger state itself.
 /// </summary>
 [Route(ApiRoutes.Recovery.Base)]
 [Tags("Recovery")]
@@ -233,6 +234,39 @@ public sealed class RecoveryController : ApiControllerBase
         if (result.IsFailure)
         {
             return ToActionResult<RecoveryLedgerEntryResponse>(result.Error);
+        }
+
+        return Ok(MapToResponse(result.Value));
+    }
+
+    /// <summary>
+    /// Attaches an operator's <c>Unsafe</c>/<c>DuplicateBusinessEffect</c> attestation to an
+    /// entry (roadmap §8.10, §9.3) — the source evidence for Evidence-Derived Trust Scoring's
+    /// <c>unsafe_outcome_count</c>/<c>duplicate_association</c> L4/L5 disqualifiers. Never a
+    /// state transition and legal against any entry, including terminal ones. The actor is
+    /// resolved the same HTTP-only way as every other Recovery Ledger write, which structurally
+    /// guarantees it is never <c>Automation</c>/<c>System</c> — this attestation must always be
+    /// human-attested.
+    /// </summary>
+    /// <param name="id">The entry to flag.</param>
+    /// <param name="request">The flag kind and mandatory reason.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.RecoveryWrite)]
+    [HttpPost("entries/{id:guid}/outcome-flag")]
+    [ProducesResponseType(typeof(RecoveryEventResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<RecoveryEventResponse>> FlagOutcome(
+        Guid id,
+        [FromBody] FlagRecoveryOutcomeRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = ResolveRecoveryActor();
+        var result = await _recoveryLedger.RecordOutcomeFlagAsync(
+            id, OwnerId, actor, request.FlagKind, request.Reason, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ToActionResult<RecoveryEventResponse>(result.Error);
         }
 
         return Ok(MapToResponse(result.Value));

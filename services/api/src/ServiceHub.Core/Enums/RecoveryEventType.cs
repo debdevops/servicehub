@@ -61,8 +61,12 @@ public enum RecoveryEventType
     /// itself un-demote any grant the independent, always-on demotion rules already caught.</summary>
     EmergencyStopCleared = 14,
 
-    // 15 (OutcomeFlagged) is reserved by the roadmap (§8.10) — not yet implemented; a later
-    // Phase D task.
+    /// <summary>An operator or API key attached a <see cref="RecoveryOutcomeFlagKind"/>
+    /// attestation to an entry (roadmap §8.10, §9.3) — <c>Unsafe</c> or
+    /// <c>DuplicateBusinessEffect</c>. Never system- or AI-inferred; never a state transition.
+    /// The source evidence for §8.10's <c>unsafe_outcome_count</c>/<c>duplicate_association</c>
+    /// L4/L5 disqualifiers.</summary>
+    OutcomeFlagged = 15,
 
     /// <summary>A recurrence-lineage cap (roadmap §7.5) was reached for this attempt's lineage,
     /// but the actor was <c>User</c>/<c>ApiKey</c> and predicate 3 did not auto-deny it (§29.11

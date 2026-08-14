@@ -477,4 +477,82 @@ public sealed class RecoveryControllerTests : IDisposable
             .ToListAsync();
         activatedEvents.Should().HaveCount(2, "each activation is its own forensic fact, never suppressed as a duplicate");
     }
+
+    // ── FlagOutcome (roadmap §8.10, §9.3) ─────────────────────────────────────
+
+    [Fact]
+    public void FlagOutcome_RequiresRecoveryWriteScope()
+    {
+        typeof(RecoveryController)
+            .GetMethod(nameof(RecoveryController.FlagOutcome))!
+            .GetCustomAttributes(typeof(RequireScopeAttribute), inherit: true)
+            .Cast<RequireScopeAttribute>()
+            .Single().Scope.Should().Be(ApiKeyScopes.RecoveryWrite);
+    }
+
+    [Fact]
+    public async Task FlagOutcome_WritesOutcomeFlaggedEvent()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-flag",
+            TargetEntity = "queue-flag",
+        });
+
+        var result = await _controller.FlagOutcome(
+            entry.Value.Id, new FlagRecoveryOutcomeRequest(RecoveryOutcomeFlagKind.Unsafe, "customer reported data loss"));
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RecoveryEventResponse>().Subject;
+        response.EventType.Should().Be(nameof(RecoveryEventType.OutcomeFlagged));
+        response.EntryId.Should().Be(entry.Value.Id);
+        response.DetailJson.Should().Contain("Unsafe").And.Contain("customer reported data loss");
+    }
+
+    [Fact]
+    public async Task FlagOutcome_DifferentOwnersEntry_ReturnsNotFound()
+    {
+        var operationB = await OpenOperationAsync(OwnerB);
+        var entryB = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operationB.Id,
+            OwnerId = OwnerB,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-flag-cross-owner",
+            TargetEntity = "queue-flag-cross-owner",
+        });
+
+        // _controller is authenticated as OwnerA attempting to flag OwnerB's entry.
+        var result = await _controller.FlagOutcome(
+            entryB.Value.Id, new FlagRecoveryOutcomeRequest(RecoveryOutcomeFlagKind.Unsafe, "not mine"));
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task GetTrustEvidence_AfterUnsafeFlag_ReportsDisqualifierPresent()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-trust-flag",
+            SignatureHashSnapshot = "sig-trust-flag",
+            TargetEntity = "queue-trust-flag",
+        });
+        await _controller.FlagOutcome(
+            entry.Value.Id, new FlagRecoveryOutcomeRequest(RecoveryOutcomeFlagKind.Unsafe, "incident"));
+
+        var result = await _controller.GetTrustEvidence("sig-trust-flag");
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<SignatureTrustEvidenceResponse>().Subject;
+        response.UnsafeOutcomePresent.Should().BeTrue();
+    }
 }

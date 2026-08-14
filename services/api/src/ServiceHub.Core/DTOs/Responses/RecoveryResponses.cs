@@ -92,10 +92,9 @@ public sealed record EmergencyStopStatusResponse(bool Active);
 
 /// <summary>
 /// Response DTO for <c>GET /api/v1/recovery/trust/{signatureHash}</c> — a
-/// <see cref="Models.SignatureTrustEvidence"/> report. <c>UnsafeOutcomePresent</c> and
-/// <c>DuplicateAssociationPresent</c> are <see langword="null"/>, never <see langword="false"/>,
-/// whenever that evidence cannot yet be checked (see the model's doc comment) — never read a
-/// <see langword="null"/> here as "confirmed absent."
+/// <see cref="Models.SignatureTrustEvidence"/> report. <c>UnsafeOutcomePresent</c> is fleet-level
+/// (any signature under the owner); <c>DuplicateAssociationPresent</c> is scoped to this
+/// signature only (see the model's doc comment).
 /// </summary>
 public sealed record SignatureTrustEvidenceResponse(
     string SignatureHash,
@@ -109,6 +108,6 @@ public sealed record SignatureTrustEvidenceResponse(
     double? VerifiedSuccessRate,
     bool MeetsL4SampleAndRate,
     bool MeetsL5SampleAndRate,
-    bool? UnsafeOutcomePresent,
-    bool? DuplicateAssociationPresent,
+    bool UnsafeOutcomePresent,
+    bool DuplicateAssociationPresent,
     IReadOnlyList<string> Reasons);

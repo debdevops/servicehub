@@ -316,4 +316,51 @@ public interface IRecoveryLedger
         bool activate,
         string? reason,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Attaches a <see cref="Enums.RecoveryOutcomeFlagKind"/> operator attestation to an entry
+    /// (roadmap §8.10, §9.3) — appends a <see cref="Enums.RecoveryEventType.OutcomeFlagged"/>
+    /// event carrying <paramref name="flagKind"/>/<paramref name="reason"/> as structured
+    /// <c>DetailJson</c>. A direct sibling of <see cref="AppendNoteAsync"/>/
+    /// <see cref="RecordRecurrenceContextAsync"/>: does not change entry state and is legal
+    /// regardless of the entry's current state, including terminal entries — the disqualifying
+    /// judgment this records can be reached after an entry has already closed. Callers must
+    /// resolve <paramref name="actor"/> through an HTTP-only path so this can never be reached by
+    /// an <c>Automation</c>/<c>System</c> actor (roadmap: "never system- or AI-inferred").
+    /// </summary>
+    Task<Result<RecoveryEvent>> RecordOutcomeFlagAsync(
+        Guid entryId,
+        string ownerId,
+        RecoveryActor actor,
+        RecoveryOutcomeFlagKind flagKind,
+        string reason,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// §8.10's <c>unsafe_outcome_count &gt; 0</c> read — <see langword="true"/> iff any entry for
+    /// <paramref name="ownerId"/>, regardless of signature, carries an
+    /// <see cref="Enums.RecoveryEventType.OutcomeFlagged"/> event with
+    /// <see cref="Enums.RecoveryOutcomeFlagKind.Unsafe"/>. Deliberately fleet-level, not scoped
+    /// to one signature (roadmap §8.10: "Fleet-level, not per-signature, for the flag's
+    /// disqualifying effect") — unlike <see cref="HasDuplicateAssociationAsync"/>, a confirmed
+    /// unsafe outcome anywhere in an owner's fleet withholds L4/L5 for every signature under that
+    /// owner, not only the flagged one.
+    /// </summary>
+    Task<bool> HasUnsafeOutcomeFlagAsync(
+        string ownerId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// §8.10's <c>duplicate_association</c> read — <see langword="true"/> iff any entry for the
+    /// exact <c>(OwnerId, SignatureHash)</c> pair carries an
+    /// <see cref="Enums.RecoveryEventType.OutcomeFlagged"/> event with
+    /// <see cref="Enums.RecoveryOutcomeFlagKind.DuplicateBusinessEffect"/>. Per-signature, not
+    /// fleet-level (roadmap §8.10) — a single flag permanently disqualifies only the signature it
+    /// was recorded against, never diluted by volume and never bleeding into an unrelated
+    /// signature under the same owner.
+    /// </summary>
+    Task<bool> HasDuplicateAssociationAsync(
+        string ownerId,
+        string signatureHash,
+        CancellationToken cancellationToken = default);
 }

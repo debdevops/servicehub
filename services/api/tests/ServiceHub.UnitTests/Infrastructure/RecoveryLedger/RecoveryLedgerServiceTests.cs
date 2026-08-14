@@ -1415,4 +1415,209 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
         result.IsFailure.Should().BeTrue();
         result.Error.Type.Should().Be(ErrorType.NotFound);
     }
+
+    // ── RecordOutcomeFlagAsync / HasUnsafeOutcomeFlagAsync / HasDuplicateAssociationAsync (roadmap §8.10, §9.3) ──
+
+    private async Task<RecoveryLedgerEntry> BeginEntryAsync(RecoveryOperation operation, string? signatureHash, string bodyHash)
+    {
+        var result = await _service.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = operation.OwnerId,
+            Actor = Actor(),
+            BodyHash = bodyHash,
+            SignatureHashSnapshot = signatureHash,
+            TargetEntity = "orders-dlq",
+        });
+
+        result.IsSuccess.Should().BeTrue();
+        return result.Value;
+    }
+
+    [Fact]
+    public async Task RecordOutcomeFlagAsync_WritesOutcomeFlaggedEventOnTheEntry()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry = await BeginEntryAsync(operation);
+
+        var result = await _service.RecordOutcomeFlagAsync(
+            entry.Id, OwnerA, Actor(), RecoveryOutcomeFlagKind.Unsafe, "customer reported data loss");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.EventType.Should().Be(RecoveryEventType.OutcomeFlagged);
+        result.Value.EntryId.Should().Be(entry.Id);
+        result.Value.DetailJson.Should().Contain("Unsafe").And.Contain("customer reported data loss");
+
+        // Never a state transition — the entry's own state is untouched by recording this flag.
+        var reloaded = await _dbContext.RecoveryLedgerEntries.FindAsync(entry.Id);
+        reloaded!.State.Should().Be(entry.State);
+    }
+
+    [Fact]
+    public async Task RecordOutcomeFlagAsync_ParticipatesInHashChain()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry = await BeginEntryAsync(operation);
+
+        await _service.RecordOutcomeFlagAsync(
+            entry.Id, OwnerA, Actor(), RecoveryOutcomeFlagKind.DuplicateBusinessEffect, "double-charged customer");
+
+        var chain = await _service.VerifyChainAsync(OwnerA);
+        chain.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RecordOutcomeFlagAsync_EmptyReason_ReturnsValidationError()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry = await BeginEntryAsync(operation);
+
+        var result = await _service.RecordOutcomeFlagAsync(
+            entry.Id, OwnerA, Actor(), RecoveryOutcomeFlagKind.Unsafe, string.Empty);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.Validation);
+    }
+
+    [Fact]
+    public async Task RecordOutcomeFlagAsync_UnknownEntry_ReturnsNotFound()
+    {
+        var result = await _service.RecordOutcomeFlagAsync(
+            Guid.NewGuid(), OwnerA, Actor(), RecoveryOutcomeFlagKind.Unsafe, "reason");
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.NotFound);
+    }
+
+    [Fact]
+    public async Task RecordOutcomeFlagAsync_DifferentOwner_ReturnsNotFound()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry = await BeginEntryAsync(operation);
+
+        var result = await _service.RecordOutcomeFlagAsync(
+            entry.Id, OwnerB, Actor(), RecoveryOutcomeFlagKind.Unsafe, "reason");
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.NotFound);
+    }
+
+    [Fact]
+    public async Task RecordOutcomeFlagAsync_LegalAgainstATerminalEntry()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry = await BeginEntryAsync(operation);
+        var writeOff = await _service.SetDispositionAsync(entry.Id, OwnerA, Actor(), "unrecoverable");
+        writeOff.IsSuccess.Should().BeTrue();
+
+        var result = await _service.RecordOutcomeFlagAsync(
+            entry.Id, OwnerA, Actor(), RecoveryOutcomeFlagKind.Unsafe, "flagged after write-off");
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HasUnsafeOutcomeFlagAsync_NoFlags_ReturnsFalse()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        await BeginEntryAsync(operation);
+
+        var result = await _service.HasUnsafeOutcomeFlagAsync(OwnerA);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HasUnsafeOutcomeFlagAsync_UnsafeFlagOnAnyEntry_ReturnsTrue_FleetLevel()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var flaggedEntry = await BeginEntryAsync(operation, "sig-x", "body-flagged");
+        await BeginEntryAsync(operation, "sig-y", "body-other");
+
+        await _service.RecordOutcomeFlagAsync(
+            flaggedEntry.Id, OwnerA, Actor(), RecoveryOutcomeFlagKind.Unsafe, "incident");
+
+        var result = await _service.HasUnsafeOutcomeFlagAsync(OwnerA);
+
+        result.Should().BeTrue("unsafe_outcome_count's disqualifying effect is fleet-level, not per-signature (§8.10)");
+    }
+
+    [Fact]
+    public async Task HasUnsafeOutcomeFlagAsync_DuplicateFlagOnly_ReturnsFalse()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry = await BeginEntryAsync(operation);
+
+        await _service.RecordOutcomeFlagAsync(
+            entry.Id, OwnerA, Actor(), RecoveryOutcomeFlagKind.DuplicateBusinessEffect, "duplicate");
+
+        var result = await _service.HasUnsafeOutcomeFlagAsync(OwnerA);
+
+        result.Should().BeFalse("a DuplicateBusinessEffect flag must never be mistaken for an Unsafe flag");
+    }
+
+    [Fact]
+    public async Task HasUnsafeOutcomeFlagAsync_FlagUnderDifferentOwner_ReturnsFalse()
+    {
+        var operationA = await OpenOperationAsync(OwnerA);
+        var entryA = await BeginEntryAsync(operationA);
+        await _service.RecordOutcomeFlagAsync(entryA.Id, OwnerA, Actor(), RecoveryOutcomeFlagKind.Unsafe, "incident");
+
+        var result = await _service.HasUnsafeOutcomeFlagAsync(OwnerB);
+
+        result.Should().BeFalse("owner isolation must hold for the fleet-level unsafe-outcome read");
+    }
+
+    [Fact]
+    public async Task HasDuplicateAssociationAsync_NoFlags_ReturnsFalse()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        await BeginEntryAsync(operation, "sig-x", "body-1");
+
+        var result = await _service.HasDuplicateAssociationAsync(OwnerA, "sig-x");
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HasDuplicateAssociationAsync_FlagOnThisSignature_ReturnsTrue()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry = await BeginEntryAsync(operation, "sig-x", "body-1");
+
+        await _service.RecordOutcomeFlagAsync(
+            entry.Id, OwnerA, Actor(), RecoveryOutcomeFlagKind.DuplicateBusinessEffect, "duplicate");
+
+        var result = await _service.HasDuplicateAssociationAsync(OwnerA, "sig-x");
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HasDuplicateAssociationAsync_FlagOnADifferentSignature_ReturnsFalse_PerSignature()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var flaggedEntry = await BeginEntryAsync(operation, "sig-x", "body-flagged");
+        await BeginEntryAsync(operation, "sig-y", "body-other");
+
+        await _service.RecordOutcomeFlagAsync(
+            flaggedEntry.Id, OwnerA, Actor(), RecoveryOutcomeFlagKind.DuplicateBusinessEffect, "duplicate");
+
+        var result = await _service.HasDuplicateAssociationAsync(OwnerA, "sig-y");
+
+        result.Should().BeFalse("duplicate_association never bleeds into an unrelated signature (§8.10)");
+    }
+
+    [Fact]
+    public async Task HasDuplicateAssociationAsync_FlagUnderDifferentOwner_ReturnsFalse()
+    {
+        var operationA = await OpenOperationAsync(OwnerA);
+        var entryA = await BeginEntryAsync(operationA, "sig-x", "body-1");
+        await _service.RecordOutcomeFlagAsync(
+            entryA.Id, OwnerA, Actor(), RecoveryOutcomeFlagKind.DuplicateBusinessEffect, "duplicate");
+
+        var result = await _service.HasDuplicateAssociationAsync(OwnerB, "sig-x");
+
+        result.Should().BeFalse("owner isolation must hold even when the signature hash matches");
+    }
 }
