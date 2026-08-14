@@ -1,19 +1,27 @@
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 
 namespace ServiceHub.Infrastructure.BackgroundServices;
 
 /// <summary>
 /// Periodically recomputes Evidence-Derived Trust Scoring (roadmap §8.10, Phase C) for every
-/// signature with replay evidence and logs a fleet-level summary — "learning" as recomputed
-/// aggregation over the same scheduled-job pattern as <see cref="RecoveryAgeingWorker"/>, not a
-/// Learning Engine subsystem (roadmap §13). Writes nothing: no new table exists for this phase,
-/// and no <c>AutonomyGrant</c> is created — that write path belongs to Phase D's extension of
-/// this same worker.
+/// signature with replay evidence and — as of this increment — writes the resulting
+/// promotion/demotion to <c>AutonomyGrant</c> via <see cref="IRecoveryLedger.RecordAutonomyGrantTransitionAsync"/>
+/// whenever the evidence genuinely earns or forfeits standing (roadmap §8.7, §9.4.3). Still
+/// "learning" as recomputed aggregation over the same scheduled-job pattern as
+/// <see cref="RecoveryAgeingWorker"/>, not a Learning Engine subsystem (roadmap §13) — every
+/// number driving a transition is a deterministic ledger query, never a model output. The
+/// Eligibility Gate's predicate 5 does not yet consult the grants this worker writes — it
+/// remains log-only (roadmap §29.6) pending a later increment that also resolves
+/// <c>AutoReplayExecutor</c>'s null-<c>SignatureHash</c> gap — so this worker's writes are
+/// authoritative evidence with no execution-authority effect yet.
 /// </summary>
 /// <remarks>
 /// Purely a query-driven sweep over durable ledger state, like <see cref="RecoveryAgeingWorker"/>
@@ -132,6 +140,7 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
 
         var l4Eligible = 0;
         var l5Eligible = 0;
+        var transitionsWritten = 0;
 
         foreach (var signatureHash in signatureHashes)
         {
@@ -148,21 +157,137 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
                 continue;
             }
 
-            if (result.Value.MeetsL4SampleAndRate)
+            var evidence = result.Value;
+
+            if (evidence.MeetsL4SampleAndRate)
             {
                 l4Eligible++;
             }
 
-            if (result.Value.MeetsL5SampleAndRate)
+            if (evidence.MeetsL5SampleAndRate)
             {
                 l5Eligible++;
+            }
+
+            var currentGrant = await recoveryLedger.GetAutonomyGrantAsync(
+                ownerId, signatureHash, RecoveryOperationKind.Replay, cancellationToken);
+            var currentLevel = currentGrant?.CurrentLevel ?? AutonomyLevel.Approve;
+
+            var transition = DetermineTransition(currentLevel, evidence);
+            if (transition is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                var transitionResult = await recoveryLedger.RecordAutonomyGrantTransitionAsync(
+                    ownerId, signatureHash, RecoveryOperationKind.Replay,
+                    currentLevel, transition.Value.NewLevel, transition.Value.Reason,
+                    BuildEvidenceJson(evidence), cancellationToken);
+
+                if (transitionResult.IsSuccess)
+                {
+                    transitionsWritten++;
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Autonomy grant transition rejected for owner {OwnerId} signature {SignatureHash}: {Error}",
+                        ownerId, signatureHash, transitionResult.Error.Message);
+                }
+            }
+            catch (DbUpdateException ex)
+            {
+                // A losing concurrent writer (roadmap §9.4.4) — either a first-creation
+                // uniqueness race or a mutation-concurrency-token race. Not a caller error: the
+                // next sweep re-evaluates this signature from the ledger's current state.
+                _logger.LogWarning(ex,
+                    "Autonomy grant transition lost a concurrency race for owner {OwnerId} signature {SignatureHash}; " +
+                    "will re-evaluate next sweep",
+                    ownerId, signatureHash);
             }
         }
 
         _logger.LogInformation(
             "Autonomy Evaluation Worker: owner {OwnerId} — {SignatureCount} signature(s) with replay evidence, " +
-            "{L4Count} meet the L3→L4 sample/rate threshold, {L5Count} meet the L4→L5 sample/rate threshold " +
-            "(sample/rate only — no AutonomyGrant is written this phase)",
-            ownerId, signatureHashes.Count, l4Eligible, l5Eligible);
+            "{L4Count} meet the L3→L4 sample/rate threshold, {L5Count} meet the L4→L5 sample/rate threshold, " +
+            "{TransitionCount} AutonomyGrant transition(s) written this sweep",
+            ownerId, signatureHashes.Count, l4Eligible, l5Eligible, transitionsWritten);
     }
+
+    /// <summary>
+    /// Decides one signature's next <c>AutonomyGrant</c> transition, if any, from its current
+    /// level and freshly computed trust evidence. Never returns a level below L3 (Approve) or
+    /// above L5 (Unattended), never skips a tier in one sweep (L3→L4 or L4→L5 only, never
+    /// L3→L5), and never promotes into a tier the evidence does not genuinely satisfy (roadmap
+    /// §8.9 — "machinery exists" is not "trust is earned").
+    /// </summary>
+    /// <remarks>
+    /// Demotion is intentionally narrower than the full roadmap model this increment: it covers
+    /// the two triggers computable from existing aggregate evidence — a verified success rate
+    /// that has fallen below the L4 floor (§8.5), and a <c>duplicate_association</c> flag, a
+    /// permanent disqualifier for both L4 and L5 (§8.10). The "two consecutive verified
+    /// Returned/failure outcomes" fast-demotion path (§7.6, §8.5, §8.6) needs a new
+    /// recency-ordered ledger query this increment deliberately does not add — it is the next
+    /// increment's work, alongside predicate 5 enforcement, not bundled here. Note §8.6 itself
+    /// defines no rate-based demotion trigger for L5 (only duplicate-association and the
+    /// deferred consecutive-failure check) — this method's absence of an L5 rate check is
+    /// spec-accurate, not an oversight.
+    /// </remarks>
+    internal static (AutonomyLevel NewLevel, string Reason)? DetermineTransition(
+        AutonomyLevel currentLevel, SignatureTrustEvidence evidence)
+    {
+        if (currentLevel == AutonomyLevel.Approve
+            && evidence.MeetsL4SampleAndRate
+            && !evidence.UnsafeOutcomePresent
+            && !evidence.DuplicateAssociationPresent)
+        {
+            return (AutonomyLevel.Standing, FormatPromotionReason(AutonomyLevel.Approve, AutonomyLevel.Standing, evidence));
+        }
+
+        if (currentLevel == AutonomyLevel.Standing
+            && evidence.MeetsL5SampleAndRate
+            && !evidence.UnsafeOutcomePresent
+            && !evidence.DuplicateAssociationPresent)
+        {
+            return (AutonomyLevel.Unattended, FormatPromotionReason(AutonomyLevel.Standing, AutonomyLevel.Unattended, evidence));
+        }
+
+        if (currentLevel is AutonomyLevel.Standing or AutonomyLevel.Unattended && evidence.DuplicateAssociationPresent)
+        {
+            return (AutonomyLevel.Approve, FormatDuplicateDemotionReason(currentLevel));
+        }
+
+        if (currentLevel == AutonomyLevel.Standing && !evidence.MeetsL4SampleAndRate)
+        {
+            return (AutonomyLevel.Approve, FormatRateDemotionReason(currentLevel, evidence));
+        }
+
+        return null;
+    }
+
+    private static string FormatPromotionReason(AutonomyLevel from, AutonomyLevel to, SignatureTrustEvidence evidence) =>
+        $"Promoted {from}→{to}: n={evidence.SampleSize}, verified_success_rate={evidence.VerifiedSuccessRate:P0}, " +
+        "unsafe_outcome_count=0, duplicate_association=0 (roadmap §8.10).";
+
+    private static string FormatRateDemotionReason(AutonomyLevel from, SignatureTrustEvidence evidence) =>
+        $"Demoted {from}→{AutonomyLevel.Approve}: verified_success_rate {evidence.VerifiedSuccessRate:P0} " +
+        $"(n={evidence.SampleSize}) fell below the floor required to hold {from} — non-disableable (roadmap §8.5).";
+
+    private static string FormatDuplicateDemotionReason(AutonomyLevel from) =>
+        $"Demoted {from}→{AutonomyLevel.Approve}: an operator flagged a duplicate business effect for this " +
+        "signature — a permanent disqualifier until an explicit human act restores eligibility (roadmap §8.10).";
+
+    private static string BuildEvidenceJson(SignatureTrustEvidence evidence) => JsonSerializer.Serialize(new
+    {
+        sampleSize = evidence.SampleSize,
+        verifiedSuccessRate = evidence.VerifiedSuccessRate,
+        recoveredCount = evidence.RecoveredCount,
+        returnedCount = evidence.ReturnedCount,
+        failedCount = evidence.FailedCount,
+        unverifiedCount = evidence.UnverifiedCount,
+        unsafeOutcomePresent = evidence.UnsafeOutcomePresent,
+        duplicateAssociationPresent = evidence.DuplicateAssociationPresent,
+    });
 }

@@ -1199,6 +1199,39 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
         result.IsSuccess.Should().BeTrue();
     }
 
+    // ── GetAutonomyGrantAsync (Phase D, this increment) ────────────────────────
+
+    [Fact]
+    public async Task GetAutonomyGrantAsync_NoGrantEverWritten_ReturnsNull()
+    {
+        (await _service.GetAutonomyGrantAsync(OwnerA, "sig-never-granted", RecoveryOperationKind.Replay))
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetAutonomyGrantAsync_AfterPromotion_ReturnsCurrentProjection()
+    {
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-7", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "10 verified successes", null);
+
+        var grant = await _service.GetAutonomyGrantAsync(OwnerA, "sig-7", RecoveryOperationKind.Replay);
+
+        grant.Should().NotBeNull();
+        grant!.CurrentLevel.Should().Be(AutonomyLevel.Standing);
+    }
+
+    [Fact]
+    public async Task GetAutonomyGrantAsync_DifferentOwnerSameSignature_ReturnsNull()
+    {
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-8", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "owner A earned it", null);
+
+        (await _service.GetAutonomyGrantAsync(OwnerB, "sig-8", RecoveryOperationKind.Replay))
+            .Should().BeNull("a grant is scoped to its owner — owner isolation must hold on the read side too");
+    }
+
     // ── Emergency Stop: IsEmergencyStopActiveAsync / RecordEmergencyControlEventAsync (§9.4.2, §15.2) ──
 
     [Fact]

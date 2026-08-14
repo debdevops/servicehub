@@ -11,17 +11,21 @@ using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.RecoveryLedger;
+using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Infrastructure.BackgroundServices;
 
 /// <summary>
-/// Phase C coverage for <see cref="AutonomyEvaluationWorker"/>: the sweep finds every signature
-/// with replay evidence and evaluates it read-only — no ledger write, no <c>AutonomyGrant</c>
-/// (that write path is Phase D's).
+/// Phase D coverage for <see cref="AutonomyEvaluationWorker"/>: the sweep finds every signature
+/// with replay evidence, evaluates it, and — as of this increment — writes the resulting
+/// promotion/demotion to <c>AutonomyGrant</c> whenever the evidence genuinely earns or forfeits
+/// standing. Predicate 5 enforcement and <c>AutoReplayExecutor</c>'s <c>SignatureHash</c> gap are
+/// explicitly out of scope for this increment/this test file.
 /// </summary>
 public sealed class AutonomyEvaluationWorkerTests : IDisposable
 {
     private const string OwnerA = "owner-a";
+    private const string OwnerB = "owner-b";
 
     private readonly DlqDbContext _dbContext;
     private readonly RecoveryLedgerService _recoveryLedger;
@@ -46,6 +50,8 @@ public sealed class AutonomyEvaluationWorkerTests : IDisposable
         _dbContext.Dispose();
     }
 
+    private static RecoveryActor Actor(RecoveryActorKind kind = RecoveryActorKind.User) => new("test-actor", kind);
+
     private static AutonomyEvaluationWorker CreateWorker() =>
         new(
             Mock.Of<IServiceProvider>(),
@@ -60,65 +66,443 @@ public sealed class AutonomyEvaluationWorkerTests : IDisposable
         return services.BuildServiceProvider();
     }
 
-    private async Task CreateRecoveredReplayEntryAsync(string signatureHash, string bodyHash)
+    private async Task<RecoveryOperation> OpenOperationAsync(string ownerId, RecoveryOperationKind kind = RecoveryOperationKind.Replay)
     {
-        var operation = await _recoveryLedger.OpenOperationAsync(new OpenRecoveryOperationRequest
+        var result = await _recoveryLedger.OpenOperationAsync(new OpenRecoveryOperationRequest
         {
-            OwnerId = OwnerA,
-            Kind = RecoveryOperationKind.Replay,
+            OwnerId = ownerId,
+            Kind = kind,
             Trigger = RecoveryTrigger.Manual,
-            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            Actor = Actor(),
             ScopeDescription = "entity=orders-dlq",
             TargetCount = 1,
         });
+        result.IsSuccess.Should().BeTrue();
+        return result.Value;
+    }
 
-        var entry = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+    /// <summary>Drives one Replay entry to a terminal disposition end-to-end — mirrors
+    /// <c>RecoveryTrustScoringServiceTests</c>'s helper of the same shape.</summary>
+    private async Task<Guid> CreateReplayEntryAsync(
+        string ownerId, string signatureHash, RecoveryDisposition disposition, string bodyHash)
+    {
+        var operation = await OpenOperationAsync(ownerId);
+        var entryResult = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
         {
-            OperationId = operation.Value.Id,
-            OwnerId = OwnerA,
-            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            OperationId = operation.Id,
+            OwnerId = ownerId,
+            Actor = Actor(),
             BodyHash = bodyHash,
             SignatureHashSnapshot = signatureHash,
             TargetEntity = "orders-dlq",
         });
+        entryResult.IsSuccess.Should().BeTrue();
+        var entry = entryResult.Value;
 
-        await _recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
+        if (disposition == RecoveryDisposition.Failed)
         {
-            EntryId = entry.Value.Id,
-            OwnerId = OwnerA,
-            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            var rejected = await _recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
+            {
+                EntryId = entry.Id,
+                OwnerId = ownerId,
+                Actor = Actor(),
+                Outcome = RecoveryExecutionOutcome.Rejected,
+            });
+            rejected.IsSuccess.Should().BeTrue();
+            return entry.Id;
+        }
+
+        var accepted = await _recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id,
+            OwnerId = ownerId,
+            Actor = Actor(),
             Outcome = RecoveryExecutionOutcome.Accepted,
         });
+        accepted.IsSuccess.Should().BeTrue();
 
-        await _recoveryLedger.RecordObservationAsync(new RecordObservationRequest
+        var outcome = disposition == RecoveryDisposition.Returned
+            ? RecoveryObservationOutcome.RecurrenceObserved
+            : RecoveryObservationOutcome.NoRecurrenceObserved;
+
+        var observed = await _recoveryLedger.RecordObservationAsync(new RecordObservationRequest
         {
-            EntryId = entry.Value.Id,
-            OwnerId = OwnerA,
+            EntryId = entry.Id,
+            OwnerId = ownerId,
             Actor = new RecoveryActor("verification-worker", RecoveryActorKind.System),
-            Outcome = RecoveryObservationOutcome.NoRecurrenceObserved,
+            Outcome = outcome,
+            Confidence = outcome == RecoveryObservationOutcome.RecurrenceObserved ? VerificationConfidence.Exact : null,
         });
+        observed.IsSuccess.Should().BeTrue();
+        return entry.Id;
     }
 
-    [Fact]
-    public async Task SweepOwnerAsync_NoSignatureEvidence_CompletesWithoutError()
+    /// <summary>Seeds <paramref name="count"/> Recovered entries for one signature — the
+    /// cheapest way to build a clean L4-eligible (n≥10) or L5-eligible (n≥30) sample.</summary>
+    private async Task SeedRecoveredEntriesAsync(string ownerId, string signatureHash, int count, string prefix)
     {
-        var worker = CreateWorker();
-        var act = () => worker.SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
-        await act.Should().NotThrowAsync();
+        for (var i = 0; i < count; i++)
+        {
+            await CreateReplayEntryAsync(ownerId, signatureHash, RecoveryDisposition.Recovered, $"{prefix}-{i}");
+        }
     }
 
+    // ── Promotion: L3 → L4 ──────────────────────────────────────────────────
+
     [Fact]
-    public async Task SweepOwnerAsync_SignatureWithEvidence_DoesNotMutateTheLedger()
+    public async Task SweepOwnerAsync_InsufficientEvidence_WritesNoGrant()
     {
-        await CreateRecoveredReplayEntryAsync("sig-hash-1", "body-1");
+        await SeedRecoveredEntriesAsync(OwnerA, "sig-thin", count: 3, "body");
 
         var entryCountBefore = await _dbContext.RecoveryLedgerEntries.CountAsync();
         var eventCountBefore = await _dbContext.RecoveryEvents.CountAsync();
 
-        var worker = CreateWorker();
-        await worker.SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
 
+        (await _dbContext.AutonomyGrants.AnyAsync(g => g.SignatureHash == "sig-thin")).Should().BeFalse(
+            "insufficient evidence (n=3 < 10) must never create an L4/L5 grant — roadmap §8.9");
         (await _dbContext.RecoveryLedgerEntries.CountAsync()).Should().Be(entryCountBefore);
         (await _dbContext.RecoveryEvents.CountAsync()).Should().Be(eventCountBefore);
+    }
+
+    [Fact]
+    public async Task SweepOwnerAsync_MeetsL4SampleAndRate_PromotesToStandingWithForensicEvent()
+    {
+        await SeedRecoveredEntriesAsync(OwnerA, "sig-good", count: 10, "body");
+
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        var grant = await _dbContext.AutonomyGrants.SingleAsync(g => g.SignatureHash == "sig-good");
+        grant.OwnerId.Should().Be(OwnerA);
+        grant.ActionKind.Should().Be(RecoveryOperationKind.Replay);
+        grant.CurrentLevel.Should().Be(AutonomyLevel.Standing);
+
+        var promoted = await _dbContext.RecoveryEvents
+            .SingleAsync(e => e.EventType == RecoveryEventType.AutonomyGrantPromoted);
+        promoted.DetailJson.Should().Contain("sig-good").And.Contain("\"newLevel\":\"Standing\"");
+    }
+
+    [Fact]
+    public async Task SweepOwnerAsync_MeetsL4ButUnsafeFlagPresent_DoesNotPromote()
+    {
+        var flaggedEntryId = await CreateReplayEntryAsync(OwnerA, "sig-unsafe", RecoveryDisposition.Recovered, "flagged");
+        await SeedRecoveredEntriesAsync(OwnerA, "sig-unsafe", count: 9, "body");
+
+        var flagResult = await _recoveryLedger.RecordOutcomeFlagAsync(
+            flaggedEntryId, OwnerA, Actor(), RecoveryOutcomeFlagKind.Unsafe, "customer reported data loss");
+        flagResult.IsSuccess.Should().BeTrue();
+
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        (await _dbContext.AutonomyGrants.AnyAsync(g => g.SignatureHash == "sig-unsafe")).Should().BeFalse(
+            "an unsafe-outcome flag withholds L4/L5 fleet-wide even with n/rate satisfied — roadmap §8.10");
+    }
+
+    [Fact]
+    public async Task SweepOwnerAsync_MeetsL4ButDuplicateFlagPresent_DoesNotPromote()
+    {
+        var flaggedEntryId = await CreateReplayEntryAsync(OwnerA, "sig-dup", RecoveryDisposition.Recovered, "flagged");
+        await SeedRecoveredEntriesAsync(OwnerA, "sig-dup", count: 9, "body");
+
+        var flagResult = await _recoveryLedger.RecordOutcomeFlagAsync(
+            flaggedEntryId, OwnerA, Actor(), RecoveryOutcomeFlagKind.DuplicateBusinessEffect, "double-charged customer");
+        flagResult.IsSuccess.Should().BeTrue();
+
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        (await _dbContext.AutonomyGrants.AnyAsync(g => g.SignatureHash == "sig-dup")).Should().BeFalse(
+            "duplicate_association permanently disqualifies this signature — roadmap §8.10");
+    }
+
+    [Fact]
+    public async Task SweepOwnerAsync_OwnerIsolation_OnlyEvaluatesRequestedOwnersEvidence()
+    {
+        await SeedRecoveredEntriesAsync(OwnerA, "shared-sig", count: 10, "a-body");
+        await SeedRecoveredEntriesAsync(OwnerB, "shared-sig", count: 3, "b-body");
+
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerB, CancellationToken.None);
+
+        var grantA = await _dbContext.AutonomyGrants.SingleAsync(g => g.OwnerId == OwnerA && g.SignatureHash == "shared-sig");
+        grantA.CurrentLevel.Should().Be(AutonomyLevel.Standing);
+
+        (await _dbContext.AutonomyGrants.AnyAsync(g => g.OwnerId == OwnerB && g.SignatureHash == "shared-sig"))
+            .Should().BeFalse("owner B's own evidence (n=3) never earns a grant, and owner A's evidence must never leak across");
+    }
+
+    // ── Promotion: L4 → L5, one tier per sweep ─────────────────────────────
+
+    [Fact]
+    public async Task SweepOwnerAsync_AlreadyAtStandingWithL5Evidence_PromotesToUnattended()
+    {
+        await SeedRecoveredEntriesAsync(OwnerA, "sig-veteran", count: 30, "body");
+        var seed = await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-veteran", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "seeded at L4 for this test", null);
+        seed.IsSuccess.Should().BeTrue();
+
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        var grant = await _dbContext.AutonomyGrants.SingleAsync(g => g.SignatureHash == "sig-veteran");
+        grant.CurrentLevel.Should().Be(AutonomyLevel.Unattended);
+
+        (await _dbContext.RecoveryEvents.CountAsync(e => e.EventType == RecoveryEventType.AutonomyGrantPromoted))
+            .Should().Be(2, "one seeded L3→L4 event plus this sweep's L4→L5 event");
+    }
+
+    [Fact]
+    public async Task SweepOwnerAsync_L3WithL5QualityEvidence_PromotesOnlyOneTierPerSweep()
+    {
+        // A signature that happens to already have n≥30/99%+ evidence but has never been
+        // granted L4 must earn L4 first, not jump straight to L5 in one sweep.
+        await SeedRecoveredEntriesAsync(OwnerA, "sig-jumper", count: 30, "body");
+
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        var grant = await _dbContext.AutonomyGrants.SingleAsync(g => g.SignatureHash == "sig-jumper");
+        grant.CurrentLevel.Should().Be(AutonomyLevel.Standing, "L3→L4 and L4→L5 are separate, sequential transitions");
+
+        // The next sweep, now that the grant is at L4, completes the second transition.
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        var grantAfterSecondSweep = await _dbContext.AutonomyGrants.SingleAsync(g => g.SignatureHash == "sig-jumper");
+        grantAfterSecondSweep.CurrentLevel.Should().Be(AutonomyLevel.Unattended);
+    }
+
+    // ── Demotion ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SweepOwnerAsync_StandingGrantWithRateBelowFloor_DemotesToApprove()
+    {
+        var seed = await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-slipping", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "seeded at L4 for this test", null);
+        seed.IsSuccess.Should().BeTrue();
+
+        // 9/10 = 90% < the 95% floor required to hold L4.
+        await SeedRecoveredEntriesAsync(OwnerA, "sig-slipping", count: 9, "ok");
+        await CreateReplayEntryAsync(OwnerA, "sig-slipping", RecoveryDisposition.Returned, "bad-1");
+
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        var grant = await _dbContext.AutonomyGrants.SingleAsync(g => g.SignatureHash == "sig-slipping");
+        grant.CurrentLevel.Should().Be(AutonomyLevel.Approve, "a verified success rate below 95% is a non-disableable L4→L3 demotion — roadmap §8.5");
+
+        (await _dbContext.RecoveryEvents.CountAsync(e => e.EventType == RecoveryEventType.AutonomyGrantDemoted)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SweepOwnerAsync_StandingGrantWithDuplicateFlag_DemotesToApprove()
+    {
+        var seed = await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-duped", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "seeded at L4 for this test", null);
+        seed.IsSuccess.Should().BeTrue();
+
+        var flaggedEntryId = await CreateReplayEntryAsync(OwnerA, "sig-duped", RecoveryDisposition.Recovered, "flagged");
+        await SeedRecoveredEntriesAsync(OwnerA, "sig-duped", count: 9, "ok");
+
+        var flagResult = await _recoveryLedger.RecordOutcomeFlagAsync(
+            flaggedEntryId, OwnerA, Actor(), RecoveryOutcomeFlagKind.DuplicateBusinessEffect, "double-charged customer");
+        flagResult.IsSuccess.Should().BeTrue();
+
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        var grant = await _dbContext.AutonomyGrants.SingleAsync(g => g.SignatureHash == "sig-duped");
+        grant.CurrentLevel.Should().Be(AutonomyLevel.Approve,
+            "duplicate_association is a permanent L4/L5 disqualifier, restorable only by an explicit human act — roadmap §8.10");
+    }
+
+    [Fact]
+    public async Task SweepOwnerAsync_UnattendedGrantWithDuplicateFlag_DemotesToApprove()
+    {
+        var seed = await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-l5-duped", RecoveryOperationKind.Replay,
+            AutonomyLevel.Standing, AutonomyLevel.Unattended, "seeded at L5 for this test", null);
+        seed.IsSuccess.Should().BeTrue();
+
+        var flaggedEntryId = await CreateReplayEntryAsync(OwnerA, "sig-l5-duped", RecoveryDisposition.Recovered, "flagged");
+        await SeedRecoveredEntriesAsync(OwnerA, "sig-l5-duped", count: 29, "ok");
+
+        var flagResult = await _recoveryLedger.RecordOutcomeFlagAsync(
+            flaggedEntryId, OwnerA, Actor(), RecoveryOutcomeFlagKind.DuplicateBusinessEffect, "double-charged customer");
+        flagResult.IsSuccess.Should().BeTrue();
+
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        var grant = await _dbContext.AutonomyGrants.SingleAsync(g => g.SignatureHash == "sig-l5-duped");
+        grant.CurrentLevel.Should().Be(AutonomyLevel.Approve, "duplicate_association demotes L5 straight to L3, same as L4 — roadmap §8.6");
+    }
+
+    [Fact]
+    public async Task SweepOwnerAsync_UnattendedGrantWithRateBelowNinetyNinePercent_DoesNotAutoDemote()
+    {
+        // §8.6/§8.7 define no rate-based demotion trigger for L5 in this document — only
+        // duplicate_association and the (not-yet-implemented) consecutive-failure check. A rate
+        // drop alone must not demote an L5 grant this increment.
+        var seed = await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-l5-slip", RecoveryOperationKind.Replay,
+            AutonomyLevel.Standing, AutonomyLevel.Unattended, "seeded at L5 for this test", null);
+        seed.IsSuccess.Should().BeTrue();
+
+        // 29/30 = ~96.7%, still >= the 95% L4 floor but well below the 99% L5 bar.
+        await SeedRecoveredEntriesAsync(OwnerA, "sig-l5-slip", count: 29, "ok");
+        await CreateReplayEntryAsync(OwnerA, "sig-l5-slip", RecoveryDisposition.Returned, "bad-1");
+
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        var grant = await _dbContext.AutonomyGrants.SingleAsync(g => g.SignatureHash == "sig-l5-slip");
+        grant.CurrentLevel.Should().Be(AutonomyLevel.Unattended);
+        (await _dbContext.RecoveryEvents.CountAsync(e => e.EventType == RecoveryEventType.AutonomyGrantDemoted)).Should().Be(0);
+    }
+
+    // ── Concurrency isolation ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task SweepOwnerAsync_ConcurrencyRaceOnOneSignature_LogsAndContinuesToTheNextSignature()
+    {
+        var evidence = new SignatureTrustEvidence(
+            OwnerId: OwnerA, SignatureHash: "irrelevant", ActionKind: RecoveryOperationKind.Replay,
+            RecoveredCount: 20, ReturnedCount: 0, FailedCount: 0, UnverifiedCount: 0, DeclinedCount: 0,
+            SampleSize: 20, VerifiedSuccessRate: 1.0, MeetsL4SampleAndRate: true, MeetsL5SampleAndRate: false,
+            UnsafeOutcomePresent: false, DuplicateAssociationPresent: false, Reasons: []);
+
+        var ledgerMock = new Mock<IRecoveryLedger>();
+        ledgerMock.Setup(l => l.GetDistinctSignatureHashesAsync(OwnerA, RecoveryOperationKind.Replay, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "sig-racing", "sig-fine" });
+        ledgerMock.Setup(l => l.GetAutonomyGrantAsync(OwnerA, It.IsAny<string>(), RecoveryOperationKind.Replay, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AutonomyGrant?)null);
+        ledgerMock.Setup(l => l.RecordAutonomyGrantTransitionAsync(
+                OwnerA, "sig-racing", RecoveryOperationKind.Replay, AutonomyLevel.Approve, AutonomyLevel.Standing,
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new DbUpdateConcurrencyException("lost the concurrency race"));
+        ledgerMock.Setup(l => l.RecordAutonomyGrantTransitionAsync(
+                OwnerA, "sig-fine", RecoveryOperationKind.Replay, AutonomyLevel.Approve, AutonomyLevel.Standing,
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<AutonomyGrant>.Success(new AutonomyGrant
+            {
+                OwnerId = OwnerA,
+                SignatureHash = "sig-fine",
+                ActionKind = RecoveryOperationKind.Replay,
+                CurrentLevel = AutonomyLevel.Standing,
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+            }));
+
+        var trustMock = new Mock<IRecoveryTrustScoringService>();
+        trustMock.Setup(t => t.EvaluateAsync(OwnerA, It.IsAny<string>(), RecoveryOperationKind.Replay, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SignatureTrustEvidence>.Success(evidence));
+
+        var services = new ServiceCollection();
+        services.AddSingleton(ledgerMock.Object);
+        services.AddSingleton(trustMock.Object);
+        var provider = services.BuildServiceProvider();
+
+        var act = () => CreateWorker().SweepOwnerAsync(provider, OwnerA, CancellationToken.None);
+        await act.Should().NotThrowAsync("a losing concurrent writer must be caught and logged, never crash the sweep — roadmap §9.4.4");
+
+        ledgerMock.Verify(l => l.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-fine", RecoveryOperationKind.Replay, AutonomyLevel.Approve, AutonomyLevel.Standing,
+            It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once,
+            "the signature after the one that lost its race must still be evaluated");
+    }
+
+    // ── DetermineTransition — pure logic, every branch (no DB) ─────────────
+
+    private static SignatureTrustEvidence Evidence(
+        int sampleSize, double? rate, bool meetsL4, bool meetsL5, bool unsafeOutcome = false, bool duplicate = false) =>
+        new(
+            OwnerId: OwnerA, SignatureHash: "sig", ActionKind: RecoveryOperationKind.Replay,
+            RecoveredCount: sampleSize, ReturnedCount: 0, FailedCount: 0, UnverifiedCount: 0, DeclinedCount: 0,
+            SampleSize: sampleSize, VerifiedSuccessRate: rate, MeetsL4SampleAndRate: meetsL4, MeetsL5SampleAndRate: meetsL5,
+            UnsafeOutcomePresent: unsafeOutcome, DuplicateAssociationPresent: duplicate, Reasons: []);
+
+    [Fact]
+    public void DetermineTransition_ApproveWithInsufficientEvidence_ReturnsNull()
+    {
+        AutonomyEvaluationWorker.DetermineTransition(AutonomyLevel.Approve, Evidence(3, 1.0, meetsL4: false, meetsL5: false))
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void DetermineTransition_ApproveMeetsL4_ReturnsPromotionToStanding()
+    {
+        var transition = AutonomyEvaluationWorker.DetermineTransition(
+            AutonomyLevel.Approve, Evidence(10, 0.95, meetsL4: true, meetsL5: false));
+
+        transition.Should().NotBeNull();
+        transition!.Value.NewLevel.Should().Be(AutonomyLevel.Standing);
+    }
+
+    [Fact]
+    public void DetermineTransition_ApproveMeetsL4ButUnsafe_ReturnsNull()
+    {
+        AutonomyEvaluationWorker.DetermineTransition(
+                AutonomyLevel.Approve, Evidence(10, 0.95, meetsL4: true, meetsL5: false, unsafeOutcome: true))
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void DetermineTransition_ApproveMeetsL4ButDuplicate_ReturnsNull()
+    {
+        AutonomyEvaluationWorker.DetermineTransition(
+                AutonomyLevel.Approve, Evidence(10, 0.95, meetsL4: true, meetsL5: false, duplicate: true))
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void DetermineTransition_StandingMeetsL5_ReturnsPromotionToUnattended()
+    {
+        var transition = AutonomyEvaluationWorker.DetermineTransition(
+            AutonomyLevel.Standing, Evidence(30, 0.99, meetsL4: true, meetsL5: true));
+
+        transition.Should().NotBeNull();
+        transition!.Value.NewLevel.Should().Be(AutonomyLevel.Unattended);
+    }
+
+    [Fact]
+    public void DetermineTransition_StandingBelowL4Floor_ReturnsDemotionToApprove()
+    {
+        var transition = AutonomyEvaluationWorker.DetermineTransition(
+            AutonomyLevel.Standing, Evidence(20, 0.90, meetsL4: false, meetsL5: false));
+
+        transition.Should().NotBeNull();
+        transition!.Value.NewLevel.Should().Be(AutonomyLevel.Approve);
+    }
+
+    [Fact]
+    public void DetermineTransition_StandingWithDuplicate_ReturnsDemotionToApprove()
+    {
+        var transition = AutonomyEvaluationWorker.DetermineTransition(
+            AutonomyLevel.Standing, Evidence(50, 1.0, meetsL4: true, meetsL5: true, duplicate: true));
+
+        transition.Should().NotBeNull();
+        transition!.Value.NewLevel.Should().Be(AutonomyLevel.Approve);
+    }
+
+    [Fact]
+    public void DetermineTransition_UnattendedWithDuplicate_ReturnsDemotionToApprove()
+    {
+        var transition = AutonomyEvaluationWorker.DetermineTransition(
+            AutonomyLevel.Unattended, Evidence(50, 1.0, meetsL4: true, meetsL5: true, duplicate: true));
+
+        transition.Should().NotBeNull();
+        transition!.Value.NewLevel.Should().Be(AutonomyLevel.Approve);
+    }
+
+    [Fact]
+    public void DetermineTransition_UnattendedBelowL5RateButAboveL4Floor_ReturnsNull()
+    {
+        // No rate-based demotion trigger exists for L5 in §8.6/§8.7 — only duplicate_association
+        // and the (deferred) consecutive-failure check.
+        AutonomyEvaluationWorker.DetermineTransition(
+                AutonomyLevel.Unattended, Evidence(30, 0.96, meetsL4: true, meetsL5: false))
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void DetermineTransition_ApproveWithNoQualifyingEvidenceAtAll_ReturnsNull()
+    {
+        AutonomyEvaluationWorker.DetermineTransition(AutonomyLevel.Approve, Evidence(0, null, meetsL4: false, meetsL5: false))
+            .Should().BeNull();
     }
 }

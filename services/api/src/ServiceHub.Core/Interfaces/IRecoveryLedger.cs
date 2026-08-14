@@ -280,6 +280,22 @@ public interface IRecoveryLedger
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Reads the current <see cref="Entities.AutonomyGrant"/> projection for one
+    /// <c>(OwnerId, SignatureHash, ActionKind)</c> triple, or <see langword="null"/> if none has
+    /// ever been created — a signature with no row has never been promoted past L3, the floor
+    /// every signature can always stand on (roadmap §8.4). This is the gate's future predicate 5
+    /// read (§9.4.3); this increment wires it as <c>AutonomyEvaluationWorker</c>'s own read of
+    /// current standing before deciding a promotion/demotion — predicate 5 itself remains
+    /// log-only (§29.6) until a later increment also resolves <c>AutoReplayExecutor</c>'s
+    /// null-<c>SignatureHash</c> gap.
+    /// </summary>
+    Task<AutonomyGrant?> GetAutonomyGrantAsync(
+        string ownerId,
+        string signatureHash,
+        RecoveryOperationKind actionKind,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Live, owner-scoped emergency-stop read for the Eligibility Gate's predicate 0 (roadmap
     /// §9.4.2, §15.2) — <see langword="true"/> iff the most recent event for
     /// <paramref name="ownerId"/> whose <see cref="Enums.RecoveryEventType"/> is

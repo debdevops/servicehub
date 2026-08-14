@@ -818,6 +818,18 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     }
 
     /// <inheritdoc />
+    public async Task<AutonomyGrant?> GetAutonomyGrantAsync(
+        string ownerId, string signatureHash, RecoveryOperationKind actionKind,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.AutonomyGrants
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                g => g.OwnerId == ownerId && g.SignatureHash == signatureHash && g.ActionKind == actionKind,
+                cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<bool> IsEmergencyStopActiveAsync(string ownerId, CancellationToken cancellationToken = default)
     {
         var latest = await _dbContext.RecoveryEvents
