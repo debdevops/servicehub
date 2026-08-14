@@ -37,7 +37,8 @@ public enum RecoveryEntryState
     WrittenOff = 8,
 
     /// <summary>Aged past the declared threshold and was surfaced on the ageing report first.
-    /// Terminal. Reserved — nothing transitions an entry into this state yet; that is the
-    /// ageing worker's responsibility, added in a later phase.</summary>
+    /// Terminal. Reachable only via <see cref="Interfaces.IRecoveryLedger.ExpireEntryAsync"/>,
+    /// called by the ageing worker after an <see cref="RecoveryEventType.AgeingFlagged"/> event
+    /// exists for the entry.</summary>
     Expired = 9
 }

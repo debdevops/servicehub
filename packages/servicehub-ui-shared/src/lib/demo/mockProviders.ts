@@ -1342,7 +1342,7 @@ export function buildDemoRecoveryExportBundle(operationId?: string): { filename:
       firstSeq: events[0]?.seq ?? 0,
       lastSeq: events[events.length - 1]?.seq ?? 0,
       verified: true,
-      algorithm: 'SHA-256 over canonical JSON with PrevHash',
+      algorithm: 'SHA-256 over pipe-delimited canonical fields plus PrevHash (see docs/RECOVERY-EVIDENCE.md)',
       tamperEvidentNotTamperProof: true,
     },
     counts,

@@ -1,13 +1,34 @@
 # ServiceHub Changelog
 
-## [3.7.0] — 2026-08-11
+## [3.7.0] — 2026-08-14
 
-Release-candidate hardening. Cross-cloud production validation, bulk-operation safety guarding, and Rules Builder accessibility fixes ahead of RC1.
+Recovery Evidence Ledger — the headline v3.7.0 feature. ServiceHub's replay/purge decisions were
+previously recorded inconsistently and in some paths untruthfully (see "Fixed" below); this
+release adds a durable, append-only, hash-chained, owner-isolated ledger that every provider-
+mutating recovery path writes to, a verification worker that closes entries as `Recovered` /
+`Returned` / `Unverified` based on actually-provable DLQ absence per provider, an ageing/expiry
+sweep, and JSON/CSV evidence export with a non-empty "what ServiceHub does not know" honesty
+manifest on every export. See `docs/RECOVERY-EVIDENCE.md` for the full model and how to
+independently verify a chain from an export. Cross-cloud production validation, bulk-operation
+safety guarding, and Rules Builder accessibility fixes from the prior RC1 hardening pass remain
+below.
 
 ### Added
 
+- **Recovery Evidence Ledger core** — `RecoveryOperation` / `RecoveryLedgerEntry` / `RecoveryEvent`, a per-owner SHA-256 hash chain (`RecoveryHashChain`, `RecoveryChainVerifier`), and append-only enforcement in `DlqDbContext.SaveChanges(Async)` that rejects any delete or out-of-allowlist modify against the three ledger tables at the persistence layer, independent of caller discipline.
+- **All seven provider-mutating recovery paths wired to the ledger** — single-message replay/purge, bulk replay/purge, signature replay, `RulesController.ReplayAll` (now routed through `IMessageOperationsService` and the same claim protocol as every other path, rather than an Azure-only client bypass), and AutoReplay rule execution. `RecoveryPathCoverageTests` enforces this with an empty exemption list — a new mutating path that forgets to write to the ledger fails the build.
+- **Marker-based verification** — replay applies an `x-servicehub-recovery-id` application property where the provider supports it, so a later DLQ recurrence is attributed to a specific recovery attempt with certainty; a body-hash heuristic is the documented, honestly-labelled fallback where a marker can't be applied. A window-close sweep (`RecoveryVerificationWorker`) closes each entry based on the owning provider's actual DLQ-absence-proof capability — `Recovered` is structurally unreachable on AWS/GCP under default settings (`AWS_NO_ABSENCE_PROOF` / `GCP_NO_ABSENCE_PROOF`), never approximated.
+- **Ageing, evidence export, and UI** — a restart-safe ageing worker that flags then expires long-non-terminal entries (`AgeingFlagged` always precedes `Expired`), JSON/CSV/manifest evidence export with byte-identical reproducibility across re-exports of an unchanged operation, and three new pages (`/recovery`, `/recovery/:id`, `/recovery/ageing`). Demo Mode exports are watermarked `demoMode: true` end-to-end (manifest, filename, UI) and are never presented as real evidence.
+- **`docs/RECOVERY-EVIDENCE.md`** — the standalone hash-chain and verification-model reference for an external auditor working from an export alone.
 - **Bulk Replay/Purge production-namespace E2E guard** — new Playwright suite proves the Bulk Replay/Bulk Purge buttons on DLQ History are disabled outright (not merely rejected after the fact) against a production namespace, and their confirmation modal never mounts.
 - **Accessibility smoke coverage** — automated axe-core (WCAG2 A/AA) scan of the DLQ History page and the Auto-Replay Rules Builder dialog, added as a Playwright suite via the new `@axe-core/playwright` dev dependency.
+
+### Fixed
+
+- **`DlqMonitorWorker` applied AutoReplay rules across tenants** — the background rule scan loaded every enabled rule with no `OwnerId` filter, so any tenant able to create an enabled rule could trigger automated, unauthorised replay in another tenant's namespaces. Now scoped to `r.OwnerId == ns.OwnerId`, with a regression test that seeds two owners and asserts zero cross-owner replays and zero rule evaluation.
+- **`DlqMonitorService` fabricated a `Replayed` outcome on message absence** — a message simply no longer being in the DLQ (which happens for reasons unrelated to ServiceHub, e.g. TTL expiry or a manual operator action) was recorded as ServiceHub having replayed it. Outcomes are now `Resolved` with an honest `ResolutionCause`, never an invented `Replayed`.
+- **Return-to-DLQ erased prior outcome fields** — a message returning to the DLQ after a recorded resolution silently discarded the evidence of what had previously happened to it.
+- **Manual triage could declare `Discarded` with no provider call ever made** — `Discarded` now means "ServiceHub destroyed this," exclusively; a human declaration uses a distinct, clearly-different value.
 
 ### Fixed
 

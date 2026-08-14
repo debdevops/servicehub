@@ -14,8 +14,10 @@ namespace ServiceHub.Core.Interfaces;
 /// No method here accepts a caller-supplied actor identity string — every actor enters as a
 /// <see cref="Models.RecoveryActor"/>, resolved server-side (see <c>ActorIdentityResolver</c>).
 /// State transitions are enforced internally; illegal transitions and owner mismatches return a
-/// <see cref="Result{T}"/> failure, never an exception. This interface currently has no callers —
-/// no controller, executor, or worker is wired to it yet.
+/// <see cref="Result{T}"/> failure, never an exception. Wired into every provider-mutating path —
+/// <c>RecoveryController</c>, <c>MessagesController</c>, <c>RulesController</c>,
+/// <c>AutoReplayExecutor</c>, <c>BulkOperationExecutor</c>, <c>SignatureReplayExecutor</c> — plus
+/// the background workers that observe and age entries.
 /// </remarks>
 public interface IRecoveryLedger
 {

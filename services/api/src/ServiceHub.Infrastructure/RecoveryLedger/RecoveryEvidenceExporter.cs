@@ -139,7 +139,7 @@ public sealed class RecoveryEvidenceExporter : IRecoveryEvidenceExporter
                 FirstSeq = firstSeq,
                 LastSeq = lastSeq,
                 Verified = chainResult.IsValid,
-                Algorithm = "SHA-256 over canonical JSON with PrevHash",
+                Algorithm = "SHA-256 over pipe-delimited canonical fields plus PrevHash (see docs/RECOVERY-EVIDENCE.md)",
                 TamperEvidentNotTamperProof = true,
             },
             Counts = counts,

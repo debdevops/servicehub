@@ -36,9 +36,10 @@ public enum RecoveryEventType
     /// <summary>An operator or the ledger set a terminal disposition on the entry.</summary>
     DispositionSet = 9,
 
-    /// <summary>The entry was flagged by the ageing worker. Reserved — no writer emits this yet;
-    /// added in a later phase. <see cref="RecoveryEntryState.Expired"/> is reachable only through
-    /// a transition whose preceding event is this one.</summary>
+    /// <summary>The entry was flagged by the ageing worker
+    /// (<c>RecoveryAgeingWorker</c>/<see cref="Interfaces.IRecoveryLedger.FlagAgeingAsync"/>).
+    /// <see cref="RecoveryEntryState.Expired"/> is reachable only through a transition whose
+    /// preceding event is this one.</summary>
     AgeingFlagged = 10,
 
     /// <summary>A free-text operator annotation, appended without changing entry state.</summary>

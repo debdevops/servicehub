@@ -346,11 +346,18 @@ public sealed class RecoveryVerificationWorkerTests : IDisposable
         var scope = BuildScope(_dbContext, _recoveryLedger, _namespaceRepoMock.Object, AzureRouter());
 
         using var cts = new CancellationTokenSource();
-        // Cancel once at least one entry has almost certainly been recorded — the loop calls
-        // ThrowIfCancellationRequested at the top of each iteration, so cancelling here still
-        // lets the in-flight first iteration's RecordObservationAsync call complete durably
-        // before the second iteration observes cancellation and throws.
-        cts.CancelAfter(TimeSpan.FromMilliseconds(1));
+        // Cancel deterministically right after the first iteration's RecordObservationAsync
+        // durably commits, instead of racing a wall-clock delay against DB I/O (which was flaky
+        // under parallel test-suite load — the whole sweep could finish before a 1ms timer fired).
+        // DbContext.SavedChanges fires synchronously once SaveChangesAsync completes, so by the
+        // time the loop reaches the second iteration's ThrowIfCancellationRequested, the token is
+        // already cancelled.
+        void CancelOnFirstSave(object? sender, SavedChangesEventArgs args)
+        {
+            _dbContext.SavedChanges -= CancelOnFirstSave;
+            cts.Cancel();
+        }
+        _dbContext.SavedChanges += CancelOnFirstSave;
 
         var act = async () => await worker.SweepOwnerAsync(scope, OwnerA, cts.Token);
         await act.Should().ThrowAsync<OperationCanceledException>();
