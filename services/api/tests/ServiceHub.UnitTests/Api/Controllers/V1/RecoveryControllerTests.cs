@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Controllers.V1;
 using ServiceHub.Api.Security;
 using ServiceHub.Core.DTOs.Requests;
@@ -381,5 +382,99 @@ public sealed class RecoveryControllerTests : IDisposable
         var result = await _controller.WriteOff(entryB.Value.Id, new WriteOffRecoveryEntryRequest("not mine"));
 
         result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    // ── Emergency Stop endpoints (§9.4.2, §15.2) ─────────────────────────────
+
+    [Fact]
+    public void ActivateAndClearEmergencyStop_RequireAdminScope()
+    {
+        // Pins the specific scope, not merely "some scope" — ScopeConformanceTests already
+        // guards that every action declares [RequireScope] at all; this guards the value.
+        typeof(RecoveryController)
+            .GetMethod(nameof(RecoveryController.ActivateEmergencyStop))!
+            .GetCustomAttributes(typeof(RequireScopeAttribute), inherit: true)
+            .Cast<RequireScopeAttribute>()
+            .Single().Scope.Should().Be(ApiKeyScopes.Admin);
+
+        typeof(RecoveryController)
+            .GetMethod(nameof(RecoveryController.ClearEmergencyStop))!
+            .GetCustomAttributes(typeof(RequireScopeAttribute), inherit: true)
+            .Cast<RequireScopeAttribute>()
+            .Single().Scope.Should().Be(ApiKeyScopes.Admin);
+    }
+
+    [Fact]
+    public async Task GetEmergencyStopStatus_InitiallyInactive_ReturnsFalse()
+    {
+        var result = await _controller.GetEmergencyStopStatus();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        ok.Value.Should().BeOfType<EmergencyStopStatusResponse>()
+            .Subject.Active.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ActivateEmergencyStop_ReturnsActiveTrueAndPersists()
+    {
+        var result = await _controller.ActivateEmergencyStop(new EmergencyStopRequest("incident 42"));
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        ok.Value.Should().BeOfType<EmergencyStopStatusResponse>().Subject.Active.Should().BeTrue();
+
+        (await _recoveryLedger.IsEmergencyStopActiveAsync(OwnerA)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ActivateEmergencyStop_NullRequestBody_Succeeds()
+    {
+        // Reason is optional — an admin can activate without a request body at all.
+        var result = await _controller.ActivateEmergencyStop(request: null);
+
+        result.Result.Should().BeOfType<OkObjectResult>();
+        (await _recoveryLedger.IsEmergencyStopActiveAsync(OwnerA)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ClearEmergencyStop_AfterActivation_ReturnsActiveFalseAndPersists()
+    {
+        await _controller.ActivateEmergencyStop(new EmergencyStopRequest("incident 43"));
+
+        var result = await _controller.ClearEmergencyStop(new EmergencyStopRequest("resolved"));
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        ok.Value.Should().BeOfType<EmergencyStopStatusResponse>().Subject.Active.Should().BeFalse();
+
+        (await _recoveryLedger.IsEmergencyStopActiveAsync(OwnerA)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ActivateEmergencyStop_DoesNotAffectAnotherOwner()
+    {
+        var controllerB = CreateController(OwnerB);
+
+        await _controller.ActivateEmergencyStop(new EmergencyStopRequest(null));
+
+        (await _recoveryLedger.IsEmergencyStopActiveAsync(OwnerA)).Should().BeTrue();
+        (await _recoveryLedger.IsEmergencyStopActiveAsync(OwnerB)).Should().BeFalse();
+
+        var statusB = await controllerB.GetEmergencyStopStatus();
+        var okB = statusB.Result.Should().BeOfType<OkObjectResult>().Subject;
+        okB.Value.Should().BeOfType<EmergencyStopStatusResponse>().Subject.Active.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ActivateEmergencyStop_CalledTwice_RemainsActiveAndAppendsBothAsForensicEvidence()
+    {
+        await _controller.ActivateEmergencyStop(new EmergencyStopRequest("first alert"));
+        var second = await _controller.ActivateEmergencyStop(new EmergencyStopRequest("second alert"));
+
+        second.Result.Should().BeOfType<OkObjectResult>();
+        (await _recoveryLedger.IsEmergencyStopActiveAsync(OwnerA)).Should().BeTrue();
+
+        var activatedEvents = await _dbContext.RecoveryEvents
+            .Where(e => e.OwnerId == OwnerA && e.EventType == RecoveryEventType.EmergencyStopActivated)
+            .ToListAsync();
+        activatedEvents.Should().HaveCount(2, "each activation is its own forensic fact, never suppressed as a duplicate");
     }
 }

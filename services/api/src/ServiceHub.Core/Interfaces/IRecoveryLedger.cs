@@ -260,4 +260,42 @@ public interface IRecoveryLedger
         string reason,
         string? evidenceJson,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Live, owner-scoped emergency-stop read for the Eligibility Gate's predicate 0 (roadmap
+    /// §9.4.2, §15.2) — <see langword="true"/> iff the most recent event for
+    /// <paramref name="ownerId"/> whose <see cref="Enums.RecoveryEventType"/> is
+    /// <see cref="Enums.RecoveryEventType.EmergencyStopActivated"/> or
+    /// <see cref="Enums.RecoveryEventType.EmergencyStopCleared"/> (ordered by
+    /// <see cref="RecoveryEvent.Seq"/> descending) is an <c>Activated</c> event.
+    /// <see langword="false"/> if none exists or the most recent is a <c>Cleared</c> event. No
+    /// stored flag and no second table — this is a live query over the same
+    /// <see cref="RecoveryEvent"/> table everything else already uses.
+    /// </summary>
+    Task<bool> IsEmergencyStopActiveAsync(
+        string ownerId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records an owner-scoped emergency-stop activation or clearing (roadmap §9.4.2, §15.2) —
+    /// opens a minimal <see cref="RecoveryOperation"/> (<c>Kind = EmergencyControl</c>,
+    /// <c>Trigger = EmergencyControl</c>, <c>TargetCount = 0</c>) and appends one
+    /// <see cref="Enums.RecoveryEventType.EmergencyStopActivated"/>/
+    /// <see cref="Enums.RecoveryEventType.EmergencyStopCleared"/> event at the operation level
+    /// (<c>EntryId = null</c>), atomically. Always appends a fresh event even if the owner's
+    /// state already matches <paramref name="activate"/> — re-activating during an unresolved
+    /// incident is itself a meaningful, separately timestamped fact, not noise. Never reads,
+    /// writes, or otherwise touches an <see cref="AutonomyGrant"/> row: clearing restores the
+    /// *ability* of a previously valid grant to execute again, it never resets or re-grants
+    /// anything. Callers must resolve <paramref name="actor"/> through an HTTP-only path (never
+    /// a caller-supplied kind) so this can never be reached by an <c>Automation</c>/<c>System</c>
+    /// actor — see <c>RecoveryController</c>'s <c>ResolveRecoveryActor()</c> and the
+    /// <c>admin</c>-scope requirement on its emergency-stop endpoints.
+    /// </summary>
+    Task<Result<RecoveryOperation>> RecordEmergencyControlEventAsync(
+        string ownerId,
+        RecoveryActor actor,
+        bool activate,
+        string? reason,
+        CancellationToken cancellationToken = default);
 }

@@ -1198,4 +1198,162 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
         evt.DetailJson.Should().NotContain("\\\"n\\\"");
         result.IsSuccess.Should().BeTrue();
     }
+
+    // ── Emergency Stop: IsEmergencyStopActiveAsync / RecordEmergencyControlEventAsync (§9.4.2, §15.2) ──
+
+    [Fact]
+    public async Task IsEmergencyStopActiveAsync_NoEventsForOwner_ReturnsFalse()
+    {
+        (await _service.IsEmergencyStopActiveAsync(OwnerA)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RecordEmergencyControlEventAsync_Activate_WritesEmergencyControlOperationAndActivatedEvent()
+    {
+        var result = await _service.RecordEmergencyControlEventAsync(
+            OwnerA, Actor("admin-1"), activate: true, reason: "suspected duplicate replays");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Kind.Should().Be(RecoveryOperationKind.EmergencyControl);
+        result.Value.Trigger.Should().Be(RecoveryTrigger.EmergencyControl);
+        result.Value.NamespaceId.Should().BeNull();
+        result.Value.TargetCount.Should().Be(0);
+
+        var evt = await _dbContext.RecoveryEvents
+            .SingleAsync(e => e.EventType == RecoveryEventType.EmergencyStopActivated);
+        evt.EntryId.Should().BeNull();
+        evt.OperationId.Should().Be(result.Value.Id);
+        evt.DetailJson.Should().Contain("suspected duplicate replays");
+    }
+
+    [Fact]
+    public async Task RecordEmergencyControlEventAsync_Activate_IsEmergencyStopActiveAsyncReturnsTrue()
+    {
+        await _service.RecordEmergencyControlEventAsync(OwnerA, Actor(), activate: true, reason: null);
+
+        (await _service.IsEmergencyStopActiveAsync(OwnerA)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RecordEmergencyControlEventAsync_ActivateThenClear_IsEmergencyStopActiveAsyncReturnsFalse()
+    {
+        await _service.RecordEmergencyControlEventAsync(OwnerA, Actor(), activate: true, reason: null);
+        var clearResult = await _service.RecordEmergencyControlEventAsync(OwnerA, Actor(), activate: false, reason: "incident resolved");
+
+        clearResult.IsSuccess.Should().BeTrue();
+        (await _service.IsEmergencyStopActiveAsync(OwnerA)).Should().BeFalse();
+
+        var clearedEvents = await _dbContext.RecoveryEvents
+            .Where(e => e.EventType == RecoveryEventType.EmergencyStopCleared)
+            .ToListAsync();
+        clearedEvents.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task RecordEmergencyControlEventAsync_RepeatedActivation_AlwaysAppendsFreshEvent()
+    {
+        // Roadmap §9.4.2: re-activating during an unresolved incident is itself a meaningful,
+        // separately timestamped fact — never suppressed as a no-op.
+        await _service.RecordEmergencyControlEventAsync(OwnerA, Actor(), activate: true, reason: "first");
+        await _service.RecordEmergencyControlEventAsync(OwnerA, Actor(), activate: true, reason: "second");
+
+        var activatedEvents = await _dbContext.RecoveryEvents
+            .Where(e => e.EventType == RecoveryEventType.EmergencyStopActivated)
+            .ToListAsync();
+        activatedEvents.Should().HaveCount(2);
+        (await _service.IsEmergencyStopActiveAsync(OwnerA)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RecordEmergencyControlEventAsync_DifferentOwners_AreIsolated()
+    {
+        await _service.RecordEmergencyControlEventAsync(OwnerA, Actor(), activate: true, reason: null);
+
+        (await _service.IsEmergencyStopActiveAsync(OwnerA)).Should().BeTrue();
+        (await _service.IsEmergencyStopActiveAsync(OwnerB)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RecordEmergencyControlEventAsync_ParticipatesInHashChain()
+    {
+        await _service.RecordEmergencyControlEventAsync(OwnerA, Actor(), activate: true, reason: null);
+        await _service.RecordEmergencyControlEventAsync(OwnerA, Actor(), activate: false, reason: null);
+
+        var chain = await _service.VerifyChainAsync(OwnerA);
+        chain.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RecordEmergencyControlEventAsync_DoesNotTouchExistingAutonomyGrants()
+    {
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-untouched", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "earned via history", null);
+
+        await _service.RecordEmergencyControlEventAsync(OwnerA, Actor(), activate: true, reason: null);
+        await _service.RecordEmergencyControlEventAsync(OwnerA, Actor(), activate: false, reason: null);
+
+        var grant = await _dbContext.AutonomyGrants.SingleAsync(g => g.SignatureHash == "sig-untouched");
+        grant.CurrentLevel.Should().Be(AutonomyLevel.Standing, "emergency stop must never modify an existing AutonomyGrant");
+
+        (await _dbContext.RecoveryEvents.CountAsync(e =>
+            e.EventType == RecoveryEventType.AutonomyGrantPromoted || e.EventType == RecoveryEventType.AutonomyGrantDemoted))
+            .Should().Be(1, "only the seeded transition, not the emergency-stop calls, may produce a grant event");
+    }
+
+    [Fact]
+    public async Task RecordEmergencyControlEventAsync_ConcurrentCallsSameOwner_ProduceContiguousValidChain()
+    {
+        // Same real-connection/temp-file pattern as ConcurrentAppends_TwoOwners_..., proving the
+        // per-owner semaphore (RecoveryLedgerService.AcquireOwnerLockAsync) serializes concurrent
+        // emergency-stop activate/clear calls exactly as it does every other ledger write — no
+        // corrupted hash chain, no lost event, regardless of call interleaving.
+        const int callCount = 6;
+        var dbPath = Path.Combine(Path.GetTempPath(), $"emergency-stop-concurrency-{Guid.NewGuid():N}.db");
+        var connectionString = $"Data Source={dbPath}";
+
+        try
+        {
+            await using (var schemaContext = new DlqDbContext(
+                new DbContextOptionsBuilder<DlqDbContext>().UseSqlite(connectionString).Options))
+            {
+                await schemaContext.Database.EnsureCreatedAsync();
+            }
+
+            async Task ToggleAsync(bool activate)
+            {
+                await using var dbContext = new DlqDbContext(
+                    new DbContextOptionsBuilder<DlqDbContext>().UseSqlite(connectionString).Options);
+                var service = new RecoveryLedgerService(dbContext);
+
+                var result = await service.RecordEmergencyControlEventAsync(
+                    OwnerA, Actor(), activate, reason: null);
+
+                result.IsSuccess.Should().BeTrue();
+            }
+
+            await Task.WhenAll(Enumerable.Range(0, callCount).Select(i => ToggleAsync(i % 2 == 0)));
+
+            await using var verifyContext = new DlqDbContext(
+                new DbContextOptionsBuilder<DlqDbContext>().UseSqlite(connectionString).Options);
+
+            var seqs = await verifyContext.RecoveryEvents
+                .Where(e => e.OwnerId == OwnerA).Select(e => e.Seq).OrderBy(s => s).ToListAsync();
+            seqs.Should().Equal(Enumerable.Range(1, callCount).Select(i => (long)i));
+
+            var verifyService = new RecoveryLedgerService(verifyContext);
+            (await verifyService.VerifyChainAsync(OwnerA)).IsValid.Should().BeTrue();
+        }
+        finally
+        {
+            foreach (var suffix in new[] { string.Empty, "-wal", "-shm", "-journal" })
+            {
+                var path = dbPath + suffix;
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+        }
+    }
 }

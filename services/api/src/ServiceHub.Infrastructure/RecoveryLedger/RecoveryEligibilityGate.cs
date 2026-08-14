@@ -31,6 +31,8 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
     public const int RecurrenceLineageCap = 3;
     private static readonly TimeSpan RecurrenceLookbackWindow = TimeSpan.FromDays(90);
 
+    private const string ReasonEmergencyStopActive = "EMERGENCY_STOP_ACTIVE";
+    private const string ReasonEmergencyStopQueryError = "EMERGENCY_STOP_QUERY_ERROR";
     private const string ReasonPurgeAutomationProhibited = "PURGE_AUTOMATION_PROHIBITED";
     private const string ReasonProductionElevationRequired = "PRODUCTION_ELEVATION_REQUIRED";
     private const string ReasonAmbiguousCollision = "RECURRENCE_CAP_AMBIGUOUS_COLLISION";
@@ -60,6 +62,33 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
     public async Task<EligibilityDecision> EvaluateAsync(
         RecoveryEligibilityRequest request, CancellationToken cancellationToken = default)
     {
+        // Predicate 0 — emergency stop (§9.4.2, §15.2): owner-scoped kill switch on new
+        // Automation/System-originated execution only, ahead of every other predicate.
+        // User/ApiKey requests are never subject to it — skip the read entirely for them, so
+        // "never affects manual recovery" holds regardless of the query's outcome. State is read
+        // live from the ledger on every evaluation: no stored flag, no second table.
+        if (request.ActorKind is RecoveryActorKind.Automation or RecoveryActorKind.System)
+        {
+            bool emergencyStopActive;
+            try
+            {
+                emergencyStopActive = await _recoveryLedger.IsEmergencyStopActiveAsync(request.OwnerId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                // Fail closed on a query error (roadmap §18): an unrunnable safety check must
+                // block automation, never silently allow it through.
+                _logger.LogError(ex,
+                    "Emergency-stop state query failed for owner {OwnerId}; failing closed", request.OwnerId);
+                return new EligibilityDecision(EligibilityVerdict.Escalate, ReasonEmergencyStopQueryError);
+            }
+
+            if (emergencyStopActive)
+            {
+                return new EligibilityDecision(EligibilityVerdict.Escalate, ReasonEmergencyStopActive);
+            }
+        }
+
         // Predicate 1 — purge origin (§9.1): unconditional, non-overridable. No purge-capable
         // path may resolve ActorKind = Automation/System once the §29.10 actor-propagation fix
         // ships — a human-requested bulk/signature purge carries User/ApiKey and passes through.

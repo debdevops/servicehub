@@ -790,6 +790,55 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
         return Result<AutonomyGrant>.Success(grant);
     }
 
+    /// <inheritdoc />
+    public async Task<bool> IsEmergencyStopActiveAsync(string ownerId, CancellationToken cancellationToken = default)
+    {
+        var latest = await _dbContext.RecoveryEvents
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId
+                && (e.EventType == RecoveryEventType.EmergencyStopActivated
+                    || e.EventType == RecoveryEventType.EmergencyStopCleared))
+            .OrderByDescending(e => e.Seq)
+            .Select(e => e.EventType)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return latest == RecoveryEventType.EmergencyStopActivated;
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<RecoveryOperation>> RecordEmergencyControlEventAsync(
+        string ownerId, RecoveryActor actor, bool activate, string? reason,
+        CancellationToken cancellationToken = default)
+    {
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+
+        var now = DateTimeOffset.UtcNow;
+        var operation = new RecoveryOperation
+        {
+            OwnerId = ownerId,
+            Kind = RecoveryOperationKind.EmergencyControl,
+            Trigger = RecoveryTrigger.EmergencyControl,
+            ActorIdentity = actor.Identity,
+            ActorKind = actor.Kind,
+            ActorScopes = actor.Scopes,
+            Reason = reason,
+            NamespaceId = null,
+            ScopeDescription = activate ? "emergency-stop=activate" : "emergency-stop=clear",
+            ServiceVersion = GetServiceVersion(),
+            OpenedAt = now,
+            TargetCount = 0,
+        };
+        _dbContext.RecoveryOperations.Add(operation);
+
+        var eventType = activate ? RecoveryEventType.EmergencyStopActivated : RecoveryEventType.EmergencyStopCleared;
+        var detail = JsonSerializer.Serialize(new { reason });
+
+        await AppendEventAsync(ownerId, entryId: null, operation.Id, eventType, actor, detail, cancellationToken);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return Result<RecoveryOperation>.Success(operation);
+    }
+
     /// <summary>
     /// Appends one event to <paramref name="ownerId"/>'s chain. Must be called while holding
     /// that owner's lock (see <see cref="AcquireOwnerLockAsync"/>) — sequencing considers both

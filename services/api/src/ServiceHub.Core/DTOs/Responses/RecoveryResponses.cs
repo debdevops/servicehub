@@ -85,6 +85,12 @@ public sealed record RecoveryOperationDetailResponse(
     IReadOnlyList<RecoveryEventResponse> Events);
 
 /// <summary>
+/// Response DTO for the emergency-stop endpoints (roadmap §9.4.2, §15.2) — the owner-scoped kill
+/// switch's live state, derived from the Recovery Evidence Ledger, never a stored flag.
+/// </summary>
+public sealed record EmergencyStopStatusResponse(bool Active);
+
+/// <summary>
 /// Response DTO for <c>GET /api/v1/recovery/trust/{signatureHash}</c> — a
 /// <see cref="Models.SignatureTrustEvidence"/> report. <c>UnsafeOutcomePresent</c> and
 /// <c>DuplicateAssociationPresent</c> are <see langword="null"/>, never <see langword="false"/>,

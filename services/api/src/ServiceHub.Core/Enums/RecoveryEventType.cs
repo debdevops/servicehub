@@ -50,9 +50,19 @@ public enum RecoveryEventType
     /// <c>AuditService</c>, which is a bounded, lossy channel unsuitable as forensic evidence.</summary>
     EligibilityDeclined = 12,
 
-    // 13 (EmergencyStopActivated), 14 (EmergencyStopCleared), 15 (OutcomeFlagged), and 16
-    // (RecurrenceCapObserved) are reserved by the roadmap (§9.4.1, §9.4.2, §8.10) — not yet
-    // implemented; later Phase D tasks.
+    /// <summary>An owner-scoped emergency stop was activated — the Eligibility Gate's predicate
+    /// 0 (roadmap §9.4.2, §15.2) resolves every subsequent <c>Automation</c>/<c>System</c>
+    /// request to <c>Escalate</c> until cleared. Never affects manual <c>User</c>/<c>ApiKey</c>
+    /// recovery, never touches an <see cref="Entities.AutonomyGrant"/> row.</summary>
+    EmergencyStopActivated = 13,
+
+    /// <summary>An owner-scoped emergency stop was cleared — restores predicate 0's ability to
+    /// resolve to <c>Allow</c> for the remaining predicates (roadmap §9.4.2, §15.2). Does not by
+    /// itself un-demote any grant the independent, always-on demotion rules already caught.</summary>
+    EmergencyStopCleared = 14,
+
+    // 15 (OutcomeFlagged) and 16 (RecurrenceCapObserved) are reserved by the roadmap (§8.10,
+    // §9.4.1) — not yet implemented; later Phase D tasks.
 
     /// <summary>An <see cref="Entities.AutonomyGrant"/> was promoted to a higher
     /// <see cref="AutonomyLevel"/> (roadmap §9.4.3).</summary>

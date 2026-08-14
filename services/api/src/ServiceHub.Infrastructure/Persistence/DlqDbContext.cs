@@ -1042,6 +1042,12 @@ public sealed class DlqDbContext : DbContext
 
         entity.HasIndex(e => new { e.OperationId, e.Seq })
             .HasDatabaseName("IX_RecoveryEvents_OperationId_Seq");
+
+        // Predicate 0's hot-path read (roadmap §9.4.2): keeps IsEmergencyStopActiveAsync an
+        // indexed lookup — it runs on every Eligibility Gate evaluation — rather than a linear
+        // scan of an owner's full event history.
+        entity.HasIndex(e => new { e.OwnerId, e.EventType, e.Seq })
+            .HasDatabaseName("IX_RecoveryEvents_Owner_EventType_Seq");
     }
 
     private static void ConfigureAutonomyGrant(ModelBuilder modelBuilder)

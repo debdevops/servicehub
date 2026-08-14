@@ -100,6 +100,107 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
         _dbContext.SaveChanges();
     }
 
+    // ── Predicate 0: emergency stop (§9.4.2, §15.2) ──────────────────────────
+
+    [Theory]
+    [InlineData(RecoveryActorKind.Automation)]
+    [InlineData(RecoveryActorKind.System)]
+    public async Task EmergencyStopActive_AutomationOrSystemActor_Escalates(RecoveryActorKind actorKind)
+    {
+        await _ledger.RecordEmergencyControlEventAsync(OwnerId, new RecoveryActor("admin", RecoveryActorKind.User), activate: true, reason: null);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: actorKind));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be("EMERGENCY_STOP_ACTIVE");
+    }
+
+    [Theory]
+    [InlineData(RecoveryActorKind.User)]
+    [InlineData(RecoveryActorKind.ApiKey)]
+    public async Task EmergencyStopActive_HumanActor_NeverBlockedByPredicate0(RecoveryActorKind actorKind)
+    {
+        await _ledger.RecordEmergencyControlEventAsync(OwnerId, new RecoveryActor("admin", RecoveryActorKind.User), activate: true, reason: null);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: actorKind));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Allow);
+    }
+
+    [Fact]
+    public async Task EmergencyStopNeverActivated_AutomationActor_NotBlockedByPredicate0()
+    {
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Allow);
+    }
+
+    [Fact]
+    public async Task EmergencyStopActivatedThenCleared_AutomationActor_NoLongerBlocked()
+    {
+        await _ledger.RecordEmergencyControlEventAsync(OwnerId, new RecoveryActor("admin", RecoveryActorKind.User), activate: true, reason: null);
+        await _ledger.RecordEmergencyControlEventAsync(OwnerId, new RecoveryActor("admin", RecoveryActorKind.User), activate: false, reason: null);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Allow);
+    }
+
+    [Fact]
+    public async Task EmergencyStopActiveForDifferentOwner_DoesNotBlockThisOwnersAutomation()
+    {
+        await _ledger.RecordEmergencyControlEventAsync(
+            "a-different-owner", new RecoveryActor("admin", RecoveryActorKind.User), activate: true, reason: null);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Allow);
+    }
+
+    [Fact]
+    public async Task EmergencyStopQueryThrows_AutomationActor_FailsClosedToEscalate()
+    {
+        var ledgerMock = new Mock<IRecoveryLedger>();
+        ledgerMock
+            .Setup(l => l.IsEmergencyStopActiveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("simulated query failure"));
+        var gate = new RecoveryEligibilityGate(ledgerMock.Object, NullLogger<RecoveryEligibilityGate>.Instance);
+
+        var decision = await gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be("EMERGENCY_STOP_QUERY_ERROR");
+    }
+
+    [Fact]
+    public async Task EmergencyStopQueryThrows_HumanActor_NeverQueriedAndStillAllowed()
+    {
+        // Predicate 0 must skip the read entirely for User/ApiKey — "never affects manual
+        // recovery" must hold regardless of whether the emergency-stop query itself is healthy.
+        var ledgerMock = new Mock<IRecoveryLedger>();
+        ledgerMock
+            .Setup(l => l.IsEmergencyStopActiveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("simulated query failure"));
+        var gate = new RecoveryEligibilityGate(ledgerMock.Object, NullLogger<RecoveryEligibilityGate>.Instance);
+
+        var decision = await gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.User, bodyHash: null));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Allow);
+        ledgerMock.Verify(
+            l => l.IsEmergencyStopActiveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task EmergencyStopActiveAndPurgeAttempted_AutomationActor_Predicate0FiresBeforePredicate1()
+    {
+        await _ledger.RecordEmergencyControlEventAsync(OwnerId, new RecoveryActor("admin", RecoveryActorKind.User), activate: true, reason: null);
+
+        var decision = await _gate.EvaluateAsync(
+            BuildRequest(RecoveryOperationKind.Purge, RecoveryActorKind.Automation));
+
+        decision.ReasonCode.Should().Be("EMERGENCY_STOP_ACTIVE");
+    }
+
     // ── Predicate 1: purge origin (§9.1) ─────────────────────────────────────
 
     [Theory]

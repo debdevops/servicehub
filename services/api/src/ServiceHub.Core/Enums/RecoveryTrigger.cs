@@ -24,8 +24,9 @@ public enum RecoveryTrigger
     /// <summary>Startup reconciliation of a claim stranded by a prior process crash.</summary>
     StartupRecovery = 5,
 
-    // 6 is reserved for RecoveryTrigger.EmergencyControl (roadmap §9.4.2, §15.2) — not yet
-    // implemented; a later Phase D task.
+    /// <summary>An administrator activated or cleared an owner-scoped emergency stop (roadmap
+    /// §9.4.2, §15.2).</summary>
+    EmergencyControl = 6,
 
     /// <summary>An <see cref="Entities.AutonomyGrant"/> promotion or demotion triggered it
     /// (roadmap §9.4.3).</summary>

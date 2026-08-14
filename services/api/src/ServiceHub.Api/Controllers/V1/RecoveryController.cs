@@ -285,6 +285,77 @@ public sealed class RecoveryController : ApiControllerBase
         return Ok(MapToResponse(result.Value));
     }
 
+    /// <summary>
+    /// Gets the caller's current owner-scoped emergency-stop state (roadmap §9.4.2, §15.2) —
+    /// derived live from the Recovery Evidence Ledger, never a stored flag.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.RecoveryRead)]
+    [HttpGet("emergency-stop")]
+    [ProducesResponseType(typeof(EmergencyStopStatusResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<EmergencyStopStatusResponse>> GetEmergencyStopStatus(
+        CancellationToken cancellationToken = default)
+    {
+        var active = await _recoveryLedger.IsEmergencyStopActiveAsync(OwnerId, cancellationToken);
+        return Ok(new EmergencyStopStatusResponse(active));
+    }
+
+    /// <summary>
+    /// Activates the caller's owner-scoped emergency stop (roadmap §9.4.2, §15.2) — blocks new
+    /// <c>Automation</c>/<c>System</c>-originated recovery execution starting with the Eligibility
+    /// Gate's next evaluation. Never affects manual <c>User</c>/<c>ApiKey</c> recovery, never
+    /// interrupts an in-flight provider call, and never touches an existing
+    /// <c>AutonomyGrant</c>. Requires the <c>admin</c> scope, deliberately more restrictive than
+    /// <c>recovery:write</c> given its blast radius.
+    /// </summary>
+    /// <param name="request">Optional administrator justification.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.Admin)]
+    [HttpPost("emergency-stop/activate")]
+    [ProducesResponseType(typeof(EmergencyStopStatusResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<EmergencyStopStatusResponse>> ActivateEmergencyStop(
+        [FromBody] EmergencyStopRequest? request = null,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = ResolveRecoveryActor();
+        var result = await _recoveryLedger.RecordEmergencyControlEventAsync(
+            OwnerId, actor, activate: true, request?.Reason, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ToActionResult<EmergencyStopStatusResponse>(result.Error);
+        }
+
+        return Ok(new EmergencyStopStatusResponse(Active: true));
+    }
+
+    /// <summary>
+    /// Clears the caller's owner-scoped emergency stop (roadmap §9.4.2, §15.2) — restores the
+    /// *ability* of previously valid <c>AutonomyGrant</c>s to execute again. Does not itself
+    /// un-demote any grant the independent, always-on demotion rules already caught, and does not
+    /// force any grant to re-earn its level. Requires the <c>admin</c> scope.
+    /// </summary>
+    /// <param name="request">Optional administrator justification.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.Admin)]
+    [HttpPost("emergency-stop/clear")]
+    [ProducesResponseType(typeof(EmergencyStopStatusResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<EmergencyStopStatusResponse>> ClearEmergencyStop(
+        [FromBody] EmergencyStopRequest? request = null,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = ResolveRecoveryActor();
+        var result = await _recoveryLedger.RecordEmergencyControlEventAsync(
+            OwnerId, actor, activate: false, request?.Reason, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ToActionResult<EmergencyStopStatusResponse>(result.Error);
+        }
+
+        return Ok(new EmergencyStopStatusResponse(Active: false));
+    }
+
     private static int ClampLimit(int limit) => Math.Clamp(limit, 1, MaxLimit);
 
     private static byte[] BuildPackageZip(RecoveryEvidenceExport export)
