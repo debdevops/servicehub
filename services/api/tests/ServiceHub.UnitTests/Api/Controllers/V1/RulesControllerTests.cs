@@ -923,4 +923,95 @@ public class RulesControllerTests : IDisposable
         var entries = await _dbContext.RecoveryLedgerEntries.AsNoTracking().Where(e => e.DlqMessageId == target.Id).ToListAsync();
         entries.Should().BeEmpty("a lost claim race must never open ledger evidence for an operation this request never performed");
     }
+
+    // ── ReplayAll: per-message persistence survives mid-batch cancellation ──
+    //
+    // Regression coverage for the persistence gap where a message's terminal
+    // DlqMessages.Status/ReplayHistories row lived only in the EF change tracker until the
+    // very end of ReplayAll's loop (a single SaveChangesAsync(ct) after every group/message).
+    // If the shared cancellation token fired between one message's Recovery Ledger outcome
+    // (recorded with CancellationToken.None) and the next message's ct.ThrowIfCancellationRequested()
+    // check, the ledger entry existed but the DlqMessages.Status/ReplayHistories change for the
+    // message that had *just* completed was lost — divergence between the Recovery Ledger and
+    // DLQ History. The fix persists each message's outcome immediately after it is determined,
+    // using CancellationToken.None so that save itself cannot be cancelled away.
+
+    [Fact]
+    public async Task ReplayAll_CancellationAfterFirstMessageOutcome_PersistsFirstMessageAndLeavesSecondUntouched()
+    {
+        var ns = CreateNamespace();
+        var rule = CreateRule();
+        _dbContext.AutoReplayRules.Add(rule);
+
+        var first = new DlqMessage
+        {
+            MessageId = "msg-first", SequenceNumber = 1, BodyHash = "hash-first",
+            NamespaceId = ns.Id, OwnerId = TestConstants.TestOwnerId, EntityName = "test-queue",
+            EntityType = ServiceBusEntityType.Queue, EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-2),
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2), Status = DlqMessageStatus.Active,
+        };
+        var second = new DlqMessage
+        {
+            MessageId = "msg-second", SequenceNumber = 2, BodyHash = "hash-second",
+            NamespaceId = ns.Id, OwnerId = TestConstants.TestOwnerId, EntityName = "test-queue",
+            EntityType = ServiceBusEntityType.Queue, EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1), Status = DlqMessageStatus.Active,
+        };
+        _dbContext.DlqMessages.AddRange(first, second);
+        await _dbContext.SaveChangesAsync();
+
+        _ruleEngine.Setup(r => r.Evaluate(It.IsAny<DlqMessage>(), It.IsAny<IReadOnlyList<RuleCondition>>()))
+            .Returns(new RuleMatchResult { MessageId = 0, ServiceBusMessageId = "any", EntityName = "test-queue", IsMatch = true });
+
+        // Simulates the shared 30-second cancellation firing right after the first message's
+        // provider call/ledger outcome completes, but before the loop reaches the second message.
+        using var cts = new CancellationTokenSource();
+
+        var messageOperations = new Mock<IMessageOperationsService>();
+        messageOperations
+            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, first.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                cts.Cancel();
+                return Result<bool>.Success(true);
+            });
+
+        SetUpReplayAllServices(ns, messageOperations);
+        SetIntentHeaders(IntentHeaders.IntentReplayAllRules);
+
+        Func<Task> act = () => _controller.ReplayAll(rule.Id, cts.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        // Second message's provider call must never have been reached.
+        messageOperations.Verify(
+            m => m.ReplayMessageAsync(ns.Id, "test-queue", null, second.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        // 1 & 4: the first message's terminal status and ReplayHistories row must have survived
+        // the cancellation that hit on the *next* iteration, and must agree with the ledger.
+        var reloadedFirst = await _dbContext.DlqMessages.AsNoTracking().SingleAsync(m => m.Id == first.Id);
+        reloadedFirst.Status.Should().Be(DlqMessageStatus.Replayed);
+
+        var firstHistory = await _dbContext.ReplayHistories.AsNoTracking().Where(h => h.DlqMessageId == first.Id).ToListAsync();
+        firstHistory.Should().ContainSingle();
+        firstHistory[0].OutcomeStatus.Should().Be("Success");
+
+        var firstLedgerEntries = await _dbContext.RecoveryLedgerEntries.AsNoTracking().Where(e => e.DlqMessageId == first.Id).ToListAsync();
+        firstLedgerEntries.Should().ContainSingle();
+        firstLedgerEntries[0].State.Should().Be(RecoveryEntryState.Observing);
+
+        // 2: cancellation on the next iteration did not roll back or erase what was just persisted.
+        reloadedFirst.ReplayedAt.Should().NotBeNull();
+        reloadedFirst.ReplaySuccess.Should().BeTrue();
+
+        // 3: the unprocessed second message must remain completely untouched.
+        var reloadedSecond = await _dbContext.DlqMessages.AsNoTracking().SingleAsync(m => m.Id == second.Id);
+        reloadedSecond.Status.Should().Be(DlqMessageStatus.Active);
+
+        var secondHistory = await _dbContext.ReplayHistories.AsNoTracking().Where(h => h.DlqMessageId == second.Id).ToListAsync();
+        secondHistory.Should().BeEmpty();
+
+        var secondLedgerEntries = await _dbContext.RecoveryLedgerEntries.AsNoTracking().Where(e => e.DlqMessageId == second.Id).ToListAsync();
+        secondLedgerEntries.Should().BeEmpty();
+    }
 }

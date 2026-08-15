@@ -822,6 +822,13 @@ public sealed class RulesController : ApiControllerBase
                         OutcomeStatus = replayResult.IsSuccess ? "Success" : "Failed",
                         ErrorDetails = replayResult.IsSuccess ? null : replayResult.Error.Message,
                     });
+
+                    // CancellationToken.None: this message's terminal DlqMessages.Status and
+                    // ReplayHistories row must survive the shared 30-second timeout the same way
+                    // the RecordExecutionAsync call above does — otherwise a mid-batch timeout can
+                    // leave the Recovery Ledger recording an outcome for a message whose status/
+                    // history change never left the EF change tracker.
+                    await _dbContext.SaveChangesAsync(CancellationToken.None);
                 }
             }
 

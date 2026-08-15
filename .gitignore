@@ -265,6 +265,10 @@ project.nuget.cache
 .github/README.md
 How-To-Use.md
 
+# Claude Code AWS E2E specialist skill (local dev workflow — mirrors .github/skills/ above;
+# symlink into .claude/skills/ exists only so Claude Code can discover it by name)
+.claude/skills/aws-e2e-specialist
+
 docs/linkedin
 # Playwright test artifacts
 apps/web/test-results/
