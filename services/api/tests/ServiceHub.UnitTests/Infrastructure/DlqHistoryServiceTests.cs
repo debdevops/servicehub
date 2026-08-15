@@ -706,4 +706,108 @@ public class DlqHistoryServiceTests : IDisposable
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("Dlq.NotFound");
     }
+
+    // ── FinalizeRecoveryAsync ────────────────────────────────
+
+    [Fact]
+    public async Task FinalizeRecoveryAsync_ReplaySuccess_TransitionsToReplayedAndStampsOutcome()
+    {
+        var msg = CreateMessage(seq: 1, status: DlqMessageStatus.Replaying);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.FinalizeRecoveryAsync(
+            msg.Id, TestConstants.TestOwnerId, DlqMessageStatus.Replaying, DlqMessageStatus.Replayed);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(DlqMessageStatus.Replayed);
+        result.Value.ReplayedAt.Should().NotBeNull();
+        result.Value.ReplaySuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task FinalizeRecoveryAsync_ReplayFailure_TransitionsToReplayFailed()
+    {
+        var msg = CreateMessage(seq: 2, status: DlqMessageStatus.Replaying);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.FinalizeRecoveryAsync(
+            msg.Id, TestConstants.TestOwnerId, DlqMessageStatus.Replaying, DlqMessageStatus.ReplayFailed);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(DlqMessageStatus.ReplayFailed);
+        result.Value.ReplaySuccess.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task FinalizeRecoveryAsync_PurgeSuccess_TransitionsToDiscarded()
+    {
+        var msg = CreateMessage(seq: 3, status: DlqMessageStatus.Purging);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.FinalizeRecoveryAsync(
+            msg.Id, TestConstants.TestOwnerId, DlqMessageStatus.Purging, DlqMessageStatus.Discarded);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(DlqMessageStatus.Discarded);
+    }
+
+    [Fact]
+    public async Task FinalizeRecoveryAsync_PurgeFailure_ReleasesClaimBackToActive()
+    {
+        var msg = CreateMessage(seq: 4, status: DlqMessageStatus.Purging);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.FinalizeRecoveryAsync(
+            msg.Id, TestConstants.TestOwnerId, DlqMessageStatus.Purging, DlqMessageStatus.Active);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(DlqMessageStatus.Active);
+    }
+
+    [Fact]
+    public async Task FinalizeRecoveryAsync_MessageNotInExpectedClaimStatus_ReturnsConflictWithoutMutating()
+    {
+        // The message never held the Replaying claim (e.g. a duplicate finalize call, or one that
+        // lost a race) — must not be allowed to finalize a claim it doesn't own.
+        var msg = CreateMessage(seq: 5, status: DlqMessageStatus.Active);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.FinalizeRecoveryAsync(
+            msg.Id, TestConstants.TestOwnerId, DlqMessageStatus.Replaying, DlqMessageStatus.Replayed);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Dlq.ClaimNotHeld");
+
+        var reloaded = await _dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == msg.Id);
+        reloaded.Status.Should().Be(DlqMessageStatus.Active);
+    }
+
+    [Fact]
+    public async Task FinalizeRecoveryAsync_UnknownId_ReturnsNotFound()
+    {
+        var result = await _service.FinalizeRecoveryAsync(
+            999999, TestConstants.TestOwnerId, DlqMessageStatus.Replaying, DlqMessageStatus.Replayed);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Dlq.NotFound");
+    }
+
+    [Fact]
+    public async Task FinalizeRecoveryAsync_WrongOwner_ReturnsNotFound()
+    {
+        var msg = CreateMessage(seq: 6, status: DlqMessageStatus.Replaying);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.FinalizeRecoveryAsync(
+            msg.Id, "someone-else", DlqMessageStatus.Replaying, DlqMessageStatus.Replayed);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Dlq.NotFound");
+    }
 }

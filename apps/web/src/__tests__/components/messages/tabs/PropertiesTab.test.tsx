@@ -70,6 +70,7 @@ describe('PropertiesTab — dead-letter message: warning severity', () => {
     queueType: 'deadletter',
     deadLetterReason: 'MaxDeliveryCountExceeded',
     deadLetterSource: 'OrchestrationQueue',
+    deadLetterErrorDescription: 'Session lock expired before message could be settled',
     deliveryCount: 3,
   });
 
@@ -90,6 +91,11 @@ describe('PropertiesTab — dead-letter message: warning severity', () => {
     expect(screen.getByText('DeadLetterErrorDescription')).toBeInTheDocument();
   });
 
+  it('renders the DeadLetterErrorDescription value, not the DeadLetterSource value', () => {
+    renderWithRouter(<PropertiesTab message={dlqMessage} />);
+    expect(screen.getByText('Session lock expired before message could be settled')).toBeInTheDocument();
+  });
+
   it('shows the "Warning" severity label for low delivery count DLQ message', () => {
     renderWithRouter(<PropertiesTab message={dlqMessage} />);
     expect(screen.getByText(/Warning/i)).toBeInTheDocument();
@@ -101,6 +107,7 @@ describe('PropertiesTab — dead-letter message: critical severity', () => {
     queueType: 'deadletter',
     deadLetterReason: 'MaxDeliveryCountExceeded',
     deadLetterSource: 'PaymentsQueue',
+    deadLetterErrorDescription: 'Downstream payment gateway returned HTTP 503',
     deliveryCount: 8,
   });
 
@@ -120,6 +127,7 @@ describe('PropertiesTab — dead-letter message: test severity', () => {
     queueType: 'deadletter',
     deadLetterReason: 'test - manual inspection',
     deadLetterSource: 'ServiceHub Testing',
+    deadLetterErrorDescription: 'Manually dead-lettered for inspection',
     deliveryCount: 1,
   });
 
@@ -139,6 +147,57 @@ describe('PropertiesTab — dead-letter message: incomplete metadata', () => {
 
   it('shows "Incomplete Azure Data" warning', () => {
     renderWithRouter(<PropertiesTab message={incompleteMessage} />);
+    expect(screen.getByText('Incomplete Azure Data')).toBeInTheDocument();
+  });
+});
+
+describe('PropertiesTab — dead-letter fields are mapped to distinct labels', () => {
+  const distinctFieldsMessage = makeMessage({
+    queueType: 'deadletter',
+    deadLetterSource: 'arn:aws:sqs:ap-south-1:123:orders',
+    deadLetterReason: 'PaymentTimeout',
+    deadLetterErrorDescription: 'Payment service timed out',
+    deliveryCount: 2,
+  });
+
+  it('renders DeadLetterReason under its own label with the reason value', () => {
+    renderWithRouter(<PropertiesTab message={distinctFieldsMessage} />);
+    expect(screen.getByText('DeadLetterReason')).toBeInTheDocument();
+    expect(screen.getAllByText('PaymentTimeout').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('renders DeadLetterErrorDescription under its own label with the error-description value, not the source', () => {
+    renderWithRouter(<PropertiesTab message={distinctFieldsMessage} />);
+    expect(screen.getByText('DeadLetterErrorDescription')).toBeInTheDocument();
+    expect(screen.getByText('Payment service timed out')).toBeInTheDocument();
+    expect(screen.queryByText('arn:aws:sqs:ap-south-1:123:orders', { selector: '.font-mono' })).not.toBeInTheDocument();
+  });
+
+  it('renders Dead-Letter Source under the "Complete Message Properties" section with the source value', () => {
+    renderWithRouter(<PropertiesTab message={distinctFieldsMessage} />);
+    expect(screen.getByText('Dead-Letter Source')).toBeInTheDocument();
+    expect(screen.getByText('arn:aws:sqs:ap-south-1:123:orders')).toBeInTheDocument();
+  });
+});
+
+describe('PropertiesTab — AWS native-redrive: source present, error description absent', () => {
+  const awsNativeRedriveMessage = makeMessage({
+    queueType: 'deadletter',
+    deadLetterReason: 'MaxReceiveCount exceeded',
+    deadLetterSource: 'arn:aws:sqs:us-east-1:456:payments-queue',
+    deadLetterErrorDescription: undefined,
+    deliveryCount: 5,
+  });
+
+  it('does not substitute the source ARN into the DeadLetterErrorDescription value', () => {
+    renderWithRouter(<PropertiesTab message={awsNativeRedriveMessage} />);
+    const factSection = screen.getByText('DeadLetterErrorDescription').closest('div')?.parentElement;
+    expect(factSection).not.toBeNull();
+    expect(factSection?.textContent).not.toContain('arn:aws:sqs:us-east-1:456:payments-queue');
+  });
+
+  it('shows the incomplete-data warning instead of a fabricated description', () => {
+    renderWithRouter(<PropertiesTab message={awsNativeRedriveMessage} />);
     expect(screen.getByText('Incomplete Azure Data')).toBeInTheDocument();
   });
 });

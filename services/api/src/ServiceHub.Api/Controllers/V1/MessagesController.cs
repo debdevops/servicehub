@@ -367,7 +367,7 @@ public sealed class MessagesController : ApiControllerBase
     /// <c>DlqMessageId = null</c> and <see cref="RecoveryHashChain.GenesisHash"/> (64 zeros) standing
     /// in for <c>BodyHash</c>, documented there as "body unavailable," never as real content.
     /// </summary>
-    private async Task<Result<(RecoveryActor Actor, RecoveryLedgerEntry Entry, string CombinedEntityName)>> TryBeginRecoveryAsync(
+    private async Task<Result<(RecoveryActor Actor, RecoveryLedgerEntry Entry, string CombinedEntityName, DlqMessage? ClaimedMessage)>> TryBeginRecoveryAsync(
         Namespace ns,
         string entityName,
         string? subscriptionName,
@@ -391,7 +391,7 @@ public sealed class MessagesController : ApiControllerBase
                 trackedMessage.Id, trackedMessage.OwnerId, claimStatus, cancellationToken);
             if (claimResult.IsFailure)
             {
-                return Result<(RecoveryActor, RecoveryLedgerEntry, string)>.Failure(claimResult.Error);
+                return Result<(RecoveryActor, RecoveryLedgerEntry, string, DlqMessage?)>.Failure(claimResult.Error);
             }
 
             trackedMessage = claimResult.Value;
@@ -419,7 +419,7 @@ public sealed class MessagesController : ApiControllerBase
         if (operationResult.IsFailure)
         {
             await ReleaseClaimIfNeededAsync(trackedMessage, cancellationToken);
-            return Result<(RecoveryActor, RecoveryLedgerEntry, string)>.Failure(operationResult.Error);
+            return Result<(RecoveryActor, RecoveryLedgerEntry, string, DlqMessage?)>.Failure(operationResult.Error);
         }
 
         var beginRequest = trackedMessage is not null
@@ -470,7 +470,7 @@ public sealed class MessagesController : ApiControllerBase
                     LogRedactor.SanitiseForLog(combinedEntityName));
             }
 
-            return Result<(RecoveryActor, RecoveryLedgerEntry, string)>.Failure(Error.Validation(
+            return Result<(RecoveryActor, RecoveryLedgerEntry, string, DlqMessage?)>.Failure(Error.Validation(
                 "Recovery.EligibilityDenied",
                 $"Blocked by the Eligibility Gate ({decision.ReasonCode}) — escalate for manual review."));
         }
@@ -479,7 +479,7 @@ public sealed class MessagesController : ApiControllerBase
         if (beginResult.IsFailure)
         {
             await ReleaseClaimIfNeededAsync(trackedMessage, cancellationToken);
-            return Result<(RecoveryActor, RecoveryLedgerEntry, string)>.Failure(beginResult.Error);
+            return Result<(RecoveryActor, RecoveryLedgerEntry, string, DlqMessage?)>.Failure(beginResult.Error);
         }
 
         if (decision.ReasonCode is not null)
@@ -487,7 +487,7 @@ public sealed class MessagesController : ApiControllerBase
             await RecordRecurrenceContextAsync(beginResult.Value.Id, actor, decision, cancellationToken);
         }
 
-        return Result<(RecoveryActor, RecoveryLedgerEntry, string)>.Success((actor, beginResult.Value, combinedEntityName));
+        return Result<(RecoveryActor, RecoveryLedgerEntry, string, DlqMessage?)>.Success((actor, beginResult.Value, combinedEntityName, trackedMessage));
     }
 
     /// <summary>
@@ -506,6 +506,37 @@ public sealed class MessagesController : ApiControllerBase
 
         await _dlqHistoryService.UpdateStatusAsync(
             claimedMessage.OwnerId, claimedMessage.Id, DlqMessageStatus.Active, cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Finalizes the claim <see cref="TryBeginRecoveryAsync"/> took on a tracked
+    /// <see cref="DlqMessage"/>, once the provider replay/purge call has completed — the
+    /// transient <c>Replaying</c>/<c>Purging</c> status is otherwise never resolved to a terminal
+    /// one (roadmap: AWS-only E2E audit P0). No-op for the untracked-message path. Best-effort
+    /// and logged rather than surfaced: the provider operation already happened and its Recovery
+    /// Ledger outcome is already recorded above, so a finalize failure here must not turn an
+    /// already-successful replay/purge into an HTTP error — a claim stranded by this rare race is
+    /// exactly what <c>InterruptedOperationRecovery</c>'s startup sweep exists to reconcile.
+    /// CancellationToken.None for the same reason <see cref="IRecoveryLedger.RecordExecutionAsync"/>
+    /// is called with it above.
+    /// </summary>
+    private async Task FinalizeClaimIfNeededAsync(
+        DlqMessage? claimedMessage, DlqMessageStatus expectedClaimStatus, DlqMessageStatus terminalStatus)
+    {
+        if (claimedMessage is null)
+        {
+            return;
+        }
+
+        var finalizeResult = await _dlqHistoryService.FinalizeRecoveryAsync(
+            claimedMessage.Id, claimedMessage.OwnerId, expectedClaimStatus, terminalStatus, CancellationToken.None);
+
+        if (finalizeResult.IsFailure)
+        {
+            _logger.LogError(
+                "Failed to finalize recovery claim for DLQ message {Id} ({ExpectedClaimStatus} -> {TerminalStatus}): {Error}",
+                claimedMessage.Id, expectedClaimStatus, terminalStatus, finalizeResult.Error.Message);
+        }
     }
 
     /// <summary>
@@ -642,7 +673,7 @@ public sealed class MessagesController : ApiControllerBase
             return ToActionResult(Shared.Results.Result.Failure(recoveryAttempt.Error));
         }
 
-        var (actor, recoveryEntry, _) = recoveryAttempt.Value;
+        var (actor, recoveryEntry, _, claimedMessage) = recoveryAttempt.Value;
 
         var result = await _messageOperationsService.ReplayMessageAsync(
             namespaceId,
@@ -665,6 +696,10 @@ public sealed class MessagesController : ApiControllerBase
             RecoveryMarker = result.IsSuccess && result.Value ? recoveryEntry.Id.ToString() : null,
             MarkerApplied = result.IsSuccess && result.Value,
         }, CancellationToken.None);
+
+        await FinalizeClaimIfNeededAsync(
+            claimedMessage, DlqMessageStatus.Replaying,
+            result.IsSuccess ? DlqMessageStatus.Replayed : DlqMessageStatus.ReplayFailed);
 
         if (result.IsFailure)
         {
@@ -802,7 +837,7 @@ public sealed class MessagesController : ApiControllerBase
             return ToActionResult(Shared.Results.Result.Failure(recoveryAttempt.Error));
         }
 
-        var (actor, recoveryEntry, _) = recoveryAttempt.Value;
+        var (actor, recoveryEntry, _, claimedMessage) = recoveryAttempt.Value;
 
         var result = await _messageOperationsService.PurgeMessageAsync(
             namespaceId,
@@ -821,6 +856,10 @@ public sealed class MessagesController : ApiControllerBase
             Outcome = result.IsSuccess ? RecoveryExecutionOutcome.Accepted : RecoveryExecutionOutcome.Rejected,
             ProviderDetailJson = result.IsSuccess ? null : result.Error.Message,
         }, CancellationToken.None);
+
+        await FinalizeClaimIfNeededAsync(
+            claimedMessage, DlqMessageStatus.Purging,
+            result.IsSuccess ? DlqMessageStatus.Discarded : DlqMessageStatus.Active);
 
         if (result.IsFailure)
         {

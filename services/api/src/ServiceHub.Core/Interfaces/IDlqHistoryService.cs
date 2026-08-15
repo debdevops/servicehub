@@ -125,6 +125,29 @@ public interface IDlqHistoryService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Finalizes a recovery claim previously taken by <see cref="ClaimForRecoveryAsync"/>,
+    /// transitioning the tracked <see cref="DlqMessage"/> from its transient claim status
+    /// (<see cref="DlqMessageStatus.Replaying"/>/<see cref="DlqMessageStatus.Purging"/>) to a
+    /// terminal status once the provider operation has completed. Uses the same
+    /// <see cref="DlqMessage.Status"/>-as-concurrency-token protocol as
+    /// <see cref="ClaimForRecoveryAsync"/>: <paramref name="expectedClaimStatus"/> is checked
+    /// before the transition is applied, so only the caller that actually holds the claim can
+    /// finalize it — a stale or duplicate finalize call, or one racing a concurrent claim,
+    /// fails with a conflict instead of silently overwriting another operation's outcome.
+    /// </summary>
+    /// <param name="id">The DLQ message's primary key.</param>
+    /// <param name="dlqMessageOwnerId">The message row's own <see cref="DlqMessage.OwnerId"/> — see the same parameter on <see cref="ClaimForRecoveryAsync"/>.</param>
+    /// <param name="expectedClaimStatus">The transient claim status the message must currently hold.</param>
+    /// <param name="terminalStatus">The terminal status to transition to.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<Result<DlqMessage>> FinalizeRecoveryAsync(
+        long id,
+        string dlqMessageOwnerId,
+        DlqMessageStatus expectedClaimStatus,
+        DlqMessageStatus terminalStatus,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets multiple DLQ messages by ID in one query, scoped to the owner. Missing or
     /// out-of-tenant IDs are silently omitted from the result rather than failing the call —
     /// used to resolve a failure signature's related messages, where some IDs may no longer

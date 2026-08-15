@@ -595,4 +595,60 @@ public sealed class DlqHistoryService : IDlqHistoryService
 
         return message;
     }
+
+    /// <inheritdoc />
+    public async Task<Result<DlqMessage>> FinalizeRecoveryAsync(
+        long id,
+        string dlqMessageOwnerId,
+        DlqMessageStatus expectedClaimStatus,
+        DlqMessageStatus terminalStatus,
+        CancellationToken cancellationToken = default)
+    {
+        var message = await _dbContext.DlqMessages
+            .FirstOrDefaultAsync(m => m.Id == id && m.OwnerId == dlqMessageOwnerId, cancellationToken);
+
+        if (message is null)
+        {
+            return Result<DlqMessage>.Failure(
+                Error.NotFound("Dlq.NotFound", $"DLQ message with ID {id} was not found"));
+        }
+
+        // Ownership guard: only the caller that actually holds the claim (Status still equals
+        // what it claimed into) may finalize it. Covers a duplicate finalize call and a message
+        // that moved on for any other reason.
+        if (message.Status != expectedClaimStatus)
+        {
+            return Result<DlqMessage>.Failure(Error.Conflict(
+                "Dlq.ClaimNotHeld",
+                $"Message status is '{message.Status}', not the expected claim status '{expectedClaimStatus}' — cannot finalize."));
+        }
+
+        message.Status = terminalStatus;
+        if (terminalStatus == DlqMessageStatus.Replayed)
+        {
+            message.ReplayedAt = DateTimeOffset.UtcNow;
+            message.ReplaySuccess = true;
+        }
+        else if (terminalStatus == DlqMessageStatus.ReplayFailed)
+        {
+            message.ReplaySuccess = false;
+        }
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await _dbContext.Entry(message).ReloadAsync(cancellationToken);
+            return Result<DlqMessage>.Failure(Error.Conflict(
+                "Dlq.ClaimLost", "Message claim was lost to another concurrent operation before it could be finalized."));
+        }
+
+        _logger.LogInformation(
+            "DLQ message {Id} recovery claim finalized: {ExpectedClaimStatus} -> {TerminalStatus}",
+            id, expectedClaimStatus, terminalStatus);
+
+        return message;
+    }
 }

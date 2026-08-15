@@ -49,6 +49,23 @@ public class MessagesControllerTests
         _dlqHistoryService
             .Setup(s => s.LookupAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<DlqMessage>.Failure(Error.NotFound("Dlq.NotFound", "not tracked")));
+        _dlqHistoryService
+            .Setup(s => s.FinalizeRecoveryAsync(
+                It.IsAny<long>(), It.IsAny<string>(), It.IsAny<DlqMessageStatus>(), It.IsAny<DlqMessageStatus>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((long id, string ownerId, DlqMessageStatus _, DlqMessageStatus terminalStatus, CancellationToken _) =>
+                Result<DlqMessage>.Success(new DlqMessage
+                {
+                    MessageId = "finalized",
+                    SequenceNumber = 1,
+                    BodyHash = "test",
+                    NamespaceId = Guid.NewGuid(),
+                    OwnerId = ownerId,
+                    EntityName = "test",
+                    EntityType = ServiceBusEntityType.Queue,
+                    EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+                    DetectedAtUtc = DateTimeOffset.UtcNow,
+                    Status = terminalStatus,
+                }));
 
         _recoveryLedger = new Mock<IRecoveryLedger>();
         _recoveryLedger
@@ -432,6 +449,82 @@ public class MessagesControllerTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task ReplayMessage_TrackedMessage_ProviderSucceeds_ShouldFinalizeToReplayed()
+    {
+        SetIntentHeaders(IntentHeaders.IntentReplayMessage);
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var tracked = CreateTrackedMessage(ns, "my-queue", 42);
+        _dlqHistoryService
+            .Setup(s => s.LookupAsync(ns.Id, "my-queue", 42, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqMessage>.Success(tracked));
+        _dlqHistoryService
+            .Setup(s => s.ClaimForRecoveryAsync(tracked.Id, tracked.OwnerId, DlqMessageStatus.Replaying, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqMessage>.Success(tracked));
+
+        _messageOperationsService.Setup(r => r.ReplayMessageAsync(ns.Id, "my-queue", null, 42, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        var result = await _controller.ReplayMessage(ns.Id, 42, "my-queue");
+
+        result.Should().BeOfType<AcceptedResult>();
+        _dlqHistoryService.Verify(
+            s => s.FinalizeRecoveryAsync(
+                tracked.Id, tracked.OwnerId, DlqMessageStatus.Replaying, DlqMessageStatus.Replayed, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplayMessage_TrackedMessage_ProviderFails_ShouldFinalizeToReplayFailed()
+    {
+        SetIntentHeaders(IntentHeaders.IntentReplayMessage);
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var tracked = CreateTrackedMessage(ns, "my-queue", 42);
+        _dlqHistoryService
+            .Setup(s => s.LookupAsync(ns.Id, "my-queue", 42, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqMessage>.Success(tracked));
+        _dlqHistoryService
+            .Setup(s => s.ClaimForRecoveryAsync(tracked.Id, tracked.OwnerId, DlqMessageStatus.Replaying, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqMessage>.Success(tracked));
+
+        _messageOperationsService.Setup(r => r.ReplayMessageAsync(ns.Id, "my-queue", null, 42, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Failure(Error.ExternalService("AWS.SQS.ReplayFailed", "SQS error")));
+
+        var result = await _controller.ReplayMessage(ns.Id, 42, "my-queue");
+
+        result.Should().NotBeOfType<AcceptedResult>();
+        _dlqHistoryService.Verify(
+            s => s.FinalizeRecoveryAsync(
+                tracked.Id, tracked.OwnerId, DlqMessageStatus.Replaying, DlqMessageStatus.ReplayFailed, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplayMessage_UntrackedMessage_ShouldNotCallFinalize()
+    {
+        SetIntentHeaders(IntentHeaders.IntentReplayMessage);
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _messageOperationsService.Setup(r => r.ReplayMessageAsync(ns.Id, "my-queue", null, 42, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        var result = await _controller.ReplayMessage(ns.Id, 42, "my-queue");
+
+        result.Should().BeOfType<AcceptedResult>();
+        _dlqHistoryService.Verify(
+            s => s.FinalizeRecoveryAsync(
+                It.IsAny<long>(), It.IsAny<string>(), It.IsAny<DlqMessageStatus>(), It.IsAny<DlqMessageStatus>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     #endregion
 
     #region PurgeMessage Tests
@@ -585,6 +678,62 @@ public class MessagesControllerTests
             l => l.OpenOperationAsync(
                 It.Is<OpenRecoveryOperationRequest>(req => req.Reason == "Confirmed duplicate — INC-1234"),
                 It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task PurgeMessage_TrackedMessage_ProviderSucceeds_ShouldFinalizeToDiscarded()
+    {
+        SetIntentHeaders(IntentHeaders.IntentPurgeMessage);
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var tracked = CreateTrackedMessage(ns, "my-queue", 42);
+        _dlqHistoryService
+            .Setup(s => s.LookupAsync(ns.Id, "my-queue", 42, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqMessage>.Success(tracked));
+        _dlqHistoryService
+            .Setup(s => s.ClaimForRecoveryAsync(tracked.Id, tracked.OwnerId, DlqMessageStatus.Purging, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqMessage>.Success(tracked));
+
+        _messageOperationsService.Setup(r => r.PurgeMessageAsync(ns.Id, "my-queue", null, 42, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        var result = await _controller.PurgeMessage(ns.Id, 42, "my-queue");
+
+        result.Should().BeOfType<AcceptedResult>();
+        _dlqHistoryService.Verify(
+            s => s.FinalizeRecoveryAsync(
+                tracked.Id, tracked.OwnerId, DlqMessageStatus.Purging, DlqMessageStatus.Discarded, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task PurgeMessage_TrackedMessage_ProviderFails_ShouldFinalizeToActive()
+    {
+        SetIntentHeaders(IntentHeaders.IntentPurgeMessage);
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var tracked = CreateTrackedMessage(ns, "my-queue", 42);
+        _dlqHistoryService
+            .Setup(s => s.LookupAsync(ns.Id, "my-queue", 42, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqMessage>.Success(tracked));
+        _dlqHistoryService
+            .Setup(s => s.ClaimForRecoveryAsync(tracked.Id, tracked.OwnerId, DlqMessageStatus.Purging, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqMessage>.Success(tracked));
+
+        _messageOperationsService.Setup(r => r.PurgeMessageAsync(ns.Id, "my-queue", null, 42, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.ExternalService("AWS.SQS.PurgeFailed", "SQS error")));
+
+        var result = await _controller.PurgeMessage(ns.Id, 42, "my-queue");
+
+        result.Should().NotBeOfType<AcceptedResult>();
+        _dlqHistoryService.Verify(
+            s => s.FinalizeRecoveryAsync(
+                tracked.Id, tracked.OwnerId, DlqMessageStatus.Purging, DlqMessageStatus.Active, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 

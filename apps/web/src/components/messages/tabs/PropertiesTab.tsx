@@ -84,7 +84,7 @@ function extractDLQDetails(message: Message, provider?: CloudProviderType): {
 
   // Explicit null checks with defensive defaults
   const rawReason = message.deadLetterReason?.trim();
-  const rawDescription = message.deadLetterSource?.trim();
+  const rawDescription = message.deadLetterErrorDescription?.trim();
 
   const reason = rawReason || `Not provided by ${serviceName}`;
   const description = rawDescription || `Not provided by ${serviceName}`;
