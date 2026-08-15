@@ -364,7 +364,22 @@ public sealed class DlqMonitorService : IDlqMonitorService
                     // they are evidence of what was previously recorded, and erasing them here
                     // would destroy a real recovery record for the sake of a message that turned
                     // out to have come back.
-                    if (existingMessage.Status != DlqMessageStatus.Active)
+                    //
+                    // Replaying/Purging are excluded deliberately: those are transient claim
+                    // states an executor (BulkOperationExecutor, SignatureReplayExecutor,
+                    // AutoReplayExecutor, or a manual replay/purge) is actively working through —
+                    // the message is still physically present in the DLQ only because the
+                    // provider call (e.g. SQS SendMessage-then-DeleteMessage) hasn't completed
+                    // yet, not because it "came back". Resetting it to Active here races the live
+                    // executor: its own claim was committed with Status as the EF concurrency
+                    // token, so the executor's terminal save (Replayed/ReplayFailed/Discarded)
+                    // then loses to a stale concurrency token and throws — dropping the
+                    // ReplayHistory/DlqMessage-status update for an outcome the Recovery Ledger
+                    // already recorded correctly, the same "never race a genuinely in-flight
+                    // claim" invariant InterruptedOperationRecovery enforces at startup.
+                    if (existingMessage.Status != DlqMessageStatus.Active
+                        && existingMessage.Status != DlqMessageStatus.Replaying
+                        && existingMessage.Status != DlqMessageStatus.Purging)
                     {
                         existingMessage.Status = DlqMessageStatus.Active;
                         _logger.LogInformation(

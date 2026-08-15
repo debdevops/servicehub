@@ -299,11 +299,14 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             return (MessageOutcome.Skipped, "Message was claimed by another concurrent replay — skipped");
         }
 
+        // CancellationToken.None from here through the provider call: the claim above is already
+        // committed, so this message must run to completion — same guarantee RulesController.
+        // ReplayAll, AutoReplayExecutor, and BulkOperationExecutor already enforce.
         var beginResult = await _recoveryLedger.BeginEntryAsync(
             RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
                 message, recovery.Namespace, recovery.OperationId, recovery.OwnerId, recovery.Actor, entityName,
                 signatureHashSnapshot: recovery.SignatureHash),
-            cancellationToken);
+            CancellationToken.None);
 
         if (beginResult.IsFailure)
         {
@@ -317,11 +320,20 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
 
         if (decision.ReasonCode is not null)
         {
-            await RecordRecurrenceContextAsync(entry.Id, recovery, decision, cancellationToken);
+            await RecordRecurrenceContextAsync(entry.Id, recovery, decision, CancellationToken.None);
         }
 
         var result = await _messageOperationsService.ReplayMessageAsync(
-            message.NamespaceId, entityName, subscriptionName, message.SequenceNumber, entry.Id, cancellationToken);
+            message.NamespaceId, entityName, subscriptionName, message.SequenceNumber, entry.Id, CancellationToken.None);
+
+        // AWS.SQS.ReplayAmbiguous (send to source succeeded, delete from DLQ failed) routes to
+        // Unknown rather than Rejected: the message is genuinely duplicated-if-retried, not
+        // safely retriable — see AwsMessageReceiver.ReplayMessageAsync.
+        var executionOutcome = result.IsSuccess
+            ? RecoveryExecutionOutcome.Accepted
+            : result.Error.Code == "AWS.SQS.ReplayAmbiguous"
+                ? RecoveryExecutionOutcome.Unknown
+                : RecoveryExecutionOutcome.Rejected;
 
         // CancellationToken.None: the provider call above already happened, so this outcome must
         // be recorded even if cancellation was requested in the meantime — same reasoning as the
@@ -331,7 +343,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             EntryId = entry.Id,
             OwnerId = recovery.OwnerId,
             Actor = recovery.Actor,
-            Outcome = result.IsSuccess ? RecoveryExecutionOutcome.Accepted : RecoveryExecutionOutcome.Rejected,
+            Outcome = executionOutcome,
             ProviderDetailJson = result.IsSuccess ? null : result.Error.Message,
             RecoveryMarker = result.IsSuccess && result.Value ? entry.Id.ToString() : null,
             MarkerApplied = result.IsSuccess && result.Value,

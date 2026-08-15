@@ -165,6 +165,10 @@ export function useReplayMessage() {
         queryClient.invalidateQueries({ queryKey: ['queues', variables.namespaceId], refetchType: 'active' }),
         queryClient.invalidateQueries({ queryKey: ['subscriptions', variables.namespaceId], refetchType: 'active' }),
         queryClient.invalidateQueries({ queryKey: ['namespace-stats', variables.namespaceId], refetchType: 'active' }),
+        // Recovery Ledger otherwise only refreshes on its own 60s refetchInterval — see
+        // useBulkOperations.ts for the same fix on the bulk-operation completion path.
+        queryClient.invalidateQueries({ queryKey: ['recovery-operations'] }),
+        queryClient.invalidateQueries({ queryKey: ['recovery-entries'] }),
       ]);
       toast.success('Message replayed successfully');
     },
@@ -210,6 +214,10 @@ export function usePurgeMessage() {
         }),
         queryClient.invalidateQueries({ queryKey: ['queues', variables.namespaceId], refetchType: 'active' }),
         queryClient.invalidateQueries({ queryKey: ['subscriptions', variables.namespaceId], refetchType: 'active' }),
+        // Recovery Ledger otherwise only refreshes on its own 60s refetchInterval — see
+        // useBulkOperations.ts for the same fix on the bulk-operation completion path.
+        queryClient.invalidateQueries({ queryKey: ['recovery-operations'] }),
+        queryClient.invalidateQueries({ queryKey: ['recovery-entries'] }),
       ]);
       toast.success('Message purged successfully');
     },

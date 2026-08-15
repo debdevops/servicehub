@@ -437,19 +437,49 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                 markerApplied = true;
             }
 
-            // CRITICAL ORDER: Send to source BEFORE deleting from DLQ
+            // CRITICAL ORDER: Send to source BEFORE deleting from DLQ.
+            //
+            // Point of no return: once SendMessageAsync is invoked, this uses
+            // CancellationToken.None rather than the caller's token for both calls. A caller-side
+            // timeout/cancellation firing mid-flight here would not cancel the AWS-side operation
+            // — SQS receives and processes the HTTP request regardless — it would only abandon
+            // ServiceHub's ability to learn whether Send/Delete actually completed, turning a
+            // knowable outcome into a genuinely ambiguous one (duplicate-replay risk if a caller
+            // then treats the aborted call as a safe-to-retry failure). Matches the same
+            // "must complete" contract already used immediately after this call returns for
+            // Recovery Ledger/DlqMessage-status persistence.
             await sqs.SendMessageAsync(new SqsSend
             {
                 QueueUrl = sourceUrl,
                 MessageBody = target.Body,
                 MessageAttributes = attributes
-            }, cancellationToken).ConfigureAwait(false);
+            }, CancellationToken.None).ConfigureAwait(false);
 
-            await sqs.DeleteMessageAsync(new DeleteMessageRequest
+            try
             {
-                QueueUrl = dlqUrl,
-                ReceiptHandle = target.ReceiptHandle
-            }, cancellationToken).ConfigureAwait(false);
+                await sqs.DeleteMessageAsync(new DeleteMessageRequest
+                {
+                    QueueUrl = dlqUrl,
+                    ReceiptHandle = target.ReceiptHandle
+                }, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (AmazonSQSException ex)
+            {
+                // Send is confirmed successful at this point — the message already exists in the
+                // source queue. Reporting this as a plain failure would make the message look
+                // safe to retry (still Active-eligible callers treat Failure as "did not
+                // happen"), which would send a second copy. A distinct error code lets callers
+                // route this to the Recovery Ledger's "Unknown" execution outcome instead of
+                // "Rejected" — the same "never report failed when the outcome is unknown"
+                // principle used for a process crash mid-call.
+                _logger.LogError(ex,
+                    "SQS replay ambiguous for message {Seq} on {QueueName}: send to source queue succeeded but " +
+                    "delete from DLQ failed — the message may now be duplicated if retried",
+                    sequenceNumber, SanitizeForLog(entityName));
+                return Result<bool>.Failure(Error.Conflict("AWS.SQS.ReplayAmbiguous",
+                    $"Message was sent to the source queue but could not be deleted from the DLQ: {ex.Message}. " +
+                    "Do not retry without first checking for a duplicate in the source queue."));
+            }
 
             _logger.LogInformation("Replayed message {Seq} from DLQ to {QueueName}", sequenceNumber, SanitizeForLog(entityName));
             return Result<bool>.Success(markerApplied);
@@ -458,6 +488,18 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         {
             _logger.LogError(ex, "SQS error replaying message {Seq} for {QueueName}", sequenceNumber, SanitizeForLog(entityName));
             return Result<bool>.Failure(Error.ExternalService("AWS.SQS.ReplayFailed", ex.Message));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+        {
+            // Mirrors the Azure provider's catch-all (ServiceBusClientWrapper.ReplayMessageAsync):
+            // IMessageReceiver.ReplayMessageAsync must never throw for an expected failure mode —
+            // callers persist Recovery Ledger/DlqMessage state immediately after this returns,
+            // and an uncaught exception here (notably OperationCanceledException from the
+            // pre-mutation scan/lock phase, which still honors the caller's token) skips that
+            // persistence entirely, leaving the claim stuck until the next server restart.
+            _logger.LogError(ex, "Unexpected error replaying message {Seq} for {QueueName}", sequenceNumber, SanitizeForLog(entityName));
+            return Result<bool>.Failure(Error.Internal("AWS.SQS.UnexpectedError",
+                "An unexpected error occurred while replaying the message."));
         }
     }
 
@@ -503,11 +545,13 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                     $"Message {sequenceNumber} was not found in the queue — it may have been consumed, replayed, or expired."));
             }
 
+            // Point of no return: CancellationToken.None — see ReplayMessageAsync for why a
+            // caller-side timeout must not abandon an AWS mutation already underway.
             await sqs.DeleteMessageAsync(new DeleteMessageRequest
             {
                 QueueUrl = targetUrl,
                 ReceiptHandle = target.ReceiptHandle
-            }, cancellationToken).ConfigureAwait(false);
+            }, CancellationToken.None).ConfigureAwait(false);
 
             _logger.LogInformation("Purged message {Seq} from {Queue}", sequenceNumber, SanitizeForLog(entityName));
             return Result.Success();
@@ -516,6 +560,13 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         {
             _logger.LogError(ex, "SQS error purging message {Seq} for {QueueName}", sequenceNumber, SanitizeForLog(entityName));
             return Result.Failure(Error.ExternalService("AWS.SQS.PurgeFailed", ex.Message));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+        {
+            // Mirrors ReplayMessageAsync's catch-all — see that method for rationale.
+            _logger.LogError(ex, "Unexpected error purging message {Seq} for {QueueName}", sequenceNumber, SanitizeForLog(entityName));
+            return Result.Failure(Error.Internal("AWS.SQS.UnexpectedError",
+                "An unexpected error occurred while purging the message."));
         }
     }
 

@@ -404,6 +404,135 @@ public sealed class AwsMessageReceiverRegressionTests
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Replay — cancellation/ambiguity around the Send/Delete pair
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ReplayMessageAsync_SendSucceeds_DeleteThrows_ReturnsDistinctAmbiguousFailure()
+    {
+        // The message is now confirmed duplicated-if-retried: Send already put a copy in the
+        // source queue, and Delete failing means the DLQ copy is still there too. Callers must
+        // be able to tell this apart from an ordinary failure (where nothing happened) so they
+        // route it to the Recovery Ledger's "Unknown" outcome instead of a retry-eligible
+        // "Rejected" — see AutoReplayExecutor/RulesController/BulkOperationExecutor/
+        // SignatureReplayExecutor/MessagesController's AWS.SQS.ReplayAmbiguous check.
+        var target = BuildSqsMessage("m-ambiguous", "rh-ambiguous", "ambiguous body");
+        var (sut, sqs, _) = BuildSut(new ReceiveMessageResponse { Messages = [target] });
+
+        sqs.Setup(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SendMessageResponse());
+        sqs.Setup(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ReceiptHandleIsInvalidException("The input receipt handle is invalid"));
+
+        var seq = ComputeSequenceNumber("m-ambiguous");
+        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq, null);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("AWS.SQS.ReplayAmbiguous");
+        result.Error.Message.Should().ContainAll("sent to the source queue", "not be deleted", "retry");
+        sqs.Verify(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_SendFails_ReturnsOrdinaryFailure_NotAmbiguous()
+    {
+        // Contrast case: nothing was sent, so this is a safe-to-retry ordinary failure, not the
+        // ambiguous duplicate-risk one.
+        var target = BuildSqsMessage("m-sendfail", "rh-sendfail", "body");
+        var (sut, sqs, _) = BuildSut(new ReceiveMessageResponse { Messages = [target] });
+
+        sqs.Setup(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new AmazonSQSException("throttled"));
+
+        var seq = ComputeSequenceNumber("m-sendfail");
+        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq, null);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("AWS.SQS.ReplayFailed");
+        sqs.Verify(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_CallerCancelsAfterSendAccepted_SendAndDeleteStillCompleteAndReplaySucceeds()
+    {
+        // Point-of-no-return regression: once Send is invoked, a caller-side cancellation (e.g.
+        // RulesController.ReplayAll's 30-second batch budget, or DlqMonitorWorker's
+        // stoppingToken) must not abandon the Send/Delete pair mid-flight — that would turn a
+        // knowable outcome into an ambiguous one for no reason, since it can't actually cancel
+        // the AWS-side operation. Both calls must complete even though the caller's token was
+        // already cancelled before this method was invoked.
+        var target = BuildSqsMessage("m-cancel", "rh-cancel", "body");
+        var (sut, sqs, _) = BuildSut();
+
+        using var cts = new CancellationTokenSource();
+
+        // The scan/lock phase (FindAndLockMessageAsync) is still cancellable — it holds a real
+        // SemaphoreSlim gate that checks the token. Cancel right as that phase hands back the
+        // target message, simulating the caller's budget running out at exactly the
+        // point-of-no-return boundary, immediately before Send.
+        sqs.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                cts.Cancel();
+                return new ReceiveMessageResponse { Messages = [target] };
+            });
+        sqs.Setup(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                cts.Token.IsCancellationRequested.Should().BeTrue(
+                    "the token must already be cancelled by the time Send runs, to prove Send ignores it");
+                return Task.FromResult(new SendMessageResponse());
+            });
+        sqs.Setup(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteMessageResponse());
+
+        var seq = ComputeSequenceNumber("m-cancel");
+        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq, null, cts.Token);
+
+        result.IsSuccess.Should().BeTrue();
+        sqs.Verify(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+        sqs.Verify(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_UnexpectedException_ReturnsFailureResult_NeverThrows()
+    {
+        // IMessageReceiver.ReplayMessageAsync must never throw for an expected failure mode —
+        // callers (RulesController.ReplayAll, AutoReplayExecutor, BulkOperationExecutor,
+        // SignatureReplayExecutor, MessagesController) persist Recovery Ledger/DlqMessage state
+        // immediately after this returns, using CancellationToken.None specifically because "the
+        // provider call above already happened". Before this fix, an exception here (notably one
+        // from the pre-mutation scan phase, which still honors the caller's token) propagated
+        // raw past all of that persistence, stranding the claim until the next server restart.
+        // Mirrors ServiceBusClientWrapper.ReplayMessageAsync's catch-all for the same contract.
+        var (sut, sqs, _) = BuildSut();
+        sqs.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("unexpected SDK failure"));
+
+        var seq = ComputeSequenceNumber("m-unexpected");
+        var act = async () => await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq, null);
+
+        var result = await act.Should().NotThrowAsync();
+        result.Subject.IsFailure.Should().BeTrue();
+        result.Subject.Error.Code.Should().Be("AWS.SQS.UnexpectedError");
+    }
+
+    [Fact]
+    public async Task PurgeMessageAsync_UnexpectedException_ReturnsFailureResult_NeverThrows()
+    {
+        var (sut, sqs, _) = BuildSut();
+        sqs.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("unexpected SDK failure"));
+
+        var seq = ComputeSequenceNumber("m-unexpected-purge");
+        var act = async () => await sut.PurgeMessageAsync(TestNamespaceId, QueueName, null, seq, fromDeadLetter: true);
+
+        var result = await act.Should().NotThrowAsync();
+        result.Subject.IsFailure.Should().BeTrue();
+        result.Subject.Error.Code.Should().Be("AWS.SQS.UnexpectedError");
+    }
+
     [Fact]
     public async Task PurgeMessageAsync_DeletesOnlyTheTargetAndReleasesTheRest()
     {

@@ -683,6 +683,15 @@ public sealed class MessagesController : ApiControllerBase
             recoveryEntry.Id,
             cancellationToken);
 
+        // AWS.SQS.ReplayAmbiguous (send to source succeeded, delete from DLQ failed) routes to
+        // Unknown rather than Rejected: the message is genuinely duplicated-if-retried, not
+        // safely retriable — see AwsMessageReceiver.ReplayMessageAsync.
+        var executionOutcome = result.IsSuccess
+            ? RecoveryExecutionOutcome.Accepted
+            : result.Error.Code == "AWS.SQS.ReplayAmbiguous"
+                ? RecoveryExecutionOutcome.Unknown
+                : RecoveryExecutionOutcome.Rejected;
+
         // CancellationToken.None: the provider call above already happened, so its outcome must
         // be recorded even if the HTTP request's cancellation fires in the meantime — otherwise a
         // replay that genuinely succeeded could be left as an orphaned Executing entry.
@@ -691,7 +700,7 @@ public sealed class MessagesController : ApiControllerBase
             EntryId = recoveryEntry.Id,
             OwnerId = OwnerId,
             Actor = actor,
-            Outcome = result.IsSuccess ? RecoveryExecutionOutcome.Accepted : RecoveryExecutionOutcome.Rejected,
+            Outcome = executionOutcome,
             ProviderDetailJson = result.IsSuccess ? null : result.Error.Message,
             RecoveryMarker = result.IsSuccess && result.Value ? recoveryEntry.Id.ToString() : null,
             MarkerApplied = result.IsSuccess && result.Value,

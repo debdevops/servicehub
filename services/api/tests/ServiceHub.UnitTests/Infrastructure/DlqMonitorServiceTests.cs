@@ -574,6 +574,43 @@ public sealed class DlqMonitorServiceTests : IDisposable
         msg.ResolutionCause.Should().Be(DlqResolutionCause.VanishedExternally);
     }
 
+    // ── DlqMonitorWorker live-scan-vs-in-flight-claim race regression ─────
+
+    [Theory]
+    [InlineData(DlqMessageStatus.Replaying)]
+    [InlineData(DlqMessageStatus.Purging)]
+    public async Task ScanNamespace_MessageClaimedByLiveReplayOrPurge_ScanDoesNotResetToActive(
+        DlqMessageStatus claimStatus)
+    {
+        // Regresses the DlqMonitorWorker reconciliation race: a message is still physically
+        // present in the DLQ only because its claiming executor (BulkOperationExecutor,
+        // SignatureReplayExecutor, AutoReplayExecutor, or a manual replay/purge) hasn't finished
+        // its provider call (e.g. SQS SendMessage-then-DeleteMessage) yet — it has not "returned"
+        // to the DLQ. Resetting Status here races the live executor's own concurrency-token save:
+        // its terminal update (Replayed/ReplayFailed/Discarded) then loses to this scan's stale
+        // token and throws, dropping the DlqMessage/ReplayHistory record of an outcome the
+        // Recovery Ledger already recorded correctly. See DlqMonitorService.ScanNamespaceAsync.
+        var sut = CreateSut(CloudProviderType.Azure);
+        SetupNamespace(CloudProviderType.Azure);
+
+        var claimed = MakeStoredMessage("in-flight-msg", 88, "test-queue", status: claimStatus);
+        _dbContext.DlqMessages.Add(claimed);
+        await _dbContext.SaveChangesAsync();
+
+        SetupEntities(MakeEntity("test-queue", "Queue", 1, CloudProviderType.Azure));
+
+        // The message the live executor is working is still visible in the DLQ.
+        SetupPeek(MakeMessage(88, "in-flight-msg"));
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(0); // Not counted as "new"
+
+        var msg = await _dbContext.DlqMessages.FirstAsync();
+        msg.Status.Should().Be(claimStatus, "the scan must leave a transient claim state untouched");
+    }
+
     // ── C6 regression: paging past the first PeekBatchSize (100) messages ─
 
     [Fact]

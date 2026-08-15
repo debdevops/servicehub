@@ -360,10 +360,14 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
                 return (MessageOutcome.Skipped, "Message was claimed by another concurrent replay — skipped");
             }
 
+            // CancellationToken.None from here through the provider call: the claim above is
+            // already committed, so this message must run to completion rather than be abandoned
+            // mid-flight by a job cancellation — the same per-message persistence guarantee
+            // RulesController.ReplayAll and AutoReplayExecutor already enforce.
             var beginResult = await _recoveryLedger.BeginEntryAsync(
                 RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
                     message, recovery.Namespace, recovery.OperationId, recovery.OwnerId, recovery.Actor, entityName),
-                cancellationToken);
+                CancellationToken.None);
 
             if (beginResult.IsFailure)
             {
@@ -377,11 +381,20 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
 
             if (decision.ReasonCode is not null)
             {
-                await RecordRecurrenceContextAsync(entry.Id, recovery, decision, cancellationToken);
+                await RecordRecurrenceContextAsync(entry.Id, recovery, decision, CancellationToken.None);
             }
 
             var result = await _messageOperationsService.ReplayMessageAsync(
-                message.NamespaceId, entityName, subscriptionName, message.SequenceNumber, entry.Id, cancellationToken);
+                message.NamespaceId, entityName, subscriptionName, message.SequenceNumber, entry.Id, CancellationToken.None);
+
+            // AWS.SQS.ReplayAmbiguous (send to source succeeded, delete from DLQ failed) routes to
+            // Unknown rather than Rejected: the message is genuinely duplicated-if-retried, not
+            // safely retriable — see AwsMessageReceiver.ReplayMessageAsync.
+            var executionOutcome = result.IsSuccess
+                ? RecoveryExecutionOutcome.Accepted
+                : result.Error.Code == "AWS.SQS.ReplayAmbiguous"
+                    ? RecoveryExecutionOutcome.Unknown
+                    : RecoveryExecutionOutcome.Rejected;
 
             // CancellationToken.None: the provider call above already happened, so this outcome
             // must be recorded even if cancellation was requested in the meantime — the same
@@ -393,7 +406,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
                 EntryId = entry.Id,
                 OwnerId = recovery.OwnerId,
                 Actor = recovery.Actor,
-                Outcome = result.IsSuccess ? RecoveryExecutionOutcome.Accepted : RecoveryExecutionOutcome.Rejected,
+                Outcome = executionOutcome,
                 ProviderDetailJson = result.IsSuccess ? null : result.Error.Message,
                 RecoveryMarker = result.IsSuccess && result.Value ? entry.Id.ToString() : null,
                 MarkerApplied = result.IsSuccess && result.Value,
@@ -440,10 +453,12 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
             return (MessageOutcome.Skipped, "Message was claimed by another concurrent purge — skipped");
         }
 
+        // CancellationToken.None from here through the provider call — see the replay branch
+        // above for why an already-committed claim must run to completion.
         var purgeBeginResult = await _recoveryLedger.BeginEntryAsync(
             RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
                 message, recovery.Namespace, recovery.OperationId, recovery.OwnerId, recovery.Actor, entityName),
-            cancellationToken);
+            CancellationToken.None);
 
         if (purgeBeginResult.IsFailure)
         {
@@ -455,12 +470,12 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
 
         if (decision.ReasonCode is not null)
         {
-            await RecordRecurrenceContextAsync(purgeEntry.Id, recovery, decision, cancellationToken);
+            await RecordRecurrenceContextAsync(purgeEntry.Id, recovery, decision, CancellationToken.None);
         }
 
         var purgeResult = await _messageOperationsService.PurgeMessageAsync(
             message.NamespaceId, entityName, subscriptionName, message.SequenceNumber,
-            fromDeadLetter: true, cancellationToken);
+            fromDeadLetter: true, CancellationToken.None);
 
         // CancellationToken.None — same reasoning as the replay branch above: the provider call
         // already happened, so its outcome must be recorded regardless of cancellation requested

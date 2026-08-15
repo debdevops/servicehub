@@ -736,10 +736,18 @@ public sealed class RulesController : ApiControllerBase
                         continue;
                     }
 
+                    // CancellationToken.None from here through the provider call: the claim above
+                    // is already committed, so this message must run to completion — an
+                    // abandoned-mid-flight message here is exactly the per-message persistence gap
+                    // the CancellationToken.None on RecordExecutionAsync/the final SaveChangesAsync
+                    // below already guards against. The shared 30-second budget still bounds the
+                    // batch: ct.ThrowIfCancellationRequested() at the top of each loop iteration
+                    // stops the batch from *starting* a new message once the budget is spent, it
+                    // just no longer abandons one already claimed.
                     var beginResult = await recoveryLedger.BeginEntryAsync(
                         RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
                             msg, ns, operationId, OwnerId, actor, entityName),
-                        ct);
+                        CancellationToken.None);
 
                     if (beginResult.IsFailure)
                     {
@@ -761,7 +769,7 @@ public sealed class RulesController : ApiControllerBase
                         try
                         {
                             await recoveryLedger.RecordRecurrenceContextAsync(
-                                entry.Id, OwnerId, actor, decision.ReasonCode, decision.MatchedCount, ct);
+                                entry.Id, OwnerId, actor, decision.ReasonCode, decision.MatchedCount, CancellationToken.None);
                         }
                         catch (Exception ex)
                         {
@@ -771,17 +779,28 @@ public sealed class RulesController : ApiControllerBase
                     }
 
                     var replayResult = await messageOperationsService.ReplayMessageAsync(
-                        group.Key.NamespaceId, entityName, subscriptionName, msg.SequenceNumber, entry.Id, ct);
+                        group.Key.NamespaceId, entityName, subscriptionName, msg.SequenceNumber, entry.Id, CancellationToken.None);
 
                     // CancellationToken.None: the provider call above already happened, so this
                     // outcome must be recorded even if the 30-second request timeout fires in the
                     // meantime.
+                    //
+                    // AWS.SQS.ReplayAmbiguous (send to source succeeded, delete from DLQ failed)
+                    // routes to Unknown rather than Rejected: the message is genuinely
+                    // duplicated-if-retried, not safely retriable — see
+                    // AwsMessageReceiver.ReplayMessageAsync.
+                    var executionOutcome = replayResult.IsSuccess
+                        ? RecoveryExecutionOutcome.Accepted
+                        : replayResult.Error.Code == "AWS.SQS.ReplayAmbiguous"
+                            ? RecoveryExecutionOutcome.Unknown
+                            : RecoveryExecutionOutcome.Rejected;
+
                     await recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
                     {
                         EntryId = entry.Id,
                         OwnerId = OwnerId,
                         Actor = actor,
-                        Outcome = replayResult.IsSuccess ? RecoveryExecutionOutcome.Accepted : RecoveryExecutionOutcome.Rejected,
+                        Outcome = executionOutcome,
                         ProviderDetailJson = replayResult.IsSuccess ? null : replayResult.Error.Message,
                         RecoveryMarker = replayResult.IsSuccess && replayResult.Value ? entry.Id.ToString() : null,
                         MarkerApplied = replayResult.IsSuccess && replayResult.Value,
@@ -801,11 +820,20 @@ public sealed class RulesController : ApiControllerBase
                     else
                     {
                         failed++;
+                        // Left ReplayFailed (retry-eligible) rather than a new status even for the
+                        // ambiguous case — DlqMessageStatus has no "send confirmed, needs manual
+                        // dedup check" value and adding one is an EF Core migration, out of scope
+                        // for this fix. The Recovery Ledger (Unknown, non-terminal — see
+                        // executionOutcome above) and this per-item Error message are the
+                        // authoritative, truthful record; an operator re-running this rule should
+                        // check the ledger/DLQ history for "Ambiguous" entries before trusting a
+                        // retry is safe.
                         msg.Status = DlqMessageStatus.ReplayFailed;
                         msg.ReplaySuccess = false;
                         results.Add(new ReplayAllItemResponse(
                             DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
-                            Outcome: "Failed", Error: replayResult.Error.Message));
+                            Outcome: replayResult.Error.Code == "AWS.SQS.ReplayAmbiguous" ? "Ambiguous" : "Failed",
+                            Error: replayResult.Error.Message));
                     }
 
                     rule.MatchCount++;

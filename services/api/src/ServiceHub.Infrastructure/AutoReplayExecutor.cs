@@ -205,6 +205,15 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
             var replayResult = await _messageOperations.ReplayMessageAsync(
                 message.NamespaceId, entityName, subscriptionName, message.SequenceNumber, entry.Id, cancellationToken);
 
+            // AWS.SQS.ReplayAmbiguous (send to source succeeded, delete from DLQ failed) routes to
+            // Unknown rather than Rejected: the message is genuinely duplicated-if-retried, not
+            // safely retriable — see AwsMessageReceiver.ReplayMessageAsync.
+            var executionOutcome = replayResult.IsSuccess
+                ? RecoveryExecutionOutcome.Accepted
+                : replayResult.Error.Code == "AWS.SQS.ReplayAmbiguous"
+                    ? RecoveryExecutionOutcome.Unknown
+                    : RecoveryExecutionOutcome.Rejected;
+
             // CancellationToken.None: the provider call above already happened, so this outcome
             // must be recorded even if cancellation was requested in the meantime.
             await _recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
@@ -212,7 +221,7 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
                 EntryId = entry.Id,
                 OwnerId = rule.OwnerId,
                 Actor = actor,
-                Outcome = replayResult.IsSuccess ? RecoveryExecutionOutcome.Accepted : RecoveryExecutionOutcome.Rejected,
+                Outcome = executionOutcome,
                 ProviderDetailJson = replayResult.IsSuccess ? null : replayResult.Error.Message,
                 RecoveryMarker = replayResult.IsSuccess && replayResult.Value ? entry.Id.ToString() : null,
                 MarkerApplied = replayResult.IsSuccess && replayResult.Value,
@@ -252,7 +261,12 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
             rule.MatchCount++;
             rule.UpdatedAt = DateTimeOffset.UtcNow;
 
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            // CancellationToken.None: RecordExecutionAsync above already committed this outcome to
+            // the Recovery Ledger, so the DlqMessage.Status/ReplayHistory record of the same
+            // outcome must not be dropped by a cancellation racing this save (e.g. app shutdown
+            // firing DlqMonitorWorker's stoppingToken mid-cycle) — the same per-message
+            // persistence guarantee RulesController.ReplayAll's replay-all path already enforces.
+            await _dbContext.SaveChangesAsync(CancellationToken.None);
 
             _logger.LogInformation(
                 "Auto-replay result for message {MessageId}: {Outcome}",
@@ -300,7 +314,9 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
             rule.MatchCount++;
             rule.UpdatedAt = DateTimeOffset.UtcNow;
 
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            // CancellationToken.None — see the success-path save above for why this must not be
+            // cancelled after RecordExecutionAsync has already recorded the ledger outcome.
+            await _dbContext.SaveChangesAsync(CancellationToken.None);
 
             return Result<string>.Failure(Error.Internal("AutoReplay.Exception", ex.Message));
         }

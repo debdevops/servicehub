@@ -199,6 +199,11 @@ export function useReplayAll() {
       qc.invalidateQueries({ queryKey: RULES_KEY });
       // Also invalidate DLQ data since messages have been replayed
       DLQ_KEYS.forEach((key) => qc.invalidateQueries({ queryKey: [key] }));
+      // Recovery Ledger otherwise only refreshes on its own 60s refetchInterval — without this,
+      // a replay-all that just recorded ledger entries can take up to a minute to show up on the
+      // Recovery Ledger page.
+      qc.invalidateQueries({ queryKey: ['recovery-operations'] });
+      qc.invalidateQueries({ queryKey: ['recovery-entries'] });
 
       if (result.replayed > 0) {
         toast.success(

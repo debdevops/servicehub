@@ -95,6 +95,10 @@ export function useSignatureReplayJob(
     void queryClient.invalidateQueries({ queryKey: ['dlq-summary'] });
     void queryClient.invalidateQueries({ queryKey: ['dlq-signature-detail', namespaceId, signatureHash] });
     void queryClient.invalidateQueries({ queryKey: ['fleet-overview'] });
+    // Recovery Ledger otherwise only refreshes on its own 60s refetchInterval — see
+    // useBulkOperations.ts for the same fix on the bulk-operation completion path.
+    void queryClient.invalidateQueries({ queryKey: ['recovery-operations'] });
+    void queryClient.invalidateQueries({ queryKey: ['recovery-entries'] });
 
     if (job.status === 'Completed') {
       toast.success(`Signature replay completed — ${job.successCount}/${job.totalMatched} succeeded`);

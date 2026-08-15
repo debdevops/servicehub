@@ -322,6 +322,56 @@ public class AutoReplayExecutorTests : IDisposable
     }
 
     [Fact]
+    public async Task Execute_AwsReplayAmbiguous_RecordsExecutionUnknown_NotExecutionFailed()
+    {
+        // Regresses the "duplicate replay risk" gap: AwsMessageReceiver.ReplayMessageAsync
+        // returns AWS.SQS.ReplayAmbiguous when Send to the source queue succeeded but Delete
+        // from the DLQ failed — the message is genuinely duplicated-if-retried, not a normal
+        // failure. AutoReplayExecutor must route that to the Recovery Ledger's
+        // RecoveryEntryState.ExecutionUnknown (a non-terminal state that keeps the entry live for
+        // later review), never RecoveryEntryState.ExecutionFailed (which asserts nothing
+        // happened and implicitly signals "safe to retry").
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+        await SeedStandingGrantAsync(msg);
+
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Failure(Error.Conflict("AWS.SQS.ReplayAmbiguous",
+                "Message was sent to the source queue but could not be deleted from the DLQ.")));
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsFailure.Should().BeTrue();
+
+        var entry = _dbContext.RecoveryLedgerEntries.Single(e => e.DlqMessageId == msg.Id);
+        entry.State.Should().Be(RecoveryEntryState.ExecutionUnknown);
+    }
+
+    [Fact]
+    public async Task Execute_AwsReplayOrdinaryFailure_RecordsExecutionFailed()
+    {
+        // Contrast case: an ordinary provider rejection (nothing sent) still records the
+        // terminal ExecutionFailed state, not ExecutionUnknown.
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+        await SeedStandingGrantAsync(msg);
+
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Failure(Error.ExternalService("AWS.SQS.ReplayFailed", "throttled")));
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsFailure.Should().BeTrue();
+
+        var entry = _dbContext.RecoveryLedgerEntries.Single(e => e.DlqMessageId == msg.Id);
+        entry.State.Should().Be(RecoveryEntryState.ExecutionFailed);
+    }
+
+    [Fact]
     public async Task Execute_TargetEntityOverride_ReplaysToAlternateEntity()
     {
         var rule = CreateRule();
