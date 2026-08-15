@@ -425,6 +425,76 @@ public sealed class AwsMessageReceiverRegressionTests
         result.Value.Should().Be(10);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // DLQ peek — operation timeout budget
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact(Timeout = 60_000)]
+    public async Task PeekDeadLetterMessagesAsync_SlowMultiRoundScan_CompletesWithinTimeoutBudget()
+    {
+        // A real DLQ scan long-polls several rounds before it's confident nothing more is
+        // left (SQS samples a subset of distributed hosts per call, so a lightly-populated
+        // queue needs multiple rounds — see PeekFromUrlAsync's quiet-round logic). Under real
+        // network latency this legitimately takes longer than a few seconds. With
+        // OperationTimeoutSeconds previously set to 15s, a scan like this one (~18s across 6
+        // rounds) timed out even though the queue and credentials were healthy — observed
+        // live as "SQS DLQ peek timed out after 15s". This pins the fix: the operation budget
+        // must survive a realistic multi-round scan.
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        var sqs = new Mock<IAmazonSQS>();
+        sqs.Setup(s => s.GetQueueUrlAsync(
+                It.Is<GetQueueUrlRequest>(r => r.QueueName == QueueName), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GetQueueUrlResponse { QueueUrl = QueueUrl });
+        sqs.Setup(s => s.GetQueueUrlAsync(
+                It.Is<GetQueueUrlRequest>(r => r.QueueName == "reg-queue-dlq"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GetQueueUrlResponse { QueueUrl = DlqUrl });
+        sqs.Setup(s => s.GetQueueAttributesAsync(
+                It.Is<GetQueueAttributesRequest>(r => r.AttributeNames.Contains("RedrivePolicy")),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GetQueueAttributesResponse
+            {
+                Attributes = new Dictionary<string, string>
+                {
+                    ["RedrivePolicy"] = @"{""maxReceiveCount"":5,""deadLetterTargetArn"":""arn:aws:sqs:us-east-1:123456:reg-queue-dlq""}",
+                },
+            });
+
+        // Round 0 finds the one real message; rounds 1-5 come back empty, which is the
+        // 5 consecutive quiet rounds PeekFromUrlAsync requires before it stops looking.
+        // Each round carries an artificial delay standing in for real long-poll + network
+        // latency, so total elapsed time (~18s) lands between the old 15s budget and the
+        // new one, proving the fix rather than just asserting the constant's value.
+        var call = 0;
+        sqs.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(async (ReceiveMessageRequest _, CancellationToken ct) =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(3), ct);
+                var round = call++;
+                return round == 0
+                    ? new ReceiveMessageResponse { Messages = [BuildSqsMessage("m-1", "rh-1")] }
+                    : new ReceiveMessageResponse { Messages = [] };
+            });
+
+        sqs.Setup(s => s.ChangeMessageVisibilityBatchAsync(
+                It.IsAny<ChangeMessageVisibilityBatchRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChangeMessageVisibilityBatchResponse());
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<SHNamespace>())).Returns(sqs.Object);
+
+        var sut = new AwsMessageReceiver(factory.Object, repo.Object, NullLogger<AwsMessageReceiver>.Instance);
+
+        var result = await sut.PeekDeadLetterMessagesAsync(
+            new GetMessagesRequest(TestNamespaceId, QueueName, null, true, 50));
+
+        result.IsSuccess.Should().BeTrue(because: "a ~18s multi-round scan must fit inside the operation timeout budget");
+        result.Value.Should().ContainSingle(m => m.MessageId == "m-1");
+    }
+
     // Mirrors AwsMessageReceiver.ComputeSequenceNumber so tests can address
     // messages the same way replay/purge callers do.
     private static long ComputeSequenceNumber(string messageId)

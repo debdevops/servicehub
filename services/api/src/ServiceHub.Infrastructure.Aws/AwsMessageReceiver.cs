@@ -86,8 +86,15 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
 
     // ── IMessageReceiver ──────────────────────────────────────────────────────
 
-    // Hard limit per individual SQS API call so a slow queue cannot stall the UI.
-    private const int OperationTimeoutSeconds = 15;
+    // Hard limit per individual SQS API call so a slow queue cannot stall the UI. Must
+    // comfortably exceed the worst-case scan duration: PeekFromUrlAsync/FindAndLockMessageAsync
+    // long-poll up to MaxScanBatches rounds (WaitTimeSeconds each) to enumerate a queue's
+    // distributed hosts, plus possible wait time behind the per-queue scan gate shared with
+    // DlqMonitorWorker's own background scans. At 15s, real scans (~20-30s worst case) timed
+    // out intermittently — observed live as "SQS DLQ peek timed out after 15s" even though the
+    // queue and credentials were healthy. Stays under ScanLockSeconds (60) so the timeout never
+    // outlives the visibility lock it holds.
+    private const int OperationTimeoutSeconds = 45;
 
     /// <inheritdoc/>
     public async Task<Result<IReadOnlyList<CoreMessage>>> PeekMessagesAsync(
