@@ -38,19 +38,29 @@ public sealed class AwsMessageReceiverRegressionTests
         string messageId,
         string receiptHandle,
         string body = "body",
-        Dictionary<string, MessageAttributeValue>? attributes = null)
-        => new()
+        Dictionary<string, MessageAttributeValue>? attributes = null,
+        Dictionary<string, string>? extraSystemAttributes = null)
+    {
+        var systemAttributes = new Dictionary<string, string>
+        {
+            ["SentTimestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(),
+            ["ApproximateReceiveCount"] = "1",
+        };
+        if (extraSystemAttributes is not null)
+        {
+            foreach (var (key, value) in extraSystemAttributes)
+                systemAttributes[key] = value;
+        }
+
+        return new()
         {
             MessageId = messageId,
             ReceiptHandle = receiptHandle,
             Body = body,
-            Attributes = new Dictionary<string, string>
-            {
-                ["SentTimestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(),
-                ["ApproximateReceiveCount"] = "1",
-            },
+            Attributes = systemAttributes,
             MessageAttributes = attributes ?? new Dictionary<string, MessageAttributeValue>(),
         };
+    }
 
     /// <summary>
     /// Builds a receiver whose SQS client serves the given receive rounds in order
@@ -272,6 +282,24 @@ public sealed class AwsMessageReceiverRegressionTests
         // The peek went to the redrive target queue, not the source.
         sqs.Verify(s => s.ReceiveMessageAsync(
             It.Is<ReceiveMessageRequest>(r => r.QueueUrl == DlqUrl), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task PeekDeadLetterMessagesAsync_MapsDeadLetterQueueSourceArnToDeadLetterSource()
+    {
+        // Mirrors Azure's DeadLetterSource mapping (ServiceBusClientWrapper), which SQS
+        // exposes via the DeadLetterQueueSourceArn system attribute on redriven messages.
+        var msg = BuildSqsMessage("m-dl", "rh-dl", "dead body",
+            extraSystemAttributes: new Dictionary<string, string>
+            {
+                ["DeadLetterQueueSourceArn"] = "arn:aws:sqs:us-east-1:123456:reg-queue",
+            });
+        var (sut, _, _) = BuildSut(new ReceiveMessageResponse { Messages = [msg] });
+
+        var result = await sut.PeekDeadLetterMessagesAsync(new GetMessagesRequest(TestNamespaceId, QueueName, null, true, 10));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value[0].DeadLetterSource.Should().Be("arn:aws:sqs:us-east-1:123456:reg-queue");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

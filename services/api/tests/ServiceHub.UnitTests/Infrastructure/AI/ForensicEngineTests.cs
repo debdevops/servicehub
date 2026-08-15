@@ -17,7 +17,8 @@ public sealed class ForensicEngineTests
         string? reason = null,
         string? desc = null,
         string? bodyPreview = null,
-        int deliveryCount = 1)
+        int deliveryCount = 1,
+        string? appPropertiesJson = null)
     {
         return new DlqMessage
         {
@@ -34,6 +35,7 @@ public sealed class ForensicEngineTests
             DeadLetterErrorDescription = desc,
             BodyPreview = bodyPreview,
             DeliveryCount = deliveryCount,
+            ApplicationPropertiesJson = appPropertiesJson,
         };
     }
 
@@ -216,6 +218,40 @@ public sealed class ForensicEngineTests
         result.Confidence.Should().Be(0.0);
         result.ReplaySafety.Should().Be("RequiresReview");
         result.Tier.Should().Be("None");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // AWS-style application-properties fallback (no native DeadLetterReason)
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void ApplicationPropertiesOnly_PaymentTimeout_Returns_Transient_NotUnknown()
+    {
+        // AWS SQS's native redrive-policy dead-lettering never sets DeadLetterReason
+        // or DeadLetterErrorDescription — the only signal is in message attributes,
+        // mapped into ApplicationPropertiesJson.
+        var msg = MakeMessage(
+            reason: null,
+            desc: null,
+            bodyPreview: "{\"orderId\":\"ORD-20260815-00001\"}",
+            appPropertiesJson: "{\"shs-error-type\":\"PaymentTimeout\",\"shs-scenario\":\"dlq-flood\"}");
+
+        var result = _sut.Analyse(msg);
+
+        result.Category.Should().Be(FailureCategory.Transient);
+        result.Category.Should().NotBe(FailureCategory.Unknown);
+        result.Tier.Should().Be("Heuristic");
+    }
+
+    [Fact]
+    public void ApplicationPropertiesJson_Null_StillFallsThroughToUnknown()
+    {
+        // Regression guard: messages with no reason/desc/body/properties signal at all
+        // must still classify as Unknown — the fix must not manufacture false matches.
+        var msg = MakeMessage(reason: null, desc: null, bodyPreview: null, appPropertiesJson: null);
+        var result = _sut.Analyse(msg);
+
+        result.Category.Should().Be(FailureCategory.Unknown);
     }
 
     // ═══════════════════════════════════════════════════════════════

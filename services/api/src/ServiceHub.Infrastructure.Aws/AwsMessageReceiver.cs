@@ -813,6 +813,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                 NamespaceId = namespaceId,
                 EntityName = entityName,
                 IsFromDeadLetter = fromDlq,
+                DeadLetterSource = msg.Attributes.GetValueOrDefault("DeadLetterQueueSourceArn"),
                 DeadLetterReason = dlReason?.StringValue,
                 DeadLetterErrorDescription = dlDescription?.StringValue,
                 State = ServiceHub.Core.Enums.MessageState.Active

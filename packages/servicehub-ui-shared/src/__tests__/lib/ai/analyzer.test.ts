@@ -106,6 +106,44 @@ describe('analyzeMessages', () => {
       const dlqInsight = insights.find(i => i.type === 'dlq-pattern');
       expect(dlqInsight).toBeUndefined();
     });
+
+    it('falls back to an application-property error type when deadLetterReason is absent (AWS native redrive)', () => {
+      // AWS SQS's native redrive-policy dead-lettering never sets deadLetterReason —
+      // the only failure signal is a producer-supplied message attribute.
+      const messages = Array.from({ length: 3 }, (_, i) =>
+        makeMessage({
+          messageId: `aws-dlq-${i}`,
+          isFromDeadLetter: true,
+          deadLetterReason: null,
+          deliveryCount: 3,
+          applicationProperties: { 'shs-error-type': 'PaymentTimeout', 'shs-scenario': 'dlq-flood' },
+        })
+      );
+
+      const insights = analyzeMessages(messages, context);
+      const dlqInsight = insights.find(i => i.type === 'dlq-pattern');
+
+      expect(dlqInsight).toBeDefined();
+      expect(dlqInsight?.evidence.patternSignature).toBe('PaymentTimeout');
+      expect(dlqInsight?.title).not.toContain('Unknown');
+      expect(dlqInsight?.description).not.toContain('"Unknown"');
+    });
+
+    it('still falls back to "Unknown" when neither deadLetterReason nor a recognisable property is present', () => {
+      const messages = Array.from({ length: 3 }, (_, i) =>
+        makeMessage({
+          messageId: `no-signal-${i}`,
+          isFromDeadLetter: true,
+          deadLetterReason: null,
+          applicationProperties: { orderId: `ORD-${i}` },
+        })
+      );
+
+      const insights = analyzeMessages(messages, context);
+      const dlqInsight = insights.find(i => i.type === 'dlq-pattern');
+
+      expect(dlqInsight?.evidence.patternSignature).toBe('Unknown');
+    });
   });
 
   // ── Retry loop ─────────────────────────────────────────────────────────────
@@ -163,6 +201,33 @@ describe('analyzeMessages', () => {
       const poisonInsight = insights.find(i => i.type === 'poison-message');
       const immediateRec = poisonInsight?.recommendations.find(r => r.priority === 'immediate');
       expect(immediateRec).toBeDefined();
+    });
+
+    it('does not flag already dead-lettered messages as poison, regardless of deliveryCount', () => {
+      // Once a message is in the DLQ, deliveryCount reflects receives against the DLQ
+      // itself (e.g. repeated peeks), not the attempts that caused dead-lettering —
+      // comparing it to any delivery-attempt threshold here is meaningless. Dead-lettered
+      // messages are already reported via the dlq-pattern insight instead.
+      const messages = Array.from({ length: 3 }, (_, i) =>
+        makeMessage({
+          messageId: `dlq-high-count-${i}`,
+          isFromDeadLetter: true,
+          deadLetterReason: 'MaxReceiveCount',
+          deliveryCount: 12,
+        })
+      );
+
+      const insights = analyzeMessages(messages, context);
+      const poisonInsight = insights.find(i => i.type === 'poison-message');
+      expect(poisonInsight).toBeUndefined();
+    });
+
+    it('does not describe the threshold as the queue\'s configured max-delivery setting', () => {
+      const messages = makePoisonMessages(3);
+      const insights = analyzeMessages(messages, context);
+      const poisonInsight = insights.find(i => i.type === 'poison-message');
+      expect(poisonInsight?.description).toContain('heuristic');
+      expect(poisonInsight?.description).not.toMatch(/^\d+ messages? exceeded 10 delivery attempts\.$/);
     });
   });
 

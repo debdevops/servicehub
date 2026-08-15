@@ -88,9 +88,14 @@ function detectDLQPatterns(messages: APIMessage[]): PatternMatch[] {
   
   // Group by dead-letter reason
   const reasonGroups = new Map<string, APIMessage[]>();
-  
+
   for (const msg of dlqMessages) {
-    const reason = normalizeErrorReason(msg.deadLetterReason || 'Unknown');
+    // Some providers (notably AWS SQS's native redrive-policy dead-lettering) never
+    // populate deadLetterReason — the only failure signal available is whatever the
+    // producer put in application properties/message attributes.
+    const reason = normalizeErrorReason(
+      msg.deadLetterReason || extractErrorTypeFromProperties(msg.applicationProperties) || 'Unknown'
+    );
     const existing = reasonGroups.get(reason) || [];
     existing.push(msg);
     reasonGroups.set(reason, existing);
@@ -152,18 +157,24 @@ function detectRetryLoops(messages: APIMessage[]): PatternMatch[] {
  * Messages that have failed many times and are likely unprocessable
  */
 function detectPoisonMessages(messages: APIMessage[]): PatternMatch[] {
-  const poisonMessages = messages.filter(m => 
-    m.deliveryCount >= CONFIG.POISON_MESSAGE_THRESHOLD
+  // Once a message is dead-lettered, its deliveryCount reflects receives against
+  // the DLQ itself (further peeks, visibility-timeout expiries there), not the
+  // attempts that caused dead-lettering — that's already reported by the
+  // dlq-pattern insight, using the real deadLetterReason/error signature. Applying
+  // this heuristic to dead-lettered messages would double-report them using a
+  // number that no longer means what it claims to mean.
+  const poisonMessages = messages.filter(m =>
+    m.deliveryCount >= CONFIG.POISON_MESSAGE_THRESHOLD && !m.isFromDeadLetter
   );
-  
+
   if (poisonMessages.length === 0) {
     return [];
   }
-  
+
   return [{
     type: 'poison-message',
     messages: poisonMessages,
-    signature: `Exceeded ${CONFIG.POISON_MESSAGE_THRESHOLD} delivery attempts`,
+    signature: `Flagged after ${CONFIG.POISON_MESSAGE_THRESHOLD}+ delivery attempts (ServiceHub heuristic)`,
     metrics: {
       affectedCount: poisonMessages.length,
       avgDeliveryCount: Math.round(
@@ -248,26 +259,60 @@ function normalizeErrorReason(reason: string): string {
  */
 function extractErrorType(msg: APIMessage): string | null {
   const body = msg.body || '';
-  
+
   // Common error patterns
   const patterns = [
     /(?:Exception|Error):\s*([A-Za-z]+(?:Exception|Error))/i,
     /"(?:error|exception|type)":\s*"([^"]+)"/i,
     /(?:failed|error|exception)\s+(?:with|:)\s+([A-Za-z]+)/i,
   ];
-  
+
   for (const pattern of patterns) {
     const match = body.match(pattern);
     if (match) {
       return match[1].trim();
     }
   }
-  
+
+  // Fallback to application properties — some providers (e.g. AWS SQS's native
+  // redrive-policy dead-lettering) never set deadLetterReason, so failure info
+  // only exists as a producer-supplied message attribute.
+  const propertyErrorType = extractErrorTypeFromProperties(msg.applicationProperties);
+  if (propertyErrorType) {
+    return propertyErrorType;
+  }
+
   // Fallback to dead-letter reason if available
   if (msg.deadLetterReason) {
     return normalizeErrorReason(msg.deadLetterReason);
   }
-  
+
+  return null;
+}
+
+/**
+ * Scan application properties for a key that looks like an error/exception-type
+ * indicator (e.g. `shs-error-type`, `ErrorType`, `error_type`, `exceptionType`),
+ * regardless of provider or naming convention. Not specific to any one producer.
+ */
+function extractErrorTypeFromProperties(
+  properties: Record<string, unknown> | null | undefined
+): string | null {
+  if (!properties) {
+    return null;
+  }
+
+  for (const [key, value] of Object.entries(properties)) {
+    if (typeof value !== 'string' || !value.trim()) {
+      continue;
+    }
+
+    const normalizedKey = key.toLowerCase().replace(/[-_]/g, '');
+    if (normalizedKey.includes('errortype') || normalizedKey.includes('exceptiontype')) {
+      return value.trim();
+    }
+  }
+
   return null;
 }
 
@@ -401,7 +446,8 @@ function getPatternDescription(pattern: PatternMatch): string {
       return `${count} messages in retry loop with average ${pattern.metrics.avgDeliveryCount} delivery attempts. ` +
         `Messages are not progressing to completion.`;
     case 'poison-message':
-      return `${count} message${count > 1 ? 's' : ''} exceeded ${CONFIG.POISON_MESSAGE_THRESHOLD} delivery attempts. ` +
+      return `${count} message${count > 1 ? 's' : ''} delivered ${CONFIG.POISON_MESSAGE_THRESHOLD}+ times without succeeding, ` +
+        `which is ServiceHub's heuristic threshold for likely-unprocessable messages — not the queue's configured max-delivery setting. ` +
         `These messages are likely unprocessable without intervention.`;
     case 'error-cluster':
       return `${count} messages share error pattern: ${pattern.signature}. ` +
