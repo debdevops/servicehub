@@ -51,8 +51,9 @@ public class MessagesControllerTests
             .ReturnsAsync(Result<DlqMessage>.Failure(Error.NotFound("Dlq.NotFound", "not tracked")));
         _dlqHistoryService
             .Setup(s => s.FinalizeRecoveryAsync(
-                It.IsAny<long>(), It.IsAny<string>(), It.IsAny<DlqMessageStatus>(), It.IsAny<DlqMessageStatus>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((long id, string ownerId, DlqMessageStatus _, DlqMessageStatus terminalStatus, CancellationToken _) =>
+                It.IsAny<long>(), It.IsAny<string>(), It.IsAny<DlqMessageStatus>(), It.IsAny<DlqMessageStatus>(),
+                It.IsAny<ReplayHistoryDetails?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((long id, string ownerId, DlqMessageStatus _, DlqMessageStatus terminalStatus, ReplayHistoryDetails? _, CancellationToken _) =>
                 Result<DlqMessage>.Success(new DlqMessage
                 {
                     MessageId = "finalized",
@@ -473,7 +474,13 @@ public class MessagesControllerTests
         result.Should().BeOfType<AcceptedResult>();
         _dlqHistoryService.Verify(
             s => s.FinalizeRecoveryAsync(
-                tracked.Id, tracked.OwnerId, DlqMessageStatus.Replaying, DlqMessageStatus.Replayed, It.IsAny<CancellationToken>()),
+                tracked.Id, tracked.OwnerId, DlqMessageStatus.Replaying, DlqMessageStatus.Replayed,
+                It.Is<ReplayHistoryDetails?>(rh =>
+                    rh != null
+                    && rh.ReplayStrategy == "original-entity"
+                    && rh.ReplayedToEntity == "my-queue"
+                    && rh.ErrorDetails == null),
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -501,7 +508,13 @@ public class MessagesControllerTests
         result.Should().NotBeOfType<AcceptedResult>();
         _dlqHistoryService.Verify(
             s => s.FinalizeRecoveryAsync(
-                tracked.Id, tracked.OwnerId, DlqMessageStatus.Replaying, DlqMessageStatus.ReplayFailed, It.IsAny<CancellationToken>()),
+                tracked.Id, tracked.OwnerId, DlqMessageStatus.Replaying, DlqMessageStatus.ReplayFailed,
+                It.Is<ReplayHistoryDetails?>(rh =>
+                    rh != null
+                    && rh.ReplayStrategy == "original-entity"
+                    && rh.ReplayedToEntity == "my-queue"
+                    && rh.ErrorDetails == "SQS error"),
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -521,7 +534,8 @@ public class MessagesControllerTests
         result.Should().BeOfType<AcceptedResult>();
         _dlqHistoryService.Verify(
             s => s.FinalizeRecoveryAsync(
-                It.IsAny<long>(), It.IsAny<string>(), It.IsAny<DlqMessageStatus>(), It.IsAny<DlqMessageStatus>(), It.IsAny<CancellationToken>()),
+                It.IsAny<long>(), It.IsAny<string>(), It.IsAny<DlqMessageStatus>(), It.IsAny<DlqMessageStatus>(),
+                It.IsAny<ReplayHistoryDetails?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -705,7 +719,8 @@ public class MessagesControllerTests
         result.Should().BeOfType<AcceptedResult>();
         _dlqHistoryService.Verify(
             s => s.FinalizeRecoveryAsync(
-                tracked.Id, tracked.OwnerId, DlqMessageStatus.Purging, DlqMessageStatus.Discarded, It.IsAny<CancellationToken>()),
+                tracked.Id, tracked.OwnerId, DlqMessageStatus.Purging, DlqMessageStatus.Discarded,
+                null, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -733,7 +748,8 @@ public class MessagesControllerTests
         result.Should().NotBeOfType<AcceptedResult>();
         _dlqHistoryService.Verify(
             s => s.FinalizeRecoveryAsync(
-                tracked.Id, tracked.OwnerId, DlqMessageStatus.Purging, DlqMessageStatus.Active, It.IsAny<CancellationToken>()),
+                tracked.Id, tracked.OwnerId, DlqMessageStatus.Purging, DlqMessageStatus.Active,
+                null, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 

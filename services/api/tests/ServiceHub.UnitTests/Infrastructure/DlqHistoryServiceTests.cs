@@ -810,4 +810,137 @@ public class DlqHistoryServiceTests : IDisposable
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("Dlq.NotFound");
     }
+
+    // ── FinalizeRecoveryAsync + ReplayHistory ────────────────
+
+    [Fact]
+    public async Task FinalizeRecoveryAsync_ReplaySuccess_WithReplayHistory_CreatesExactlyOneRowMatchingConventions()
+    {
+        var msg = CreateMessage(seq: 7, status: DlqMessageStatus.Replaying);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var details = new ReplayHistoryDetails(
+            ReplayedBy: "ApiKey:test-key",
+            ReplayStrategy: "original-entity",
+            ReplayedToEntity: "test-queue");
+
+        var result = await _service.FinalizeRecoveryAsync(
+            msg.Id, TestConstants.TestOwnerId, DlqMessageStatus.Replaying, DlqMessageStatus.Replayed, details);
+
+        result.IsSuccess.Should().BeTrue();
+
+        var histories = await _dbContext.ReplayHistories.Where(h => h.DlqMessageId == msg.Id).ToListAsync();
+        histories.Should().HaveCount(1);
+        var history = histories[0];
+        history.RuleId.Should().BeNull();
+        history.ReplayedBy.Should().Be("ApiKey:test-key");
+        history.ReplayStrategy.Should().Be("original-entity");
+        history.ReplayedToEntity.Should().Be("test-queue");
+        history.OutcomeStatus.Should().Be("Success");
+        history.ErrorDetails.Should().BeNull();
+        history.ReplayedAt.Should().Be(result.Value.ReplayedAt!.Value);
+    }
+
+    [Fact]
+    public async Task FinalizeRecoveryAsync_ReplayFailure_WithReplayHistory_CreatesFailedOutcomeRow()
+    {
+        var msg = CreateMessage(seq: 8, status: DlqMessageStatus.Replaying);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var details = new ReplayHistoryDetails(
+            ReplayedBy: "ApiKey:test-key",
+            ReplayStrategy: "original-entity",
+            ReplayedToEntity: "test-queue",
+            ErrorDetails: "SQS error");
+
+        var result = await _service.FinalizeRecoveryAsync(
+            msg.Id, TestConstants.TestOwnerId, DlqMessageStatus.Replaying, DlqMessageStatus.ReplayFailed, details);
+
+        result.IsSuccess.Should().BeTrue();
+
+        var histories = await _dbContext.ReplayHistories.Where(h => h.DlqMessageId == msg.Id).ToListAsync();
+        histories.Should().HaveCount(1);
+        histories[0].OutcomeStatus.Should().Be("Failed");
+        histories[0].ErrorDetails.Should().Be("SQS error");
+    }
+
+    [Fact]
+    public async Task FinalizeRecoveryAsync_ClaimConflict_WithReplayHistory_CreatesNoRow()
+    {
+        // Message never held the Replaying claim — finalize fails before any write, including
+        // the ReplayHistory row, even though the caller supplied details.
+        var msg = CreateMessage(seq: 9, status: DlqMessageStatus.Active);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var details = new ReplayHistoryDetails("ApiKey:test-key", "original-entity", "test-queue");
+
+        var result = await _service.FinalizeRecoveryAsync(
+            msg.Id, TestConstants.TestOwnerId, DlqMessageStatus.Replaying, DlqMessageStatus.Replayed, details);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Dlq.ClaimNotHeld");
+
+        var histories = await _dbContext.ReplayHistories.Where(h => h.DlqMessageId == msg.Id).ToListAsync();
+        histories.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task FinalizeRecoveryAsync_PurgeSuccess_ReplayHistoryProvidedDefensively_CreatesNoRow()
+    {
+        // Purge's terminal status (Discarded) never produces a ReplayHistory row, even if a
+        // caller mistakenly passed details — the guard is on terminalStatus, not just the null
+        // check, matching every other purge path in this codebase (no ReplayHistory for purges).
+        var msg = CreateMessage(seq: 10, status: DlqMessageStatus.Purging);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var details = new ReplayHistoryDetails("ApiKey:test-key", "original-entity", "test-queue");
+
+        var result = await _service.FinalizeRecoveryAsync(
+            msg.Id, TestConstants.TestOwnerId, DlqMessageStatus.Purging, DlqMessageStatus.Discarded, details);
+
+        result.IsSuccess.Should().BeTrue();
+
+        var histories = await _dbContext.ReplayHistories.Where(h => h.DlqMessageId == msg.Id).ToListAsync();
+        histories.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task FinalizeRecoveryAsync_PurgeFailure_ReplayHistoryProvidedDefensively_CreatesNoRow()
+    {
+        var msg = CreateMessage(seq: 11, status: DlqMessageStatus.Purging);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var details = new ReplayHistoryDetails("ApiKey:test-key", "original-entity", "test-queue");
+
+        var result = await _service.FinalizeRecoveryAsync(
+            msg.Id, TestConstants.TestOwnerId, DlqMessageStatus.Purging, DlqMessageStatus.Active, details);
+
+        result.IsSuccess.Should().BeTrue();
+
+        var histories = await _dbContext.ReplayHistories.Where(h => h.DlqMessageId == msg.Id).ToListAsync();
+        histories.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task FinalizeRecoveryAsync_ReplaySuccess_NoReplayHistoryArgument_CreatesNoRow()
+    {
+        // Backward-compatibility: callers that don't pass replayHistory (default null) get the
+        // pre-fix behavior — status/timestamps update, no ReplayHistory row.
+        var msg = CreateMessage(seq: 12, status: DlqMessageStatus.Replaying);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.FinalizeRecoveryAsync(
+            msg.Id, TestConstants.TestOwnerId, DlqMessageStatus.Replaying, DlqMessageStatus.Replayed);
+
+        result.IsSuccess.Should().BeTrue();
+
+        var histories = await _dbContext.ReplayHistories.Where(h => h.DlqMessageId == msg.Id).ToListAsync();
+        histories.Should().BeEmpty();
+    }
 }

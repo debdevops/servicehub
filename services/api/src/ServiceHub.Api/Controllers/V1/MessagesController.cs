@@ -521,7 +521,10 @@ public sealed class MessagesController : ApiControllerBase
     /// is called with it above.
     /// </summary>
     private async Task FinalizeClaimIfNeededAsync(
-        DlqMessage? claimedMessage, DlqMessageStatus expectedClaimStatus, DlqMessageStatus terminalStatus)
+        DlqMessage? claimedMessage,
+        DlqMessageStatus expectedClaimStatus,
+        DlqMessageStatus terminalStatus,
+        ReplayHistoryDetails? replayHistory = null)
     {
         if (claimedMessage is null)
         {
@@ -529,7 +532,7 @@ public sealed class MessagesController : ApiControllerBase
         }
 
         var finalizeResult = await _dlqHistoryService.FinalizeRecoveryAsync(
-            claimedMessage.Id, claimedMessage.OwnerId, expectedClaimStatus, terminalStatus, CancellationToken.None);
+            claimedMessage.Id, claimedMessage.OwnerId, expectedClaimStatus, terminalStatus, replayHistory, CancellationToken.None);
 
         if (finalizeResult.IsFailure)
         {
@@ -708,7 +711,12 @@ public sealed class MessagesController : ApiControllerBase
 
         await FinalizeClaimIfNeededAsync(
             claimedMessage, DlqMessageStatus.Replaying,
-            result.IsSuccess ? DlqMessageStatus.Replayed : DlqMessageStatus.ReplayFailed);
+            result.IsSuccess ? DlqMessageStatus.Replayed : DlqMessageStatus.ReplayFailed,
+            new ReplayHistoryDetails(
+                ReplayedBy: actor.Identity,
+                ReplayStrategy: "original-entity",
+                ReplayedToEntity: entityName,
+                ErrorDetails: result.IsFailure ? result.Error.Message : null));
 
         if (result.IsFailure)
         {

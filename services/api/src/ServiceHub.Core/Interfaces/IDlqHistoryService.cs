@@ -139,12 +139,22 @@ public interface IDlqHistoryService
     /// <param name="dlqMessageOwnerId">The message row's own <see cref="DlqMessage.OwnerId"/> — see the same parameter on <see cref="ClaimForRecoveryAsync"/>.</param>
     /// <param name="expectedClaimStatus">The transient claim status the message must currently hold.</param>
     /// <param name="terminalStatus">The terminal status to transition to.</param>
+    /// <param name="replayHistory">
+    /// When supplied and <paramref name="terminalStatus"/> is <see cref="DlqMessageStatus.Replayed"/>
+    /// or <see cref="DlqMessageStatus.ReplayFailed"/>, records one <see cref="ReplayHistory"/> row for
+    /// this finalize call — the same audit trail <c>AutoReplayExecutor</c>, <c>BulkOperationExecutor</c>
+    /// and <c>SignatureReplayExecutor</c> already write for their own replay paths. Left <c>null</c> by
+    /// purge callers (terminal status <see cref="DlqMessageStatus.Discarded"/>/<see cref="DlqMessageStatus.Active"/>),
+    /// which never produce a <see cref="ReplayHistory"/> row — a purge is not a replay attempt, matching
+    /// every other purge path in this codebase.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<Result<DlqMessage>> FinalizeRecoveryAsync(
         long id,
         string dlqMessageOwnerId,
         DlqMessageStatus expectedClaimStatus,
         DlqMessageStatus terminalStatus,
+        ReplayHistoryDetails? replayHistory = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -200,3 +210,15 @@ public sealed record DlqTrendPoint(
     DateTimeOffset Date,
     int NewMessages,
     int ResolvedMessages);
+
+/// <summary>
+/// The fields <see cref="IDlqHistoryService.FinalizeRecoveryAsync"/> needs to write a
+/// <see cref="ReplayHistory"/> row for a manual single-message replay, mirroring the same fields
+/// <c>AutoReplayExecutor</c>/<c>BulkOperationExecutor</c>/<c>SignatureReplayExecutor</c> populate
+/// for their own replay paths.
+/// </summary>
+public sealed record ReplayHistoryDetails(
+    string ReplayedBy,
+    string ReplayStrategy,
+    string ReplayedToEntity,
+    string? ErrorDetails = null);

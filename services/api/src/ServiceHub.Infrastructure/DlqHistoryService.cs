@@ -602,6 +602,7 @@ public sealed class DlqHistoryService : IDlqHistoryService
         string dlqMessageOwnerId,
         DlqMessageStatus expectedClaimStatus,
         DlqMessageStatus terminalStatus,
+        ReplayHistoryDetails? replayHistory = null,
         CancellationToken cancellationToken = default)
     {
         var message = await _dbContext.DlqMessages
@@ -623,15 +624,34 @@ public sealed class DlqHistoryService : IDlqHistoryService
                 $"Message status is '{message.Status}', not the expected claim status '{expectedClaimStatus}' — cannot finalize."));
         }
 
+        var now = DateTimeOffset.UtcNow;
         message.Status = terminalStatus;
         if (terminalStatus == DlqMessageStatus.Replayed)
         {
-            message.ReplayedAt = DateTimeOffset.UtcNow;
+            message.ReplayedAt = now;
             message.ReplaySuccess = true;
         }
         else if (terminalStatus == DlqMessageStatus.ReplayFailed)
         {
             message.ReplaySuccess = false;
+        }
+
+        // Purge's terminal statuses (Discarded/Active) never reach here even if a caller passed
+        // replayHistory — a purge is not a replay attempt, matching every other purge path
+        // (BulkOperationExecutor's purge branch, InterruptedOperationRecovery's Purging->Active).
+        if (replayHistory is not null &&
+            (terminalStatus == DlqMessageStatus.Replayed || terminalStatus == DlqMessageStatus.ReplayFailed))
+        {
+            _dbContext.ReplayHistories.Add(new ReplayHistory
+            {
+                DlqMessageId = message.Id,
+                ReplayedAt = now,
+                ReplayedBy = replayHistory.ReplayedBy,
+                ReplayStrategy = replayHistory.ReplayStrategy,
+                ReplayedToEntity = replayHistory.ReplayedToEntity,
+                OutcomeStatus = terminalStatus == DlqMessageStatus.Replayed ? "Success" : "Failed",
+                ErrorDetails = replayHistory.ErrorDetails,
+            });
         }
 
         try
