@@ -450,7 +450,7 @@ describe('RulesPage — rule target scope', () => {
     updatedAt: null,
   };
 
-  it('shows a global badge for a rule with no EntityName/TopicName condition', async () => {
+  it('shows an explicit ALL CLOUDS · ALL NAMESPACES banner for a rule with no EntityName/TopicName condition', async () => {
     mockUseRules.mockReturnValue({ data: [ruleNoEntityCondition], isLoading: false, refetch: vi.fn(), isFetching: false });
     mockUseNamespaces.mockReturnValue({ data: [awsNamespace] });
     mockUseAllNamespacesQueues.mockReturnValue([{ namespaceId: 'ns-aws-1', queues: [{ name: 'orders' }], isLoading: false, isError: false }]);
@@ -458,22 +458,27 @@ describe('RulesPage — rule target scope', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><RulesPage /></Wrapper>);
 
-    expect(await screen.findByText('Applies across all connected namespaces')).toBeInTheDocument();
+    expect(await screen.findByText('ALL CLOUDS · ALL NAMESPACES')).toBeInTheDocument();
   });
 
-  it('resolves a single-namespace target for a rule with an EntityName condition', async () => {
+  it('resolves a single-namespace target with Cloud, Namespace, Provider service, Entity, and DLQ all distinct', async () => {
     mockUseRules.mockReturnValue({ data: [ruleWithEntityCondition], isLoading: false, refetch: vi.fn(), isFetching: false });
     mockUseNamespaces.mockReturnValue({ data: [awsNamespace] });
-    mockUseAllNamespacesQueues.mockReturnValue([{ namespaceId: 'ns-aws-1', queues: [{ name: 'orders' }], isLoading: false, isError: false }]);
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns-aws-1', queues: [{ name: 'orders', deadLetterTargetQueue: 'orders-dlq' }], isLoading: false, isError: false },
+    ]);
 
     const Wrapper = createWrapper();
     render(<Wrapper><RulesPage /></Wrapper>);
 
     expect(await screen.findByText('AWS DEV')).toBeInTheDocument();
-    expect(screen.getByText('orders', { selector: 'span.font-mono' })).toBeInTheDocument();
+    expect(screen.getByText('AWS')).toBeInTheDocument(); // Cloud badge — explicit, not icon-only
+    expect(screen.getByText('SQS')).toBeInTheDocument(); // Provider service — distinct from "AWS"
+    expect(screen.getByText('orders')).toBeInTheDocument(); // Entity — distinct from namespace
+    expect(screen.getByText('DLQ: orders-dlq')).toBeInTheDocument(); // Real RedrivePolicy target, not fabricated
   });
 
-  it('flags an ambiguous target when the same entity name exists in two namespaces', async () => {
+  it('flags an ambiguous target when the same entity name exists in two namespaces across clouds', async () => {
     mockUseRules.mockReturnValue({ data: [ruleWithEntityCondition], isLoading: false, refetch: vi.fn(), isFetching: false });
     mockUseNamespaces.mockReturnValue({ data: [awsNamespace, azureNamespace] });
     mockUseAllNamespacesQueues.mockReturnValue([
@@ -487,5 +492,16 @@ describe('RulesPage — rule target scope', () => {
     expect(await screen.findByText(/Ambiguous target — matches 2 namespaces/)).toBeInTheDocument();
     expect(screen.getByText('AWS DEV')).toBeInTheDocument();
     expect(screen.getByText('Azure DEV')).toBeInTheDocument();
+  });
+
+  it('shows an explicit "Scope unresolved" state rather than a misleading namespace when the entity is not found', async () => {
+    mockUseRules.mockReturnValue({ data: [ruleWithEntityCondition], isLoading: false, refetch: vi.fn(), isFetching: false });
+    mockUseNamespaces.mockReturnValue({ data: [awsNamespace] });
+    mockUseAllNamespacesQueues.mockReturnValue([{ namespaceId: 'ns-aws-1', queues: [{ name: 'some-other-queue' }], isLoading: false, isError: false }]);
+
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    expect(await screen.findByText('Scope unresolved')).toBeInTheDocument();
   });
 });

@@ -78,9 +78,22 @@ const PROVIDER_CONSOLE_NAMES: Record<CloudProviderType, string> = {
   gcp: 'GCP Console',
 };
 
+// Provider service name with the cloud name stripped — for layouts that already show the cloud
+// (e.g. an "AWS" badge) immediately next to this, where "AWS SQS" would repeat "AWS" redundantly.
+const PROVIDER_SERVICE_SHORT_NAMES: Record<CloudProviderType, string> = {
+  azure: 'Service Bus',
+  aws: 'SQS',
+  gcp: 'Pub/Sub',
+};
+
 // eslint-disable-next-line react-refresh/only-export-components -- style map + badge belong together
 export function getProviderServiceName(provider?: CloudProviderType): string {
   return PROVIDER_SERVICE_NAMES[provider ?? 'azure'];
+}
+
+// eslint-disable-next-line react-refresh/only-export-components -- style map + badge belong together
+export function getProviderServiceShortName(provider?: CloudProviderType): string {
+  return PROVIDER_SERVICE_SHORT_NAMES[provider ?? 'azure'];
 }
 
 // eslint-disable-next-line react-refresh/only-export-components -- style map + badge belong together

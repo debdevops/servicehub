@@ -15,13 +15,20 @@ function ns(overrides: Partial<Namespace> & { id: string }): Namespace {
 const awsNs: NamespaceEntityIndex = {
   namespaceId: 'ns-aws',
   namespace: ns({ id: 'ns-aws', displayName: 'AWS DEV', cloudProvider: 'aws', environment: 'dev' }),
-  queues: ['orders'],
+  queues: [{ name: 'orders', deadLetterTargetQueue: 'orders-dlq' }],
   topics: [],
 };
 
 const azureNs: NamespaceEntityIndex = {
   namespaceId: 'ns-azure',
   namespace: ns({ id: 'ns-azure', displayName: 'Azure DEV', cloudProvider: 'azure', environment: 'prod' }),
+  queues: [],
+  topics: ['orders-topic'],
+};
+
+const gcpNs: NamespaceEntityIndex = {
+  namespaceId: 'ns-gcp',
+  namespace: ns({ id: 'ns-gcp', displayName: 'GCP DEV', cloudProvider: 'gcp', environment: 'dev' }),
   queues: [],
   topics: ['orders-topic'],
 };
@@ -52,7 +59,7 @@ describe('resolveRuleScope', () => {
     expect(resolveRuleScope(conditions, [awsNs], true)).toEqual({ kind: 'unresolved', value: 'ghost-queue' });
   });
 
-  it('resolves a single match to its namespace/cloud/entity', () => {
+  it('resolves a single AWS queue match with its real RedrivePolicy DLQ name', () => {
     const conditions: RuleCondition[] = [{ field: 'EntityName', operator: 'Equals', value: 'orders' }];
     const result = resolveRuleScope(conditions, [awsNs], true);
     expect(result).toEqual({
@@ -65,16 +72,32 @@ describe('resolveRuleScope', () => {
           environment: 'dev',
           entityName: 'orders',
           entityKind: 'queue',
+          dlqLabel: 'orders-dlq',
         },
       ],
     });
+  });
+
+  it('leaves dlqLabel null for an AWS queue with no RedrivePolicy configured', () => {
+    const noDlq: NamespaceEntityIndex = {
+      namespaceId: 'ns-aws-2',
+      namespace: ns({ id: 'ns-aws-2', displayName: 'AWS UAT', cloudProvider: 'aws', environment: 'uat' }),
+      queues: [{ name: 'plain-queue' }],
+      topics: [],
+    };
+    const conditions: RuleCondition[] = [{ field: 'EntityName', operator: 'Equals', value: 'plain-queue' }];
+    const result = resolveRuleScope(conditions, [noDlq], true);
+    expect(result.kind).toBe('resolved');
+    if (result.kind === 'resolved') {
+      expect(result.matches[0].dlqLabel).toBeNull();
+    }
   });
 
   it('flags an ambiguous match when the same entity name exists in two namespaces', () => {
     const namesake: NamespaceEntityIndex = {
       namespaceId: 'ns-azure-2',
       namespace: ns({ id: 'ns-azure-2', displayName: 'Azure UAT', cloudProvider: 'azure', environment: 'uat' }),
-      queues: ['orders'],
+      queues: [{ name: 'orders' }],
       topics: [],
     };
     const conditions: RuleCondition[] = [{ field: 'EntityName', operator: 'Equals', value: 'orders' }];
@@ -86,7 +109,7 @@ describe('resolveRuleScope', () => {
     }
   });
 
-  it('resolves an Azure subscription value ("topic/subscriptions/name") to its parent topic namespace', () => {
+  it('resolves an Azure subscription value ("topic/subscriptions/name") to its parent topic namespace and its $DeadLetterQueue path', () => {
     const conditions: RuleCondition[] = [
       { field: 'EntityName', operator: 'Equals', value: 'orders-topic/subscriptions/billing-sub' },
     ];
@@ -102,9 +125,33 @@ describe('resolveRuleScope', () => {
           entityName: 'orders-topic/subscriptions/billing-sub',
           entityKind: 'subscription',
           topicName: 'orders-topic',
+          subscriptionName: 'billing-sub',
+          dlqLabel: 'orders-topic/subscriptions/billing-sub/$DeadLetterQueue',
         },
       ],
     });
+  });
+
+  it('resolves a GCP subscription value to its parent topic namespace but leaves dlqLabel null (dead-letter topic is not fetched anywhere in the app)', () => {
+    const conditions: RuleCondition[] = [
+      { field: 'EntityName', operator: 'Equals', value: 'orders-topic/subscriptions/billing-sub' },
+    ];
+    const result = resolveRuleScope(conditions, [gcpNs], true);
+    expect(result.kind).toBe('resolved');
+    if (result.kind === 'resolved') {
+      expect(result.matches[0].dlqLabel).toBeNull();
+      expect(result.matches[0].cloudProvider).toBe('gcp');
+    }
+  });
+
+  it('never derives a DLQ label for a bare topic-kind match — a topic itself has no DLQ, only its subscriptions do', () => {
+    const conditions: RuleCondition[] = [{ field: 'TopicName', operator: 'Equals', value: 'orders-topic' }];
+    const result = resolveRuleScope(conditions, [azureNs], true);
+    expect(result.kind).toBe('resolved');
+    if (result.kind === 'resolved') {
+      expect(result.matches[0].entityKind).toBe('topic');
+      expect(result.matches[0].dlqLabel).toBeNull();
+    }
   });
 
   it('resolves each value of an In condition independently', () => {
