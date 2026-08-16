@@ -677,6 +677,19 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     }
 
     /// <inheritdoc />
+    public async Task<CloudProviderType?> GetSignatureProviderAsync(
+        string ownerId, string signatureHash, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.RecoveryLedgerEntries
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId
+                        && e.SignatureHashSnapshot == signatureHash
+                        && e.ProviderSnapshot != null)
+            .Select(e => e.ProviderSnapshot)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<RecoveryDisposition>> GetRecentVerifiedDispositionsAsync(
         string ownerId, string signatureHash, RecoveryOperationKind actionKind, int count,
         CancellationToken cancellationToken = default)

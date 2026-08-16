@@ -256,6 +256,19 @@ public interface IRecoveryLedger
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The <see cref="RecoveryLedgerEntry.ProviderSnapshot"/> shared by every entry recorded
+    /// against <paramref name="signatureHash"/> for <paramref name="ownerId"/> — a signature is
+    /// provider-specific by construction (<c>FailureFingerprintBuilder</c> hashes the message's
+    /// provider into the canonical string), so one non-null snapshot is authoritative for the
+    /// whole signature. <see langword="null"/> if no entry exists yet. Roadmap §14's
+    /// <c>CanProveDlqAbsence</c>-equivalent L4/L5 promotion guard (Phase F).
+    /// </summary>
+    Task<CloudProviderType?> GetSignatureProviderAsync(
+        string ownerId,
+        string signatureHash,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// The most recent <paramref name="count"/> terminal outcomes carrying real verification
     /// signal for one signature — <see cref="Enums.RecoveryDisposition.Recovered"/> or
     /// <see cref="Enums.RecoveryDisposition.Returned"/> only — ordered by

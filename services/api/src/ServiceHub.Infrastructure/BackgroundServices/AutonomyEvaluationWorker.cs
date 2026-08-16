@@ -172,7 +172,10 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
                 ownerId, signatureHash, RecoveryOperationKind.Replay, cancellationToken);
             var currentLevel = currentGrant?.CurrentLevel ?? AutonomyLevel.Approve;
 
-            var transition = DetermineTransition(currentLevel, evidence);
+            var provider = await recoveryLedger.GetSignatureProviderAsync(ownerId, signatureHash, cancellationToken);
+            var canProveDlqAbsence = GetCapabilities(provider).CanProveDlqAbsence;
+
+            var transition = DetermineTransition(currentLevel, evidence, canProveDlqAbsence);
             if (transition is null)
             {
                 continue;
@@ -222,6 +225,15 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
     /// L3→L5), and never promotes into a tier the evidence does not genuinely satisfy (roadmap
     /// §8.9 — "machinery exists" is not "trust is earned").
     /// </summary>
+    /// <param name="currentLevel">The signature's current <c>AutonomyGrant</c> level.</param>
+    /// <param name="evidence">Freshly computed trust evidence for the signature.</param>
+    /// <param name="canProveDlqAbsence">
+    /// The signature's provider's <see cref="ProviderCapabilities.CanProveDlqAbsence"/>
+    /// (roadmap §14, Phase F). L4/L5 promotion requires it — ServiceHub's own verification must
+    /// be trustworthy before granting unattended execution — while L3 and every demotion path
+    /// are unaffected, since a human evaluator bears the risk at L3 regardless of provider, and
+    /// withdrawing trust is always safe.
+    /// </param>
     /// <remarks>
     /// Demotion is intentionally narrower than the full roadmap model this increment: it covers
     /// the two triggers computable from existing aggregate evidence — a verified success rate
@@ -235,12 +247,13 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
     /// spec-accurate, not an oversight.
     /// </remarks>
     internal static (AutonomyLevel NewLevel, string Reason)? DetermineTransition(
-        AutonomyLevel currentLevel, SignatureTrustEvidence evidence)
+        AutonomyLevel currentLevel, SignatureTrustEvidence evidence, bool canProveDlqAbsence)
     {
         if (currentLevel == AutonomyLevel.Approve
             && evidence.MeetsL4SampleAndRate
             && !evidence.UnsafeOutcomePresent
-            && !evidence.DuplicateAssociationPresent)
+            && !evidence.DuplicateAssociationPresent
+            && canProveDlqAbsence)
         {
             return (AutonomyLevel.Standing, FormatPromotionReason(AutonomyLevel.Approve, AutonomyLevel.Standing, evidence));
         }
@@ -248,7 +261,8 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
         if (currentLevel == AutonomyLevel.Standing
             && evidence.MeetsL5SampleAndRate
             && !evidence.UnsafeOutcomePresent
-            && !evidence.DuplicateAssociationPresent)
+            && !evidence.DuplicateAssociationPresent
+            && canProveDlqAbsence)
         {
             return (AutonomyLevel.Unattended, FormatPromotionReason(AutonomyLevel.Standing, AutonomyLevel.Unattended, evidence));
         }
@@ -265,6 +279,20 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
 
         return null;
     }
+
+    /// <summary>
+    /// Maps a signature's provider (roadmap §14) to its <see cref="ProviderCapabilities"/>.
+    /// <see langword="null"/> (no ledger entry has a <c>ProviderSnapshot</c> yet, e.g. a very old
+    /// record predating that column) fails closed to AWS's/GCP's non-verifying capabilities —
+    /// never Azure's — so an unresolvable provider can never itself justify an L4/L5 promotion.
+    /// </summary>
+    private static ProviderCapabilities GetCapabilities(CloudProviderType? provider) => provider switch
+    {
+        CloudProviderType.Aws => ProviderCapabilities.Aws,
+        CloudProviderType.Gcp => ProviderCapabilities.Gcp,
+        CloudProviderType.Azure => ProviderCapabilities.Azure,
+        _ => ProviderCapabilities.Aws,
+    };
 
     private static string FormatPromotionReason(AutonomyLevel from, AutonomyLevel to, SignatureTrustEvidence evidence) =>
         $"Promoted {from}→{to}: n={evidence.SampleSize}, verified_success_rate={evidence.VerifiedSuccessRate:P0}, " +
