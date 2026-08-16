@@ -1,16 +1,19 @@
 import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useQueries } from '@tanstack/react-query';
-import { Plus, Zap, RefreshCw, ToggleLeft, ToggleRight, Pencil, Trash2, FlaskConical, Play, AlertTriangle, X, Shield, Brain } from 'lucide-react';
+import { Plus, Zap, RefreshCw, ToggleLeft, ToggleRight, Pencil, Trash2, FlaskConical, Play, AlertTriangle, X, Shield, Brain, Globe2 } from 'lucide-react';
 import { RuleBuilderDialog, TemplateGalleryDialog, RuleTestDialog } from '@/components/rules';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { HelpTooltip } from '@/components/help';
+import { EnvironmentBadge } from '@/components/EnvironmentBadge';
 import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useAllNamespacesQueues } from '@servicehub/ui-shared/hooks/useQueues';
 import { apiClient } from '@servicehub/ui-shared/lib/api/client';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { findRuleEntityWarnings, type KnownEntities } from '@servicehub/ui-shared/lib/ruleValidation';
+import { resolveRuleScope, type NamespaceEntityIndex, type RuleScope } from '@servicehub/ui-shared/lib/ruleScope';
+import { ProviderBadge, getProviderServiceName } from '@servicehub/ui-shared/lib/providerStyles';
 import type { Topic } from '@servicehub/ui-shared/lib/api/types';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 import {
@@ -62,6 +65,20 @@ export function RulesPage() {
         topicResults.every((r) => !r.isLoading),
     }),
     [allQueueStats, topicResults, namespaceIds.length],
+  );
+
+  // Same underlying data as knownEntities above, but keeping the per-namespace grouping
+  // (rather than flattening into one list) so a rule's EntityName/TopicName condition can be
+  // resolved back to the specific namespace(s)/cloud(s) it lives in — no extra network calls.
+  const namespaceEntityIndex: NamespaceEntityIndex[] = useMemo(
+    () =>
+      (namespaces ?? []).map((ns) => ({
+        namespaceId: ns.id,
+        namespace: ns,
+        queues: allQueueStats.find((s) => s.namespaceId === ns.id)?.queues?.map((q) => q.name) ?? [],
+        topics: topicResults[namespaceIds.indexOf(ns.id)]?.data?.map((t) => t.name) ?? [],
+      })),
+    [namespaces, allQueueStats, topicResults, namespaceIds],
   );
   const createMutation = useCreateRule();
   const updateMutation = useUpdateRule();
@@ -214,6 +231,7 @@ export function RulesPage() {
               <RuleCard
                 key={rule.id}
                 rule={rule}
+                scope={resolveRuleScope(rule.conditions, namespaceEntityIndex, knownEntities.loaded)}
                 entityWarnings={findRuleEntityWarnings(rule.conditions, rule.action, knownEntities)}
                 onEdit={() => handleEdit(rule)}
                 onDelete={() => handleDelete(rule)}
@@ -260,6 +278,11 @@ export function RulesPage() {
 
       <ReplayAllConfirmDialog
         rule={replayAllRule}
+        scope={
+          replayAllRule
+            ? resolveRuleScope(replayAllRule.conditions, namespaceEntityIndex, knownEntities.loaded)
+            : null
+        }
         isExecuting={replayAllMutation.isPending}
         onConfirm={confirmReplayAll}
         onCancel={() => setReplayAllRule(null)}
@@ -281,8 +304,71 @@ export function RulesPage() {
 
 // ─── Sub-Components ────────────────────────────────────────────────
 
+// Shows what a rule's EntityName/TopicName condition (if any) actually resolves to —
+// reused on the rule card and on the Replay All confirmation, where target ambiguity
+// matters most. See lib/ruleScope.ts for why this is inferred rather than stored.
+function ScopeBlock({ scope }: { scope: RuleScope }) {
+  if (scope.kind === 'loading') {
+    return <span className="text-[11px] text-gray-400 italic">Resolving scope…</span>;
+  }
+
+  if (scope.kind === 'global') {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-gray-500">
+        <Globe2 className="w-3.5 h-3.5 shrink-0" />
+        <span>Applies across all connected namespaces</span>
+      </div>
+    );
+  }
+
+  if (scope.kind === 'pattern') {
+    return (
+      <div className="text-xs text-gray-600">
+        Entities matching{' '}
+        <span className="font-mono text-gray-800">
+          {fieldLabel(scope.field)} {operatorLabel(scope.operator)} &quot;{scope.value}&quot;
+        </span>
+      </div>
+    );
+  }
+
+  if (scope.kind === 'unresolved') {
+    return (
+      <div className="text-xs text-amber-700">
+        Target entity &quot;{scope.value}&quot; not found in any connected namespace
+      </div>
+    );
+  }
+
+  const ambiguous = scope.matches.length > 1;
+  return (
+    <div className={ambiguous ? 'space-y-1.5 rounded-lg border border-amber-200 bg-amber-50/60 p-2' : 'space-y-1'}>
+      {ambiguous && (
+        <p className="flex items-center gap-1 text-[11px] font-semibold text-amber-700">
+          <AlertTriangle className="w-3 h-3" />
+          Ambiguous target — matches {scope.matches.length} namespaces
+        </p>
+      )}
+      {scope.matches.map((m, i) => (
+        <div key={`${m.namespaceId}-${m.entityName}-${i}`} className="flex flex-wrap items-center gap-1.5 text-xs">
+          <ProviderBadge provider={m.cloudProvider} />
+          <span className="text-gray-400">{getProviderServiceName(m.cloudProvider)}</span>
+          <span className="text-gray-300">·</span>
+          <span className="font-medium text-gray-700">{m.namespaceName}</span>
+          {m.environment && <EnvironmentBadge env={m.environment} />}
+          <span className="text-gray-300">·</span>
+          <span className="font-mono text-gray-800">
+            {m.entityKind === 'subscription' ? `${m.topicName}/${m.entityName}` : m.entityName}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function RuleCard({
   rule,
+  scope,
   entityWarnings,
   onEdit,
   onDelete,
@@ -292,6 +378,7 @@ function RuleCard({
   isReplayingAll,
 }: {
   rule: RuleResponse;
+  scope: RuleScope;
   entityWarnings: string[];
   onEdit: () => void;
   onDelete: () => void;
@@ -328,8 +415,11 @@ function RuleCard({
             }`}
           />
           {rule.name.startsWith('Auto:') && (
-            <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 rounded">
-              AI
+            <span
+              className="shrink-0 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 rounded"
+              title="Rule source: AI-generated (Generate Intelligent Rules). Executes deterministically once enabled — this is not an autonomy grant."
+            >
+              AI-generated
             </span>
           )}
           <h3 className="text-sm font-bold text-gray-900 truncate">{rule.name}</h3>
@@ -368,6 +458,12 @@ function RuleCard({
       {rule.description && (
         <p className="text-xs text-gray-500 mb-3 line-clamp-2">{rule.description}</p>
       )}
+
+      {/* Target — cloud/provider/namespace/entity this rule actually affects */}
+      <div className="mb-3">
+        <h4 className="text-[10px] font-semibold text-gray-500 uppercase mb-1">Target</h4>
+        <ScopeBlock scope={scope} />
+      </div>
 
       {/* Conditions */}
       <div className="mb-3">
@@ -427,6 +523,10 @@ function RuleCard({
           <strong className="text-gray-700">
             {rule.successCount} ({successPct}%)
           </strong>
+        </span>
+        <span title="Rate limit — replays this rule will trigger per hour">
+          Limit:{' '}
+          <strong className="text-gray-700">{rule.maxReplaysPerHour}/hr</strong>
         </span>
       </div>
 
@@ -533,11 +633,13 @@ function EmptyState({
 
 function ReplayAllConfirmDialog({
   rule,
+  scope,
   isExecuting,
   onConfirm,
   onCancel,
 }: {
   rule: RuleResponse | null;
+  scope: RuleScope | null;
   isExecuting: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -599,6 +701,11 @@ function ReplayAllConfirmDialog({
             <div className="text-sm font-semibold text-gray-900 mb-1">
               Rule: {rule.name}
             </div>
+            {scope && (
+              <div className="mb-2">
+                <ScopeBlock scope={scope} />
+              </div>
+            )}
             <div className="space-y-0.5">
               {rule.conditions.map((c, i) => (
                 <div key={i} className="text-xs text-gray-600 flex items-center gap-1">

@@ -23,6 +23,18 @@ vi.mock('@/components/rules', () => ({
     open ? <div data-testid="rule-test-dialog" /> : null,
 }));
 
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
+  useNamespaces: vi.fn(),
+}));
+
+vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({
+  useAllNamespacesQueues: vi.fn(),
+}));
+
+vi.mock('@servicehub/ui-shared/lib/api/client', () => ({
+  apiClient: { get: vi.fn().mockResolvedValue({ data: [] }) },
+}));
+
 import {
   useRules,
   useCreateRule,
@@ -32,6 +44,8 @@ import {
   useReplayAll,
   useGenerateRules,
 } from '@servicehub/ui-shared/hooks/useRules';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useAllNamespacesQueues } from '@servicehub/ui-shared/hooks/useQueues';
 
 const mockUseRules = useRules as ReturnType<typeof vi.fn>;
 const mockUseCreateRule = useCreateRule as ReturnType<typeof vi.fn>;
@@ -40,6 +54,8 @@ const mockUseDeleteRule = useDeleteRule as ReturnType<typeof vi.fn>;
 const mockUseToggleRule = useToggleRule as ReturnType<typeof vi.fn>;
 const mockUseReplayAll = useReplayAll as ReturnType<typeof vi.fn>;
 const mockUseGenerateRules = useGenerateRules as ReturnType<typeof vi.fn>;
+const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
+const mockUseAllNamespacesQueues = useAllNamespacesQueues as ReturnType<typeof vi.fn>;
 
 const mockRules = [
   {
@@ -95,6 +111,10 @@ beforeEach(() => {
   mockUseToggleRule.mockReturnValue({ ...mockMutation });
   mockUseReplayAll.mockReturnValue({ ...mockMutation, isPending: false });
   mockUseGenerateRules.mockReturnValue({ ...mockMutation, isPending: false });
+  // Empty by default — namespaceIds stays [] so scope resolution reports 'global'/'loading'
+  // the same way it did before scope resolution existed, keeping unrelated tests unaffected.
+  mockUseNamespaces.mockReturnValue({ data: [] });
+  mockUseAllNamespacesQueues.mockReturnValue([]);
 });
 
 describe('RulesPage', () => {
@@ -377,5 +397,95 @@ describe('RulesPage', () => {
     render(<Wrapper><RulesPage /></Wrapper>);
     // DeadLetterReason field → 'reason', Equals → 'equals'
     expect(screen.getAllByText(/reason/i).length).toBeGreaterThan(0);
+  });
+});
+
+describe('RulesPage — rule target scope', () => {
+  const awsNamespace = {
+    id: 'ns-aws-1',
+    name: 'aws-dev',
+    displayName: 'AWS DEV',
+    isActive: true,
+    createdAt: '2024-01-01T00:00:00Z',
+    cloudProvider: 'aws' as const,
+    environment: 'dev' as const,
+  };
+  const azureNamespace = {
+    id: 'ns-azure-1',
+    name: 'azure-dev',
+    displayName: 'Azure DEV',
+    isActive: true,
+    createdAt: '2024-01-01T00:00:00Z',
+    cloudProvider: 'azure' as const,
+    environment: 'prod' as const,
+  };
+
+  const ruleNoEntityCondition = {
+    id: 10,
+    name: 'Global Rule',
+    description: null,
+    enabled: true,
+    conditions: [{ field: 'DeadLetterReason', operator: 'Equals', value: 'Timeout' }],
+    action: { autoReplay: true, delaySeconds: 10, exponentialBackoff: false },
+    matchCount: 0,
+    successCount: 0,
+    pendingMatchCount: 0,
+    maxReplaysPerHour: 100,
+    createdAt: '2024-01-01T00:00:00Z',
+    updatedAt: null,
+  };
+
+  const ruleWithEntityCondition = {
+    id: 11,
+    name: 'Orders Rule',
+    description: null,
+    enabled: true,
+    conditions: [{ field: 'EntityName', operator: 'Equals', value: 'orders' }],
+    action: { autoReplay: true, delaySeconds: 10, exponentialBackoff: false },
+    matchCount: 0,
+    successCount: 0,
+    pendingMatchCount: 0,
+    maxReplaysPerHour: 100,
+    createdAt: '2024-01-01T00:00:00Z',
+    updatedAt: null,
+  };
+
+  it('shows a global badge for a rule with no EntityName/TopicName condition', async () => {
+    mockUseRules.mockReturnValue({ data: [ruleNoEntityCondition], isLoading: false, refetch: vi.fn(), isFetching: false });
+    mockUseNamespaces.mockReturnValue({ data: [awsNamespace] });
+    mockUseAllNamespacesQueues.mockReturnValue([{ namespaceId: 'ns-aws-1', queues: [{ name: 'orders' }], isLoading: false, isError: false }]);
+
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    expect(await screen.findByText('Applies across all connected namespaces')).toBeInTheDocument();
+  });
+
+  it('resolves a single-namespace target for a rule with an EntityName condition', async () => {
+    mockUseRules.mockReturnValue({ data: [ruleWithEntityCondition], isLoading: false, refetch: vi.fn(), isFetching: false });
+    mockUseNamespaces.mockReturnValue({ data: [awsNamespace] });
+    mockUseAllNamespacesQueues.mockReturnValue([{ namespaceId: 'ns-aws-1', queues: [{ name: 'orders' }], isLoading: false, isError: false }]);
+
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    expect(await screen.findByText('AWS DEV')).toBeInTheDocument();
+    expect(screen.getByText('orders', { selector: 'span.font-mono' })).toBeInTheDocument();
+  });
+
+  it('flags an ambiguous target when the same entity name exists in two namespaces', async () => {
+    mockUseRules.mockReturnValue({ data: [ruleWithEntityCondition], isLoading: false, refetch: vi.fn(), isFetching: false });
+    mockUseNamespaces.mockReturnValue({ data: [awsNamespace, azureNamespace] });
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns-aws-1', queues: [{ name: 'orders' }], isLoading: false, isError: false },
+      { namespaceId: 'ns-azure-1', queues: [{ name: 'orders' }], isLoading: false, isError: false },
+    ]);
+
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    expect(await screen.findByText(/Ambiguous target — matches 2 namespaces/)).toBeInTheDocument();
+    expect(screen.getByText('AWS DEV')).toBeInTheDocument();
+    expect(screen.getByText('Azure DEV')).toBeInTheDocument();
   });
 });
