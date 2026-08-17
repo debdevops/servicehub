@@ -20,6 +20,15 @@ export interface NamespaceEntityIndex {
   namespace: Namespace;
   queues: NamespaceQueueEntity[];
   topics: string[];
+  /**
+   * Whether THIS namespace's queue/topic lists have finished loading. Deliberately per-namespace
+   * rather than a single global flag: with the old global gate, one slow/erroring namespace among
+   * many connected ones blocked scope resolution for every entity-scoped rule card, even rules
+   * whose target lived in an already-loaded namespace. Per-namespace loading lets a rule resolve
+   * the moment its own namespace's data is in, instead of waiting on the slowest namespace in the
+   * whole fleet.
+   */
+  loaded: boolean;
 }
 
 export interface ScopedEntity {
@@ -48,12 +57,20 @@ export type RuleScope =
   | { kind: 'global' }
   /** EntityName/TopicName condition uses a non-exact operator (Contains, StartsWith, Regex, ...) — not resolvable to a specific entity. */
   | { kind: 'pattern'; field: string; operator: string; value: string }
-  /** Entity/namespace lists are still loading — avoid rendering a wrong scope while data settles. */
+  /** Entity/namespace lists are still loading and no match has been found among the namespaces
+   * that HAVE finished loading yet — avoid rendering a wrong scope while data settles. Purely
+   * transient: resolves to 'resolved' or 'unresolved' as soon as the relevant data is in. */
   | { kind: 'loading' }
-  /** Exact value matches no known queue/topic/subscription in any connected namespace. */
+  /** Every connected namespace finished loading and none contains this value. */
   | { kind: 'unresolved'; value: string }
-  /** Exact value resolved to one (precise) or more (ambiguous — same name across namespaces/clouds) entities. */
-  | { kind: 'resolved'; matches: ScopedEntity[] };
+  /**
+   * Exact value resolved to one (precise) or more (ambiguous — same name across namespaces/clouds)
+   * entities, found among namespaces that have already loaded. `provisional: true` means at least
+   * one OTHER connected namespace hasn't finished loading yet — the match itself is real, not
+   * fabricated, but a same-named entity could still turn up elsewhere and upgrade this to
+   * ambiguous once the rest of the data arrives (the card re-renders live as that happens).
+   */
+  | { kind: 'resolved'; matches: ScopedEntity[]; provisional: boolean };
 
 function buildDlqLabel(
   cloudProvider: CloudProviderType,
@@ -139,7 +156,11 @@ function findEntity(
 export function resolveRuleScope(
   conditions: RuleCondition[],
   index: NamespaceEntityIndex[],
-  loaded: boolean,
+  /** Whether the connected-namespaces list itself has loaded — distinct from each entry's own
+   * `loaded` flag. Until this is true we don't even know which namespaces exist, so nothing can
+   * be classified as 'unresolved' yet (an empty `index` before this settles must not be read as
+   * "zero namespaces connected"). */
+  namespacesLoaded: boolean,
 ): RuleScope {
   const scopeCondition = conditions.find(
     (c) => c.field === 'EntityName' || c.field === 'TopicName',
@@ -156,18 +177,24 @@ export function resolveRuleScope(
     };
   }
 
-  if (!loaded) return { kind: 'loading' };
+  if (!namespacesLoaded) return { kind: 'loading' };
 
   const values =
     scopeCondition.operator === 'In'
       ? scopeCondition.value.split(',').map((v) => v.trim()).filter(Boolean)
       : [scopeCondition.value];
 
-  const matches = values.flatMap((value) => findEntity(value, index));
+  // Search only namespaces whose own entity lists have already loaded — a rule resolves as soon
+  // as ITS namespace is ready, rather than waiting on the slowest namespace in the whole fleet.
+  const loadedEntries = index.filter((entry) => entry.loaded);
+  const allSettled = index.every((entry) => entry.loaded);
+  const matches = values.flatMap((value) => findEntity(value, loadedEntries));
 
-  if (matches.length === 0) {
-    return { kind: 'unresolved', value: values[0] ?? scopeCondition.value };
+  if (matches.length > 0) {
+    return { kind: 'resolved', matches, provisional: !allSettled };
   }
 
-  return { kind: 'resolved', matches };
+  if (!allSettled) return { kind: 'loading' };
+
+  return { kind: 'unresolved', value: values[0] ?? scopeCondition.value };
 }

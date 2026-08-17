@@ -17,6 +17,7 @@ const awsNs: NamespaceEntityIndex = {
   namespace: ns({ id: 'ns-aws', displayName: 'AWS DEV', cloudProvider: 'aws', environment: 'dev' }),
   queues: [{ name: 'orders', deadLetterTargetQueue: 'orders-dlq' }],
   topics: [],
+  loaded: true,
 };
 
 const azureNs: NamespaceEntityIndex = {
@@ -24,6 +25,7 @@ const azureNs: NamespaceEntityIndex = {
   namespace: ns({ id: 'ns-azure', displayName: 'Azure DEV', cloudProvider: 'azure', environment: 'prod' }),
   queues: [],
   topics: ['orders-topic'],
+  loaded: true,
 };
 
 const gcpNs: NamespaceEntityIndex = {
@@ -31,12 +33,18 @@ const gcpNs: NamespaceEntityIndex = {
   namespace: ns({ id: 'ns-gcp', displayName: 'GCP DEV', cloudProvider: 'gcp', environment: 'dev' }),
   queues: [],
   topics: ['orders-topic'],
+  loaded: true,
 };
 
 describe('resolveRuleScope', () => {
   it('returns global when there is no EntityName/TopicName condition', () => {
     const conditions: RuleCondition[] = [{ field: 'DeadLetterReason', operator: 'Equals', value: 'Timeout' }];
     expect(resolveRuleScope(conditions, [awsNs], true)).toEqual({ kind: 'global' });
+  });
+
+  it('returns global immediately even while namespaces are still loading — it needs no entity data', () => {
+    const conditions: RuleCondition[] = [{ field: 'DeadLetterReason', operator: 'Equals', value: 'Timeout' }];
+    expect(resolveRuleScope(conditions, [], false)).toEqual({ kind: 'global' });
   });
 
   it('returns pattern for a non-exact operator on EntityName', () => {
@@ -49,21 +57,28 @@ describe('resolveRuleScope', () => {
     });
   });
 
-  it('returns loading while entity lists are not yet loaded', () => {
+  it('returns loading while the namespaces list itself has not loaded yet', () => {
     const conditions: RuleCondition[] = [{ field: 'EntityName', operator: 'Equals', value: 'orders' }];
-    expect(resolveRuleScope(conditions, [awsNs], false)).toEqual({ kind: 'loading' });
+    expect(resolveRuleScope(conditions, [], false)).toEqual({ kind: 'loading' });
   });
 
-  it('returns unresolved when the value matches no known entity', () => {
+  it('returns loading when namespaces are known but this namespace\'s own entities have not loaded yet', () => {
+    const stillLoading: NamespaceEntityIndex = { ...awsNs, loaded: false };
+    const conditions: RuleCondition[] = [{ field: 'EntityName', operator: 'Equals', value: 'orders' }];
+    expect(resolveRuleScope(conditions, [stillLoading], true)).toEqual({ kind: 'loading' });
+  });
+
+  it('returns unresolved once every connected namespace has settled and none contains the value', () => {
     const conditions: RuleCondition[] = [{ field: 'EntityName', operator: 'Equals', value: 'ghost-queue' }];
     expect(resolveRuleScope(conditions, [awsNs], true)).toEqual({ kind: 'unresolved', value: 'ghost-queue' });
   });
 
-  it('resolves a single AWS queue match with its real RedrivePolicy DLQ name', () => {
+  it('resolves a single AWS queue match with its real RedrivePolicy DLQ name, not provisional once fully settled', () => {
     const conditions: RuleCondition[] = [{ field: 'EntityName', operator: 'Equals', value: 'orders' }];
     const result = resolveRuleScope(conditions, [awsNs], true);
     expect(result).toEqual({
       kind: 'resolved',
+      provisional: false,
       matches: [
         {
           namespaceId: 'ns-aws',
@@ -78,12 +93,38 @@ describe('resolveRuleScope', () => {
     });
   });
 
+  it('resolves a match found in an already-loaded namespace as provisional while a DIFFERENT connected namespace is still loading — the whole point of per-namespace resolution', () => {
+    const stillLoadingAzure: NamespaceEntityIndex = { ...azureNs, loaded: false, topics: [] };
+    const conditions: RuleCondition[] = [{ field: 'EntityName', operator: 'Equals', value: 'orders' }];
+    const result = resolveRuleScope(conditions, [awsNs, stillLoadingAzure], true);
+    expect(result.kind).toBe('resolved');
+    if (result.kind === 'resolved') {
+      expect(result.provisional).toBe(true);
+      expect(result.matches).toHaveLength(1);
+      expect(result.matches[0].namespaceId).toBe('ns-aws');
+    }
+  });
+
+  it('does not resolve a rule from a namespace that has not loaded yet even if it would eventually match there', () => {
+    // The match only exists in the still-loading namespace — nothing to show from the loaded one.
+    const stillLoadingWithMatch: NamespaceEntityIndex = {
+      namespaceId: 'ns-azure',
+      namespace: ns({ id: 'ns-azure', displayName: 'Azure DEV', cloudProvider: 'azure', environment: 'prod' }),
+      queues: [{ name: 'orders' }],
+      topics: [],
+      loaded: false,
+    };
+    const conditions: RuleCondition[] = [{ field: 'EntityName', operator: 'Equals', value: 'orders' }];
+    expect(resolveRuleScope(conditions, [stillLoadingWithMatch], true)).toEqual({ kind: 'loading' });
+  });
+
   it('leaves dlqLabel null for an AWS queue with no RedrivePolicy configured', () => {
     const noDlq: NamespaceEntityIndex = {
       namespaceId: 'ns-aws-2',
       namespace: ns({ id: 'ns-aws-2', displayName: 'AWS UAT', cloudProvider: 'aws', environment: 'uat' }),
       queues: [{ name: 'plain-queue' }],
       topics: [],
+      loaded: true,
     };
     const conditions: RuleCondition[] = [{ field: 'EntityName', operator: 'Equals', value: 'plain-queue' }];
     const result = resolveRuleScope(conditions, [noDlq], true);
@@ -93,17 +134,19 @@ describe('resolveRuleScope', () => {
     }
   });
 
-  it('flags an ambiguous match when the same entity name exists in two namespaces', () => {
+  it('flags an ambiguous match when the same entity name exists in two already-loaded namespaces across clouds', () => {
     const namesake: NamespaceEntityIndex = {
       namespaceId: 'ns-azure-2',
       namespace: ns({ id: 'ns-azure-2', displayName: 'Azure UAT', cloudProvider: 'azure', environment: 'uat' }),
       queues: [{ name: 'orders' }],
       topics: [],
+      loaded: true,
     };
     const conditions: RuleCondition[] = [{ field: 'EntityName', operator: 'Equals', value: 'orders' }];
     const result = resolveRuleScope(conditions, [awsNs, namesake], true);
     expect(result.kind).toBe('resolved');
     if (result.kind === 'resolved') {
+      expect(result.provisional).toBe(false);
       expect(result.matches).toHaveLength(2);
       expect(result.matches.map((m) => m.namespaceId).sort()).toEqual(['ns-aws', 'ns-azure-2'].sort());
     }
@@ -116,6 +159,7 @@ describe('resolveRuleScope', () => {
     const result = resolveRuleScope(conditions, [azureNs], true);
     expect(result).toEqual({
       kind: 'resolved',
+      provisional: false,
       matches: [
         {
           namespaceId: 'ns-azure',
@@ -162,5 +206,10 @@ describe('resolveRuleScope', () => {
       expect(result.matches).toHaveLength(2);
       expect(result.matches.map((m) => m.entityName).sort()).toEqual(['orders', 'orders-topic']);
     }
+  });
+
+  it('treats zero connected namespaces (once the namespace list itself has loaded) as unresolved, not stuck loading', () => {
+    const conditions: RuleCondition[] = [{ field: 'EntityName', operator: 'Equals', value: 'orders' }];
+    expect(resolveRuleScope(conditions, [], true)).toEqual({ kind: 'unresolved', value: 'orders' });
   });
 });

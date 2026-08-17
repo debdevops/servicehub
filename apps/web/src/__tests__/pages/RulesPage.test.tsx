@@ -504,4 +504,56 @@ describe('RulesPage — rule target scope', () => {
 
     expect(await screen.findByText('Scope unresolved')).toBeInTheDocument();
   });
+
+  it('shows "Resolving scope…" only while the namespaces list itself is loading, not as a persistent fallback', () => {
+    mockUseRules.mockReturnValue({ data: [ruleWithEntityCondition], isLoading: false, refetch: vi.fn(), isFetching: false });
+    mockUseNamespaces.mockReturnValue({ data: undefined, isLoading: true });
+    mockUseAllNamespacesQueues.mockReturnValue([]);
+
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    expect(screen.getByText('Resolving scope…')).toBeInTheDocument();
+  });
+
+  it('resolves a rule scoped to an already-loaded namespace immediately, even while a DIFFERENT connected namespace is still loading — the fix for cards stuck on "Resolving scope…"', async () => {
+    const rule = {
+      ...ruleWithEntityCondition,
+      conditions: [{ field: 'EntityName', operator: 'Equals', value: 'order-processing' }],
+    };
+    mockUseRules.mockReturnValue({ data: [rule], isLoading: false, refetch: vi.fn(), isFetching: false });
+    mockUseNamespaces.mockReturnValue({ data: [awsNamespace, azureNamespace] });
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns-aws-1', queues: [{ name: 'order-processing' }], isLoading: false, isError: false },
+      // A second, unrelated namespace still loading — must not block the AWS card above.
+      { namespaceId: 'ns-azure-1', queues: undefined, isLoading: true, isError: false },
+    ]);
+
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    expect(await screen.findByText('AWS DEV')).toBeInTheDocument();
+    expect(screen.getByText('order-processing')).toBeInTheDocument();
+    // Real, not fabricated — flagged as still-confirming since another namespace hasn't settled.
+    expect(screen.getByText(/Confirming remaining namespaces/)).toBeInTheDocument();
+  });
+
+  it('shows the same resolved Cloud/Namespace/Provider/Entity scope in the Replay-All confirmation before the destructive action', async () => {
+    mockUseRules.mockReturnValue({ data: [ruleWithEntityCondition], isLoading: false, refetch: vi.fn(), isFetching: false });
+    mockUseNamespaces.mockReturnValue({ data: [awsNamespace] });
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns-aws-1', queues: [{ name: 'orders', deadLetterTargetQueue: 'orders-dlq' }], isLoading: false, isError: false },
+    ]);
+
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    await screen.findByText('AWS DEV'); // wait for the card's own scope to resolve first
+    fireEvent.click(screen.getByText('Replay All'));
+
+    expect(screen.getByText('Replay All Matching Messages')).toBeInTheDocument();
+    const dialogNamespaceMatches = screen.getAllByText('AWS DEV');
+    expect(dialogNamespaceMatches.length).toBeGreaterThanOrEqual(2); // card + dialog
+    expect(screen.getAllByText('DLQ: orders-dlq').length).toBeGreaterThanOrEqual(2);
+  });
 });

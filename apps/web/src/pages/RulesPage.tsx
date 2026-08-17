@@ -14,7 +14,7 @@ import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { findRuleEntityWarnings, type KnownEntities } from '@servicehub/ui-shared/lib/ruleValidation';
 import { resolveRuleScope, type NamespaceEntityIndex, type RuleScope, type ScopedEntity } from '@servicehub/ui-shared/lib/ruleScope';
 import { ProviderBadge, getProviderStyle, getProviderServiceShortName } from '@servicehub/ui-shared/lib/providerStyles';
-import type { Topic } from '@servicehub/ui-shared/lib/api/types';
+import type { Topic, ApiError } from '@servicehub/ui-shared/lib/api/types';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 import {
   useRules,
@@ -39,7 +39,7 @@ export function RulesPage() {
 
   // Entities across every connected namespace (all providers) — used to flag
   // rules whose entity references no longer exist anywhere.
-  const { data: namespaces } = useNamespaces();
+  const { data: namespaces, isLoading: namespacesLoading } = useNamespaces();
   const namespaceIds = useMemo(() => namespaces?.map((ns) => ns.id) ?? [], [namespaces]);
   const allQueueStats = useAllNamespacesQueues(namespaceIds, false);
   const topicResults = useQueries({
@@ -52,7 +52,14 @@ export function RulesPage() {
       enabled: !isDemoMode && !!id,
       staleTime: 60_000,
       refetchIntervalInBackground: false,
-      retry: 1,
+      // Same status-aware retry suppression as useQueues' queuesQueryOptions — retrying a
+      // non-retryable 404/429/5xx just doubles the time a rule card sits at "Resolving scope…"
+      // for a namespace whose topics endpoint isn't going to succeed.
+      retry: (failureCount: number, error: ApiError) => {
+        const status = error?.response?.status ?? 0;
+        if (status === 404 || status === 429 || status >= 500) return false;
+        return failureCount < 1;
+      },
     })),
   });
   const knownEntities: KnownEntities = useMemo(
@@ -70,18 +77,26 @@ export function RulesPage() {
   // Same underlying data as knownEntities above, but keeping the per-namespace grouping
   // (rather than flattening into one list) so a rule's EntityName/TopicName condition can be
   // resolved back to the specific namespace(s)/cloud(s) it lives in — no extra network calls.
+  // Each entry carries its OWN loaded state (see NamespaceEntityIndex.loaded) so resolveRuleScope
+  // can resolve a rule the moment its namespace's data is in, rather than every card waiting on
+  // whichever connected namespace happens to be slowest.
   const namespaceEntityIndex: NamespaceEntityIndex[] = useMemo(
     () =>
-      (namespaces ?? []).map((ns) => ({
-        namespaceId: ns.id,
-        namespace: ns,
-        queues:
-          allQueueStats.find((s) => s.namespaceId === ns.id)?.queues?.map((q) => ({
-            name: q.name,
-            deadLetterTargetQueue: q.deadLetterTargetQueue,
-          })) ?? [],
-        topics: topicResults[namespaceIds.indexOf(ns.id)]?.data?.map((t) => t.name) ?? [],
-      })),
+      (namespaces ?? []).map((ns) => {
+        const queueStat = allQueueStats.find((s) => s.namespaceId === ns.id);
+        const topicResult = topicResults[namespaceIds.indexOf(ns.id)];
+        return {
+          namespaceId: ns.id,
+          namespace: ns,
+          queues:
+            queueStat?.queues?.map((q) => ({
+              name: q.name,
+              deadLetterTargetQueue: q.deadLetterTargetQueue,
+            })) ?? [],
+          topics: topicResult?.data?.map((t) => t.name) ?? [],
+          loaded: !(queueStat?.isLoading ?? true) && !(topicResult?.isLoading ?? true),
+        };
+      }),
     [namespaces, allQueueStats, topicResults, namespaceIds],
   );
   const createMutation = useCreateRule();
@@ -235,7 +250,7 @@ export function RulesPage() {
               <RuleCard
                 key={rule.id}
                 rule={rule}
-                scope={resolveRuleScope(rule.conditions, namespaceEntityIndex, knownEntities.loaded)}
+                scope={resolveRuleScope(rule.conditions, namespaceEntityIndex, !namespacesLoading)}
                 entityWarnings={findRuleEntityWarnings(rule.conditions, rule.action, knownEntities)}
                 onEdit={() => handleEdit(rule)}
                 onDelete={() => handleDelete(rule)}
@@ -284,7 +299,7 @@ export function RulesPage() {
         rule={replayAllRule}
         scope={
           replayAllRule
-            ? resolveRuleScope(replayAllRule.conditions, namespaceEntityIndex, knownEntities.loaded)
+            ? resolveRuleScope(replayAllRule.conditions, namespaceEntityIndex, !namespacesLoading)
             : null
         }
         isExecuting={replayAllMutation.isPending}
@@ -402,6 +417,12 @@ function ScopeContent({ scope }: { scope: RuleScope }) {
           <ScopeIdentity key={`${m.namespaceId}-${m.entityName}-${i}`} match={m} />
         ))}
       </div>
+      {scope.provisional && (
+        <p className="flex items-center gap-1 text-[10px] text-gray-400 italic">
+          <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+          Confirming remaining namespaces — this may still turn out to be ambiguous
+        </p>
+      )}
     </div>
   );
 }
