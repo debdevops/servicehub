@@ -14,9 +14,26 @@
 [![Version](https://img.shields.io/badge/version-3.7.0-brightgreen.svg)](.version)
 [![Self-Hosted](https://img.shields.io/badge/Deployment-Self--Hosted-0078D4.svg)](#quick-start)
 
-[⚡ Quick Start](#quick-start) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security) · [📋 Changelog](CHANGELOG.md)
+[⚡ Quick Start](#quick-start) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security) · [🚀 Self-Hosting](self-hosting/README.md) · [📋 Changelog](CHANGELOG.md)
 
 </div>
+
+---
+
+## What do you want to do?
+
+```
+Just try ServiceHub?             → Demo / Sandbox           (#try-it)
+Run on my laptop?                → With Docker              (#docker-fastest-with-docker)
+                                  → Without Docker           (#one-command-setup-without-docker-from-source)
+Test my real cloud?              → AWS / Azure / GCP         (self-hosting/README.md#cloud-credentials-least-privilege-setup)
+Run ServiceHub inside my org?    → Azure App Service         (#azure-app-service-recommended)
+                                  → Azure Container Apps      (#azure-container-apps-alternative)
+Want a ready-made container?     → GHCR                      (#container-image)
+```
+
+No cloud account, credentials, or infrastructure are required for the first option. Every
+option below runs the same single Docker image — nothing is a separate build.
 
 ---
 
@@ -107,6 +124,9 @@ docker compose up --build
 Open **[http://localhost:8080](http://localhost:8080)**, then connect a namespace with your own
 cloud credentials. The port is bound to `127.0.0.1` (loopback) only by default, so it isn't
 reachable from your network until you deliberately change that.
+
+Prefer not to build locally? Pull the official image instead of `--build`:
+`docker pull ghcr.io/debdevops/servicehub:latest` (see [Container Image](#container-image)).
 
 If you skip the `.env` step, `docker compose` stops immediately and names the variable that is
 missing rather than starting a container that fails its configuration check.
@@ -296,7 +316,7 @@ Follow this path before connecting to a production namespace. This protects your
 
 ## Quick Start
 
-### Docker (fastest)
+### Docker (fastest, with Docker)
 
 ```bash
 cp .env.example .env
@@ -328,7 +348,20 @@ checklist. `Cors:AllowedOrigins` and at least one API key (or OIDC) also need se
 users reach it, and `SITEURL`/`AllowedHosts` must name the hostname users actually visit rather
 than `localhost`.
 
-### One-Command Setup (from source)
+### Container Image
+
+Official images are published to GitHub Container Registry on every tagged release:
+
+```bash
+docker pull ghcr.io/debdevops/servicehub:latest
+# or pin a version: ghcr.io/debdevops/servicehub:3.7.0
+```
+
+Run it the same way as the locally built image — same required secrets, same volume, same
+port. See [Self-Hosting](self-hosting/README.md) before pointing a pulled image at real
+credentials or a non-loopback address.
+
+### One-Command Setup (without Docker, from source)
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git
@@ -338,9 +371,9 @@ cd servicehub
 
 Open **[http://localhost:3000](http://localhost:3000)** — then connect with your connection string. The script automatically installs .NET 10 SDK and Node.js 22+ if not already present.
 
-### Create a Dedicated Policy (Azure)
+### Create a Dedicated Read-Only Credential
 
-For read-only browsing (recommended for production):
+Azure:
 ```bash
 az servicebus namespace authorization-rule create \
   --namespace-name <your-namespace> \
@@ -348,6 +381,101 @@ az servicebus namespace authorization-rule create \
   --name servicehub-readonly \
   --rights Listen
 ```
+
+AWS and GCP least-privilege IAM policies (exact SDK actions ServiceHub calls, JSON policy and
+`gcloud` commands included) are in [Self-Hosting → Cloud credentials](self-hosting/README.md#cloud-credentials-least-privilege-setup).
+Quick "create a resource, connect it, verify it, tear it down" walkthroughs for all three
+clouds are in [Self-Hosting → Quick end-to-end test](self-hosting/README.md#quick-end-to-end-test).
+
+---
+
+## Self-Host on Azure
+
+Both options run the same GHCR image (`ghcr.io/debdevops/servicehub:latest`) as a single,
+non-scaled container — see [Deployment Model](#deployment-model). Pick one; you don't need
+both.
+
+### Azure App Service (Recommended)
+
+The most mature managed path today — Web App for Containers, one instance, no code changes.
+
+```bash
+az login
+az group create --name rg-servicehub --location eastus
+
+az appservice plan create --name plan-servicehub --resource-group rg-servicehub \
+  --is-linux --sku B1
+
+az webapp create --name <globally-unique-app-name> --resource-group rg-servicehub \
+  --plan plan-servicehub --deployment-container-image-name ghcr.io/debdevops/servicehub:latest
+
+# Required secrets + config — same variables as the Docker section above
+az webapp config appsettings set --name <app-name> --resource-group rg-servicehub --settings \
+  ASPNETCORE_ENVIRONMENT=Production \
+  SECURITY__ENCRYPTIONKEY="$(openssl rand -hex 32)" \
+  SECURITY__SPATOKEN__SECRET="$(openssl rand -hex 32)" \
+  SITEURL="https://<app-name>.azurewebsites.net" \
+  AllowedHosts="<app-name>.azurewebsites.net" \
+  WEBSITES_PORT=8080
+
+az webapp restart --name <app-name> --resource-group rg-servicehub
+```
+
+Then mount **persistent** storage — App Service's local container disk is not guaranteed to
+survive a restart or scale event. Attach an Azure Files share via `az webapp config storage-account add`
+and point both `DlqDatabase__DataDirectory` and `NamespaceRepository__DataDirectory` at the
+same mounted path (see [Self-Hosting → Persistent storage](self-hosting/README.md#persistent-storage-two-stores-two-config-keys) —
+this is the single most common misconfiguration).
+
+Verify: `curl https://<app-name>.azurewebsites.net/health/live`, then open the URL in a
+browser. **Pin the App Service Plan to a single instance** — do not enable auto-scale-out;
+duplicate replicas would run duplicate background workers against the same data.
+
+This repo's own `deploy/` folder contains the maintainer's personal production pipeline
+(specific budget, resource names, and an Azure DevOps release flow) — useful as a reference,
+not something you need to read or reuse for the steps above.
+
+### Azure Container Apps (Alternative)
+
+Workable, but Container Apps' headline feature — scale-to-zero and elastic replica count —
+actively fights this architecture: a cold start after scale-to-zero drops in-flight SSE
+connections and resets the in-process event bus, and any replica count above 1 risks two
+copies of the same background worker acting on the same SQLite database. Use this only if
+your organization is already standardized on Container Apps.
+
+```bash
+az login
+az group create --name rg-servicehub --location eastus
+
+az containerapp env create --name env-servicehub --resource-group rg-servicehub --location eastus
+
+az containerapp create --name servicehub --resource-group rg-servicehub \
+  --environment env-servicehub --image ghcr.io/debdevops/servicehub:latest \
+  --target-port 8080 --ingress external \
+  --min-replicas 1 --max-replicas 1 \
+  --secrets encryption-key="$(openssl rand -hex 32)" spa-secret="$(openssl rand -hex 32)" \
+  --env-vars ASPNETCORE_ENVIRONMENT=Production \
+    SECURITY__ENCRYPTIONKEY=secretref:encryption-key \
+    SECURITY__SPATOKEN__SECRET=secretref:spa-secret \
+    SITEURL=https://<app-fqdn>
+```
+
+`--min-replicas 1 --max-replicas 1` is not optional — it's what makes this safe to run at
+all. Attach Azure Files storage the same way as App Service, mounted at both
+`DataDirectory` paths, then verify against `/health/live` as above.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `docker compose up` exits immediately, names a missing variable | `SECURITY__ENCRYPTIONKEY` or `SECURITY__SPATOKEN__SECRET` unset | `cp .env.example .env` and fill both in — see [Try It](#try-it) |
+| App starts but every request is rejected / wrong host | `AllowedHosts` or `SITEURL` doesn't match the hostname you're actually visiting | Set both to the real external hostname, not `localhost`, once you're off loopback |
+| Creating an AWS or GCP namespace returns `503` | `CloudProviders:Aws:Enabled` / `CloudProviders:Gcp:Enabled` is `false` (Azure-only by default) | Set `CLOUDPROVIDERS__AWS__ENABLED=true` / `CLOUDPROVIDERS__GCP__ENABLED=true` before connecting that provider |
+| `/health/live` fails after deploy | Container isn't listening on the platform's expected port, or hasn't finished startup config validation | Confirm `WEBSITES_PORT`/`--target-port` is `8080`; check container logs for the startup config validator's specific missing-variable error |
+| `docker pull ghcr.io/debdevops/servicehub` fails with "denied" | GHCR package visibility is private, or the tag doesn't exist yet | Confirm the tag (`:latest` or a released `:X.Y.Z`) exists under the repo's Packages tab |
+| Namespace credentials are gone after a restart, but DLQ history is intact | Only `DlqDatabase__DataDirectory` was persisted, not `NamespaceRepository__DataDirectory` | Mount **both** `DataDirectory` paths to the same persistent volume — see [Self-Hosting → Persistent storage](self-hosting/README.md#persistent-storage-two-stores-two-config-keys) |
 
 ---
 
