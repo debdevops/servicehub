@@ -44,16 +44,22 @@ public sealed class RecoveryAgeingWorker : BackgroundService
     private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(30);
     private const int DefaultSweepIntervalSeconds = 3600;
     private const int DefaultThresholdDays = 7;
+    private const int DefaultMaxAgeingBatchSize = 1000;
 
     private readonly TimeSpan _sweepInterval;
     private readonly int _thresholdDays;
+    private readonly int _maxAgeingBatchSize;
 
     /// <summary>Initializes a new instance of the <see cref="RecoveryAgeingWorker"/> class.</summary>
     /// <param name="serviceProvider">Root service provider for per-sweep-cycle scope creation.</param>
     /// <param name="configuration">
     /// Application configuration — reads <c>RecoveryEvidence:AgeingSweepIntervalSeconds</c>
-    /// (default 3600, clamped to [60, 86400]) and <c>RecoveryEvidence:AgeingThresholdDays</c>
-    /// (default 7, clamped to [1, 3650]).
+    /// (default 3600, clamped to [60, 86400]), <c>RecoveryEvidence:AgeingThresholdDays</c>
+    /// (default 7, clamped to [1, 3650]), and <c>RecoveryEvidence:MaxAgeingBatchSize</c> (default
+    /// 1000, clamped to [1, 100000]) — the per-sweep cap on how many of an owner's non-terminal
+    /// entries this worker fetches at once. Oldest entries are fetched first, so a backlog beyond
+    /// the cap is picked up on a later sweep as older entries ahead of it terminalize, never
+    /// starved.
     /// </param>
     /// <param name="logger">Logger instance.</param>
     public RecoveryAgeingWorker(
@@ -71,6 +77,9 @@ public sealed class RecoveryAgeingWorker : BackgroundService
         _thresholdDays = Math.Clamp(
             configuration.GetValue("RecoveryEvidence:AgeingThresholdDays", DefaultThresholdDays),
             1, 3650);
+        _maxAgeingBatchSize = Math.Clamp(
+            configuration.GetValue("RecoveryEvidence:MaxAgeingBatchSize", DefaultMaxAgeingBatchSize),
+            1, 100_000);
     }
 
     /// <inheritdoc />
@@ -147,7 +156,7 @@ public sealed class RecoveryAgeingWorker : BackgroundService
     {
         var recoveryLedger = services.GetRequiredService<IRecoveryLedger>();
 
-        var nonTerminal = await recoveryLedger.GetAgeingAsync(ownerId, cancellationToken);
+        var nonTerminal = await recoveryLedger.GetAgeingAsync(ownerId, _maxAgeingBatchSize, cancellationToken);
         var now = DateTimeOffset.UtcNow;
         var threshold = now.AddDays(-_thresholdDays);
 

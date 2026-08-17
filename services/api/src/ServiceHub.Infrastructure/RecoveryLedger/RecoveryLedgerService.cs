@@ -476,12 +476,14 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<RecoveryLedgerEntry>> GetAgeingAsync(string ownerId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<RecoveryLedgerEntry>> GetAgeingAsync(
+        string ownerId, int limit = int.MaxValue, CancellationToken cancellationToken = default)
     {
         return await _dbContext.RecoveryLedgerEntries
             .AsNoTracking()
             .Where(e => e.OwnerId == ownerId && NonTerminalStates.Contains(e.State))
             .OrderBy(e => e.BegunAt)
+            .Take(limit)
             .ToListAsync(cancellationToken);
     }
 
@@ -662,7 +664,8 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<string>> GetDistinctSignatureHashesAsync(
-        string ownerId, RecoveryOperationKind actionKind, CancellationToken cancellationToken = default)
+        string ownerId, RecoveryOperationKind actionKind, int limit = int.MaxValue,
+        CancellationToken cancellationToken = default)
     {
         return await _dbContext.RecoveryLedgerEntries
             .AsNoTracking()
@@ -673,6 +676,8 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
                 o => o.Id,
                 (e, _) => e.SignatureHashSnapshot!)
             .Distinct()
+            .OrderBy(hash => hash)
+            .Take(limit)
             .ToListAsync(cancellationToken);
     }
 
@@ -708,6 +713,63 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
             .Take(count)
             .Select(e => e.Disposition!.Value)
             .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<RecoveryDisposition>> GetRecentVerifiedDispositionsByRuleAsync(
+        string ownerId, long ruleId, RecoveryOperationKind actionKind, int count,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.RecoveryLedgerEntries
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId
+                        && (e.Disposition == RecoveryDisposition.Recovered || e.Disposition == RecoveryDisposition.Returned))
+            .Join(
+                _dbContext.RecoveryOperations.AsNoTracking()
+                    .Where(o => o.Kind == actionKind && o.SourceRuleId == ruleId),
+                e => e.OperationId,
+                o => o.Id,
+                (e, _) => e)
+            .OrderByDescending(e => e.LastEventSeq)
+            .Take(count)
+            .Select(e => e.Disposition!.Value)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<RecoveryOperation>> RecordAutoReplayCircuitBreakerTripAsync(
+        string ownerId, long ruleId, string ruleName, RecoveryActor actor, int sampleSize,
+        double verifiedSuccessRate, CancellationToken cancellationToken = default)
+    {
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+
+        var now = DateTimeOffset.UtcNow;
+        var operation = new RecoveryOperation
+        {
+            OwnerId = ownerId,
+            Kind = RecoveryOperationKind.AutoReplayRuleControl,
+            Trigger = RecoveryTrigger.AutoReplayCircuitBreaker,
+            ActorIdentity = actor.Identity,
+            ActorKind = actor.Kind,
+            ActorScopes = actor.Scopes,
+            Reason = $"Verified success rate {verifiedSuccessRate:P0} over last {sampleSize} outcomes fell below the circuit-breaker floor",
+            NamespaceId = null,
+            SourceRuleId = ruleId,
+            ScopeDescription = $"auto-replay rule {ruleId} ({ruleName}) circuit breaker",
+            ServiceVersion = GetServiceVersion(),
+            OpenedAt = now,
+            TargetCount = 0,
+        };
+        _dbContext.RecoveryOperations.Add(operation);
+
+        var detail = JsonSerializer.Serialize(new { ruleId, ruleName, sampleSize, verifiedSuccessRate });
+
+        await AppendEventAsync(
+            ownerId, entryId: null, operation.Id, RecoveryEventType.AutoReplayRuleCircuitBreakerTripped,
+            actor, detail, cancellationToken);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return Result<RecoveryOperation>.Success(operation);
     }
 
     /// <inheritdoc />

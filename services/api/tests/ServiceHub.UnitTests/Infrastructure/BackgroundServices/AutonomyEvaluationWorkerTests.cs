@@ -52,17 +52,27 @@ public sealed class AutonomyEvaluationWorkerTests : IDisposable
 
     private static RecoveryActor Actor(RecoveryActorKind kind = RecoveryActorKind.User) => new("test-actor", kind);
 
-    private static AutonomyEvaluationWorker CreateWorker() =>
-        new(
-            Mock.Of<IServiceProvider>(),
-            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build(),
+    // IPlatformEventBus is resolved from the root provider in the constructor (mirrors
+    // DlqMonitorWorker's existing convention for the same dependency) — must be present even
+    // when a test never trips the circuit breaker, or construction itself throws.
+    private static AutonomyEvaluationWorker CreateWorker(IDictionary<string, string?>? config = null)
+    {
+        var rootServices = new ServiceCollection();
+        rootServices.AddSingleton(Mock.Of<IPlatformEventBus>());
+        return new(
+            rootServices.BuildServiceProvider(),
+            new ConfigurationBuilder().AddInMemoryCollection(config ?? new Dictionary<string, string?>()).Build(),
             NullLogger<AutonomyEvaluationWorker>.Instance);
+    }
 
     private IServiceProvider BuildScope()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IRecoveryLedger>(_recoveryLedger);
         services.AddSingleton<IRecoveryTrustScoringService>(_trustScoring);
+        // SweepOwnerAsync's circuit-breaker step (SweepAutoReplayCircuitBreakersAsync) resolves
+        // DlqDbContext from this scope to enumerate the owner's AutoReplayRules.
+        services.AddSingleton(_dbContext);
         return services.BuildServiceProvider();
     }
 
@@ -374,7 +384,7 @@ public sealed class AutonomyEvaluationWorkerTests : IDisposable
             UnsafeOutcomePresent: false, DuplicateAssociationPresent: false, Reasons: []);
 
         var ledgerMock = new Mock<IRecoveryLedger>();
-        ledgerMock.Setup(l => l.GetDistinctSignatureHashesAsync(OwnerA, RecoveryOperationKind.Replay, It.IsAny<CancellationToken>()))
+        ledgerMock.Setup(l => l.GetDistinctSignatureHashesAsync(OwnerA, RecoveryOperationKind.Replay, It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<string> { "sig-racing", "sig-fine" });
         ledgerMock.Setup(l => l.GetAutonomyGrantAsync(OwnerA, It.IsAny<string>(), RecoveryOperationKind.Replay, It.IsAny<CancellationToken>()))
             .ReturnsAsync((AutonomyGrant?)null);
@@ -403,6 +413,9 @@ public sealed class AutonomyEvaluationWorkerTests : IDisposable
         var services = new ServiceCollection();
         services.AddSingleton(ledgerMock.Object);
         services.AddSingleton(trustMock.Object);
+        // SweepOwnerAsync's circuit-breaker step resolves DlqDbContext to enumerate the owner's
+        // AutoReplayRules — none seeded here, so it safely no-ops.
+        services.AddSingleton(_dbContext);
         var provider = services.BuildServiceProvider();
 
         var act = () => CreateWorker().SweepOwnerAsync(provider, OwnerA, CancellationToken.None);
@@ -632,5 +645,163 @@ public sealed class AutonomyEvaluationWorkerTests : IDisposable
 
         var grant = await _dbContext.AutonomyGrants.SingleAsync(g => g.SignatureHash == "sig-azure-perfect");
         grant.CurrentLevel.Should().Be(AutonomyLevel.Standing);
+    }
+
+    // ── SweepAutoReplayCircuitBreakersAsync (success-rate circuit breaker) ──────────────────────
+
+    private static IDictionary<string, string?> CircuitBreakerConfig(int sampleSize, double floor) => new Dictionary<string, string?>
+    {
+        ["RecoveryEvidence:CircuitBreakerSampleSize"] = sampleSize.ToString(),
+        ["RecoveryEvidence:CircuitBreakerSuccessRateFloor"] = floor.ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
+
+    private async Task<AutoReplayRule> CreateRuleAsync(string ownerId, string name, bool enabled = true)
+    {
+        var rule = new AutoReplayRule
+        {
+            Name = name, OwnerId = ownerId, Enabled = enabled,
+            ConditionsJson = "[]", ActionsJson = "{}",
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        _dbContext.AutoReplayRules.Add(rule);
+        await _dbContext.SaveChangesAsync();
+        return rule;
+    }
+
+    /// <summary>Seeds one verified (Recovered/Returned) entry attributed to a rule via
+    /// <see cref="RecoveryOperation.SourceRuleId"/> — the circuit breaker's source query key.</summary>
+    private async Task SeedRuleDispositionAsync(
+        string ownerId, long ruleId, RecoveryDisposition disposition, string bodyHash)
+    {
+        var operation = await _recoveryLedger.OpenOperationAsync(new OpenRecoveryOperationRequest
+        {
+            OwnerId = ownerId, Kind = RecoveryOperationKind.Replay, Trigger = RecoveryTrigger.AutoRule,
+            Actor = Actor(RecoveryActorKind.Automation), ScopeDescription = "entity=orders-dlq",
+            SourceRuleId = ruleId, TargetCount = 1,
+        });
+        var entry = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Value.Id, OwnerId = ownerId, Actor = Actor(RecoveryActorKind.Automation),
+            BodyHash = bodyHash, TargetEntity = "orders-dlq",
+        });
+        await _recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Value.Id, OwnerId = ownerId, Actor = Actor(RecoveryActorKind.Automation),
+            Outcome = RecoveryExecutionOutcome.Accepted,
+        });
+        var outcome = disposition == RecoveryDisposition.Returned
+            ? RecoveryObservationOutcome.RecurrenceObserved
+            : RecoveryObservationOutcome.NoRecurrenceObserved;
+        await _recoveryLedger.RecordObservationAsync(new RecordObservationRequest
+        {
+            EntryId = entry.Value.Id, OwnerId = ownerId, Actor = new RecoveryActor("verification-worker", RecoveryActorKind.System),
+            Outcome = outcome,
+            Confidence = outcome == RecoveryObservationOutcome.RecurrenceObserved ? VerificationConfidence.Exact : null,
+        });
+    }
+
+    [Fact]
+    public async Task SweepAutoReplayCircuitBreakersAsync_BelowSampleSize_DoesNotTrip()
+    {
+        var rule = await CreateRuleAsync(OwnerA, "Thin Sample Rule");
+        for (var i = 0; i < 3; i++)
+        {
+            await SeedRuleDispositionAsync(OwnerA, rule.Id, RecoveryDisposition.Returned, $"body-{i}");
+        }
+
+        var worker = CreateWorker(CircuitBreakerConfig(sampleSize: 4, floor: 0.50));
+        await worker.SweepAutoReplayCircuitBreakersAsync(BuildScope(), OwnerA, _recoveryLedger, CancellationToken.None);
+
+        (await _dbContext.AutoReplayRules.SingleAsync(r => r.Id == rule.Id)).Enabled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SweepAutoReplayCircuitBreakersAsync_SuccessRateAtOrAboveFloor_DoesNotTrip()
+    {
+        var rule = await CreateRuleAsync(OwnerA, "Healthy Rule");
+        await SeedRuleDispositionAsync(OwnerA, rule.Id, RecoveryDisposition.Recovered, "body-1");
+        await SeedRuleDispositionAsync(OwnerA, rule.Id, RecoveryDisposition.Recovered, "body-2");
+        await SeedRuleDispositionAsync(OwnerA, rule.Id, RecoveryDisposition.Returned, "body-3");
+        await SeedRuleDispositionAsync(OwnerA, rule.Id, RecoveryDisposition.Returned, "body-4");
+
+        // Exactly 50% verified success — at the floor, not below it.
+        var worker = CreateWorker(CircuitBreakerConfig(sampleSize: 4, floor: 0.50));
+        await worker.SweepAutoReplayCircuitBreakersAsync(BuildScope(), OwnerA, _recoveryLedger, CancellationToken.None);
+
+        (await _dbContext.AutoReplayRules.SingleAsync(r => r.Id == rule.Id)).Enabled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SweepAutoReplayCircuitBreakersAsync_SuccessRateBelowFloor_DisablesRuleAndWritesLedgerEvent()
+    {
+        var rule = await CreateRuleAsync(OwnerA, "Poison Message Rule");
+        await SeedRuleDispositionAsync(OwnerA, rule.Id, RecoveryDisposition.Returned, "body-1");
+        await SeedRuleDispositionAsync(OwnerA, rule.Id, RecoveryDisposition.Returned, "body-2");
+        await SeedRuleDispositionAsync(OwnerA, rule.Id, RecoveryDisposition.Returned, "body-3");
+        await SeedRuleDispositionAsync(OwnerA, rule.Id, RecoveryDisposition.Recovered, "body-4");
+
+        var worker = CreateWorker(CircuitBreakerConfig(sampleSize: 4, floor: 0.50));
+        await worker.SweepAutoReplayCircuitBreakersAsync(BuildScope(), OwnerA, _recoveryLedger, CancellationToken.None);
+
+        (await _dbContext.AutoReplayRules.SingleAsync(r => r.Id == rule.Id)).Enabled.Should().BeFalse();
+
+        var evt = await _dbContext.RecoveryEvents
+            .SingleAsync(e => e.EventType == RecoveryEventType.AutoReplayRuleCircuitBreakerTripped);
+        evt.DetailJson.Should().Contain("Poison Message Rule");
+
+        var operation = await _dbContext.RecoveryOperations.SingleAsync(o => o.Id == evt.OperationId);
+        operation.Kind.Should().Be(RecoveryOperationKind.AutoReplayRuleControl);
+        operation.SourceRuleId.Should().Be(rule.Id);
+    }
+
+    [Fact]
+    public async Task SweepAutoReplayCircuitBreakersAsync_OnlyDisablesTheOffendingRule()
+    {
+        var badRule = await CreateRuleAsync(OwnerA, "Bad Rule");
+        var goodRule = await CreateRuleAsync(OwnerA, "Good Rule");
+
+        for (var i = 0; i < 4; i++)
+        {
+            await SeedRuleDispositionAsync(OwnerA, badRule.Id, RecoveryDisposition.Returned, $"bad-{i}");
+            await SeedRuleDispositionAsync(OwnerA, goodRule.Id, RecoveryDisposition.Recovered, $"good-{i}");
+        }
+
+        var worker = CreateWorker(CircuitBreakerConfig(sampleSize: 4, floor: 0.50));
+        await worker.SweepAutoReplayCircuitBreakersAsync(BuildScope(), OwnerA, _recoveryLedger, CancellationToken.None);
+
+        (await _dbContext.AutoReplayRules.SingleAsync(r => r.Id == badRule.Id)).Enabled.Should().BeFalse();
+        (await _dbContext.AutoReplayRules.SingleAsync(r => r.Id == goodRule.Id)).Enabled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SweepAutoReplayCircuitBreakersAsync_AlreadyDisabledRule_NeverReevaluated()
+    {
+        var rule = await CreateRuleAsync(OwnerA, "Already Off", enabled: false);
+        for (var i = 0; i < 4; i++)
+        {
+            await SeedRuleDispositionAsync(OwnerA, rule.Id, RecoveryDisposition.Returned, $"body-{i}");
+        }
+
+        var worker = CreateWorker(CircuitBreakerConfig(sampleSize: 4, floor: 0.50));
+        await worker.SweepAutoReplayCircuitBreakersAsync(BuildScope(), OwnerA, _recoveryLedger, CancellationToken.None);
+
+        (await _dbContext.RecoveryEvents.AnyAsync(e => e.EventType == RecoveryEventType.AutoReplayRuleCircuitBreakerTripped))
+            .Should().BeFalse("an already-disabled rule has nothing left to trip and must not be re-recorded every sweep");
+    }
+
+    [Fact]
+    public async Task SweepAutoReplayCircuitBreakersAsync_DifferentOwner_Isolated()
+    {
+        var ruleB = await CreateRuleAsync(OwnerB, "Owner B Rule");
+        for (var i = 0; i < 4; i++)
+        {
+            await SeedRuleDispositionAsync(OwnerB, ruleB.Id, RecoveryDisposition.Returned, $"body-{i}");
+        }
+
+        var worker = CreateWorker(CircuitBreakerConfig(sampleSize: 4, floor: 0.50));
+        await worker.SweepAutoReplayCircuitBreakersAsync(BuildScope(), OwnerA, _recoveryLedger, CancellationToken.None);
+
+        (await _dbContext.AutoReplayRules.SingleAsync(r => r.Id == ruleB.Id)).Enabled.Should().BeTrue(
+            "sweeping OwnerA must never evaluate, let alone disable, OwnerB's rules");
     }
 }

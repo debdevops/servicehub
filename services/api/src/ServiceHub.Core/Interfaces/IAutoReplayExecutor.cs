@@ -44,4 +44,16 @@ public interface IAutoReplayExecutor
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>True if the rule can still replay (under the limit).</returns>
     Task<bool> CanReplayAsync(long ruleId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Checks whether the owner's combined automated replay rate, across every one of their
+    /// auto-replay rules, is still under <c>RecoveryEvidence:FleetReplayVelocityCapPerHour</c> —
+    /// the blast-radius cap that <see cref="CanReplayAsync"/> cannot see, since it only bounds
+    /// one rule at a time. Several individually-reasonable per-rule limits can otherwise sum to
+    /// a much larger aggregate replay volume than any single rule's cap implies.
+    /// </summary>
+    /// <param name="ownerId">The owner whose rules are being aggregated.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True if the owner's fleet-wide replay rate is still under the cap.</returns>
+    Task<bool> CanReplayFleetWideAsync(string ownerId, CancellationToken cancellationToken = default);
 }

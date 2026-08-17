@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
@@ -20,6 +21,8 @@ namespace ServiceHub.Infrastructure;
 /// </summary>
 public sealed class AutoReplayExecutor : IAutoReplayExecutor
 {
+    private const int DefaultFleetReplayVelocityCapPerHour = 500;
+
     private readonly DlqDbContext _dbContext;
     private readonly IMessageOperationsService _messageOperations;
     private readonly IRecoveryLedger _recoveryLedger;
@@ -27,9 +30,12 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
     private readonly IFailureFeatureExtractor _featureExtractor;
     private readonly IFailureFingerprintBuilder _fingerprintBuilder;
     private readonly ILogger<AutoReplayExecutor> _logger;
+    private readonly int _fleetReplayVelocityCapPerHour;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="AutoReplayExecutor"/> class.
+    /// Initializes a new instance of the <see cref="AutoReplayExecutor"/> class. Reads
+    /// <c>RecoveryEvidence:FleetReplayVelocityCapPerHour</c> from <paramref name="configuration"/>
+    /// (default 500, clamped to [1, 100000]).
     /// </summary>
     public AutoReplayExecutor(
         DlqDbContext dbContext,
@@ -38,6 +44,7 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         IRecoveryEligibilityGate eligibilityGate,
         IFailureFeatureExtractor featureExtractor,
         IFailureFingerprintBuilder fingerprintBuilder,
+        IConfiguration configuration,
         ILogger<AutoReplayExecutor> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
@@ -47,6 +54,11 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         _featureExtractor = featureExtractor ?? throw new ArgumentNullException(nameof(featureExtractor));
         _fingerprintBuilder = fingerprintBuilder ?? throw new ArgumentNullException(nameof(fingerprintBuilder));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        _fleetReplayVelocityCapPerHour = Math.Clamp(
+            configuration.GetValue("RecoveryEvidence:FleetReplayVelocityCapPerHour", DefaultFleetReplayVelocityCapPerHour),
+            1, 100_000);
     }
 
     /// <inheritdoc />
@@ -98,13 +110,15 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         // query still runs (harmless — read-only) but its result is discarded exactly as before:
         // the gate reports whichever predicate fires first.
         var rateLimitExceeded = !await CanReplayAsync(rule.Id, cancellationToken);
+        var fleetRateLimitExceeded = !await CanReplayFleetWideAsync(rule.OwnerId, cancellationToken);
         var signatureHash = await ComputeSignatureHashAsync(message, cancellationToken);
 
         var decision = await _eligibilityGate.EvaluateAsync(
             new RecoveryEligibilityRequest(
                 rule.OwnerId, RecoveryOperationKind.Replay, RecoveryActorKind.Automation, RecoveryTrigger.AutoRule,
                 ns.Id, message.EntityName, message.BodyHash, signatureHash, ns.Environment,
-                RateLimitExceeded: rateLimitExceeded, Provider: ns.Provider),
+                RateLimitExceeded: rateLimitExceeded, Provider: ns.Provider,
+                FleetRateLimitExceeded: fleetRateLimitExceeded),
             cancellationToken);
 
         if (decision.ReasonCode == RecoveryEligibilityGate.ReasonRateLimited)
@@ -114,6 +128,16 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
                 rule.Id, rule.MaxReplaysPerHour);
             return Result<string>.Failure(
                 Error.Validation("Rule.RateLimited", $"Rule '{rule.Name}' has exceeded {rule.MaxReplaysPerHour} replays/hour"));
+        }
+
+        if (decision.ReasonCode == RecoveryEligibilityGate.ReasonFleetRateLimited)
+        {
+            _logger.LogWarning(
+                "Owner {OwnerId} exceeded fleet-wide replay velocity cap ({Max}/hour) via rule {RuleId}, skipping",
+                rule.OwnerId, _fleetReplayVelocityCapPerHour, rule.Id);
+            return Result<string>.Failure(
+                Error.Validation("Rule.FleetRateLimited",
+                    $"Owner has exceeded the fleet-wide {_fleetReplayVelocityCapPerHour} replays/hour cap across all auto-replay rules"));
         }
 
         if (decision.Verdict != EligibilityVerdict.Allow)
@@ -368,5 +392,21 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
             .CountAsync(h => h.RuleId == ruleId && h.ReplayedAt >= oneHourAgo, cancellationToken);
 
         return recentReplays < rule.MaxReplaysPerHour;
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> CanReplayFleetWideAsync(string ownerId, CancellationToken cancellationToken = default)
+    {
+        var oneHourAgo = DateTimeOffset.UtcNow.AddHours(-1);
+        var recentFleetReplays = await _dbContext.ReplayHistories
+            .Where(h => h.RuleId != null && h.ReplayedAt >= oneHourAgo)
+            .Join(
+                _dbContext.AutoReplayRules.Where(r => r.OwnerId == ownerId),
+                h => h.RuleId,
+                r => r.Id,
+                (h, _) => h.Id)
+            .CountAsync(cancellationToken);
+
+        return recentFleetReplays < _fleetReplayVelocityCapPerHour;
     }
 }

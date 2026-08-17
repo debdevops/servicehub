@@ -47,14 +47,20 @@ public sealed class RecoveryVerificationWorker : BackgroundService
 
     private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(15);
     private const int DefaultSweepIntervalSeconds = 60;
+    private const int DefaultMaxAgeingBatchSize = 1000;
 
     private readonly TimeSpan _sweepInterval;
+    private readonly int _maxAgeingBatchSize;
 
     /// <summary>Initializes a new instance of the <see cref="RecoveryVerificationWorker"/> class.</summary>
     /// <param name="serviceProvider">Root service provider for per-sweep-cycle scope creation.</param>
     /// <param name="configuration">
     /// Application configuration — reads <c>RecoveryEvidence:VerificationSweepIntervalSeconds</c>
-    /// (default 60, clamped to [10, 3600]).
+    /// (default 60, clamped to [10, 3600]) and <c>RecoveryEvidence:MaxAgeingBatchSize</c> (default
+    /// 1000, clamped to [1, 100000]) — the per-sweep cap on how many of an owner's non-terminal
+    /// entries this worker fetches at once. Oldest entries are fetched first, so a backlog beyond
+    /// the cap is picked up on a later sweep as older entries ahead of it terminalize, never
+    /// starved.
     /// </param>
     /// <param name="logger">Logger instance.</param>
     public RecoveryVerificationWorker(
@@ -69,6 +75,9 @@ public sealed class RecoveryVerificationWorker : BackgroundService
         _sweepInterval = TimeSpan.FromSeconds(Math.Clamp(
             configuration.GetValue("RecoveryEvidence:VerificationSweepIntervalSeconds", DefaultSweepIntervalSeconds),
             10, 3600));
+        _maxAgeingBatchSize = Math.Clamp(
+            configuration.GetValue("RecoveryEvidence:MaxAgeingBatchSize", DefaultMaxAgeingBatchSize),
+            1, 100_000);
     }
 
     /// <inheritdoc />
@@ -148,7 +157,7 @@ public sealed class RecoveryVerificationWorker : BackgroundService
         var namespaceRepo = services.GetRequiredService<INamespaceRepository>();
         var router = services.GetRequiredService<CloudProviderRouter>();
 
-        var nonTerminal = await recoveryLedger.GetAgeingAsync(ownerId, cancellationToken);
+        var nonTerminal = await recoveryLedger.GetAgeingAsync(ownerId, _maxAgeingBatchSize, cancellationToken);
         var now = DateTimeOffset.UtcNow;
 
         var due = nonTerminal.Where(e =>

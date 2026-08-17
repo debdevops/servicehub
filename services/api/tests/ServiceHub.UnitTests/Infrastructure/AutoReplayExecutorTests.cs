@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -25,6 +26,8 @@ public class AutoReplayExecutorTests : IDisposable
     private readonly IRecoveryEligibilityGate _eligibilityGate;
     private readonly IFailureFeatureExtractor _featureExtractor = new FailureFeatureExtractor();
     private readonly IFailureFingerprintBuilder _fingerprintBuilder = new FailureFingerprintBuilder();
+    private readonly IConfiguration _configuration =
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build();
     private readonly AutoReplayExecutor _executor;
     private readonly Namespace _testNamespace = Namespace.Create(
         "test-namespace", "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
@@ -43,7 +46,7 @@ public class AutoReplayExecutorTests : IDisposable
         _eligibilityGate = new RecoveryEligibilityGate(_recoveryLedger, NullLogger<RecoveryEligibilityGate>.Instance);
         _executor = new AutoReplayExecutor(
             _dbContext, _messageOperations.Object, _recoveryLedger, _eligibilityGate,
-            _featureExtractor, _fingerprintBuilder, _logger.Object);
+            _featureExtractor, _fingerprintBuilder, _configuration, _logger.Object);
     }
 
     /// <summary>
@@ -135,7 +138,7 @@ public class AutoReplayExecutorTests : IDisposable
     {
         var act = () => new AutoReplayExecutor(
             null!, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
-            _featureExtractor, _fingerprintBuilder, _logger.Object);
+            _featureExtractor, _fingerprintBuilder, _configuration, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("dbContext");
     }
 
@@ -144,7 +147,7 @@ public class AutoReplayExecutorTests : IDisposable
     {
         var act = () => new AutoReplayExecutor(
             _dbContext, null!, new RecoveryLedgerService(_dbContext), _eligibilityGate,
-            _featureExtractor, _fingerprintBuilder, _logger.Object);
+            _featureExtractor, _fingerprintBuilder, _configuration, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("messageOperations");
     }
 
@@ -153,7 +156,7 @@ public class AutoReplayExecutorTests : IDisposable
     {
         var act = () => new AutoReplayExecutor(
             _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), null!,
-            _featureExtractor, _fingerprintBuilder, _logger.Object);
+            _featureExtractor, _fingerprintBuilder, _configuration, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("eligibilityGate");
     }
 
@@ -162,7 +165,7 @@ public class AutoReplayExecutorTests : IDisposable
     {
         var act = () => new AutoReplayExecutor(
             _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
-            null!, _fingerprintBuilder, _logger.Object);
+            null!, _fingerprintBuilder, _configuration, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("featureExtractor");
     }
 
@@ -171,8 +174,17 @@ public class AutoReplayExecutorTests : IDisposable
     {
         var act = () => new AutoReplayExecutor(
             _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
-            _featureExtractor, null!, _logger.Object);
+            _featureExtractor, null!, _configuration, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("fingerprintBuilder");
+    }
+
+    [Fact]
+    public void Constructor_NullConfiguration_Throws()
+    {
+        var act = () => new AutoReplayExecutor(
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            _featureExtractor, _fingerprintBuilder, null!, _logger.Object);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("configuration");
     }
 
     [Fact]
@@ -180,7 +192,7 @@ public class AutoReplayExecutorTests : IDisposable
     {
         var act = () => new AutoReplayExecutor(
             _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
-            _featureExtractor, _fingerprintBuilder, null!);
+            _featureExtractor, _fingerprintBuilder, _configuration, null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -222,6 +234,99 @@ public class AutoReplayExecutorTests : IDisposable
 
         var result = await _executor.CanReplayAsync(rule.Id);
         result.Should().BeFalse();
+    }
+
+    // ── CanReplayFleetWideAsync ───────────────────────────────
+
+    private AutoReplayExecutor CreateExecutorWithFleetCap(int cap)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["RecoveryEvidence:FleetReplayVelocityCapPerHour"] = cap.ToString()
+            })
+            .Build();
+        return new AutoReplayExecutor(
+            _dbContext, _messageOperations.Object, _recoveryLedger, _eligibilityGate,
+            _featureExtractor, _fingerprintBuilder, configuration, _logger.Object);
+    }
+
+    [Fact]
+    public async Task CanReplayFleetWide_NoHistory_ReturnsTrue()
+    {
+        var result = await _executor.CanReplayFleetWideAsync(TestConstants.TestOwnerId);
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CanReplayFleetWide_UnderCap_ReturnsTrue()
+    {
+        var executor = CreateExecutorWithFleetCap(cap: 5);
+        var result = await executor.CanReplayFleetWideAsync(TestConstants.TestOwnerId);
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CanReplayFleetWide_CapExceededAcrossMultipleRules_ReturnsFalse()
+    {
+        // Two separate rules, each individually well under its own per-rule limit, but their
+        // combined recent replay volume exceeds the fleet-wide cap.
+        var ruleA = CreateRule("Rule A", maxPerHour: 100);
+        var ruleB = CreateRule("Rule B", maxPerHour: 100);
+        var msg = CreateMessage(1);
+
+        for (int i = 0; i < 2; i++)
+        {
+            _dbContext.ReplayHistories.Add(new ReplayHistory
+            {
+                DlqMessageId = msg.Id, RuleId = ruleA.Id,
+                ReplayedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+                ReplayedBy = "test", ReplayStrategy = "original",
+                ReplayedToEntity = "q", OutcomeStatus = "Success"
+            });
+            _dbContext.ReplayHistories.Add(new ReplayHistory
+            {
+                DlqMessageId = msg.Id, RuleId = ruleB.Id,
+                ReplayedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+                ReplayedBy = "test", ReplayStrategy = "original",
+                ReplayedToEntity = "q", OutcomeStatus = "Success"
+            });
+        }
+        await _dbContext.SaveChangesAsync();
+
+        var executor = CreateExecutorWithFleetCap(cap: 3);
+        var result = await executor.CanReplayFleetWideAsync(TestConstants.TestOwnerId);
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CanReplayFleetWide_OnlyCountsSameOwner()
+    {
+        var otherOwnerRule = new AutoReplayRule
+        {
+            Name = "Other Owner Rule", OwnerId = "other-owner", Enabled = true,
+            ConditionsJson = "[]", ActionsJson = "{}",
+            CreatedAt = DateTimeOffset.UtcNow, MaxReplaysPerHour = 100,
+        };
+        _dbContext.AutoReplayRules.Add(otherOwnerRule);
+        await _dbContext.SaveChangesAsync();
+
+        var msg = CreateMessage(1);
+        for (int i = 0; i < 5; i++)
+        {
+            _dbContext.ReplayHistories.Add(new ReplayHistory
+            {
+                DlqMessageId = msg.Id, RuleId = otherOwnerRule.Id,
+                ReplayedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+                ReplayedBy = "test", ReplayStrategy = "original",
+                ReplayedToEntity = "q", OutcomeStatus = "Success"
+            });
+        }
+        await _dbContext.SaveChangesAsync();
+
+        var executor = CreateExecutorWithFleetCap(cap: 3);
+        var result = await executor.CanReplayFleetWideAsync(TestConstants.TestOwnerId);
+        result.Should().BeTrue();
     }
 
     // ── ExecuteAsync ────────────────────────────────────────
@@ -492,7 +597,7 @@ public class AutoReplayExecutorTests : IDisposable
         var executor = new AutoReplayExecutor(
             dbContext, messageOperations.Object, racingLedger,
             new RecoveryEligibilityGate(racingLedger, NullLogger<RecoveryEligibilityGate>.Instance),
-            _featureExtractor, _fingerprintBuilder, _logger.Object);
+            _featureExtractor, _fingerprintBuilder, _configuration, _logger.Object);
         var action = new RuleAction();
 
         // Earn predicate 5's grant against the same ledger this executor reads from — this test

@@ -19,5 +19,10 @@ public enum RecoveryOperationKind
 
     /// <summary>The operation was an <see cref="Entities.AutonomyGrant"/> promotion or demotion
     /// (roadmap §9.4.3).</summary>
-    AutonomyGrantChange = 3
+    AutonomyGrantChange = 3,
+
+    /// <summary>The operation automatically disabled an <see cref="Entities.AutoReplayRule"/> —
+    /// the success-rate circuit breaker. Never represents a replay/purge and never touches an
+    /// <see cref="Entities.AutonomyGrant"/>.</summary>
+    AutoReplayRuleControl = 4
 }

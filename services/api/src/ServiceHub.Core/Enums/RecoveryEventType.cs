@@ -81,5 +81,13 @@ public enum RecoveryEventType
 
     /// <summary>An <see cref="Entities.AutonomyGrant"/> was demoted to a lower
     /// <see cref="AutonomyLevel"/> (roadmap §9.4.3).</summary>
-    AutonomyGrantDemoted = 18
+    AutonomyGrantDemoted = 18,
+
+    /// <summary>An <see cref="Entities.AutoReplayRule"/> was automatically disabled because its
+    /// recent *verified* recovery outcomes (<c>Recovered</c>/<c>Returned</c> — never broker
+    /// acceptance alone) fell below the configured success-rate floor. The honest minimum of
+    /// "earned automation": a rule that successfully hands messages back to a queue that
+    /// immediately re-dead-letters them looks 100% successful by execution acceptance alone, but
+    /// turns itself off once its outcomes are actually verified.</summary>
+    AutoReplayRuleCircuitBreakerTripped = 19
 }

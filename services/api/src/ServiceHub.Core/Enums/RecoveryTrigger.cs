@@ -30,5 +30,9 @@ public enum RecoveryTrigger
 
     /// <summary>An <see cref="Entities.AutonomyGrant"/> promotion or demotion triggered it
     /// (roadmap §9.4.3).</summary>
-    AutonomyEvaluation = 7
+    AutonomyEvaluation = 7,
+
+    /// <summary>The success-rate circuit breaker automatically disabled an
+    /// <see cref="Entities.AutoReplayRule"/> — never a grant change, never a replay/purge.</summary>
+    AutoReplayCircuitBreaker = 8
 }

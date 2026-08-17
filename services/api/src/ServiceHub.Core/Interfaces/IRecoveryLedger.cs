@@ -117,10 +117,14 @@ public interface IRecoveryLedger
         RecoveryEntryQuery query,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Returns an owner's currently non-terminal entries, oldest first. No ageing
-    /// threshold or flagging logic is applied yet — that is a later phase's ageing worker.</summary>
+    /// <summary>Returns an owner's currently non-terminal entries, oldest first, capped at
+    /// <paramref name="limit"/>. No ageing threshold or flagging logic is applied here — that is
+    /// the ageing/verification workers' job. Oldest-first ordering makes a cap safe across
+    /// sweeps: a backlog beyond <paramref name="limit"/> is picked up on a later sweep as the
+    /// oldest entries ahead of it terminalize, never starved.</summary>
     Task<IReadOnlyList<RecoveryLedgerEntry>> GetAgeingAsync(
         string ownerId,
+        int limit = int.MaxValue,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -245,14 +249,24 @@ public interface IRecoveryLedger
     /// <summary>
     /// Every distinct, non-null <see cref="RecoveryLedgerEntry.SignatureHashSnapshot"/> value
     /// with at least one entry under one <see cref="Enums.RecoveryOperationKind"/>, scoped to
-    /// <paramref name="ownerId"/> — the sweep set for <c>AutonomyEvaluationWorker</c>. A
-    /// null <c>SignatureHashSnapshot</c> is never returned: it has no per-signature trust
-    /// identity to evaluate (roadmap §4 — <c>BodyHash</c> lineage and <c>SignatureHash</c> trust
-    /// semantics are kept separate).
+    /// <paramref name="ownerId"/>, capped at <paramref name="limit"/> — the sweep set for
+    /// <c>AutonomyEvaluationWorker</c>. A null <c>SignatureHashSnapshot</c> is never returned: it
+    /// has no per-signature trust identity to evaluate (roadmap §4 — <c>BodyHash</c> lineage and
+    /// <c>SignatureHash</c> trust semantics are kept separate).
     /// </summary>
+    /// <remarks>
+    /// Known limitation, honestly documented rather than silently accepted: unlike
+    /// <see cref="GetAgeingAsync"/>, this has no natural "oldest first" ordering to make a cap
+    /// self-draining across sweeps, so results are ordered by the hash string itself for
+    /// determinism only. If an owner's distinct-signature count persistently exceeds
+    /// <paramref name="limit"/>, the signatures sorting after the cap are not guaranteed
+    /// round-robin fairness across sweeps without a schema change (e.g. a last-evaluated
+    /// timestamp) this increment deliberately does not add.
+    /// </remarks>
     Task<IReadOnlyList<string>> GetDistinctSignatureHashesAsync(
         string ownerId,
         RecoveryOperationKind actionKind,
+        int limit = int.MaxValue,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -287,6 +301,38 @@ public interface IRecoveryLedger
         string signatureHash,
         RecoveryOperationKind actionKind,
         int count,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The same query as <see cref="GetRecentVerifiedDispositionsAsync"/>, but scoped to one
+    /// <see cref="Entities.AutoReplayRule"/> (via <see cref="RecoveryOperation.SourceRuleId"/>)
+    /// rather than one failure signature — the success-rate circuit breaker's source query. A
+    /// rule fires against many different signatures, so this cannot reuse the per-signature
+    /// query's key.
+    /// </summary>
+    Task<IReadOnlyList<RecoveryDisposition>> GetRecentVerifiedDispositionsByRuleAsync(
+        string ownerId,
+        long ruleId,
+        RecoveryOperationKind actionKind,
+        int count,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records the success-rate circuit breaker automatically disabling an
+    /// <see cref="Entities.AutoReplayRule"/> — opens a minimal <see cref="RecoveryOperation"/>
+    /// (<c>Kind = AutoReplayRuleControl</c>) and appends one
+    /// <see cref="Enums.RecoveryEventType.AutoReplayRuleCircuitBreakerTripped"/> event at the
+    /// operation level, atomically, mirroring <see cref="RecordEmergencyControlEventAsync"/>'s
+    /// pattern. Does not itself flip <see cref="Entities.AutoReplayRule.Enabled"/> — the caller
+    /// is expected to have already done so in the same save, or immediately after.
+    /// </summary>
+    Task<Result<RecoveryOperation>> RecordAutoReplayCircuitBreakerTripAsync(
+        string ownerId,
+        long ruleId,
+        string ruleName,
+        RecoveryActor actor,
+        int sampleSize,
+        double verifiedSuccessRate,
         CancellationToken cancellationToken = default);
 
     /// <summary>

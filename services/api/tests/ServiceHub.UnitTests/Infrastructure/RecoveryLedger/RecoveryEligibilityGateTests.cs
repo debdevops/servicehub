@@ -56,9 +56,10 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
         // Defaults to Azure (CanProveDlqAbsence=true) so every pre-existing test not concerned
         // with predicate 5's provider-capability corroboration keeps its original meaning —
         // tests exercising that corroboration specifically pass Aws/Gcp/null.
-        CloudProviderType? provider = CloudProviderType.Azure) =>
+        CloudProviderType? provider = CloudProviderType.Azure,
+        bool fleetRateLimitExceeded = false) =>
         new(OwnerId, actionKind, actorKind, RecoveryTrigger.Manual, NamespaceId, entityName, bodyHash,
-            signatureHash, environment, rateLimitExceeded, provider);
+            signatureHash, environment, rateLimitExceeded, provider, fleetRateLimitExceeded);
 
     private void SeedLineageEntry(
         string entityName,
@@ -386,6 +387,33 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
         var decision = await _gate.EvaluateAsync(BuildRequest(rateLimitExceeded: false));
 
         decision.Verdict.Should().Be(EligibilityVerdict.Allow);
+    }
+
+    [Fact]
+    public async Task FleetRateLimitExceeded_Escalates()
+    {
+        var decision = await _gate.EvaluateAsync(BuildRequest(fleetRateLimitExceeded: true));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be(RecoveryEligibilityGate.ReasonFleetRateLimited);
+    }
+
+    [Fact]
+    public async Task FleetRateLimitNotExceeded_NotDeniedByPredicate4()
+    {
+        var decision = await _gate.EvaluateAsync(BuildRequest(fleetRateLimitExceeded: false));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Allow);
+    }
+
+    [Fact]
+    public async Task PerRuleRateLimitFiresBeforeFleetRateLimit_WhenBothExceeded()
+    {
+        var decision = await _gate.EvaluateAsync(
+            BuildRequest(rateLimitExceeded: true, fleetRateLimitExceeded: true));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be(RecoveryEligibilityGate.ReasonRateLimited);
     }
 
     // ── Predicate 5: autonomy lookup — enforced per §9.4.3 ──────────────────────

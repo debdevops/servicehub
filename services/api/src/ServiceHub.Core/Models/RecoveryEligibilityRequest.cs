@@ -23,6 +23,10 @@ namespace ServiceHub.Core.Models;
 /// <param name="RateLimitExceeded">Predicate 4's input, pre-computed by the caller via the
 /// existing <c>IAutoReplayExecutor.CanReplayAsync</c> where a per-rule rate limit applies —
 /// <see langword="false"/> (the default) for every caller with no rate-limit concept.</param>
+/// <param name="FleetRateLimitExceeded">Predicate 4's fleet-wide input, pre-computed by the
+/// caller via <c>IAutoReplayExecutor.CanReplayFleetWideAsync</c> — the owner's combined
+/// automated-replay rate across every rule, not just this one. <see langword="false"/> (the
+/// default) for every caller with no fleet-rate concept.</param>
 /// <param name="Provider">Target namespace's cloud provider — drives predicate 5's independent
 /// capability check: an <c>Automation</c> actor may only execute unattended
 /// (<see cref="AutonomyLevel.Standing"/>/<see cref="AutonomyLevel.Unattended"/>) when the
@@ -40,4 +44,5 @@ public sealed record RecoveryEligibilityRequest(
     string? SignatureHash,
     EnvironmentType? Environment,
     bool RateLimitExceeded = false,
-    CloudProviderType? Provider = null);
+    CloudProviderType? Provider = null,
+    bool FleetRateLimitExceeded = false);

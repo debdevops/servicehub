@@ -286,7 +286,9 @@ public sealed class RecoveryController : ApiControllerBase
     public async Task<ActionResult<IReadOnlyList<RecoveryLedgerEntryResponse>>> GetAgeing(
         CancellationToken cancellationToken = default)
     {
-        var entries = await _recoveryLedger.GetAgeingAsync(OwnerId, cancellationToken);
+        // Deliberately unbounded (no limit) — this is the human-facing "nothing is silently
+        // lost" report; unlike the background sweep workers, it must never silently truncate.
+        var entries = await _recoveryLedger.GetAgeingAsync(OwnerId, cancellationToken: cancellationToken);
         return Ok(entries.Select(MapToResponse).ToList());
     }
 

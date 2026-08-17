@@ -4,9 +4,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
+using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Events;
+using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
+using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 
 namespace ServiceHub.Infrastructure.BackgroundServices;
 
@@ -30,18 +35,29 @@ namespace ServiceHub.Infrastructure.BackgroundServices;
 public sealed class AutonomyEvaluationWorker : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
+    private readonly IPlatformEventBus _eventBus;
     private readonly ILogger<AutonomyEvaluationWorker> _logger;
 
     private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(45);
     private const int DefaultSweepIntervalSeconds = 3600;
+    private const int DefaultCircuitBreakerSampleSize = 20;
+    private const double DefaultCircuitBreakerSuccessRateFloor = 0.50;
+    private const int DefaultMaxSignatureSweepBatchSize = 1000;
 
     private readonly TimeSpan _sweepInterval;
+    private readonly int _circuitBreakerSampleSize;
+    private readonly double _circuitBreakerSuccessRateFloor;
+    private readonly int _maxSignatureSweepBatchSize;
 
     /// <summary>Initializes a new instance of the <see cref="AutonomyEvaluationWorker"/> class.</summary>
     /// <param name="serviceProvider">Root service provider for per-sweep-cycle scope creation.</param>
     /// <param name="configuration">
     /// Application configuration — reads <c>RecoveryEvidence:AutonomyEvaluationSweepIntervalSeconds</c>
-    /// (default 3600, clamped to [60, 86400]).
+    /// (default 3600, clamped to [60, 86400]), <c>RecoveryEvidence:CircuitBreakerSampleSize</c>
+    /// (default 20, clamped to [1, 10000]), <c>RecoveryEvidence:CircuitBreakerSuccessRateFloor</c>
+    /// (default 0.50, clamped to [0.0, 1.0]), and <c>RecoveryEvidence:MaxSignatureSweepBatchSize</c>
+    /// (default 1000, clamped to [1, 100000]) — the per-sweep cap on how many distinct signatures
+    /// this worker evaluates at once.
     /// </param>
     /// <param name="logger">Logger instance.</param>
     public AutonomyEvaluationWorker(
@@ -56,6 +72,19 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
         _sweepInterval = TimeSpan.FromSeconds(Math.Clamp(
             configuration.GetValue("RecoveryEvidence:AutonomyEvaluationSweepIntervalSeconds", DefaultSweepIntervalSeconds),
             60, 86400));
+        _circuitBreakerSampleSize = Math.Clamp(
+            configuration.GetValue("RecoveryEvidence:CircuitBreakerSampleSize", DefaultCircuitBreakerSampleSize),
+            1, 10_000);
+        _circuitBreakerSuccessRateFloor = Math.Clamp(
+            configuration.GetValue("RecoveryEvidence:CircuitBreakerSuccessRateFloor", DefaultCircuitBreakerSuccessRateFloor),
+            0.0, 1.0);
+        _maxSignatureSweepBatchSize = Math.Clamp(
+            configuration.GetValue("RecoveryEvidence:MaxSignatureSweepBatchSize", DefaultMaxSignatureSweepBatchSize),
+            1, 100_000);
+
+        // IPlatformEventBus is a singleton — resolve once from the root provider, matching
+        // DlqMonitorWorker's existing convention for the same dependency.
+        _eventBus = serviceProvider.GetRequiredService<IPlatformEventBus>();
     }
 
     /// <inheritdoc />
@@ -130,11 +159,24 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
         var trustScoring = services.GetRequiredService<IRecoveryTrustScoringService>();
 
         var signatureHashes = await recoveryLedger.GetDistinctSignatureHashesAsync(
-            ownerId, RecoveryOperationKind.Replay, cancellationToken);
+            ownerId, RecoveryOperationKind.Replay, _maxSignatureSweepBatchSize, cancellationToken);
 
         if (signatureHashes.Count == 0)
         {
             return;
+        }
+
+        if (signatureHashes.Count == _maxSignatureSweepBatchSize)
+        {
+            // Cannot distinguish "exactly at the cap" from "more exist beyond it" without an
+            // extra query — logging on every sweep at the cap is the honest, cheap choice: an
+            // operator sees a persistent warning rather than a silently-invisible backlog.
+            _logger.LogWarning(
+                "Autonomy Evaluation Worker: owner {OwnerId} has at least {Limit} distinct signatures with " +
+                "replay evidence — this sweep evaluated only the batch capped at " +
+                "RecoveryEvidence:MaxSignatureSweepBatchSize; any remainder is not guaranteed even coverage " +
+                "across sweeps",
+                ownerId, _maxSignatureSweepBatchSize);
         }
 
         var l4Eligible = 0;
@@ -216,6 +258,107 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
             "{L4Count} meet the L3→L4 sample/rate threshold, {L5Count} meet the L4→L5 sample/rate threshold, " +
             "{TransitionCount} AutonomyGrant transition(s) written this sweep",
             ownerId, signatureHashes.Count, l4Eligible, l5Eligible, transitionsWritten);
+
+        await SweepAutoReplayCircuitBreakersAsync(services, ownerId, recoveryLedger, cancellationToken);
+    }
+
+    /// <summary>
+    /// The success-rate circuit breaker: for each of the owner's currently-enabled
+    /// <see cref="AutoReplayRule"/>s, checks whether its most recent
+    /// <see cref="_circuitBreakerSampleSize"/> *verified* ledger outcomes (never broker
+    /// acceptance alone — see <see cref="ReplayHistory.OutcomeStatus"/>'s different, weaker
+    /// meaning) fell below <see cref="_circuitBreakerSuccessRateFloor"/>, and if so disables the
+    /// rule, records the decision in the Recovery Ledger, and publishes a Platform Event.
+    /// Internal (rather than private) so tests can drive one sweep directly.
+    /// </summary>
+    internal async Task SweepAutoReplayCircuitBreakersAsync(
+        IServiceProvider services, string ownerId, IRecoveryLedger recoveryLedger, CancellationToken cancellationToken)
+    {
+        var dbContext = services.GetRequiredService<DlqDbContext>();
+
+        var rules = await dbContext.AutoReplayRules
+            .Where(r => r.OwnerId == ownerId && r.Enabled)
+            .ToListAsync(cancellationToken);
+
+        foreach (var rule in rules)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var dispositions = await recoveryLedger.GetRecentVerifiedDispositionsByRuleAsync(
+                ownerId, rule.Id, RecoveryOperationKind.Replay, _circuitBreakerSampleSize, cancellationToken);
+
+            if (dispositions.Count < _circuitBreakerSampleSize)
+            {
+                continue;
+            }
+
+            var recoveredCount = dispositions.Count(d => d == RecoveryDisposition.Recovered);
+            var verifiedSuccessRate = (double)recoveredCount / dispositions.Count;
+
+            if (verifiedSuccessRate >= _circuitBreakerSuccessRateFloor)
+            {
+                continue;
+            }
+
+            rule.Enabled = false;
+            rule.UpdatedAt = DateTimeOffset.UtcNow;
+
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                // An operator or another process already changed this rule since it was loaded
+                // above — never overwrite a concurrent edit. The next sweep re-evaluates from
+                // the ledger's current state.
+                _logger.LogWarning(ex,
+                    "Circuit breaker lost a concurrency race disabling rule {RuleId} for owner {OwnerId}; " +
+                    "will re-evaluate next sweep", rule.Id, ownerId);
+                continue;
+            }
+
+            var actor = ActorIdentityResolver.ResolveSystemActor("AutonomyEvaluationWorker:CircuitBreaker");
+            var ledgerResult = await recoveryLedger.RecordAutoReplayCircuitBreakerTripAsync(
+                ownerId, rule.Id, rule.Name, actor, dispositions.Count, verifiedSuccessRate, cancellationToken);
+
+            if (ledgerResult.IsFailure)
+            {
+                _logger.LogError(
+                    "Rule {RuleId} was disabled by the circuit breaker but the ledger record failed: {Error}",
+                    rule.Id, ledgerResult.Error.Message);
+            }
+
+            _logger.LogWarning(
+                "Auto-replay rule {RuleId}/{RuleName} disabled by the success-rate circuit breaker: " +
+                "verified success rate {Rate:P0} over the last {SampleSize} outcomes fell below the {Floor:P0} floor",
+                rule.Id, Security.LogRedactor.SanitiseForLog(rule.Name), verifiedSuccessRate,
+                dispositions.Count, _circuitBreakerSuccessRateFloor);
+
+            // Owner-scoped, no NamespaceId (a rule is not tied to one namespace) — Actor must be
+            // the raw OwnerId for PlatformEventStreamBroker's visibility check to resolve it to
+            // the right SSE connections (see IsVisibleToOwnerAsync: NamespaceId-less events are
+            // only visible when Actor equals the connection's owner).
+            var evt = new PlatformEvent
+            {
+                Source = "ServiceHub.Infrastructure.BackgroundServices.AutonomyEvaluationWorker",
+                Category = EventCategories.Rule,
+                EventType = EventTypes.AutoReplayRuleCircuitBreakerTripped,
+                Severity = EventSeverity.Warning,
+                Actor = ownerId,
+                TargetScope = rule.Id.ToString(),
+                Payload = new AutoReplayRuleCircuitBreakerTrippedPayload
+                {
+                    RuleId = rule.Id,
+                    RuleName = rule.Name,
+                    SampleSize = dispositions.Count,
+                    VerifiedSuccessRate = verifiedSuccessRate,
+                    TrippedAtUtc = DateTimeOffset.UtcNow,
+                },
+            };
+
+            await _eventBus.PublishAsync(evt, cancellationToken);
+        }
     }
 
     /// <summary>

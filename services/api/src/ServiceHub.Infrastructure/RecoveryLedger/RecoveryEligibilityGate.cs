@@ -61,6 +61,14 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
     /// </summary>
     public const string ReasonRateLimited = "RATE_LIMITED";
 
+    /// <summary>
+    /// Predicate 4's fleet-wide reason code — the owner's combined automated-replay rate across
+    /// every rule exceeded <c>RecoveryEvidence:FleetReplayVelocityCapPerHour</c>, not just this
+    /// one rule's own limit. Same treatment as <see cref="ReasonRateLimited"/>: routine
+    /// throttling, never <c>Declined</c>-recorded.
+    /// </summary>
+    public const string ReasonFleetRateLimited = "FLEET_RATE_LIMITED";
+
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly ILogger<RecoveryEligibilityGate> _logger;
 
@@ -150,6 +158,16 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
         if (request.RateLimitExceeded)
         {
             return new EligibilityDecision(EligibilityVerdict.Escalate, ReasonRateLimited);
+        }
+
+        // Predicate 4 (fleet-wide) — the owner's combined automated-replay rate across every
+        // rule, not just this one. Pre-computed by the caller via CanReplayFleetWideAsync; false
+        // for every caller with no fleet-rate concept. A separate check from the per-rule one
+        // above so the reported reason distinguishes "this rule is busy" from "this owner's
+        // automation is running hot fleet-wide."
+        if (request.FleetRateLimitExceeded)
+        {
+            return new EligibilityDecision(EligibilityVerdict.Escalate, ReasonFleetRateLimited);
         }
 
         // Predicate 5 — autonomy lookup (§9, enforced per §9.4.3): an Automation actor may only

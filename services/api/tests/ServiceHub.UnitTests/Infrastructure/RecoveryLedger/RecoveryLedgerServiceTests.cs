@@ -38,7 +38,8 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
     private static RecoveryActor Actor(string identity = "test-actor") => new(identity, RecoveryActorKind.User);
 
     private async Task<RecoveryOperation> OpenOperationAsync(
-        string ownerId = OwnerA, RecoveryOperationKind kind = RecoveryOperationKind.Replay, string? reason = null)
+        string ownerId = OwnerA, RecoveryOperationKind kind = RecoveryOperationKind.Replay, string? reason = null,
+        long? sourceRuleId = null)
     {
         var result = await _service.OpenOperationAsync(new OpenRecoveryOperationRequest
         {
@@ -48,6 +49,7 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
             Actor = Actor(),
             Reason = reason ?? (kind == RecoveryOperationKind.Purge ? "test purge reason" : null),
             ScopeDescription = "entity=orders-dlq",
+            SourceRuleId = sourceRuleId,
             TargetCount = 1,
         });
 
@@ -1846,6 +1848,162 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
 
         recentReplay.Should().Equal(RecoveryDisposition.Returned);
         recentPurge.Should().BeEmpty("a Discarded purge disposition is neither Recovered nor Returned");
+    }
+
+    // ── GetRecentVerifiedDispositionsByRuleAsync / RecordAutoReplayCircuitBreakerTripAsync (circuit breaker) ──
+
+    [Fact]
+    public async Task GetRecentVerifiedDispositionsByRuleAsync_NoEntries_ReturnsEmpty()
+    {
+        var result = await _service.GetRecentVerifiedDispositionsByRuleAsync(OwnerA, 999, RecoveryOperationKind.Replay, 2);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetRecentVerifiedDispositionsByRuleAsync_OrdersByLastEventSeq_NotByBegunAt()
+    {
+        var operation = await OpenOperationAsync(OwnerA, sourceRuleId: 1);
+        var entry1 = await BeginEntryAsync(operation, "sig-a", "body-1"); // begins 1st
+        var entry2 = await BeginEntryAsync(operation, "sig-b", "body-2"); // begins 2nd
+        var entry3 = await BeginEntryAsync(operation, "sig-c", "body-3"); // begins 3rd
+
+        await CloseAsRecoveredAsync(entry2); // closes 1st
+        await CloseAsReturnedAsync(entry3);  // closes 2nd
+        await CloseAsReturnedAsync(entry1);  // closes 3rd (last)
+
+        var recent = await _service.GetRecentVerifiedDispositionsByRuleAsync(OwnerA, 1, RecoveryOperationKind.Replay, 2);
+
+        recent.Should().Equal(RecoveryDisposition.Returned, RecoveryDisposition.Returned);
+    }
+
+    [Fact]
+    public async Task GetRecentVerifiedDispositionsByRuleAsync_UnverifiedEntry_ExcludedEntirely()
+    {
+        var operation = await OpenOperationAsync(OwnerA, sourceRuleId: 1);
+        var entry1 = await BeginEntryAsync(operation, "sig-a", "body-1");
+        var entry2 = await BeginEntryAsync(operation, "sig-b", "body-2");
+        var entry3 = await BeginEntryAsync(operation, "sig-c", "body-3");
+
+        await CloseAsReturnedAsync(entry1);
+        await CloseAsUnverifiedAsync(entry2);
+        await CloseAsReturnedAsync(entry3);
+
+        var recent = await _service.GetRecentVerifiedDispositionsByRuleAsync(OwnerA, 1, RecoveryOperationKind.Replay, 2);
+
+        recent.Should().Equal(RecoveryDisposition.Returned, RecoveryDisposition.Returned);
+    }
+
+    [Fact]
+    public async Task GetRecentVerifiedDispositionsByRuleAsync_DifferentRule_Isolated()
+    {
+        var operationX = await OpenOperationAsync(OwnerA, sourceRuleId: 1);
+        var entryX = await BeginEntryAsync(operationX, "sig-x", "body-x");
+        await CloseAsReturnedAsync(entryX);
+
+        var operationY = await OpenOperationAsync(OwnerA, sourceRuleId: 2);
+        var entryY = await BeginEntryAsync(operationY, "sig-y", "body-y");
+        await CloseAsReturnedAsync(entryY);
+
+        var recentRuleOne = await _service.GetRecentVerifiedDispositionsByRuleAsync(OwnerA, 1, RecoveryOperationKind.Replay, 2);
+
+        recentRuleOne.Should().Equal(RecoveryDisposition.Returned);
+    }
+
+    [Fact]
+    public async Task GetRecentVerifiedDispositionsByRuleAsync_MultipleSignaturesUnderSameRule_AllCounted()
+    {
+        // A rule fires against many different failure signatures — the circuit breaker's whole
+        // reason for existing is a per-rule, not per-signature, view of verified outcomes.
+        var operation = await OpenOperationAsync(OwnerA, sourceRuleId: 1);
+        var entry1 = await BeginEntryAsync(operation, "sig-a", "body-1");
+        var entry2 = await BeginEntryAsync(operation, "sig-b", "body-2");
+
+        await CloseAsReturnedAsync(entry1);
+        await CloseAsRecoveredAsync(entry2);
+
+        var recent = await _service.GetRecentVerifiedDispositionsByRuleAsync(OwnerA, 1, RecoveryOperationKind.Replay, 2);
+
+        recent.Should().Equal(RecoveryDisposition.Recovered, RecoveryDisposition.Returned);
+    }
+
+    [Fact]
+    public async Task RecordAutoReplayCircuitBreakerTripAsync_WritesAutoReplayRuleControlOperationAndEvent()
+    {
+        var result = await _service.RecordAutoReplayCircuitBreakerTripAsync(
+            OwnerA, ruleId: 42, ruleName: "Poison Message Rule", Actor("system"), sampleSize: 20, verifiedSuccessRate: 0.30);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Kind.Should().Be(RecoveryOperationKind.AutoReplayRuleControl);
+        result.Value.Trigger.Should().Be(RecoveryTrigger.AutoReplayCircuitBreaker);
+        result.Value.SourceRuleId.Should().Be(42);
+        result.Value.NamespaceId.Should().BeNull();
+
+        var evt = await _dbContext.RecoveryEvents
+            .SingleAsync(e => e.EventType == RecoveryEventType.AutoReplayRuleCircuitBreakerTripped);
+        evt.EntryId.Should().BeNull();
+        evt.OperationId.Should().Be(result.Value.Id);
+        evt.DetailJson.Should().Contain("Poison Message Rule");
+    }
+
+    // ── GetAgeingAsync / GetDistinctSignatureHashesAsync: per-sweep batch limit ─────────────────
+
+    [Fact]
+    public async Task GetAgeingAsync_NoLimit_ReturnsAllNonTerminalEntries()
+    {
+        for (var i = 0; i < 3; i++)
+        {
+            await OpenAndBeginAsync(OwnerA);
+        }
+
+        var result = await _service.GetAgeingAsync(OwnerA);
+
+        result.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task GetAgeingAsync_LimitRespected()
+    {
+        // BegunAt is stamped internally at insert and, correctly, cannot be altered afterward —
+        // RecoveryLedgerAppendOnlyGuard rejects it (see RecoveryLedgerAppendOnlyGuardTests) — so
+        // this asserts the cap itself, not which specific entries win the tie among rows begun
+        // within the same test's real-clock granularity.
+        for (var i = 0; i < 3; i++)
+        {
+            await OpenAndBeginAsync(OwnerA);
+        }
+
+        var result = await _service.GetAgeingAsync(OwnerA, limit: 2);
+
+        result.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetDistinctSignatureHashesAsync_NoLimit_ReturnsAllDistinctSignatures()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        await BeginEntryAsync(operation, "sig-a", "body-a");
+        await BeginEntryAsync(operation, "sig-b", "body-b");
+        await BeginEntryAsync(operation, "sig-c", "body-c");
+
+        var result = await _service.GetDistinctSignatureHashesAsync(OwnerA, RecoveryOperationKind.Replay);
+
+        result.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task GetDistinctSignatureHashesAsync_LimitRespected()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        await BeginEntryAsync(operation, "sig-a", "body-a");
+        await BeginEntryAsync(operation, "sig-b", "body-b");
+        await BeginEntryAsync(operation, "sig-c", "body-c");
+
+        var result = await _service.GetDistinctSignatureHashesAsync(OwnerA, RecoveryOperationKind.Replay, limit: 2);
+
+        result.Should().HaveCount(2);
+        // The query orders by the hash string for determinism when capped.
+        result.Should().Equal("sig-a", "sig-b");
     }
 
     // ── RecordAutonomyGrantTransitionAsync stale-previousLevel guard (Phase D fast-demotion increment) ──
