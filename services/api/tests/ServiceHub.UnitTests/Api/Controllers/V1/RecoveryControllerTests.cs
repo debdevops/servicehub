@@ -571,7 +571,7 @@ public sealed class RecoveryControllerTests : IDisposable
         response.CurrentLevel.Should().Be((int)AutonomyLevel.Approve);
         response.CanAutoReplay.Should().BeFalse();
         response.CanProveDlqAbsence.Should().BeFalse();
-        response.BlockedReason.Should().Contain("cannot currently provide sufficient verified recovery evidence");
+        response.BlockedReason.Should().Contain("cannot currently provide the deterministic recovery evidence required for unattended replay");
     }
 
     [Fact]

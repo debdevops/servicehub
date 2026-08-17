@@ -350,7 +350,7 @@ public sealed class RecoveryController : ApiControllerBase
         if (!canAutoReplay)
         {
             blockedReason = !capabilities.CanProveDlqAbsence
-                ? $"{provider?.ToString() ?? "This provider"} cannot currently provide sufficient verified recovery evidence for unattended replay — {capabilities.Notes}"
+                ? $"{provider?.ToString() ?? "This provider"} cannot currently provide the deterministic recovery evidence required for unattended replay — background scanning cannot independently confirm a replayed message never returned to the DLQ."
                 : "This signature has not yet earned Standing (L4) or Unattended (L5) trust — replay currently requires human approval (L3).";
         }
 

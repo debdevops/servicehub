@@ -66,7 +66,7 @@ export function useSignatureAutonomyStatus(signatureHash?: string, actionKind: '
               canProveDlqAbsence,
               blockedReason: canProveDlqAbsence
                 ? 'This signature has not yet earned Standing (L4) or Unattended (L5) trust — replay currently requires human approval (L3).'
-                : `${cloudProvider.toUpperCase()} cannot currently provide sufficient verified recovery evidence for unattended replay.`,
+                : `${cloudProvider.toUpperCase()} cannot currently provide the deterministic recovery evidence required for unattended replay — background scanning cannot independently confirm a replayed message never returned to the DLQ.`,
             });
           },
           enabled: !!signatureHash,

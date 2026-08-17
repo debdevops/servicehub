@@ -49,7 +49,7 @@ export function AutonomyStatus({ signatureHash }: { signatureHash: string }) {
     <div className="flex items-start gap-1.5">
       <Lock className="w-3.5 h-3.5 text-gray-500 shrink-0 mt-0.5" />
       <span className="text-xs text-gray-600">
-        <span className="font-medium text-gray-800">Automatic recovery blocked.</span> {status.blockedReason}
+        <span className="font-medium text-gray-800">Automatic recovery blocked.</span> {status.blockedReason} Manual recovery remains available.
       </span>
     </div>
   );
