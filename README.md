@@ -14,7 +14,7 @@
 [![Version](https://img.shields.io/badge/version-3.7.0-brightgreen.svg)](.version)
 [![Self-Hosted](https://img.shields.io/badge/Deployment-Self--Hosted-0078D4.svg)](#quick-start)
 
-[⚡ Quick Start](#quick-start) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security) · [🚀 Self-Hosting](self-hosting/README.md) · [📋 Changelog](CHANGELOG.md)
+[⚡ Quick Start](#quick-start) · [🖥️ Run It Locally (Plain-Language Guide)](LOCAL-DEPLOYMENT.md) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security) · [🚀 Self-Hosting](self-hosting/README.md) · [📋 Changelog](CHANGELOG.md)
 
 </div>
 
@@ -34,6 +34,10 @@ Want a ready-made container?     → GHCR                      (#container-image
 
 No cloud account, credentials, or infrastructure are required for the first option. Every
 option below runs the same single Docker image — nothing is a separate build.
+
+Never used Docker or a terminal before? Skip the links above and follow
+**[LOCAL-DEPLOYMENT.md](LOCAL-DEPLOYMENT.md)** — the same "run on my laptop" steps, written
+for a non-technical reader with screenshots at every step.
 
 ---
 
@@ -109,11 +113,18 @@ provide.
 
 ## Try It
 
+> **New to the command line or Docker?** Follow
+> **[LOCAL-DEPLOYMENT.md](LOCAL-DEPLOYMENT.md)** instead — a plain-language,
+> screenshot-by-screenshot guide with no assumed technical background.
+
 ServiceHub encrypts stored connection strings at rest, so it needs two secrets generated on your
 machine before first run. There are no defaults — a shipped default key would be identical across
 every deployment that never overrode it.
 
 ```bash
+git clone https://github.com/debdevops/servicehub.git
+cd servicehub
+
 cp .env.example .env
 printf 'SECURITY__ENCRYPTIONKEY=%s\n'    "$(openssl rand -hex 32)" >> .env
 printf 'SECURITY__SPATOKEN__SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
@@ -319,12 +330,18 @@ Follow this path before connecting to a production namespace. This protects your
 ### Docker (fastest, with Docker)
 
 ```bash
+git clone https://github.com/debdevops/servicehub.git
+cd servicehub
+
 cp .env.example .env
 printf 'SECURITY__ENCRYPTIONKEY=%s\n'    "$(openssl rand -hex 32)" >> .env
 printf 'SECURITY__SPATOKEN__SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
 
 docker compose up --build
 ```
+
+Step-by-step with screenshots (no Docker/command-line experience assumed):
+[LOCAL-DEPLOYMENT.md](LOCAL-DEPLOYMENT.md).
 
 Open **[http://localhost:8080](http://localhost:8080)**, then connect a namespace with your own cloud credentials. One image serves both the SPA and the API.
 
@@ -370,6 +387,9 @@ cd servicehub
 ```
 
 Open **[http://localhost:3000](http://localhost:3000)** — then connect with your connection string. The script automatically installs .NET 10 SDK and Node.js 22+ if not already present.
+
+Step-by-step with screenshots (no command-line experience assumed):
+[LOCAL-DEPLOYMENT.md](LOCAL-DEPLOYMENT.md).
 
 ### Create a Dedicated Read-Only Credential
 
