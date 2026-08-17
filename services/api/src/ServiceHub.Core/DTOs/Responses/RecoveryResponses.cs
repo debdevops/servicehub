@@ -111,3 +111,32 @@ public sealed record SignatureTrustEvidenceResponse(
     bool UnsafeOutcomePresent,
     bool DuplicateAssociationPresent,
     IReadOnlyList<string> Reasons);
+
+/// <summary>
+/// Response DTO for <c>GET /api/v1/recovery/autonomy/{signatureHash}</c> — the actual, currently
+/// granted <see cref="Enums.AutonomyLevel"/> for one signature (the Eligibility Gate predicate 5's
+/// own read), plus a real, non-fabricated reason when unattended (L4/L5) execution is unavailable.
+/// A no-grant-yet signature reports <see cref="Enums.AutonomyLevel.Approve"/> (L3, the permanent
+/// human-approved floor every signature always stands on) — never a fabricated lower level.
+/// </summary>
+/// <param name="SignatureHash">The failure signature evaluated.</param>
+/// <param name="ActionKind">The recovery action evaluated.</param>
+/// <param name="CurrentLevel">The grant's current level, numeric (matches <see cref="Enums.AutonomyLevel"/>).</param>
+/// <param name="LevelLabel">Human-readable level name, e.g. <c>"Approve (L3)"</c>, <c>"Standing (L4)"</c>.</param>
+/// <param name="CanAutoReplay">Whether this signature is currently eligible for unattended
+/// (L4/L5) auto-replay — mirrors the Eligibility Gate predicate 5 check exactly, including its
+/// provider-capability corroboration.</param>
+/// <param name="CanProveDlqAbsence">Whether the signature's own cloud provider can independently
+/// verify DLQ absence — the real, structural fact that gates L4/L5 regardless of trust evidence.</param>
+/// <param name="BlockedReason">A real, non-fabricated explanation for why unattended execution is
+/// unavailable, populated only when <see cref="CanAutoReplay"/> is <see langword="false"/> and a
+/// concrete reason is known (e.g. the provider's capability limitation); <see langword="null"/>
+/// when auto-replay is available, or when no signature-specific reason can be determined.</param>
+public sealed record SignatureAutonomyStatusResponse(
+    string SignatureHash,
+    string ActionKind,
+    int CurrentLevel,
+    string LevelLabel,
+    bool CanAutoReplay,
+    bool CanProveDlqAbsence,
+    string? BlockedReason);

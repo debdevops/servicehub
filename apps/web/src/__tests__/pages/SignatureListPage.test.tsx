@@ -11,13 +11,21 @@ vi.mock('@servicehub/ui-shared/hooks/useDlqSignatures', () => ({
 vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
+vi.mock('@servicehub/ui-shared/hooks/useDlqHistory', () => ({
+  useDlqSummary: vi.fn(() => ({ data: undefined })),
+}));
 vi.mock('@servicehub/ui-shared/lib/demo/DemoContext', () => ({
   useDemoContext: vi.fn(),
 }));
 vi.mock('@/components/dlq', () => ({
-  StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,
-  TrendBadge: ({ trend }: { trend: string }) => <span>{trend}</span>,
   FailureInvestigationPanel: () => <div data-testid="investigation-panel" />,
+  SignatureSummaryCard: ({ signature }: { signature: { dominantDeadletterReason: string; status: string; trend: string } }) => (
+    <div>
+      <span>{signature.dominantDeadletterReason}</span>
+      <span>{signature.status}</span>
+      <span>{signature.trend}</span>
+    </div>
+  ),
 }));
 
 import { useDlqSignatures } from '@servicehub/ui-shared/hooks/useDlqSignatures';

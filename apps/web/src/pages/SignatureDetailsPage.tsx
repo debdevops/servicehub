@@ -10,13 +10,16 @@ import {
   useArchiveSignature,
 } from '@servicehub/ui-shared/hooks/useDlqSignatures';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useDlqSummary } from '@servicehub/ui-shared/hooks/useDlqHistory';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { extractApiError } from '@servicehub/ui-shared/lib/api/errors';
 import type { ApiError } from '@servicehub/ui-shared/lib/api/types';
 import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
+import { EnvironmentBadge } from '@/components/EnvironmentBadge';
 import {
   StatusBadge,
   TrendBadge,
+  AutonomyStatus,
   FailureInvestigationPanel,
   SignatureLifecycleActions,
   SignatureTimelinePanel,
@@ -47,6 +50,7 @@ export function SignatureDetailsPage() {
 
   const { data: namespaces } = useNamespaces();
   const namespace = namespaces?.find(ns => ns.id === namespaceId);
+  const { data: dlqSummary } = useDlqSummary(namespaceId);
   const { isDemoMode, cloudProvider } = useDemoContext();
   const basePath = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
 
@@ -146,10 +150,24 @@ export function SignatureDetailsPage() {
                 <StatusBadge status={detail.status} size="md" />
                 <TrendBadge trend={detail.trend} size="md" />
                 {namespace?.cloudProvider && <ProviderBadge provider={namespace.cloudProvider} />}
+                {namespace?.environment && <EnvironmentBadge env={namespace.environment} />}
               </div>
             </div>
 
-            <p className="text-sm text-gray-700 mb-4">{detail.explanation}</p>
+            <p className="text-sm text-gray-700 mb-1">
+              {detail.knowledge?.rootCause ? (
+                <>
+                  <span className="font-medium">Likely cause (recorded by an operator):</span> {detail.knowledge.rootCause}
+                </>
+              ) : (
+                detail.explanation
+              )}
+            </p>
+            {detail.confidence === 'Medium' && (
+              <p className="text-xs text-gray-500 mb-3">
+                ServiceHub has medium confidence in this classification — review the technical evidence below before relying on it fully.
+              </p>
+            )}
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-4">
               <div>
@@ -157,11 +175,19 @@ export function SignatureDetailsPage() {
                 <span className="font-medium text-gray-900">{namespace?.displayName || namespace?.name || '—'}</span>
               </div>
               <div>
+                <span className="text-gray-500 block text-xs">% of this namespace's DLQ</span>
+                <span className="font-medium text-gray-900">
+                  {dlqSummary && dlqSummary.activeMessages > 0
+                    ? `${Math.round((detail.size / dlqSummary.activeMessages) * 100)}%`
+                    : '—'}
+                </span>
+              </div>
+              <div>
                 <span className="text-gray-500 block text-xs">First Seen</span>
                 <span className="font-medium text-gray-900">{formatDate(detail.firstSeenAt)}</span>
               </div>
               <div>
-                <span className="text-gray-500 block text-xs">Last Seen</span>
+                <span className="text-gray-500 block text-xs">Last Active</span>
                 <span className="font-medium text-gray-900">{formatDate(detail.windowEnd)}</span>
               </div>
               <div>
@@ -178,6 +204,10 @@ export function SignatureDetailsPage() {
                   <span className="font-medium text-gray-900">No — historical record</span>
                 </div>
               )}
+            </div>
+
+            <div className="mb-3">
+              <AutonomyStatus signatureHash={detail.signatureHash} />
             </div>
 
             {trendRecommendation && (

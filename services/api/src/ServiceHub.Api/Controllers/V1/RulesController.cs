@@ -692,7 +692,8 @@ public sealed class RulesController : ApiControllerBase
                     var decision = await eligibilityGate.EvaluateAsync(
                         new RecoveryEligibilityRequest(
                             OwnerId, RecoveryOperationKind.Replay, actor.Kind, RecoveryTrigger.RuleReplayAll,
-                            ns.Id, msg.EntityName, msg.BodyHash, SignatureHash: null, ns.Environment),
+                            ns.Id, msg.EntityName, msg.BodyHash, SignatureHash: null, ns.Environment,
+                            Provider: ns.Provider),
                         ct);
 
                     if (decision.Verdict != EligibilityVerdict.Allow)

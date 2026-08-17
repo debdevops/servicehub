@@ -169,6 +169,12 @@ export function useReplayMessage() {
         // useBulkOperations.ts for the same fix on the bulk-operation completion path.
         queryClient.invalidateQueries({ queryKey: ['recovery-operations'] }),
         queryClient.invalidateQueries({ queryKey: ['recovery-entries'] }),
+        // DLQ History, Failure Signatures, and the Dashboard fleet card otherwise only refresh on
+        // their own poll intervals (dlq-signatures has none at all) — a replay changes all three.
+        queryClient.invalidateQueries({ queryKey: ['dlq-history'] }),
+        queryClient.invalidateQueries({ queryKey: ['dlq-summary', variables.namespaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['dlq-signatures', variables.namespaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['dlq-signature-detail', variables.namespaceId], exact: false }),
       ]);
       toast.success('Message replayed successfully');
     },
@@ -214,10 +220,17 @@ export function usePurgeMessage() {
         }),
         queryClient.invalidateQueries({ queryKey: ['queues', variables.namespaceId], refetchType: 'active' }),
         queryClient.invalidateQueries({ queryKey: ['subscriptions', variables.namespaceId], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['namespace-stats', variables.namespaceId], refetchType: 'active' }),
         // Recovery Ledger otherwise only refreshes on its own 60s refetchInterval — see
         // useBulkOperations.ts for the same fix on the bulk-operation completion path.
         queryClient.invalidateQueries({ queryKey: ['recovery-operations'] }),
         queryClient.invalidateQueries({ queryKey: ['recovery-entries'] }),
+        // DLQ History, Failure Signatures, and the Dashboard fleet card otherwise only refresh on
+        // their own poll intervals (dlq-signatures has none at all) — a purge changes all three.
+        queryClient.invalidateQueries({ queryKey: ['dlq-history'] }),
+        queryClient.invalidateQueries({ queryKey: ['dlq-summary', variables.namespaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['dlq-signatures', variables.namespaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['dlq-signature-detail', variables.namespaceId], exact: false }),
       ]);
       toast.success('Message purged successfully');
     },

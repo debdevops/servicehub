@@ -189,6 +189,28 @@ export function useTestRule() {
  * Hook for executing replay-all on a rule.
  * Replays every DLQ message that matches the rule's conditions.
  */
+// Replay-all's matched messages are not scoped to one namespace in the response (a rule has no
+// persisted namespace scope today — see the Auto-Replay Rule UI), so these are invalidated
+// unscoped, matching the existing DLQ_KEYS approach on this same hook: broader than strictly
+// necessary for a single-namespace rule, but never wrong, and correct for a cross-namespace one.
+function invalidateReplayAllQueries(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: RULES_KEY });
+  // Also invalidate DLQ data since messages have been replayed
+  DLQ_KEYS.forEach((key) => qc.invalidateQueries({ queryKey: [key] }));
+  // Recovery Ledger otherwise only refreshes on its own 60s refetchInterval — without this,
+  // a replay-all that just recorded ledger entries can take up to a minute to show up on the
+  // Recovery Ledger page.
+  qc.invalidateQueries({ queryKey: ['recovery-operations'] });
+  qc.invalidateQueries({ queryKey: ['recovery-entries'] });
+  // Sidebar/queue-list DLQ counts and the Failure Signatures list otherwise never refresh after
+  // Replay All — dlq-signatures in particular has no refetchInterval of its own at all.
+  qc.invalidateQueries({ queryKey: ['queues'] });
+  qc.invalidateQueries({ queryKey: ['namespace-stats'] });
+  qc.invalidateQueries({ queryKey: ['dlq-signatures'] });
+  qc.invalidateQueries({ queryKey: ['dlq-signature-detail'] });
+  qc.invalidateQueries({ queryKey: ['fleet-overview'] });
+}
+
 export function useReplayAll() {
   const qc = useQueryClient();
   const { isDemoMode } = useDemoContext();
@@ -196,14 +218,7 @@ export function useReplayAll() {
     mutationFn: (ruleId: number) =>
       isDemoMode ? rejectDemoModeMutation() : rulesApi.replayAll(ruleId),
     onSuccess: (result) => {
-      qc.invalidateQueries({ queryKey: RULES_KEY });
-      // Also invalidate DLQ data since messages have been replayed
-      DLQ_KEYS.forEach((key) => qc.invalidateQueries({ queryKey: [key] }));
-      // Recovery Ledger otherwise only refreshes on its own 60s refetchInterval — without this,
-      // a replay-all that just recorded ledger entries can take up to a minute to show up on the
-      // Recovery Ledger page.
-      qc.invalidateQueries({ queryKey: ['recovery-operations'] });
-      qc.invalidateQueries({ queryKey: ['recovery-entries'] });
+      invalidateReplayAllQueries(qc);
 
       if (result.replayed > 0) {
         toast.success(
@@ -222,6 +237,21 @@ export function useReplayAll() {
       }
     },
     onError: (error: ApiError) => {
+      // A 504 does not mean the operation stopped — the backend's own error body says so
+      // verbatim ("Some messages may have been replayed. Please check and retry."), and it's
+      // been observed live continuing to replay past the HTTP timeout. Treating this as a plain
+      // failure would tell the operator the opposite of what may have actually happened, so this
+      // still refreshes every query a successful replay-all would have, rather than leaving the
+      // UI showing pre-attempt counts under a "failed" toast.
+      if (error?.response?.status === 504) {
+        invalidateReplayAllQueries(qc);
+        toast(
+          'Replay-all took too long to confirm — some messages may already have been replayed. Refresh to check the current state before retrying.',
+          { icon: '⏳', duration: 10000 },
+        );
+        return;
+      }
+
       const errorMessage =
         error?.response?.data?.detail ||
         error?.response?.data?.message ||

@@ -555,4 +555,106 @@ public sealed class RecoveryControllerTests : IDisposable
         var response = ok.Value.Should().BeOfType<SignatureTrustEvidenceResponse>().Subject;
         response.UnsafeOutcomePresent.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task GetAutonomyStatus_NoHistoryAtAll_UnresolvableProviderFailsClosedToCapabilityReason()
+    {
+        // No ledger entry exists yet for this signature, so its provider can't be resolved —
+        // GetSignatureProviderAsync returns null, which GetCapabilities fails closed to AWS's
+        // (non-verifying) capabilities, matching AutonomyEvaluationWorker's own fail-closed
+        // behavior: an unresolvable provider can never itself justify reporting auto-replay as
+        // available, so this reports the capability reason rather than a trust-gap one.
+        var result = await _controller.GetAutonomyStatus("sig-no-history");
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<SignatureAutonomyStatusResponse>().Subject;
+        response.CurrentLevel.Should().Be((int)AutonomyLevel.Approve);
+        response.CanAutoReplay.Should().BeFalse();
+        response.CanProveDlqAbsence.Should().BeFalse();
+        response.BlockedReason.Should().Contain("cannot currently provide sufficient verified recovery evidence");
+    }
+
+    [Fact]
+    public async Task GetAutonomyStatus_HistoryOnAzureButNoGrantYet_ReportsApproveFloorWithTrustGapReason()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-autonomy-no-grant",
+            SignatureHashSnapshot = "sig-autonomy-no-grant",
+            ProviderSnapshot = CloudProviderType.Azure,
+            TargetEntity = "queue-autonomy-no-grant",
+        });
+
+        var result = await _controller.GetAutonomyStatus("sig-autonomy-no-grant");
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<SignatureAutonomyStatusResponse>().Subject;
+        response.CurrentLevel.Should().Be((int)AutonomyLevel.Approve);
+        response.CanAutoReplay.Should().BeFalse();
+        response.CanProveDlqAbsence.Should().BeTrue();
+        response.BlockedReason.Should().Contain("Standing").And.Contain("L3");
+    }
+
+    [Fact]
+    public async Task GetAutonomyStatus_GrantAtStandingOnAzureSignature_ReportsAutoReplayAvailable()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-autonomy-azure",
+            SignatureHashSnapshot = "sig-autonomy-azure",
+            ProviderSnapshot = CloudProviderType.Azure,
+            TargetEntity = "queue-autonomy-azure",
+        });
+        await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-autonomy-azure", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "test: earned standing", evidenceJson: null);
+
+        var result = await _controller.GetAutonomyStatus("sig-autonomy-azure");
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<SignatureAutonomyStatusResponse>().Subject;
+        response.CurrentLevel.Should().Be((int)AutonomyLevel.Standing);
+        response.CanAutoReplay.Should().BeTrue();
+        response.CanProveDlqAbsence.Should().BeTrue();
+        response.BlockedReason.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetAutonomyStatus_GrantAtStandingOnAwsSignature_ReportsBlockedWithRealCapabilityReason()
+    {
+        // Unreachable via the real promotion path (AutonomyEvaluationWorker never promotes AWS
+        // past Approve) — this test is exercising the endpoint's own read/report logic in
+        // isolation, mirroring the Eligibility Gate's own defense-in-depth corroboration.
+        var operation = await OpenOperationAsync(OwnerA);
+        await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-autonomy-aws",
+            SignatureHashSnapshot = "sig-autonomy-aws",
+            ProviderSnapshot = CloudProviderType.Aws,
+            TargetEntity = "queue-autonomy-aws",
+        });
+        await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-autonomy-aws", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "test: earned standing", evidenceJson: null);
+
+        var result = await _controller.GetAutonomyStatus("sig-autonomy-aws");
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<SignatureAutonomyStatusResponse>().Subject;
+        response.CurrentLevel.Should().Be((int)AutonomyLevel.Standing);
+        response.CanAutoReplay.Should().BeFalse();
+        response.CanProveDlqAbsence.Should().BeFalse();
+        response.BlockedReason.Should().Contain("Aws");
+    }
 }

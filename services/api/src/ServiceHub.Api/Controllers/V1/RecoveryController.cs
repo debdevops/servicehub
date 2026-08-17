@@ -320,6 +320,61 @@ public sealed class RecoveryController : ApiControllerBase
     }
 
     /// <summary>
+    /// The actual, currently granted <see cref="AutonomyLevel"/> for one signature — the same
+    /// read the Eligibility Gate's predicate 5 performs, plus a real, non-fabricated explanation
+    /// when unattended (L4/L5) execution is unavailable. Lets the UI show an operator exactly why
+    /// automatic replay is or isn't available for this signature, using only facts the backend
+    /// already enforces — never a guessed severity or invented reason.
+    /// </summary>
+    /// <param name="signatureHash">The failure signature to evaluate.</param>
+    /// <param name="actionKind">The recovery action to evaluate. Defaults to <see cref="RecoveryOperationKind.Replay"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.RecoveryRead)]
+    [HttpGet("autonomy/{signatureHash}")]
+    [ProducesResponseType(typeof(SignatureAutonomyStatusResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<SignatureAutonomyStatusResponse>> GetAutonomyStatus(
+        string signatureHash,
+        [FromQuery] RecoveryOperationKind actionKind = RecoveryOperationKind.Replay,
+        CancellationToken cancellationToken = default)
+    {
+        var grant = await _recoveryLedger.GetAutonomyGrantAsync(OwnerId, signatureHash, actionKind, cancellationToken);
+        var currentLevel = grant?.CurrentLevel ?? AutonomyLevel.Approve;
+
+        var provider = await _recoveryLedger.GetSignatureProviderAsync(OwnerId, signatureHash, cancellationToken);
+        var capabilities = GetCapabilities(provider);
+
+        var canAutoReplay = currentLevel is AutonomyLevel.Standing or AutonomyLevel.Unattended
+            && capabilities.CanProveDlqAbsence;
+
+        string? blockedReason = null;
+        if (!canAutoReplay)
+        {
+            blockedReason = !capabilities.CanProveDlqAbsence
+                ? $"{provider?.ToString() ?? "This provider"} cannot currently provide sufficient verified recovery evidence for unattended replay — {capabilities.Notes}"
+                : "This signature has not yet earned Standing (L4) or Unattended (L5) trust — replay currently requires human approval (L3).";
+        }
+
+        return Ok(new SignatureAutonomyStatusResponse(
+            SignatureHash: signatureHash,
+            ActionKind: actionKind.ToString(),
+            CurrentLevel: (int)currentLevel,
+            LevelLabel: $"{currentLevel} (L{(int)currentLevel})",
+            CanAutoReplay: canAutoReplay,
+            CanProveDlqAbsence: capabilities.CanProveDlqAbsence,
+            BlockedReason: blockedReason));
+    }
+
+    // Same static preset lookup RecoveryEligibilityGate/AutonomyEvaluationWorker use — a
+    // null/unresolved provider fails closed to AWS's capabilities (CanProveDlqAbsence=false), so
+    // an unresolvable provider can never itself report auto-replay as available.
+    private static ProviderCapabilities GetCapabilities(CloudProviderType? provider) => provider switch
+    {
+        CloudProviderType.Azure => ProviderCapabilities.Azure,
+        CloudProviderType.Gcp => ProviderCapabilities.Gcp,
+        _ => ProviderCapabilities.Aws,
+    };
+
+    /// <summary>
     /// Gets the caller's current owner-scoped emergency-stop state (roadmap §9.4.2, §15.2) —
     /// derived live from the Recovery Evidence Ledger, never a stored flag.
     /// </summary>

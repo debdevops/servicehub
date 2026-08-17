@@ -52,9 +52,13 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
         string? bodyHash = "hash-1",
         string? signatureHash = null,
         EnvironmentType? environment = EnvironmentType.Dev,
-        bool rateLimitExceeded = false) =>
+        bool rateLimitExceeded = false,
+        // Defaults to Azure (CanProveDlqAbsence=true) so every pre-existing test not concerned
+        // with predicate 5's provider-capability corroboration keeps its original meaning —
+        // tests exercising that corroboration specifically pass Aws/Gcp/null.
+        CloudProviderType? provider = CloudProviderType.Azure) =>
         new(OwnerId, actionKind, actorKind, RecoveryTrigger.Manual, NamespaceId, entityName, bodyHash,
-            signatureHash, environment, rateLimitExceeded);
+            signatureHash, environment, rateLimitExceeded, provider);
 
     private void SeedLineageEntry(
         string entityName,
@@ -444,6 +448,61 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
         await SeedGrantAsync("sig-1", AutonomyLevel.Unattended);
 
         var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1"));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Allow);
+    }
+
+    [Theory]
+    [InlineData(CloudProviderType.Aws)]
+    [InlineData(CloudProviderType.Gcp)]
+    public async Task AutomationActor_GrantAtL4Standing_ProviderCannotProveDlqAbsence_Escalates(CloudProviderType provider)
+    {
+        // Defense-in-depth: a grant claiming Standing must still be independently corroborated
+        // against the target message's own provider capability — this is unreachable via the real
+        // promotion path today (AutonomyEvaluationWorker never promotes AWS/GCP past Approve), but
+        // the gate itself must not blindly trust the grant alone.
+        await SeedGrantAsync("sig-1", AutonomyLevel.Standing);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(
+            actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1", provider: provider));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be(RecoveryEligibilityGate.ReasonProviderCannotVerifyAbsence);
+    }
+
+    [Fact]
+    public async Task AutomationActor_GrantAtL5Unattended_ProviderCannotProveDlqAbsence_Escalates()
+    {
+        await SeedGrantAsync("sig-1", AutonomyLevel.Unattended);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(
+            actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1", provider: CloudProviderType.Aws));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be(RecoveryEligibilityGate.ReasonProviderCannotVerifyAbsence);
+    }
+
+    [Fact]
+    public async Task AutomationActor_GrantAtL4Standing_NullProvider_FailsClosedToEscalate()
+    {
+        await SeedGrantAsync("sig-1", AutonomyLevel.Standing);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(
+            actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1", provider: null));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be(RecoveryEligibilityGate.ReasonProviderCannotVerifyAbsence);
+    }
+
+    [Fact]
+    public async Task AutomationActor_GrantAtL4Standing_AzureProvider_StillAllows()
+    {
+        // Azure's CanProveDlqAbsence=true corroborates the grant — the real-world case every
+        // current L4/L5 promotion actually represents.
+        await SeedGrantAsync("sig-1", AutonomyLevel.Standing);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(
+            actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1", provider: CloudProviderType.Azure));
 
         decision.Verdict.Should().Be(EligibilityVerdict.Allow);
     }

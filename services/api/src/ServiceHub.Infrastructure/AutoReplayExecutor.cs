@@ -104,7 +104,7 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
             new RecoveryEligibilityRequest(
                 rule.OwnerId, RecoveryOperationKind.Replay, RecoveryActorKind.Automation, RecoveryTrigger.AutoRule,
                 ns.Id, message.EntityName, message.BodyHash, signatureHash, ns.Environment,
-                RateLimitExceeded: rateLimitExceeded),
+                RateLimitExceeded: rateLimitExceeded, Provider: ns.Provider),
             cancellationToken);
 
         if (decision.ReasonCode == RecoveryEligibilityGate.ReasonRateLimited)

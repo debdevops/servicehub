@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Info, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Info, AlertTriangle, Globe2 } from 'lucide-react';
 import type { RuleCondition, RuleAction, RuleResponse, CreateRuleRequest } from '@servicehub/ui-shared/lib/api/rules';
 import { findRuleEntityWarnings, type KnownEntities } from '@servicehub/ui-shared/lib/ruleValidation';
+import { resolveRuleScope, type NamespaceEntityIndex } from '@servicehub/ui-shared/lib/ruleScope';
+import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 const FIELD_OPTIONS = [
@@ -39,6 +41,11 @@ interface RuleBuilderDialogProps {
   initialAction?: RuleAction;
   isSaving?: boolean;
   knownEntities?: KnownEntities;
+  /** Same per-namespace entity index RulesPage builds for its own cards — passed through so this
+   * dialog can preview the rule's real scope live, using resolveRuleScope, instead of showing
+   * nothing while the rule is being written. Optional: omitted callers simply skip the preview. */
+  namespaceEntityIndex?: NamespaceEntityIndex[];
+  namespacesLoaded?: boolean;
 }
 
 const defaultCondition: RuleCondition = {
@@ -63,6 +70,8 @@ export function RuleBuilderDialog({
   initialAction,
   isSaving,
   knownEntities,
+  namespaceEntityIndex,
+  namespacesLoaded,
 }: RuleBuilderDialogProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -132,6 +141,15 @@ export function RuleBuilderDialog({
   };
 
   const canSave = name.trim().length > 0 && conditions.every((c) => c.value.trim().length > 0);
+
+  // Live scope preview — the same resolveRuleScope used by RulesPage's cards, run against the
+  // conditions currently being edited, so a user sees before saving whether this rule is global
+  // or targets a specific namespace/entity (see ruleScope.ts's header comment: rules carry no
+  // persisted scope of their own, so this is always inferred from EntityName/TopicName, never
+  // fabricated).
+  const liveScope = namespaceEntityIndex
+    ? resolveRuleScope(conditions, namespaceEntityIndex, !!namespacesLoaded)
+    : null;
 
   // Live cross-check against real entities so users see BEFORE saving that a
   // rule references a queue/topic that doesn't exist in any connected cloud.
@@ -329,6 +347,50 @@ export function RuleBuilderDialog({
                 </div>
               ))}
             </div>
+
+            {liveScope && (
+              <div className="mt-2 flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-gray-50">
+                {liveScope.kind === 'global' && (
+                  <>
+                    <Globe2 className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                    <span className="text-gray-600 font-medium">Scope: all clouds · all namespaces</span>
+                  </>
+                )}
+                {liveScope.kind === 'pattern' && (
+                  <span className="text-gray-600">
+                    Scope: pattern match on <span className="font-medium">{liveScope.field}</span> — not a fixed namespace
+                  </span>
+                )}
+                {liveScope.kind === 'loading' && (
+                  <span className="text-gray-500">Resolving scope…</span>
+                )}
+                {liveScope.kind === 'unresolved' && (
+                  <>
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <span className="text-amber-700">
+                      Scope: &ldquo;{liveScope.value}&rdquo; not found in any connected namespace
+                    </span>
+                  </>
+                )}
+                {liveScope.kind === 'resolved' && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-gray-500">Scope:</span>
+                    {liveScope.matches.map((m, i) => (
+                      <span key={`${m.namespaceId}-${m.entityName}-${i}`} className="inline-flex items-center gap-1">
+                        <ProviderBadge provider={m.cloudProvider} />
+                        <span className="text-gray-700">{m.namespaceName} / {m.entityName}</span>
+                      </span>
+                    ))}
+                    {liveScope.matches.length > 1 && (
+                      <span className="text-amber-700 font-medium">(ambiguous — matches {liveScope.matches.length} locations)</span>
+                    )}
+                    {liveScope.provisional && (
+                      <span className="text-gray-400">confirming remaining namespaces…</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Actions */}

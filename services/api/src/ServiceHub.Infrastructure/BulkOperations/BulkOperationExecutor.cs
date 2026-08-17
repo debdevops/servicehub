@@ -332,7 +332,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
             new RecoveryEligibilityRequest(
                 recovery.OwnerId, actionKind, recovery.Actor.Kind, RecoveryTrigger.BulkJob,
                 recovery.Namespace.Id, message.EntityName, message.BodyHash, SignatureHash: null,
-                recovery.Namespace.Environment),
+                recovery.Namespace.Environment, Provider: recovery.Namespace.Provider),
             cancellationToken);
 
         if (decision.Verdict != EligibilityVerdict.Allow)

@@ -281,6 +281,8 @@ export function RulesPage() {
         initialAction={templatePrefill?.action}
         isSaving={createMutation.isPending || updateMutation.isPending}
         knownEntities={knownEntities}
+        namespaceEntityIndex={namespaceEntityIndex}
+        namespacesLoaded={!namespacesLoading}
       />
 
       <TemplateGalleryDialog

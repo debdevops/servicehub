@@ -16,10 +16,16 @@ vi.mock('@servicehub/ui-shared/hooks/useDlqSignatures', () => ({
 vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
+vi.mock('@servicehub/ui-shared/hooks/useDlqHistory', () => ({
+  useDlqSummary: vi.fn(() => ({ data: undefined })),
+}));
 vi.mock('@servicehub/ui-shared/lib/demo/DemoContext', () => ({
   useDemoContext: vi.fn(),
 }));
 vi.mock('@/components/dlq', () => ({
+  AutonomyStatus: ({ signatureHash }: { signatureHash: string }) => (
+    <div data-testid="autonomy-status">Autonomy status for {signatureHash}</div>
+  ),
   StatusBadge: ({ status }: { status: string }) => <span>Status:{status}</span>,
   TrendBadge: ({ trend }: { trend: string }) => <span>Trend:{trend}</span>,
   FailureInvestigationPanel: () => <div data-testid="investigation-panel" />,

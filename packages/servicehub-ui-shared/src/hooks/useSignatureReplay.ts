@@ -94,11 +94,18 @@ export function useSignatureReplayJob(
     void queryClient.invalidateQueries({ queryKey: ['dlq-history'] });
     void queryClient.invalidateQueries({ queryKey: ['dlq-summary'] });
     void queryClient.invalidateQueries({ queryKey: ['dlq-signature-detail', namespaceId, signatureHash] });
+    // The Failure Signatures list is a separate query from this one signature's detail — without
+    // this, replaying from the Signature Details page leaves the list showing a stale count for
+    // this signature (dlq-signatures has no refetchInterval of its own to eventually correct it).
+    void queryClient.invalidateQueries({ queryKey: ['dlq-signatures', namespaceId] });
     void queryClient.invalidateQueries({ queryKey: ['fleet-overview'] });
     // Recovery Ledger otherwise only refreshes on its own 60s refetchInterval — see
     // useBulkOperations.ts for the same fix on the bulk-operation completion path.
     void queryClient.invalidateQueries({ queryKey: ['recovery-operations'] });
     void queryClient.invalidateQueries({ queryKey: ['recovery-entries'] });
+    // Sidebar/queue-list DLQ counts otherwise never refresh after a signature replay completes.
+    void queryClient.invalidateQueries({ queryKey: ['queues', namespaceId] });
+    void queryClient.invalidateQueries({ queryKey: ['namespace-stats', namespaceId] });
 
     if (job.status === 'Completed') {
       toast.success(`Signature replay completed — ${job.successCount}/${job.totalMatched} succeeded`);

@@ -448,7 +448,8 @@ public sealed class MessagesController : ApiControllerBase
         var decision = await _eligibilityGate.EvaluateAsync(
             new RecoveryEligibilityRequest(
                 OwnerId, kind, actor.Kind, RecoveryTrigger.Manual,
-                ns.Id, combinedEntityName, trackedMessage?.BodyHash, SignatureHash: null, ns.Environment),
+                ns.Id, combinedEntityName, trackedMessage?.BodyHash, SignatureHash: null, ns.Environment,
+                Provider: ns.Provider),
             cancellationToken);
 
         if (decision.Verdict != EligibilityVerdict.Allow)

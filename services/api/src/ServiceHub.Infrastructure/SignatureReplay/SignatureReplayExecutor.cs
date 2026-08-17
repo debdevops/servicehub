@@ -273,7 +273,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             new RecoveryEligibilityRequest(
                 recovery.OwnerId, RecoveryOperationKind.Replay, recovery.Actor.Kind, RecoveryTrigger.SignatureJob,
                 recovery.Namespace.Id, message.EntityName, message.BodyHash, recovery.SignatureHash,
-                recovery.Namespace.Environment),
+                recovery.Namespace.Environment, Provider: recovery.Namespace.Provider),
             cancellationToken);
 
         if (decision.Verdict != EligibilityVerdict.Allow)

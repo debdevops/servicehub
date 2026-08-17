@@ -23,6 +23,12 @@ namespace ServiceHub.Core.Models;
 /// <param name="RateLimitExceeded">Predicate 4's input, pre-computed by the caller via the
 /// existing <c>IAutoReplayExecutor.CanReplayAsync</c> where a per-rule rate limit applies —
 /// <see langword="false"/> (the default) for every caller with no rate-limit concept.</param>
+/// <param name="Provider">Target namespace's cloud provider — drives predicate 5's independent
+/// capability check: an <c>Automation</c> actor may only execute unattended
+/// (<see cref="AutonomyLevel.Standing"/>/<see cref="AutonomyLevel.Unattended"/>) when the
+/// provider's own <see cref="ProviderCapabilities.CanProveDlqAbsence"/> corroborates the grant,
+/// so the gate never has to trust <c>AutonomyGrant.CurrentLevel</c> alone. <see langword="null"/>
+/// is treated the same as an unresolvable provider — fails closed.</param>
 public sealed record RecoveryEligibilityRequest(
     string OwnerId,
     RecoveryOperationKind ActionKind,
@@ -33,4 +39,5 @@ public sealed record RecoveryEligibilityRequest(
     string? BodyHash,
     string? SignatureHash,
     EnvironmentType? Environment,
-    bool RateLimitExceeded = false);
+    bool RateLimitExceeded = false,
+    CloudProviderType? Provider = null);

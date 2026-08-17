@@ -44,6 +44,16 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
     private const string ReasonAutonomyGrantInsufficient = "AUTONOMY_GRANT_INSUFFICIENT";
 
     /// <summary>
+    /// Predicate 5's independent-capability reason code: fires when a grant claims
+    /// Standing/Unattended but the request's own <see cref="RecoveryEligibilityRequest.Provider"/>
+    /// cannot corroborate it via <see cref="ProviderCapabilities.CanProveDlqAbsence"/>. Today this
+    /// is unreachable in practice (fingerprint-hashing already encodes provider identity into
+    /// <c>SignatureHash</c>, so a grant only ever reaches those levels on Azure) — this is
+    /// defense-in-depth against that invariant ever changing, not a live behavior change.
+    /// </summary>
+    public const string ReasonProviderCannotVerifyAbsence = "PROVIDER_CANNOT_VERIFY_ABSENCE";
+
+    /// <summary>
     /// Predicate 4's reason code. Never <c>Declined</c>-recorded (roadmap §9.3): "routine
     /// operational throttling with its own adequate existing log line, not a safety escalation."
     /// Callers check for this exact code to know when to skip
@@ -187,6 +197,26 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
         var currentLevel = grant?.CurrentLevel ?? AutonomyLevel.Approve;
         if (currentLevel is AutonomyLevel.Standing or AutonomyLevel.Unattended)
         {
+            // Defense-in-depth (not a live behavior change): the grant alone is trusted for
+            // promotion by AutonomyEvaluationWorker, but this gate is the actual execution
+            // boundary, so it independently corroborates the claim against the provider's own
+            // capability rather than trusting AutonomyGrant.CurrentLevel blindly. Today
+            // AutonomyEvaluationWorker never promotes a signature past Approve without
+            // ProviderCapabilities.CanProveDlqAbsence already being true, so this never fires in
+            // practice — it exists so a future change (e.g. a fingerprint-algorithm version that
+            // stops encoding provider identity into SignatureHash) can't silently reopen a
+            // cross-provider execution path with nothing here to catch it.
+            var capabilities = GetCapabilities(request.Provider);
+            if (!capabilities.CanProveDlqAbsence)
+            {
+                _logger.LogWarning(
+                    "Eligibility Gate predicate 5 escalating for owner {OwnerId} signature {SignatureHash} — " +
+                    "grant claims level {Level} but provider {Provider} cannot independently verify DLQ " +
+                    "absence; refusing to trust the grant alone",
+                    request.OwnerId, request.SignatureHash, currentLevel, request.Provider);
+                return new EligibilityDecision(EligibilityVerdict.Escalate, ReasonProviderCannotVerifyAbsence);
+            }
+
             return null;
         }
 
@@ -196,6 +226,16 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
             request.OwnerId, request.SignatureHash, currentLevel);
         return new EligibilityDecision(EligibilityVerdict.Escalate, ReasonAutonomyGrantInsufficient);
     }
+
+    // Same static preset lookup AutonomyEvaluationWorker.GetCapabilities uses — a null/unresolved
+    // provider fails closed to AWS's capabilities (CanProveDlqAbsence=false), matching that
+    // worker's existing fail-closed behavior on the promotion side.
+    private static ProviderCapabilities GetCapabilities(CloudProviderType? provider) => provider switch
+    {
+        CloudProviderType.Azure => ProviderCapabilities.Azure,
+        CloudProviderType.Gcp => ProviderCapabilities.Gcp,
+        _ => ProviderCapabilities.Aws,
+    };
 
     private async Task<EligibilityDecision?> EvaluateRecurrenceLineageAsync(
         string ownerId, Guid namespaceId, string entityName, string bodyHash,

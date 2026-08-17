@@ -100,6 +100,17 @@ export interface RecoveryEntriesParams {
   limit?: number;
 }
 
+/** Mirrors ServiceHub.Core.DTOs.Responses.SignatureAutonomyStatusResponse. */
+export interface SignatureAutonomyStatus {
+  signatureHash: string;
+  actionKind: string;
+  currentLevel: number;
+  levelLabel: string;
+  canAutoReplay: boolean;
+  canProveDlqAbsence: boolean;
+  blockedReason: string | null;
+}
+
 // The verification-limitation sentence every surface rendering a verification result must show
 // verbatim (roadmap §13.4) — ServiceHub observes the queue, never the consumer.
 export const RECOVERY_LIMITATION_SENTENCE =
@@ -127,6 +138,11 @@ export const recoveryApi = {
 
   getAgeing: async (): Promise<RecoveryLedgerEntry[]> => {
     const response = await apiClient.get<RecoveryLedgerEntry[]>('/recovery/ageing');
+    return response.data;
+  },
+
+  getAutonomyStatus: async (signatureHash: string): Promise<SignatureAutonomyStatus> => {
+    const response = await apiClient.get<SignatureAutonomyStatus>(`/recovery/autonomy/${signatureHash}`);
     return response.data;
   },
 

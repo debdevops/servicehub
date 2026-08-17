@@ -100,7 +100,9 @@ public sealed class CloudBridgeController : ApiControllerBase
         SupportsPurge: c.SupportsPurge,
         SupportsScheduledMessages: c.SupportsScheduledMessages,
         SupportsRepeatablePeek: c.SupportsRepeatablePeek,
-        Notes: c.Notes);
+        Notes: c.Notes,
+        SupportsRecoveryMarker: c.SupportsRecoveryMarker,
+        CanProveDlqAbsence: c.CanProveDlqAbsence);
 
     // -------------------------------------------------------------------------
     // GET api/v1/cloud-bridge/namespaces/{namespaceId}/entities?provider=Aws
