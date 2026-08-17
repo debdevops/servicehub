@@ -143,6 +143,13 @@ describe('analyzeMessages', () => {
       const dlqInsight = insights.find(i => i.type === 'dlq-pattern');
 
       expect(dlqInsight?.evidence.patternSignature).toBe('Unknown');
+      // The literal 'Unknown' signature must never be presented as if it were
+      // a shared real error — the title/description should say plainly that
+      // no reason was extractable, not imply these messages share a cause.
+      expect(dlqInsight?.title).toBe('DLQ Pattern: Failure Reason Unavailable');
+      expect(dlqInsight?.description).not.toContain('similar error');
+      expect(dlqInsight?.description).not.toContain('"Unknown"');
+      expect(dlqInsight?.description).toContain('no extractable failure reason');
     });
   });
 

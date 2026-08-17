@@ -418,7 +418,11 @@ function generateRecommendations(pattern: PatternMatch): AIInsight['recommendati
 function getPatternTitle(pattern: PatternMatch): string {
   switch (pattern.type) {
     case 'dlq-pattern':
-      return `DLQ Pattern: ${pattern.signature?.substring(0, 50) || 'Unknown Failure'}`;
+      // 'Unknown' here means no reason was extractable at all (see detectDLQPatterns) —
+      // say so plainly rather than presenting "Unknown" as if it were the error itself.
+      return pattern.signature === 'Unknown'
+        ? 'DLQ Pattern: Failure Reason Unavailable'
+        : `DLQ Pattern: ${pattern.signature?.substring(0, 50) || 'Unknown Failure'}`;
     case 'retry-loop':
       return `Retry Loop: ${pattern.messages.length} Messages Stuck`;
     case 'poison-message':
@@ -440,6 +444,14 @@ function getPatternDescription(pattern: PatternMatch): string {
   
   switch (pattern.type) {
     case 'dlq-pattern':
+      // Grouped only by shared *absence* of a reason — do not imply they share a cause.
+      if (pattern.signature === 'Unknown') {
+        return `${count} messages dead-lettered with no extractable failure reason ` +
+          `(${pattern.metrics.matchPercentage}% of DLQ messages). This queue's provider may not expose ` +
+          `a native per-message dead-letter reason, and no recognizable error-type property was found ` +
+          `on these messages. They are grouped here only because a reason could not be determined for ` +
+          `each — this does not mean they share the same underlying cause.`;
+      }
       return `${count} messages dead-lettered with similar error: "${pattern.signature}". ` +
         `This represents ${pattern.metrics.matchPercentage}% of DLQ messages.`;
     case 'retry-loop':
