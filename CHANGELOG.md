@@ -1,6 +1,6 @@
 # ServiceHub Changelog
 
-## [3.7.0] — 2026-08-14
+## [3.7.0] — 2026-08-18
 
 Recovery Evidence Ledger — the headline v3.7.0 feature. ServiceHub's replay/purge decisions were
 previously recorded inconsistently and in some paths untruthfully (see "Fixed" below); this
@@ -11,7 +11,10 @@ sweep, and JSON/CSV evidence export with a non-empty "what ServiceHub does not k
 manifest on every export. See `docs/RECOVERY-EVIDENCE.md` for the full model and how to
 independently verify a chain from an export. Cross-cloud production validation, bulk-operation
 safety guarding, and Rules Builder accessibility fixes from the prior RC1 hardening pass remain
-below.
+below. Since the initial 14 Aug cut, this release also picked up a fleet-wide replay velocity
+cap and per-rule success-rate circuit breaker on top of the Eligibility Gate, a dedicated Live
+Tail workspace, Back/Forward navigation across every Quick Access destination, and a round of
+header/Messages-page UX consolidation.
 
 ### Added
 
@@ -22,6 +25,14 @@ below.
 - **`docs/RECOVERY-EVIDENCE.md`** — the standalone hash-chain and verification-model reference for an external auditor working from an export alone.
 - **Bulk Replay/Purge production-namespace E2E guard** — new Playwright suite proves the Bulk Replay/Bulk Purge buttons on DLQ History are disabled outright (not merely rejected after the fact) against a production namespace, and their confirmation modal never mounts.
 - **Accessibility smoke coverage** — automated axe-core (WCAG2 A/AA) scan of the DLQ History page and the Auto-Replay Rules Builder dialog, added as a Playwright suite via the new `@axe-core/playwright` dev dependency.
+- **Fleet-wide replay velocity cap and per-rule success-rate circuit breaker** — `IAutoReplayExecutor.CanReplayFleetWideAsync` adds a second, owner-wide check (`RecoveryEvidence:FleetReplayVelocityCapPerHour`, default 500/hr) alongside the existing per-rule limit: several individually-reasonable per-rule caps could otherwise sum to a much larger aggregate replay volume than any single rule's own limit implies. The Eligibility Gate escalates on this via a new `FLEET_RATE_LIMITED` predicate-4 reason, distinct from a single rule being rate-limited. Separately, `AutonomyEvaluationWorker` now runs a success-rate circuit breaker each sweep: any enabled `AutoReplayRule` whose most recent `RecoveryEvidence:CircuitBreakerSampleSize` (default 20) *verified* ledger outcomes — `Recovered`/`Returned`, never broker-acceptance alone — fall below `RecoveryEvidence:CircuitBreakerSuccessRateFloor` (default 50%) is automatically disabled, ledger-recorded (`AutoReplayRuleCircuitBreakerTripped`), and announced via a new `servicehub.rule.circuitbreaker.tripped.v1` platform event. This closes the gap where a rule that successfully hands messages back to a queue that immediately re-dead-letters them would otherwise look 100% successful by execution-acceptance alone. `RecoveryEvidence:MaxSignatureSweepBatchSize` (default 1000) also bounds each autonomy sweep's per-cycle signature batch, with an explicit warning logged whenever a sweep hits the cap rather than silently under-covering the backlog.
+- **Live Tail workspace page** (`/live-tail`) — a dedicated, linkable Quick Access destination for watching one queue or topic/subscription in real time, reachable from the sidebar's new "Live Tail" entry. Provider → Namespace → Entity selection lives in the URL, so a session is shareable/bookmarkable/preselectable; streaming itself reuses the existing `useLiveTail()` SSE session — the same logic the in-context `LiveTailPanel` drawer on the Messages page already used — so there is no second backend integration to keep correct, and it inherits the same `ProviderCapabilities.SupportsRepeatablePeek` gating (unsupported on AWS).
+- **Back/Forward navigation for every Quick Access destination** — `QuickAccessToolbar` renders a browser-like Back/Forward pair plus the current workspace's label (Namespace Overview, Incident Center, Fleet Health, Active Messages, Live Tail, Dead-Letter, Scheduled Messages, Cloud Bridge, DLQ Intelligence, Failure Signatures, Auto-Replay Rules, Multi-Cloud Trace, System Health, Audit Trail, Recovery Evidence, Security & Privacy, Help & Guide) above the workspace, so switching between panels via Quick Access no longer strands the user without a way back short of the browser's own controls. `useQuickAccessHistory` tracks the router's own PUSH/REPLACE/POP history to know whether a previous/next entry exists — movement is delegated to the real router history (`navigate(-1)`/`navigate(1)`), not a parallel stack.
+
+### Changed
+
+- **Header consolidated to a single-line connection indicator** — removed the "Current Connections" chip row that listed every connected provider (Azure/AWS/GCP) side by side, and the separate namespace-name/env-badge row beneath it; both are now one compact top-bar indicator (pulsing dot + provider icon + short label, e.g. "AWS" + env badge, e.g. "DEV"). The sidebar's Namespaces panel already handles quick-switching between namespaces, so no functionality was lost.
+- **Messages page info banners merged into one row** — the "more messages available" notice and the AWS SQS delivery-count warning previously stacked as two full-width banners; they now render as a single compact row (full text still available via `title` tooltip), reducing the vertical space non-critical notices take above the message list.
 
 ### Fixed
 
@@ -29,6 +40,7 @@ below.
 - **`DlqMonitorService` fabricated a `Replayed` outcome on message absence** — a message simply no longer being in the DLQ (which happens for reasons unrelated to ServiceHub, e.g. TTL expiry or a manual operator action) was recorded as ServiceHub having replayed it. Outcomes are now `Resolved` with an honest `ResolutionCause`, never an invented `Replayed`.
 - **Return-to-DLQ erased prior outcome fields** — a message returning to the DLQ after a recorded resolution silently discarded the evidence of what had previously happened to it.
 - **Manual triage could declare `Discarded` with no provider call ever made** — `Discarded` now means "ServiceHub destroyed this," exclusively; a human declaration uses a distinct, clearly-different value.
+- **Failure signature notes length limit not enforced on record binding** — `UpdateSignatureStatusRequest.Notes`'s `[StringLength(4096)]` validation attribute was explicitly scoped to `property:` only, which on a record's positional constructor parameter excludes the constructor parameter itself from carrying the attribute. Removed the explicit target so it applies to both, restoring the length constraint on the signature lifecycle status endpoint (`POST .../signatures/{hash}/status`) used by manual triage and auto-replay's signature transitions.
 
 ### Fixed
 
