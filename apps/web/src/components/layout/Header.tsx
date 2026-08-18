@@ -4,6 +4,7 @@ import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
 import { getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
 import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
+import { EnvironmentBadge } from '@/components/EnvironmentBadge';
 
 export function Header() {
   const [searchParams] = useSearchParams();
@@ -37,21 +38,25 @@ export function Header() {
           </span>
         </Link>
 
-        {/* Current connection — compact provider + environment indicator */}
+        {/* Current connection — provider + namespace + environment. Never hidden: this is the
+            operator's only always-visible statement of what a destructive action would affect,
+            so it degrades (truncates) rather than disappearing on a narrow viewport. */}
         {isConnected && (
-          <div className="hidden lg:flex items-center gap-2 flex-1 min-w-0" data-tour="header-connection">
-            <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" aria-hidden="true" />
+          <div className="flex items-center gap-2 flex-1 min-w-0" data-tour="header-connection">
+            <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full min-w-0">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse shrink-0" aria-hidden="true" />
               <ProviderIcon provider={currentNamespace.cloudProvider} className="w-4 h-4 shrink-0" />
-              <span className="text-xs font-bold uppercase tracking-wide">
+              <span className="hidden sm:inline text-xs font-bold uppercase tracking-wide shrink-0">
                 {getProviderStyle(currentNamespace.cloudProvider).label}
               </span>
-              <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded uppercase leading-none ${
-                currentNamespace.environment === 'prod' ? 'bg-red-500 text-white' :
-                currentNamespace.environment === 'uat' ? 'bg-amber-400 text-amber-900' :
-                'bg-green-400 text-green-900'
-              }`}>
-                {(currentNamespace.environment ?? 'dev').toUpperCase()}
+              <span
+                className="hidden md:inline text-xs font-medium text-white/90 truncate min-w-0"
+                title={currentNamespace.displayName || currentNamespace.name}
+              >
+                {currentNamespace.displayName || currentNamespace.name}
+              </span>
+              <span className="shrink-0">
+                <EnvironmentBadge env={currentNamespace.environment} />
               </span>
             </div>
           </div>

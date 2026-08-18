@@ -10,6 +10,9 @@ function queryKeysForEvent(event: PlatformEventFrame): QueryKey[] {
   if (event.category === 'namespace') {
     keys.push(['namespaces']);
   }
+  if (event.category === 'rule') {
+    keys.push(['rules']);
+  }
   if (event.namespaceId) {
     keys.push(
       ['queues', event.namespaceId],

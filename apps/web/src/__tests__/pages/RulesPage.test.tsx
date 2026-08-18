@@ -35,6 +35,12 @@ vi.mock('@servicehub/ui-shared/lib/api/client', () => ({
   apiClient: { get: vi.fn().mockResolvedValue({ data: [] }) },
 }));
 
+// Covered independently by useEventStream.test.tsx — here we only need RulesPage to not
+// crash on the real hook's apiClient.defaults access, which the mock above doesn't provide.
+vi.mock('@servicehub/ui-shared/hooks/useEventStream', () => ({
+  useEventStream: vi.fn(() => ({ connected: false })),
+}));
+
 import {
   useRules,
   useCreateRule,
@@ -159,6 +165,49 @@ describe('RulesPage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><RulesPage /></Wrapper>);
     expect(screen.getByText(/"MaxDeliveryCountExceeded"/)).toBeInTheDocument();
+  });
+
+  it('never claims a specific circuit-breaker threshold or that it mirrors the backend', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+    expect(screen.queryByText(/mirrors the backend/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/30% over recent replays/i)).not.toBeInTheDocument();
+  });
+
+  it('distinguishes a circuit-breaker-disabled rule from a manually-disabled rule', () => {
+    mockUseRules.mockReturnValue({
+      data: [
+        {
+          ...mockRules[1],
+          id: 3,
+          name: 'Breaker Tripped Rule',
+          enabled: false,
+          disabledReason: 'CircuitBreaker',
+          disabledReasonDetail:
+            'Verified success rate 38% over the last 20 outcomes fell below the 50% circuit-breaker floor.',
+        },
+        {
+          ...mockRules[1],
+          id: 4,
+          name: 'Manually Disabled Rule',
+          enabled: false,
+          disabledReason: 'Manual',
+          disabledReasonDetail: null,
+        },
+      ],
+      isLoading: false,
+      refetch: vi.fn(),
+      isFetching: false,
+    });
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    // Circuit-breaker-disabled rule states why, visibly, without needing a hover/title.
+    expect(screen.getByText(/Disabled by the safety circuit breaker/i)).toBeInTheDocument();
+    expect(screen.getByText(/38%/)).toBeInTheDocument();
+
+    // Manually-disabled rule gets none of that — the two must render differently.
+    expect(screen.queryAllByText(/Disabled by the safety circuit breaker/i)).toHaveLength(1);
   });
 
   it('shows loading state', () => {

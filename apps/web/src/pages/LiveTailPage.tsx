@@ -259,8 +259,13 @@ export function LiveTailPage() {
   const capabilityBlocked = hasSelection && !supportsRepeatablePeek;
   const status: LiveTailStatus = capabilityBlocked ? 'unsupported' : liveStatus;
 
+  // Distinguishes "the operator paused this" from "the connection dropped" or "never started" —
+  // stop() alone can't tell those apart, since Pause and Stop both call it (see below).
+  const [pausedByUser, setPausedByUser] = useState(false);
+
   useEffect(() => {
     if (!hasSelection || capabilityBlocked) return;
+    setPausedByUser(false);
     start();
     return () => stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -323,7 +328,9 @@ export function LiveTailPage() {
       <div className="flex items-center justify-between gap-3 px-6 py-2.5 border-b border-gray-200 bg-white shrink-0 flex-wrap">
         <div className="flex items-center gap-2 text-sm">
           <span className={`w-2 h-2 rounded-full ${STATUS_DOT[status]}`} />
-          <span className="text-gray-700 font-medium">{STATUS_LABEL[status]}</span>
+          <span className="text-gray-700 font-medium">
+            {status === 'idle' && pausedByUser ? 'Paused' : STATUS_LABEL[status]}
+          </span>
           <span className="text-gray-400">· {messages.length} received</span>
           {search && <span className="text-gray-400">· {filteredMessages.length} shown</span>}
         </div>
@@ -354,7 +361,15 @@ export function LiveTailPage() {
             <Trash2 className="w-3.5 h-3.5" /> Clear
           </button>
           <button
-            onClick={() => (isRunning ? stop() : start())}
+            onClick={() => {
+              if (isRunning) {
+                setPausedByUser(true);
+                stop();
+              } else {
+                setPausedByUser(false);
+                start();
+              }
+            }}
             disabled={status === 'unsupported'}
             className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium transition-colors disabled:opacity-40"
           >
@@ -362,7 +377,10 @@ export function LiveTailPage() {
             {isRunning ? 'Pause' : 'Resume'}
           </button>
           <button
-            onClick={stop}
+            onClick={() => {
+              setPausedByUser(false);
+              stop();
+            }}
             disabled={status === 'idle' || status === 'unsupported'}
             className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium transition-colors disabled:opacity-40"
           >

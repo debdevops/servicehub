@@ -124,6 +124,50 @@ describe('LiveTailPage', () => {
     expect(screen.getByText('Watching for new messages…')).toBeInTheDocument();
   });
 
+  // rerender() must be given a freshly-created element each time, not the same element
+  // reference reused — React (and RTL's rerender) can bail out of re-invoking the tree when
+  // the root is re-rendered with an identical element object, which would silently defeat
+  // these tests' whole premise (the mocked hook's new return value never being picked up).
+  function pausableLiveTailTree() {
+    return (
+      <MemoryRouter initialEntries={['/live-tail?namespace=ns-azure&queue=orders']}>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}>
+          <LiveTailPage />
+        </QueryClientProvider>
+      </MemoryRouter>
+    );
+  }
+
+  it('shows "Paused" (not "Stopped") after the operator clicks Pause', () => {
+    mockUseLiveTail.mockReturnValue({ status: 'connected', messages: [], start, stop, clear });
+    const { rerender } = render(pausableLiveTailTree());
+    expect(screen.getByText('Live')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Pause/ }));
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    // The underlying session actually closes after Pause calls stop() — simulate that.
+    mockUseLiveTail.mockReturnValue({ status: 'idle', messages: [], start, stop, clear });
+    rerender(pausableLiveTailTree());
+
+    expect(screen.getByText('Paused')).toBeInTheDocument();
+    expect(screen.queryByText('Stopped')).not.toBeInTheDocument();
+  });
+
+  it('shows "Stopped" (not "Paused") after the operator clicks Stop', () => {
+    mockUseLiveTail.mockReturnValue({ status: 'connected', messages: [], start, stop, clear });
+    const { rerender } = render(pausableLiveTailTree());
+
+    fireEvent.click(screen.getByRole('button', { name: /^Stop$/ }));
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    mockUseLiveTail.mockReturnValue({ status: 'idle', messages: [], start, stop, clear });
+    rerender(pausableLiveTailTree());
+
+    expect(screen.getByText('Stopped')).toBeInTheDocument();
+    expect(screen.queryByText('Paused')).not.toBeInTheDocument();
+  });
+
   it('blocks AWS from starting a session and explains why, without calling start()', () => {
     renderPage('/live-tail?namespace=ns-aws&queue=orders');
     expect(screen.getByText('Live Tail unavailable for AWS SQS')).toBeInTheDocument();

@@ -131,12 +131,17 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
 
   const openConfirm = (action: 'replay' | 'purge') => {
     const shortId = message.id?.split('-').slice(0, 2).join('-') || `#${message.sequenceNumber}`;
+    // Every destructive-action confirmation must name what it will affect — a namespace/entity
+    // is never implied only by whatever the operator happens to be looking at on screen.
+    const nsLabel = currentNs?.displayName || currentNs?.name || 'unknown namespace';
+    const envLabel = (currentNs?.environment ?? 'dev').toUpperCase();
+    const identityLine = `Namespace: ${nsLabel} (${envLabel}) · Entity: ${entityName || 'unknown'}\n\n`;
 
     if (action === 'replay') {
       setConfirmState({
         isOpen: true,
         title: 'Replay Message',
-        message: `Are you sure you want to replay message ${shortId}?\n\nThis will re-send the message to the queue for processing.\n\n💡 Best practice: validate replay in DEV or UAT before using in PROD. Production namespaces block this action.\n\n⚠️ Replay is best-effort and not atomic. If a transient error occurs after the message is sent but before it is removed from the DLQ, both the original DLQ entry and the new copy may briefly coexist. Check ApplicationProperties for "Replayed=true" if you see unexpected duplicates.`,
+        message: `${identityLine}Are you sure you want to replay message ${shortId}?\n\nThis will re-send the message to the queue for processing.\n\n💡 Best practice: validate replay in DEV or UAT before using in PROD. Production namespaces block this action.\n\n⚠️ Replay is best-effort and not atomic. If a transient error occurs after the message is sent but before it is removed from the DLQ, both the original DLQ entry and the new copy may briefly coexist. Check ApplicationProperties for "Replayed=true" if you see unexpected duplicates.`,
         variant: 'default',
         action: 'replay',
       });
@@ -144,7 +149,7 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
       setConfirmState({
         isOpen: true,
         title: 'Permanently Delete Message',
-        message: `Are you sure you want to permanently delete message ${shortId}?\n\nThis action cannot be undone.`,
+        message: `${identityLine}Are you sure you want to permanently delete message ${shortId}?\n\nThis action cannot be undone.`,
         variant: 'danger',
         action: 'purge',
       });

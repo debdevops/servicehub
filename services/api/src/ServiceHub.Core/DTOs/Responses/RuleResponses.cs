@@ -18,7 +18,9 @@ public sealed record RuleResponse(
     long SuccessCount,
     double SuccessRate,
     int MaxReplaysPerHour,
-    int PendingMatchCount);
+    int PendingMatchCount,
+    string? DisabledReason,
+    string? DisabledReasonDetail);
 
 /// <summary>
 /// Response DTO for rule test results.

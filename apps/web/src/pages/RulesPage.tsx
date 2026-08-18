@@ -16,6 +16,7 @@ import { resolveRuleScope, type NamespaceEntityIndex, type RuleScope, type Scope
 import { ProviderBadge, getProviderStyle, getProviderServiceShortName } from '@servicehub/ui-shared/lib/providerStyles';
 import type { Topic, ApiError } from '@servicehub/ui-shared/lib/api/types';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
+import { useEventStream } from '@servicehub/ui-shared/hooks/useEventStream';
 import {
   useRules,
   useCreateRule,
@@ -36,6 +37,9 @@ import type {
 export function RulesPage() {
   const { data: rules, isLoading, isError, refetch, isFetching } = useRules();
   const { isDemoMode } = useDemoContext();
+  // Live-refreshes the rules list when a circuit-breaker trip (or any other rule change)
+  // happens elsewhere, rather than waiting for the existing 30s poll.
+  useEventStream();
 
   // Entities across every connected namespace (all providers) — used to flag
   // rules whose entity references no longer exist anywhere.
@@ -480,10 +484,14 @@ function RuleCard({
     rule.matchCount > 0
       ? Math.round((rule.successCount / rule.matchCount) * 100)
       : 0;
-  // Mirrors the backend circuit-breaker threshold (30% over recent replays) so
-  // users see WHY a rule is about to be — or should be — disabled.
+  // Lifetime broker-acceptance rate — NOT the circuit breaker's measure. The breaker disables
+  // a rule based on recent *verified* recovery outcomes (see AutonomyEvaluationWorker), which
+  // can differ sharply from how often the broker merely accepted a replay. This heuristic is a
+  // secondary "this rule looks unreliable" signal only; a breaker trip is reported separately
+  // via `rule.disabledReason` below.
   const isFailing = rule.enabled && rule.matchCount >= 5 && successPct < 30;
   const hasEntityWarning = entityWarnings.length > 0;
+  const isCircuitBreakerDisabled = !rule.enabled && rule.disabledReason === 'CircuitBreaker';
 
   return (
     <div
@@ -492,7 +500,9 @@ function RuleCard({
           ? hasEntityWarning || isFailing
             ? 'border-amber-300 bg-amber-50/40 hover:shadow-md'
             : 'border-gray-200 bg-white hover:shadow-md'
-          : 'border-gray-100 bg-gray-50 opacity-75'
+          : isCircuitBreakerDisabled
+            ? 'border-red-200 bg-red-50/40'
+            : 'border-gray-100 bg-gray-50 opacity-75'
       }`}
     >
       {/* Scope — cloud/namespace/provider/entity, self-contained at a glance (see ScopeHeader) */}
@@ -528,9 +538,18 @@ function RuleCard({
           {isFailing && (
             <span
               className="shrink-0 px-1.5 py-0.5 text-[10px] font-bold text-red-700 bg-red-100 border border-red-200 rounded"
-              title={`Only ${successPct}% of replays succeed — fix the root cause or disable this rule`}
+              title={`Only ${successPct}% of replays were broker-accepted (lifetime) — not the circuit breaker's verified measure, but still worth a look`}
             >
               failing
+            </span>
+          )}
+          {isCircuitBreakerDisabled && (
+            <span
+              className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-red-700 bg-red-100 border border-red-200 rounded"
+              title={rule.disabledReasonDetail ?? 'Disabled by the success-rate circuit breaker'}
+            >
+              <Shield className="w-3 h-3" />
+              safety-disabled
             </span>
           )}
         </div>
@@ -622,6 +641,17 @@ function RuleCard({
           {entityWarnings.map((warning, i) => (
             <p key={i}>⚠ {warning}</p>
           ))}
+        </div>
+      )}
+
+      {isCircuitBreakerDisabled && (
+        <div className="mb-3 px-2.5 py-2 bg-red-50 border border-red-200 rounded-lg text-[11px] text-red-800 flex items-start gap-1.5">
+          <Shield className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
+          <p>
+            <strong>Disabled by the safety circuit breaker</strong> — not a human.{' '}
+            {rule.disabledReasonDetail ?? 'Verified recovery outcomes for this rule fell below the safety floor.'}{' '}
+            Re-enabling without addressing the underlying failures will likely trip it again.
+          </p>
         </div>
       )}
 

@@ -25,6 +25,19 @@ public sealed class AutoReplayRule
     /// <summary>Whether the rule is currently active.</summary>
     public bool Enabled { get; set; } = true;
 
+    /// <summary>
+    /// Why the rule is currently disabled — <c>"Manual"</c> (a human toggled it off) or
+    /// <c>"CircuitBreaker"</c> (the success-rate circuit breaker tripped it). Null when enabled.
+    /// </summary>
+    public string? DisabledReason { get; set; }
+
+    /// <summary>
+    /// Human-readable detail for <see cref="DisabledReason"/> — for a circuit-breaker trip, the
+    /// verified success rate and sample size that caused it. Null unless <see cref="DisabledReason"/>
+    /// is <c>"CircuitBreaker"</c>.
+    /// </summary>
+    public string? DisabledReasonDetail { get; set; }
+
     /// <summary>JSON-serialized conditions that must match for the rule to trigger.</summary>
     public required string ConditionsJson { get; set; }
 

@@ -357,7 +357,9 @@ public class CoreDtoTests
             SuccessCount: 45,
             SuccessRate: 90.0,
             MaxReplaysPerHour: 100,
-            PendingMatchCount: 0);
+            PendingMatchCount: 0,
+            DisabledReason: null,
+            DisabledReasonDetail: null);
 
         response.Id.Should().Be(1);
         response.Name.Should().Be("Timeout Rule");

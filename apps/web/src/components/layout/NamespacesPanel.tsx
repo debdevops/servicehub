@@ -402,7 +402,10 @@ export function NamespacesPanel() {
       defaultWidth={320}
       minWidth={260}
       maxWidth={520}
-      narrowBreakpoint={1280}
+      // Aligned with Header's connection-chip breakpoint (Tailwind `lg`, 1024px) so there is no
+      // dead band where the chip shows a namespace but this panel — the surface that lets an
+      // operator confirm/switch it — is already collapsed.
+      narrowBreakpoint={1024}
       dataTour="sidebar"
       headerActions={
         <>

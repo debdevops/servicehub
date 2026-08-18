@@ -17,6 +17,9 @@ import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
+import { EnvironmentBadge } from '@/components/EnvironmentBadge';
+import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
+import { getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
 import type { Message, ContentType } from '@servicehub/ui-shared/lib/mockData';
 import type { Message as APIMessage, CloudProviderType, ApiError } from '@servicehub/ui-shared/lib/api/types';
 import toast from 'react-hot-toast';
@@ -129,6 +132,7 @@ export function MessagesPage() {
 
   // Fetch available namespaces to validate the current namespace ID
   const { data: namespaces } = useNamespaces();
+  const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
 
   // Auto-fix invalid namespace ID by redirecting to the first available namespace
   useEffect(() => {
@@ -577,6 +581,29 @@ export function MessagesPage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden relative" data-tour="messages-area">
+      {/* Identity — the operator must never be one click from Replay/Purge without knowing
+          exactly which cloud, namespace, environment, and entity is in view. */}
+      <div className="bg-white border-b border-gray-100 px-4 py-1.5 flex items-center gap-2 shrink-0 min-w-0">
+        <h1 className="text-sm font-bold text-gray-900 truncate">{entityName}</h1>
+        {currentNamespace && (
+          <>
+            <span className="text-gray-300 shrink-0">·</span>
+            <ProviderIcon provider={currentNamespace.cloudProvider} className="w-3.5 h-3.5 shrink-0 text-gray-500" />
+            <span className="hidden sm:inline text-xs font-semibold uppercase tracking-wide text-gray-400 shrink-0">
+              {getProviderStyle(currentNamespace.cloudProvider).label}
+            </span>
+            <span
+              className="text-xs text-gray-500 truncate min-w-0"
+              title={currentNamespace.displayName || currentNamespace.name}
+            >
+              {currentNamespace.displayName || currentNamespace.name}
+            </span>
+            <span className="shrink-0">
+              <EnvironmentBadge env={currentNamespace.environment} />
+            </span>
+          </>
+        )}
+      </div>
       {/* Toolbar */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shrink-0">
         {/* Search */}

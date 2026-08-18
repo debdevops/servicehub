@@ -301,6 +301,10 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
             }
 
             rule.Enabled = false;
+            rule.DisabledReason = "CircuitBreaker";
+            rule.DisabledReasonDetail =
+                $"Verified success rate {verifiedSuccessRate:P0} over the last {dispositions.Count} outcomes " +
+                $"fell below the {_circuitBreakerSuccessRateFloor:P0} circuit-breaker floor.";
             rule.UpdatedAt = DateTimeOffset.UtcNow;
 
             try

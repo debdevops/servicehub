@@ -743,7 +743,10 @@ public sealed class AutonomyEvaluationWorkerTests : IDisposable
         var worker = CreateWorker(CircuitBreakerConfig(sampleSize: 4, floor: 0.50));
         await worker.SweepAutoReplayCircuitBreakersAsync(BuildScope(), OwnerA, _recoveryLedger, CancellationToken.None);
 
-        (await _dbContext.AutoReplayRules.SingleAsync(r => r.Id == rule.Id)).Enabled.Should().BeFalse();
+        var disabledRule = await _dbContext.AutoReplayRules.SingleAsync(r => r.Id == rule.Id);
+        disabledRule.Enabled.Should().BeFalse();
+        disabledRule.DisabledReason.Should().Be("CircuitBreaker");
+        disabledRule.DisabledReasonDetail.Should().Contain("25").And.Contain("4 outcomes").And.Contain("50").And.Contain("circuit-breaker floor");
 
         var evt = await _dbContext.RecoveryEvents
             .SingleAsync(e => e.EventType == RecoveryEventType.AutoReplayRuleCircuitBreakerTripped);

@@ -29,10 +29,11 @@ vi.mock('@/components/ConfirmDialog', () => ({
   // Confirm is intentionally left non-disabled here (unlike the real component) so these
   // tests exercise MessageDetailPanel's own re-entrancy guard in handleConfirm, independent
   // of ConfirmDialog's UI-level disabling (covered separately in ConfirmDialog.test.tsx).
-  ConfirmDialog: ({ isOpen, title, isConfirming, onConfirm, onCancel }: any) =>
+  ConfirmDialog: ({ isOpen, title, message, isConfirming, onConfirm, onCancel }: any) =>
     isOpen ? (
       <div data-testid="confirm-dialog" data-confirming={!!isConfirming}>
         <span>{title}</span>
+        <p style={{ whiteSpace: 'pre-line' }}>{message}</p>
         <button onClick={onConfirm}>Confirm</button>
         <button onClick={onCancel}>Cancel</button>
       </div>
@@ -231,6 +232,25 @@ describe('MessageDetailPanel', () => {
     fireEvent.click(screen.getByLabelText('Replay message'));
     expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
     expect(screen.getByText('Replay Message')).toBeInTheDocument();
+  });
+
+  it('names the namespace and environment in the Replay confirmation', () => {
+    mockUseNamespaces.mockReturnValue({ data: [{ ...makeNamespace('azure'), displayName: 'Contoso UAT', environment: 'uat' }] });
+    const Wrapper = createWrapper();
+    render(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
+    fireEvent.click(screen.getByLabelText('Replay message'));
+    expect(screen.getByText(/Contoso UAT/)).toBeInTheDocument();
+    expect(screen.getByText(/UAT/)).toBeInTheDocument();
+    expect(screen.getByText(/test-queue/)).toBeInTheDocument();
+  });
+
+  it('names the namespace and environment in the Delete confirmation', () => {
+    mockUseNamespaces.mockReturnValue({ data: [{ ...makeNamespace('aws'), displayName: 'Acme Dev', environment: 'dev' }] });
+    const Wrapper = createWrapper();
+    render(<Wrapper><MessageDetailPanel message={mockMessage} /></Wrapper>);
+    fireEvent.click(screen.getByLabelText('Permanently delete message'));
+    expect(screen.getByText(/Acme Dev/)).toBeInTheDocument();
+    expect(screen.getByText(/DEV/)).toBeInTheDocument();
   });
 
   it('closes confirm dialog when Cancel is clicked', () => {

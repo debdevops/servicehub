@@ -63,7 +63,14 @@ const mockUseSubscriptions = useSubscriptions as ReturnType<typeof vi.fn>;
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 
 const mockNamespaces = [
-  { id: 'ns1', name: 'my-namespace', displayName: 'My Namespace', isActive: true },
+  {
+    id: 'ns1',
+    name: 'my-namespace',
+    displayName: 'My Namespace',
+    isActive: true,
+    cloudProvider: 'azure',
+    environment: 'prod',
+  },
 ];
 
 const mockMessagesData = {
@@ -152,6 +159,19 @@ describe('MessagesPage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><MessagesPage /></Wrapper>);
     expect(screen.getByText('2 messages')).toBeInTheDocument();
+  });
+
+  it('has exactly one <h1> naming the current entity, with namespace and environment visible nearby', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><MessagesPage /></Wrapper>);
+
+    const headings = screen.getAllByRole('heading', { level: 1 });
+    expect(headings).toHaveLength(1);
+    expect(headings[0]).toHaveTextContent('test-queue');
+
+    // Namespace and environment must be readable without expanding any panel.
+    expect(screen.getByText('My Namespace')).toBeInTheDocument();
+    expect(screen.getByText('PROD')).toBeInTheDocument();
   });
 
   it('shows loading skeleton during loading', () => {

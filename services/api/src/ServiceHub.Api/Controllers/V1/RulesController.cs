@@ -280,9 +280,11 @@ public sealed class RulesController : ApiControllerBase
                     Error.Conflict(ErrorCodes.Rule.AlreadyExists, $"A rule named '{request.Name}' already exists"));
 
             // Update properties in-place — preserves the same ID, stats, and external references.
+            var wasEnabled = rule.Enabled;
             rule.Name = request.Name;
             rule.Description = request.Description;
             rule.Enabled = request.Enabled;
+            ApplyManualDisableReason(rule, wasEnabled);
             rule.ConditionsJson = JsonSerializer.Serialize(request.Conditions, JsonOptions);
             rule.ActionsJson = JsonSerializer.Serialize(request.Action, JsonOptions);
             rule.UpdatedAt = DateTimeOffset.UtcNow;
@@ -408,7 +410,9 @@ public sealed class RulesController : ApiControllerBase
             return ToActionResult<RuleResponse>(
                 Error.NotFound(ErrorCodes.Rule.NotFound, $"Rule {id} not found"));
 
+        var wasEnabled = rule.Enabled;
         rule.Enabled = !rule.Enabled;
+        ApplyManualDisableReason(rule, wasEnabled);
         rule.UpdatedAt = DateTimeOffset.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -1027,6 +1031,26 @@ public sealed class RulesController : ApiControllerBase
 
     // ── Mapping ─────────────────────────────────────────────────
 
+    /// <summary>
+    /// Keeps <see cref="AutoReplayRule.DisabledReason"/> honest for a manual API write (Toggle or
+    /// Update): clears it on an actual disabled→enabled transition, and marks it "Manual" on an
+    /// actual enabled→disabled transition. A no-op call (state unchanged) never overwrites an
+    /// existing circuit-breaker provenance.
+    /// </summary>
+    private static void ApplyManualDisableReason(AutoReplayRule rule, bool wasEnabled)
+    {
+        if (rule.Enabled && !wasEnabled)
+        {
+            rule.DisabledReason = null;
+            rule.DisabledReasonDetail = null;
+        }
+        else if (!rule.Enabled && wasEnabled)
+        {
+            rule.DisabledReason = "Manual";
+            rule.DisabledReasonDetail = null;
+        }
+    }
+
     private RuleResponse MapToResponse(AutoReplayRule rule, int? pendingMatchCount = null)
     {
         var conditions = DeserializeOrDefault<List<RuleCondition>>(rule.ConditionsJson) ?? [];
@@ -1048,7 +1072,9 @@ public sealed class RulesController : ApiControllerBase
             SuccessCount: rule.SuccessCount,
             SuccessRate: successRate,
             MaxReplaysPerHour: rule.MaxReplaysPerHour,
-            PendingMatchCount: pendingMatchCount ?? 0);
+            PendingMatchCount: pendingMatchCount ?? 0,
+            DisabledReason: rule.DisabledReason,
+            DisabledReasonDetail: rule.DisabledReasonDetail);
     }
 
     private static T? DeserializeOrDefault<T>(string json)

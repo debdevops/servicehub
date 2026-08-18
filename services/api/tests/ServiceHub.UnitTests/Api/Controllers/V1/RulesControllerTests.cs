@@ -315,6 +315,62 @@ public class RulesControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task Update_EnabledToDisabled_SetsManualDisabledReason()
+    {
+        var rule = CreateRule(enabled: true);
+        _dbContext.AutoReplayRules.Add(rule);
+        await _dbContext.SaveChangesAsync();
+
+        var request = CreateRuleRequest("Updated Rule") with { Enabled = false };
+        var result = await _controller.Update(rule.Id, request);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RuleResponse>().Subject;
+        response.Enabled.Should().BeFalse();
+        response.DisabledReason.Should().Be("Manual");
+    }
+
+    [Fact]
+    public async Task Update_NoOpOnAlreadyDisabledCircuitBreakerRule_PreservesDisabledReason()
+    {
+        var rule = CreateRule(enabled: false);
+        rule.DisabledReason = "CircuitBreaker";
+        rule.DisabledReasonDetail = "Verified success rate 38% over the last 20 outcomes fell below the 50% circuit-breaker floor.";
+        _dbContext.AutoReplayRules.Add(rule);
+        await _dbContext.SaveChangesAsync();
+
+        // Editing conditions/name while leaving the rule disabled must not overwrite the
+        // circuit breaker's provenance with "Manual" — the rule's enabled state never changed.
+        var request = CreateRuleRequest("Renamed Rule") with { Enabled = false };
+        var result = await _controller.Update(rule.Id, request);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RuleResponse>().Subject;
+        response.Enabled.Should().BeFalse();
+        response.DisabledReason.Should().Be("CircuitBreaker");
+        response.DisabledReasonDetail.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task Update_DisabledToEnabled_ClearsDisabledReason()
+    {
+        var rule = CreateRule(enabled: false);
+        rule.DisabledReason = "CircuitBreaker";
+        rule.DisabledReasonDetail = "Verified success rate 38% over the last 20 outcomes fell below the 50% circuit-breaker floor.";
+        _dbContext.AutoReplayRules.Add(rule);
+        await _dbContext.SaveChangesAsync();
+
+        var request = CreateRuleRequest("Updated Rule") with { Enabled = true };
+        var result = await _controller.Update(rule.Id, request);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RuleResponse>().Subject;
+        response.Enabled.Should().BeTrue();
+        response.DisabledReason.Should().BeNull();
+        response.DisabledReasonDetail.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Update_DuplicateName_ReturnsConflict()
     {
         _dbContext.AutoReplayRules.Add(CreateRule("Rule A"));
@@ -368,6 +424,8 @@ public class RulesControllerTests : IDisposable
         var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var response = ok.Value.Should().BeOfType<RuleResponse>().Subject;
         response.Enabled.Should().BeFalse();
+        response.DisabledReason.Should().Be("Manual");
+        response.DisabledReasonDetail.Should().BeNull();
         _auditLogger.Verify(a => a.LogCriticalAction(
             It.IsAny<HttpContext>(), It.IsAny<string>(), "Rule.Toggle", "Succeeded",
             It.IsAny<Guid?>(), It.IsAny<EnvironmentType?>(), It.IsAny<string?>(), It.IsAny<string?>(),
@@ -378,6 +436,8 @@ public class RulesControllerTests : IDisposable
     public async Task Toggle_DisabledRule_BecomesEnabled()
     {
         var rule = CreateRule(enabled: false);
+        rule.DisabledReason = "CircuitBreaker";
+        rule.DisabledReasonDetail = "Verified success rate 38% over the last 20 outcomes fell below the 50% circuit-breaker floor.";
         _dbContext.AutoReplayRules.Add(rule);
         await _dbContext.SaveChangesAsync();
 
@@ -385,6 +445,29 @@ public class RulesControllerTests : IDisposable
         var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var response = ok.Value.Should().BeOfType<RuleResponse>().Subject;
         response.Enabled.Should().BeTrue();
+        response.DisabledReason.Should().BeNull();
+        response.DisabledReasonDetail.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Toggle_AlreadyDisabledManually_TogglingOffAgainIsNotPossible_ButReEnableThenDisableSetsManual()
+    {
+        // A circuit-breaker-disabled rule that a human re-enables and then disables again
+        // (two Toggle calls) must end up attributed to the human, not the stale breaker trip.
+        var rule = CreateRule(enabled: false);
+        rule.DisabledReason = "CircuitBreaker";
+        rule.DisabledReasonDetail = "Verified success rate 38% over the last 20 outcomes fell below the 50% circuit-breaker floor.";
+        _dbContext.AutoReplayRules.Add(rule);
+        await _dbContext.SaveChangesAsync();
+
+        await _controller.Toggle(rule.Id); // re-enable
+        var result = await _controller.Toggle(rule.Id); // disable again, manually
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RuleResponse>().Subject;
+        response.Enabled.Should().BeFalse();
+        response.DisabledReason.Should().Be("Manual");
+        response.DisabledReasonDetail.Should().BeNull();
     }
 
     [Fact]

@@ -340,6 +340,12 @@ public sealed class DlqDbContext : DbContext
         entity.Property(e => e.ActionsJson)
             .HasMaxLength(8192)
             .IsRequired();
+
+        entity.Property(e => e.DisabledReason)
+            .HasMaxLength(32);
+
+        entity.Property(e => e.DisabledReasonDetail)
+            .HasMaxLength(256);
     }
 
     private static void ConfigureAuditLog(ModelBuilder modelBuilder)
