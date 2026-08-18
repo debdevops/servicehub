@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MessagesPage } from '@/pages/MessagesPage';
 
@@ -95,10 +95,12 @@ const mockMessagesData = {
 // existing query params along — including a stale ?message= deep link.
 function LocationProbe() {
   const location = useLocation();
+  const navigationType = useNavigationType();
   const navigate = useNavigate();
   return (
     <>
       <span data-testid="location-search">{location.search}</span>
+      <span data-testid="navigation-type">{navigationType}</span>
       <button onClick={() => navigate('/messages?namespace=ns1&queue=other-queue&message=msg-1')}>
         go-other-queue
       </button>
@@ -351,6 +353,20 @@ describe('MessagesPage', () => {
       expect(screen.getByTestId('location-search')).toHaveTextContent('message=msg-1');
       fireEvent.click(screen.getByText(/Dead-Letter \(/));
       expect(screen.getByTestId('location-search')).not.toHaveTextContent('message=');
+    });
+
+    it('pushes a history entry when a message is selected, so Back can return to the queue view', () => {
+      const Wrapper = createWrapper();
+      render(<Wrapper><MessagesPage /></Wrapper>);
+      fireEvent.click(screen.getByText('Select msg-2'));
+      expect(screen.getByTestId('navigation-type')).toHaveTextContent('PUSH');
+    });
+
+    it('replaces (does not push) when the selection is cleared by a tab switch', () => {
+      const Wrapper = createWrapper('/messages?namespace=ns1&queue=test-queue&message=msg-1');
+      render(<Wrapper><MessagesPage /></Wrapper>);
+      fireEvent.click(screen.getByText(/Dead-Letter \(/));
+      expect(screen.getByTestId('navigation-type')).toHaveTextContent('REPLACE');
     });
 
     it('clears selection and the stale message param when navigating to another entity', () => {

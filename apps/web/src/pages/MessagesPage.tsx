@@ -157,6 +157,14 @@ export function MessagesPage() {
     () => searchParams.get('message')
   );
 
+  // Re-sync when the URL's message param changes for reasons other than our own
+  // setSelectedMessageId calls below (e.g. Back/Forward navigation) — otherwise
+  // the URL restores but the detail panel doesn't.
+  const messageParam = searchParams.get('message');
+  useEffect(() => {
+    setSelectedMessageId(messageParam);
+  }, [messageParam]);
+
   const syncMessageParam = (id: string | null) => {
     const newParams = new URLSearchParams(searchParams);
     if (id) {
@@ -164,9 +172,11 @@ export function MessagesPage() {
     } else {
       newParams.delete('message');
     }
-    setSearchParams(newParams, { replace: true });
+    // Opening a message is a distinct, back-able step; clearing it (tab
+    // switches, etc.) stays a replace so it doesn't litter history.
+    setSearchParams(newParams, { replace: id === null });
   };
-  
+
   // Queue tab: active or deadletter (sync with URL parameter)
   const [queueTab, setQueueTab] = useState<QueueTab>('active');
 
