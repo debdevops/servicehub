@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useDeferredValue } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause, Radio, Inbox, Clock, Archive } from 'lucide-react';
+import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, AlertTriangle, Play, Pause, Radio, Inbox, Clock, Archive } from 'lucide-react';
 import { MessageList, MessageDetailPanel, LiveTailPanel, type QueueTab } from '@/components/messages';
 import { EmptyState } from '@/components/EmptyState';
 import { AwsTopicFanout } from '@/components/aws/AwsTopicFanout';
@@ -776,23 +776,33 @@ export function MessagesPage() {
         </div>
       )}
 
-      {/* More Messages Available Banner */}
-      {hasMoreMessages && !evidenceFilter && (
-        <div className="bg-blue-50 border-b border-blue-200 px-4 py-2.5 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-blue-600 shrink-0" />
-          <span className="text-xs text-blue-800 flex-1">
-            <span className="font-semibold">More messages available:</span> Showing {messages.length.toLocaleString()} of {totalMessagesInQueue.toLocaleString()} messages.
-            Scroll down or click "Load More" to view additional messages.
-            Search and filters only apply to the messages currently loaded.
-          </span>
-        </div>
-      )}
-
-      {/* AWS SQS semantics notice — browsing counts as deliveries */}
-      {isAwsNamespace && (
-        <div className="px-4 py-1.5 bg-amber-50 border-b border-amber-100 text-amber-700 text-xs shrink-0">
-          AWS SQS counts every view as a delivery — repeated refreshes can move messages to the DLQ
-          once the queue's redrive policy limit is reached. Auto-refresh is off by default here.
+      {/* Info notices — merged into a single compact row */}
+      {((hasMoreMessages && !evidenceFilter) || isAwsNamespace) && (
+        <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-200 flex items-center gap-4 text-xs shrink-0 flex-wrap">
+          {hasMoreMessages && !evidenceFilter && (
+            <span
+              className="flex items-center gap-1.5 text-blue-700"
+              title={`More messages available: Showing ${messages.length.toLocaleString()} of ${totalMessagesInQueue.toLocaleString()} messages. Search and filters only apply to the messages currently loaded.`}
+            >
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              Showing {messages.length.toLocaleString()} of {totalMessagesInQueue.toLocaleString()}
+              <button onClick={handleLoadMore} className="underline font-medium hover:text-blue-800">
+                Load More
+              </button>
+            </span>
+          )}
+          {hasMoreMessages && !evidenceFilter && isAwsNamespace && (
+            <span className="text-gray-300" aria-hidden="true">|</span>
+          )}
+          {isAwsNamespace && (
+            <span
+              className="flex items-center gap-1.5 text-amber-700"
+              title="AWS SQS counts every view as a delivery — repeated refreshes can move messages to the DLQ once the queue's redrive policy limit is reached. Auto-refresh is off by default here."
+            >
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              AWS: viewing counts as delivery
+            </span>
+          )}
         </div>
       )}
 

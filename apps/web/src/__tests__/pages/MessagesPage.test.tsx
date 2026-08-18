@@ -295,14 +295,14 @@ describe('MessagesPage', () => {
     });
     const Wrapper = createWrapper();
     render(<Wrapper><MessagesPage /></Wrapper>);
-    expect(screen.getByText(/More messages available/)).toBeInTheDocument();
-    expect(screen.getByText(/Search and filters only apply to the messages currently loaded/)).toBeInTheDocument();
+    expect(screen.getByText('Load More')).toBeInTheDocument();
+    expect(screen.getByTitle(/Search and filters only apply to the messages currently loaded/)).toBeInTheDocument();
   });
 
   it('does not show the more-messages warning when the full queue is already loaded', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><MessagesPage /></Wrapper>);
-    expect(screen.queryByText(/More messages available/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Load More')).not.toBeInTheDocument();
   });
 
   it('renders with topic subscription path', () => {
