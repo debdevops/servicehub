@@ -49,7 +49,9 @@ public sealed record FleetNamespaceHealth(
     int TopEntityCount,
     string? TopCategory,
     DateTimeOffset? OldestActiveDetectedAt,
-    FleetHealthSeverity Severity);
+    FleetHealthSeverity Severity,
+    FleetMonitoringCoverage Coverage,
+    string? CoverageNote);
 
 /// <summary>A fleet-wide daily trend point (new vs resolved across all namespaces).</summary>
 public sealed record FleetTrendPoint(
@@ -67,5 +69,34 @@ public enum FleetHealthSeverity
     Warning = 1,
 
     /// <summary>A spike in the window or a large active backlog needs attention.</summary>
-    Critical = 2
+    Critical = 2,
+
+    /// <summary>
+    /// Zero active dead-letters, but only because <see cref="FleetNamespaceHealth.Coverage"/> is
+    /// not <see cref="FleetMonitoringCoverage.Scanned"/> — the namespace has not actually been
+    /// observed, so "no known failures" must never be reported as "Healthy".
+    /// </summary>
+    Unknown = 3
+}
+
+/// <summary>
+/// Whether a namespace's dead-letter activity in <see cref="FleetNamespaceHealth"/> reflects a
+/// real background scan, or an absence of scanning that must not be mistaken for a clean queue.
+/// Mirrors the two facts <c>DlqMonitorService.ScanNamespaceAsync</c> already checks before
+/// scanning: provider registration and <c>SupportsRepeatablePeek</c>/<c>AllowDestructivePeek</c>.
+/// </summary>
+public enum FleetMonitoringCoverage
+{
+    /// <summary>The namespace is actively scanned by the background DLQ monitor.</summary>
+    Scanned = 0,
+
+    /// <summary>
+    /// The provider has no non-destructive peek and the operator has not opted into destructive
+    /// polling (<c>DlqMonitor:AllowDestructivePeek:{Provider}</c>) — the background monitor never
+    /// scans this namespace.
+    /// </summary>
+    NotMonitored = 1,
+
+    /// <summary>No <c>ICloudMessagingProvider</c> is registered for this namespace's provider.</summary>
+    ProviderNotRegistered = 2
 }

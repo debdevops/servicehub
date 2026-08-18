@@ -5,7 +5,7 @@ import { useRecoveryOperation } from '@servicehub/ui-shared/hooks/useRecoveryOpe
 import { useDownloadRecoveryExport, useWriteOffRecoveryEntry } from '@servicehub/ui-shared/hooks/useRecoveryOperation';
 import { useVerifyChain } from '@servicehub/ui-shared/hooks/useChainVerification';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
-import type { RecoveryLedgerEntry } from '@servicehub/ui-shared/lib/api/recovery';
+import { describeRecoveryDetailReason, type RecoveryLedgerEntry } from '@servicehub/ui-shared/lib/api/recovery';
 import { VerificationResultNote } from '@/components/recovery/VerificationResultNote';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
@@ -101,6 +101,16 @@ export default function RecoveryOperationDetailPage() {
     return acc;
   }, {});
 
+  // The reason an entry closed as Unverified (etc.) is recorded on the event that closed it, not
+  // on the entry itself — find it once per entry so it renders immediately, not only inside the
+  // event-chain table below (which is collapsed by default).
+  const reasonByEntryId = new Map<string, string>();
+  for (const evt of events) {
+    if (!evt.entryId) continue;
+    const reason = describeRecoveryDetailReason(evt.detailJson);
+    if (reason) reasonByEntryId.set(evt.entryId, reason);
+  }
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="bg-white border-b border-gray-200 px-6 py-4 shrink-0">
@@ -178,7 +188,9 @@ export default function RecoveryOperationDetailPage() {
                   <tr key={entry.id}>
                     <td className="px-3 py-2 text-gray-700 font-mono text-xs">{entry.targetEntity}</td>
                     <td className="px-3 py-2 text-gray-400 font-mono text-xs truncate max-w-[160px]">{entry.bodyHash}</td>
-                    <td className="px-3 py-2"><VerificationResultNote entry={entry} /></td>
+                    <td className="px-3 py-2">
+                      <VerificationResultNote entry={entry} reasonText={reasonByEntryId.get(entry.id) ?? null} />
+                    </td>
                     <td className="px-3 py-2">
                       {NON_TERMINAL.includes(entry.state) && (
                         <button
@@ -214,6 +226,7 @@ export default function RecoveryOperationDetailPage() {
                     <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">Event</th>
                     <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">Occurred</th>
                     <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">Actor</th>
+                    <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">Detail</th>
                     <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">Hash</th>
                   </tr>
                 </thead>
@@ -224,6 +237,7 @@ export default function RecoveryOperationDetailPage() {
                       <td className="px-3 py-2 font-medium text-gray-800">{evt.eventType}</td>
                       <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{new Date(evt.occurredAt).toLocaleString()}</td>
                       <td className="px-3 py-2 text-gray-600">{evt.actorIdentity}</td>
+                      <td className="px-3 py-2 text-gray-600 max-w-[220px]">{describeRecoveryDetailReason(evt.detailJson) ?? '—'}</td>
                       <td className="px-3 py-2 font-mono text-gray-400 truncate max-w-[140px]" title={evt.entryHash}>{evt.entryHash}</td>
                     </tr>
                   ))}

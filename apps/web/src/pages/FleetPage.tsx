@@ -31,6 +31,9 @@ const severityStyles: Record<FleetHealthSeverity, { dot: string; text: string; l
   critical: { dot: 'bg-red-500', text: 'text-red-700', label: 'Critical' },
   warning: { dot: 'bg-amber-500', text: 'text-amber-700', label: 'Warning' },
   healthy: { dot: 'bg-emerald-500', text: 'text-emerald-700', label: 'Healthy' },
+  // Zero known dead-letters, but the namespace was never scanned — must read distinctly from
+  // "Healthy" (blueprint Gap 1: an unmonitored namespace must never render green).
+  unknown: { dot: 'bg-slate-400', text: 'text-slate-600', label: 'Not monitored' },
 };
 
 // Maps a provider connectivity health-check entry name (registered in Program.cs /
@@ -393,9 +396,20 @@ export default function FleetPage() {
                         >
                           <td className="px-4 py-2.5">
                             <div className="flex items-center gap-2">
-                              <span className={`w-2 h-2 rounded-full ${sev.dot}`} title={sev.label} />
+                              <span
+                                className={`w-2 h-2 rounded-full ${sev.dot}`}
+                                title={n.severity === 'unknown' ? (n.coverageNote ?? sev.label) : sev.label}
+                              />
                               <span className="font-medium text-gray-800">{n.namespaceName}</span>
                               <ProviderBadge provider={n.provider.toLowerCase() as CloudProviderType} />
+                              {n.coverage !== 'scanned' && n.severity !== 'unknown' && (
+                                <span
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200"
+                                  title={n.coverageNote ?? 'The background monitor does not scan this namespace automatically. An empty or low count here does not mean the queue is clean.'}
+                                >
+                                  Not monitored
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="px-4 py-2.5 text-gray-500">{n.environment}</td>

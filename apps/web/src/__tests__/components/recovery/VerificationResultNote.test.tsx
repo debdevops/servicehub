@@ -61,4 +61,16 @@ describe('VerificationResultNote — honesty conformance', () => {
     render(<VerificationResultNote entry={makeEntry({ state: 'Returned', verificationConfidence: 'Exact' })} />);
     expect(screen.getByText(/Exact match/)).toBeInTheDocument();
   });
+
+  it('forwards the Unverified reason to the state badge', () => {
+    render(
+      <VerificationResultNote
+        entry={makeEntry({ state: 'Unverified', verificationResult: 'Unverified' })}
+        reasonText="AWS SQS has no non-destructive peek; ServiceHub cannot prove a message did not return."
+      />
+    );
+    expect(
+      screen.getByText('AWS SQS has no non-destructive peek; ServiceHub cannot prove a message did not return.')
+    ).toBeInTheDocument();
+  });
 });

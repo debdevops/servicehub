@@ -929,6 +929,10 @@ function buildDemoFleetNamespaceHealth(provider: CloudProviderType): FleetNamesp
     topCategory: topActive?.dominantDeadletterReason ?? null,
     oldestActiveDetectedAt: oldestActive?.firstSeenAt ?? null,
     severity,
+    // Demo Mode simulates a fully-monitored namespace for every provider — there is no real scan
+    // to be honest about here, unlike the live FleetOverviewService.
+    coverage: 'scanned',
+    coverageNote: null,
   };
 }
 
@@ -1188,7 +1192,7 @@ function buildDemoRecoveryOperation(): RecoveryOperation {
 function buildDemoRecoveryEvents(operationId: string, entries: RecoveryLedgerEntry[]): RecoveryEvent[] {
   let seq = 1;
   const events: RecoveryEvent[] = [];
-  const push = (entryId: string | null, eventType: string, occurredAt: string) => {
+  const push = (entryId: string | null, eventType: string, occurredAt: string, detailJson: string | null = null) => {
     events.push({
       id: `${operationId}-event-${seq}`,
       ownerId: 'demo-owner',
@@ -1199,7 +1203,7 @@ function buildDemoRecoveryEvents(operationId: string, entries: RecoveryLedgerEnt
       occurredAt,
       actorIdentity: DEMO_RECOVERY_ACTOR,
       actorKind: 'User',
-      detailJson: null,
+      detailJson,
       prevHash: seq === 1 ? '0'.repeat(64) : `demo-hash-${seq - 1}`,
       entryHash: `demo-hash-${seq}`,
       schemaVersion: 1,
@@ -1216,7 +1220,10 @@ function buildDemoRecoveryEvents(operationId: string, entries: RecoveryLedgerEnt
     } else if (entry.state === 'Recovered') {
       push(entry.id, 'NoRecurrenceObserved', entry.closedAt ?? entry.begunAt);
     } else if (entry.state === 'Unverified') {
-      push(entry.id, 'ObservationUnavailable', entry.closedAt ?? entry.begunAt);
+      // All Unverified demo entries are AWS (DEMO_RECOVERY_SPECS) — a real, accurate reason
+      // code for this fixture, not an invented one, so Demo Mode exercises the same honesty
+      // path a real AWS deployment hits (docs/RECOVERY-EVIDENCE.md §4).
+      push(entry.id, 'ObservationUnavailable', entry.closedAt ?? entry.begunAt, JSON.stringify({ reason: 'AWS_NO_ABSENCE_PROOF' }));
     }
   }
   return events;

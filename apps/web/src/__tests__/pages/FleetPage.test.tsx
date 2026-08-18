@@ -56,6 +56,8 @@ const sampleOverview = {
       topCategory: 'PoisonMessage',
       oldestActiveDetectedAt: '2026-07-20T06:00:00Z',
       severity: 'critical' as const,
+      coverage: 'scanned' as const,
+      coverageNote: null,
     },
     {
       namespaceId: 'ns-healthy',
@@ -71,6 +73,8 @@ const sampleOverview = {
       topCategory: null,
       oldestActiveDetectedAt: null,
       severity: 'healthy' as const,
+      coverage: 'scanned' as const,
+      coverageNote: null,
     },
     {
       namespaceId: 'ns-dev-active',
@@ -86,6 +90,31 @@ const sampleOverview = {
       topCategory: 'Transient',
       oldestActiveDetectedAt: '2026-07-21T01:00:00Z',
       severity: 'warning' as const,
+      coverage: 'scanned' as const,
+      coverageNote: null,
+    },
+  ],
+};
+
+const unmonitoredOverview = {
+  ...sampleOverview,
+  namespaces: [
+    {
+      namespaceId: 'ns-unmonitored',
+      namespaceName: 'acme-aws-prod',
+      provider: 'Aws',
+      environment: 'Prod',
+      activeCount: 0,
+      newInWindow: 0,
+      resolvedInWindow: 0,
+      totalCount: 0,
+      topEntity: null,
+      topEntityCount: 0,
+      topCategory: null,
+      oldestActiveDetectedAt: null,
+      severity: 'unknown' as const,
+      coverage: 'notMonitored' as const,
+      coverageNote: 'AWS SQS has no non-destructive peek.',
     },
   ],
 };
@@ -224,5 +253,14 @@ describe('FleetPage', () => {
     renderPage();
 
     expect(screen.getByRole('link', { name: /per-namespace details/i })).toHaveAttribute('href', '/dashboard');
+  });
+
+  it('never shows a Healthy dot for an unmonitored namespace with zero known dead-letters', () => {
+    mockUseFleetOverview.mockReturnValue({ data: unmonitoredOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    renderPage();
+
+    const row = screen.getByText('acme-aws-prod').closest('tr') as HTMLElement;
+    expect(within(row).queryByTitle('Healthy')).not.toBeInTheDocument();
+    expect(within(row).getByTitle('AWS SQS has no non-destructive peek.')).toBeInTheDocument();
   });
 });

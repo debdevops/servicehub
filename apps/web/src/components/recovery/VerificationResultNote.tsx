@@ -14,7 +14,15 @@ import { RecoveryStateBadge } from './RecoveryStateBadge';
  * not behind a tooltip alone (§13.4 requires the text itself to render, not just be available on
  * hover).
  */
-export function VerificationResultNote({ entry }: { entry: RecoveryLedgerEntry }) {
+export function VerificationResultNote({
+  entry,
+  reasonText,
+}: {
+  entry: RecoveryLedgerEntry;
+  /** Humanized reason the entry closed as `Unverified` (or other non-terminal states), when one
+   * was recorded — see `describeRecoveryDetailReason`. Omit or pass null if none was found. */
+  reasonText?: string | null;
+}) {
   const windowLabel = entry.observationWindowEndsAt
     ? `not returned within the observation window`
     : null;
@@ -22,7 +30,7 @@ export function VerificationResultNote({ entry }: { entry: RecoveryLedgerEntry }
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2 flex-wrap">
-        <RecoveryStateBadge state={entry.state} />
+        <RecoveryStateBadge state={entry.state} reasonText={reasonText} />
         {entry.state === 'Recovered' && windowLabel && (
           <span className="text-xs text-gray-500">· {windowLabel}</span>
         )}

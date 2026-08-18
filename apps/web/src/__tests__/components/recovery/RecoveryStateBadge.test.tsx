@@ -21,4 +21,25 @@ describe('RecoveryStateBadge', () => {
     const unverifiedClass = unverifiedContainer.querySelector('span')?.className;
     expect(recoveredClass).not.toBe(unverifiedClass);
   });
+
+  it.each(states)('opening the details panel for %s shows all four explanation parts', (state) => {
+    render(<RecoveryStateBadge state={state} />);
+    const details = screen.getByText(state).closest('details') as HTMLDetailsElement;
+    details.open = true;
+    expect(screen.getByText(/^What happened:/)).toBeInTheDocument();
+    expect(screen.getByText(/^Why ServiceHub knows this:/)).toBeInTheDocument();
+    expect(screen.getByText(/^What ServiceHub cannot prove:/)).toBeInTheDocument();
+    expect(screen.getByText(/^What you can do:/)).toBeInTheDocument();
+  });
+
+  it('renders a recorded reason when one is supplied', () => {
+    render(<RecoveryStateBadge state="Unverified" reasonText="AWS SQS has no non-destructive peek." />);
+    expect(screen.getByText('AWS SQS has no non-destructive peek.')).toBeInTheDocument();
+    expect(screen.getByText(/^Recorded reason:/)).toBeInTheDocument();
+  });
+
+  it('never fabricates a recorded-reason line when none was supplied', () => {
+    render(<RecoveryStateBadge state="Unverified" />);
+    expect(screen.queryByText(/^Recorded reason:/)).not.toBeInTheDocument();
+  });
 });

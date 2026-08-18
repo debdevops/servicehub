@@ -4,7 +4,14 @@ import { apiClient } from './client';
 
 // Matches the wire value: the API's JsonStringEnumConverter serializes enums camelCase,
 // so FleetHealthSeverity.Healthy arrives as "healthy", not "Healthy".
-export type FleetHealthSeverity = 'healthy' | 'warning' | 'critical';
+// 'unknown' means "zero known dead-letters, but coverage isn't Scanned" — it must never be
+// treated as equivalent to 'healthy'.
+export type FleetHealthSeverity = 'healthy' | 'warning' | 'critical' | 'unknown';
+
+// Whether the namespace's dead-letter activity reflects a real background scan, or an absence
+// of scanning that must not be mistaken for a clean queue (mirrors the backend's
+// FleetMonitoringCoverage — see FleetOverviewService.DetermineCoverage).
+export type FleetMonitoringCoverage = 'scanned' | 'notMonitored' | 'providerNotRegistered';
 
 export interface FleetNamespaceHealth {
   namespaceId: string;
@@ -20,6 +27,8 @@ export interface FleetNamespaceHealth {
   topCategory: string | null;
   oldestActiveDetectedAt: string | null;
   severity: FleetHealthSeverity;
+  coverage: FleetMonitoringCoverage;
+  coverageNote: string | null;
 }
 
 export interface FleetTrendPoint {

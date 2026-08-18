@@ -120,4 +120,39 @@ describe('RecoveryOperationDetailPage', () => {
     fireEvent.click(writeOffButtons[0]);
     expect(screen.getByText('Write off entry')).toBeInTheDocument();
   });
+
+  it('renders the recorded Unverified reason on the entry row and in the event-chain Detail column', () => {
+    mockUseRecoveryOperation.mockReturnValue({
+      data: {
+        operation: {
+          id: 'op-1', kind: 'Replay', trigger: 'Manual', actorIdentity: 'alex@contoso.com',
+          actorKind: 'User', reason: null, namespaceId: 'ns-1',
+          namespaceNameSnapshot: 'acme-prod (AWS)', providerSnapshot: 'aws', environmentSnapshot: 'prod',
+          scopeDescription: 'entity=orders-dlq', sourceRuleId: null, sourceJobId: null,
+          serviceVersion: '3.7.0', openedAt: '2026-08-10T09:00:00Z', targetCount: 1,
+        },
+        entries: [{ ...baseEntry, id: 'entry-unverified', state: 'Unverified', verificationResult: 'Unverified' }],
+        events: [
+          {
+            id: 'evt-1', ownerId: 'o', seq: 1, entryId: 'entry-unverified', operationId: 'op-1',
+            eventType: 'ObservationUnavailable', occurredAt: '2026-08-10T10:00:00Z',
+            actorIdentity: 'RecoveryVerificationWorker', actorKind: 'System',
+            detailJson: '{"reason":"AWS_NO_ABSENCE_PROOF"}', prevHash: '0'.repeat(64), entryHash: 'h1', schemaVersion: 1,
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    });
+
+    renderPage();
+
+    expect(
+      screen.getByText('AWS SQS has no non-destructive peek; ServiceHub cannot prove a message did not return.')
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText(/Event chain/));
+    const detailHeader = screen.getByRole('columnheader', { name: 'Detail' });
+    expect(detailHeader).toBeInTheDocument();
+  });
 });

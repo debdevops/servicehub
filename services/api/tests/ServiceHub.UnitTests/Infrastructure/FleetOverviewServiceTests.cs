@@ -1,12 +1,15 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Infrastructure;
@@ -30,7 +33,39 @@ public class FleetOverviewServiceTests : IDisposable
         _dbContext.Database.OpenConnection();
         _dbContext.Database.EnsureCreated();
 
-        _service = new FleetOverviewService(_dbContext, _namespaces.Object, new Mock<ILogger<FleetOverviewService>>().Object);
+        // Default: Azure registered, no config overrides — every existing test below uses the
+        // default (Azure) namespace, which is always Scanned.
+        _service = CreateService(registeredProviders: CloudProviderType.Azure);
+    }
+
+    /// <summary>
+    /// Builds a service wired with only the registered providers listed, mirroring
+    /// <c>DlqMonitorServiceTests.CreateSut</c>'s pattern for router/configuration setup.
+    /// </summary>
+    private FleetOverviewService CreateService(
+        IReadOnlyDictionary<string, string?>? configData = null,
+        params CloudProviderType[] registeredProviders)
+    {
+        var providers = registeredProviders.Select(p =>
+        {
+            var mock = new Mock<ICloudMessagingProvider>();
+            mock.SetupGet(x => x.ProviderType).Returns(p);
+            mock.SetupGet(x => x.Capabilities).Returns(p switch
+            {
+                CloudProviderType.Aws => ProviderCapabilities.Aws,
+                CloudProviderType.Gcp => ProviderCapabilities.Gcp,
+                _ => ProviderCapabilities.Azure,
+            });
+            return mock.Object;
+        });
+        var router = new CloudProviderRouter(providers);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(configData ?? new Dictionary<string, string?>())
+            .Build();
+
+        return new FleetOverviewService(
+            _dbContext, _namespaces.Object, router, configuration,
+            new Mock<ILogger<FleetOverviewService>>().Object);
     }
 
     public void Dispose()
@@ -92,6 +127,84 @@ public class FleetOverviewServiceTests : IDisposable
         result.Value.TotalActive.Should().Be(0);
         result.Value.Namespaces.Should().ContainSingle()
             .Which.Severity.Should().Be(FleetHealthSeverity.Healthy);
+        result.Value.Namespaces.Single().Coverage.Should().Be(FleetMonitoringCoverage.Scanned);
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_UnmonitoredAwsNamespace_NoRows_IsUnknownNeverHealthy()
+    {
+        var ns = Namespace.Create("aws-ns", "akid:secret", ownerId: TestConstants.TestOwnerId, provider: CloudProviderType.Aws).Value;
+        SetOwnedNamespaces(ns);
+
+        // AWS registered, but no DlqMonitor:AllowDestructivePeek:Aws override — matches the
+        // shipped default (appsettings.json: AllowDestructivePeek.Aws = false).
+        var service = CreateService(registeredProviders: CloudProviderType.Aws);
+
+        var result = await service.GetOverviewAsync(TestConstants.TestOwnerId);
+
+        result.IsSuccess.Should().BeTrue();
+        var health = result.Value.Namespaces.Should().ContainSingle().Which;
+        health.Severity.Should().Be(FleetHealthSeverity.Unknown);
+        health.Severity.Should().NotBe(FleetHealthSeverity.Healthy);
+        health.Coverage.Should().Be(FleetMonitoringCoverage.NotMonitored);
+        health.CoverageNote.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_AwsNamespace_AllowDestructivePeekEnabled_IsScannedAndHealthy()
+    {
+        var ns = Namespace.Create("aws-ns", "akid:secret", ownerId: TestConstants.TestOwnerId, provider: CloudProviderType.Aws).Value;
+        SetOwnedNamespaces(ns);
+
+        var service = CreateService(
+            configData: new Dictionary<string, string?> { ["DlqMonitor:AllowDestructivePeek:Aws"] = "true" },
+            registeredProviders: CloudProviderType.Aws);
+
+        var result = await service.GetOverviewAsync(TestConstants.TestOwnerId);
+
+        result.IsSuccess.Should().BeTrue();
+        var health = result.Value.Namespaces.Should().ContainSingle().Which;
+        health.Severity.Should().Be(FleetHealthSeverity.Healthy);
+        health.Coverage.Should().Be(FleetMonitoringCoverage.Scanned);
+        health.CoverageNote.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_UnmonitoredAwsNamespace_WithKnownActiveRows_KeepsRealSeverity()
+    {
+        // A confirmed backlog (from before monitoring was disabled, or a historical scan) must
+        // never be suppressed just because the namespace isn't currently monitored.
+        var ns = Namespace.Create("aws-ns", "akid:secret", ownerId: TestConstants.TestOwnerId, provider: CloudProviderType.Aws).Value;
+        SetOwnedNamespaces(ns);
+        _dbContext.DlqMessages.Add(Msg(ns.Id, 1));
+        await _dbContext.SaveChangesAsync();
+
+        var service = CreateService(registeredProviders: CloudProviderType.Aws);
+
+        var result = await service.GetOverviewAsync(TestConstants.TestOwnerId);
+
+        result.IsSuccess.Should().BeTrue();
+        var health = result.Value.Namespaces.Should().ContainSingle().Which;
+        health.Severity.Should().Be(FleetHealthSeverity.Warning);
+        health.Coverage.Should().Be(FleetMonitoringCoverage.NotMonitored);
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_ProviderNotRegistered_IsUnknownWithProviderNotRegisteredCoverage()
+    {
+        var ns = Namespace.Create("gcp-ns", "{\"type\":\"service_account\"}", ownerId: TestConstants.TestOwnerId, provider: CloudProviderType.Gcp).Value;
+        SetOwnedNamespaces(ns);
+
+        // No providers registered at all — mirrors CloudProviders:Gcp:Enabled=false.
+        var service = CreateService();
+
+        var result = await service.GetOverviewAsync(TestConstants.TestOwnerId);
+
+        result.IsSuccess.Should().BeTrue();
+        var health = result.Value.Namespaces.Should().ContainSingle().Which;
+        health.Severity.Should().Be(FleetHealthSeverity.Unknown);
+        health.Coverage.Should().Be(FleetMonitoringCoverage.ProviderNotRegistered);
+        health.CoverageNote.Should().NotBeNullOrEmpty();
     }
 
     [Fact]

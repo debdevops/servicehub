@@ -118,6 +118,72 @@ Given a `Seq`-ordered list of one owner's events:
 This is exactly what `RecoveryChainVerifier.Verify` (server-side) and the evidence export's
 `chain.verified` field report — an independent recomputation should agree with it.
 
+### 3.3a Independent offline verification
+
+`scripts/verify-recovery-chain.py` is a dependency-free (Python 3 standard library only) tool
+that recomputes the checks above **without running ServiceHub and without trusting its API to
+say "valid."** It never contacts a server, never touches a database, and never modifies its
+input.
+
+**1. Obtain the evidence package.** `GET /api/v1/recovery/operations/{id}/export?format=package`
+(or `format=json` for the combined bundle — see §6) — either works as input to the script.
+
+**2. Run the verifier:**
+
+```
+python3 scripts/verify-recovery-chain.py recovery-evidence-<id>-<timestamp>.zip
+```
+
+**3. What it verifies**, for every event in the export:
+- Its `EntryHash` recomputes correctly from its own twelve canonical fields plus its own stored
+  `PrevHash` (§3.2) — detects an event modified after being appended.
+- `Seq` values are strictly increasing across the export, with no duplicates or reordering.
+- Wherever two exported events are truly adjacent in `Seq` (`n`, `n+1`), the second's `PrevHash`
+  equals the first's `EntryHash` — detects deletion or reordering of evidence between them.
+- Any event whose `PrevHash` is the genesis hash (§3.1) has `Seq == 1` — genesis is only valid
+  for the very first event in the owner's entire chain.
+- If a `manifest.json`/`manifest` is present, the exported events' `Seq` range matches what the
+  manifest claims — detects an event silently dropped from the export after the manifest was
+  computed (truncation).
+
+**4. What "PASS" means:** every check above held for every event in this export. Nothing in the
+export was altered, reordered, duplicated, or dropped relative to what the manifest (if present)
+claims.
+
+**5. What it cannot prove:** continuity with the owner's **global** chain. A per-operation export
+contains only that operation's events; other operations' events are interleaved between them in
+the real, owner-wide sequence (see §3), so gaps in `Seq` between two exported events are normal,
+not evidence of tampering — and this tool has no way to see what, if anything, sits in those
+gaps. Proving the entire owner chain's continuity requires the full chain (every operation's
+events), which only the running ServiceHub server has, or a full owner-wide `events` export. This
+is a structural limit of exporting per operation, not a weakness specific to this tool — it is
+the same "tamper-evident, not tamper-proof" honesty this document opens with, extended to what an
+offline reader can and cannot check.
+
+**6. Example: a valid export**
+
+```
+$ python3 scripts/verify-recovery-chain.py recovery-evidence-<id>-<timestamp>.zip
+PASS — 3 event(s) verified, owner='acme-owner', Seq 1-3.
+This confirms: no event was altered after being appended, no event in this export
+is missing/duplicated/reordered, and adjacent-Seq events chain correctly.
+This does NOT confirm continuity with other operations' events in the owner's
+global chain — see docs/RECOVERY-EVIDENCE.md for what an offline, per-operation
+export cannot prove.
+```
+
+**7. Example: a tampered export** (one field of one event edited after export)
+
+```
+$ python3 scripts/verify-recovery-chain.py recovery-evidence-<id>-<timestamp>-tampered.zip
+FAIL — 1 finding(s):
+  - Seq 2: EntryHash mismatch — stored=21132ab... recomputed=791606b... This event's fields
+    were altered after being appended.
+```
+
+The script exits `0` on PASS, `1` on FAIL (naming every divergent `Seq`), and `2` if the input
+couldn't be parsed at all.
+
 ## 4. What ServiceHub can and cannot prove
 
 Recovery verification depends on ServiceHub actually being able to observe the dead-letter queue
@@ -157,16 +223,22 @@ recorded as ambiguous rather than guessed.
 
 ## 6. Export bundle contents
 
-An evidence export (`GET` on the recovery operation's export endpoint) produces:
+An evidence export (`GET` on the recovery operation's export endpoint) supports three formats via
+the `format` query parameter:
 
-- `manifest.json` — the honesty contract: schema/service version, chain summary (§3.3's `verified`
-  result plus first/last `Seq`), entry counts by state, what ServiceHub knows / observed / does not
-  know, and any provider limitations that applied.
-- `operation.json` — the operation header.
-- `entries.json` / `entries.csv` — one row per ledger entry.
-- `events.json` — every event for the operation, `Seq`-ordered, sufficient to run the §3.3
-  verification procedure independently.
-- A combined `bundle.json` containing all of the above under one root.
+- `format=json` (default) — the combined bundle: a single document with `manifest`, `operation`,
+  `entries`, and `events` under one root. This *is* the "bundle" — there is no separately-named
+  `bundle.json` file; requesting the default format is how you get the combined document.
+- `format=csv` — `entries.csv` alone, nothing else.
+- `format=package` — a zip containing five files, each individually reproducible from the
+  `format=json` bundle's fields:
+  - `manifest.json` — the honesty contract: schema/service version, chain summary (§3.3's
+    `verified` result plus first/last `Seq`), entry counts by state, what ServiceHub knows /
+    observed / does not know, and any provider limitations that applied.
+  - `operation.json` — the operation header.
+  - `entries.json` / `entries.csv` — one row per ledger entry.
+  - `events.json` — every event for the operation, `Seq`-ordered, sufficient to run the §3.3
+    verification procedure independently.
 
 **Reproducibility**: two exports of the same, unchanged operation are byte-identical except for
 `manifest.exportedAt` and `manifest.exportedBy` — entries are ordered deterministically
