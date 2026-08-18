@@ -32,6 +32,7 @@ const RecoveryAgeingPageLazy = lazy(() => import('./pages/RecoveryAgeingPage'));
 const RecoveryOperationDetailPageLazy = lazy(() => import('./pages/RecoveryOperationDetailPage'));
 const MessagesOverviewPageLazy = lazy(() => import('./pages/MessagesOverviewPage'));
 const MessagesPageLazy = lazy(() => import('./pages/MessagesPage').then(m => ({ default: m.MessagesPage })));
+const LiveTailPageLazy = lazy(() => import('./pages/LiveTailPage').then(m => ({ default: m.LiveTailPage })));
 const ConnectPageLazy = lazy(() => import('./pages/ConnectPage').then(m => ({ default: m.ConnectPage })));
 const RulesPageLazy = lazy(() => import('./pages/RulesPage').then(m => ({ default: m.RulesPage })));
 const HealthPageLazy = lazy(() => import('./pages/HealthPage').then(m => ({ default: m.HealthPage })));
@@ -74,6 +75,14 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <MessagesOverviewPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'live-tail',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <LiveTailPageLazy />
       </Suspense>
     ),
   },

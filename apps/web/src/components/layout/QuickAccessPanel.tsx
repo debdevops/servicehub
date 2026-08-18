@@ -15,6 +15,7 @@ import {
   Route,
   Pin,
   AlertTriangle,
+  Radio,
 } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
@@ -123,6 +124,19 @@ export function QuickAccessPanel() {
           <span className="flex-1 text-left">Active Messages</span>
           <span className="text-xs text-sky-600 font-medium">All Clouds</span>
         </button>
+        <NavLink
+          to={activeNamespace ? `${navPrefix}/live-tail?namespace=${activeNamespace.id}` : `${navPrefix}/live-tail`}
+          className={({ isActive }) =>
+            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isActive
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-medium'
+                : 'bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border-gray-200 hover:border-emerald-300'
+            }`
+          }
+        >
+          <Radio className="w-4 h-4 text-emerald-500" />
+          <span className="flex-1 text-left">Live Tail</span>
+        </NavLink>
         <button
           onClick={() => navigate(`${navPrefix}/messages-overview?tab=deadletter`)}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-red-50 text-gray-700 hover:text-red-700 border border-gray-200 hover:border-red-300 shadow-sm"

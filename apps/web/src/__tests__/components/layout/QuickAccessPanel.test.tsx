@@ -53,6 +53,7 @@ describe('QuickAccessPanel', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><QuickAccessPanel /></Wrapper>);
     expect(screen.getByText('Active Messages')).toBeInTheDocument();
+    expect(screen.getByText('Live Tail')).toBeInTheDocument();
     expect(screen.getByText('Dead-Letter')).toBeInTheDocument();
     expect(screen.getByText('Namespace Overview')).toBeInTheDocument();
     expect(screen.getByText('Fleet Health')).toBeInTheDocument();
@@ -65,6 +66,18 @@ describe('QuickAccessPanel', () => {
     expect(screen.getByText('Audit Trail')).toBeInTheDocument();
     expect(screen.getByText('Security & Privacy')).toBeInTheDocument();
     expect(screen.getByText('Help & Guide')).toBeInTheDocument();
+  });
+
+  it('places Live Tail between Active Messages and Dead-Letter', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><QuickAccessPanel /></Wrapper>);
+    const labels = ['Active Messages', 'Live Tail', 'Dead-Letter', 'Scheduled Messages', 'Cloud Bridge'];
+    for (let i = 0; i < labels.length - 1; i++) {
+      const current = screen.getByText(labels[i]);
+      const next = screen.getByText(labels[i + 1]);
+      // DOCUMENT_POSITION_FOLLOWING (4) means `next` comes after `current` in the DOM.
+      expect(current.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
   });
 
   it('groups shortcuts under section labels', () => {
