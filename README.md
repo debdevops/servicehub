@@ -23,7 +23,7 @@
 ## What do you want to do?
 
 ```
-Just try ServiceHub?             → Demo / Sandbox           (#try-it)
+Just try ServiceHub?             → Demo                     (#try-it)
 Run on my laptop?                → With Docker              (#docker-fastest-with-docker)
                                   → Without Docker           (#one-command-setup-without-docker-from-source)
 Test my real cloud?              → AWS / Azure / GCP         (self-hosting/README.md#cloud-credentials-least-privilege-setup)
@@ -144,10 +144,23 @@ missing rather than starting a container that fails its configuration check.
 
 No credentials yet? The Welcome page's **"Try a live demo"** buttons open a fully client-side
 demo walkthrough per cloud (`/demo/azure`, `/demo/aws`, `/demo/gcp`) — no backend calls, no
-credentials, safe to click around before connecting anything real.
+credentials, safe to click around before connecting anything real. This is the supported, tested
+demo experience and the one worth trying first.
 
 For connecting real cloud credentials, persistent storage, and production hardening, see
 [Quick Start](#quick-start) below.
+
+<details>
+<summary>Two additional, experimental standalone apps exist in this repo (<code>apps/demo</code>, <code>apps/sandbox</code>) — click to expand</summary>
+
+`./run.sh demo` and `./run.sh sandbox` (or `./run.sh all`) start two separate exploratory apps on
+ports 5174 and 5175. They're real and launchable, but **experimental and unsupported** — no test
+suite, not covered by the e2e suite, CI only checks that they build and typecheck. If you just want
+to try ServiceHub, use the in-app demo above instead. See
+[`apps/demo/README.md`](apps/demo/README.md) and [`apps/sandbox/README.md`](apps/sandbox/README.md)
+for what each one is for.
+
+</details>
 
 ---
 
@@ -549,6 +562,11 @@ Browser (React 19 SPA)
                                                             └── Google.Cloud.PubSub.V1
 ```
 
+Full picture — provider abstraction, `ProviderCapabilities`, the Recovery Evidence Ledger,
+autonomy/safety model, persistence, SSE, security boundaries: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Why the foundational decisions were made the way they were: [`docs/adr/`](docs/adr/). Adding a new
+messaging provider (Kafka, RabbitMQ, a fourth cloud, …): [`docs/extending/adding-a-provider.md`](docs/extending/adding-a-provider.md).
+
 ---
 
 ## API Documentation
@@ -578,17 +596,19 @@ On AWS (delete by receipt handle) and GCP (acknowledge), yes — the Purge actio
 
 ## Contributing
 
-Bug fixes, features, and documentation improvements are welcome!
+Bug fixes, features, and documentation improvements are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md)
+for the full guide, including [adding a new messaging provider](docs/extending/adding-a-provider.md).
 
 ```bash
-# Unit tests (Vitest — 780+ tests, ≥60% coverage required)
+# Frontend unit tests (Vitest, ≥60% coverage required)
 npm run -w apps/web test:coverage
+npm run -w packages/servicehub-ui-shared test   # hooks + API client live here, not in apps/web
 
-# Backend tests (xUnit — 1,900+ unit + integration tests)
+# Backend tests (xUnit — unit + integration)
 dotnet test services/api/tests/ServiceHub.UnitTests
 dotnet test services/api/tests/ServiceHub.IntegrationTests
 
-# E2E tests (Playwright)
+# E2E tests (Playwright, against client-side Demo Mode)
 npm run -w apps/web test:e2e
 ```
 

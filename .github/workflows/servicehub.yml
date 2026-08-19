@@ -297,6 +297,48 @@ jobs:
       - name: Build application
         run: npm run -w apps/web build
 
+  build-experimental-apps:
+    name: Build Experimental Apps (apps/demo, apps/sandbox)
+    runs-on: ubuntu-latest
+    # apps/demo and apps/sandbox are experimental, unsupported exploratory surfaces (see their
+    # own README.md) — no test suite exists for either yet, so this job intentionally runs only
+    # lint + typecheck + build, to catch a broken build or a type error introduced by a change
+    # to packages/servicehub-ui-shared (which both apps consume) without pretending there is
+    # behavioral test coverage that doesn't exist. Kept separate from build-and-test-frontend so
+    # a failure here is clearly attributed to the experimental apps, not the supported product.
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies (monorepo workspace)
+        run: npm ci --include=optional
+
+      - name: Lint apps/demo
+        run: npm run -w apps/demo lint
+
+      - name: Lint apps/sandbox
+        run: npm run -w apps/sandbox lint
+
+      - name: Type check apps/demo
+        run: npm exec -w apps/demo -- tsc -b
+
+      - name: Type check apps/sandbox
+        run: npm exec -w apps/sandbox -- tsc -b
+
+      - name: Build apps/demo
+        run: npm run -w apps/demo build
+
+      - name: Build apps/sandbox
+        run: npm run -w apps/sandbox build
+
   e2e-tests:
     name: E2E Tests (Playwright, Demo Mode)
     runs-on: ubuntu-latest
@@ -509,7 +551,7 @@ jobs:
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [build-and-test-backend, build-and-test-frontend, e2e-tests, container-smoke-test, production-configuration-validation]
+    needs: [build-and-test-backend, build-and-test-frontend, build-experimental-apps, e2e-tests, container-smoke-test, production-configuration-validation]
     if: always()
 
     steps:
@@ -521,6 +563,10 @@ jobs:
           fi
           if [ "${{ needs.build-and-test-frontend.result }}" != "success" ]; then
             echo "❌ Frontend build/tests failed"
+            exit 1
+          fi
+          if [ "${{ needs.build-experimental-apps.result }}" != "success" ]; then
+            echo "❌ Experimental apps (apps/demo, apps/sandbox) failed to build"
             exit 1
           fi
           if [ "${{ needs.e2e-tests.result }}" != "success" ]; then

@@ -80,6 +80,12 @@ printf 'SECURITY__ENCRYPTIONKEY=%s\n'    "$(openssl rand -hex 32)" >> .env
 printf 'SECURITY__SPATOKEN__SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
 ```
 
+**Only run this block once.** If you paste it again later — for example while re-reading this
+guide — it appends a *second* pair of keys, and `.env` uses the last one written. That silently
+changes your encryption key, which makes every connection you've already saved permanently
+unreadable (see [Stopping, restarting, and resetting](#stopping-restarting-and-resetting) below).
+If you ever need to see or change a key afterwards, open `.env` in a text editor instead.
+
 **Windows Command Prompt** doesn't have `openssl` by default — instead run this one command
 (needs [git](https://git-scm.com/download/win), which most Windows machines already have if
 you installed it in Step 2):
@@ -133,6 +139,7 @@ From here you have two choices:
 | Start it again later | `docker compose up -d` (the `-d` runs it in the background so you can close the terminal) |
 | See if it's still running | `docker compose ps` |
 | Completely start over, deleting all saved data | `docker compose down -v` — only do this if you actually want to erase everything |
+| Change `SECURITY__ENCRYPTIONKEY` in `.env` after connections are already saved | Don't, unless you also want to lose access to them — every saved connection becomes permanently unreadable and must be re-added. There's no rotation path in this release. |
 
 Your data (saved connections, DLQ history) is kept between restarts automatically — you don't
 need to redo Steps 4–5 next time, just run `docker compose up -d` from inside the folder.
@@ -168,6 +175,11 @@ Same as [Option A, Step 3](#step-3-open-a-terminal-in-that-folder) above.
 The first time, this installs .NET 10 and Node.js 22 automatically if you don't already have
 them — you may be asked to enter your computer's password to allow the install. This can take
 several minutes the first time; later runs are fast.
+
+You don't need to create any keys yourself for this path — `run.sh` generates a fresh encryption
+key and SPA token secret for you on first run (via `scripts/generate-keys.sh`) and writes them to
+a git-ignored `services/api/src/ServiceHub.Api/appsettings.Local.json`, reusing the same file (and
+the same keys) on every later run rather than regenerating them.
 
 ### Step 4: Open it in your browser
 
