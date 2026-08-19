@@ -36,6 +36,7 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly IPlatformEventBus _eventBus;
+    private readonly Telemetry.ServiceHubMetrics? _metrics;
     private readonly ILogger<AutonomyEvaluationWorker> _logger;
 
     private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(45);
@@ -85,6 +86,10 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
         // IPlatformEventBus is a singleton — resolve once from the root provider, matching
         // DlqMonitorWorker's existing convention for the same dependency.
         _eventBus = serviceProvider.GetRequiredService<IPlatformEventBus>();
+
+        // Optional: GetService (not GetRequiredService) so tests that build a root provider
+        // without registering it keep working — metrics recording degrades to a no-op instead.
+        _metrics = serviceProvider.GetService<Telemetry.ServiceHubMetrics>();
     }
 
     /// <inheritdoc />
@@ -233,6 +238,8 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
                 if (transitionResult.IsSuccess)
                 {
                     transitionsWritten++;
+                    var direction = transition.Value.NewLevel > currentLevel ? "promotion" : "demotion";
+                    _metrics?.RecordAutonomyTransition(direction, currentLevel.ToString(), transition.Value.NewLevel.ToString());
                 }
                 else
                 {
@@ -321,6 +328,8 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
                     "will re-evaluate next sweep", rule.Id, ownerId);
                 continue;
             }
+
+            _metrics?.RecordCircuitBreakerTrip();
 
             var actor = ActorIdentityResolver.ResolveSystemActor("AutonomyEvaluationWorker:CircuitBreaker");
             var ledgerResult = await recoveryLedger.RecordAutoReplayCircuitBreakerTripAsync(
@@ -433,13 +442,8 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
     /// record predating that column) fails closed to AWS's/GCP's non-verifying capabilities —
     /// never Azure's — so an unresolvable provider can never itself justify an L4/L5 promotion.
     /// </summary>
-    private static ProviderCapabilities GetCapabilities(CloudProviderType? provider) => provider switch
-    {
-        CloudProviderType.Aws => ProviderCapabilities.Aws,
-        CloudProviderType.Gcp => ProviderCapabilities.Gcp,
-        CloudProviderType.Azure => ProviderCapabilities.Azure,
-        _ => ProviderCapabilities.Aws,
-    };
+    private static ProviderCapabilities GetCapabilities(CloudProviderType? provider) =>
+        ProviderCapabilities.For(provider ?? CloudProviderType.Aws);
 
     private static string FormatPromotionReason(AutonomyLevel from, AutonomyLevel to, SignatureTrustEvidence evidence) =>
         $"Promoted {from}→{to}: n={evidence.SampleSize}, verified_success_rate={evidence.VerifiedSuccessRate:P0}, " +

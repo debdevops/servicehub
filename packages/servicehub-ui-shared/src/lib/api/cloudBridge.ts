@@ -25,6 +25,10 @@ export interface ProviderCapabilities {
   supportsScheduledMessages: boolean;
   supportsRepeatablePeek: boolean;
   notes: string;
+  supportsRecoveryMarker?: boolean;
+  canProveDlqAbsence?: boolean;
+  supportsTopics?: boolean;
+  supportsSubscriptions?: boolean;
 }
 
 /** Capabilities map keyed by provider name ("Azure" | "Aws" | "Gcp") */

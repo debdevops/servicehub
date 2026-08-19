@@ -194,7 +194,7 @@ public sealed class AwsMessageSender : IMessageSender
         if (failed.Count > 0)
         {
             _logger.LogWarning("Batch send partial failure for {QueueName}: {Errors}",
-                LogRedactor.SanitiseForLog(first.EntityName), string.Join("; ", failed));
+                LogRedactor.SanitiseForLog(first.EntityName), LogRedactor.SanitiseForLog(string.Join("; ", failed)));
             return Result.Failure(Error.ExternalService("AWS.SQS.BatchPartialFailure",
                 $"Batch send had {failed.Count} failures: {string.Join("; ", failed)}"));
         }

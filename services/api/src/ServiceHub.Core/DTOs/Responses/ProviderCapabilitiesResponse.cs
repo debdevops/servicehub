@@ -16,6 +16,8 @@ namespace ServiceHub.Core.DTOs.Responses;
 /// not return to the DLQ — the fact that determines whether this provider can ever earn
 /// unattended (L4/L5) auto-replay. <see langword="false"/> means auto-replay is bounded to
 /// human-approved (L3) execution regardless of trust-evidence accumulated so far.</param>
+/// <param name="SupportsTopics">Whether the provider has a publish/subscribe topic concept.</param>
+/// <param name="SupportsSubscriptions">Whether the provider has a topic-subscription concept.</param>
 public sealed record ProviderCapabilitiesResponse(
     bool SupportsMessageCounts,
     bool SupportsManualDeadLetter,
@@ -24,4 +26,6 @@ public sealed record ProviderCapabilitiesResponse(
     bool SupportsRepeatablePeek,
     string Notes,
     bool SupportsRecoveryMarker,
-    bool CanProveDlqAbsence);
+    bool CanProveDlqAbsence,
+    bool SupportsTopics,
+    bool SupportsSubscriptions);

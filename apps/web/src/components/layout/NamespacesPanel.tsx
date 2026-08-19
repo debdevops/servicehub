@@ -448,7 +448,7 @@ export function NamespacesPanel() {
       <div className="border-t border-gray-100 p-3 bg-white sticky bottom-0">
         <NavLink
           to="/connect"
-          className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-sm font-medium transition-all shadow-md hover:shadow-lg"
+          className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-sky-700 hover:bg-sky-800 text-white rounded-lg text-sm font-medium transition-all shadow-md hover:shadow-lg"
         >
           <Plus className="w-4 h-4" />
           Add Connection

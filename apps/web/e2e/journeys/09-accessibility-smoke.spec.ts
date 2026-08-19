@@ -1,44 +1,84 @@
 /**
  * Suite F: Accessibility smoke check (P1, no backend required)
  *
- * Lightweight axe-core scan of the highest-value ServiceHub surfaces, to catch
- * obvious WCAG regressions. Not a full accessibility audit — two flows only:
+ * axe-core scan of ServiceHub's highest-value surfaces, to catch obvious WCAG regressions.
+ * Not a full accessibility audit, but no longer excludes the app-wide chrome (header, sidebar,
+ * Quick Access, footer) the way earlier passes of this suite did — every one of those regions is
+ * present on every page below and is scanned along with the page content, not carved out.
  *
- *   1. DLQ History page (priority #1 from the RC1 task).
- *   2. Auto-Replay Rules builder modal (substituted for the Bulk Replay/Purge
- *      preview modal, priority #2, which cannot be reached in Demo Mode: every
- *      demo namespace is seeded as environment 'prod' — see
- *      08-bulk-replay-purge-safety.spec.ts — so the Bulk Replay/Bulk Purge
- *      buttons are disabled outright and their confirmation modal never mounts).
- *
- * Scans exclude the shared app chrome (header/sidebar/footer, present on every
- * page) so this smoke test gates on the page/modal content it names, not on
- * pre-existing, app-wide chrome issues out of scope for this check.
+ * Destructive confirmation dialogs (message Replay/Delete) are not reachable here: every demo
+ * namespace is seeded as environment 'prod' (see 08-bulk-replay-purge-safety.spec.ts), so those
+ * actions are disabled outright and their confirmation modal never mounts in Demo Mode. The
+ * shared `ConfirmDialog` component they use is covered by unit tests
+ * (ConfirmDialog.test.tsx / useFocusTrap.test.tsx) instead — role="alertdialog", aria-modal,
+ * aria-labelledby/aria-describedby, Escape-to-cancel, and a full keyboard focus trap with
+ * wrap-around and focus restoration on close.
  */
 import AxeBuilder from '@axe-core/playwright';
 import { test, expect } from '../fixtures/base';
 
 const NAMESPACE = 'demo-azure-contoso-prod';
-const CHROME_EXCLUDES = [
-  'header',
-  'div[data-tour="sidebar"]',
-  'div[data-tour="quick-access"]',
-  'div[data-testid="demo-mode-banner"]',
-  'footer',
-];
+
+async function scan(page: import('@playwright/test').Page) {
+  const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+  expect(results.violations, JSON.stringify(results.violations, null, 2)).toEqual([]);
+}
 
 test.describe('Suite F — Accessibility smoke (azure)', () => {
   test('DLQ History page has no WCAG2 A/AA violations', async ({ page, noConsoleErrors }) => {
     void noConsoleErrors;
     await page.goto(`/demo/azure/dlq-history?namespace=${NAMESPACE}`);
     await expect(page.getByRole('heading', { name: 'DLQ Intelligence' })).toBeVisible();
+    await scan(page);
+  });
 
-    const results = await CHROME_EXCLUDES.reduce(
-      (builder, selector) => builder.exclude(selector),
-      new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']),
-    ).analyze();
+  test('Active Messages page has no WCAG2 A/AA violations', async ({ page, noConsoleErrors }) => {
+    void noConsoleErrors;
+    await page.goto(`/demo/azure/messages?namespace=${NAMESPACE}&tab=active`);
+    await page.waitForSelector('h1, h2');
+    await scan(page);
+  });
 
-    expect(results.violations, JSON.stringify(results.violations, null, 2)).toEqual([]);
+  test('Dead-Letter tab has no WCAG2 A/AA violations', async ({ page, noConsoleErrors }) => {
+    void noConsoleErrors;
+    await page.goto(`/demo/azure/messages?namespace=${NAMESPACE}&tab=deadletter`);
+    await page.waitForSelector('h1, h2');
+    await scan(page);
+  });
+
+  test('Live Tail page has no WCAG2 A/AA violations', async ({ page, noConsoleErrors }) => {
+    void noConsoleErrors;
+    await page.goto(`/demo/azure/live-tail?namespace=${NAMESPACE}`);
+    await page.waitForSelector('h1, h2');
+    await scan(page);
+  });
+
+  test('Failure Signatures page has no WCAG2 A/AA violations', async ({ page, noConsoleErrors }) => {
+    void noConsoleErrors;
+    await page.goto(`/demo/azure/signatures?namespace=${NAMESPACE}`);
+    await page.waitForSelector('h1, h2');
+    await scan(page);
+  });
+
+  test('Recovery Evidence ledger has no WCAG2 A/AA violations', async ({ page, noConsoleErrors }) => {
+    void noConsoleErrors;
+    await page.goto('/demo/azure/recovery');
+    await page.waitForSelector('h1, h2');
+    await scan(page);
+  });
+
+  test('Fleet Health page has no WCAG2 A/AA violations', async ({ page, noConsoleErrors }) => {
+    void noConsoleErrors;
+    await page.goto('/demo/azure/fleet');
+    await page.waitForSelector('h1, h2');
+    await scan(page);
+  });
+
+  test('Auto-Replay Rules page has no WCAG2 A/AA violations', async ({ page, noConsoleErrors }) => {
+    void noConsoleErrors;
+    await page.goto('/demo/azure/rules');
+    await page.waitForSelector('h1, h2');
+    await scan(page);
   });
 
   test('Auto-Replay Rules builder modal has no WCAG2 A/AA violations', async ({ page, noConsoleErrors }) => {
@@ -49,11 +89,6 @@ test.describe('Suite F — Accessibility smoke (azure)', () => {
     const dialog = page.getByRole('dialog', { name: 'Create Auto-Replay Rule' });
     await expect(dialog).toBeVisible();
 
-    const results = await CHROME_EXCLUDES.reduce(
-      (builder, selector) => builder.exclude(selector),
-      new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']),
-    ).analyze();
-
-    expect(results.violations, JSON.stringify(results.violations, null, 2)).toEqual([]);
+    await scan(page);
   });
 });

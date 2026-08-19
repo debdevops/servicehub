@@ -44,6 +44,7 @@ public sealed class RecoveryVerificationWorker : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<RecoveryVerificationWorker> _logger;
+    private readonly Telemetry.ServiceHubMetrics? _metrics;
 
     private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(15);
     private const int DefaultSweepIntervalSeconds = 60;
@@ -71,6 +72,10 @@ public sealed class RecoveryVerificationWorker : BackgroundService
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         ArgumentNullException.ThrowIfNull(configuration);
+
+        // Optional: GetService (not GetRequiredService) so tests that build a root provider
+        // without registering it keep working — metrics recording degrades to a no-op instead.
+        _metrics = serviceProvider.GetService<Telemetry.ServiceHubMetrics>();
 
         _sweepInterval = TimeSpan.FromSeconds(Math.Clamp(
             configuration.GetValue("RecoveryEvidence:VerificationSweepIntervalSeconds", DefaultSweepIntervalSeconds),
@@ -191,6 +196,7 @@ public sealed class RecoveryVerificationWorker : BackgroundService
             }
             else
             {
+                _metrics?.RecordVerificationOutcome(outcome.ToString(), reason);
                 _logger.LogInformation(
                     "Recovery ledger entry {EntryId} closed as {Outcome}{Reason}",
                     entry.Id, outcome, reason is null ? string.Empty : $" ({reason})");

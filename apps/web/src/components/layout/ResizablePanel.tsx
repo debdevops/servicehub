@@ -180,8 +180,8 @@ export function ResizablePanel({
       {/* Resize footer — draggable, matches the reference's "drag to resize" affordance */}
       <div
         onMouseDown={handleDragStart}
-        className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-1.5 border-t border-gray-100 text-[10px] font-medium text-gray-400 cursor-col-resize select-none transition-colors ${
-          isDragging ? 'bg-primary-100 text-primary-600' : 'hover:bg-gray-50 hover:text-gray-500'
+        className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-1.5 border-t border-gray-100 text-[10px] font-medium text-gray-500 cursor-col-resize select-none transition-colors ${
+          isDragging ? 'bg-primary-100 text-primary-600' : 'hover:bg-gray-50 hover:text-gray-600'
         }`}
         title="Drag to resize"
       >

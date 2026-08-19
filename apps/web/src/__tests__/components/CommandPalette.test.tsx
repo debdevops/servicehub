@@ -70,6 +70,14 @@ describe('CommandPalette', () => {
     expect(screen.getByText('System Health')).toBeInTheDocument();
   });
 
+  it('describes the Connect page in provider-neutral terms', () => {
+    renderOpen();
+    // This item is reachable before any provider is chosen (AWS/GCP users too), so its
+    // description must not name Azure's product (Service Bus).
+    expect(screen.getByText('Add or manage cloud namespaces')).toBeInTheDocument();
+    expect(screen.queryByText(/service bus/i)).not.toBeInTheDocument();
+  });
+
   it('shows namespace items from useNamespaces', () => {
     renderOpen();
     expect(screen.getByText('Production Bus')).toBeInTheDocument();

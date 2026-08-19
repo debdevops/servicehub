@@ -712,4 +712,30 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
         decision.ReasonCode.Should().BeNull();
         decision.MatchedCount.Should().Be(0);
     }
+
+    // ── Metrics wiring (blueprint Gap 15) ───────────────────────────────────
+
+    [Fact]
+    public async Task EvaluateAsync_WhenMetricsProvided_RecordsOneEligibilityDecision()
+    {
+        var factory = new ServiceHub.UnitTests.Infrastructure.Telemetry.ServiceHubMetricsTests.FakeMeterFactory();
+        using var metrics = new ServiceHub.Infrastructure.Telemetry.ServiceHubMetrics(factory);
+        var recorded = new List<(long Value, KeyValuePair<string, object?>[] Tags)>();
+        using var listener = new System.Diagnostics.Metrics.MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Name == "servicehub.recovery.eligibility.decisions")
+                l.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, tags, _) => recorded.Add((value, tags.ToArray())));
+        listener.Start();
+
+        var gateWithMetrics = new RecoveryEligibilityGate(_ledger, NullLogger<RecoveryEligibilityGate>.Instance, metrics);
+        var decision = await gateWithMetrics.EvaluateAsync(BuildRequest(environment: EnvironmentType.Prod));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Deny);
+        recorded.Should().ContainSingle();
+        recorded[0].Tags.Should().Contain(new KeyValuePair<string, object?>("verdict", "Deny"));
+        recorded[0].Tags.Should().Contain(new KeyValuePair<string, object?>("reason", "PRODUCTION_ELEVATION_REQUIRED"));
+    }
 }

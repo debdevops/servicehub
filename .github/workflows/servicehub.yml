@@ -278,11 +278,23 @@ jobs:
           path: apps/web/coverage/
           retention-days: 14
 
-      - name: Run shared UI package tests (@servicehub/ui-shared)
+      - name: Run shared UI package tests with coverage (@servicehub/ui-shared)
         # apps/web consumes this workspace package, but its ~500 tests were never executed in
         # CI — only apps/web's own suite was. Same command developers run locally, so a green
         # local run and a green CI run now mean the same thing for the shared package.
-        run: npm run -w packages/servicehub-ui-shared test
+        # test:coverage runs vitest --coverage, which enforces the same 60%/60%/50%/60%
+        # lines/functions/branches/statements thresholds already configured in this package's
+        # own vite.config.ts (identical to apps/web's) — vitest fails the command itself if
+        # coverage regresses below them, so no separate bash threshold-check step is needed here.
+        run: npm run -w packages/servicehub-ui-shared test:coverage
+
+      - name: Upload shared package coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-shared-${{ github.run_number }}
+          path: packages/servicehub-ui-shared/coverage/
+          retention-days: 14
 
       - name: Type check with TypeScript
         run: npm exec -w apps/web -- tsc -b

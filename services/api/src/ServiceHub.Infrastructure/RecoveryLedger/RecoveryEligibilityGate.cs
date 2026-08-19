@@ -71,17 +71,36 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
 
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly ILogger<RecoveryEligibilityGate> _logger;
+    private readonly Telemetry.ServiceHubMetrics? _metrics;
 
     /// <summary>Initialises a new instance of <see cref="RecoveryEligibilityGate"/>.</summary>
-    public RecoveryEligibilityGate(IRecoveryLedger recoveryLedger, ILogger<RecoveryEligibilityGate> logger)
+    /// <param name="recoveryLedger">The recovery ledger used to read/write eligibility-relevant state.</param>
+    /// <param name="logger">Logger instance.</param>
+    /// <param name="metrics">
+    /// Optional — <see langword="null"/> in tests that construct this gate directly without a DI
+    /// container. Resolved automatically in production, where it is registered as a singleton.
+    /// </param>
+    public RecoveryEligibilityGate(
+        IRecoveryLedger recoveryLedger,
+        ILogger<RecoveryEligibilityGate> logger,
+        Telemetry.ServiceHubMetrics? metrics = null)
     {
         _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _metrics = metrics;
     }
 
     /// <inheritdoc />
     public async Task<EligibilityDecision> EvaluateAsync(
         RecoveryEligibilityRequest request, CancellationToken cancellationToken = default)
+    {
+        var decision = await EvaluateCoreAsync(request, cancellationToken);
+        _metrics?.RecordEligibilityDecision(decision.Verdict.ToString(), decision.ReasonCode);
+        return decision;
+    }
+
+    private async Task<EligibilityDecision> EvaluateCoreAsync(
+        RecoveryEligibilityRequest request, CancellationToken cancellationToken)
     {
         // Predicate 0 — emergency stop (§9.4.2, §15.2): owner-scoped kill switch on new
         // Automation/System-originated execution only, ahead of every other predicate.
@@ -245,15 +264,10 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
         return new EligibilityDecision(EligibilityVerdict.Escalate, ReasonAutonomyGrantInsufficient);
     }
 
-    // Same static preset lookup AutonomyEvaluationWorker.GetCapabilities uses — a null/unresolved
-    // provider fails closed to AWS's capabilities (CanProveDlqAbsence=false), matching that
-    // worker's existing fail-closed behavior on the promotion side.
-    private static ProviderCapabilities GetCapabilities(CloudProviderType? provider) => provider switch
-    {
-        CloudProviderType.Azure => ProviderCapabilities.Azure,
-        CloudProviderType.Gcp => ProviderCapabilities.Gcp,
-        _ => ProviderCapabilities.Aws,
-    };
+    // A null/unresolved provider fails closed to AWS's capabilities (CanProveDlqAbsence=false),
+    // matching AutonomyEvaluationWorker's existing fail-closed behavior on the promotion side.
+    private static ProviderCapabilities GetCapabilities(CloudProviderType? provider) =>
+        ProviderCapabilities.For(provider ?? CloudProviderType.Aws);
 
     private async Task<EligibilityDecision?> EvaluateRecurrenceLineageAsync(
         string ownerId, Guid namespaceId, string entityName, string bodyHash,

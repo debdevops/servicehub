@@ -221,7 +221,7 @@ function TopicSubscriptionPicker({
           className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-left text-sm text-gray-800 truncate transition-colors hover:border-gray-400 hover:bg-gray-50"
           title={`${topicName} / ${sub.name}`}
         >
-          {topicName} <span className="text-gray-400">/ {sub.name}</span>
+          {topicName} <span className="text-gray-500">/ {sub.name}</span>
         </button>
       ))}
     </>

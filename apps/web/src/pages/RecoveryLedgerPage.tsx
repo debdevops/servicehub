@@ -80,6 +80,7 @@ export default function RecoveryLedgerPage() {
           <select
             value={kindFilter}
             onChange={e => setKindFilter(e.target.value as '' | 'Replay' | 'Purge')}
+            aria-label="Filter by operation kind"
             className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
           >
             <option value="">All Kinds</option>
@@ -109,7 +110,7 @@ export default function RecoveryLedgerPage() {
             <div className="text-center">
               <ShieldCheck className="w-10 h-10 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-500 font-medium">No recovery operations recorded</p>
-              <p className="text-sm text-gray-400 mt-1">
+              <p className="text-sm text-gray-500 mt-1">
                 Replay and purge operations will appear here as they happen.
               </p>
             </div>
@@ -138,7 +139,7 @@ export default function RecoveryLedgerPage() {
                     <Link to={`${navPrefix}/recovery/${op.id}`} className="text-gray-800 font-medium text-xs hover:text-teal-700 hover:underline">
                       {op.actorIdentity}
                     </Link>
-                    <div className="text-xs text-gray-400">{op.trigger}</div>
+                    <div className="text-xs text-gray-500">{op.trigger}</div>
                   </td>
                   <td className="px-4 py-3"><KindBadge kind={op.kind} /></td>
                   <td className="px-4 py-3 text-gray-600 text-xs font-mono truncate max-w-[280px]">{op.scopeDescription}</td>

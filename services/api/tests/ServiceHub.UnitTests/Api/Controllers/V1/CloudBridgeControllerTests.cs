@@ -100,6 +100,15 @@ public sealed class CloudBridgeControllerTests
         capabilities["Azure"].SupportsRecoveryMarker.Should().BeTrue();
         capabilities["Aws"].SupportsRecoveryMarker.Should().BeTrue();
         capabilities["Gcp"].SupportsRecoveryMarker.Should().BeTrue();
+
+        // All three providers have a topic/subscription concept today (Service Bus topics, SNS,
+        // Pub/Sub) — the flags exist so a future queue-only provider can decline them.
+        capabilities["Azure"].SupportsTopics.Should().BeTrue();
+        capabilities["Aws"].SupportsTopics.Should().BeTrue();
+        capabilities["Gcp"].SupportsTopics.Should().BeTrue();
+        capabilities["Azure"].SupportsSubscriptions.Should().BeTrue();
+        capabilities["Aws"].SupportsSubscriptions.Should().BeTrue();
+        capabilities["Gcp"].SupportsSubscriptions.Should().BeTrue();
     }
 
     [Theory]

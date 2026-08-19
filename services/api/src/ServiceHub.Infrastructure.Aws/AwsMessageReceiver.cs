@@ -10,6 +10,7 @@ using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Aws.Models;
 using ServiceHub.Infrastructure.Aws.Resilience;
+using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Results;
 using CoreMessage = ServiceHub.Core.Entities.Message;
 using SqsMessage = Amazon.SQS.Model.Message;
@@ -128,24 +129,24 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             }, linkedCts.Token).ConfigureAwait(false);
 
             _logger.LogDebug("Peeked {Count} messages from SQS queue {QueueName} (namespace {NamespaceId})",
-                mapped.Count, SanitizeForLog(request.EntityName), request.NamespaceId);
+                mapped.Count, LogRedactor.SanitiseForLog(request.EntityName), request.NamespaceId);
             return Result.Success<IReadOnlyList<CoreMessage>>(mapped);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning("SQS peek timed out after {Seconds}s for queue {QueueName}", OperationTimeoutSeconds, SanitizeForLog(request.EntityName));
+            _logger.LogWarning("SQS peek timed out after {Seconds}s for queue {QueueName}", OperationTimeoutSeconds, LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Failure<IReadOnlyList<CoreMessage>>(Error.ExternalService(
                 "AWS.SQS.Timeout", $"SQS operation timed out after {OperationTimeoutSeconds}s."));
         }
         catch (AmazonSQSException ex)
         {
-            _logger.LogError(ex, "SQS error peeking messages from {QueueName}", SanitizeForLog(request.EntityName));
+            _logger.LogError(ex, "SQS error peeking messages from {QueueName}", LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Failure<IReadOnlyList<CoreMessage>>(Error.ExternalService(
                 "AWS.SQS.PeekFailed", $"SQS error: {ex.Message}"));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Unexpected error peeking SQS messages from {QueueName}", SanitizeForLog(request.EntityName));
+            _logger.LogError(ex, "Unexpected error peeking SQS messages from {QueueName}", LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Failure<IReadOnlyList<CoreMessage>>(Error.Internal("AWS.SQS.UnexpectedError", ex.Message));
         }
     }
@@ -186,29 +187,29 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
 
             if (mapped is null)
             {
-                _logger.LogWarning("Queue {QueueName} has no DLQ configured (no RedrivePolicy)", SanitizeForLog(request.EntityName));
+                _logger.LogWarning("Queue {QueueName} has no DLQ configured (no RedrivePolicy)", LogRedactor.SanitiseForLog(request.EntityName));
                 return Result.Success<IReadOnlyList<CoreMessage>>(Array.Empty<CoreMessage>());
             }
 
             _logger.LogDebug("Peeked {Count} DLQ messages from {QueueName} (namespace {NamespaceId})",
-                mapped.Count, SanitizeForLog(request.EntityName), request.NamespaceId);
+                mapped.Count, LogRedactor.SanitiseForLog(request.EntityName), request.NamespaceId);
             return Result.Success<IReadOnlyList<CoreMessage>>(mapped);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning("SQS DLQ peek timed out after {Seconds}s for queue {QueueName}", OperationTimeoutSeconds, SanitizeForLog(request.EntityName));
+            _logger.LogWarning("SQS DLQ peek timed out after {Seconds}s for queue {QueueName}", OperationTimeoutSeconds, LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Failure<IReadOnlyList<CoreMessage>>(Error.ExternalService(
                 "AWS.SQS.Timeout", $"SQS DLQ operation timed out after {OperationTimeoutSeconds}s."));
         }
         catch (AmazonSQSException ex)
         {
-            _logger.LogError(ex, "SQS error peeking DLQ messages from {QueueName}", SanitizeForLog(request.EntityName));
+            _logger.LogError(ex, "SQS error peeking DLQ messages from {QueueName}", LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Failure<IReadOnlyList<CoreMessage>>(Error.ExternalService(
                 "AWS.SQS.DlqPeekFailed", $"SQS error: {ex.Message}"));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Unexpected error peeking SQS DLQ messages from {QueueName}", SanitizeForLog(request.EntityName));
+            _logger.LogError(ex, "Unexpected error peeking SQS DLQ messages from {QueueName}", LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Failure<IReadOnlyList<CoreMessage>>(Error.Internal("AWS.SQS.UnexpectedError", ex.Message));
         }
     }
@@ -244,7 +245,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         }
         catch (AmazonSQSException ex)
         {
-            _logger.LogError(ex, "SQS error getting message count for {QueueName}", SanitizeForLog(entityName));
+            _logger.LogError(ex, "SQS error getting message count for {QueueName}", LogRedactor.SanitiseForLog(entityName));
             return Result.Failure<long>(Error.ExternalService("AWS.SQS.CountFailed", ex.Message));
         }
     }
@@ -374,12 +375,12 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                 }
             }
 
-            _logger.LogInformation("Dead-lettered {Count} messages from {QueueName}", deadLettered, SanitizeForLog(request.EntityName));
+            _logger.LogInformation("Dead-lettered {Count} messages from {QueueName}", deadLettered, LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Success(deadLettered);
         }
         catch (AmazonSQSException ex)
         {
-            _logger.LogError(ex, "SQS error dead-lettering messages from {QueueName}", SanitizeForLog(request.EntityName));
+            _logger.LogError(ex, "SQS error dead-lettering messages from {QueueName}", LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Failure<int>(Error.ExternalService("AWS.SQS.DlqFailed", ex.Message));
         }
     }
@@ -416,7 +417,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             var target = await FindAndLockMessageAsync(sqs, dlqUrl, sequenceNumber, cancellationToken).ConfigureAwait(false);
             if (target is null)
             {
-                _logger.LogWarning("Message with sequence {Seq} not found in DLQ for {QueueName}", sequenceNumber, SanitizeForLog(entityName));
+                _logger.LogWarning("Message with sequence {Seq} not found in DLQ for {QueueName}", sequenceNumber, LogRedactor.SanitiseForLog(entityName));
                 return Result<bool>.Failure(Error.NotFound("AWS.SQS.MessageNotFound",
                     $"Message {sequenceNumber} was not found in the DLQ — it may have been consumed, replayed, or expired."));
             }
@@ -475,18 +476,18 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                 _logger.LogError(ex,
                     "SQS replay ambiguous for message {Seq} on {QueueName}: send to source queue succeeded but " +
                     "delete from DLQ failed — the message may now be duplicated if retried",
-                    sequenceNumber, SanitizeForLog(entityName));
+                    sequenceNumber, LogRedactor.SanitiseForLog(entityName));
                 return Result<bool>.Failure(Error.Conflict("AWS.SQS.ReplayAmbiguous",
                     $"Message was sent to the source queue but could not be deleted from the DLQ: {ex.Message}. " +
                     "Do not retry without first checking for a duplicate in the source queue."));
             }
 
-            _logger.LogInformation("Replayed message {Seq} from DLQ to {QueueName}", sequenceNumber, SanitizeForLog(entityName));
+            _logger.LogInformation("Replayed message {Seq} from DLQ to {QueueName}", sequenceNumber, LogRedactor.SanitiseForLog(entityName));
             return Result<bool>.Success(markerApplied);
         }
         catch (AmazonSQSException ex)
         {
-            _logger.LogError(ex, "SQS error replaying message {Seq} for {QueueName}", sequenceNumber, SanitizeForLog(entityName));
+            _logger.LogError(ex, "SQS error replaying message {Seq} for {QueueName}", sequenceNumber, LogRedactor.SanitiseForLog(entityName));
             return Result<bool>.Failure(Error.ExternalService("AWS.SQS.ReplayFailed", ex.Message));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
@@ -497,7 +498,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             // and an uncaught exception here (notably OperationCanceledException from the
             // pre-mutation scan/lock phase, which still honors the caller's token) skips that
             // persistence entirely, leaving the claim stuck until the next server restart.
-            _logger.LogError(ex, "Unexpected error replaying message {Seq} for {QueueName}", sequenceNumber, SanitizeForLog(entityName));
+            _logger.LogError(ex, "Unexpected error replaying message {Seq} for {QueueName}", sequenceNumber, LogRedactor.SanitiseForLog(entityName));
             return Result<bool>.Failure(Error.Internal("AWS.SQS.UnexpectedError",
                 "An unexpected error occurred while replaying the message."));
         }
@@ -553,18 +554,18 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                 ReceiptHandle = target.ReceiptHandle
             }, CancellationToken.None).ConfigureAwait(false);
 
-            _logger.LogInformation("Purged message {Seq} from {Queue}", sequenceNumber, SanitizeForLog(entityName));
+            _logger.LogInformation("Purged message {Seq} from {Queue}", sequenceNumber, LogRedactor.SanitiseForLog(entityName));
             return Result.Success();
         }
         catch (AmazonSQSException ex)
         {
-            _logger.LogError(ex, "SQS error purging message {Seq} for {QueueName}", sequenceNumber, SanitizeForLog(entityName));
+            _logger.LogError(ex, "SQS error purging message {Seq} for {QueueName}", sequenceNumber, LogRedactor.SanitiseForLog(entityName));
             return Result.Failure(Error.ExternalService("AWS.SQS.PurgeFailed", ex.Message));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
         {
             // Mirrors ReplayMessageAsync's catch-all — see that method for rationale.
-            _logger.LogError(ex, "Unexpected error purging message {Seq} for {QueueName}", sequenceNumber, SanitizeForLog(entityName));
+            _logger.LogError(ex, "Unexpected error purging message {Seq} for {QueueName}", sequenceNumber, LogRedactor.SanitiseForLog(entityName));
             return Result.Failure(Error.Internal("AWS.SQS.UnexpectedError",
                 "An unexpected error occurred while purging the message."));
         }
@@ -581,7 +582,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         _logger.LogWarning(
             "AWS SQS does not support scheduled message inspection. " +
             "Use EventBridge Scheduler for scheduled delivery. Queue: {QueueName}",
-            SanitizeForLog(entityName));
+            LogRedactor.SanitiseForLog(entityName));
 
         return Task.FromResult(
             Result.Success<IReadOnlyList<CoreMessage>>(Array.Empty<CoreMessage>()));
@@ -652,16 +653,12 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         }
         catch (AmazonSQSException ex)
         {
-            _logger.LogError(ex, "SQS error getting visibility status for {QueueName}", SanitizeForLog(queueName));
+            _logger.LogError(ex, "SQS error getting visibility status for {QueueName}", LogRedactor.SanitiseForLog(queueName));
             return Result.Failure<SqsVisibilityInfo>(Error.ExternalService("AWS.SQS.VisibilityFailed", ex.Message));
         }
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
-    private static string SanitizeForLog(string? value)
-        => (value ?? string.Empty)
-            .Replace("\r", string.Empty, StringComparison.Ordinal)
-            .Replace("\n", string.Empty, StringComparison.Ordinal);
     private static async Task<string> ResolveQueueUrlAsync(
         IAmazonSQS sqs, string queueName, CancellationToken ct)
     {

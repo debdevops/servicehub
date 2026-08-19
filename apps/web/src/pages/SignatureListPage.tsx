@@ -60,7 +60,7 @@ function SignatureListItem({
       <div className="relative">
         <Link
           to={`${basePath}/signatures/${signature.signatureHash}?namespace=${namespaceId}`}
-          className="absolute top-4 right-4 text-xs text-primary-600 hover:text-primary-700 font-medium z-10"
+          className="absolute top-4 right-4 text-xs text-primary-700 hover:text-primary-800 font-medium z-10"
         >
           View details →
         </Link>
@@ -119,6 +119,7 @@ export function SignatureListPage() {
         <select
           value={namespaceId ?? ''}
           onChange={e => setSearchParams({ namespace: e.target.value })}
+          aria-label="Select a namespace"
           className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 bg-white"
         >
           <option value="" disabled>Select a namespace…</option>
@@ -151,7 +152,7 @@ export function SignatureListPage() {
             <span className="text-gray-500 font-medium">Status:</span>
             <button
               onClick={() => setStatusFilter(undefined)}
-              className={`px-2.5 py-1 rounded-full font-medium border ${!statusFilter ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200'}`}
+              className={`px-2.5 py-1 rounded-full font-medium border ${!statusFilter ? 'bg-primary-700 text-white border-primary-700' : 'bg-white text-gray-600 border-gray-200'}`}
             >
               All
             </button>
@@ -159,7 +160,7 @@ export function SignatureListPage() {
               <button
                 key={status}
                 onClick={() => setStatusFilter(status === statusFilter ? undefined : status)}
-                className={`px-2.5 py-1 rounded-full font-medium border ${statusFilter === status ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200'}`}
+                className={`px-2.5 py-1 rounded-full font-medium border ${statusFilter === status ? 'bg-primary-700 text-white border-primary-700' : 'bg-white text-gray-600 border-gray-200'}`}
               >
                 {status}
               </button>
@@ -169,7 +170,7 @@ export function SignatureListPage() {
               <button
                 key={trend}
                 onClick={() => setTrendFilter(trend === trendFilter ? undefined : trend)}
-                className={`px-2.5 py-1 rounded-full font-medium border ${trendFilter === trend ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200'}`}
+                className={`px-2.5 py-1 rounded-full font-medium border ${trendFilter === trend ? 'bg-primary-700 text-white border-primary-700' : 'bg-white text-gray-600 border-gray-200'}`}
               >
                 {trend}
               </button>
@@ -177,7 +178,7 @@ export function SignatureListPage() {
             <span className="text-gray-500 font-medium ml-3">Review:</span>
             <button
               onClick={() => setReviewStatusFilter(undefined)}
-              className={`px-2.5 py-1 rounded-full font-medium border ${!reviewStatusFilter ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200'}`}
+              className={`px-2.5 py-1 rounded-full font-medium border ${!reviewStatusFilter ? 'bg-primary-700 text-white border-primary-700' : 'bg-white text-gray-600 border-gray-200'}`}
             >
               All
             </button>
@@ -185,7 +186,7 @@ export function SignatureListPage() {
               <button
                 key={reviewStatus}
                 onClick={() => setReviewStatusFilter(reviewStatus === reviewStatusFilter ? undefined : reviewStatus)}
-                className={`px-2.5 py-1 rounded-full font-medium border ${reviewStatusFilter === reviewStatus ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200'}`}
+                className={`px-2.5 py-1 rounded-full font-medium border ${reviewStatusFilter === reviewStatus ? 'bg-primary-700 text-white border-primary-700' : 'bg-white text-gray-600 border-gray-200'}`}
               >
                 {reviewStatus}
               </button>

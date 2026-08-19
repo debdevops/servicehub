@@ -127,8 +127,8 @@ export function SignatureSummaryCard({ signature, namespace, dlqSummary, confide
           {signature.size} message{signature.size === 1 ? '' : 's'}
           {percentOfDlq !== null && ` · ${percentOfDlq}% of this namespace's DLQ`}
         </span>
-        <span className="text-xs text-gray-400">· first seen {formatRelativeTime(signature.firstSeenAt)}</span>
-        <span className="text-xs text-gray-400">· active as of {formatRelativeTime(signature.windowEnd)}</span>
+        <span className="text-xs text-gray-500">· first seen {formatRelativeTime(signature.firstSeenAt)}</span>
+        <span className="text-xs text-gray-500">· active as of {formatRelativeTime(signature.windowEnd)}</span>
       </div>
 
       {/* Plain-language explanation + what to do */}

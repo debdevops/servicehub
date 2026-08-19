@@ -62,6 +62,17 @@ namespace ServiceHub.Core.Models;
 /// The Recovery Verification Worker consults this to decide between
 /// <see cref="Enums.RecoveryEntryState.Recovered"/> and <see cref="Enums.RecoveryEntryState.Unverified"/>.
 /// </param>
+/// <param name="SupportsTopics">
+/// Whether the provider has a publish/subscribe topic concept (<c>TopicsController</c>). True
+/// for all three current providers — Azure Service Bus topics, SNS topics (AWS), and Pub/Sub
+/// topics (GCP). Exists so a future queue-only provider can decline this without editing the
+/// controller.
+/// </param>
+/// <param name="SupportsSubscriptions">
+/// Whether the provider has a topic-subscription concept (<c>SubscriptionsController</c>). True
+/// for all three current providers — Azure Service Bus subscriptions, SNS subscriptions (AWS),
+/// and Pub/Sub subscriptions (GCP).
+/// </param>
 public sealed record ProviderCapabilities(
     bool SupportsMessageCounts,
     bool SupportsManualDeadLetter,
@@ -70,7 +81,9 @@ public sealed record ProviderCapabilities(
     bool SupportsRepeatablePeek,
     string Notes,
     bool SupportsRecoveryMarker,
-    bool CanProveDlqAbsence)
+    bool CanProveDlqAbsence,
+    bool SupportsTopics = true,
+    bool SupportsSubscriptions = true)
 {
     /// <summary>Capabilities of Microsoft Azure Service Bus.</summary>
     public static readonly ProviderCapabilities Azure = new(
@@ -104,4 +117,17 @@ public sealed record ProviderCapabilities(
         Notes: "Message counts and manual dead-lettering are not supported — Pub/Sub has no count API and dead-lettering is policy-driven via MaxDeliveryAttempts. Scheduled messages are not supported either.",
         SupportsRecoveryMarker: true,
         CanProveDlqAbsence: false);
+
+    /// <summary>
+    /// Resolves the capabilities preset for a given provider type. This is the single place
+    /// that maps <see cref="Enums.CloudProviderType"/> to its <see cref="ProviderCapabilities"/>
+    /// preset for callers that only have the enum value (e.g. before a provider is registered
+    /// with <see cref="Interfaces.ICloudProviderRouter"/>).
+    /// </summary>
+    public static ProviderCapabilities For(Enums.CloudProviderType provider) => provider switch
+    {
+        Enums.CloudProviderType.Azure => Azure,
+        Enums.CloudProviderType.Gcp => Gcp,
+        _ => Aws
+    };
 }

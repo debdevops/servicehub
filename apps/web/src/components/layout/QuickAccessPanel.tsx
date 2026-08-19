@@ -66,7 +66,7 @@ export function QuickAccessPanel() {
     >
       <nav className="space-y-1 px-3 py-3">
         {/* ── Overview ── */}
-        <div className="pt-1 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Overview</div>
+        <div className="pt-1 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Overview</div>
         <NavLink
           to={`${navPrefix}/dashboard`}
           className={({ isActive }) =>
@@ -115,14 +115,14 @@ export function QuickAccessPanel() {
         </NavLink>
 
         {/* ── Browse across clouds ── */}
-        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Browse across clouds</div>
+        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Browse across clouds</div>
         <button
           onClick={() => navigate(`${navPrefix}/messages-overview?tab=active`)}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border border-gray-200 hover:border-sky-300 shadow-sm"
         >
           <Database className="w-4 h-4 text-sky-500" />
           <span className="flex-1 text-left">Active Messages</span>
-          <span className="text-xs text-sky-600 font-medium">All Clouds</span>
+          <span className="text-xs text-sky-700 font-medium">All Clouds</span>
         </button>
         <NavLink
           to={activeNamespace ? `${navPrefix}/live-tail?namespace=${activeNamespace.id}` : `${navPrefix}/live-tail`}
@@ -173,7 +173,7 @@ export function QuickAccessPanel() {
         </NavLink>
 
         {/* ── Diagnose & automate ── */}
-        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Diagnose &amp; automate</div>
+        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Diagnose &amp; automate</div>
         <NavLink
           to={activeNamespace ? `${navPrefix}/dlq-history?namespace=${activeNamespace.id}` : `${navPrefix}/dlq-history`}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-purple-50 text-gray-700 hover:text-purple-700 border border-gray-200 hover:border-purple-300 shadow-sm"
@@ -204,7 +204,7 @@ export function QuickAccessPanel() {
         </NavLink>
 
         {/* ── Platform ── */}
-        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Platform</div>
+        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Platform</div>
         <NavLink
           to={`${navPrefix}/health`}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border border-gray-200 hover:border-emerald-300 shadow-sm"
@@ -255,7 +255,7 @@ export function QuickAccessPanel() {
         </NavLink>
 
         {/* ── Support ── */}
-        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Support</div>
+        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Support</div>
         <NavLink
           to={`${navPrefix}/help`}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border border-gray-200 hover:border-primary-300 shadow-sm"

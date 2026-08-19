@@ -87,7 +87,7 @@ export function Header() {
           >
             <Search className="w-3.5 h-3.5" />
             <span className="flex-1 text-left">Search…</span>
-            <kbd className="text-[10px] font-mono bg-gray-100 text-gray-500 px-1 rounded">⌘K</kbd>
+            <kbd className="text-[10px] font-mono bg-gray-100 text-gray-600 px-1 rounded">⌘K</kbd>
           </button>
           <button
             onClick={() => window.dispatchEvent(new Event('servicehub:open-palette'))}
@@ -118,7 +118,7 @@ export function Header() {
           >
             <Bell className="w-5 h-5" />
             {totalDlqCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full border-2 border-primary-500">
+              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center bg-red-600 text-white text-[10px] font-bold rounded-full border-2 border-primary-500">
                 {totalDlqCount > 99 ? '99+' : totalDlqCount}
               </span>
             )}
