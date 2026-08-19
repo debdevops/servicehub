@@ -115,6 +115,15 @@ followed it.
 
 ## [3.4.0] — 2026-08-02
 
+> **Note:** several doc paths named below (`docs/CONFIGURATION.md`, `docs/FLOW.md`,
+> `docs/PROVIDER-SUPPORT.md`, `docs/KNOWN-LIMITATIONS.md`, `docs/COMPREHENSIVE-GUIDE.md`,
+> `docs/EXTENDING-PROVIDERS.md`, `docs/multi-platform/{aws,gcp}/README.md`,
+> `self-hosting/security-hardening/README.md`) were accurate at the time of this release. A later
+> docs-minimization pass consolidated or removed them from the public repository; for current
+> configuration/deployment/security guidance see [`self-hosting/README.md`](self-hosting/README.md),
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), and
+> [`docs/extending/adding-a-provider.md`](docs/extending/adding-a-provider.md).
+
 ### Removed
 
 - **Simulator** — the in-memory `ASPNETCORE_ENVIRONMENT=Simulator` backend (`ServiceHub.Simulator` project, `SimulatorController`, `SimulatorOnlyAttribute`, seeded Azure/AWS/GCP namespaces, `run.sh --simulator`, the `useSimulator` hook and Simulator control-panel UI) has been permanently removed, not replaced by another backend. `docker-compose.yml`'s primary service now runs in `Development` mode and requires real cloud credentials to browse a namespace; the client-side, backend-free Demo Mode (`/demo/azure`, `/demo/aws`, `/demo/gcp`) remains the zero-credential way to explore the UI. AWS/GCP end-to-end code paths (previously exercised via Simulator) are now verified through unit tests and a real, flag-enabled provider only.

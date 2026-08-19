@@ -212,12 +212,19 @@ consecutive verified recurrence and cannot be disabled by configuration.
 
 ## 6a. The AI capability boundary
 
-AI/DLQ pattern detection is heuristic and runs **client-side only** — no external AI API calls of
-any kind, in either direction. Where a backend AI-adjacent component exists (anomaly detection), it
-is architecturally forbidden from calling any mutating method on `IRecoveryLedger` or the replay/
-purge paths: `AIBoundaryArchitectureTests` reflects over each relevant interface's own method list
-to derive the forbidden-member set automatically, so a future write method added to `IRecoveryLedger`
-is caught without anyone remembering to update an exclusion list. AI touches nouns (classification,
+AI/DLQ pattern detection is heuristic — no calls to any third-party or cloud AI API, in either
+direction. The primary pattern-detection surface (the Messages page's "AI Findings" panel) runs as
+client-side heuristics in the browser (`packages/servicehub-ui-shared/src/lib/ai/`). A backend
+AI-adjacent path also exists for richer failure-signature clustering and (stubbed) anomaly
+detection: it can optionally call `services/ai/` — a local, self-hosted, disabled-by-default
+companion container the operator runs on their own network, never an external service — and always
+falls back to a purely local, in-process deterministic strategy when that container is disabled,
+absent, or unreachable (see [`services/ai/README.md`](../services/ai/README.md)). Every AI-adjacent
+backend component, this clustering path and anomaly detection alike, is architecturally forbidden
+from calling any mutating method on `IRecoveryLedger` or the replay/purge paths:
+`AIBoundaryArchitectureTests` reflects over each relevant interface's own method list to derive the
+forbidden-member set automatically, so a future write method added to `IRecoveryLedger` is caught
+without anyone remembering to update an exclusion list. AI touches nouns (classification,
 explanation), never verbs (execution) — see [ADR-0005](adr/0005-ai-capability-boundary.md).
 
 ## 7. Persistence and single-instance architecture
