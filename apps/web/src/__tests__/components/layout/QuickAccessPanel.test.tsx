@@ -102,4 +102,36 @@ describe('QuickAccessPanel', () => {
     expect(screen.getByText('Active Messages')).toBeInTheDocument();
   });
 
+  it('labels "browse across clouds" shortcuts "All Namespaces" (not "All Clouds") on a single-provider installation', () => {
+    mockUseNamespaces.mockReturnValue({
+      data: [{ id: 'ns1', name: 'my-namespace', isActive: true, cloudProvider: 'aws' }],
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+    const Wrapper = createWrapper();
+    render(<Wrapper><QuickAccessPanel /></Wrapper>);
+    expect(screen.getAllByText('All Namespaces')).toHaveLength(2);
+    expect(screen.queryByText('All Clouds')).not.toBeInTheDocument();
+    expect(screen.getByText('Multi-Cloud Trace').closest('a')).toHaveAttribute(
+      'title',
+      'Needs at least two connected providers to trace a cross-cloud hop'
+    );
+  });
+
+  it('labels "browse across clouds" shortcuts "All Clouds" once ≥2 providers are configured', () => {
+    mockUseNamespaces.mockReturnValue({
+      data: [
+        { id: 'ns1', name: 'azure-ns', isActive: true, cloudProvider: 'azure' },
+        { id: 'ns2', name: 'aws-ns', isActive: true, cloudProvider: 'aws' },
+      ],
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+    const Wrapper = createWrapper();
+    render(<Wrapper><QuickAccessPanel /></Wrapper>);
+    expect(screen.getAllByText('All Clouds')).toHaveLength(2);
+    expect(screen.queryByText('All Namespaces')).not.toBeInTheDocument();
+    expect(screen.getByText('Multi-Cloud Trace').closest('a')).not.toHaveAttribute('title');
+  });
+
 });

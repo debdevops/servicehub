@@ -407,8 +407,13 @@ export function ConnectPage() {
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div
                       className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                        ns.isActive ? 'bg-green-500' : 'bg-gray-300'
+                        !ns.isActive
+                          ? 'bg-gray-300'
+                          : ns.lastConnectionTestSucceeded === false
+                            ? 'bg-amber-500'
+                            : 'bg-green-500'
                       }`}
+                      title={ns.isActive && ns.lastConnectionTestSucceeded === false ? 'Last connection test failed' : undefined}
                     />
                     <div className="min-w-0 flex-1">
                       <h3
@@ -544,6 +549,7 @@ export function ConnectPage() {
                 <button
                   type="button"
                   onClick={() => setCloudProvider('aws')}
+                  aria-disabled={!awsEnabled}
                   className={`flex flex-col items-center gap-1 p-2.5 rounded-lg border text-xs font-medium transition-all ${
                     cloudProvider === 'aws'
                       ? 'bg-orange-50 border-orange-400 text-orange-700 ring-2 ring-orange-300'
@@ -551,8 +557,9 @@ export function ConnectPage() {
                   }`}
                   title="Amazon Web Services SQS"
                 >
-                  <ProviderIcon provider="aws" className="w-6 h-6" />
+                  <ProviderIcon provider="aws" className={`w-6 h-6 ${awsEnabled ? '' : 'grayscale opacity-50'}`} />
                   <span>AWS</span>
+                  {!awsEnabled && <span className="text-[9px] font-normal normal-case text-gray-400">Not available</span>}
                   {cloudProvider === 'aws' && (
                     <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">Selected</span>
                   )}
@@ -562,6 +569,7 @@ export function ConnectPage() {
                 <button
                   type="button"
                   onClick={() => setCloudProvider('gcp')}
+                  aria-disabled={!gcpEnabled}
                   className={`flex flex-col items-center gap-1 p-2.5 rounded-lg border text-xs font-medium transition-all ${
                     cloudProvider === 'gcp'
                       ? 'bg-green-50 border-green-400 text-green-700 ring-2 ring-green-300'
@@ -569,8 +577,9 @@ export function ConnectPage() {
                   }`}
                   title="Google Cloud Pub/Sub"
                 >
-                  <ProviderIcon provider="gcp" className="w-6 h-6" />
+                  <ProviderIcon provider="gcp" className={`w-6 h-6 ${gcpEnabled ? '' : 'grayscale opacity-50'}`} />
                   <span>GCP</span>
+                  {!gcpEnabled && <span className="text-[9px] font-normal normal-case text-gray-400">Not available</span>}
                   {cloudProvider === 'gcp' && (
                     <span className="text-[10px] bg-green-100 text-green-600 px-1.5 py-0.5 rounded-full">Selected</span>
                   )}

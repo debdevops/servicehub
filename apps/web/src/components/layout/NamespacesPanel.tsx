@@ -8,13 +8,16 @@ import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
 import { useInsightsSummary } from '@servicehub/ui-shared/hooks/useInsights';
 import { AwsQueueList, AwsTopicList } from '@/components/layout/AwsEntityTree';
 import { setThemeProvider } from '@servicehub/ui-shared/lib/providerTheme';
-import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { useProviderCapabilities, useProviderStatus } from '@servicehub/ui-shared/hooks/useCloudBridge';
 import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
-import { getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
+import { getProviderStyle, PROVIDER_STATE_STYLES } from '@servicehub/ui-shared/lib/providerStyles';
+import { getProviderConnectionState, type ProviderInstallState } from '@servicehub/ui-shared/lib/providerConnectionState';
 import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
 import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { ResizablePanel } from './ResizablePanel';
+
+const ALL_PROVIDERS: CloudProviderType[] = ['azure', 'aws', 'gcp'];
 
 interface NamespaceItemProps {
   namespace: {
@@ -24,6 +27,7 @@ interface NamespaceItemProps {
     isActive: boolean;
     cloudProvider?: CloudProviderType;
     environment?: string;
+    lastConnectionTestSucceeded?: boolean | null;
   };
 }
 
@@ -297,8 +301,18 @@ function NamespaceCard({ namespace }: NamespaceItemProps) {
               {env}
             </span>
             <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-gray-500">
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${namespace.isActive ? 'bg-green-500' : 'bg-gray-300'}`} />
-              {namespace.isActive ? 'Connected' : 'Inactive'}
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                !namespace.isActive
+                  ? 'bg-gray-300'
+                  : namespace.lastConnectionTestSucceeded === false
+                    ? 'bg-amber-500'
+                    : 'bg-green-500'
+              }`} />
+              {!namespace.isActive
+                ? 'Inactive'
+                : namespace.lastConnectionTestSucceeded === false
+                  ? 'Connection issue'
+                  : 'Connected'}
             </span>
           </div>
         </div>
@@ -387,6 +401,39 @@ function NamespaceCard({ namespace }: NamespaceItemProps) {
   );
 }
 
+/** A provider with no namespace card above — either not part of this installation
+ * at all, or part of it but never connected. Quiet, inert, no numbers/dots that could
+ * be mistaken for liveness — the whole point is that it never looks like empty data. */
+function OtherProviderRow({ provider, state }: { provider: CloudProviderType; state: ProviderInstallState }) {
+  const style = getProviderStyle(provider);
+  const stateStyle = PROVIDER_STATE_STYLES[state];
+
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg">
+      <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 border border-gray-100 bg-white overflow-hidden ${stateStyle.iconClass}`}>
+        <ProviderIcon provider={provider} className="w-full h-full" />
+      </div>
+      <div className="min-w-0 flex-1 flex items-center gap-1.5">
+        <span className="text-xs font-semibold text-gray-500">{style.label}</span>
+        {stateStyle.dotClass && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${stateStyle.dotClass}`} />}
+        <span className={`text-[10px] font-medium truncate ${stateStyle.textClass}`}>{stateStyle.label}</span>
+      </div>
+      {state === 'available-unconfigured' ? (
+        <NavLink to="/connect" className="text-[10px] font-semibold text-primary-600 hover:text-primary-700 shrink-0">
+          + Connect
+        </NavLink>
+      ) : (
+        <span
+          className="text-[10px] text-gray-400 shrink-0"
+          title="An operator must enable this provider's feature flag on the server to make it available here."
+        >
+          Ask an operator
+        </span>
+      )}
+    </div>
+  );
+}
+
 /**
  * Namespaces / Connections — every connected cloud (Azure, AWS, GCP) as an expandable
  * card showing provider, environment, connection status, and its queues/topics/subscriptions.
@@ -394,6 +441,19 @@ function NamespaceCard({ namespace }: NamespaceItemProps) {
  */
 export function NamespacesPanel() {
   const { data: namespaces, isLoading, refetch, isRefetching } = useNamespaces();
+  const { data: providerStatus } = useProviderStatus();
+  const { isDemoMode } = useDemoContext();
+
+  // "Not configured" must never look like "no data" — every provider this installation
+  // doesn't already show a namespace card for gets a quiet, explicit row here instead of
+  // silently not existing. Skipped in Demo Mode: there's no real provider-status to check,
+  // and a "not configured" row inside a single-provider demo would be nonsensical (mirrors
+  // useProviderStatus()'s own `enabled: !isDemoMode` gate).
+  const otherProviders = isDemoMode
+    ? []
+    : ALL_PROVIDERS
+        .map((provider) => ({ provider, state: getProviderConnectionState(providerStatus, namespaces, provider) }))
+        .filter(({ state }) => state === 'unavailable' || state === 'available-unconfigured');
 
   return (
     <ResizablePanel
@@ -443,6 +503,19 @@ export function NamespacesPanel() {
           </div>
         )}
       </div>
+
+      {otherProviders.length > 0 && (
+        <div className="px-3 pb-2 pt-1 border-t border-gray-100">
+          <p className="px-1 pb-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+            Other providers
+          </p>
+          <div className="space-y-0.5">
+            {otherProviders.map(({ provider, state }) => (
+              <OtherProviderRow key={provider} provider={provider} state={state} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Add Connection CTA */}
       <div className="border-t border-gray-100 p-3 bg-white sticky bottom-0">

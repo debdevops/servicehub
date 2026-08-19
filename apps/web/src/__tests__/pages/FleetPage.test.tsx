@@ -15,6 +15,10 @@ vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({
   useAllNamespacesQueues: vi.fn(),
 }));
 
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
+  useNamespaces: vi.fn(),
+}));
+
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -24,9 +28,11 @@ vi.mock('react-router-dom', async () => {
 import { useFleetOverview } from '@servicehub/ui-shared/hooks/useFleet';
 import { useHealthReport } from '@servicehub/ui-shared/hooks/useHealth';
 import { useAllNamespacesQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 const mockUseFleetOverview = useFleetOverview as ReturnType<typeof vi.fn>;
 const mockUseHealthReport = useHealthReport as ReturnType<typeof vi.fn>;
 const mockUseAllNamespacesQueues = useAllNamespacesQueues as ReturnType<typeof vi.fn>;
+const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 
 const sampleOverview = {
   generatedAt: '2026-07-21T06:00:00Z',
@@ -132,6 +138,7 @@ describe('FleetPage', () => {
     vi.clearAllMocks();
     mockUseHealthReport.mockReturnValue({ data: undefined });
     mockUseAllNamespacesQueues.mockReturnValue([]);
+    mockUseNamespaces.mockReturnValue({ data: [] });
   });
 
   it('shows a loading state', () => {
@@ -169,6 +176,12 @@ describe('FleetPage', () => {
 
   it('renders provider connectivity badges from the health report', () => {
     mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    mockUseNamespaces.mockReturnValue({
+      data: [
+        { id: 'ns-azure', name: 'orders-prod', isActive: true, createdAt: '2026-01-01', cloudProvider: 'azure' },
+        { id: 'ns-aws', name: 'reporting-dev', isActive: true, createdAt: '2026-01-01', cloudProvider: 'aws' },
+      ],
+    });
     mockUseHealthReport.mockReturnValue({
       data: {
         entries: {
@@ -182,6 +195,45 @@ describe('FleetPage', () => {
     expect(screen.getByText(/provider connectivity/i)).toBeInTheDocument();
     expect(screen.getByTitle('OK')).toBeInTheDocument();
     expect(screen.getByTitle('Slow')).toBeInTheDocument();
+  });
+
+  it('never renders "Healthy" (emerald) styling for a provider with 0 namespaces (flag on, unconnected)', () => {
+    mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    // Both checks report Healthy ("No namespaces configured" is still a Healthy result
+    // from AwsHealthCheck) but this operator has 0 namespaces for either — must not
+    // read as connected/emerald just because the raw health-check status says Healthy.
+    mockUseNamespaces.mockReturnValue({ data: [] });
+    mockUseHealthReport.mockReturnValue({
+      data: {
+        entries: {
+          servicebus: { status: 'Healthy', description: 'OK' },
+          'aws-connectivity': { status: 'Healthy', description: 'No AWS namespaces configured.' },
+        },
+      },
+    });
+    renderPage();
+
+    const strip = screen.getByText(/provider connectivity/i).closest('div') as HTMLElement;
+    expect(within(strip).queryAllByText(/Azure|AWS/, { selector: 'span' }).length).toBeGreaterThan(0);
+    expect(strip.querySelectorAll('.bg-emerald-50').length).toBe(0);
+  });
+
+  it('renders a provider with no health-check entry as unavailable instead of silently omitting it', () => {
+    mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    mockUseNamespaces.mockReturnValue({ data: [] });
+    mockUseHealthReport.mockReturnValue({
+      data: {
+        entries: {
+          servicebus: { status: 'Healthy', description: 'OK' },
+          // gcp-connectivity absent entirely — flag is off on this server.
+        },
+      },
+    });
+    renderPage();
+
+    const strip = screen.getByText(/provider connectivity/i).closest('div') as HTMLElement;
+    const gcpPill = within(strip).getByText('GCP').closest('span');
+    expect(gcpPill).toHaveAttribute('title', 'Not available on this server');
   });
 
   it('filters namespace rows by provider', () => {

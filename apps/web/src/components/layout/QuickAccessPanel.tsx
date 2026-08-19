@@ -36,6 +36,13 @@ export function QuickAccessPanel() {
   const activeNamespace = namespaces?.find((ns) => ns.isActive);
   const demoStats = isDemoMode && cloudProvider ? getMockStats(cloudProvider) : null;
 
+  // "All Clouds" is misleading on a single-provider installation — reads as though
+  // Azure/AWS/GCP data the operator doesn't have is somehow included. Swap to
+  // "All Namespaces" whenever fewer than 2 distinct providers are actually configured.
+  const configuredProviderCount = new Set((namespaces ?? []).map((ns) => ns.cloudProvider).filter(Boolean)).size;
+  const isMultiCloud = configuredProviderCount > 1;
+  const browseAllLabel = isMultiCloud ? 'All Clouds' : 'All Namespaces';
+
   const allNamespaceIds = isDemoMode ? [] : (namespaces?.map((ns) => ns.id) ?? []);
   // autoRefresh: false — Header renders the same fleet-wide dead-letter total from the same
   // ['namespace-stats', id] cache entries and is mounted on every page alongside this panel.
@@ -122,7 +129,7 @@ export function QuickAccessPanel() {
         >
           <Database className="w-4 h-4 text-sky-500" />
           <span className="flex-1 text-left">Active Messages</span>
-          <span className="text-xs text-sky-700 font-medium">All Clouds</span>
+          <span className="text-xs text-sky-700 font-medium">{browseAllLabel}</span>
         </button>
         <NavLink
           to={activeNamespace ? `${navPrefix}/live-tail?namespace=${activeNamespace.id}` : `${navPrefix}/live-tail`}
@@ -143,7 +150,7 @@ export function QuickAccessPanel() {
         >
           <AlertCircle className="w-4 h-4 text-red-500" />
           <span className="flex-1 text-left">Dead-Letter</span>
-          <span className="text-xs text-red-600 font-medium">All Clouds</span>
+          <span className="text-xs text-red-600 font-medium">{browseAllLabel}</span>
         </button>
         <NavLink
           to={`${navPrefix}/scheduled`}
@@ -191,6 +198,7 @@ export function QuickAccessPanel() {
         </NavLink>
         <NavLink
           to={`${navPrefix}/cross-cloud-trace`}
+          title={isMultiCloud ? undefined : 'Needs at least two connected providers to trace a cross-cloud hop'}
           className={({ isActive }) =>
             `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
               isActive

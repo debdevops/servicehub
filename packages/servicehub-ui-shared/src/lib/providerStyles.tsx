@@ -1,4 +1,5 @@
 import type { CloudProviderType } from './api/types';
+import type { ProviderInstallState } from './providerConnectionState';
 import { ProviderIcon } from '../components/ProviderIcon';
 
 // Shared per-provider visual identity used by the multi-cloud overview widgets:
@@ -62,6 +63,48 @@ export const PROVIDER_STYLES: Record<CloudProviderType, ProviderStyle> = {
 export function getProviderStyle(provider?: CloudProviderType): ProviderStyle {
   return PROVIDER_STYLES[provider ?? 'azure'];
 }
+
+export interface ProviderStateStyle {
+  /** Never "Inactive," never blank — always a truthful, specific label. */
+  label: string;
+  /** null = render no dot at all — a dot implies "this is a monitored thing." */
+  dotClass: string | null;
+  textClass: string;
+  /** Applied to the provider icon/avatar to visually recede unconnected providers. */
+  iconClass: string;
+}
+
+// Visual language for ProviderInstallState (see providerConnectionState.ts), reused across
+// every surface that renders per-provider install/connection state (sidebar footer, Fleet
+// connectivity strip, Cloud Bridge status cards, Connect page tiles) so "not configured,"
+// "connection issue," and "not available" always mean the same colors/wording everywhere.
+// eslint-disable-next-line react-refresh/only-export-components -- style map + badge belong together
+export const PROVIDER_STATE_STYLES: Record<ProviderInstallState, ProviderStateStyle> = {
+  connected: {
+    label: 'Connected',
+    dotClass: 'bg-green-500',
+    textClass: 'text-green-700',
+    iconClass: '',
+  },
+  'connection-issue': {
+    label: 'Connection issue',
+    dotClass: 'bg-amber-500',
+    textClass: 'text-amber-700',
+    iconClass: '',
+  },
+  'available-unconfigured': {
+    label: 'Not configured',
+    dotClass: 'bg-gray-300',
+    textClass: 'text-gray-500',
+    iconClass: 'opacity-50',
+  },
+  unavailable: {
+    label: 'Not available on this server',
+    dotClass: null,
+    textClass: 'text-gray-400',
+    iconClass: 'grayscale opacity-40',
+  },
+};
 
 // Full messaging-service and management-console names — used in copy that references where a
 // fact came from or where to verify it (e.g. "Not provided by {service}", "Check the {console}

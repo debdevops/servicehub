@@ -164,6 +164,17 @@ describe('ConnectPage multi-cloud provider gating', () => {
     expect(screen.getByRole('button', { name: /^Connect$/ })).toBeDisabled();
   });
 
+  it('shows a "Not available" caption on the AWS tile at a glance, before it is clicked', () => {
+    mockProviderStatus.mockReturnValue({ data: { Aws: false, Gcp: true } });
+    renderConnectPage();
+
+    const awsTile = screen.getByTitle('Amazon Web Services SQS');
+    expect(awsTile).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText('Not available', { selector: 'button[title="Amazon Web Services SQS"] span' })).toBeInTheDocument();
+    // GCP is enabled — no caption, not marked aria-disabled.
+    expect(screen.getByTitle('Google Cloud Pub/Sub')).toHaveAttribute('aria-disabled', 'false');
+  });
+
   it('treats providers as disabled while status is still loading', () => {
     mockProviderStatus.mockReturnValue({ data: undefined });
     renderConnectPage();
