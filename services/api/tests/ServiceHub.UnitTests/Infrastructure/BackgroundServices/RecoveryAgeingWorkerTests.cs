@@ -237,9 +237,21 @@ public sealed class RecoveryAgeingWorkerTests : IDisposable
         var entry = await BeginEntryAsync(OwnerA, DateTimeOffset.UtcNow.AddDays(-10));
         var worker = CreateWorker(thresholdDays: 7);
 
+        // Each concurrent sweep needs its own DbContext instance — sharing one across the two
+        // Task.WhenAll branches would violate EF Core's single-threaded-per-instance contract and
+        // fail with a ConcurrencyDetector error unrelated to the invariant under test. The second
+        // context shares the first's open connection so both see the same in-memory database,
+        // mirroring two independent DI scopes (as production's IServiceScopeFactory would hand
+        // out) racing against the same owner's static lock (RecoveryLedgerService.OwnerLocks).
+        using var otherContext = new DlqDbContext(
+            new DbContextOptionsBuilder<DlqDbContext>()
+                .UseSqlite(_dbContext.Database.GetDbConnection())
+                .Options);
+        var otherLedger = new RecoveryLedgerService(otherContext);
+
         await Task.WhenAll(
             worker.SweepOwnerAsync(BuildScope(_recoveryLedger), OwnerA, CancellationToken.None),
-            worker.SweepOwnerAsync(BuildScope(_recoveryLedger), OwnerA, CancellationToken.None));
+            worker.SweepOwnerAsync(BuildScope(otherLedger), OwnerA, CancellationToken.None));
 
         var flagEvents = await _dbContext.RecoveryEvents
             .Where(e => e.EntryId == entry.Id && e.EventType == RecoveryEventType.AgeingFlagged)
