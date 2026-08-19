@@ -980,7 +980,7 @@ public sealed class MessagesController : ApiControllerBase
 
         try
         {
-            var session = _liveTailSessionFactory.Create(namespaceId, entityName, subscriptionName, fromDeadLetter);
+            var session = _liveTailSessionFactory.Create(namespaceId, entityName, subscriptionName, fromDeadLetter, ns.Provider);
 
             Response.Headers.ContentType = "text/event-stream; charset=utf-8";
             Response.Headers.CacheControl = "no-cache, no-store";

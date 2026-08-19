@@ -2,6 +2,7 @@ using FluentAssertions;
 using Moq;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.LiveTail;
 using ServiceHub.Shared.Results;
@@ -13,8 +14,15 @@ public sealed class LiveTailSessionTests
     private readonly Mock<IMessageOperationsService> _messageOperationsMock = new();
     private static readonly Guid NamespaceId = Guid.NewGuid();
 
-    private LiveTailSession CreateSut(string entityName = "orders", string? subscriptionName = null, bool fromDeadLetter = false) =>
-        new(_messageOperationsMock.Object, NamespaceId, entityName, subscriptionName, fromDeadLetter);
+    // GCP by default for the provider-neutral behaviour below (single-snapshot-per-poll,
+    // MessageId dedup, no sequence cursor) — unchanged from this class's original design.
+    // Azure-specific sequential-catch-up behaviour is covered separately further down.
+    private LiveTailSession CreateSut(
+        string entityName = "orders",
+        string? subscriptionName = null,
+        bool fromDeadLetter = false,
+        CloudProviderType provider = CloudProviderType.Gcp) =>
+        new(_messageOperationsMock.Object, NamespaceId, entityName, subscriptionName, fromDeadLetter, provider);
 
     private static Message BuildMessage(string messageId, long sequenceNumber = 1) => new()
     {
@@ -29,14 +37,14 @@ public sealed class LiveTailSessionTests
     [Fact]
     public void Constructor_NullMessageOperationsService_Throws()
     {
-        var act = () => new LiveTailSession(null!, NamespaceId, "orders", null, false);
+        var act = () => new LiveTailSession(null!, NamespaceId, "orders", null, false, CloudProviderType.Gcp);
         act.Should().Throw<ArgumentNullException>().WithParameterName("messageOperationsService");
     }
 
     [Fact]
     public void Constructor_NullEntityName_Throws()
     {
-        var act = () => new LiveTailSession(_messageOperationsMock.Object, NamespaceId, null!, null, false);
+        var act = () => new LiveTailSession(_messageOperationsMock.Object, NamespaceId, null!, null, false, CloudProviderType.Gcp);
         act.Should().Throw<ArgumentException>().WithParameterName("entityName");
     }
 
@@ -104,6 +112,81 @@ public sealed class LiveTailSessionTests
         var second = await sut.PollNextAsync();
 
         second.Value.Should().ContainSingle().Which.SequenceNumber.Should().Be(43);
+    }
+
+    // ── Azure sequential catch-up (regression: a backlog larger than one poll batch used
+    //    to permanently strand Live Tail on page 1 — see LiveTailSession's remarks) ────────
+
+    [Fact]
+    public async Task PollNextAsync_Azure_BacklogLargerThanOneBatch_CatchesUpWithinOnePollAndSeesLaterArrivals()
+    {
+        // A fresh Azure receiver is created (and its position lost) on every real Peek call,
+        // so the mock must behave the same way the real provider does: honour whatever
+        // FromSequenceNumber was requested rather than silently continuing where the last
+        // call left off, which is exactly the assumption that let the real bug ship unnoticed.
+        var backlog = Enumerable.Range(1, 30).Select(i => BuildMessage($"backlog-{i}", i)).ToList();
+
+        _messageOperationsMock
+            .Setup(m => m.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((GetMessagesRequest req, CancellationToken _) =>
+            {
+                var from = req.FromSequenceNumber ?? 1;
+                var page = backlog.Where(m => m.SequenceNumber >= from).Take(req.MaxMessages).ToList();
+                return Result<IReadOnlyList<Message>>.Success(page);
+            });
+
+        var sut = CreateSut(provider: CloudProviderType.Azure);
+
+        // One poll call must internally page through the entire 30-message backlog (2 batches
+        // of 25 + a short one) without emitting any of it — the whole point of "first poll
+        // seeds without emitting" must hold regardless of backlog size.
+        var first = await sut.PollNextAsync();
+        first.Value.Should().BeEmpty();
+
+        // A message that arrives *after* the backlog (sequence 31) must be visible on the very
+        // next poll — this is the exact scenario that was broken: with no cursor, every poll
+        // re-peeked the same oldest 25 (sequence 1-25) forever and never saw sequence 31.
+        backlog.Add(BuildMessage("new-arrival", 31));
+        var second = await sut.PollNextAsync();
+
+        second.Value.Should().ContainSingle().Which.MessageId.Should().Be("new-arrival");
+    }
+
+    [Fact]
+    public async Task PollNextAsync_Azure_PassesAdvancingFromSequenceNumber()
+    {
+        var requests = new List<GetMessagesRequest>();
+        _messageOperationsMock
+            .Setup(m => m.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<GetMessagesRequest, CancellationToken>((req, _) => requests.Add(req))
+            .ReturnsAsync(Result<IReadOnlyList<Message>>.Success([BuildMessage("m1", 5)]));
+
+        var sut = CreateSut(provider: CloudProviderType.Azure);
+        await sut.PollNextAsync();
+        await sut.PollNextAsync();
+
+        requests.Should().HaveCount(2);
+        requests[0].FromSequenceNumber.Should().BeNull();
+        requests[1].FromSequenceNumber.Should().Be(6); // one past the highest sequence number seen
+    }
+
+    [Fact]
+    public async Task PollNextAsync_Gcp_NeverPassesFromSequenceNumber()
+    {
+        // GCP's SequenceNumber rotates per redelivery — a cursor built from it would be
+        // meaningless, so GCP must keep relying purely on MessageId dedup, unaffected by
+        // this fix.
+        var requests = new List<GetMessagesRequest>();
+        _messageOperationsMock
+            .Setup(m => m.PeekMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<GetMessagesRequest, CancellationToken>((req, _) => requests.Add(req))
+            .ReturnsAsync(Result<IReadOnlyList<Message>>.Success([BuildMessage("m1", 5), BuildMessage("m2", 999)]));
+
+        var sut = CreateSut(provider: CloudProviderType.Gcp);
+        await sut.PollNextAsync();
+        await sut.PollNextAsync();
+
+        requests.Should().HaveCount(2).And.OnlyContain(r => r.FromSequenceNumber == null);
     }
 
     // ── Failure passthrough ──────────────────────────────────────────────────
