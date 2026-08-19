@@ -31,6 +31,9 @@ vi.mock('@/components/messages', () => ({
       <button onClick={() => onSelectMessage('msg-2')}>Select msg-2</button>
       <button onClick={() => onQueueTabChange('active')}>Active ({activeCounts.active})</button>
       <button onClick={() => onQueueTabChange('deadletter')}>Dead-Letter ({activeCounts.deadletter})</button>
+      {messages.map((m: any) => (
+        <span key={m.id} data-testid={`preview-${m.id}`}>{m.preview}</span>
+      ))}
     </div>
   ),
   MessageDetailPanel: () => <div data-testid="message-detail-panel" />,
@@ -159,6 +162,53 @@ describe('MessagesPage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><MessagesPage /></Wrapper>);
     expect(screen.getByText('2 messages')).toBeInTheDocument();
+  });
+
+  it('shows an empty preview (not "Body unavailable") for a message with a genuinely empty body', () => {
+    // Regresses a mislabel found while testing GCP Pub/Sub, whose peek maps a zero-length
+    // Data payload to body: '' (not null) — e.g. a message intentionally published with no
+    // body. The preview must not claim the body is "unavailable" (implying a size/throttle
+    // error) merely because the empty string is falsy.
+    mockUseMessages.mockReturnValue({
+      data: {
+        items: [{
+          messageId: 'msg-empty',
+          sequenceNumber: 1,
+          enqueuedTime: new Date().toISOString(),
+          body: '',
+          contentType: 'application/json',
+          deliveryCount: 1,
+          applicationProperties: {},
+        }],
+        totalCount: 1,
+      },
+      isLoading: false, error: null, refetch: vi.fn(), isFetching: false, dataUpdatedAt: Date.now(),
+    });
+    const Wrapper = createWrapper();
+    render(<Wrapper><MessagesPage /></Wrapper>);
+    expect(screen.getByTestId('preview-msg-empty')).toHaveTextContent('');
+    expect(screen.queryByText(/Body unavailable/)).not.toBeInTheDocument();
+  });
+
+  it('shows "Body unavailable" only when the body is genuinely absent (null)', () => {
+    mockUseMessages.mockReturnValue({
+      data: {
+        items: [{
+          messageId: 'msg-null-body',
+          sequenceNumber: 1,
+          enqueuedTime: new Date().toISOString(),
+          body: null,
+          contentType: 'application/json',
+          deliveryCount: 1,
+          applicationProperties: {},
+        }],
+        totalCount: 1,
+      },
+      isLoading: false, error: null, refetch: vi.fn(), isFetching: false, dataUpdatedAt: Date.now(),
+    });
+    const Wrapper = createWrapper();
+    render(<Wrapper><MessagesPage /></Wrapper>);
+    expect(screen.getByTestId('preview-msg-null-body')).toHaveTextContent('Body unavailable - may exceed size limit or API throttled');
   });
 
   it('has exactly one <h1> naming the current entity, with namespace and environment visible nearby', () => {

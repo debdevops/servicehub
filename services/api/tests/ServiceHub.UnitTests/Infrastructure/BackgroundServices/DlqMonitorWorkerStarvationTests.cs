@@ -126,6 +126,9 @@ public sealed class DlqMonitorWorkerStarvationTests : IAsyncLifetime
             });
 
         var executor = new Mock<IAutoReplayExecutor>();
+        executor.Setup(e => e.EvaluateEligibilityAsync(
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<Namespace>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((EligibilityDecision.Allow, (string?)null));
         executor.Setup(e => e.ExecuteAsync(
                 It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .Returns(async (DlqMessage msg, AutoReplayRule _, RuleAction _, Namespace _, Guid _, CancellationToken ct) =>
@@ -229,7 +232,7 @@ public sealed class DlqMonitorWorkerStarvationTests : IAsyncLifetime
             Times.Once,
             "a replayed message leaves the Active set and must never be replayed again by a later sweep");
 
-        executor.Invocations.Should().HaveCount(1);
+        executor.Invocations.Count(i => i.Method.Name == nameof(IAutoReplayExecutor.ExecuteAsync)).Should().Be(1);
 
         await sp.DisposeAsync();
     }
@@ -285,7 +288,7 @@ public sealed class DlqMonitorWorkerStarvationTests : IAsyncLifetime
         rows.Single(m => m.MessageId == matchA).Status.Should().Be(DlqMessageStatus.Replayed,
             "namespace A's cursor must not be advanced by namespace B's sweep");
         rows.Single(m => m.MessageId == matchB).Status.Should().Be(DlqMessageStatus.Replayed);
-        executor.Invocations.Should().HaveCount(2);
+        executor.Invocations.Count(i => i.Method.Name == nameof(IAutoReplayExecutor.ExecuteAsync)).Should().Be(2);
 
         // No cross-namespace leakage: A's sweep must never evaluate B's rows.
         var (workerC, spC, _, evaluatedC) = BuildWorker([], batchSize: 100);
@@ -312,7 +315,7 @@ public sealed class DlqMonitorWorkerStarvationTests : IAsyncLifetime
         // Two cycles before the "crash": the early match replays, the late one has not been reached.
         await worker1.EvaluateAutoReplayRulesAsync(sp1, ns, CancellationToken.None);
         await worker1.EvaluateAutoReplayRulesAsync(sp1, ns, CancellationToken.None);
-        executor1.Invocations.Should().HaveCount(1);
+        executor1.Invocations.Count(i => i.Method.Name == nameof(IAutoReplayExecutor.ExecuteAsync)).Should().Be(1);
 
         // Restart: a brand-new worker instance has no cursor at all (in-memory state is lost).
         var (worker2, sp2, executor2, evaluated2) = BuildWorker([earlyMatch, lateMatch], batchSize: 3);

@@ -309,12 +309,21 @@ function extractErrorTypeFromProperties(
 
     const normalizedKey = key.toLowerCase().replace(/[-_]/g, '');
     if (normalizedKey.includes('errortype') || normalizedKey.includes('exceptiontype')) {
-      return value.trim();
+      const trimmed = value.trim();
+      if (NO_ERROR_SENTINEL_VALUES.has(trimmed.toLowerCase())) {
+        continue;
+      }
+      return trimmed;
     }
   }
 
   return null;
 }
+
+// Producers sometimes stamp an error-type-like property on every message, success or
+// failure, defaulting it to one of these when there's no actual error — treat them the
+// same as "no property found" rather than fabricating a pattern/cluster from them.
+const NO_ERROR_SENTINEL_VALUES = new Set(['none', 'null', 'n/a', 'na', 'unset', 'undefined']);
 
 /**
  * Calculate confidence level based on evidence strength

@@ -562,6 +562,18 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
     /// pullers on the same subscription, like <c>DlqMonitorWorker</c>'s own background scan —
     /// so this loops (deduping by MessageId) until a quiet round or <see cref="MaxScanBatches"/>
     /// is hit, mirroring the AWS provider's equivalent peek-completeness fix for SQS.
+    /// <para>
+    /// A batch shorter than requested stops the loop immediately instead of issuing one more
+    /// confirmatory Pull. Every Pull is a real Pub/Sub delivery that counts toward the
+    /// subscription's <c>MaxDeliveryAttempts</c> dead-letter policy, even when its result is a
+    /// re-nacked duplicate — verified live against a subscription with
+    /// <c>maxDeliveryAttempts=5</c>, where the previous always-do-one-more-pull behaviour burned
+    /// 2 delivery attempts per peek on an otherwise never-failing message, capable of dead-
+    /// lettering it purely from being viewed a few times. A short read is Pub/Sub's normal
+    /// signal that nothing more is immediately available, so skipping the confirmatory pull in
+    /// that case trades a rare miss under heavy concurrent contention for not silently spending
+    /// the entity's redelivery budget on every refresh.
+    /// </para>
     /// </summary>
     private async Task<List<ReceivedMessage>> PullAndNackAsync(
         SubscriberServiceApiClient subscriber, string subscriptionResourceName, int maxMessages, CancellationToken ct)
@@ -571,10 +583,11 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
 
         for (var i = 0; i < MaxScanBatches && messages.Count < maxMessages; i++)
         {
+            var requested = maxMessages - messages.Count;
             var response = await subscriber.PullAsync(new PullRequest
             {
                 Subscription = subscriptionResourceName,
-                MaxMessages = maxMessages - messages.Count
+                MaxMessages = requested
             }, ct).ConfigureAwait(false);
 
             if (response.ReceivedMessages.Count == 0)
@@ -597,6 +610,9 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             {
                 break; // quiet round: everything in this batch was a dup we've already released
             }
+
+            if (response.ReceivedMessages.Count < requested)
+                break; // short read: nothing more is immediately available, skip the extra Pull
         }
 
         return messages;

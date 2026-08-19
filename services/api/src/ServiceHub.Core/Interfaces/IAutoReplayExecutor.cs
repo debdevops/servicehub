@@ -38,6 +38,23 @@ public interface IAutoReplayExecutor
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Runs the same Eligibility Gate check <see cref="ExecuteAsync"/> uses internally, without
+    /// opening a recovery ledger operation or recording anything — lets a caller (e.g.
+    /// <c>DlqMonitorWorker</c>) decide whether a match is even worth acting on before paying the
+    /// cost of a ledger operation for it.
+    /// </summary>
+    /// <param name="message">The DLQ message being evaluated.</param>
+    /// <param name="rule">The matched rule.</param>
+    /// <param name="ns">The namespace <paramref name="message"/> belongs to.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The gate's decision, plus the failure-signature hash computed along the way.</returns>
+    Task<(EligibilityDecision Decision, string? SignatureHash)> EvaluateEligibilityAsync(
+        DlqMessage message,
+        AutoReplayRule rule,
+        Namespace ns,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Checks whether the given rule has exceeded its per-hour replay limit.
     /// </summary>
     /// <param name="ruleId">The rule ID to check.</param>

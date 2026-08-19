@@ -151,6 +151,27 @@ describe('analyzeMessages', () => {
       expect(dlqInsight?.description).not.toContain('"Unknown"');
       expect(dlqInsight?.description).toContain('no extractable failure reason');
     });
+
+    it('treats a "None"-valued error-type property as no signal, not a real shared error', () => {
+      // Some producers stamp an error-type property on every message, success or
+      // failure, defaulting it to a "no error" sentinel — that must not be
+      // fabricated into a DLQ pattern/error cluster finding.
+      const messages = Array.from({ length: 3 }, (_, i) =>
+        makeMessage({
+          messageId: `sentinel-${i}`,
+          isFromDeadLetter: true,
+          deadLetterReason: null,
+          applicationProperties: { 'shs-error-type': 'None', orderId: `ORD-${i}` },
+        })
+      );
+
+      const insights = analyzeMessages(messages, context);
+      const dlqInsight = insights.find(i => i.type === 'dlq-pattern');
+
+      expect(dlqInsight?.evidence.patternSignature).toBe('Unknown');
+      expect(dlqInsight?.title).toBe('DLQ Pattern: Failure Reason Unavailable');
+      expect(dlqInsight?.description).not.toContain('"None"');
+    });
   });
 
   // ── Retry loop ─────────────────────────────────────────────────────────────

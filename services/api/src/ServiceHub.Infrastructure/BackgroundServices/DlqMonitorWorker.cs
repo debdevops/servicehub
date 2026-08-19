@@ -410,6 +410,21 @@ public sealed class DlqMonitorWorker : BackgroundService
                     break;
                 }
 
+                // Cheap pre-check before paying for a ledger operation: once a message's
+                // lineage has already been recorded past the recurrence cap (MatchedCount grows
+                // with every recorded attempt, including a Declined one), the verdict can only
+                // ever be Escalate again — re-running the full executor would open a fresh,
+                // empty Recovery Evidence operation and add yet another Declined entry every
+                // poll cycle, forever, for a message that will never become eligible again.
+                // Skip silently once we're past the boundary; the first crossing (MatchedCount
+                // == cap) still goes through ExecuteAsync below so it's recorded exactly once.
+                var (preDecision, _) = await replayExecutor.EvaluateEligibilityAsync(message, rule, ns, cancellationToken);
+                if (preDecision.Verdict != Core.Enums.EligibilityVerdict.Allow
+                    && preDecision.MatchedCount > RecoveryEligibilityGate.RecurrenceLineageCap)
+                {
+                    break;
+                }
+
                 var operationId = await GetOrOpenOperationIdAsync(rule);
                 if (operationId is null)
                 {

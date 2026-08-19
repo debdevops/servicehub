@@ -88,6 +88,9 @@ public sealed class DlqMonitorWorkerRegressionTests
                 rules.Select(r => (r, action)).ToList());
 
         var executor = new Mock<IAutoReplayExecutor>();
+        executor.Setup(e => e.EvaluateEligibilityAsync(
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<Namespace>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((EligibilityDecision.Allow, (string?)null));
         executor.Setup(e => e.ExecuteAsync(
                 It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<string>.Success("replayed"));
@@ -151,6 +154,42 @@ public sealed class DlqMonitorWorkerRegressionTests
         executor.Verify(e => e.ExecuteAsync(
                 It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.AtLeastOnce);
+
+        await db.Database.CloseConnectionAsync();
+        await db.DisposeAsync();
+        await sp.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task AutoReplay_MessageAlreadyPastRecurrenceLineageCap_DoesNotOpenFreshLedgerOperationEveryCycle()
+    {
+        // A message whose lineage was already declined past RecurrenceLineageCap on an earlier
+        // cycle can only ever be Escalate-declined again — re-opening a Recovery Evidence
+        // operation for it every poll cycle floods the ledger with empty (Targets: 0) rows for
+        // a message that will never become eligible again (see DlqMonitorWorker.cs).
+        var ns = BuildNamespace();
+        var (db, sp, executor) = await BuildHarnessAsync(
+            ns,
+            new RuleAction { AutoReplay = true, DelaySeconds = 0 },
+            detectedAt: DateTimeOffset.UtcNow.AddHours(-2));
+
+        executor.Setup(e => e.EvaluateEligibilityAsync(
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<Namespace>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((
+                new EligibilityDecision(
+                    EligibilityVerdict.Escalate,
+                    "RECURRENCE_CAP_EXCEEDED",
+                    MatchedCount: RecoveryEligibilityGate.RecurrenceLineageCap + 5),
+                (string?)null));
+
+        await RunOneCycleAsync(sp);
+
+        // No attempt should even be made — the pre-check must short-circuit before the
+        // executor (and therefore before any ledger operation) is ever reached.
+        executor.Verify(e => e.ExecuteAsync(
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        db.RecoveryOperations.Should().BeEmpty();
 
         await db.Database.CloseConnectionAsync();
         await db.DisposeAsync();
@@ -274,6 +313,9 @@ public sealed class DlqMonitorWorkerRegressionTests
                 rules.Select(r => (r, new RuleAction { AutoReplay = true, DelaySeconds = 0 })).ToList());
 
         var executor = new Mock<IAutoReplayExecutor>();
+        executor.Setup(e => e.EvaluateEligibilityAsync(
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<Namespace>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((EligibilityDecision.Allow, (string?)null));
         executor.Setup(e => e.ExecuteAsync(
                 It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<string>.Success("replayed"));

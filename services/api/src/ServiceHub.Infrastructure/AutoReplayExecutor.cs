@@ -97,29 +97,7 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
             entityName = message.EntityName;
         }
 
-        // Eligibility Gate (roadmap §9/Phase B) — the same gate instance every recovery path
-        // shares. Predicate 1 (purge origin) is N/A here (this path only ever replays); predicate
-        // 2 (production elevation) is already unreachable here (DlqMonitorWorker never evaluates
-        // rules against a Prod namespace); predicate 3 (recurrence cap) is Phase A's original
-        // inline check, now generalized into the gate with no behavior change; predicate 4 (rate
-        // limit) wraps the existing CanReplayAsync — pre-computed here since only a rule-driven
-        // caller has a per-rule limit for the gate to consult; predicate 5 (autonomy lookup) is
-        // enforced (roadmap §9.4.3) against the SignatureHash computed below — this call only
-        // reaches the provider once its signature has earned AutonomyGrant Standing/Unattended.
-        // Evaluated in that fixed order, so if recurrence would already block, the rate-limit
-        // query still runs (harmless — read-only) but its result is discarded exactly as before:
-        // the gate reports whichever predicate fires first.
-        var rateLimitExceeded = !await CanReplayAsync(rule.Id, cancellationToken);
-        var fleetRateLimitExceeded = !await CanReplayFleetWideAsync(rule.OwnerId, cancellationToken);
-        var signatureHash = await ComputeSignatureHashAsync(message, cancellationToken);
-
-        var decision = await _eligibilityGate.EvaluateAsync(
-            new RecoveryEligibilityRequest(
-                rule.OwnerId, RecoveryOperationKind.Replay, RecoveryActorKind.Automation, RecoveryTrigger.AutoRule,
-                ns.Id, message.EntityName, message.BodyHash, signatureHash, ns.Environment,
-                RateLimitExceeded: rateLimitExceeded, Provider: ns.Provider,
-                FleetRateLimitExceeded: fleetRateLimitExceeded),
-            cancellationToken);
+        var (decision, signatureHash) = await EvaluateEligibilityAsync(message, rule, ns, cancellationToken);
 
         if (decision.ReasonCode == RecoveryEligibilityGate.ReasonRateLimited)
         {
@@ -375,6 +353,37 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         }
 
         return fingerprintResult.Value.Hash;
+    }
+
+    /// <inheritdoc />
+    public async Task<(EligibilityDecision Decision, string? SignatureHash)> EvaluateEligibilityAsync(
+        DlqMessage message, AutoReplayRule rule, Namespace ns, CancellationToken cancellationToken = default)
+    {
+        // Eligibility Gate (roadmap §9/Phase B) — the same gate instance every recovery path
+        // shares. Predicate 1 (purge origin) is N/A here (this path only ever replays); predicate
+        // 2 (production elevation) is already unreachable here (DlqMonitorWorker never evaluates
+        // rules against a Prod namespace); predicate 3 (recurrence cap) is Phase A's original
+        // inline check, now generalized into the gate with no behavior change; predicate 4 (rate
+        // limit) wraps the existing CanReplayAsync — pre-computed here since only a rule-driven
+        // caller has a per-rule limit for the gate to consult; predicate 5 (autonomy lookup) is
+        // enforced (roadmap §9.4.3) against the SignatureHash computed below — this call only
+        // reaches the provider once its signature has earned AutonomyGrant Standing/Unattended.
+        // Evaluated in that fixed order, so if recurrence would already block, the rate-limit
+        // query still runs (harmless — read-only) but its result is discarded exactly as before:
+        // the gate reports whichever predicate fires first.
+        var rateLimitExceeded = !await CanReplayAsync(rule.Id, cancellationToken);
+        var fleetRateLimitExceeded = !await CanReplayFleetWideAsync(rule.OwnerId, cancellationToken);
+        var signatureHash = await ComputeSignatureHashAsync(message, cancellationToken);
+
+        var decision = await _eligibilityGate.EvaluateAsync(
+            new RecoveryEligibilityRequest(
+                rule.OwnerId, RecoveryOperationKind.Replay, RecoveryActorKind.Automation, RecoveryTrigger.AutoRule,
+                ns.Id, message.EntityName, message.BodyHash, signatureHash, ns.Environment,
+                RateLimitExceeded: rateLimitExceeded, Provider: ns.Provider,
+                FleetRateLimitExceeded: fleetRateLimitExceeded),
+            cancellationToken);
+
+        return (decision, signatureHash);
     }
 
     /// <inheritdoc />

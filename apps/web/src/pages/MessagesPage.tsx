@@ -70,7 +70,7 @@ function transformMessage(
     id,
     enqueuedTime: new Date(apiMessage.enqueuedTime),
     status,
-    preview: body ? body.substring(0, 100) : '[Body unavailable - may exceed size limit or API throttled]',
+    preview: body != null ? body.substring(0, 100) : '[Body unavailable - may exceed size limit or API throttled]',
     contentType: (apiMessage.contentType || 'application/json') as ContentType,
     deliveryCount: apiMessage.deliveryCount || 0,
     hasAIInsight: insightMessageIds.includes(id),
