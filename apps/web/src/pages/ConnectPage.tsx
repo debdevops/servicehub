@@ -549,7 +549,6 @@ export function ConnectPage() {
                 <button
                   type="button"
                   onClick={() => setCloudProvider('aws')}
-                  aria-disabled={!awsEnabled}
                   className={`flex flex-col items-center gap-1 p-2.5 rounded-lg border text-xs font-medium transition-all ${
                     cloudProvider === 'aws'
                       ? 'bg-orange-50 border-orange-400 text-orange-700 ring-2 ring-orange-300'
@@ -569,7 +568,6 @@ export function ConnectPage() {
                 <button
                   type="button"
                   onClick={() => setCloudProvider('gcp')}
-                  aria-disabled={!gcpEnabled}
                   className={`flex flex-col items-center gap-1 p-2.5 rounded-lg border text-xs font-medium transition-all ${
                     cloudProvider === 'gcp'
                       ? 'bg-green-50 border-green-400 text-green-700 ring-2 ring-green-300'

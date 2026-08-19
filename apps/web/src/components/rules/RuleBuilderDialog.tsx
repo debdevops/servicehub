@@ -307,10 +307,11 @@ export function RuleBuilderDialog({
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[10px] text-gray-500 uppercase mb-0.5">
+                        <label htmlFor={`condition-value-${i}`} className="block text-[10px] text-gray-500 uppercase mb-0.5">
                           Value
                         </label>
                         <input
+                          id={`condition-value-${i}`}
                           type="text"
                           value={condition.value}
                           onChange={(e) => updateCondition(i, { value: e.target.value })}

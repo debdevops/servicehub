@@ -168,11 +168,12 @@ describe('ConnectPage multi-cloud provider gating', () => {
     mockProviderStatus.mockReturnValue({ data: { Aws: false, Gcp: true } });
     renderConnectPage();
 
-    const awsTile = screen.getByTitle('Amazon Web Services SQS');
-    expect(awsTile).toHaveAttribute('aria-disabled', 'true');
+    // The tile stays clickable (selecting it is how the disabled-on-server explanation and
+    // submit-blocking below get shown), so unavailability is signalled visually, not via
+    // aria-disabled — a truly non-operable-control semantic that would break real clicks.
     expect(screen.getByText('Not available', { selector: 'button[title="Amazon Web Services SQS"] span' })).toBeInTheDocument();
-    // GCP is enabled — no caption, not marked aria-disabled.
-    expect(screen.getByTitle('Google Cloud Pub/Sub')).toHaveAttribute('aria-disabled', 'false');
+    // GCP is enabled — no caption.
+    expect(screen.queryByText('Not available', { selector: 'button[title="Google Cloud Pub/Sub"] span' })).not.toBeInTheDocument();
   });
 
   it('treats providers as disabled while status is still loading', () => {
