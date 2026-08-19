@@ -136,7 +136,12 @@ function EntityTable({ namespaceId, provider }: { namespaceId: string; provider:
   }
 
   return (
-    <div className="h-full rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
+    // min-h floor: the provider-status cards above this can leave very little flex space
+    // in a short viewport — without a floor, h-full collapses to a couple pixels and
+    // overflow-hidden silently clips the whole table (provider bar, rows, pagination too),
+    // with no scrollbar anywhere to reach it. The parent wrapper's overflow-y-auto (see
+    // CloudBridgePage below) is what turns that shortfall into an actual scroll instead.
+    <div className="h-full min-h-[360px] rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
       {/* Provider summary bar */}
       <div className={`shrink-0 flex flex-wrap items-center gap-x-5 gap-y-2 px-5 py-3.5 border-b ${style.headerBorder} ${style.headerBg}`}>
         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-semibold border ${style.badge}`}>
@@ -387,9 +392,12 @@ export function CloudBridgePage() {
         )}
       </div>
 
-      {/* Scrollable entity grid — fills all remaining vertical space */}
+      {/* Scrollable entity grid — fills all remaining vertical space. overflow-y-auto is the
+          fallback for a short viewport: EntityTable's min-h-[360px] floor keeps it from being
+          crushed to nothing, and this scroll is what makes anything past that floor reachable
+          when the fixed header above leaves less than 360px of room. */}
       {hasEnabledProviders && (
-        <div className="flex-1 min-h-0 px-6 pb-6 max-w-6xl w-full mx-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 max-w-6xl w-full mx-auto">
           {selectedNamespaceId && providerForNamespace ? (
             <EntityTable namespaceId={selectedNamespaceId} provider={providerForNamespace} />
           ) : (
