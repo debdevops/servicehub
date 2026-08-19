@@ -165,6 +165,11 @@ public sealed class ServiceBusHealthCheckTests
         result.Status.Should().Be(HealthStatus.Degraded);
         result.Data["HealthyNamespaces"].Should().Be(1);
         result.Data["UnhealthyNamespaces"].Should().Be(1);
+
+        // /health is unauthenticated and GetActiveAsync() returns every owner's namespaces
+        // unscoped, so a namespace name must never appear in the response — only counts.
+        result.Data.Should().NotContainKey("UnhealthyNamespaceNames");
+        result.Data.Values.OfType<string>().Should().NotContain(s => s.Contains("unhealthy-ns"));
     }
 
     [Fact]

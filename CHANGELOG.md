@@ -1,6 +1,6 @@
 # ServiceHub Changelog
 
-## [3.7.0] — 2026-08-18
+## [3.7.0] — 2026-08-19
 
 Recovery Evidence Ledger — the headline v3.7.0 feature. ServiceHub's replay/purge decisions were
 previously recorded inconsistently and in some paths untruthfully (see "Fixed" below); this
@@ -14,7 +14,11 @@ safety guarding, and Rules Builder accessibility fixes from the prior RC1 harden
 below. Since the initial 14 Aug cut, this release also picked up a fleet-wide replay velocity
 cap and per-rule success-rate circuit breaker on top of the Eligibility Gate, a dedicated Live
 Tail workspace, Back/Forward navigation across every Quick Access destination, and a round of
-header/Messages-page UX consolidation.
+header/Messages-page UX consolidation. A follow-up deep multi-cloud E2E pass against real Azure/
+AWS/GCP infrastructure on 19 Aug (see "Fixed" and "Security" below) found and fixed five further
+defects — a Live Tail cursor bug, two GCP peek-accounting bugs, an AI Insights false-positive, and
+a Recovery Evidence ledger audit-noise bug — plus a cross-tenant namespace-name disclosure in the
+unauthenticated health endpoints.
 
 ### Added
 
@@ -33,6 +37,8 @@ header/Messages-page UX consolidation.
 
 - **Header consolidated to a single-line connection indicator** — removed the "Current Connections" chip row that listed every connected provider (Azure/AWS/GCP) side by side, and the separate namespace-name/env-badge row beneath it; both are now one compact top-bar indicator (pulsing dot + provider icon + short label, e.g. "AWS" + env badge, e.g. "DEV"). The sidebar's Namespaces panel already handles quick-switching between namespaces, so no functionality was lost.
 - **Messages page info banners merged into one row** — the "more messages available" notice and the AWS SQS delivery-count warning previously stacked as two full-width banners; they now render as a single compact row (full text still available via `title` tooltip), reducing the vertical space non-critical notices take above the message list.
+- **Provider availability UX made consistent across Namespaces, Fleet Health, Quick Access, Connect, and Cloud Bridge** — a new shared `getProviderConnectionState()` derives one of `unavailable` (server flag off) / `available-unconfigured` (flag on, no namespace yet) / `connected` / `connection-issue` per provider from data already fetched, so a disabled or not-yet-configured AWS/GCP provider is never rendered as "0 messages"/healthy the way an empty-but-configured provider is.
+- **Cloud Bridge entity table could be clipped with no scrollbar on a short viewport** — its `h-full` flex sizing could collapse to a few pixels when the provider-status cards above it left little room, and `overflow-hidden` silently clipped the whole table. Added a `min-h-[360px]` floor plus a scrollable parent, so a short viewport scrolls to reach it instead of hiding it.
 
 ### Fixed
 
@@ -45,6 +51,19 @@ header/Messages-page UX consolidation.
 ### Fixed
 
 - **Rules Builder form controls missing programmatic labels** — the Field, Operator, Delay, Max Retries, and Max Replays Per Hour inputs had visual `<label>`s not associated with their controls via `htmlFor`/`id`, failing WCAG 2.4.6/1.3.1 for screen-reader users. Also raised two low-contrast text/button color pairs (`primary-500/600`, `amber-500/600`) to `-700/800` to clear WCAG AA contrast minimums.
+
+### Fixed (19 Aug deep multi-cloud E2E pass)
+
+- **Live Tail was permanently stuck showing nothing on Azure once an entity had more than 25 pre-existing messages** — `ServiceBusClientWrapper.PeekMessagesAsync` creates and disposes a fresh `ServiceBusReceiver` per call, so the SDK's "continue from last peeked position" cursor never survived between polls; every 3-second poll re-peeked the same oldest 25 messages, already marked seen, and could never reach a message arriving after the backlog. `LiveTailSession` now tracks and passes `FromSequenceNumber` explicitly, for Azure only (GCP's sequence numbers rotate per redelivery and are deliberately left untouched; AWS never reaches this class). Live-verified against real Azure after the fix.
+- **GCP peek silently burned delivery-attempt budget, risking spurious dead-lettering** — `GcpMessageReceiver.PullAndNackAsync` issued an extra confirmatory pull that counted toward Pub/Sub's `maxDeliveryAttempts`, so simply viewing Active Messages could push a message into the DLQ on its own. Fixed to no longer spend an extra delivery attempt on a read-only view.
+- **GCP empty message bodies were mislabeled as "unavailable"** — an intentionally empty Pub/Sub message body rendered the same generic unavailable state as a real fetch failure. The two are now distinguished.
+- **AI Insights fabricated an error pattern from a benign `None`-valued property** — any application property matching `errortype`/`exceptiontype` was treated as a real signal regardless of value, so a producer's routine `shs-error-type: None` stamp produced a fabricated "DLQ Pattern: None" finding on messages with no actual error. Sentinel values (`none`, `null`, `n/a`, `na`, `unset`, `undefined`, case-insensitive) are now treated as no signal.
+- **Recovery Evidence ledger flooded with empty operations for auto-replay messages already past the recurrence-lineage cap** — `DlqMonitorWorker` opened a fresh top-level ledger operation on every poll cycle for a message whose lineage had already been declined for exceeding `RecurrenceLineageCap`, producing 100+ near-identical `Targets: 0` rows over hours with no new information. A new side-effect-free `IAutoReplayExecutor.EvaluateEligibilityAsync` pre-check now runs before a ledger operation is opened; the first crossing of the cap is still recorded once. The eligibility gate itself was never bypassed by this bug — no duplicate replay, no safety-check skip, audit-trail noise only.
+
+### Security
+
+- **Webhook URLs were logged verbatim on rejection** — `WebhookNotifier`'s "not a permitted destination" warning included the full configured `Webhooks:Url`; a Slack/Teams incoming-webhook URL is a bearer secret in itself. The log message now states the rejection reason without the URL.
+- **Unauthenticated `/health` and `/health/ready` leaked namespace names across tenants** — `ServiceBusHealthCheck`/`AwsHealthCheck`/`GcpHealthCheck` all call `GetActiveAsync()`, which returns every owner's namespaces unscoped, and included unhealthy namespace *names* in their health-check `data`, which is serialized directly into the `/health` response body — a route `ApiKeyAuthenticationMiddleware` deliberately never authenticates. On a deployment using scoped API keys or OIDC to isolate multiple owners, any caller who could merely reach the health endpoint could read other tenants' namespace names with no credential. All three health checks now report only counts (`UnhealthyNamespaces` / `UnhealthyAwsNamespaces` / `UnhealthyGcpNamespaces`); names are never included.
 
 ### Validated
 
