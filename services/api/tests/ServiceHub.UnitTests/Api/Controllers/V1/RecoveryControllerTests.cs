@@ -131,6 +131,50 @@ public sealed class RecoveryControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task GetOperations_AutoRuleOperationWithUnknownUpfrontTargetCount_ReportsRealEntryCount()
+    {
+        // An auto-replay rule tick opens its operation with TargetCount=0 (DlqMonitorWorker
+        // doesn't know how many messages it'll match up front) but can still append real
+        // entries as it replays messages that cycle. The list view's "Targets" column must
+        // reflect what actually happened, not the immutable 0 snapshot from open time.
+        var operationResult = await _recoveryLedger.OpenOperationAsync(new OpenRecoveryOperationRequest
+        {
+            OwnerId = OwnerA,
+            Kind = RecoveryOperationKind.Replay,
+            Trigger = RecoveryTrigger.AutoRule,
+            Actor = new RecoveryActor("Rule:8", RecoveryActorKind.Automation),
+            ScopeDescription = "auto-replay rule 8",
+            TargetCount = 0,
+        });
+        var operation = operationResult.Value;
+
+        await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            Actor = new RecoveryActor("Rule:8", RecoveryActorKind.Automation),
+            BodyHash = "hash-1",
+            TargetEntity = "queue-1",
+        });
+        await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            Actor = new RecoveryActor("Rule:8", RecoveryActorKind.Automation),
+            BodyHash = "hash-2",
+            TargetEntity = "queue-1",
+        });
+
+        var result = await _controller.GetOperations();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var operations = ok.Value.Should().BeAssignableTo<IReadOnlyList<RecoveryOperationResponse>>().Subject;
+        var response = operations.Should().ContainSingle().Subject;
+        response.TargetCount.Should().Be(0);
+        response.EntryCount.Should().Be(2);
+    }
+
+    [Fact]
     public async Task GetOperationById_DifferentOwner_ReturnsNotFound()
     {
         var operation = await OpenOperationAsync(OwnerB);

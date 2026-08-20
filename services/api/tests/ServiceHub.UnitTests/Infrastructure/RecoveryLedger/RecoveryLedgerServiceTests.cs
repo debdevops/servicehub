@@ -80,6 +80,44 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
         return (operation, entry);
     }
 
+    // ── GetEntryCountsAsync ─────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetEntryCountsAsync_CountsEntriesPerOperation_OmitsOperationsWithNoEntries()
+    {
+        var (opWithTwo, _) = await OpenAndBeginAsync();
+        await BeginEntryAsync(opWithTwo);
+        var (opWithOne, _) = await OpenAndBeginAsync();
+        var opWithNone = await OpenOperationAsync();
+
+        var counts = await _service.GetEntryCountsAsync(
+            [opWithTwo.Id, opWithOne.Id, opWithNone.Id], OwnerA);
+
+        counts[opWithTwo.Id].Should().Be(2);
+        counts[opWithOne.Id].Should().Be(1);
+        counts.Should().NotContainKey(opWithNone.Id);
+    }
+
+    [Fact]
+    public async Task GetEntryCountsAsync_DifferentOwnersEntries_NotCountedAcrossOwners()
+    {
+        var (opOwnerA, _) = await OpenAndBeginAsync(OwnerA);
+        var (opOwnerB, _) = await OpenAndBeginAsync(OwnerB);
+
+        var counts = await _service.GetEntryCountsAsync([opOwnerA.Id, opOwnerB.Id], OwnerA);
+
+        counts[opOwnerA.Id].Should().Be(1);
+        counts.Should().NotContainKey(opOwnerB.Id);
+    }
+
+    [Fact]
+    public async Task GetEntryCountsAsync_EmptyOperationIds_ReturnsEmpty()
+    {
+        var counts = await _service.GetEntryCountsAsync([], OwnerA);
+
+        counts.Should().BeEmpty();
+    }
+
     // ── OpenOperationAsync ──────────────────────────────────────────────────
 
     [Fact]

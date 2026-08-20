@@ -152,7 +152,7 @@ export default function RecoveryLedgerPage() {
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-gray-700 font-medium">{op.targetCount}</td>
+                  <td className="px-4 py-3 text-gray-700 font-medium">{op.entryCount}</td>
                 </tr>
               ))}
             </tbody>

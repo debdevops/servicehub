@@ -81,7 +81,7 @@ public sealed class RecoveryEvidenceExporter : IRecoveryEvidenceExporter
         var events = await _recoveryLedger.GetEventsForOperationAsync(operationId, ownerId, cancellationToken);
         var chainResult = await _recoveryLedger.VerifyChainAsync(ownerId, cancellationToken);
 
-        var operationResponse = MapOperation(operation);
+        var operationResponse = MapOperation(operation, entries.Count);
         var entryResponses = entries.Select(MapEntry).ToList();
         var eventResponses = events.Select(MapEvent).ToList();
 
@@ -238,7 +238,7 @@ public sealed class RecoveryEvidenceExporter : IRecoveryEvidenceExporter
             : value;
     }
 
-    private static RecoveryOperationResponse MapOperation(RecoveryOperation operation) => new(
+    private static RecoveryOperationResponse MapOperation(RecoveryOperation operation, int entryCount) => new(
         Id: operation.Id,
         Kind: operation.Kind.ToString(),
         Trigger: operation.Trigger.ToString(),
@@ -254,7 +254,8 @@ public sealed class RecoveryEvidenceExporter : IRecoveryEvidenceExporter
         SourceJobId: operation.SourceJobId,
         ServiceVersion: operation.ServiceVersion,
         OpenedAt: operation.OpenedAt,
-        TargetCount: operation.TargetCount);
+        TargetCount: operation.TargetCount,
+        EntryCount: entryCount);
 
     private static RecoveryLedgerEntryResponse MapEntry(RecoveryLedgerEntry entry) => new(
         Id: entry.Id,

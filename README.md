@@ -20,6 +20,24 @@
 
 ---
 
+## 📚 User Guides — Cloud Provider Guides
+
+Already connected and want to know what to actually *do* with ServiceHub? Each guide below is a
+plain-language, screenshot-illustrated walkthrough of the full message-debugging journey —
+browsing, DLQ investigation, AI Insights, replay, and the Recovery Evidence Ledger — verified
+live against a real namespace, with an honest, explicit list of what's supported and what isn't
+for that cloud:
+
+- **[☁️ Azure Service Bus Guide](docs/guides/azure-guide.md)** — the fully supported (GA) provider
+- **[🟧 AWS SQS/SNS Guide](docs/guides/aws-guide.md)** — Preview, with SQS's own limitations explained
+- **[🟩 GCP Pub/Sub Guide](docs/guides/gcp-guide.md)** — Preview, with Pub/Sub's own limitations explained
+
+New to ServiceHub and haven't connected a cloud account yet? Start with
+[LOCAL-DEPLOYMENT.md](LOCAL-DEPLOYMENT.md) instead — it covers installing ServiceHub and
+connecting your first namespace, with a link back to the matching guide above once you're in.
+
+---
+
 ## What do you want to do?
 
 ```

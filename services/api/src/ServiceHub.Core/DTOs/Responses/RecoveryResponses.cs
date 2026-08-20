@@ -20,7 +20,8 @@ public sealed record RecoveryOperationResponse(
     long? SourceJobId,
     string ServiceVersion,
     DateTimeOffset OpenedAt,
-    int TargetCount);
+    int TargetCount,
+    int EntryCount);
 
 /// <summary>
 /// Response DTO for a <see cref="Entities.RecoveryLedgerEntry"/> — one per (operation, message).

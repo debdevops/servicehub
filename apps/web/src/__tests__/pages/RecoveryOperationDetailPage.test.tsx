@@ -76,7 +76,7 @@ describe('RecoveryOperationDetailPage', () => {
           actorKind: 'User', reason: 'INC-4471', namespaceId: 'ns-1',
           namespaceNameSnapshot: 'contoso-prod', providerSnapshot: 'azure', environmentSnapshot: 'prod',
           scopeDescription: 'entity=orders-dlq', sourceRuleId: null, sourceJobId: null,
-          serviceVersion: '3.7.0', openedAt: '2026-08-10T09:00:00Z', targetCount: 1,
+          serviceVersion: '3.7.0', openedAt: '2026-08-10T09:00:00Z', targetCount: 1, entryCount: 1,
         },
         entries: [{ ...baseEntry, state: 'Recovered' }],
         events: [
@@ -101,7 +101,7 @@ describe('RecoveryOperationDetailPage', () => {
           actorKind: 'User', reason: null, namespaceId: 'ns-1',
           namespaceNameSnapshot: 'contoso-prod', providerSnapshot: 'azure', environmentSnapshot: 'prod',
           scopeDescription: 'entity=orders-dlq', sourceRuleId: null, sourceJobId: null,
-          serviceVersion: '3.7.0', openedAt: '2026-08-10T09:00:00Z', targetCount: 2,
+          serviceVersion: '3.7.0', openedAt: '2026-08-10T09:00:00Z', targetCount: 2, entryCount: 2,
         },
         entries: [
           { ...baseEntry, id: 'entry-open', state: 'ExecutionUnknown' },
@@ -129,7 +129,7 @@ describe('RecoveryOperationDetailPage', () => {
           actorKind: 'User', reason: null, namespaceId: 'ns-1',
           namespaceNameSnapshot: 'acme-prod (AWS)', providerSnapshot: 'aws', environmentSnapshot: 'prod',
           scopeDescription: 'entity=orders-dlq', sourceRuleId: null, sourceJobId: null,
-          serviceVersion: '3.7.0', openedAt: '2026-08-10T09:00:00Z', targetCount: 1,
+          serviceVersion: '3.7.0', openedAt: '2026-08-10T09:00:00Z', targetCount: 1, entryCount: 1,
         },
         entries: [{ ...baseEntry, id: 'entry-unverified', state: 'Unverified', verificationResult: 'Unverified' }],
         events: [

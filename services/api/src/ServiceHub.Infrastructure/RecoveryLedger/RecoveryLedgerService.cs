@@ -444,6 +444,24 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<Guid, int>> GetEntryCountsAsync(
+        IReadOnlyCollection<Guid> operationIds, string ownerId, CancellationToken cancellationToken = default)
+    {
+        if (operationIds.Count == 0)
+        {
+            return new Dictionary<Guid, int>();
+        }
+
+        var counts = await _dbContext.RecoveryLedgerEntries.AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && operationIds.Contains(e.OperationId))
+            .GroupBy(e => e.OperationId)
+            .Select(g => new { OperationId = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        return counts.ToDictionary(c => c.OperationId, c => c.Count);
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<RecoveryLedgerEntry>> QueryEntriesAsync(
         RecoveryEntryQuery query, CancellationToken cancellationToken = default)
     {

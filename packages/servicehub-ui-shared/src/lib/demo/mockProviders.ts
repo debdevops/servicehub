@@ -1186,6 +1186,7 @@ function buildDemoRecoveryOperation(): RecoveryOperation {
     serviceVersion: '3.7.0',
     openedAt: DEMO_RECOVERY_OPENED_AT,
     targetCount: 214,
+    entryCount: 214,
   };
 }
 
@@ -1251,6 +1252,7 @@ function buildDemoStuckOperation(): RecoveryOperation {
     serviceVersion: '3.7.0',
     openedAt: DEMO_STUCK_BEGUN_AT,
     targetCount: 1,
+    entryCount: 1,
   };
 }
 

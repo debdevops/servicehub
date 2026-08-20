@@ -23,6 +23,7 @@ export interface RecoveryOperation {
   serviceVersion: string;
   openedAt: string;
   targetCount: number;
+  entryCount: number;
 }
 
 export type RecoveryEntryState =
@@ -35,7 +36,8 @@ export type RecoveryEntryState =
   | 'Discarded'
   | 'Unverified'
   | 'WrittenOff'
-  | 'Expired';
+  | 'Expired'
+  | 'Declined';
 
 export interface RecoveryLedgerEntry {
   id: string;
@@ -237,6 +239,13 @@ export const RECOVERY_STATE_EXPLANATIONS: Record<RecoveryEntryState, RecoverySta
     whyKnown: 'An ageing sweep flagged it before it was marked expired.',
     cannotProve: 'What happened to the message after ServiceHub stopped tracking it.',
     nextStep: 'Investigate manually if this message still matters.',
+  },
+  Declined: {
+    summary: 'Blocked before any provider call was made.',
+    whatHappened: 'An eligibility check blocked this attempt before ServiceHub ever contacted the provider — for example, a recurrence-lineage cap or an autonomy-grant check.',
+    whyKnown: 'The eligibility verdict and its reason were recorded at decision time.',
+    cannotProve: 'Nothing was attempted, so there is nothing to observe — this is terminal from the start.',
+    nextStep: 'Check the recorded reason; a human can still replay the underlying message manually if appropriate.',
   },
 };
 

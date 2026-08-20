@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { RecoveryStateBadge } from '@/components/recovery/RecoveryStateBadge';
-import type { RecoveryEntryState } from '@servicehub/ui-shared/lib/api/recovery';
+import { RECOVERY_STATE_EXPLANATIONS, type RecoveryEntryState } from '@servicehub/ui-shared/lib/api/recovery';
 
 describe('RecoveryStateBadge', () => {
-  const states: RecoveryEntryState[] = [
-    'Executing', 'Observing', 'ExecutionFailed', 'ExecutionUnknown',
-    'Recovered', 'Returned', 'Discarded', 'Unverified', 'WrittenOff', 'Expired',
-  ];
+  // Derived from the exhaustive explanations map, not hand-maintained, so a new
+  // RecoveryEntryState is automatically covered here the moment it's added there — a
+  // hand-maintained list previously drifted from the backend's `Declined` state and crashed
+  // RecoveryStateBadge in production before this test caught it.
+  const states = Object.keys(RECOVERY_STATE_EXPLANATIONS) as RecoveryEntryState[];
 
   it.each(states)('renders the state label for %s', (state) => {
     render(<RecoveryStateBadge state={state} />);

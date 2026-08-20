@@ -11,6 +11,7 @@ const STATE_STYLES: Record<RecoveryEntryState, { bg: string; text: string }> = {
   Unverified: { bg: 'bg-purple-100', text: 'text-purple-700' },
   WrittenOff: { bg: 'bg-gray-100', text: 'text-gray-500' },
   Expired: { bg: 'bg-gray-100', text: 'text-gray-500' },
+  Declined: { bg: 'bg-gray-200', text: 'text-gray-700' },
 };
 
 /**

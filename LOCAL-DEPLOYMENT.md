@@ -325,6 +325,13 @@ specifically what's wrong (wrong region, revoked key, missing permission, etc.) 
 written for you, not written for programmers. Once it succeeds, your namespace appears in the
 **Namespaces / Connections** panel on the left, and you can start browsing real queues.
 
+**Now that you're connected**, the matching plain-language guide walks through what to actually
+*do* next — browsing messages, investigating the Dead-Letter Queue, AI Insights, replay, and the
+Recovery Evidence Ledger — with real screenshots:
+[Azure Guide](docs/guides/azure-guide.md) ·
+[AWS Guide](docs/guides/aws-guide.md) ·
+[GCP Guide](docs/guides/gcp-guide.md)
+
 For production use — least-privilege IAM policies, running with authentication turned on, and
 what changes when you set **Environment** to `PROD` — see
 [self-hosting/README.md](self-hosting/README.md) once you're past this first trial connection.

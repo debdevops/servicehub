@@ -64,7 +64,12 @@ public sealed class RecoveryController : ApiControllerBase
         var operations = await _recoveryLedger.QueryOperationsAsync(
             OwnerId, namespaceId, ClampLimit(limit), cancellationToken);
 
-        return Ok(operations.Select(MapToResponse).ToList());
+        var entryCounts = await _recoveryLedger.GetEntryCountsAsync(
+            operations.Select(o => o.Id).ToList(), OwnerId, cancellationToken);
+
+        return Ok(operations
+            .Select(o => MapToResponse(o, entryCounts.GetValueOrDefault(o.Id)))
+            .ToList());
     }
 
     /// <summary>
@@ -96,7 +101,7 @@ public sealed class RecoveryController : ApiControllerBase
         var events = await _recoveryLedger.GetEventsForOperationAsync(id, OwnerId, cancellationToken);
 
         return Ok(new RecoveryOperationDetailResponse(
-            MapToResponse(operation),
+            MapToResponse(operation, entries.Count),
             entries.Select(MapToResponse).ToList(),
             events.Select(MapToResponse).ToList()));
     }
@@ -472,7 +477,12 @@ public sealed class RecoveryController : ApiControllerBase
         writer.Write(content);
     }
 
-    private static RecoveryOperationResponse MapToResponse(RecoveryOperation operation) => new(
+    /// <param name="operation">The operation to map.</param>
+    /// <param name="entryCount">Actual count of ledger entries recorded under this operation, e.g.
+    /// from <see cref="IRecoveryLedger.GetEntryCountsAsync"/>. Falls back to the operation's own
+    /// (possibly-0-if-unknown-up-front, see <see cref="RecoveryOperation.TargetCount"/>) snapshot
+    /// when the caller hasn't computed a real count.</param>
+    private static RecoveryOperationResponse MapToResponse(RecoveryOperation operation, int? entryCount = null) => new(
         Id: operation.Id,
         Kind: operation.Kind.ToString(),
         Trigger: operation.Trigger.ToString(),
@@ -488,7 +498,8 @@ public sealed class RecoveryController : ApiControllerBase
         SourceJobId: operation.SourceJobId,
         ServiceVersion: operation.ServiceVersion,
         OpenedAt: operation.OpenedAt,
-        TargetCount: operation.TargetCount);
+        TargetCount: operation.TargetCount,
+        EntryCount: entryCount ?? operation.TargetCount);
 
     private static RecoveryLedgerEntryResponse MapToResponse(RecoveryLedgerEntry entry) => new(
         Id: entry.Id,

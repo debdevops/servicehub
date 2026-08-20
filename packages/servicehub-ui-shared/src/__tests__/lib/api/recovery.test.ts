@@ -8,7 +8,7 @@ import {
 
 const ALL_STATES: RecoveryEntryState[] = [
   'Executing', 'Observing', 'ExecutionFailed', 'ExecutionUnknown',
-  'Recovered', 'Returned', 'Discarded', 'Unverified', 'WrittenOff', 'Expired',
+  'Recovered', 'Returned', 'Discarded', 'Unverified', 'WrittenOff', 'Expired', 'Declined',
 ];
 
 describe('RECOVERY_STATE_EXPLANATIONS', () => {
@@ -22,7 +22,7 @@ describe('RECOVERY_STATE_EXPLANATIONS', () => {
     expect(explanation.nextStep.length).toBeGreaterThan(0);
   });
 
-  it('covers exactly the 10 known states, no more, no fewer', () => {
+  it('covers exactly the 11 known states, no more, no fewer', () => {
     expect(Object.keys(RECOVERY_STATE_EXPLANATIONS).sort()).toEqual([...ALL_STATES].sort());
   });
 });

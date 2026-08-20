@@ -117,6 +117,17 @@ public interface IRecoveryLedger
         RecoveryEntryQuery query,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Counts ledger entries per operation, for the given operation IDs and owner.
+    /// <see cref="Entities.RecoveryOperation.TargetCount"/> is an immutable snapshot of what was
+    /// known when the operation was opened — 0 for an auto-replay rule tick, whose match count is
+    /// unknown up front — so a caller wanting "how many messages did this operation actually
+    /// touch" (e.g. the ledger list view) should use this instead. Operations with no entries are
+    /// omitted from the result rather than present with a value of 0.</summary>
+    Task<IReadOnlyDictionary<Guid, int>> GetEntryCountsAsync(
+        IReadOnlyCollection<Guid> operationIds,
+        string ownerId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Returns an owner's currently non-terminal entries, oldest first, capped at
     /// <paramref name="limit"/>. No ageing threshold or flagging logic is applied here — that is
     /// the ageing/verification workers' job. Oldest-first ordering makes a cap safe across
