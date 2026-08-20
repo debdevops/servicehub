@@ -36,6 +36,16 @@ function createWrapper() {
   };
 }
 
+/** Same as createWrapper, but also returns the QueryClient so a test can spy on invalidateQueries. */
+function createWrapperWithClient() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const Wrapper = ({ children }: { children: React.ReactNode }) =>
+    React.createElement(QueryClientProvider, { client: queryClient }, children);
+  return { Wrapper, queryClient };
+}
+
 // ─── useMessages ─────────────────────────────────────────────────────────────
 
 describe('useMessages', () => {
@@ -261,6 +271,30 @@ describe('useReplayMessage', () => {
     expect(messagesApi.replay).toHaveBeenCalledWith('ns-1', 42, 'my-queue', undefined);
   });
 
+  it('invalidates DLQ History, DLQ Summary, and Failure Signatures — not just the message list', async () => {
+    // Regression coverage: these three were previously never invalidated by a single replay, so
+    // DLQ History, the Failure Signatures list/detail, and (via dlq-summary) the Dashboard fleet
+    // card stayed stale until their own poll interval elapsed (dlq-signatures has none at all).
+    vi.mocked(messagesApi.replay).mockResolvedValueOnce(undefined as any);
+    const { Wrapper, queryClient } = createWrapperWithClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useReplayMessage(), { wrapper: Wrapper });
+
+    await act(async () => {
+      result.current.mutate({ namespaceId: 'ns-1', sequenceNumber: 42, entityName: 'my-queue' });
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const invalidatedKeys = invalidateSpy.mock.calls.map((call) => (call[0] as { queryKey: unknown[] }).queryKey[0]);
+    expect(invalidatedKeys).toContain('dlq-history');
+    expect(invalidatedKeys).toContain('dlq-summary');
+    expect(invalidatedKeys).toContain('dlq-signatures');
+    expect(invalidatedKeys).toContain('dlq-signature-detail');
+    expect(invalidatedKeys).toContain('namespace-stats');
+  });
+
   // Replay has shipped for many releases; a 404 means the message is gone, not that the
   // feature is missing. The previous assertion here asserted the defect itself.
   it('explains a 404 as a missing message, never as a missing feature', async () => {
@@ -389,5 +423,29 @@ describe('usePurgeMessage', () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
     const [, options] = vi.mocked(toast.error).mock.calls[0];
     expect(Number.isFinite(options!.duration!)).toBe(true);
+  });
+
+  it('invalidates namespace-stats, DLQ History, DLQ Summary, and Failure Signatures', async () => {
+    // Regression coverage: namespace-stats (sidebar/queue-list DLQ count) was previously omitted
+    // entirely from purge's invalidation, unlike replay's — plus the same DLQ History/Failure
+    // Signatures gap replay had.
+    vi.mocked(messagesApi.purge).mockResolvedValueOnce(undefined as any);
+    const { Wrapper, queryClient } = createWrapperWithClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => usePurgeMessage(), { wrapper: Wrapper });
+
+    await act(async () => {
+      result.current.mutate({ namespaceId: 'ns-1', sequenceNumber: 42, entityName: 'my-queue' });
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const invalidatedKeys = invalidateSpy.mock.calls.map((call) => (call[0] as { queryKey: unknown[] }).queryKey[0]);
+    expect(invalidatedKeys).toContain('namespace-stats');
+    expect(invalidatedKeys).toContain('dlq-history');
+    expect(invalidatedKeys).toContain('dlq-summary');
+    expect(invalidatedKeys).toContain('dlq-signatures');
+    expect(invalidatedKeys).toContain('dlq-signature-detail');
   });
 });

@@ -64,13 +64,18 @@ public sealed class GcpHealthCheckTests
             .ThrowsAsync(new InvalidOperationException("credentials invalid"));
 
         var sut = BuildSut(
-            Result<IReadOnlyList<SHNamespace>>.Success(new List<SHNamespace> { BuildGcpNamespace() }),
+            Result<IReadOnlyList<SHNamespace>>.Success(new List<SHNamespace> { BuildGcpNamespace("gcp-broken") }),
             factory);
 
         var result = await sut.CheckHealthAsync(new HealthCheckContext());
 
         result.Status.Should().Be(HealthStatus.Unhealthy);
         result.Data["UnhealthyGcpNamespaces"].Should().Be(1);
+
+        // /health is unauthenticated and GetActiveAsync() returns every owner's namespaces
+        // unscoped, so a namespace name must never appear in the response — only counts.
+        result.Data.Should().NotContainKey("UnhealthyGcpNamespaceNames");
+        result.Data.Values.OfType<string>().Should().NotContain(s => s.Contains("gcp-broken"));
     }
 
     [Fact]

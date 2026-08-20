@@ -1,6 +1,7 @@
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Models;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Core.Interfaces;
@@ -32,12 +33,16 @@ public interface IBulkOperationService
     /// Validates the request (production guard, capability, non-empty match), persists a
     /// <see cref="BulkOperationJob"/> in <see cref="Enums.BulkOperationStatus.Pending"/>, and
     /// hands it to the background worker for processing. Returns the created job immediately —
-    /// the caller polls <see cref="GetJobAsync"/> for progress.
+    /// the caller polls <see cref="GetJobAsync"/> for progress. <paramref name="requestedBy"/> is
+    /// the requester's actor, resolved by the caller (HTTP context) while it's still available —
+    /// persisted on the job so the background worker that executes it later can attribute ledger
+    /// writes correctly (roadmap §29.10).
     /// </summary>
     Task<Result<BulkOperationJobResponse>> CreateJobAsync(
         string ownerId,
         BulkOperationCreateRequest request,
         string? correlationId,
+        RecoveryActor requestedBy,
         IReadOnlySet<Guid>? allowedNamespaceIds = null,
         CancellationToken cancellationToken = default);
 

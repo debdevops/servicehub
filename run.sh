@@ -39,14 +39,14 @@ Usage: ./run.sh [command] [options]
 
 Commands:
   servicehub                Start ServiceHub API + Web UI (default)
-  demo                      Start Demo application only
-  sandbox                   Start Sandbox application only
+  demo                      Start Demo application only (experimental, unsupported — see apps/demo/README.md)
+  sandbox                   Start Sandbox application only (experimental, unsupported — see apps/sandbox/README.md)
   all                       Start ServiceHub API, Web UI, Demo, and Sandbox
 
 Examples:
   ./run.sh                  # Start ServiceHub (same as ./run.sh servicehub)
   ./run.sh servicehub       # Start ServiceHub API + Web UI
-  ./run.sh demo             # Start Demo only
+  ./run.sh demo             # Start Demo only (experimental)
   ./run.sh --help           # Show this help message
 
 Press Ctrl+C to stop all services.
@@ -657,7 +657,7 @@ echo ""
 if [ "${ASPNETCORE_ENVIRONMENT:-Development}" = "Production" ]; then
     echo -e "${YELLOW}⚠ Warning: ASPNETCORE_ENVIRONMENT is set to Production.${NC}"
     echo -e "   run.sh is intended for local development only."
-    echo -e "   For Azure deployment, use the self-hosting guide: ./self-hosting/README.md${NC}"
+    echo -e "   For a real deployment, see the Quick Start and Security sections in README.md${NC}"
     read -r -p "Continue anyway? (y/N): " confirm
     [[ "$confirm" =~ ^[Yy]$ ]] || exit 0
 fi
@@ -1026,13 +1026,13 @@ if [ "$START_WEB" = true ]; then
 fi
 
 if [ "$START_DEMO" = true ] && [ -d "$DEMO_DIR" ]; then
-    echo -e "${BLUE}📦 Demo:${NC}"
+    echo -e "${BLUE}📦 Demo (experimental — see apps/demo/README.md):${NC}"
     echo -e "  • ${GREEN}http://localhost:5174${NC}"
     echo ""
 fi
 
 if [ "$START_SANDBOX" = true ] && [ -d "$SANDBOX_DIR" ]; then
-    echo -e "${BLUE}🏖️  Sandbox:${NC}"
+    echo -e "${BLUE}🏖️  Sandbox (experimental — see apps/sandbox/README.md):${NC}"
     echo -e "  • ${GREEN}http://localhost:5175${NC}"
     echo ""
 fi

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MessagesPage } from '@/pages/MessagesPage';
 
@@ -31,6 +31,9 @@ vi.mock('@/components/messages', () => ({
       <button onClick={() => onSelectMessage('msg-2')}>Select msg-2</button>
       <button onClick={() => onQueueTabChange('active')}>Active ({activeCounts.active})</button>
       <button onClick={() => onQueueTabChange('deadletter')}>Dead-Letter ({activeCounts.deadletter})</button>
+      {messages.map((m: any) => (
+        <span key={m.id} data-testid={`preview-${m.id}`}>{m.preview}</span>
+      ))}
     </div>
   ),
   MessageDetailPanel: () => <div data-testid="message-detail-panel" />,
@@ -63,7 +66,14 @@ const mockUseSubscriptions = useSubscriptions as ReturnType<typeof vi.fn>;
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 
 const mockNamespaces = [
-  { id: 'ns1', name: 'my-namespace', displayName: 'My Namespace', isActive: true },
+  {
+    id: 'ns1',
+    name: 'my-namespace',
+    displayName: 'My Namespace',
+    isActive: true,
+    cloudProvider: 'azure',
+    environment: 'prod',
+  },
 ];
 
 const mockMessagesData = {
@@ -95,10 +105,12 @@ const mockMessagesData = {
 // existing query params along — including a stale ?message= deep link.
 function LocationProbe() {
   const location = useLocation();
+  const navigationType = useNavigationType();
   const navigate = useNavigate();
   return (
     <>
       <span data-testid="location-search">{location.search}</span>
+      <span data-testid="navigation-type">{navigationType}</span>
       <button onClick={() => navigate('/messages?namespace=ns1&queue=other-queue&message=msg-1')}>
         go-other-queue
       </button>
@@ -150,6 +162,66 @@ describe('MessagesPage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><MessagesPage /></Wrapper>);
     expect(screen.getByText('2 messages')).toBeInTheDocument();
+  });
+
+  it('shows an empty preview (not "Body unavailable") for a message with a genuinely empty body', () => {
+    // Regresses a mislabel found while testing GCP Pub/Sub, whose peek maps a zero-length
+    // Data payload to body: '' (not null) — e.g. a message intentionally published with no
+    // body. The preview must not claim the body is "unavailable" (implying a size/throttle
+    // error) merely because the empty string is falsy.
+    mockUseMessages.mockReturnValue({
+      data: {
+        items: [{
+          messageId: 'msg-empty',
+          sequenceNumber: 1,
+          enqueuedTime: new Date().toISOString(),
+          body: '',
+          contentType: 'application/json',
+          deliveryCount: 1,
+          applicationProperties: {},
+        }],
+        totalCount: 1,
+      },
+      isLoading: false, error: null, refetch: vi.fn(), isFetching: false, dataUpdatedAt: Date.now(),
+    });
+    const Wrapper = createWrapper();
+    render(<Wrapper><MessagesPage /></Wrapper>);
+    expect(screen.getByTestId('preview-msg-empty')).toHaveTextContent('');
+    expect(screen.queryByText(/Body unavailable/)).not.toBeInTheDocument();
+  });
+
+  it('shows "Body unavailable" only when the body is genuinely absent (null)', () => {
+    mockUseMessages.mockReturnValue({
+      data: {
+        items: [{
+          messageId: 'msg-null-body',
+          sequenceNumber: 1,
+          enqueuedTime: new Date().toISOString(),
+          body: null,
+          contentType: 'application/json',
+          deliveryCount: 1,
+          applicationProperties: {},
+        }],
+        totalCount: 1,
+      },
+      isLoading: false, error: null, refetch: vi.fn(), isFetching: false, dataUpdatedAt: Date.now(),
+    });
+    const Wrapper = createWrapper();
+    render(<Wrapper><MessagesPage /></Wrapper>);
+    expect(screen.getByTestId('preview-msg-null-body')).toHaveTextContent('Body unavailable - may exceed size limit or API throttled');
+  });
+
+  it('has exactly one <h1> naming the current entity, with namespace and environment visible nearby', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><MessagesPage /></Wrapper>);
+
+    const headings = screen.getAllByRole('heading', { level: 1 });
+    expect(headings).toHaveLength(1);
+    expect(headings[0]).toHaveTextContent('test-queue');
+
+    // Namespace and environment must be readable without expanding any panel.
+    expect(screen.getByText('My Namespace')).toBeInTheDocument();
+    expect(screen.getByText('PROD')).toBeInTheDocument();
   });
 
   it('shows loading skeleton during loading', () => {
@@ -293,14 +365,14 @@ describe('MessagesPage', () => {
     });
     const Wrapper = createWrapper();
     render(<Wrapper><MessagesPage /></Wrapper>);
-    expect(screen.getByText(/More messages available/)).toBeInTheDocument();
-    expect(screen.getByText(/Search and filters only apply to the messages currently loaded/)).toBeInTheDocument();
+    expect(screen.getByText('Load More')).toBeInTheDocument();
+    expect(screen.getByTitle(/Search and filters only apply to the messages currently loaded/)).toBeInTheDocument();
   });
 
   it('does not show the more-messages warning when the full queue is already loaded', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><MessagesPage /></Wrapper>);
-    expect(screen.queryByText(/More messages available/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Load More')).not.toBeInTheDocument();
   });
 
   it('renders with topic subscription path', () => {
@@ -351,6 +423,20 @@ describe('MessagesPage', () => {
       expect(screen.getByTestId('location-search')).toHaveTextContent('message=msg-1');
       fireEvent.click(screen.getByText(/Dead-Letter \(/));
       expect(screen.getByTestId('location-search')).not.toHaveTextContent('message=');
+    });
+
+    it('pushes a history entry when a message is selected, so Back can return to the queue view', () => {
+      const Wrapper = createWrapper();
+      render(<Wrapper><MessagesPage /></Wrapper>);
+      fireEvent.click(screen.getByText('Select msg-2'));
+      expect(screen.getByTestId('navigation-type')).toHaveTextContent('PUSH');
+    });
+
+    it('replaces (does not push) when the selection is cleared by a tab switch', () => {
+      const Wrapper = createWrapper('/messages?namespace=ns1&queue=test-queue&message=msg-1');
+      render(<Wrapper><MessagesPage /></Wrapper>);
+      fireEvent.click(screen.getByText(/Dead-Letter \(/));
+      expect(screen.getByTestId('navigation-type')).toHaveTextContent('REPLACE');
     });
 
     it('clears selection and the stale message param when navigating to another entity', () => {

@@ -3,7 +3,9 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Controllers.V1;
@@ -15,6 +17,8 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
+using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Api.Controllers.V1;
 
@@ -311,6 +315,62 @@ public class RulesControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task Update_EnabledToDisabled_SetsManualDisabledReason()
+    {
+        var rule = CreateRule(enabled: true);
+        _dbContext.AutoReplayRules.Add(rule);
+        await _dbContext.SaveChangesAsync();
+
+        var request = CreateRuleRequest("Updated Rule") with { Enabled = false };
+        var result = await _controller.Update(rule.Id, request);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RuleResponse>().Subject;
+        response.Enabled.Should().BeFalse();
+        response.DisabledReason.Should().Be("Manual");
+    }
+
+    [Fact]
+    public async Task Update_NoOpOnAlreadyDisabledCircuitBreakerRule_PreservesDisabledReason()
+    {
+        var rule = CreateRule(enabled: false);
+        rule.DisabledReason = "CircuitBreaker";
+        rule.DisabledReasonDetail = "Verified success rate 38% over the last 20 outcomes fell below the 50% circuit-breaker floor.";
+        _dbContext.AutoReplayRules.Add(rule);
+        await _dbContext.SaveChangesAsync();
+
+        // Editing conditions/name while leaving the rule disabled must not overwrite the
+        // circuit breaker's provenance with "Manual" — the rule's enabled state never changed.
+        var request = CreateRuleRequest("Renamed Rule") with { Enabled = false };
+        var result = await _controller.Update(rule.Id, request);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RuleResponse>().Subject;
+        response.Enabled.Should().BeFalse();
+        response.DisabledReason.Should().Be("CircuitBreaker");
+        response.DisabledReasonDetail.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task Update_DisabledToEnabled_ClearsDisabledReason()
+    {
+        var rule = CreateRule(enabled: false);
+        rule.DisabledReason = "CircuitBreaker";
+        rule.DisabledReasonDetail = "Verified success rate 38% over the last 20 outcomes fell below the 50% circuit-breaker floor.";
+        _dbContext.AutoReplayRules.Add(rule);
+        await _dbContext.SaveChangesAsync();
+
+        var request = CreateRuleRequest("Updated Rule") with { Enabled = true };
+        var result = await _controller.Update(rule.Id, request);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RuleResponse>().Subject;
+        response.Enabled.Should().BeTrue();
+        response.DisabledReason.Should().BeNull();
+        response.DisabledReasonDetail.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Update_DuplicateName_ReturnsConflict()
     {
         _dbContext.AutoReplayRules.Add(CreateRule("Rule A"));
@@ -364,6 +424,8 @@ public class RulesControllerTests : IDisposable
         var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var response = ok.Value.Should().BeOfType<RuleResponse>().Subject;
         response.Enabled.Should().BeFalse();
+        response.DisabledReason.Should().Be("Manual");
+        response.DisabledReasonDetail.Should().BeNull();
         _auditLogger.Verify(a => a.LogCriticalAction(
             It.IsAny<HttpContext>(), It.IsAny<string>(), "Rule.Toggle", "Succeeded",
             It.IsAny<Guid?>(), It.IsAny<EnvironmentType?>(), It.IsAny<string?>(), It.IsAny<string?>(),
@@ -374,6 +436,8 @@ public class RulesControllerTests : IDisposable
     public async Task Toggle_DisabledRule_BecomesEnabled()
     {
         var rule = CreateRule(enabled: false);
+        rule.DisabledReason = "CircuitBreaker";
+        rule.DisabledReasonDetail = "Verified success rate 38% over the last 20 outcomes fell below the 50% circuit-breaker floor.";
         _dbContext.AutoReplayRules.Add(rule);
         await _dbContext.SaveChangesAsync();
 
@@ -381,6 +445,29 @@ public class RulesControllerTests : IDisposable
         var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var response = ok.Value.Should().BeOfType<RuleResponse>().Subject;
         response.Enabled.Should().BeTrue();
+        response.DisabledReason.Should().BeNull();
+        response.DisabledReasonDetail.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Toggle_AlreadyDisabledManually_TogglingOffAgainIsNotPossible_ButReEnableThenDisableSetsManual()
+    {
+        // A circuit-breaker-disabled rule that a human re-enables and then disables again
+        // (two Toggle calls) must end up attributed to the human, not the stale breaker trip.
+        var rule = CreateRule(enabled: false);
+        rule.DisabledReason = "CircuitBreaker";
+        rule.DisabledReasonDetail = "Verified success rate 38% over the last 20 outcomes fell below the 50% circuit-breaker floor.";
+        _dbContext.AutoReplayRules.Add(rule);
+        await _dbContext.SaveChangesAsync();
+
+        await _controller.Toggle(rule.Id); // re-enable
+        var result = await _controller.Toggle(rule.Id); // disable again, manually
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RuleResponse>().Subject;
+        response.Enabled.Should().BeFalse();
+        response.DisabledReason.Should().Be("Manual");
+        response.DisabledReasonDetail.Should().BeNull();
     }
 
     [Fact]
@@ -659,5 +746,355 @@ public class RulesControllerTests : IDisposable
         response.AnalysedMessages.Should().Be(2);
         response.RulesCreated.Should().Be(0);
         response.RulesSkipped.Should().BeGreaterThanOrEqualTo(2);
+    }
+
+    // ── ReplayAll ───────────────────────────────────────────
+    //
+    // Previously untested: ReplayAll routed through IServiceBusClientCache directly (Azure-only)
+    // and never claimed a message before replaying it (roadmap P6). These tests exercise the
+    // Phase 3 rewrite onto IMessageOperationsService with the same claim protocol every other
+    // replay path uses.
+
+    private static Namespace CreateNamespace(
+        string name = "replay-all-ns",
+        CloudProviderType provider = CloudProviderType.Azure,
+        EnvironmentType environment = EnvironmentType.Dev) =>
+        Namespace.Create(
+            name,
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
+            environment: environment,
+            provider: provider,
+            ownerId: TestConstants.TestOwnerId).Value;
+
+    private void SetIntentHeaders(string intent)
+    {
+        _controller.ControllerContext.HttpContext.Request.Headers[IntentHeaders.IntentHeaderName] = intent;
+        _controller.ControllerContext.HttpContext.Request.Headers[IntentHeaders.ConfirmHeaderName] = "true";
+    }
+
+    /// <summary>
+    /// Wires <c>HttpContext.RequestServices</c> with everything <c>ReplayAll</c> resolves via
+    /// the service locator: the namespace repository, the message operations facade, the
+    /// recovery ledger (a real <see cref="RecoveryLedgerService"/> against <see cref="_dbContext"/>
+    /// so entries are actually queryable afterward), and the rate-limit executor.
+    /// </summary>
+    private void SetUpReplayAllServices(
+        Namespace ns, Mock<IMessageOperationsService> messageOperations, bool rateLimited = false)
+    {
+        var namespaceRepository = new Mock<INamespaceRepository>();
+        namespaceRepository
+            .Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var autoReplayExecutor = new Mock<IAutoReplayExecutor>();
+        autoReplayExecutor
+            .Setup(e => e.CanReplayAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(!rateLimited);
+
+        var ledger = new RecoveryLedgerService(_dbContext);
+
+        var services = new ServiceCollection();
+        services.AddSingleton(namespaceRepository.Object);
+        services.AddSingleton(messageOperations.Object);
+        services.AddSingleton<IRecoveryLedger>(ledger);
+        services.AddSingleton<IRecoveryEligibilityGate>(
+            new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance));
+        services.AddSingleton(autoReplayExecutor.Object);
+        _controller.ControllerContext.HttpContext.RequestServices = services.BuildServiceProvider();
+    }
+
+    [Fact]
+    public async Task ReplayAll_Success_RoutesThroughMessageOperationsServiceAndRecordsLedgerEntry()
+    {
+        var ns = CreateNamespace();
+        var rule = CreateRule();
+        _dbContext.AutoReplayRules.Add(rule);
+        var message = CreateDlqMessage(1);
+        message = new DlqMessage
+        {
+            MessageId = message.MessageId, SequenceNumber = message.SequenceNumber, BodyHash = message.BodyHash,
+            NamespaceId = ns.Id, OwnerId = TestConstants.TestOwnerId, EntityName = message.EntityName,
+            EntityType = message.EntityType, EnqueuedTimeUtc = message.EnqueuedTimeUtc,
+            DetectedAtUtc = message.DetectedAtUtc, DeadLetterReason = message.DeadLetterReason,
+            DeliveryCount = message.DeliveryCount, Status = message.Status, FailureCategory = message.FailureCategory,
+        };
+        _dbContext.DlqMessages.Add(message);
+        await _dbContext.SaveChangesAsync();
+
+        _ruleEngine.Setup(r => r.Evaluate(It.IsAny<DlqMessage>(), It.IsAny<IReadOnlyList<RuleCondition>>()))
+            .Returns(new RuleMatchResult { MessageId = message.Id, ServiceBusMessageId = message.MessageId, EntityName = message.EntityName, IsMatch = true });
+
+        var messageOperations = new Mock<IMessageOperationsService>();
+        messageOperations
+            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, message.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        SetUpReplayAllServices(ns, messageOperations);
+        SetIntentHeaders(IntentHeaders.IntentReplayAllRules);
+
+        var result = await _controller.ReplayAll(rule.Id);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<ReplayAllResponse>().Subject;
+        response.Replayed.Should().Be(1);
+        response.Failed.Should().Be(0);
+
+        // Never resolved via the service locator — proves the Azure-only client-cache path is gone.
+        messageOperations.Verify(
+            m => m.ReplayMessageAsync(ns.Id, "test-queue", null, message.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        var reloaded = await _dbContext.DlqMessages.AsNoTracking().SingleAsync(m => m.Id == message.Id);
+        reloaded.Status.Should().Be(DlqMessageStatus.Replayed);
+
+        var entries = await _dbContext.RecoveryLedgerEntries.AsNoTracking().Where(e => e.DlqMessageId == message.Id).ToListAsync();
+        entries.Should().ContainSingle();
+        entries[0].State.Should().Be(RecoveryEntryState.Observing);
+    }
+
+    [Theory]
+    [InlineData(CloudProviderType.Gcp)]
+    [InlineData(CloudProviderType.Aws)]
+    public async Task ReplayAll_NonAzureNamespace_RoutesThroughMessageOperationsService(CloudProviderType provider)
+    {
+        // Previously impossible to test at all: ReplayAll resolved IServiceBusClientCache
+        // directly, which has no meaning for a GCP/AWS namespace (roadmap P6). Routing through
+        // IMessageOperationsService — which itself dispatches by provider — means RulesController
+        // no longer needs, or has, any Azure-specific dependency on this path.
+        var ns = CreateNamespace(provider: provider);
+        var rule = CreateRule();
+        _dbContext.AutoReplayRules.Add(rule);
+        var message = new DlqMessage
+        {
+            MessageId = "msg-1", SequenceNumber = 1, BodyHash = "hash-1",
+            NamespaceId = ns.Id, OwnerId = TestConstants.TestOwnerId, EntityName = "test-queue",
+            EntityType = ServiceBusEntityType.Queue, EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddHours(-1),
+            DetectedAtUtc = DateTimeOffset.UtcNow, Status = DlqMessageStatus.Active, CloudProvider = provider,
+        };
+        _dbContext.DlqMessages.Add(message);
+        await _dbContext.SaveChangesAsync();
+
+        _ruleEngine.Setup(r => r.Evaluate(It.IsAny<DlqMessage>(), It.IsAny<IReadOnlyList<RuleCondition>>()))
+            .Returns(new RuleMatchResult { MessageId = message.Id, ServiceBusMessageId = message.MessageId, EntityName = message.EntityName, IsMatch = true });
+
+        var messageOperations = new Mock<IMessageOperationsService>();
+        messageOperations
+            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, message.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        SetUpReplayAllServices(ns, messageOperations);
+        SetIntentHeaders(IntentHeaders.IntentReplayAllRules);
+
+        var result = await _controller.ReplayAll(rule.Id);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<ReplayAllResponse>().Subject;
+        response.Replayed.Should().Be(1);
+
+        messageOperations.Verify(
+            m => m.ReplayMessageAsync(ns.Id, "test-queue", null, message.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplayAll_ProviderRejects_RecordsFailureAndLedgerRejection()
+    {
+        var ns = CreateNamespace();
+        var rule = CreateRule();
+        _dbContext.AutoReplayRules.Add(rule);
+        var message = new DlqMessage
+        {
+            MessageId = "msg-1", SequenceNumber = 1, BodyHash = "hash-1",
+            NamespaceId = ns.Id, OwnerId = TestConstants.TestOwnerId, EntityName = "test-queue",
+            EntityType = ServiceBusEntityType.Queue, EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddHours(-1),
+            DetectedAtUtc = DateTimeOffset.UtcNow, Status = DlqMessageStatus.Active,
+        };
+        _dbContext.DlqMessages.Add(message);
+        await _dbContext.SaveChangesAsync();
+
+        _ruleEngine.Setup(r => r.Evaluate(It.IsAny<DlqMessage>(), It.IsAny<IReadOnlyList<RuleCondition>>()))
+            .Returns(new RuleMatchResult { MessageId = message.Id, ServiceBusMessageId = message.MessageId, EntityName = message.EntityName, IsMatch = true });
+
+        var messageOperations = new Mock<IMessageOperationsService>();
+        messageOperations
+            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, message.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Failure(Error.ExternalService("Provider.Rejected", "provider declined")));
+
+        SetUpReplayAllServices(ns, messageOperations);
+        SetIntentHeaders(IntentHeaders.IntentReplayAllRules);
+
+        var result = await _controller.ReplayAll(rule.Id);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<ReplayAllResponse>().Subject;
+        response.Failed.Should().Be(1);
+
+        var reloaded = await _dbContext.DlqMessages.AsNoTracking().SingleAsync(m => m.Id == message.Id);
+        reloaded.Status.Should().Be(DlqMessageStatus.ReplayFailed);
+
+        var entries = await _dbContext.RecoveryLedgerEntries.AsNoTracking().Where(e => e.DlqMessageId == message.Id).ToListAsync();
+        entries.Should().ContainSingle();
+        entries[0].State.Should().Be(RecoveryEntryState.ExecutionFailed);
+    }
+
+    [Fact]
+    public async Task ReplayAll_MessageClaimedByConcurrentReplay_SkipsWithoutCallingProvider()
+    {
+        var ns = CreateNamespace();
+        var rule = CreateRule();
+        _dbContext.AutoReplayRules.Add(rule);
+
+        // ReplayAll snapshots its eligible-message list up front (OrderBy DetectedAtUtc), then
+        // processes it sequentially — so `target`, ordered after `decoy`, can go stale before
+        // this request reaches it. Same TOCTOU shape as
+        // BulkOperationExecutorTests.ExecuteAsync_ConcurrentReplayFromAnotherWorker.
+        var decoy = new DlqMessage
+        {
+            MessageId = "msg-decoy", SequenceNumber = 1, BodyHash = "hash-decoy",
+            NamespaceId = ns.Id, OwnerId = TestConstants.TestOwnerId, EntityName = "test-queue",
+            EntityType = ServiceBusEntityType.Queue, EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1), Status = DlqMessageStatus.Active,
+        };
+        var target = new DlqMessage
+        {
+            MessageId = "msg-target", SequenceNumber = 2, BodyHash = "hash-target",
+            NamespaceId = ns.Id, OwnerId = TestConstants.TestOwnerId, EntityName = "test-queue",
+            EntityType = ServiceBusEntityType.Queue, EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow, Status = DlqMessageStatus.Active,
+        };
+        _dbContext.DlqMessages.AddRange(decoy, target);
+        await _dbContext.SaveChangesAsync();
+
+        _ruleEngine.Setup(r => r.Evaluate(It.IsAny<DlqMessage>(), It.IsAny<IReadOnlyList<RuleCondition>>()))
+            .Returns(new RuleMatchResult { MessageId = 0, ServiceBusMessageId = "any", EntityName = "test-queue", IsMatch = true });
+
+        var options = new DbContextOptionsBuilder<DlqDbContext>().UseSqlite(_dbContext.Database.GetDbConnection()).Options;
+
+        var messageOperations = new Mock<IMessageOperationsService>();
+        messageOperations
+            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, decoy.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                // While this request is still processing the decoy, a different worker (its own
+                // context, same connection) claims the target message underneath it.
+                await using var racingContext = new DlqDbContext(options);
+                var racingCopy = await racingContext.DlqMessages.SingleAsync(m => m.Id == target.Id);
+                racingCopy.Status = DlqMessageStatus.Replaying;
+                await racingContext.SaveChangesAsync();
+                return Result<bool>.Success(true);
+            });
+        messageOperations
+            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, target.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        SetUpReplayAllServices(ns, messageOperations);
+        SetIntentHeaders(IntentHeaders.IntentReplayAllRules);
+
+        var result = await _controller.ReplayAll(rule.Id);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<ReplayAllResponse>().Subject;
+        response.Replayed.Should().Be(1, "the decoy replays normally");
+        response.Skipped.Should().Be(1, "the target's claim lost the race and must be skipped, not retried");
+
+        // This request's own claim attempt for `target` lost the race — it must never have
+        // reached the provider a second time.
+        messageOperations.Verify(
+            m => m.ReplayMessageAsync(ns.Id, "test-queue", null, target.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        var entries = await _dbContext.RecoveryLedgerEntries.AsNoTracking().Where(e => e.DlqMessageId == target.Id).ToListAsync();
+        entries.Should().BeEmpty("a lost claim race must never open ledger evidence for an operation this request never performed");
+    }
+
+    // ── ReplayAll: per-message persistence survives mid-batch cancellation ──
+    //
+    // Regression coverage for the persistence gap where a message's terminal
+    // DlqMessages.Status/ReplayHistories row lived only in the EF change tracker until the
+    // very end of ReplayAll's loop (a single SaveChangesAsync(ct) after every group/message).
+    // If the shared cancellation token fired between one message's Recovery Ledger outcome
+    // (recorded with CancellationToken.None) and the next message's ct.ThrowIfCancellationRequested()
+    // check, the ledger entry existed but the DlqMessages.Status/ReplayHistories change for the
+    // message that had *just* completed was lost — divergence between the Recovery Ledger and
+    // DLQ History. The fix persists each message's outcome immediately after it is determined,
+    // using CancellationToken.None so that save itself cannot be cancelled away.
+
+    [Fact]
+    public async Task ReplayAll_CancellationAfterFirstMessageOutcome_PersistsFirstMessageAndLeavesSecondUntouched()
+    {
+        var ns = CreateNamespace();
+        var rule = CreateRule();
+        _dbContext.AutoReplayRules.Add(rule);
+
+        var first = new DlqMessage
+        {
+            MessageId = "msg-first", SequenceNumber = 1, BodyHash = "hash-first",
+            NamespaceId = ns.Id, OwnerId = TestConstants.TestOwnerId, EntityName = "test-queue",
+            EntityType = ServiceBusEntityType.Queue, EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-2),
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2), Status = DlqMessageStatus.Active,
+        };
+        var second = new DlqMessage
+        {
+            MessageId = "msg-second", SequenceNumber = 2, BodyHash = "hash-second",
+            NamespaceId = ns.Id, OwnerId = TestConstants.TestOwnerId, EntityName = "test-queue",
+            EntityType = ServiceBusEntityType.Queue, EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1), Status = DlqMessageStatus.Active,
+        };
+        _dbContext.DlqMessages.AddRange(first, second);
+        await _dbContext.SaveChangesAsync();
+
+        _ruleEngine.Setup(r => r.Evaluate(It.IsAny<DlqMessage>(), It.IsAny<IReadOnlyList<RuleCondition>>()))
+            .Returns(new RuleMatchResult { MessageId = 0, ServiceBusMessageId = "any", EntityName = "test-queue", IsMatch = true });
+
+        // Simulates the shared 30-second cancellation firing right after the first message's
+        // provider call/ledger outcome completes, but before the loop reaches the second message.
+        using var cts = new CancellationTokenSource();
+
+        var messageOperations = new Mock<IMessageOperationsService>();
+        messageOperations
+            .Setup(m => m.ReplayMessageAsync(ns.Id, "test-queue", null, first.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                cts.Cancel();
+                return Result<bool>.Success(true);
+            });
+
+        SetUpReplayAllServices(ns, messageOperations);
+        SetIntentHeaders(IntentHeaders.IntentReplayAllRules);
+
+        Func<Task> act = () => _controller.ReplayAll(rule.Id, cts.Token);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        // Second message's provider call must never have been reached.
+        messageOperations.Verify(
+            m => m.ReplayMessageAsync(ns.Id, "test-queue", null, second.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        // 1 & 4: the first message's terminal status and ReplayHistories row must have survived
+        // the cancellation that hit on the *next* iteration, and must agree with the ledger.
+        var reloadedFirst = await _dbContext.DlqMessages.AsNoTracking().SingleAsync(m => m.Id == first.Id);
+        reloadedFirst.Status.Should().Be(DlqMessageStatus.Replayed);
+
+        var firstHistory = await _dbContext.ReplayHistories.AsNoTracking().Where(h => h.DlqMessageId == first.Id).ToListAsync();
+        firstHistory.Should().ContainSingle();
+        firstHistory[0].OutcomeStatus.Should().Be("Success");
+
+        var firstLedgerEntries = await _dbContext.RecoveryLedgerEntries.AsNoTracking().Where(e => e.DlqMessageId == first.Id).ToListAsync();
+        firstLedgerEntries.Should().ContainSingle();
+        firstLedgerEntries[0].State.Should().Be(RecoveryEntryState.Observing);
+
+        // 2: cancellation on the next iteration did not roll back or erase what was just persisted.
+        reloadedFirst.ReplayedAt.Should().NotBeNull();
+        reloadedFirst.ReplaySuccess.Should().BeTrue();
+
+        // 3: the unprocessed second message must remain completely untouched.
+        var reloadedSecond = await _dbContext.DlqMessages.AsNoTracking().SingleAsync(m => m.Id == second.Id);
+        reloadedSecond.Status.Should().Be(DlqMessageStatus.Active);
+
+        var secondHistory = await _dbContext.ReplayHistories.AsNoTracking().Where(h => h.DlqMessageId == second.Id).ToListAsync();
+        secondHistory.Should().BeEmpty();
+
+        var secondLedgerEntries = await _dbContext.RecoveryLedgerEntries.AsNoTracking().Where(e => e.DlqMessageId == second.Id).ToListAsync();
+        secondLedgerEntries.Should().BeEmpty();
     }
 }

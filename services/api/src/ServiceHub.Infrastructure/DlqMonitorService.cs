@@ -8,8 +8,10 @@ using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.AI;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Results;
@@ -28,6 +30,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
     private readonly CloudProviderRouter _router;
     private readonly IForensicEngineRouter _forensicEngine;
     private readonly IConfiguration _configuration;
+    private readonly IRecoveryLedger _recoveryLedger;
     private readonly DlqNotMonitoredLogGuard _notMonitoredLogGuard;
     private readonly ILogger<DlqMonitorService> _logger;
 
@@ -40,6 +43,14 @@ public sealed class DlqMonitorService : IDlqMonitorService
     private const string SubscriptionPathSegment = "/subscriptions/";
 
     /// <summary>
+    /// The application property/attribute a replay stamps to attribute an eventual recurrence
+    /// back to the exact <see cref="RecoveryLedgerEntry"/> that produced it (§8.2 of the
+    /// Recovery Evidence Ledger verification model). See the provider <c>ReplayMessageAsync</c>
+    /// implementations for where this is written.
+    /// </summary>
+    internal const string RecoveryMarkerPropertyKey = "x-servicehub-recovery-id";
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="DlqMonitorService"/> class.
     /// </summary>
     public DlqMonitorService(
@@ -48,6 +59,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
         CloudProviderRouter router,
         IForensicEngineRouter forensicEngine,
         IConfiguration configuration,
+        IRecoveryLedger recoveryLedger,
         DlqNotMonitoredLogGuard notMonitoredLogGuard,
         ILogger<DlqMonitorService> logger)
     {
@@ -56,6 +68,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
         _router = router ?? throw new ArgumentNullException(nameof(router));
         _forensicEngine = forensicEngine ?? throw new ArgumentNullException(nameof(forensicEngine));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _notMonitoredLogGuard = notMonitoredLogGuard ?? throw new ArgumentNullException(nameof(notMonitoredLogGuard));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -134,6 +147,15 @@ public sealed class DlqMonitorService : IDlqMonitorService
             if (ns.Provider == CloudProviderType.Gcp && entity.Name.EndsWith("-dlq", StringComparison.Ordinal))
                 continue;
 
+            // Parsed and normalized up front so the reconcile key below (scannedEntities) always
+            // matches the EntityName format DlqMessage rows are stored under — Azure lists
+            // subscriptions as "topic/subscriptions/sub" already, but AWS/GCP list them as
+            // "topic/sub", and only the normalized "topic/subscriptions/sub" form is ever
+            // persisted (see fullEntityName in ScanEntityDlqAsync). Keying on the raw
+            // entity.Name here made the AWS/GCP reconcile never fire (P9).
+            var (entityName, topicName, entityType) = ParseEntity(entity.Name, entity.EntityType);
+            var fullEntityName = topicName != null ? $"{topicName}{SubscriptionPathSegment}{entityName}" : entityName;
+
             // A provider that genuinely reports live message counts (Azure, AWS — both populate
             // DeadLetterCount reliably in ListEntitiesAsync) means entities with 0 can be skipped
             // without peeking. GCP's Capabilities.SupportsMessageCounts is false (Pub/Sub has no
@@ -142,11 +164,9 @@ public sealed class DlqMonitorService : IDlqMonitorService
             // CrossCloudTraceController uses for its own dead-letter-peek gate.
             if (provider.Capabilities.SupportsMessageCounts && entity.DeadLetterCount == 0)
             {
-                scannedEntities[entity.Name] = 0;
+                scannedEntities[fullEntityName] = 0;
                 continue;
             }
-
-            var (entityName, topicName, entityType) = ParseEntity(entity.Name, entity.EntityType);
 
             if (entity.DeadLetterCount > 0)
             {
@@ -158,10 +178,15 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 receiver, namespaceId, entityName, topicName,
                 entityType, ns.OwnerId, ns.Provider, cancellationToken);
             totalNew += newCount;
-            scannedEntities[entity.Name] = liveCount;
+            scannedEntities[fullEntityName] = liveCount;
         }
 
-        // Reconcile: for entities with 0 DLQ messages, mark any remaining Active DB records as Replayed
+        // Reconcile: for entities with 0 DLQ messages, mark any remaining Active DB records as
+        // Resolved. This scan only proves the message is no longer in the DLQ — it cannot tell
+        // whether ServiceHub replayed it, an operator drained it externally, it expired, or
+        // another tool consumed it. Absence must never be reported as "Replayed" (that is a
+        // specific, unverified claim); VanishedExternally is the truthful cause until a Recovery
+        // Evidence Ledger (a later phase) can attribute the disappearance to a ServiceHub action.
         var reconciledCount = 0;
         try
         {
@@ -177,8 +202,9 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
                     foreach (var record in staleRecords)
                     {
-                        record.Status = DlqMessageStatus.Replayed;
-                        record.ReplayedAt = DateTimeOffset.UtcNow;
+                        record.Status = DlqMessageStatus.Resolved;
+                        record.ResolvedAt = DateTimeOffset.UtcNow;
+                        record.ResolutionCause = DlqResolutionCause.VanishedExternally;
                         reconciledCount++;
                     }
                 }
@@ -188,7 +214,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
             {
                 await _dbContext.SaveChangesAsync(cancellationToken);
                 _logger.LogInformation(
-                    "Reconciled {Count} stale DLQ messages as Replayed for namespace {NamespaceId}",
+                    "Reconciled {Count} stale DLQ messages as Resolved (vanished externally) for namespace {NamespaceId}",
                     reconciledCount, namespaceId);
             }
         }
@@ -250,9 +276,12 @@ public sealed class DlqMonitorService : IDlqMonitorService
         var liveCount = 0;
         var fullEntityName = topicName != null ? $"{topicName}{SubscriptionPathSegment}{entityName}" : entityName;
 
-        // Azure sequence numbers are stable identifiers; AWS/GCP sequence numbers are hashes
-        // of per-delivery receipt handles / ack IDs and change on every peek, so those
-        // providers must dedup and reconcile by MessageId instead.
+        // Azure sequence numbers are real broker-assigned identifiers. AWS/GCP sequence numbers
+        // are a stable SHA-256 hash of the message's own (also stable) broker MessageId — they
+        // do not change between peeks of the same message, but they carry no ordering relative
+        // to arrival, so they cannot serve as a paging cursor (see ComputeSequenceNumber in
+        // AwsMessageReceiver/GcpMessageReceiver). Those providers must dedup and reconcile by
+        // MessageId instead.
         var useSequenceKey = provider == CloudProviderType.Azure;
 
         try
@@ -294,9 +323,9 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
                 allPeekedMessages.AddRange(batchMessages);
 
-                // AWS/GCP sequence numbers are unstable per-peek hashes (see useSequenceKey
-                // comment above), so there is no cursor to advance past a single batch there —
-                // only Azure can page beyond PeekBatchSize within a scan cycle.
+                // AWS/GCP sequence numbers carry no ordering relative to arrival (see
+                // useSequenceKey comment above), so there is no cursor to advance past a single
+                // batch there — only Azure can page beyond PeekBatchSize within a scan cycle.
                 if (!useSequenceKey || batchMessages.Count < PeekBatchSize)
                     break;
 
@@ -330,13 +359,29 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
                 if (existingMessage != null)
                 {
-                    // Message already tracked — ensure it's marked as Active
-                    if (existingMessage.Status != DlqMessageStatus.Active)
+                    // Message already tracked — ensure it's marked as Active. The prior
+                    // ResolvedAt/ReplayedAt/ReplaySuccess/ResolutionCause are left untouched:
+                    // they are evidence of what was previously recorded, and erasing them here
+                    // would destroy a real recovery record for the sake of a message that turned
+                    // out to have come back.
+                    //
+                    // Replaying/Purging are excluded deliberately: those are transient claim
+                    // states an executor (BulkOperationExecutor, SignatureReplayExecutor,
+                    // AutoReplayExecutor, or a manual replay/purge) is actively working through —
+                    // the message is still physically present in the DLQ only because the
+                    // provider call (e.g. SQS SendMessage-then-DeleteMessage) hasn't completed
+                    // yet, not because it "came back". Resetting it to Active here races the live
+                    // executor: its own claim was committed with Status as the EF concurrency
+                    // token, so the executor's terminal save (Replayed/ReplayFailed/Discarded)
+                    // then loses to a stale concurrency token and throws — dropping the
+                    // ReplayHistory/DlqMessage-status update for an outcome the Recovery Ledger
+                    // already recorded correctly, the same "never race a genuinely in-flight
+                    // claim" invariant InterruptedOperationRecovery enforces at startup.
+                    if (existingMessage.Status != DlqMessageStatus.Active
+                        && existingMessage.Status != DlqMessageStatus.Replaying
+                        && existingMessage.Status != DlqMessageStatus.Purging)
                     {
                         existingMessage.Status = DlqMessageStatus.Active;
-                        existingMessage.ResolvedAt = null;
-                        existingMessage.ReplayedAt = null;
-                        existingMessage.ReplaySuccess = null;
                         _logger.LogInformation(
                             "Message {MessageId} returned to DLQ, status updated to Active",
                             LogRedactor.SanitiseForLog(msg.MessageId));
@@ -380,6 +425,12 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
                 _dbContext.DlqMessages.Add(dlqMessage);
 
+                // Recurrence detection: a message replayed by ServiceHub gets a brand-new
+                // provider identity on every provider (P4), so a genuine return lands here, as a
+                // "new" message, never in the existingMessage branch above. Detection only
+                // applies to newly-detected messages for the same reason.
+                await DetectRecurrenceAsync(ownerId, namespaceId, fullEntityName, bodyHash, msg, detectedAt, cancellationToken);
+
                 var features = SignalExtractor.ExtractFeatures(dlqMessage);
                 _dbContext.MessageFeatureRecords.Add(new MessageFeatureRecord
                 {
@@ -408,7 +459,10 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 newCount++;
             }
 
-            // CRITICAL: Mark messages that are NO LONGER in DLQ as Replayed
+            // Mark messages that are NO LONGER in the DLQ as Resolved. This scan cannot tell why
+            // they left — ServiceHub replay, external drain, TTL expiry, or another tool are all
+            // indistinguishable from here — so the cause is recorded as VanishedExternally, not
+            // asserted as a replay ServiceHub never observed.
             List<DlqMessage> messagesNoLongerInDlq;
             if (useSequenceKey)
             {
@@ -428,7 +482,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 // so a single scan only ever samples up to PeekBatchSize messages. A batch at
                 // the cap doesn't prove the DLQ is empty beyond it, so reconciling against a
                 // possibly-truncated sample would falsely mark still-present messages as
-                // Replayed. Only reconcile when this scan came in under the cap — the closest
+                // Resolved. Only reconcile when this scan came in under the cap — the closest
                 // signal available that it saw the entity's full live DLQ.
                 var currentDlqMessageIds = allPeekedMessages
                     .Select(m => m.MessageId)
@@ -450,17 +504,18 @@ public sealed class DlqMonitorService : IDlqMonitorService
 
             foreach (var removedMessage in messagesNoLongerInDlq)
             {
-                removedMessage.Status = DlqMessageStatus.Replayed;
-                removedMessage.ReplayedAt = DateTimeOffset.UtcNow;
+                removedMessage.Status = DlqMessageStatus.Resolved;
+                removedMessage.ResolvedAt = DateTimeOffset.UtcNow;
+                removedMessage.ResolutionCause = DlqResolutionCause.VanishedExternally;
                 _logger.LogInformation(
-                    "Message {MessageId} no longer in DLQ — marked as Replayed",
+                    "Message {MessageId} no longer in DLQ — marked as Resolved (vanished externally)",
                     LogRedactor.SanitiseForLog(removedMessage.MessageId));
             }
 
             if (messagesNoLongerInDlq.Count > 0)
             {
                 _logger.LogInformation(
-                    "Marked {Count} messages as Replayed for {EntityType} {EntityName}",
+                    "Marked {Count} messages as Resolved for {EntityType} {EntityName}",
                     messagesNoLongerInDlq.Count, entityType, LogRedactor.SanitiseForLog(entityName));
             }
 
@@ -485,6 +540,161 @@ public sealed class DlqMonitorService : IDlqMonitorService
         }
 
         return (newCount, liveCount);
+    }
+
+    /// <summary>
+    /// Attributes a newly-detected DLQ message to an open <see cref="RecoveryLedgerEntry"/> it
+    /// may be a recurrence of — the scan-time half of the verification model's shipping
+    /// algorithm (§8.5). Exact match via the stamped marker takes priority; when the marker
+    /// could not be applied (<see cref="ProviderCapabilities.SupportsRecoveryMarker"/> was false
+    /// for this provider, the SQS attribute cap was hit, or the flag was disabled at replay
+    /// time), falls back to a body-hash heuristic that may match more than one open entry — every
+    /// match is recorded, each with its own collision count, rather than guessing which one it was.
+    /// </summary>
+    private async Task DetectRecurrenceAsync(
+        string ownerId, Guid namespaceId, string fullEntityName, string bodyHash,
+        Message msg, DateTimeOffset detectedAt, CancellationToken cancellationToken)
+    {
+        string? marker = null;
+        if (msg.ApplicationProperties is { } props
+            && props.TryGetValue(RecoveryMarkerPropertyKey, out var rawMarker))
+        {
+            marker = rawMarker as string ?? rawMarker?.ToString();
+        }
+
+        if (!string.IsNullOrEmpty(marker))
+        {
+            var exactMatch = await _recoveryLedger.FindByMarkerAsync(ownerId, marker, cancellationToken);
+            if (exactMatch is not null)
+            {
+                await RecordRecurrenceAsync(exactMatch, VerificationConfidence.Exact, collisionCount: 0, cancellationToken);
+                return;
+            }
+        }
+
+        var heuristicCandidates = await _recoveryLedger.FindHeuristicRecurrenceCandidatesAsync(
+            ownerId, namespaceId, fullEntityName, bodyHash, detectedAt, cancellationToken);
+
+        foreach (var candidate in heuristicCandidates)
+        {
+            await RecordRecurrenceAsync(candidate, VerificationConfidence.Heuristic, heuristicCandidates.Count, cancellationToken);
+        }
+    }
+
+    private async Task RecordRecurrenceAsync(
+        RecoveryLedgerEntry entry, VerificationConfidence confidence, int collisionCount, CancellationToken cancellationToken)
+    {
+        var actor = ActorIdentityResolver.ResolveSystemActor("DlqMonitorService");
+        var detail = collisionCount > 0
+            ? JsonSerializer.Serialize(new { collisionCount })
+            : null;
+
+        var result = await _recoveryLedger.RecordObservationAsync(new RecordObservationRequest
+        {
+            EntryId = entry.Id,
+            OwnerId = entry.OwnerId,
+            Actor = actor,
+            Outcome = RecoveryObservationOutcome.RecurrenceObserved,
+            Confidence = confidence,
+            DetailJson = detail,
+        }, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            // Not fatal to the scan — most commonly means a concurrent scan or the verification
+            // worker's window-close sweep already closed this entry first; a lost race, not an
+            // error. The entry's own state is authoritative either way.
+            _logger.LogDebug(
+                "Skipped recording recurrence for recovery ledger entry {EntryId}: {Error}",
+                entry.Id, result.Error.Message);
+            return;
+        }
+
+        _logger.LogInformation(
+            "Recovery ledger entry {EntryId} returned to the DLQ ({Confidence} match)",
+            entry.Id, confidence);
+
+        await EvaluateFastDemotionAsync(entry, cancellationToken);
+    }
+
+    /// <summary>
+    /// Roadmap §7.6/§8.5/§8.6's fast-demotion path: two consecutive verified <c>Returned</c>
+    /// outcomes for a signature currently holding L4/L5 standing demote it to L3 immediately,
+    /// rather than waiting for <c>AutonomyEvaluationWorker</c>'s hourly sweep — the only call site
+    /// in the codebase that can ever produce a <c>Returned</c> disposition is this method, so this
+    /// is the sole place that needs to check. Never touches rate-based or duplicate-association
+    /// demotion, promotion, or any other <c>AutonomyGrant</c> transition — those remain the sweep's
+    /// exclusive responsibility, untouched by this method.
+    /// </summary>
+    private async Task EvaluateFastDemotionAsync(RecoveryLedgerEntry entry, CancellationToken cancellationToken)
+    {
+        var signatureHash = entry.SignatureHashSnapshot;
+        if (string.IsNullOrEmpty(signatureHash))
+        {
+            // No stable per-signature trust identity to demote (roadmap §4) — same null-handling
+            // as predicate 5 and Evidence-Derived Trust Scoring.
+            return;
+        }
+
+        var grant = await _recoveryLedger.GetAutonomyGrantAsync(
+            entry.OwnerId, signatureHash, RecoveryOperationKind.Replay, cancellationToken);
+
+        if (grant is null || grant.CurrentLevel is not (AutonomyLevel.Standing or AutonomyLevel.Unattended))
+        {
+            // Already at/below L3, or never granted — nothing to fast-demote.
+            return;
+        }
+
+        var recent = await _recoveryLedger.GetRecentVerifiedDispositionsAsync(
+            entry.OwnerId, signatureHash, RecoveryOperationKind.Replay, count: 2, cancellationToken);
+
+        if (recent.Count < 2 || recent.Any(d => d != RecoveryDisposition.Returned))
+        {
+            return;
+        }
+
+        var fromLevel = grant.CurrentLevel;
+        var reason = $"Demoted {fromLevel}→{AutonomyLevel.Approve}: two consecutive verified " +
+            "Returned outcomes — the currently trusted signature failed to resolve recurrence " +
+            "twice in a row (roadmap §7.6, §8.5, §8.6). Non-disableable.";
+        var evidenceJson = JsonSerializer.Serialize(new
+        {
+            trigger = "fast_demotion_two_consecutive_returned",
+            recentDispositions = recent.Select(d => d.ToString()),
+        });
+
+        try
+        {
+            var transitionResult = await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+                entry.OwnerId, signatureHash, RecoveryOperationKind.Replay,
+                fromLevel, AutonomyLevel.Approve, reason, evidenceJson, cancellationToken);
+
+            if (transitionResult.IsFailure)
+            {
+                // Most commonly a losing snapshot race against a concurrent AutonomyEvaluationWorker
+                // sweep (roadmap §9.4.4) — the grant is already at or past L3 via another writer;
+                // not an error, nothing left to do.
+                _logger.LogDebug(
+                    "Skipped fast-demotion transition for owner {OwnerId} signature {SignatureHash}: {Error}",
+                    entry.OwnerId, signatureHash, transitionResult.Error.Message);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "AutonomyGrant fast-demoted {FromLevel}→{ToLevel} for owner {OwnerId} signature " +
+                    "{SignatureHash}: two consecutive verified Returned outcomes",
+                    fromLevel, AutonomyLevel.Approve, entry.OwnerId, signatureHash);
+            }
+        }
+        catch (DbUpdateException ex)
+        {
+            // A losing concurrent writer (roadmap §9.4.4) — the next Returned observation or the
+            // next sweep re-evaluates from the ledger's current state.
+            _logger.LogWarning(ex,
+                "AutonomyGrant fast-demotion lost a concurrency race for owner {OwnerId} signature " +
+                "{SignatureHash}; will re-evaluate on next trigger",
+                entry.OwnerId, signatureHash);
+        }
     }
 
     private static string ComputeBodyHash(string? body)

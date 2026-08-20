@@ -10,10 +10,12 @@ import {
   Activity,
   HelpCircle,
   Shield,
+  ShieldCheck,
   Cloud,
   Route,
   Pin,
   AlertTriangle,
+  Radio,
 } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
@@ -33,6 +35,13 @@ export function QuickAccessPanel() {
 
   const activeNamespace = namespaces?.find((ns) => ns.isActive);
   const demoStats = isDemoMode && cloudProvider ? getMockStats(cloudProvider) : null;
+
+  // "All Clouds" is misleading on a single-provider installation — reads as though
+  // Azure/AWS/GCP data the operator doesn't have is somehow included. Swap to
+  // "All Namespaces" whenever fewer than 2 distinct providers are actually configured.
+  const configuredProviderCount = new Set((namespaces ?? []).map((ns) => ns.cloudProvider).filter(Boolean)).size;
+  const isMultiCloud = configuredProviderCount > 1;
+  const browseAllLabel = isMultiCloud ? 'All Clouds' : 'All Namespaces';
 
   const allNamespaceIds = isDemoMode ? [] : (namespaces?.map((ns) => ns.id) ?? []);
   // autoRefresh: false — Header renders the same fleet-wide dead-letter total from the same
@@ -64,7 +73,7 @@ export function QuickAccessPanel() {
     >
       <nav className="space-y-1 px-3 py-3">
         {/* ── Overview ── */}
-        <div className="pt-1 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Overview</div>
+        <div className="pt-1 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Overview</div>
         <NavLink
           to={`${navPrefix}/dashboard`}
           className={({ isActive }) =>
@@ -113,22 +122,35 @@ export function QuickAccessPanel() {
         </NavLink>
 
         {/* ── Browse across clouds ── */}
-        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Browse across clouds</div>
+        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Browse across clouds</div>
         <button
           onClick={() => navigate(`${navPrefix}/messages-overview?tab=active`)}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border border-gray-200 hover:border-sky-300 shadow-sm"
         >
           <Database className="w-4 h-4 text-sky-500" />
           <span className="flex-1 text-left">Active Messages</span>
-          <span className="text-xs text-sky-600 font-medium">All Clouds</span>
+          <span className="text-xs text-sky-700 font-medium">{browseAllLabel}</span>
         </button>
+        <NavLink
+          to={activeNamespace ? `${navPrefix}/live-tail?namespace=${activeNamespace.id}` : `${navPrefix}/live-tail`}
+          className={({ isActive }) =>
+            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isActive
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-medium'
+                : 'bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border-gray-200 hover:border-emerald-300'
+            }`
+          }
+        >
+          <Radio className="w-4 h-4 text-emerald-500" />
+          <span className="flex-1 text-left">Live Tail</span>
+        </NavLink>
         <button
           onClick={() => navigate(`${navPrefix}/messages-overview?tab=deadletter`)}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-red-50 text-gray-700 hover:text-red-700 border border-gray-200 hover:border-red-300 shadow-sm"
         >
           <AlertCircle className="w-4 h-4 text-red-500" />
           <span className="flex-1 text-left">Dead-Letter</span>
-          <span className="text-xs text-red-600 font-medium">All Clouds</span>
+          <span className="text-xs text-red-600 font-medium">{browseAllLabel}</span>
         </button>
         <NavLink
           to={`${navPrefix}/scheduled`}
@@ -158,7 +180,7 @@ export function QuickAccessPanel() {
         </NavLink>
 
         {/* ── Diagnose & automate ── */}
-        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Diagnose &amp; automate</div>
+        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Diagnose &amp; automate</div>
         <NavLink
           to={activeNamespace ? `${navPrefix}/dlq-history?namespace=${activeNamespace.id}` : `${navPrefix}/dlq-history`}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-purple-50 text-gray-700 hover:text-purple-700 border border-gray-200 hover:border-purple-300 shadow-sm"
@@ -176,6 +198,7 @@ export function QuickAccessPanel() {
         </NavLink>
         <NavLink
           to={`${navPrefix}/cross-cloud-trace`}
+          title={isMultiCloud ? undefined : 'Needs at least two connected providers to trace a cross-cloud hop'}
           className={({ isActive }) =>
             `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
               isActive
@@ -189,7 +212,7 @@ export function QuickAccessPanel() {
         </NavLink>
 
         {/* ── Platform ── */}
-        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Platform</div>
+        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Platform</div>
         <NavLink
           to={`${navPrefix}/health`}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border border-gray-200 hover:border-emerald-300 shadow-sm"
@@ -213,6 +236,19 @@ export function QuickAccessPanel() {
           <span className="text-xs text-primary-600 font-medium">Logs</span>
         </NavLink>
         <NavLink
+          to={`${navPrefix}/recovery`}
+          className={({ isActive }) =>
+            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isActive
+                ? 'bg-teal-50 text-teal-700 border-teal-300 font-medium'
+                : 'bg-white hover:bg-teal-50 text-gray-700 hover:text-teal-700 border-gray-200 hover:border-teal-300'
+            }`
+          }
+        >
+          <ShieldCheck className="w-4 h-4 text-teal-500" />
+          <span className="flex-1 text-left">Recovery Evidence</span>
+        </NavLink>
+        <NavLink
           to={`${navPrefix}/security`}
           className={({ isActive }) =>
             `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
@@ -227,7 +263,7 @@ export function QuickAccessPanel() {
         </NavLink>
 
         {/* ── Support ── */}
-        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Support</div>
+        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Support</div>
         <NavLink
           to={`${navPrefix}/help`}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border border-gray-200 hover:border-primary-300 shadow-sm"

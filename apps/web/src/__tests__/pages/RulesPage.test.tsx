@@ -23,6 +23,24 @@ vi.mock('@/components/rules', () => ({
     open ? <div data-testid="rule-test-dialog" /> : null,
 }));
 
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
+  useNamespaces: vi.fn(),
+}));
+
+vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({
+  useAllNamespacesQueues: vi.fn(),
+}));
+
+vi.mock('@servicehub/ui-shared/lib/api/client', () => ({
+  apiClient: { get: vi.fn().mockResolvedValue({ data: [] }) },
+}));
+
+// Covered independently by useEventStream.test.tsx — here we only need RulesPage to not
+// crash on the real hook's apiClient.defaults access, which the mock above doesn't provide.
+vi.mock('@servicehub/ui-shared/hooks/useEventStream', () => ({
+  useEventStream: vi.fn(() => ({ connected: false })),
+}));
+
 import {
   useRules,
   useCreateRule,
@@ -32,6 +50,8 @@ import {
   useReplayAll,
   useGenerateRules,
 } from '@servicehub/ui-shared/hooks/useRules';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useAllNamespacesQueues } from '@servicehub/ui-shared/hooks/useQueues';
 
 const mockUseRules = useRules as ReturnType<typeof vi.fn>;
 const mockUseCreateRule = useCreateRule as ReturnType<typeof vi.fn>;
@@ -40,6 +60,8 @@ const mockUseDeleteRule = useDeleteRule as ReturnType<typeof vi.fn>;
 const mockUseToggleRule = useToggleRule as ReturnType<typeof vi.fn>;
 const mockUseReplayAll = useReplayAll as ReturnType<typeof vi.fn>;
 const mockUseGenerateRules = useGenerateRules as ReturnType<typeof vi.fn>;
+const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
+const mockUseAllNamespacesQueues = useAllNamespacesQueues as ReturnType<typeof vi.fn>;
 
 const mockRules = [
   {
@@ -95,6 +117,10 @@ beforeEach(() => {
   mockUseToggleRule.mockReturnValue({ ...mockMutation });
   mockUseReplayAll.mockReturnValue({ ...mockMutation, isPending: false });
   mockUseGenerateRules.mockReturnValue({ ...mockMutation, isPending: false });
+  // Empty by default — namespaceIds stays [] so scope resolution reports 'global'/'loading'
+  // the same way it did before scope resolution existed, keeping unrelated tests unaffected.
+  mockUseNamespaces.mockReturnValue({ data: [] });
+  mockUseAllNamespacesQueues.mockReturnValue([]);
 });
 
 describe('RulesPage', () => {
@@ -139,6 +165,49 @@ describe('RulesPage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><RulesPage /></Wrapper>);
     expect(screen.getByText(/"MaxDeliveryCountExceeded"/)).toBeInTheDocument();
+  });
+
+  it('never claims a specific circuit-breaker threshold or that it mirrors the backend', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+    expect(screen.queryByText(/mirrors the backend/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/30% over recent replays/i)).not.toBeInTheDocument();
+  });
+
+  it('distinguishes a circuit-breaker-disabled rule from a manually-disabled rule', () => {
+    mockUseRules.mockReturnValue({
+      data: [
+        {
+          ...mockRules[1],
+          id: 3,
+          name: 'Breaker Tripped Rule',
+          enabled: false,
+          disabledReason: 'CircuitBreaker',
+          disabledReasonDetail:
+            'Verified success rate 38% over the last 20 outcomes fell below the 50% circuit-breaker floor.',
+        },
+        {
+          ...mockRules[1],
+          id: 4,
+          name: 'Manually Disabled Rule',
+          enabled: false,
+          disabledReason: 'Manual',
+          disabledReasonDetail: null,
+        },
+      ],
+      isLoading: false,
+      refetch: vi.fn(),
+      isFetching: false,
+    });
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    // Circuit-breaker-disabled rule states why, visibly, without needing a hover/title.
+    expect(screen.getByText(/Disabled by the safety circuit breaker/i)).toBeInTheDocument();
+    expect(screen.getByText(/38%/)).toBeInTheDocument();
+
+    // Manually-disabled rule gets none of that — the two must render differently.
+    expect(screen.queryAllByText(/Disabled by the safety circuit breaker/i)).toHaveLength(1);
   });
 
   it('shows loading state', () => {
@@ -377,5 +446,163 @@ describe('RulesPage', () => {
     render(<Wrapper><RulesPage /></Wrapper>);
     // DeadLetterReason field → 'reason', Equals → 'equals'
     expect(screen.getAllByText(/reason/i).length).toBeGreaterThan(0);
+  });
+});
+
+describe('RulesPage — rule target scope', () => {
+  const awsNamespace = {
+    id: 'ns-aws-1',
+    name: 'aws-dev',
+    displayName: 'AWS DEV',
+    isActive: true,
+    createdAt: '2024-01-01T00:00:00Z',
+    cloudProvider: 'aws' as const,
+    environment: 'dev' as const,
+  };
+  const azureNamespace = {
+    id: 'ns-azure-1',
+    name: 'azure-dev',
+    displayName: 'Azure DEV',
+    isActive: true,
+    createdAt: '2024-01-01T00:00:00Z',
+    cloudProvider: 'azure' as const,
+    environment: 'prod' as const,
+  };
+
+  const ruleNoEntityCondition = {
+    id: 10,
+    name: 'Global Rule',
+    description: null,
+    enabled: true,
+    conditions: [{ field: 'DeadLetterReason', operator: 'Equals', value: 'Timeout' }],
+    action: { autoReplay: true, delaySeconds: 10, exponentialBackoff: false },
+    matchCount: 0,
+    successCount: 0,
+    pendingMatchCount: 0,
+    maxReplaysPerHour: 100,
+    createdAt: '2024-01-01T00:00:00Z',
+    updatedAt: null,
+  };
+
+  const ruleWithEntityCondition = {
+    id: 11,
+    name: 'Orders Rule',
+    description: null,
+    enabled: true,
+    conditions: [{ field: 'EntityName', operator: 'Equals', value: 'orders' }],
+    action: { autoReplay: true, delaySeconds: 10, exponentialBackoff: false },
+    matchCount: 0,
+    successCount: 0,
+    pendingMatchCount: 0,
+    maxReplaysPerHour: 100,
+    createdAt: '2024-01-01T00:00:00Z',
+    updatedAt: null,
+  };
+
+  it('shows an explicit ALL CLOUDS · ALL NAMESPACES banner for a rule with no EntityName/TopicName condition', async () => {
+    mockUseRules.mockReturnValue({ data: [ruleNoEntityCondition], isLoading: false, refetch: vi.fn(), isFetching: false });
+    mockUseNamespaces.mockReturnValue({ data: [awsNamespace] });
+    mockUseAllNamespacesQueues.mockReturnValue([{ namespaceId: 'ns-aws-1', queues: [{ name: 'orders' }], isLoading: false, isError: false }]);
+
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    expect(await screen.findByText('ALL CLOUDS · ALL NAMESPACES')).toBeInTheDocument();
+  });
+
+  it('resolves a single-namespace target with Cloud, Namespace, Provider service, Entity, and DLQ all distinct', async () => {
+    mockUseRules.mockReturnValue({ data: [ruleWithEntityCondition], isLoading: false, refetch: vi.fn(), isFetching: false });
+    mockUseNamespaces.mockReturnValue({ data: [awsNamespace] });
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns-aws-1', queues: [{ name: 'orders', deadLetterTargetQueue: 'orders-dlq' }], isLoading: false, isError: false },
+    ]);
+
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    expect(await screen.findByText('AWS DEV')).toBeInTheDocument();
+    expect(screen.getByText('AWS')).toBeInTheDocument(); // Cloud badge — explicit, not icon-only
+    expect(screen.getByText('SQS')).toBeInTheDocument(); // Provider service — distinct from "AWS"
+    expect(screen.getByText('orders')).toBeInTheDocument(); // Entity — distinct from namespace
+    expect(screen.getByText('DLQ: orders-dlq')).toBeInTheDocument(); // Real RedrivePolicy target, not fabricated
+  });
+
+  it('flags an ambiguous target when the same entity name exists in two namespaces across clouds', async () => {
+    mockUseRules.mockReturnValue({ data: [ruleWithEntityCondition], isLoading: false, refetch: vi.fn(), isFetching: false });
+    mockUseNamespaces.mockReturnValue({ data: [awsNamespace, azureNamespace] });
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns-aws-1', queues: [{ name: 'orders' }], isLoading: false, isError: false },
+      { namespaceId: 'ns-azure-1', queues: [{ name: 'orders' }], isLoading: false, isError: false },
+    ]);
+
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    expect(await screen.findByText(/Ambiguous target — matches 2 namespaces/)).toBeInTheDocument();
+    expect(screen.getByText('AWS DEV')).toBeInTheDocument();
+    expect(screen.getByText('Azure DEV')).toBeInTheDocument();
+  });
+
+  it('shows an explicit "Scope unresolved" state rather than a misleading namespace when the entity is not found', async () => {
+    mockUseRules.mockReturnValue({ data: [ruleWithEntityCondition], isLoading: false, refetch: vi.fn(), isFetching: false });
+    mockUseNamespaces.mockReturnValue({ data: [awsNamespace] });
+    mockUseAllNamespacesQueues.mockReturnValue([{ namespaceId: 'ns-aws-1', queues: [{ name: 'some-other-queue' }], isLoading: false, isError: false }]);
+
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    expect(await screen.findByText('Scope unresolved')).toBeInTheDocument();
+  });
+
+  it('shows "Resolving scope…" only while the namespaces list itself is loading, not as a persistent fallback', () => {
+    mockUseRules.mockReturnValue({ data: [ruleWithEntityCondition], isLoading: false, refetch: vi.fn(), isFetching: false });
+    mockUseNamespaces.mockReturnValue({ data: undefined, isLoading: true });
+    mockUseAllNamespacesQueues.mockReturnValue([]);
+
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    expect(screen.getByText('Resolving scope…')).toBeInTheDocument();
+  });
+
+  it('resolves a rule scoped to an already-loaded namespace immediately, even while a DIFFERENT connected namespace is still loading — the fix for cards stuck on "Resolving scope…"', async () => {
+    const rule = {
+      ...ruleWithEntityCondition,
+      conditions: [{ field: 'EntityName', operator: 'Equals', value: 'order-processing' }],
+    };
+    mockUseRules.mockReturnValue({ data: [rule], isLoading: false, refetch: vi.fn(), isFetching: false });
+    mockUseNamespaces.mockReturnValue({ data: [awsNamespace, azureNamespace] });
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns-aws-1', queues: [{ name: 'order-processing' }], isLoading: false, isError: false },
+      // A second, unrelated namespace still loading — must not block the AWS card above.
+      { namespaceId: 'ns-azure-1', queues: undefined, isLoading: true, isError: false },
+    ]);
+
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    expect(await screen.findByText('AWS DEV')).toBeInTheDocument();
+    expect(screen.getByText('order-processing')).toBeInTheDocument();
+    // Real, not fabricated — flagged as still-confirming since another namespace hasn't settled.
+    expect(screen.getByText(/Confirming remaining namespaces/)).toBeInTheDocument();
+  });
+
+  it('shows the same resolved Cloud/Namespace/Provider/Entity scope in the Replay-All confirmation before the destructive action', async () => {
+    mockUseRules.mockReturnValue({ data: [ruleWithEntityCondition], isLoading: false, refetch: vi.fn(), isFetching: false });
+    mockUseNamespaces.mockReturnValue({ data: [awsNamespace] });
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns-aws-1', queues: [{ name: 'orders', deadLetterTargetQueue: 'orders-dlq' }], isLoading: false, isError: false },
+    ]);
+
+    const Wrapper = createWrapper();
+    render(<Wrapper><RulesPage /></Wrapper>);
+
+    await screen.findByText('AWS DEV'); // wait for the card's own scope to resolve first
+    fireEvent.click(screen.getByText('Replay All'));
+
+    expect(screen.getByText('Replay All Matching Messages')).toBeInTheDocument();
+    const dialogNamespaceMatches = screen.getAllByText('AWS DEV');
+    expect(dialogNamespaceMatches.length).toBeGreaterThanOrEqual(2); // card + dialog
+    expect(screen.getAllByText('DLQ: orders-dlq').length).toBeGreaterThanOrEqual(2);
   });
 });

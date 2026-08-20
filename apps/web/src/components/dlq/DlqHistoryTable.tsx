@@ -64,6 +64,33 @@ function truncate(text: string | null, max = 60): string {
   return text.length > max ? text.slice(0, max) + '…' : text;
 }
 
+const RESOLUTION_LABELS: Record<string, string> = {
+  ReplayedByServiceHub: 'Replayed by ServiceHub',
+  PurgedByServiceHub: 'Purged by ServiceHub',
+  VanishedExternally: 'Vanished externally',
+  DeclaredByOperator: 'Declared by operator',
+  Unknown: 'Cause unknown',
+};
+
+/**
+ * Renders `DlqHistoryItem.resolutionCause` — the truthful replacement for the old, sometimes
+ * fabricated "Replayed" status reading (roadmap P2). A row with no cause recorded predates the
+ * Recovery Evidence Ledger; that is stated plainly rather than left blank, which would read as a
+ * bug rather than a known limitation of older data.
+ */
+function ResolutionCauseCell({ cause }: { cause: string | null }) {
+  if (!cause) {
+    return <span className="text-xs text-gray-400 italic">cause not recorded</span>;
+  }
+  const label = RESOLUTION_LABELS[cause] ?? cause;
+  const isExternal = cause === 'VanishedExternally';
+  return (
+    <span className={`text-xs font-medium ${isExternal ? 'text-amber-600' : 'text-gray-600'}`}>
+      {label}
+    </span>
+  );
+}
+
 export function DlqHistoryTable({
   items,
   totalCount,
@@ -180,6 +207,7 @@ export function DlqHistoryTable({
               <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600 w-16">Provider</th>
               <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600">Entity</th>
               <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600 w-28">Status</th>
+              <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600 w-36">Resolution</th>
               <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600 w-36">Category</th>
               <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600 w-28">Replay Safety</th>
               <th scope="col" className="text-left px-4 py-3 font-semibold text-gray-600 w-20">
@@ -222,6 +250,9 @@ export function DlqHistoryTable({
                 </td>
                 <td className="px-4 py-3">
                   <StatusBadge status={item.status} />
+                </td>
+                <td className="px-4 py-3">
+                  <ResolutionCauseCell cause={item.resolutionCause} />
                 </td>
                 <td className="px-4 py-3">
                   <CategoryBadge

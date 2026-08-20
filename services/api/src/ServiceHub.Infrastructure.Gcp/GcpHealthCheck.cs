@@ -125,8 +125,9 @@ public sealed class GcpHealthCheck : IHealthCheck
             data["HealthyGcpNamespaces"] = healthyCount;
             data["UnhealthyGcpNamespaces"] = unhealthyNames.Count;
 
-            if (unhealthyNames.Count > 0)
-                data["UnhealthyGcpNamespaceNames"] = string.Join(", ", unhealthyNames);
+            // Namespace names are deliberately never exposed here: GetActiveAsync() returns every
+            // owner's namespaces unscoped, and /health is unauthenticated, so a name would leak
+            // one tenant's namespace naming to any caller who can merely reach the health endpoint.
 
             if (unhealthyNames.Count == gcpNamespaces.Count)
             {

@@ -718,7 +718,7 @@ export function DashboardPage() {
           <EmptyState
             icon={Globe}
             heading="No namespaces connected yet"
-            subtext="Connect a Service Bus namespace to see it here."
+            subtext="Connect a namespace to see it here."
             action={{ label: 'Connect a namespace', icon: Plus, onClick: () => navigate('/connect') }}
           />
         ) : (

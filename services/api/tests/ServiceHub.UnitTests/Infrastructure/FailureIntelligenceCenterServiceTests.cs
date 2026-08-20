@@ -100,6 +100,8 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
         ProcessedCount = totalMatched,
         FailureCount = failureCount,
         SuccessCount = totalMatched - failureCount,
+        RequestedByIdentity = OwnerId,
+        RequestedByActorKind = RecoveryActorKind.User,
     };
 
     [Fact]
@@ -276,5 +278,7 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
         TopEntityCount: 3,
         TopCategory: "Timeout",
         OldestActiveDetectedAt: DateTimeOffset.UtcNow.AddDays(-1),
-        Severity: severity);
+        Severity: severity,
+        Coverage: FleetMonitoringCoverage.Scanned,
+        CoverageNote: null);
 }

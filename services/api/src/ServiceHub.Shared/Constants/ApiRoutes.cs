@@ -423,6 +423,37 @@ public static class ApiRoutes
         public const string Base = $"{VersionedBase}/me";
     }
 
+    /// <summary>Routes for the Recovery Evidence Ledger.</summary>
+    public static class Recovery
+    {
+        /// <summary>Base route for recovery operation queries.</summary>
+        public const string Base = $"{VersionedBase}/recovery";
+
+        /// <summary>Route for listing recovery operations.</summary>
+        public const string Operations = $"{Base}/operations";
+
+        /// <summary>Route for a specific recovery operation by ID.</summary>
+        public const string OperationById = $"{Operations}/{{id:guid}}";
+
+        /// <summary>Route for exporting one recovery operation's evidence.</summary>
+        public const string OperationExport = $"{OperationById}/export";
+
+        /// <summary>Route for verifying the caller's hash chain, from one operation's context.</summary>
+        public const string OperationVerify = $"{OperationById}/verify";
+
+        /// <summary>Route for listing recovery ledger entries.</summary>
+        public const string Entries = $"{Base}/entries";
+
+        /// <summary>Route for writing off a single recovery ledger entry.</summary>
+        public const string EntryWriteOff = $"{Entries}/{{id:guid}}/write-off";
+
+        /// <summary>Route for the ageing report of open (non-terminal) entries.</summary>
+        public const string Ageing = $"{Base}/ageing";
+
+        /// <summary>Route for one signature's Evidence-Derived Trust Scoring report (roadmap §8.10).</summary>
+        public const string Trust = $"{Base}/trust/{{signatureHash}}";
+    }
+
     /// <summary>Routes for the Investigation Center — incident command for failure investigation.</summary>
     public static class FailureIntelligence
     {

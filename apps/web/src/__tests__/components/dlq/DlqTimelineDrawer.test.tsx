@@ -9,6 +9,10 @@ vi.mock('@servicehub/ui-shared/hooks/useDlqHistory', () => ({
   useUpdateDlqStatus: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
+vi.mock('@servicehub/ui-shared/hooks/useRecoveryLedger', () => ({
+  useRecoveryEntries: vi.fn(() => ({ data: [], isLoading: false })),
+}));
+
 import { useDlqTimeline, useDlqMessageDetail, useUpdateDlqStatus } from '@servicehub/ui-shared/hooks/useDlqHistory';
 
 const mockUseDlqTimeline = useDlqTimeline as ReturnType<typeof vi.fn>;

@@ -36,6 +36,7 @@ export interface Message {
   // Dead-letter specific fields
   deadLetterReason?: string;
   deadLetterSource?: string;
+  deadLetterErrorDescription?: string;
   // Scheduled delivery
   scheduledEnqueueTime?: string;
   // AI Analysis (present when hasAIInsight is true)

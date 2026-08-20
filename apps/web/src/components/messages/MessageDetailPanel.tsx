@@ -131,12 +131,17 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
 
   const openConfirm = (action: 'replay' | 'purge') => {
     const shortId = message.id?.split('-').slice(0, 2).join('-') || `#${message.sequenceNumber}`;
+    // Every destructive-action confirmation must name what it will affect — a namespace/entity
+    // is never implied only by whatever the operator happens to be looking at on screen.
+    const nsLabel = currentNs?.displayName || currentNs?.name || 'unknown namespace';
+    const envLabel = (currentNs?.environment ?? 'dev').toUpperCase();
+    const identityLine = `Namespace: ${nsLabel} (${envLabel}) · Entity: ${entityName || 'unknown'}\n\n`;
 
     if (action === 'replay') {
       setConfirmState({
         isOpen: true,
         title: 'Replay Message',
-        message: `Are you sure you want to replay message ${shortId}?\n\nThis will re-send the message to the queue for processing.\n\n💡 Best practice: validate replay in DEV or UAT before using in PROD. Production namespaces block this action.\n\n⚠️ Replay is best-effort and not atomic. If a transient error occurs after the message is sent but before it is removed from the DLQ, both the original DLQ entry and the new copy may briefly coexist. Check ApplicationProperties for "Replayed=true" if you see unexpected duplicates.`,
+        message: `${identityLine}Are you sure you want to replay message ${shortId}?\n\nThis will re-send the message to the queue for processing.\n\n💡 Best practice: validate replay in DEV or UAT before using in PROD. Production namespaces block this action.\n\n⚠️ Replay is best-effort and not atomic. If a transient error occurs after the message is sent but before it is removed from the DLQ, both the original DLQ entry and the new copy may briefly coexist. Check ApplicationProperties for "Replayed=true" if you see unexpected duplicates.`,
         variant: 'default',
         action: 'replay',
       });
@@ -144,7 +149,7 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
       setConfirmState({
         isOpen: true,
         title: 'Permanently Delete Message',
-        message: `Are you sure you want to permanently delete message ${shortId}?\n\nThis action cannot be undone.`,
+        message: `${identityLine}Are you sure you want to permanently delete message ${shortId}?\n\nThis action cannot be undone.`,
         variant: 'danger',
         action: 'purge',
       });
@@ -205,9 +210,9 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
 
   return (
     <>
-      <div className="flex items-center gap-3 p-4 border-t border-gray-200 bg-white">
+      <div className="shrink-0 flex items-center gap-3 p-4 border-t border-gray-200 bg-white overflow-x-auto">
         {/* Replay Button */}
-        <div className="flex items-center gap-2">
+        <div className="shrink-0 flex items-center gap-2">
           {(() => {
             // Production environment guard — block all replay actions
             if (isProd) {
@@ -215,7 +220,7 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
                 <button
                   disabled
                   title="Replay is disabled for production namespaces. Use your CI/CD pipeline for production message operations."
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-400 rounded-lg font-medium cursor-not-allowed border border-red-200"
+                  className="shrink-0 whitespace-nowrap inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-400 rounded-lg font-medium cursor-not-allowed border border-red-200"
                   aria-label="Replay blocked in production"
                 >
                   <Play size={16} />
@@ -230,7 +235,7 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
                 <button
                   disabled
                   title="Replay requires a SAS policy with Manage permission. Update your connection string to enable replay."
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-400 rounded-lg font-medium cursor-not-allowed border border-amber-200"
+                  className="shrink-0 whitespace-nowrap inline-flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-400 rounded-lg font-medium cursor-not-allowed border border-amber-200"
                   aria-label="Replay blocked — insufficient permissions"
                 >
                   <Play size={16} />
@@ -245,13 +250,13 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
                   <button
                     disabled
                     title="Replay is only available for dead-letter messages — active messages are already being processed"
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-gray-300 text-gray-500 rounded-lg font-medium cursor-not-allowed"
+                    className="shrink-0 whitespace-nowrap inline-flex items-center gap-2 px-4 py-2 bg-gray-300 text-gray-500 rounded-lg font-medium cursor-not-allowed"
                     aria-label="Replay message"
                   >
                     <Play size={16} />
                     Replay
                   </button>
-                  <span className="text-xs text-gray-500 italic max-w-[160px]" title="Active messages are already queued for processing. Replay is for returning dead-letter messages to the main queue.">
+                  <span className="shrink-0 text-xs text-gray-500 italic max-w-[160px]" title="Active messages are already queued for processing. Replay is for returning dead-letter messages to the main queue.">
                     Active messages cannot be replayed
                   </span>
                 </>
@@ -260,7 +265,7 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
 
             return (
               <button
-                className="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition-colors disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+                className="shrink-0 whitespace-nowrap inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition-colors disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
                 onClick={() => openConfirm('replay')}
                 disabled={replayMessage.isPending || !namespaceId}
                 title="Re-send this message from DLQ back to the main queue for reprocessing"
@@ -273,7 +278,7 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
           })()}
         </div>
         <button
-          className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-lg font-medium transition-colors"
+          className="shrink-0 whitespace-nowrap inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-lg font-medium transition-colors"
           onClick={handleCopyId}
           aria-label="Copy message ID to clipboard"
         >
@@ -285,7 +290,7 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
           <button
             disabled
             title={purgeUnsupportedReason}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-400 border border-gray-200 rounded-lg font-medium cursor-not-allowed"
+            className="shrink-0 whitespace-nowrap inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-400 border border-gray-200 rounded-lg font-medium cursor-not-allowed"
             aria-label={`Purge not supported: ${purgeUnsupportedReason}`}
           >
             <Trash2 size={16} />
@@ -295,7 +300,7 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
           <button
             disabled
             title="Purge is disabled for production namespaces. Validate in DEV and UAT first."
-            className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-400 border border-red-200 rounded-lg font-medium cursor-not-allowed"
+            className="shrink-0 whitespace-nowrap inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-400 border border-red-200 rounded-lg font-medium cursor-not-allowed"
             aria-label="Purge blocked in production"
           >
             <Trash2 size={16} />
@@ -303,7 +308,7 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
           </button>
         ) : (
           <button
-            className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-red-50 text-gray-700 hover:text-red-600 border border-gray-200 hover:border-red-200 rounded-lg font-medium transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
+            className="shrink-0 whitespace-nowrap inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-red-50 text-gray-700 hover:text-red-600 border border-gray-200 hover:border-red-200 rounded-lg font-medium transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
             onClick={() => openConfirm('purge')}
             disabled={purgeMessage.isPending || !namespaceId}
             title="Permanently delete this message — cannot be undone"

@@ -25,6 +25,24 @@ public sealed class BulkOperationJob
     /// </summary>
     public required string OwnerId { get; init; }
 
+    // ── Requester actor snapshot (roadmap §29.10) ──────────────────────────────
+    // Persisted at job-creation time, when the requester's real identity is still available from
+    // HttpContext, so the background worker that executes the job later (no HttpContext) can
+    // attribute every ledger write to the human/API-key who actually asked for it instead of
+    // falling back to a synthetic Automation actor. Execution mechanism is not the actor of
+    // record — see BulkOperationExecutor.RunAsync.
+
+    /// <summary>The requester's resolved actor identity, e.g. <c>ApiKey:ops-bot</c> or
+    /// <c>user@example.com</c> — same value <see cref="Models.RecoveryActor.Identity"/> carries.</summary>
+    public required string RequestedByIdentity { get; init; }
+
+    /// <summary>The requester's actor kind, as resolved by <c>ApiControllerBase.ResolveRecoveryActor</c>
+    /// at job-creation time — always <c>User</c> or <c>ApiKey</c> for an HTTP-created job.</summary>
+    public required RecoveryActorKind RequestedByActorKind { get; init; }
+
+    /// <summary>The requester's granted scopes at job-creation time, for API key actors.</summary>
+    public string? RequestedByScopes { get; init; }
+
     /// <summary>Whether this job replays or purges matched messages.</summary>
     public required BulkOperationType OperationType { get; init; }
 

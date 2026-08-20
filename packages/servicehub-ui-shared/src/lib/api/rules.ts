@@ -33,6 +33,8 @@ export interface RuleResponse {
   successRate: number;
   maxReplaysPerHour: number;
   pendingMatchCount: number;
+  disabledReason: 'Manual' | 'CircuitBreaker' | null;
+  disabledReasonDetail: string | null;
 }
 
 export interface RuleMatchResultResponse {

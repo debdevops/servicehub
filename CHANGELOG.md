@@ -1,5 +1,76 @@
 # ServiceHub Changelog
 
+## [3.7.0] — 2026-08-19
+
+Recovery Evidence Ledger — the headline v3.7.0 feature. ServiceHub's replay/purge decisions were
+previously recorded inconsistently and in some paths untruthfully (see "Fixed" below); this
+release adds a durable, append-only, hash-chained, owner-isolated ledger that every provider-
+mutating recovery path writes to, a verification worker that closes entries as `Recovered` /
+`Returned` / `Unverified` based on actually-provable DLQ absence per provider, an ageing/expiry
+sweep, and JSON/CSV evidence export with a non-empty "what ServiceHub does not know" honesty
+manifest on every export. See `docs/RECOVERY-EVIDENCE.md` for the full model and how to
+independently verify a chain from an export. Cross-cloud production validation, bulk-operation
+safety guarding, and Rules Builder accessibility fixes from the prior RC1 hardening pass remain
+below. Since the initial 14 Aug cut, this release also picked up a fleet-wide replay velocity
+cap and per-rule success-rate circuit breaker on top of the Eligibility Gate, a dedicated Live
+Tail workspace, Back/Forward navigation across every Quick Access destination, and a round of
+header/Messages-page UX consolidation. A follow-up deep multi-cloud E2E pass against real Azure/
+AWS/GCP infrastructure on 19 Aug (see "Fixed" and "Security" below) found and fixed five further
+defects — a Live Tail cursor bug, two GCP peek-accounting bugs, an AI Insights false-positive, and
+a Recovery Evidence ledger audit-noise bug — plus a cross-tenant namespace-name disclosure in the
+unauthenticated health endpoints.
+
+### Added
+
+- **Recovery Evidence Ledger core** — `RecoveryOperation` / `RecoveryLedgerEntry` / `RecoveryEvent`, a per-owner SHA-256 hash chain (`RecoveryHashChain`, `RecoveryChainVerifier`), and append-only enforcement in `DlqDbContext.SaveChanges(Async)` that rejects any delete or out-of-allowlist modify against the three ledger tables at the persistence layer, independent of caller discipline.
+- **All seven provider-mutating recovery paths wired to the ledger** — single-message replay/purge, bulk replay/purge, signature replay, `RulesController.ReplayAll` (now routed through `IMessageOperationsService` and the same claim protocol as every other path, rather than an Azure-only client bypass), and AutoReplay rule execution. `RecoveryPathCoverageTests` enforces this with an empty exemption list — a new mutating path that forgets to write to the ledger fails the build.
+- **Marker-based verification** — replay applies an `x-servicehub-recovery-id` application property where the provider supports it, so a later DLQ recurrence is attributed to a specific recovery attempt with certainty; a body-hash heuristic is the documented, honestly-labelled fallback where a marker can't be applied. A window-close sweep (`RecoveryVerificationWorker`) closes each entry based on the owning provider's actual DLQ-absence-proof capability — `Recovered` is structurally unreachable on AWS/GCP under default settings (`AWS_NO_ABSENCE_PROOF` / `GCP_NO_ABSENCE_PROOF`), never approximated.
+- **Ageing, evidence export, and UI** — a restart-safe ageing worker that flags then expires long-non-terminal entries (`AgeingFlagged` always precedes `Expired`), JSON/CSV/manifest evidence export with byte-identical reproducibility across re-exports of an unchanged operation, and three new pages (`/recovery`, `/recovery/:id`, `/recovery/ageing`). Demo Mode exports are watermarked `demoMode: true` end-to-end (manifest, filename, UI) and are never presented as real evidence.
+- **`docs/RECOVERY-EVIDENCE.md`** — the standalone hash-chain and verification-model reference for an external auditor working from an export alone.
+- **Bulk Replay/Purge production-namespace E2E guard** — new Playwright suite proves the Bulk Replay/Bulk Purge buttons on DLQ History are disabled outright (not merely rejected after the fact) against a production namespace, and their confirmation modal never mounts.
+- **Accessibility smoke coverage** — automated axe-core (WCAG2 A/AA) scan of the DLQ History page and the Auto-Replay Rules Builder dialog, added as a Playwright suite via the new `@axe-core/playwright` dev dependency.
+- **Fleet-wide replay velocity cap and per-rule success-rate circuit breaker** — `IAutoReplayExecutor.CanReplayFleetWideAsync` adds a second, owner-wide check (`RecoveryEvidence:FleetReplayVelocityCapPerHour`, default 500/hr) alongside the existing per-rule limit: several individually-reasonable per-rule caps could otherwise sum to a much larger aggregate replay volume than any single rule's own limit implies. The Eligibility Gate escalates on this via a new `FLEET_RATE_LIMITED` predicate-4 reason, distinct from a single rule being rate-limited. Separately, `AutonomyEvaluationWorker` now runs a success-rate circuit breaker each sweep: any enabled `AutoReplayRule` whose most recent `RecoveryEvidence:CircuitBreakerSampleSize` (default 20) *verified* ledger outcomes — `Recovered`/`Returned`, never broker-acceptance alone — fall below `RecoveryEvidence:CircuitBreakerSuccessRateFloor` (default 50%) is automatically disabled, ledger-recorded (`AutoReplayRuleCircuitBreakerTripped`), and announced via a new `servicehub.rule.circuitbreaker.tripped.v1` platform event. This closes the gap where a rule that successfully hands messages back to a queue that immediately re-dead-letters them would otherwise look 100% successful by execution-acceptance alone. `RecoveryEvidence:MaxSignatureSweepBatchSize` (default 1000) also bounds each autonomy sweep's per-cycle signature batch, with an explicit warning logged whenever a sweep hits the cap rather than silently under-covering the backlog.
+- **Live Tail workspace page** (`/live-tail`) — a dedicated, linkable Quick Access destination for watching one queue or topic/subscription in real time, reachable from the sidebar's new "Live Tail" entry. Provider → Namespace → Entity selection lives in the URL, so a session is shareable/bookmarkable/preselectable; streaming itself reuses the existing `useLiveTail()` SSE session — the same logic the in-context `LiveTailPanel` drawer on the Messages page already used — so there is no second backend integration to keep correct, and it inherits the same `ProviderCapabilities.SupportsRepeatablePeek` gating (unsupported on AWS).
+- **Back/Forward navigation for every Quick Access destination** — `QuickAccessToolbar` renders a browser-like Back/Forward pair plus the current workspace's label (Namespace Overview, Incident Center, Fleet Health, Active Messages, Live Tail, Dead-Letter, Scheduled Messages, Cloud Bridge, DLQ Intelligence, Failure Signatures, Auto-Replay Rules, Multi-Cloud Trace, System Health, Audit Trail, Recovery Evidence, Security & Privacy, Help & Guide) above the workspace, so switching between panels via Quick Access no longer strands the user without a way back short of the browser's own controls. `useQuickAccessHistory` tracks the router's own PUSH/REPLACE/POP history to know whether a previous/next entry exists — movement is delegated to the real router history (`navigate(-1)`/`navigate(1)`), not a parallel stack.
+
+### Changed
+
+- **Header consolidated to a single-line connection indicator** — removed the "Current Connections" chip row that listed every connected provider (Azure/AWS/GCP) side by side, and the separate namespace-name/env-badge row beneath it; both are now one compact top-bar indicator (pulsing dot + provider icon + short label, e.g. "AWS" + env badge, e.g. "DEV"). The sidebar's Namespaces panel already handles quick-switching between namespaces, so no functionality was lost.
+- **Messages page info banners merged into one row** — the "more messages available" notice and the AWS SQS delivery-count warning previously stacked as two full-width banners; they now render as a single compact row (full text still available via `title` tooltip), reducing the vertical space non-critical notices take above the message list.
+- **Provider availability UX made consistent across Namespaces, Fleet Health, Quick Access, Connect, and Cloud Bridge** — a new shared `getProviderConnectionState()` derives one of `unavailable` (server flag off) / `available-unconfigured` (flag on, no namespace yet) / `connected` / `connection-issue` per provider from data already fetched, so a disabled or not-yet-configured AWS/GCP provider is never rendered as "0 messages"/healthy the way an empty-but-configured provider is.
+- **Cloud Bridge entity table could be clipped with no scrollbar on a short viewport** — its `h-full` flex sizing could collapse to a few pixels when the provider-status cards above it left little room, and `overflow-hidden` silently clipped the whole table. Added a `min-h-[360px]` floor plus a scrollable parent, so a short viewport scrolls to reach it instead of hiding it.
+
+### Fixed
+
+- **`DlqMonitorWorker` applied AutoReplay rules across tenants** — the background rule scan loaded every enabled rule with no `OwnerId` filter, so any tenant able to create an enabled rule could trigger automated, unauthorised replay in another tenant's namespaces. Now scoped to `r.OwnerId == ns.OwnerId`, with a regression test that seeds two owners and asserts zero cross-owner replays and zero rule evaluation.
+- **`DlqMonitorService` fabricated a `Replayed` outcome on message absence** — a message simply no longer being in the DLQ (which happens for reasons unrelated to ServiceHub, e.g. TTL expiry or a manual operator action) was recorded as ServiceHub having replayed it. Outcomes are now `Resolved` with an honest `ResolutionCause`, never an invented `Replayed`.
+- **Return-to-DLQ erased prior outcome fields** — a message returning to the DLQ after a recorded resolution silently discarded the evidence of what had previously happened to it.
+- **Manual triage could declare `Discarded` with no provider call ever made** — `Discarded` now means "ServiceHub destroyed this," exclusively; a human declaration uses a distinct, clearly-different value.
+- **Failure signature notes length limit not enforced on record binding** — `UpdateSignatureStatusRequest.Notes`'s `[StringLength(4096)]` validation attribute was explicitly scoped to `property:` only, which on a record's positional constructor parameter excludes the constructor parameter itself from carrying the attribute. Removed the explicit target so it applies to both, restoring the length constraint on the signature lifecycle status endpoint (`POST .../signatures/{hash}/status`) used by manual triage and auto-replay's signature transitions.
+
+### Fixed
+
+- **Rules Builder form controls missing programmatic labels** — the Field, Operator, Delay, Max Retries, and Max Replays Per Hour inputs had visual `<label>`s not associated with their controls via `htmlFor`/`id`, failing WCAG 2.4.6/1.3.1 for screen-reader users. Also raised two low-contrast text/button color pairs (`primary-500/600`, `amber-500/600`) to `-700/800` to clear WCAG AA contrast minimums.
+
+### Fixed (19 Aug deep multi-cloud E2E pass)
+
+- **Live Tail was permanently stuck showing nothing on Azure once an entity had more than 25 pre-existing messages** — `ServiceBusClientWrapper.PeekMessagesAsync` creates and disposes a fresh `ServiceBusReceiver` per call, so the SDK's "continue from last peeked position" cursor never survived between polls; every 3-second poll re-peeked the same oldest 25 messages, already marked seen, and could never reach a message arriving after the backlog. `LiveTailSession` now tracks and passes `FromSequenceNumber` explicitly, for Azure only (GCP's sequence numbers rotate per redelivery and are deliberately left untouched; AWS never reaches this class). Live-verified against real Azure after the fix.
+- **GCP peek silently burned delivery-attempt budget, risking spurious dead-lettering** — `GcpMessageReceiver.PullAndNackAsync` issued an extra confirmatory pull that counted toward Pub/Sub's `maxDeliveryAttempts`, so simply viewing Active Messages could push a message into the DLQ on its own. Fixed to no longer spend an extra delivery attempt on a read-only view.
+- **GCP empty message bodies were mislabeled as "unavailable"** — an intentionally empty Pub/Sub message body rendered the same generic unavailable state as a real fetch failure. The two are now distinguished.
+- **AI Insights fabricated an error pattern from a benign `None`-valued property** — any application property matching `errortype`/`exceptiontype` was treated as a real signal regardless of value, so a producer's routine `shs-error-type: None` stamp produced a fabricated "DLQ Pattern: None" finding on messages with no actual error. Sentinel values (`none`, `null`, `n/a`, `na`, `unset`, `undefined`, case-insensitive) are now treated as no signal.
+- **Recovery Evidence ledger flooded with empty operations for auto-replay messages already past the recurrence-lineage cap** — `DlqMonitorWorker` opened a fresh top-level ledger operation on every poll cycle for a message whose lineage had already been declined for exceeding `RecurrenceLineageCap`, producing 100+ near-identical `Targets: 0` rows over hours with no new information. A new side-effect-free `IAutoReplayExecutor.EvaluateEligibilityAsync` pre-check now runs before a ledger operation is opened; the first crossing of the cap is still recorded once. The eligibility gate itself was never bypassed by this bug — no duplicate replay, no safety-check skip, audit-trail noise only.
+
+### Security
+
+- **Webhook URLs were logged verbatim on rejection** — `WebhookNotifier`'s "not a permitted destination" warning included the full configured `Webhooks:Url`; a Slack/Teams incoming-webhook URL is a bearer secret in itself. The log message now states the rejection reason without the URL.
+- **Unauthenticated `/health` and `/health/ready` leaked namespace names across tenants** — `ServiceBusHealthCheck`/`AwsHealthCheck`/`GcpHealthCheck` all call `GetActiveAsync()`, which returns every owner's namespaces unscoped, and included unhealthy namespace *names* in their health-check `data`, which is serialized directly into the `/health` response body — a route `ApiKeyAuthenticationMiddleware` deliberately never authenticates. On a deployment using scoped API keys or OIDC to isolate multiple owners, any caller who could merely reach the health endpoint could read other tenants' namespace names with no credential. All three health checks now report only counts (`UnhealthyNamespaces` / `UnhealthyAwsNamespaces` / `UnhealthyGcpNamespaces`); names are never included.
+
+### Validated
+
+- **Cross-cloud production confidence** — live end-to-end validation against real Azure, AWS, and GCP infrastructure: auth, connectivity, discovery, DLQ, and replay all PASS on all three providers (200 messages each, 0 errors); GCP's manual-DLQ restriction correctly rejected as documented. All 33 temporary cloud resources cleanly destroyed post-validation (`verify-cloud-resources.sh` PASS, 0 residual Terraform state).
+
+---
+
 ## [3.6.0] — 2026-08-10
 
 Stabilization and bug-bash release. No new features, no architectural change — every entry below
@@ -43,6 +114,15 @@ followed it.
 ---
 
 ## [3.4.0] — 2026-08-02
+
+> **Note:** several doc paths named below (`docs/CONFIGURATION.md`, `docs/FLOW.md`,
+> `docs/PROVIDER-SUPPORT.md`, `docs/KNOWN-LIMITATIONS.md`, `docs/COMPREHENSIVE-GUIDE.md`,
+> `docs/EXTENDING-PROVIDERS.md`, `docs/multi-platform/{aws,gcp}/README.md`,
+> `self-hosting/security-hardening/README.md`) were accurate at the time of this release. A later
+> docs-minimization pass consolidated or removed them from the public repository; for current
+> configuration/deployment/security guidance see [`self-hosting/README.md`](self-hosting/README.md),
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), and
+> [`docs/extending/adding-a-provider.md`](docs/extending/adding-a-provider.md).
 
 ### Removed
 

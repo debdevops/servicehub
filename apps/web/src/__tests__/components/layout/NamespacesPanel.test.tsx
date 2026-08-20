@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NamespacesPanel } from '@/components/layout/NamespacesPanel';
+import { DemoModeProvider } from '@servicehub/ui-shared/lib/demo/DemoContext';
 
 vi.mock('@servicehub/ui-shared/lib/api/client', () => ({
   apiClient: {
@@ -25,6 +26,10 @@ vi.mock('@servicehub/ui-shared/hooks/useSubscriptions', () => ({
 vi.mock('@servicehub/ui-shared/hooks/useInsights', () => ({
   useInsightsSummary: vi.fn(),
 }));
+vi.mock('@servicehub/ui-shared/hooks/useCloudBridge', () => ({
+  useProviderStatus: vi.fn(),
+  useProviderCapabilities: vi.fn(),
+}));
 vi.mock('react-hot-toast', () => ({
   default: { error: vi.fn(), success: vi.fn() },
   toast: vi.fn(),
@@ -35,12 +40,15 @@ import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
 import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
 import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
 import { useInsightsSummary } from '@servicehub/ui-shared/hooks/useInsights';
+import { useProviderStatus, useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;
 const mockUseTopics = useTopics as ReturnType<typeof vi.fn>;
 const mockUseSubscriptions = useSubscriptions as ReturnType<typeof vi.fn>;
 const mockUseInsightsSummary = useInsightsSummary as ReturnType<typeof vi.fn>;
+const mockUseProviderStatus = useProviderStatus as ReturnType<typeof vi.fn>;
+const mockUseProviderCapabilities = useProviderCapabilities as ReturnType<typeof vi.fn>;
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -74,6 +82,10 @@ beforeEach(() => {
   mockUseTopics.mockReturnValue({ data: mockTopics, isLoading: false });
   mockUseSubscriptions.mockReturnValue({ data: [], isLoading: false });
   mockUseInsightsSummary.mockReturnValue({ data: undefined });
+  // Azure + AWS already have namespace cards (mockNamespaces); GCP has none and is
+  // enabled — the default fixture exercises the "available-unconfigured" footer row.
+  mockUseProviderStatus.mockReturnValue({ data: { Azure: true, Aws: true, Gcp: true } });
+  mockUseProviderCapabilities.mockReturnValue({ data: undefined });
 });
 
 describe('NamespacesPanel', () => {
@@ -215,5 +227,66 @@ describe('NamespacesPanel', () => {
 
     fireEvent.click(screen.getByLabelText('Expand Namespaces / Connections'));
     expect(screen.getByText('My Namespace')).toBeInTheDocument();
+  });
+
+  it('shows a "Connection issue" pill instead of "Connected" when the last test failed', () => {
+    mockUseNamespaces.mockReturnValue({
+      data: [{ ...mockNamespaces[0], lastConnectionTestSucceeded: false }, mockNamespaces[1]],
+      isLoading: false,
+      refetch: vi.fn(),
+      isRefetching: false,
+    });
+    const Wrapper = createWrapper();
+    render(<Wrapper><NamespacesPanel /></Wrapper>);
+    expect(screen.getByText('Connection issue')).toBeInTheDocument();
+    expect(screen.queryByText('Connected')).not.toBeInTheDocument();
+  });
+
+  it('still shows "Connected" when the last test succeeded or was never run', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><NamespacesPanel /></Wrapper>);
+    expect(screen.getByText('Connected')).toBeInTheDocument();
+  });
+
+  it('lists an enabled, zero-namespace provider (GCP) as "Not configured", not silently omitted', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><NamespacesPanel /></Wrapper>);
+    expect(screen.getByText('GCP')).toBeInTheDocument();
+    expect(screen.getByText('Not configured')).toBeInTheDocument();
+    expect(screen.getByText('+ Connect')).toBeInTheDocument();
+  });
+
+  it('lists a disabled provider as "Not available on this server", never as empty data', () => {
+    mockUseProviderStatus.mockReturnValue({ data: { Azure: true, Aws: true, Gcp: false } });
+    const Wrapper = createWrapper();
+    render(<Wrapper><NamespacesPanel /></Wrapper>);
+    expect(screen.getByText('Not available on this server')).toBeInTheDocument();
+    expect(screen.getByText('Ask an operator')).toBeInTheDocument();
+  });
+
+  it('does not list "Other providers" for a provider that already has a namespace card', () => {
+    // Both Azure and AWS have namespace cards from mockNamespaces; only GCP (0
+    // namespaces) should appear in the footer.
+    const Wrapper = createWrapper();
+    render(<Wrapper><NamespacesPanel /></Wrapper>);
+    expect(screen.getByText('Other providers')).toBeInTheDocument();
+    expect(screen.getAllByText('GCP')).toHaveLength(1);
+  });
+
+  it('does not render the "Other providers" footer in Demo Mode', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <MemoryRouter initialEntries={['/demo/azure/messages']}>
+        <QueryClientProvider client={queryClient}>
+          <DemoModeProvider cloudProvider="azure">
+            <NamespacesPanel />
+          </DemoModeProvider>
+        </QueryClientProvider>
+      </MemoryRouter>
+    );
+    expect(screen.queryByText('Other providers')).not.toBeInTheDocument();
+    expect(screen.queryByText('Not configured')).not.toBeInTheDocument();
   });
 });

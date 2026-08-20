@@ -3,7 +3,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 
 namespace ServiceHub.UnitTests.Infrastructure.Persistence;
 
@@ -15,6 +18,7 @@ namespace ServiceHub.UnitTests.Infrastructure.Persistence;
 public sealed class InterruptedOperationRecoveryTests : IDisposable
 {
     private readonly DlqDbContext _dbContext;
+    private readonly IRecoveryLedger _recoveryLedger;
     private readonly Guid _namespaceId = Guid.NewGuid();
 
     public InterruptedOperationRecoveryTests()
@@ -25,6 +29,7 @@ public sealed class InterruptedOperationRecoveryTests : IDisposable
         _dbContext = new DlqDbContext(options);
         _dbContext.Database.OpenConnection();
         _dbContext.Database.EnsureCreated();
+        _recoveryLedger = new RecoveryLedgerService(_dbContext);
     }
 
     public void Dispose()
@@ -55,7 +60,7 @@ public sealed class InterruptedOperationRecoveryTests : IDisposable
 
     private Task<int> RunRecoveryAsync() =>
         InterruptedOperationRecovery.ReconcileInterruptedOperationsAsync(
-            _dbContext, NullLogger.Instance);
+            _dbContext, _recoveryLedger, NullLogger.Instance);
 
     [Fact]
     public async Task StrandedReplayingMessage_BecomesReplayFailed_AndIsEligibleAgain()
@@ -131,6 +136,69 @@ public sealed class InterruptedOperationRecoveryTests : IDisposable
             .ToListAsync();
 
         history.Should().BeEmpty("an interrupted purge is not a replay attempt");
+    }
+
+    private async Task<Guid> BeginLedgerEntryAsync(DlqMessage message)
+    {
+        var actor = new RecoveryActor("test-actor", RecoveryActorKind.User);
+        var operationResult = await _recoveryLedger.OpenOperationAsync(new OpenRecoveryOperationRequest
+        {
+            OwnerId = message.OwnerId,
+            Kind = RecoveryOperationKind.Replay,
+            Trigger = RecoveryTrigger.Manual,
+            Actor = actor,
+            ScopeDescription = "test",
+            TargetCount = 1,
+        });
+        var entryResult = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operationResult.Value.Id,
+            OwnerId = message.OwnerId,
+            Actor = actor,
+            DlqMessageId = message.Id,
+            BodyHash = message.BodyHash,
+            TargetEntity = message.EntityName,
+        });
+        return entryResult.Value.Id;
+    }
+
+    [Fact]
+    public async Task StrandedMessageWithOpenLedgerEntry_ClosesEntryAsExecutionUnknown()
+    {
+        var message = AddMessage(DlqMessageStatus.Replaying);
+        var entryId = await BeginLedgerEntryAsync(message);
+
+        await RunRecoveryAsync();
+
+        var storedEntry = await _dbContext.RecoveryLedgerEntries.AsNoTracking().SingleAsync(e => e.Id == entryId);
+        storedEntry.State.Should().Be(RecoveryEntryState.ExecutionUnknown);
+
+        var events = await _dbContext.RecoveryEvents.AsNoTracking()
+            .Where(e => e.EntryId == entryId)
+            .ToListAsync();
+        events.Should().Contain(e => e.EventType == RecoveryEventType.ExecutionUnknown);
+    }
+
+    [Fact]
+    public async Task StrandedMessageWithAlreadyClosedLedgerEntry_LeavesEvidenceUntouched()
+    {
+        // An entry that already reached a terminal state before the crash (the provider accepted
+        // the replay and RecordExecutionAsync committed, but the process died before the
+        // subsequent DlqMessage status update) must not be reopened or re-recorded.
+        var message = AddMessage(DlqMessageStatus.Replaying);
+        var entryId = await BeginLedgerEntryAsync(message);
+        await _recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entryId,
+            OwnerId = message.OwnerId,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            Outcome = RecoveryExecutionOutcome.Accepted,
+        });
+
+        await RunRecoveryAsync();
+
+        var storedEntry = await _dbContext.RecoveryLedgerEntries.AsNoTracking().SingleAsync(e => e.Id == entryId);
+        storedEntry.State.Should().Be(RecoveryEntryState.Observing, "already-closed evidence must never be rewritten");
     }
 
     [Theory]

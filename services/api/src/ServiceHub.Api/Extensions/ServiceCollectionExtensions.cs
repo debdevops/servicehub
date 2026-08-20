@@ -7,6 +7,7 @@ using ServiceHub.Api.Security;
 using ServiceHub.Infrastructure;
 using ServiceHub.Infrastructure.Aws;
 using ServiceHub.Infrastructure.Gcp;
+using ServiceHub.Infrastructure.Telemetry;
 
 namespace ServiceHub.Api.Extensions;
 
@@ -116,7 +117,7 @@ public static class ServiceCollectionExtensions
         // Domain metrics (fleet backlog, etc.). AddMetrics guarantees IMeterFactory is available;
         // the meter is only exported when OpenTelemetry is enabled.
         services.AddMetrics();
-        services.AddSingleton<Telemetry.ServiceHubMetrics>();
+        services.AddSingleton<ServiceHubMetrics>();
 
         // Strongly-typed, validated configuration (ServiceBus, RateLimit, Webhooks) with
         // fail-fast at startup. Also binds RateLimitOptions from the "RateLimit" section.

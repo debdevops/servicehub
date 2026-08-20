@@ -56,6 +56,11 @@ public static class EventTypes
     /// </summary>
     public const string RuleMatched = "servicehub.rule.matched.v1";
 
+    /// <summary>
+    /// Raised when the success-rate circuit breaker automatically disables an auto-replay rule.
+    /// </summary>
+    public const string AutoReplayRuleCircuitBreakerTripped = "servicehub.rule.circuitbreaker.tripped.v1";
+
     // ── Bulk Operations ──────────────────────────────────────────────────────
 
     /// <summary>

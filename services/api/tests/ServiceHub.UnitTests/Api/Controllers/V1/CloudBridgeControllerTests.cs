@@ -90,6 +90,25 @@ public sealed class CloudBridgeControllerTests
         capabilities["Azure"].SupportsRepeatablePeek.Should().BeTrue();
         capabilities["Aws"].SupportsRepeatablePeek.Should().BeFalse();
         capabilities["Gcp"].SupportsRepeatablePeek.Should().BeTrue();
+
+        // CanProveDlqAbsence is the fact that determines whether a provider can ever earn L4/L5
+        // auto-replay — must be surfaced to the frontend, not left backend-only.
+        capabilities["Azure"].CanProveDlqAbsence.Should().BeTrue();
+        capabilities["Aws"].CanProveDlqAbsence.Should().BeFalse();
+        capabilities["Gcp"].CanProveDlqAbsence.Should().BeFalse();
+
+        capabilities["Azure"].SupportsRecoveryMarker.Should().BeTrue();
+        capabilities["Aws"].SupportsRecoveryMarker.Should().BeTrue();
+        capabilities["Gcp"].SupportsRecoveryMarker.Should().BeTrue();
+
+        // All three providers have a topic/subscription concept today (Service Bus topics, SNS,
+        // Pub/Sub) — the flags exist so a future queue-only provider can decline them.
+        capabilities["Azure"].SupportsTopics.Should().BeTrue();
+        capabilities["Aws"].SupportsTopics.Should().BeTrue();
+        capabilities["Gcp"].SupportsTopics.Should().BeTrue();
+        capabilities["Azure"].SupportsSubscriptions.Should().BeTrue();
+        capabilities["Aws"].SupportsSubscriptions.Should().BeTrue();
+        capabilities["Gcp"].SupportsSubscriptions.Should().BeTrue();
     }
 
     [Theory]

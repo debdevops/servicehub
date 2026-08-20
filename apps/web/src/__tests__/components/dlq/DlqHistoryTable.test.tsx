@@ -52,10 +52,28 @@ describe('DlqHistoryTable', () => {
     render(<DlqHistoryTable {...defaultProps} />);
     expect(screen.getByText('Entity')).toBeInTheDocument();
     expect(screen.getByText('Status')).toBeInTheDocument();
+    expect(screen.getByText('Resolution')).toBeInTheDocument();
     expect(screen.getByText('Category')).toBeInTheDocument();
     expect(screen.getByText('DLQ Reason')).toBeInTheDocument();
     expect(screen.getByText('Detected')).toBeInTheDocument();
     expect(screen.getByText('Actions')).toBeInTheDocument();
+  });
+
+  it('renders "cause not recorded" for rows with no resolutionCause (pre-ledger legacy data)', () => {
+    render(<DlqHistoryTable {...defaultProps} />);
+    expect(screen.getAllByText('cause not recorded').length).toBeGreaterThan(0);
+  });
+
+  it('renders a truthful resolution cause label when present', () => {
+    const items = [{ ...mockItems[0], resolutionCause: 'ReplayedByServiceHub' }];
+    render(<DlqHistoryTable {...defaultProps} items={items as any} totalCount={1} />);
+    expect(screen.getByText('Replayed by ServiceHub')).toBeInTheDocument();
+  });
+
+  it('flags an externally-vanished message distinctly rather than implying ServiceHub acted', () => {
+    const items = [{ ...mockItems[0], resolutionCause: 'VanishedExternally' }];
+    render(<DlqHistoryTable {...defaultProps} items={items as any} totalCount={1} />);
+    expect(screen.getByText('Vanished externally')).toBeInTheDocument();
   });
 
   it('renders entity names for items', () => {

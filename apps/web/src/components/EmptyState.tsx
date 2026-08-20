@@ -23,7 +23,7 @@ export function EmptyState({ icon: Icon, heading, subtext, action, fillHeight = 
     >
       <Icon className="w-14 h-14 text-gray-300 mb-4" />
       <p className="text-gray-600 font-semibold text-lg mb-1">{heading}</p>
-      {subtext && <p className="text-gray-400 text-sm mb-5 max-w-sm">{subtext}</p>}
+      {subtext && <p className="text-gray-500 text-sm mb-5 max-w-sm">{subtext}</p>}
       {action && (
         <button
           onClick={action.onClick}

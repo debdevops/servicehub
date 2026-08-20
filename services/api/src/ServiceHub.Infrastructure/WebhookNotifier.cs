@@ -59,8 +59,11 @@ public sealed class WebhookNotifier : IWebhookNotifier
 
         if (!TryGetSafeWebhookUri(_options.Url, out var webhookUri))
         {
-            _logger.LogWarning("Webhook URL {Url} is not a permitted destination (must be HTTPS and not an internal address)",
-                _options.Url);
+            // The configured URL is never logged, even redacted: a Slack/Teams webhook URL is a
+            // bearer secret in itself, and the rejection reason (non-HTTPS or internal address)
+            // is enough for an operator to fix their own configuration without it appearing in
+            // plaintext logs.
+            _logger.LogWarning("Configured webhook URL is not a permitted destination (must be HTTPS and not an internal address)");
             return Result.Failure(Error.Validation("Webhook.InvalidUrl",
                 "Webhook URL must be an HTTPS URL pointing to an external host"));
         }
@@ -125,8 +128,11 @@ public sealed class WebhookNotifier : IWebhookNotifier
 
         if (!TryGetSafeWebhookUri(_options.Url, out var webhookUri))
         {
-            _logger.LogWarning("Webhook URL {Url} is not a permitted destination (must be HTTPS and not an internal address)",
-                _options.Url);
+            // The configured URL is never logged, even redacted: a Slack/Teams webhook URL is a
+            // bearer secret in itself, and the rejection reason (non-HTTPS or internal address)
+            // is enough for an operator to fix their own configuration without it appearing in
+            // plaintext logs.
+            _logger.LogWarning("Configured webhook URL is not a permitted destination (must be HTTPS and not an internal address)");
             return Result.Failure(Error.Validation("Webhook.InvalidUrl",
                 "Webhook URL must be an HTTPS URL pointing to an external host"));
         }

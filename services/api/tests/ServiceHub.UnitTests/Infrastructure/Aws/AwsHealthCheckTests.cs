@@ -107,7 +107,11 @@ public sealed class AwsHealthCheckTests
         result.Status.Should().Be(HealthStatus.Degraded);
         result.Data["HealthyAwsNamespaces"].Should().Be(1);
         result.Data["UnhealthyAwsNamespaces"].Should().Be(1);
-        result.Data["UnhealthyAwsNamespaceNames"].Should().Be("aws-broken");
+
+        // /health is unauthenticated and GetActiveAsync() returns every owner's namespaces
+        // unscoped, so a namespace name must never appear in the response — only counts.
+        result.Data.Should().NotContainKey("UnhealthyAwsNamespaceNames");
+        result.Data.Values.OfType<string>().Should().NotContain(s => s.Contains("aws-broken"));
     }
 
     [Fact]

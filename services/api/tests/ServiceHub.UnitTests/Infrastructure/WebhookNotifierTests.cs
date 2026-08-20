@@ -403,6 +403,27 @@ public sealed class WebhookNotifierTests
         handler.CallCount.Should().Be(0);
     }
 
+    [Fact]
+    public async Task NotifyBulkOperationCompleted_InvalidUrl_NeverLogsTheUrl()
+    {
+        // A webhook URL (e.g. a Slack/Teams incoming webhook) is a bearer secret in itself —
+        // rejecting it for being non-HTTPS must not put it in plaintext logs at Warning level.
+        const string secretUrl = "http://hooks.slack.com/services/T00/B00/XXXXSECRETXXXX";
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var logger = new Moq.Mock<Microsoft.Extensions.Logging.ILogger<WebhookNotifier>>();
+        var sut = new WebhookNotifier(
+            new HttpClient(handler), Wrap(DefaultEnabledOptions(url: secretUrl)), AllFormatters, logger.Object);
+
+        var result = await sut.NotifyBulkOperationCompletedAsync(
+            TestJobId, BulkOperationType.Replay, BulkOperationStatus.Completed,
+            TestNamespaceId, TestNamespaceName, 1, 1, 0, 0);
+
+        result.IsFailure.Should().BeTrue();
+        logger.Invocations
+            .Where(i => i.Method.Name == "Log")
+            .Should().NotContain(i => i.Arguments[2]!.ToString()!.Contains(secretUrl));
+    }
+
     // ── Helpers ──────────────────────────────────────────────
 
     /// <summary>

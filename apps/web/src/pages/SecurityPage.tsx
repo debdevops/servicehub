@@ -266,7 +266,7 @@ export function SecurityPage() {
                   The self-hosting guide walks through a complete deployment in under 10 minutes.
                 </p>
                 <a
-                  href="https://github.com/debdevops/servicehub#-quick-start"
+                  href="https://github.com/debdevops/servicehub#quick-start"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs text-blue-700 font-medium hover:text-blue-900 hover:underline mt-3"

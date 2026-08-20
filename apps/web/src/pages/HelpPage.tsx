@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, BookOpen, ChevronDown, ChevronRight, Play, HelpCircle, Download, Zap, MessageSquare } from 'lucide-react';
+import { Search, BookOpen, ChevronDown, ChevronRight, Play, HelpCircle } from 'lucide-react';
 import { helpSections } from '@servicehub/ui-shared/lib/helpContent';
 import { resetTour } from '@/components/help/GuidedTour';
 
@@ -14,16 +14,6 @@ export function HelpPage() {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(helpSections.map((s) => s.id)),
   );
-
-  // Screenshot mappings for visual context
-  const screenshotMap: Record<string, string[]> = {
-    'getting-started': ['/docs/screenshots/ServiceHub-Home-Page.png'],
-    'messages': ['/docs/screenshots/ServiceHub-Active-Message-1.png', '/docs/screenshots/ServiceHub-Message-Detail-Expanded.png'],
-    'dlq': ['/docs/screenshots/ServiceHub-DLQ-Intelligence.png'],
-    'rules': ['/docs/screenshots/ServiceHub-Auto-Replay-Rules.png'],
-    'fab': ['/docs/screenshots/ServiceHub-Dashborad-6.png'],
-    'health': ['/docs/screenshots/ServiceHub-System-Health-Status.png'],
-  };
 
   const filteredSections = useMemo(() => {
     if (!searchQuery.trim()) return helpSections;
@@ -115,34 +105,6 @@ export function HelpPage() {
           </div>
         </div>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-10">
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-center gap-3 mb-2">
-              <Zap className="w-5 h-5 text-amber-500" />
-              <span className="text-xs font-semibold text-gray-500 uppercase">Setup Time</span>
-            </div>
-            <p className="text-lg font-bold text-gray-900">30 seconds</p>
-            <p className="text-xs text-gray-500 mt-1">From install to first debug</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-center gap-3 mb-2">
-              <MessageSquare className="w-5 h-5 text-blue-500" />
-              <span className="text-xs font-semibold text-gray-500 uppercase">Features</span>
-            </div>
-            <p className="text-lg font-bold text-gray-900">15+</p>
-            <p className="text-xs text-gray-500 mt-1">Powerful debugging tools</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-center gap-3 mb-2">
-              <Download className="w-5 h-5 text-green-500" />
-              <span className="text-xs font-semibold text-gray-500 uppercase">No Setup</span>
-            </div>
-            <p className="text-lg font-bold text-gray-900">Free</p>
-            <p className="text-xs text-gray-500 mt-1">100% open source</p>
-          </div>
-        </div>
-
         {/* Search */}
         <div className="relative mb-8">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -190,8 +152,7 @@ export function HelpPage() {
         <div className="space-y-5">
           {filteredSections.map((section) => {
             const isExpanded = expandedSections.has(section.id);
-            const screenshots = screenshotMap[section.id] || [];
-            
+
             return (
               <div
                 key={section.id}
@@ -225,28 +186,6 @@ export function HelpPage() {
                 {/* Items */}
                 {isExpanded && (
                   <div className="border-t border-gray-100">
-                    {/* Screenshot preview if available */}
-                    {screenshots.length > 0 && (
-                      <div className="overflow-x-auto bg-gray-50 px-6 py-4 border-b border-gray-100">
-                        <div className="flex gap-4">
-                          {screenshots.map((src, idx) => (
-                            <div key={idx} className="flex-shrink-0">
-                              <img
-                                src={src}
-                                alt={`${section.title} example ${idx + 1}`}
-                                className="h-32 rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow object-cover"
-                                onError={(e) => {
-                                  // Gracefully handle missing images
-                                  (e.target as HTMLImageElement).style.display = 'none';
-                                }}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                        <p className="text-xs text-gray-600 mt-2">💡 Visual examples - click to expand</p>
-                      </div>
-                    )}
-
                     {/* Content items */}
                     {section.items.map((item, idx) => (
                       <div
@@ -320,17 +259,28 @@ export function HelpPage() {
         <div className="mt-10 bg-gradient-to-r from-primary-600 to-primary-700 rounded-2xl p-8 text-white text-center shadow-lg">
           <h2 className="text-xl font-bold mb-2">Still have questions?</h2>
           <p className="text-primary-100 mb-6">
-            Join our GitHub discussions or check out the documentation for advanced topics.
+            This page stays short on purpose. For a full, screenshot-illustrated walkthrough of
+            every provider and every Quick Access destination, read the public guides — or open
+            a GitHub issue for anything they don't cover.
           </p>
           <div className="flex items-center justify-center gap-4 flex-wrap">
             <a
-              href="https://github.com/debdevops/servicehub/discussions"
+              href="https://github.com/debdevops/servicehub/tree/main/docs/guides"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-6 py-2.5 bg-white text-primary-700 font-semibold rounded-lg hover:bg-gray-100 transition-colors"
             >
+              <span>📚</span>
+              Read the Guides
+            </a>
+            <a
+              href="https://github.com/debdevops/servicehub/issues/new"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-6 py-2.5 border border-white text-white hover:bg-primary-800 font-semibold rounded-lg transition-colors"
+            >
               <span>💬</span>
-              GitHub Discussions
+              Feature Requests
             </a>
             <Link
               to="/security"

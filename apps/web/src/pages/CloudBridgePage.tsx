@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Cloud, RefreshCw, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Inbox, Radio, GitBranch } from 'lucide-react';
 import { useProviderStatus, useCloudEntities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
-import { getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
+import { getProviderStyle, PROVIDER_STATE_STYLES } from '@servicehub/ui-shared/lib/providerStyles';
+import { getProviderConnectionState, type ProviderInstallState } from '@servicehub/ui-shared/lib/providerConnectionState';
 import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
 import { EmptyState } from '@/components/EmptyState';
 import type { CloudEntity } from '@servicehub/ui-shared/lib/api/cloudBridge';
@@ -134,7 +136,12 @@ function EntityTable({ namespaceId, provider }: { namespaceId: string; provider:
   }
 
   return (
-    <div className="h-full rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
+    // min-h floor: the provider-status cards above this can leave very little flex space
+    // in a short viewport — without a floor, h-full collapses to a couple pixels and
+    // overflow-hidden silently clips the whole table (provider bar, rows, pagination too),
+    // with no scrollbar anywhere to reach it. The parent wrapper's overflow-y-auto (see
+    // CloudBridgePage below) is what turns that shortfall into an actual scroll instead.
+    <div className="h-full min-h-[360px] rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
       {/* Provider summary bar */}
       <div className={`shrink-0 flex flex-wrap items-center gap-x-5 gap-y-2 px-5 py-3.5 border-b ${style.headerBorder} ${style.headerBg}`}>
         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-semibold border ${style.badge}`}>
@@ -218,43 +225,49 @@ function EntityTable({ namespaceId, provider }: { namespaceId: string; provider:
   );
 }
 
-/** Per-provider status card — provider identity, live/disabled state, and a quick
- * roll-up of how many namespaces are connected and whether any have a DLQ backlog. */
+/** Per-provider status card — provider identity, install/connection state, and (once
+ * connected) a quick roll-up of how many namespaces are connected and whether any
+ * have a DLQ backlog. "Not configured" and "not available on this server" are kept
+ * visually distinct: both are inert, but only the latter is outside the operator's
+ * control from inside the app. */
 function ProviderStatusCard({
   providerKey,
-  enabled,
+  state,
   namespaceCount,
   dlqCount,
 }: {
   providerKey: string;
-  enabled: boolean;
+  state: ProviderInstallState;
   namespaceCount: number;
   dlqCount: number;
 }) {
   const providerType = PROVIDER_KEY_TO_TYPE[providerKey];
   const style = getProviderStyle(providerType);
+  const stateStyle = PROVIDER_STATE_STYLES[state];
   const label = PROVIDER_LABELS[providerKey] ?? providerKey;
+  const isUnavailable = state === 'unavailable';
+  const hasStats = state === 'connected' || state === 'connection-issue';
 
   return (
     <div
       className={`flex-1 min-w-[220px] rounded-xl border p-4 transition-colors ${
-        enabled ? `bg-white ${style.headerBorder} border-l-4 ${style.accentBorder}` : 'bg-gray-50 border-gray-200'
+        isUnavailable ? 'bg-gray-50 border-gray-200' : `bg-white ${style.headerBorder} border-l-4 ${style.accentBorder}`
       }`}
     >
       <div className="flex items-center gap-3">
-        <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border overflow-hidden ${enabled ? 'border-gray-200 bg-white shadow-sm' : 'border-gray-200 bg-gray-100 opacity-50'}`}>
+        <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border overflow-hidden border-gray-200 bg-white shadow-sm ${stateStyle.iconClass}`}>
           <ProviderIcon provider={providerType} className="w-full h-full" />
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-gray-900 truncate">{label}</p>
-          <span className={`inline-flex items-center gap-1 text-xs font-medium ${enabled ? 'text-green-600' : 'text-gray-400'}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${enabled ? 'bg-green-500' : 'bg-gray-300'}`} />
-            {enabled ? 'Active' : 'Disabled'}
+          <span className={`inline-flex items-center gap-1 text-xs font-medium ${stateStyle.textClass}`}>
+            {stateStyle.dotClass && <span className={`w-1.5 h-1.5 rounded-full ${stateStyle.dotClass}`} />}
+            {stateStyle.label}
           </span>
         </div>
       </div>
 
-      {enabled && (
+      {hasStats && (
         <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
           <span className="text-gray-500">
             <span className="font-bold text-gray-800">{namespaceCount}</span> namespace{namespaceCount === 1 ? '' : 's'} connected
@@ -264,9 +277,17 @@ function ProviderStatusCard({
               <AlertTriangle className="w-3 h-3" />
               {dlqCount.toLocaleString()} dead-lettered
             </span>
-          ) : namespaceCount > 0 ? (
+          ) : (
             <span className="text-gray-400">No backlog</span>
-          ) : null}
+          )}
+        </div>
+      )}
+
+      {state === 'available-unconfigured' && (
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <Link to="/connect" className="text-xs font-medium text-primary-600 hover:text-primary-700">
+            + Add a connection
+          </Link>
         </div>
       )}
     </div>
@@ -323,15 +344,15 @@ export function CloudBridgePage() {
           ) : (
             <div className="flex flex-wrap gap-3">
               {Object.keys(PROVIDER_LABELS).map((key) => {
-                const enabled = providerStatus?.[key] ?? false;
                 const providerType = PROVIDER_KEY_TO_TYPE[key];
+                const state = getProviderConnectionState(providerStatus, namespaces, providerType);
                 const nsForProvider = namespaces?.filter((ns) => ns.cloudProvider === providerType) ?? [];
                 const dlqForProvider = nsForProvider.reduce((sum, ns) => sum + (dlqByNamespaceId.get(ns.id) ?? 0), 0);
                 return (
                   <ProviderStatusCard
                     key={key}
                     providerKey={key}
-                    enabled={enabled}
+                    state={state}
                     namespaceCount={nsForProvider.length}
                     dlqCount={dlqForProvider}
                   />
@@ -371,9 +392,12 @@ export function CloudBridgePage() {
         )}
       </div>
 
-      {/* Scrollable entity grid — fills all remaining vertical space */}
+      {/* Scrollable entity grid — fills all remaining vertical space. overflow-y-auto is the
+          fallback for a short viewport: EntityTable's min-h-[360px] floor keeps it from being
+          crushed to nothing, and this scroll is what makes anything past that floor reachable
+          when the fixed header above leaves less than 360px of room. */}
       {hasEnabledProviders && (
-        <div className="flex-1 min-h-0 px-6 pb-6 max-w-6xl w-full mx-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 max-w-6xl w-full mx-auto">
           {selectedNamespaceId && providerForNamespace ? (
             <EntityTable namespaceId={selectedNamespaceId} provider={providerForNamespace} />
           ) : (

@@ -407,8 +407,13 @@ export function ConnectPage() {
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div
                       className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                        ns.isActive ? 'bg-green-500' : 'bg-gray-300'
+                        !ns.isActive
+                          ? 'bg-gray-300'
+                          : ns.lastConnectionTestSucceeded === false
+                            ? 'bg-amber-500'
+                            : 'bg-green-500'
                       }`}
+                      title={ns.isActive && ns.lastConnectionTestSucceeded === false ? 'Last connection test failed' : undefined}
                     />
                     <div className="min-w-0 flex-1">
                       <h3
@@ -551,8 +556,9 @@ export function ConnectPage() {
                   }`}
                   title="Amazon Web Services SQS"
                 >
-                  <ProviderIcon provider="aws" className="w-6 h-6" />
+                  <ProviderIcon provider="aws" className={`w-6 h-6 ${awsEnabled ? '' : 'grayscale opacity-50'}`} />
                   <span>AWS</span>
+                  {!awsEnabled && <span className="text-[9px] font-normal normal-case text-gray-400">Not available</span>}
                   {cloudProvider === 'aws' && (
                     <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">Selected</span>
                   )}
@@ -569,8 +575,9 @@ export function ConnectPage() {
                   }`}
                   title="Google Cloud Pub/Sub"
                 >
-                  <ProviderIcon provider="gcp" className="w-6 h-6" />
+                  <ProviderIcon provider="gcp" className={`w-6 h-6 ${gcpEnabled ? '' : 'grayscale opacity-50'}`} />
                   <span>GCP</span>
+                  {!gcpEnabled && <span className="text-[9px] font-normal normal-case text-gray-400">Not available</span>}
                   {cloudProvider === 'gcp' && (
                     <span className="text-[10px] bg-green-100 text-green-600 px-1.5 py-0.5 rounded-full">Selected</span>
                   )}
@@ -931,25 +938,23 @@ export function ConnectPage() {
                 >
                   <option value="dev">DEV — Development</option>
                   <option value="uat">UAT — User Acceptance Testing</option>
-                  <option value="prod">PROD — Production</option>
+                  <option value="prod" disabled>PROD — Production (disabled)</option>
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
-                  {environment === 'prod' ? (
-                    <>
-                      <span className="text-amber-600 font-semibold">⚠️ Production namespace:</span>
-                      {' '}Quick Actions (replay, send, generate) are disabled for safety. Validate your workflow in DEV and UAT first.
-                    </>
-                  ) : environment === 'uat' ? (
+                  {environment === 'uat' ? (
                     <>
                       <span className="text-amber-700 font-medium">UAT namespace:</span>
-                      {' '}Validate replay rules and DLQ behaviour here before connecting to PROD.
+                      {' '}Validate replay rules and DLQ behaviour here.
                     </>
                   ) : (
                     <>
                       <span className="text-green-700 font-medium">Recommended: start with a DEV namespace.</span>
-                      {' '}Test DLQ inspection, replay rules, and message operations safely before moving to UAT or PROD.
+                      {' '}Test DLQ inspection, replay rules, and message operations safely.
                     </>
                   )}
+                </p>
+                <p className="text-xs text-amber-600 mt-1">
+                  ⚠️ Production connectivity is disabled. Connect namespaces in Dev or UAT.
                 </p>
               </div>
 
@@ -1058,7 +1063,7 @@ export function ConnectPage() {
                     Your data never leaves your infrastructure.
                   </p>
                   <a
-                    href="https://github.com/debdevops/servicehub/blob/main/self-hosting/README.md"
+                    href="https://github.com/debdevops/servicehub#quick-start"
                     target="_blank" rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800"
                   >

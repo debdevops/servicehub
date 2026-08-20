@@ -5,6 +5,7 @@ using ServiceHub.Infrastructure;
 using ServiceHub.Infrastructure.Aws;
 using ServiceHub.Infrastructure.Gcp;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Core.Interfaces;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -135,8 +136,9 @@ using (var scope = app.Services.CreateScope())
         // InterruptedOperationRecovery for the full rationale.
         try
         {
+            var recoveryLedger = scope.ServiceProvider.GetRequiredService<IRecoveryLedger>();
             await InterruptedOperationRecovery.ReconcileInterruptedOperationsAsync(
-                dlqDbContext, app.Logger);
+                dlqDbContext, recoveryLedger, app.Logger);
         }
         catch (Exception recoveryEx)
         {

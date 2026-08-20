@@ -1,4 +1,5 @@
 export { StatusBadge, CategoryBadge, TrendBadge } from './StatusBadge';
+export { SignatureSummaryCard, AutonomyStatus } from './SignatureSummaryCard';
 export { DlqHistoryTable } from './DlqHistoryTable';
 export { DlqTimelineDrawer } from './DlqTimelineDrawer';
 export { BulkOperationPreviewModal } from './BulkOperationPreviewModal';

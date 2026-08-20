@@ -1,8 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
-import { X, Clock, AlertCircle, CheckCircle, XCircle, ArrowRight, FileText } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { X, Clock, AlertCircle, CheckCircle, XCircle, ArrowRight, FileText, ShieldCheck } from 'lucide-react';
 import { useDlqTimeline, useDlqMessageDetail, useUpdateDlqNotes, useUpdateDlqStatus } from '@servicehub/ui-shared/hooks/useDlqHistory';
+import { useRecoveryEntries } from '@servicehub/ui-shared/hooks/useRecoveryLedger';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { StatusBadge, CategoryBadge } from './StatusBadge';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
+import { VerificationResultNote } from '@/components/recovery/VerificationResultNote';
 
 interface DlqTimelineDrawerProps {
   messageId: number | null;
@@ -45,8 +49,18 @@ function formatRelativeTime(ts: string): string {
 }
 
 export function DlqTimelineDrawer({ messageId, onClose }: DlqTimelineDrawerProps) {
+  const { isDemoMode, cloudProvider } = useDemoContext();
+  const navPrefix = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
   const { data: timeline, isLoading: timelineLoading } = useDlqTimeline(messageId);
   const { data: detail, isLoading: detailLoading } = useDlqMessageDetail(messageId);
+  const { data: recoveryEntries } = useRecoveryEntries({ dlqMessageId: messageId ?? undefined }, messageId !== null);
+  // Most recent entry only — a message can be replayed more than once over its life, and the
+  // "recovery record" here is meant as a quick pointer to the current evidence, not a full
+  // history (the ledger operation page is the full history).
+  const latestRecoveryEntry = useMemo(
+    () => (recoveryEntries ?? []).slice().sort((a, b) => b.begunAt.localeCompare(a.begunAt))[0] ?? null,
+    [recoveryEntries],
+  );
 
   const isOpen = messageId !== null;
 
@@ -199,6 +213,22 @@ export function DlqTimelineDrawer({ messageId, onClose }: DlqTimelineDrawerProps
                       {detail.deadLetterErrorDescription && (
                         <p className="text-red-600 mt-1 text-xs">{detail.deadLetterErrorDescription}</p>
                       )}
+                    </div>
+                  )}
+
+                  {latestRecoveryEntry && (
+                    <div className="bg-teal-50/60 rounded-lg p-3 border border-teal-100">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-teal-600" />
+                        <span className="text-xs font-semibold text-teal-800 uppercase">Recovery record</span>
+                      </div>
+                      <VerificationResultNote entry={latestRecoveryEntry} />
+                      <Link
+                        to={`${navPrefix}/recovery/${latestRecoveryEntry.operationId}`}
+                        className="inline-block mt-2 text-xs text-teal-700 hover:underline font-medium"
+                      >
+                        View full evidence →
+                      </Link>
                     </div>
                   )}
 

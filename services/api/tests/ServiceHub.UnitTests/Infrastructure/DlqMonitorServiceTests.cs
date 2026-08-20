@@ -23,6 +23,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
     private readonly Mock<IForensicEngineRouter> _forensicMock = new();
     private readonly Mock<ICloudMessagingProvider> _providerMock = new();
     private readonly Mock<IMessageReceiver> _receiverMock = new();
+    private readonly Mock<IRecoveryLedger> _recoveryLedgerMock = new();
 
     private readonly Guid _namespaceId = Guid.NewGuid();
 
@@ -34,6 +35,17 @@ public sealed class DlqMonitorServiceTests : IDisposable
         _dbContext = new DlqDbContext(options);
         _dbContext.Database.OpenConnection();
         _dbContext.Database.EnsureCreated();
+
+        // Default: no open recovery ledger entries anywhere — matches every test's synthetic
+        // messages, which carry no x-servicehub-recovery-id marker and correlate to no entry.
+        // Tests exercising recurrence detection override these explicitly.
+        _recoveryLedgerMock
+            .Setup(x => x.FindByMarkerAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((RecoveryLedgerEntry?)null);
+        _recoveryLedgerMock
+            .Setup(x => x.FindHeuristicRecurrenceCandidatesAsync(
+                It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<RecoveryLedgerEntry>());
     }
 
     public void Dispose()
@@ -67,7 +79,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
 
         return new DlqMonitorService(
             _dbContext, _repoMock.Object, router, _forensicMock.Object,
-            configuration, logGuard ?? new DlqNotMonitoredLogGuard(),
+            configuration, _recoveryLedgerMock.Object, logGuard ?? new DlqNotMonitoredLogGuard(),
             logger ?? NullLogger<DlqMonitorService>.Instance);
     }
 
@@ -170,7 +182,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
         var act = () => new DlqMonitorService(
             null!, _repoMock.Object, router, _forensicMock.Object,
-            EmptyConfig(), new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
+            EmptyConfig(), _recoveryLedgerMock.Object, new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("dbContext");
     }
 
@@ -180,7 +192,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
         var act = () => new DlqMonitorService(
             _dbContext, null!, router, _forensicMock.Object,
-            EmptyConfig(), new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
+            EmptyConfig(), _recoveryLedgerMock.Object, new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("namespaceRepository");
     }
 
@@ -189,7 +201,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
     {
         var act = () => new DlqMonitorService(
             _dbContext, _repoMock.Object, null!, _forensicMock.Object,
-            EmptyConfig(), new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
+            EmptyConfig(), _recoveryLedgerMock.Object, new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("router");
     }
 
@@ -199,7 +211,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
         var act = () => new DlqMonitorService(
             _dbContext, _repoMock.Object, router, null!,
-            EmptyConfig(), new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
+            EmptyConfig(), _recoveryLedgerMock.Object, new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("forensicEngine");
     }
 
@@ -209,8 +221,18 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
         var act = () => new DlqMonitorService(
             _dbContext, _repoMock.Object, router, _forensicMock.Object,
-            null!, new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
+            null!, _recoveryLedgerMock.Object, new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("configuration");
+    }
+
+    [Fact]
+    public void Constructor_NullRecoveryLedger_Throws()
+    {
+        var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
+        var act = () => new DlqMonitorService(
+            _dbContext, _repoMock.Object, router, _forensicMock.Object,
+            EmptyConfig(), null!, new DlqNotMonitoredLogGuard(), NullLogger<DlqMonitorService>.Instance);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("recoveryLedger");
     }
 
     [Fact]
@@ -219,7 +241,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
         var act = () => new DlqMonitorService(
             _dbContext, _repoMock.Object, router, _forensicMock.Object,
-            EmptyConfig(), null!, NullLogger<DlqMonitorService>.Instance);
+            EmptyConfig(), _recoveryLedgerMock.Object, null!, NullLogger<DlqMonitorService>.Instance);
         act.Should().Throw<ArgumentNullException>().WithParameterName("notMonitoredLogGuard");
     }
 
@@ -229,7 +251,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
         var act = () => new DlqMonitorService(
             _dbContext, _repoMock.Object, router, _forensicMock.Object,
-            EmptyConfig(), new DlqNotMonitoredLogGuard(), null!);
+            EmptyConfig(), _recoveryLedgerMock.Object, new DlqNotMonitoredLogGuard(), null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -401,7 +423,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ScanNamespace_AzureQueueWithZeroDlq_NotPeeked_ReconcilesStaleMessages()
+    public async Task ScanNamespace_AzureQueueWithZeroDlq_NotPeeked_ReconcilesStaleMessagesAsResolved()
     {
         var sut = CreateSut(CloudProviderType.Azure);
         SetupNamespace(CloudProviderType.Azure);
@@ -420,9 +442,12 @@ public sealed class DlqMonitorServiceTests : IDisposable
             r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
+        // An empty DLQ proves absence, not that ServiceHub replayed the message — a background
+        // scan must never fabricate "Replayed" (see the critical invariant in DlqMonitorService).
         var msg = await _dbContext.DlqMessages.FirstAsync();
-        msg.Status.Should().Be(DlqMessageStatus.Replayed);
-        msg.ReplayedAt.Should().NotBeNull();
+        msg.Status.Should().Be(DlqMessageStatus.Resolved);
+        msg.ResolvedAt.Should().NotBeNull();
+        msg.ResolutionCause.Should().Be(DlqResolutionCause.VanishedExternally);
     }
 
     [Fact]
@@ -489,7 +514,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ScanNamespace_MessageRemovedFromDlq_MarkedAsReplayed()
+    public async Task ScanNamespace_MessageRemovedFromDlq_MarkedAsResolvedVanishedExternally()
     {
         var sut = CreateSut(CloudProviderType.Azure);
         SetupNamespace(CloudProviderType.Azure);
@@ -508,21 +533,27 @@ public sealed class DlqMonitorServiceTests : IDisposable
 
         result.IsSuccess.Should().BeTrue();
 
+        // Absence from a peek sample proves the message left the DLQ, not that ServiceHub
+        // replayed it — external drain, TTL expiry, and another tool are equally possible, so
+        // the cause is recorded as VanishedExternally rather than an unverified "Replayed".
         var removedMsg = await _dbContext.DlqMessages.FirstAsync(m => m.SequenceNumber == 50);
-        removedMsg.Status.Should().Be(DlqMessageStatus.Replayed);
-        removedMsg.ReplayedAt.Should().NotBeNull();
+        removedMsg.Status.Should().Be(DlqMessageStatus.Resolved);
+        removedMsg.ResolvedAt.Should().NotBeNull();
+        removedMsg.ResolutionCause.Should().Be(DlqResolutionCause.VanishedExternally);
     }
 
     [Fact]
-    public async Task ScanNamespace_PreviouslyReplayedMessage_ReappearsInDlq_StatusUpdatedToActive()
+    public async Task ScanNamespace_PreviouslyResolvedMessage_ReappearsInDlq_StatusUpdatedToActive_PriorEvidencePreserved()
     {
         var sut = CreateSut(CloudProviderType.Azure);
         SetupNamespace(CloudProviderType.Azure);
 
-        var replayed = MakeStoredMessage("reappeared-msg", 75, "test-queue",
-            status: DlqMessageStatus.Replayed);
-        replayed.ReplayedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
-        _dbContext.DlqMessages.Add(replayed);
+        var resolved = MakeStoredMessage("reappeared-msg", 75, "test-queue",
+            status: DlqMessageStatus.Resolved);
+        var priorResolvedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        resolved.ResolvedAt = priorResolvedAt;
+        resolved.ResolutionCause = DlqResolutionCause.VanishedExternally;
+        _dbContext.DlqMessages.Add(resolved);
         await _dbContext.SaveChangesAsync();
 
         SetupEntities(MakeEntity("test-queue", "Queue", 1, CloudProviderType.Azure));
@@ -535,9 +566,49 @@ public sealed class DlqMonitorServiceTests : IDisposable
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be(0); // Not counted as "new"
 
+        // The prior resolution is real evidence of what was previously recorded — a message
+        // returning to the DLQ must not erase it (P3).
         var msg = await _dbContext.DlqMessages.FirstAsync();
         msg.Status.Should().Be(DlqMessageStatus.Active);
-        msg.ReplayedAt.Should().BeNull();
+        msg.ResolvedAt.Should().Be(priorResolvedAt);
+        msg.ResolutionCause.Should().Be(DlqResolutionCause.VanishedExternally);
+    }
+
+    // ── DlqMonitorWorker live-scan-vs-in-flight-claim race regression ─────
+
+    [Theory]
+    [InlineData(DlqMessageStatus.Replaying)]
+    [InlineData(DlqMessageStatus.Purging)]
+    public async Task ScanNamespace_MessageClaimedByLiveReplayOrPurge_ScanDoesNotResetToActive(
+        DlqMessageStatus claimStatus)
+    {
+        // Regresses the DlqMonitorWorker reconciliation race: a message is still physically
+        // present in the DLQ only because its claiming executor (BulkOperationExecutor,
+        // SignatureReplayExecutor, AutoReplayExecutor, or a manual replay/purge) hasn't finished
+        // its provider call (e.g. SQS SendMessage-then-DeleteMessage) yet — it has not "returned"
+        // to the DLQ. Resetting Status here races the live executor's own concurrency-token save:
+        // its terminal update (Replayed/ReplayFailed/Discarded) then loses to this scan's stale
+        // token and throws, dropping the DlqMessage/ReplayHistory record of an outcome the
+        // Recovery Ledger already recorded correctly. See DlqMonitorService.ScanNamespaceAsync.
+        var sut = CreateSut(CloudProviderType.Azure);
+        SetupNamespace(CloudProviderType.Azure);
+
+        var claimed = MakeStoredMessage("in-flight-msg", 88, "test-queue", status: claimStatus);
+        _dbContext.DlqMessages.Add(claimed);
+        await _dbContext.SaveChangesAsync();
+
+        SetupEntities(MakeEntity("test-queue", "Queue", 1, CloudProviderType.Azure));
+
+        // The message the live executor is working is still visible in the DLQ.
+        SetupPeek(MakeMessage(88, "in-flight-msg"));
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(0); // Not counted as "new"
+
+        var msg = await _dbContext.DlqMessages.FirstAsync();
+        msg.Status.Should().Be(claimStatus, "the scan must leave a transient claim state untouched");
     }
 
     // ── C6 regression: paging past the first PeekBatchSize (100) messages ─
@@ -644,7 +715,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task ScanNamespace_AwsQueueWithZeroDlqCount_NotPeeked_ReconcilesStaleMessages()
+    public async Task ScanNamespace_AwsQueueWithZeroDlqCount_NotPeeked_ReconcilesStaleMessagesAsResolved()
     {
         var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
         SetupNamespace(CloudProviderType.Aws);
@@ -666,8 +737,9 @@ public sealed class DlqMonitorServiceTests : IDisposable
             Times.Never);
 
         var msg = await _dbContext.DlqMessages.FirstAsync();
-        msg.Status.Should().Be(DlqMessageStatus.Replayed);
-        msg.ReplayedAt.Should().NotBeNull();
+        msg.Status.Should().Be(DlqMessageStatus.Resolved);
+        msg.ResolvedAt.Should().NotBeNull();
+        msg.ResolutionCause.Should().Be(DlqResolutionCause.VanishedExternally);
     }
 
     [Fact]
@@ -717,7 +789,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ScanNamespace_AwsMessageGone_ReconciledByMessageId()
+    public async Task ScanNamespace_AwsMessageGone_ReconciledByMessageId_MarkedResolved()
     {
         var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
         SetupNamespace(CloudProviderType.Aws);
@@ -734,8 +806,9 @@ public sealed class DlqMonitorServiceTests : IDisposable
         result.IsSuccess.Should().BeTrue();
 
         var goneMsg = await _dbContext.DlqMessages.FirstAsync(m => m.MessageId == "gone-msg");
-        goneMsg.Status.Should().Be(DlqMessageStatus.Replayed);
-        goneMsg.ReplayedAt.Should().NotBeNull();
+        goneMsg.Status.Should().Be(DlqMessageStatus.Resolved);
+        goneMsg.ResolvedAt.Should().NotBeNull();
+        goneMsg.ResolutionCause.Should().Be(DlqResolutionCause.VanishedExternally);
     }
 
     [Fact]
@@ -781,6 +854,35 @@ public sealed class DlqMonitorServiceTests : IDisposable
         _receiverMock.Verify(
             r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task ScanNamespace_AwsSnsSubscriptionWithZeroDlqCount_ReconcilesStaleMessage_KeyMatchesStoredFormat()
+    {
+        // P9 regression: AWS/GCP ListEntitiesAsync reports subscriptions as "topic/sub", but
+        // DlqMessage.EntityName always persists the normalized "topic/subscriptions/sub" form
+        // (the same format ParseEntity/ScanEntityDlqAsync use for every provider). Before the
+        // fix, the namespace-level reconcile keyed its lookup on the raw "topic/sub" name and
+        // so never matched a stored row, meaning this entity's stale messages were never
+        // reconciled at all.
+        var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
+        SetupNamespace(CloudProviderType.Aws);
+
+        _dbContext.DlqMessages.Add(MakeStoredMessage(
+            "stale-sns-msg", 99, "orders-topic/subscriptions/order-processor", CloudProviderType.Aws,
+            entityType: ServiceBusEntityType.Subscription));
+        await _dbContext.SaveChangesAsync();
+
+        // AWS SNS subscriptions are listed as "topic/sub", not "topic/subscriptions/sub".
+        SetupEntities(MakeEntity("orders-topic/order-processor", "Subscription", 0, CloudProviderType.Aws));
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+
+        var msg = await _dbContext.DlqMessages.FirstAsync();
+        msg.Status.Should().Be(DlqMessageStatus.Resolved);
+        msg.ResolutionCause.Should().Be(DlqResolutionCause.VanishedExternally);
     }
 
     // ═══════════════════════════════════════════════════════════════
