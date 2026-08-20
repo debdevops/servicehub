@@ -3,7 +3,7 @@
 **Status: Experimental — not the supported product surface.** This is a standalone workspace app,
 separate from `apps/web` (the real ServiceHub SPA) and separate from `apps/web`'s own in-app Demo
 Mode routes (`/demo/azure`, `/demo/aws`, `/demo/gcp`), which are the ones the root
-[README](../../README.md#try-it) documents and Playwright covers in CI.
+[README](../../README.md#quick-start) documents and Playwright covers in CI.
 
 ## Purpose
 

@@ -9,8 +9,8 @@ It is honest about a hard limit up front: the chain is **tamper-evident, not tam
 Anyone with write access to the underlying SQLite file can recompute the entire chain and produce
 a self-consistent forgery. Verification here detects *casual or partial* alteration — a changed
 field, a wrong link, a gap in sequence — not a determined adversary with database access. There is
-no cryptographic signing or external notarization in this release (deliberately deferred; see the
-project roadmap).
+no cryptographic signing or external notarization in this release — deliberately deferred, not
+overlooked, so that this document doesn't overclaim what the chain actually protects against.
 
 ## 1. Data model
 

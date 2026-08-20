@@ -20,51 +20,20 @@
 
 ---
 
-## 📚 User Guides — Cloud Provider Guides
+## What is ServiceHub?
 
-Already connected and want to know what to actually *do* with ServiceHub? Each guide below is a
-plain-language, screenshot-illustrated walkthrough of the full message-debugging journey —
-browsing, DLQ investigation, AI Insights, replay, and the Recovery Evidence Ledger — verified
-live against a real namespace, with an honest, explicit list of what's supported and what isn't
-for that cloud:
-
-- **[🧭 Quick Access Guide](docs/guides/quick-access-guide.md)** — every navigation shortcut explained, with a full navigation map
-- **[☁️ Azure Service Bus Guide](docs/guides/azure-guide.md)** — the fully supported (GA) provider
-- **[🟧 AWS SQS/SNS Guide](docs/guides/aws-guide.md)** — Preview, with SQS's own limitations explained
-- **[🟩 GCP Pub/Sub Guide](docs/guides/gcp-guide.md)** — Preview, with Pub/Sub's own limitations explained
-
-New to ServiceHub and haven't connected a cloud account yet? Start with
-[LOCAL-DEPLOYMENT.md](LOCAL-DEPLOYMENT.md) instead — it covers installing ServiceHub and
-connecting your first namespace, with a link back to the matching guide above once you're in.
-
----
-
-## What do you want to do?
-
-```
-Just try ServiceHub?             → Demo                     (#try-it)
-Run on my laptop?                → With Docker              (#docker-fastest-with-docker)
-                                  → Without Docker           (#one-command-setup-without-docker-from-source)
-Test my real cloud?              → AWS / Azure / GCP         (self-hosting/README.md#cloud-credentials-least-privilege-setup)
-Run ServiceHub inside my org?    → Azure App Service         (#azure-app-service-recommended)
-                                  → Azure Container Apps      (#azure-container-apps-alternative)
-Want a ready-made container?     → GHCR                      (#container-image)
-```
-
-No cloud account, credentials, or infrastructure are required for the first option. Every
-option below runs the same single Docker image — nothing is a separate build.
-
-Never used Docker or a terminal before? Skip the links above and follow
-**[LOCAL-DEPLOYMENT.md](LOCAL-DEPLOYMENT.md)** — the same "run on my laptop" steps, written
-for a non-technical reader with screenshots at every step.
+**ServiceHub is a self-hosted, open-source forensic debugger for cloud message queues.** Point
+it at Azure Service Bus, AWS SQS/SNS, or GCP Pub/Sub and it gives you what the cloud console
+won't: full message bodies, real-time search, AI-assisted dead-letter pattern detection, one-click
+replay, and a permanent, tamper-evident record of every recovery decision it makes — all running
+in a single process you control, with no message data ever leaving your network. Azure Service Bus
+is fully supported (GA); AWS and GCP are in preview.
 
 ---
 
 ## Why ServiceHub?
 
 Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-Letter Queue** — but you can't read their bodies or search them without writing throwaway scripts. You manually sample messages one by one, spending hours on what should take minutes.
-
-**ServiceHub is an ultra-fast, self-hosted web application that gives engineers full forensic visibility into their cloud message queues** — like a debugger, but for Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub.
 
 > **Your cloud console shows you counts. ServiceHub shows you answers.**
 
@@ -74,99 +43,10 @@ Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-
 > [!TIP]
 > **No credentials?** The Welcome page's **"Try a live demo"** buttons open a fully client-side demo walkthrough per cloud — no backend, no cloud account needed.
 
-```mermaid
-%%{init: {'theme':'dark', 'themeVariables': { 'fontSize':'22px', 'primaryTextColor':'#ffffff', 'fontFamily':'arial', 'lineColor':'#ffffff'}}}%%
-graph TB
-    subgraph UI["🌐 UI — React 19 SPA"]
-        SPA["TanStack Query hooks<br/>Axios API client"]
-    end
-
-    subgraph Core["🧭 PROVIDER-NEUTRAL CORE"]
-        ROUTER["CloudProviderRouter<br/>the extension point — one interface, N providers"]
-        CAPS["ProviderCapabilities<br/>honest per-provider asymmetry"]
-        SAFETY["Safety rails<br/>Peek-only by default · replay/send blocked on production namespaces"]
-    end
-
-    subgraph Providers["☁️ CLOUD PROVIDERS — same ICloudMessagingProvider contract"]
-        AZ["Azure Service Bus<br/>GA"]
-        AWS["AWS SQS / SNS<br/>Preview"]
-        GCP["GCP Pub/Sub<br/>Preview"]
-    end
-
-    subgraph Storage["💾 PERSISTENCE — two stores, by design"]
-        JSON["Namespaces<br/>JSON file"]
-        SQLITE["DLQ history · audit · bulk ops<br/>SQLite"]
-    end
-
-    SPA --> ROUTER
-    ROUTER --> CAPS
-    ROUTER --> SAFETY
-    ROUTER --> AZ
-    ROUTER --> AWS
-    ROUTER --> GCP
-    ROUTER --> JSON
-    ROUTER --> SQLITE
-
-    style UI fill:#1565c0,stroke:#0d47a1,stroke-width:3px,color:#fff
-    style Core fill:#388e3c,stroke:#1b5e20,stroke-width:3px,color:#fff
-    style Providers fill:#d84315,stroke:#bf360c,stroke-width:3px,color:#fff
-    style Storage fill:#004d40,stroke:#00695c,stroke-width:3px,color:#fff
-```
-
----
-
-## Try It
-
-> **New to the command line or Docker?** Follow
-> **[LOCAL-DEPLOYMENT.md](LOCAL-DEPLOYMENT.md)** instead — a plain-language,
-> screenshot-by-screenshot guide with no assumed technical background.
-
-ServiceHub encrypts stored connection strings at rest, so it needs two secrets generated on your
-machine before first run. There are no defaults — a shipped default key would be identical across
-every deployment that never overrode it.
-
-```bash
-git clone https://github.com/debdevops/servicehub.git
-cd servicehub
-
-cp .env.example .env
-printf 'SECURITY__ENCRYPTIONKEY=%s\n'    "$(openssl rand -hex 32)" >> .env
-printf 'SECURITY__SPATOKEN__SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
-
-docker compose up --build
-```
-
-Open **[http://localhost:8080](http://localhost:8080)**, then connect a namespace with your own
-cloud credentials. The port is bound to `127.0.0.1` (loopback) only by default, so it isn't
-reachable from your network until you deliberately change that.
-
-Prefer not to build locally? Pull the official image instead of `--build`:
-`docker pull ghcr.io/debdevops/servicehub:latest` (see [Container Image](#container-image)).
-
-If you skip the `.env` step, `docker compose` stops immediately and names the variable that is
-missing rather than starting a container that fails its configuration check.
-
-No credentials yet? The Welcome page's **"Try a live demo"** buttons open a fully client-side
-demo walkthrough per cloud (`/demo/azure`, `/demo/aws`, `/demo/gcp`) — no backend calls, no
-credentials, safe to click around before connecting anything real. This is the supported, tested
-demo experience and the one worth trying first.
-
-For connecting real cloud credentials, persistent storage, and production hardening, see
-[Quick Start](#quick-start) below.
-
-<details>
-<summary>Two additional, experimental standalone apps exist in this repo (<code>apps/demo</code>, <code>apps/sandbox</code>) — click to expand</summary>
-
-`./run.sh demo` and `./run.sh sandbox` (or `./run.sh all`) start two separate exploratory apps on
-ports 5174 and 5175. They're real and launchable, but **experimental and unsupported** — no test
-suite, not covered by the e2e suite, CI only checks that they build and typecheck. If you just want
-to try ServiceHub, use the in-app demo above instead. See
-[`apps/demo/README.md`](apps/demo/README.md) and [`apps/sandbox/README.md`](apps/sandbox/README.md)
-for what each one is for.
-
-</details>
-
----
+<p align="center">
+  <a href="docs/screenshots/showcase/01-dlq-populated.jpg"><img src="docs/screenshots/showcase/01-dlq-populated.jpg" width="85%"/></a>
+  <br/><sub>A real Dead-Letter Queue in ServiceHub — 168 AWS SQS failures, honest about what SQS does and doesn't tell you about them.</sub>
+</p>
 
 | Capability | Standard Cloud Portals | ServiceHub |
 |---|---|---|
@@ -180,6 +60,61 @@ for what each one is for.
 | Correlation ID tracing | ❌ Not available | ✅ Trace journeys across all queues |
 | Scheduled message management | ❌ Not available | ✅ View, reschedule, and cancel (Azure only — see the provider table below) |
 | Cross-cloud message trace | ❌ Not available | ✅ Trace across Azure + AWS + GCP (AWS/GCP require an operator to enable them on the server) |
+
+---
+
+## 🛡️ Investigate → Recover → Prove It Happened
+
+That's the whole product, in three words. **Investigate** a failure with full message bodies and
+AI-assisted pattern clustering — not just a count. **Recover** it with one-click or automated
+replay, safety-gated on production namespaces. **Prove it happened** with the Recovery Evidence
+Ledger, a permanent, append-only, hash-chained record of exactly what ServiceHub asked the
+provider to do and what it subsequently observed — so replay isn't a black box you have to trust
+blindly.
+
+Every screenshot below is a real capture — live Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub
+namespaces connected to ServiceHub simultaneously, not mocked data. Click any image to open it
+full-size.
+
+<table>
+<tr>
+<td width="33%"><a href="docs/screenshots/showcase/01-dlq-populated.jpg"><img src="docs/screenshots/showcase/01-dlq-populated.jpg" width="100%"/></a><br/><sub><b>1. Investigate</b> — Dead-Letter Queue, 168 real AWS failures, AI-tagged</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/02-ai-findings.jpg"><img src="docs/screenshots/showcase/02-ai-findings.jpg" width="100%"/></a><br/><sub><b>2. Investigate</b> — AI Findings clusters the pattern, confidence scored, never hidden</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/03-multi-cloud-connected.jpg"><img src="docs/screenshots/showcase/03-multi-cloud-connected.jpg" width="100%"/></a><br/><sub><b>3. Investigate</b> — Azure, AWS, and GCP connected side by side, one UI</sub></td>
+</tr>
+<tr>
+<td width="33%"><a href="docs/screenshots/showcase/04-auto-replay-circuit-breaker.jpg"><img src="docs/screenshots/showcase/04-auto-replay-circuit-breaker.jpg" width="100%"/></a><br/><sub><b>4. Recover</b> — Auto-Replay Rules, with a real circuit breaker that self-disables on low success</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/05-recovery-evidence-ledger.jpg"><img src="docs/screenshots/showcase/05-recovery-evidence-ledger.jpg" width="100%"/></a><br/><sub><b>5. Prove it happened</b> — the Recovery Evidence Ledger, one row per recovery decision</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/06-recovery-evidence-detail.jpg"><img src="docs/screenshots/showcase/06-recovery-evidence-detail.jpg" width="100%"/></a><br/><sub><b>6. Prove it happened</b> — one operation's hash chain, verifiable and exportable as evidence</sub></td>
+</tr>
+</table>
+
+See the [Quick Access Guide](docs/guides/quick-access-guide.md) for what every one of these
+screens does, and the cloud provider guides linked below
+([Azure](docs/guides/azure-guide.md) / [AWS](docs/guides/aws-guide.md) /
+[GCP](docs/guides/gcp-guide.md)) for a full walkthrough per provider.
+
+---
+
+## Multi-Cloud Bridge
+
+ServiceHub extends beyond Azure Service Bus to support **AWS SQS/SNS** and **GCP Pub/Sub** via the Cloud Bridge — a dedicated page that lists every queue, topic, and subscription for a selected non-Azure namespace in one provider-agnostic view, independent of the Correlation ID tracing described below.
+
+| Provider | Status | Browse & Search | Dead-Letter | Replay | Purge | Send & Test Tools³ | Cross-Cloud Trace |
+|----------|--------|-----------------|-------------|--------|-------|--------------------|-------------------|
+| **Azure Service Bus** | ✅ GA | ✅ | ✅ | ✅ | — (SDK limitation) | ✅ | ✅ |
+| **AWS SQS / SNS** | 🔶 Preview | ✅ | ✅ (redrive DLQ) | ✅ | ✅ | ✅ | ✅¹ |
+| **GCP Pub/Sub** | 🔶 Preview | ✅ | ✅ peek (nack/ack deadline)² | ✅ | ✅ | ✅ | ✅¹ |
+
+¹ Cross-Cloud Trace searches any namespace whose provider is registered in the API's dependency-injection container. Azure is always registered; AWS/GCP registration is disabled by default in this build — register the provider to exercise AWS/GCP trace search.
+² GCP Pub/Sub dead-lettering is policy-driven via `MaxDeliveryAttempts`; ServiceHub reads the DLQ through the subscription's configured dead-letter topic, and its test tooling moves messages there by republishing through the subscription's dead-letter policy. Message counts are unavailable via the Pub/Sub API and are reported as `0`.
+³ Test tools (send a message, generate realistic test data, push messages to the DLQ) are available only on **DEV** namespaces with a Manage-level connection — never in UAT or production.
+
+**Preview** means: implemented and unit-tested, not validated against live AWS/GCP services in this project's own CI, capability-gated, no parity guarantee with Azure.
+
+### 🌐 Cross-Cloud Trace
+Connect namespaces from two or more cloud providers and use **Multi-Cloud Trace** to trace a single Correlation ID or message GUID as it routes from Azure $\rightarrow$ AWS $\rightarrow$ GCP (or any combination). The result is a visual routing path diagram, a chronological hop timeline, and a namespace search-coverage panel.
+*(Azure namespaces are always searched in parallel. AWS and GCP namespaces are searched the same way whenever those providers are registered on the server; if a provider isn't registered, its namespaces are skipped with a reason shown in the search-coverage panel instead of being silently omitted.)*
 
 ---
 
@@ -224,7 +159,10 @@ Turn the dead-letter history into a triage workflow. From any message, **Resolve
 Define rules that watch DLQ messages and automatically replay them when conditions match. Recover from common failures without manual intervention.
 - **AI-generated rules** or pre-built templates for timeouts and throttles.
 - **Flexible matching** by DLQ reason, error description, entity, delivery count, or regex.
-- **Safety controls** with rate limiting to prevent overwhelming downstream services.
+- **Safety controls** with rate limiting to prevent overwhelming downstream services — including a **circuit breaker** that disables a rule automatically when its real-world success rate drops too low, so a bad rule can't quietly keep failing.
+
+### 🎯 Failure Signature Intelligence — Name the Repeat, Not Just the Symptom
+Recurring dead-letter patterns get clustered into a named, confidence-scored **Failure Signature** with its own lifecycle (new → investigating → resolved) and guided replay — so the fifth time `PaymentGatewayError` shows up, you're managing a known case instead of re-diagnosing from scratch. Backed by a searchable knowledge base of what worked last time.
 
 ### 🔎 Real-Time Search & Correlation Explorer
 Search across message body, properties, and headers instantly. Filter 1,000+ messages down to exactly what you need in under a second. Paste any Correlation ID to trace a message's full journey across all queues, topics, and namespaces.
@@ -235,89 +173,11 @@ See every message queued for future delivery. Reschedule or cancel individual me
 ### 📈 Multi-Namespace Dashboard
 One glance at every connected namespace — Azure, AWS, and GCP side by side, sorted by DLQ severity. Each card shows live active/DLQ/scheduled counts, a health badge, and one-click jumps into Browse Queues or DLQ History. Quick Actions surface the four things you reach for during an incident: Browse All DLQs, All Scheduled, Cross-Cloud Trace, Auto-Replay Rules.
 
-### 📝 Audit Trail
-Every critical operation — send, replay, purge, dead-letter, rule changes — is written to a persistent, per-owner audit log: timestamp, user, cloud/environment, action, resource, and outcome. Exportable, filterable, and isolated so one tenant can never see another's history.
+### 📝 Audit Trail & Recovery Evidence Ledger
+Every critical operation — send, replay, purge, dead-letter, rule changes — is written to a persistent, per-owner **Audit Trail**: timestamp, user, cloud/environment, action, resource, and outcome. Exportable, filterable, and isolated so one tenant can never see another's history. Replay and purge specifically get a second, deeper record: the **Recovery Evidence Ledger** (`/recovery`) — an append-only, hash-chained history of exactly what ServiceHub asked the provider to do and what it subsequently observed, so a recovery claim never has to just be taken on faith. See [`docs/RECOVERY-EVIDENCE.md`](docs/RECOVERY-EVIDENCE.md) for the full technical model.
 
 ### 🛡️ Security & Privacy Page
 An in-app page that answers the trust question before anyone has to ask it: a diagram of exactly how data moves from browser → ServiceHub server → cloud SDK, what's encrypted (connection strings, AES-256-GCM), what's redacted from logs, and what's never stored (message bodies, plaintext secrets) — with links to verify each claim directly in the open-source code.
-
----
-
-## Multi-Cloud Bridge
-
-ServiceHub extends beyond Azure Service Bus to support **AWS SQS/SNS** and **GCP Pub/Sub** via the Cloud Bridge — a dedicated page that lists every queue, topic, and subscription for a selected non-Azure namespace in one provider-agnostic view, independent of the Correlation ID tracing described below.
-
-| Provider | Status | Browse & Search | Dead-Letter | Replay | Purge | Send & Test Tools³ | Cross-Cloud Trace |
-|----------|--------|-----------------|-------------|--------|-------|--------------------|-------------------|
-| **Azure Service Bus** | ✅ GA | ✅ | ✅ | ✅ | — (SDK limitation) | ✅ | ✅ |
-| **AWS SQS / SNS** | 🔶 Preview | ✅ | ✅ (redrive DLQ) | ✅ | ✅ | ✅ | ✅¹ |
-| **GCP Pub/Sub** | 🔶 Preview | ✅ | ✅ peek (nack/ack deadline)² | ✅ | ✅ | ✅ | ✅¹ |
-
-¹ Cross-Cloud Trace searches any namespace whose provider is registered in the API's dependency-injection container. Azure is always registered; AWS/GCP registration is disabled by default in this build — register the provider to exercise AWS/GCP trace search.
-² GCP Pub/Sub dead-lettering is policy-driven via `MaxDeliveryAttempts`; ServiceHub reads the DLQ through the subscription's configured dead-letter topic, and its test tooling moves messages there by republishing through the subscription's dead-letter policy. Message counts are unavailable via the Pub/Sub API and are reported as `0`.
-³ Test tools (send a message, generate realistic test data, push messages to the DLQ) are available only on **DEV** namespaces with a Manage-level connection — never in UAT or production.
-
-**Preview** means: implemented and unit-tested, not validated against live AWS/GCP services in this project's own CI, capability-gated, no parity guarantee with Azure.
-
-### 🌐 Cross-Cloud Trace
-Connect namespaces from two or more cloud providers and use **Multi-Cloud Trace** to trace a single Correlation ID or message GUID as it routes from Azure $\rightarrow$ AWS $\rightarrow$ GCP (or any combination). The result is a visual routing path diagram, a chronological hop timeline, and a namespace search-coverage panel.
-*(Azure namespaces are always searched in parallel. AWS and GCP namespaces are searched the same way whenever those providers are registered on the server; if a provider isn't registered, its namespaces are skipped with a reason shown in the search-coverage panel instead of being silently omitted.)*
-
----
-
-## Visual Showcase
-
-Every screenshot below is a real capture — live Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub namespaces connected to ServiceHub simultaneously, not mocked data. Click any image to open it full-size.
-
-### 💀 The Core Story — 5,000 Dead Letters to a Fixed Root Cause
-
-<table>
-<tr>
-<td width="33%"><a href="docs/screenshots/23-ServiceHub-DLQ-Populated-MultiCloud.png"><img src="docs/screenshots/23-ServiceHub-DLQ-Populated-MultiCloud.png" width="100%"/></a><br/><sub><b>1. Dead-Letter Queue</b> — populated with real failures, AI-tagged</sub></td>
-<td width="33%"><a href="docs/screenshots/08-ServiceHub-Search-Messages.png"><img src="docs/screenshots/08-ServiceHub-Search-Messages.png" width="100%"/></a><br/><sub><b>2. Search</b> — filter thousands of messages down to exactly what you need</sub></td>
-<td width="33%"><a href="docs/screenshots/18-ServiceHub-Message-Detail-Safety.png"><img src="docs/screenshots/18-ServiceHub-Message-Detail-Safety.png" width="100%"/></a><br/><sub><b>3. Open one</b> — full forensic properties; Replay correctly disabled on active messages</sub></td>
-</tr>
-<tr>
-<td width="33%"><a href="docs/screenshots/03-ServiceHub-Message-Detail-Expanded.png"><img src="docs/screenshots/03-ServiceHub-Message-Detail-Expanded.png" width="100%"/></a><br/><sub><b>4. Read the body</b> — full JSON/XML with syntax highlighting</sub></td>
-<td width="33%"><a href="docs/screenshots/07-ServiceHub-Auto-Replay-1.png"><img src="docs/screenshots/07-ServiceHub-Auto-Replay-1.png" width="100%"/></a><br/><sub><b>5. Replay it</b> — one-click, or an auto-replay rule for the whole cluster</sub></td>
-<td width="33%"></td>
-</tr>
-</table>
-
-### 🌐 Multi-Cloud
-
-<table>
-<tr>
-<td width="33%"><a href="docs/screenshots/13-ServiceHub-MultiCloud-Dashboard.png"><img src="docs/screenshots/13-ServiceHub-MultiCloud-Dashboard.png" width="100%"/></a><br/><sub><b>Multi-Namespace Dashboard</b> — all 3 clouds, sorted by DLQ severity</sub></td>
-<td width="33%"><a href="docs/screenshots/16-ServiceHub-AWS-SNS-FanOut.png"><img src="docs/screenshots/16-ServiceHub-AWS-SNS-FanOut.png" width="100%"/></a><br/><sub><b>AWS SNS Fan-Out</b> — subscription status &amp; live queue depth (preview)</sub></td>
-<td width="33%"><a href="docs/screenshots/17-ServiceHub-GCP-Message-Detail.png"><img src="docs/screenshots/17-ServiceHub-GCP-Message-Detail.png" width="100%"/></a><br/><sub><b>GCP Pub/Sub Message Detail</b> — same forensic UI, different cloud (preview)</sub></td>
-</tr>
-<tr>
-<td width="33%"><a href="docs/screenshots/22-ServiceHub-Cloud-Bridge.png"><img src="docs/screenshots/22-ServiceHub-Cloud-Bridge.png" width="100%"/></a><br/><sub><b>Cloud Bridge</b> — cross-provider entity browser</sub></td>
-<td width="33%"></td>
-<td width="33%"></td>
-</tr>
-</table>
-
-### 🛡️ Investigate → Recover → Prove It Happened
-
-<table>
-<tr>
-<td width="33%"><a href="docs/screenshots/guides/azure/05-ai-insights.png"><img src="docs/screenshots/guides/azure/05-ai-insights.png" width="100%"/></a><br/><sub><b>AI Insights</b> — heuristic pattern clustering, always labeled "not a confirmed fact"</sub></td>
-<td width="33%"><a href="docs/screenshots/guides/quick-access/14-recovery-evidence-ledger.png"><img src="docs/screenshots/guides/quick-access/14-recovery-evidence-ledger.png" width="100%"/></a><br/><sub><b>Recovery Evidence Ledger</b> — a permanent, append-only record of every replay</sub></td>
-<td width="33%"><a href="docs/screenshots/guides/quick-access/03-fleet-health.png"><img src="docs/screenshots/guides/quick-access/03-fleet-health.png" width="100%"/></a><br/><sub><b>Fleet Health</b> — dead-letter trend across every namespace, at a glance</sub></td>
-</tr>
-<tr>
-<td width="33%"><a href="docs/screenshots/guides/quick-access/05-live-tail.png"><img src="docs/screenshots/guides/quick-access/05-live-tail.png" width="100%"/></a><br/><sub><b>Live Tail</b> — watch messages arrive in real time (Azure &amp; GCP)</sub></td>
-<td width="33%"><a href="docs/screenshots/guides/quick-access/10-auto-replay-rules.png"><img src="docs/screenshots/guides/quick-access/10-auto-replay-rules.png" width="100%"/></a><br/><sub><b>Auto-Replay Rules</b> — with a real circuit breaker that self-disables on low success</sub></td>
-<td width="33%"><a href="docs/screenshots/guides/quick-access/21-failure-signature-detail.png"><img src="docs/screenshots/guides/quick-access/21-failure-signature-detail.png" width="100%"/></a><br/><sub><b>Failure Signature detail</b> — confidence-scored root-cause clustering</sub></td>
-</tr>
-</table>
-
-See the [Quick Access Guide](docs/guides/quick-access-guide.md) for what every one of these
-screens does, and the cloud provider guides linked near the top of this page
-([Azure](docs/guides/azure-guide.md) / [AWS](docs/guides/aws-guide.md) /
-[GCP](docs/guides/gcp-guide.md)) for a full walkthrough per provider.
 
 ---
 
@@ -349,6 +209,25 @@ screens does, and the cloud provider guides linked near the top of this page
 
 ---
 
+## 📚 User Guides — Cloud Provider Guides
+
+Already connected and want to know what to actually *do* with ServiceHub? Each guide below is a
+plain-language, screenshot-illustrated walkthrough of the full message-debugging journey —
+browsing, DLQ investigation, AI Insights, replay, and the Recovery Evidence Ledger — verified
+live against a real namespace, with an honest, explicit list of what's supported and what isn't
+for that cloud:
+
+- **[🧭 Quick Access Guide](docs/guides/quick-access-guide.md)** — every navigation shortcut explained, with a full navigation map
+- **[☁️ Azure Service Bus Guide](docs/guides/azure-guide.md)** — the fully supported (GA) provider
+- **[🟧 AWS SQS/SNS Guide](docs/guides/aws-guide.md)** — Preview, with SQS's own limitations explained
+- **[🟩 GCP Pub/Sub Guide](docs/guides/gcp-guide.md)** — Preview, with Pub/Sub's own limitations explained
+
+New to ServiceHub and haven't connected a cloud account yet? Start with
+[LOCAL-DEPLOYMENT.md](LOCAL-DEPLOYMENT.md) instead — it covers installing ServiceHub and
+connecting your first namespace, with a link back to the matching guide above once you're in.
+
+---
+
 ## Recommended Usage Flow
 
 Follow this path before connecting to a production namespace. This protects your live environment and gives you confidence in every operation before it matters.
@@ -362,24 +241,38 @@ Follow this path before connecting to a production namespace. This protects your
 
 ---
 
-## Deployment Model
-
-ServiceHub is **self-hosted, single-instance software for one team** — not a multi-tenant SaaS
-platform. Every deployment is one process: one SQLite database (DLQ history, auto-replay rules,
-audit trail) and one in-process event bus, both scoped to that process's own lifetime. There is no
-shared state between instances and no supported way to run two instances against the same data
-directory.
-
-This is a **deliberate choice for this release, not an omission**. It keeps the architecture
-simple, the data local, and the operational surface small — the trade-off is no horizontal
-scaling and no built-in multi-tenant isolation beyond the per-owner scoping OIDC/API keys already
-provide.
-
----
-
 ## Quick Start
 
+### What do you want to do?
+
+```
+Just try ServiceHub?             → Demo                     (below)
+Run on my laptop?                → With Docker              (#docker-fastest-with-docker)
+                                  → Without Docker           (#one-command-setup-without-docker-from-source)
+Test my real cloud?              → AWS / Azure / GCP         (self-hosting/README.md#cloud-credentials-least-privilege-setup)
+Run ServiceHub inside my org?    → Azure App Service         (#azure-app-service-recommended)
+                                  → Azure Container Apps      (#azure-container-apps-alternative)
+Want a ready-made container?     → GHCR                      (#container-image)
+```
+
+No cloud account, credentials, or infrastructure are required for the first option. Every
+option below runs the same single Docker image — nothing is a separate build.
+
+Never used Docker or a terminal before? Skip the commands below and follow
+**[LOCAL-DEPLOYMENT.md](LOCAL-DEPLOYMENT.md)** — the same "run on my laptop" steps, written
+for a non-technical reader with screenshots at every step.
+
+> [!TIP]
+> **No credentials yet?** The Welcome page's **"Try a live demo"** buttons open a fully
+> client-side demo walkthrough per cloud (`/demo/azure`, `/demo/aws`, `/demo/gcp`) — no backend
+> calls, no credentials, safe to click around before connecting anything real. This is the
+> supported, tested demo experience and the one worth trying first.
+
 ### Docker (fastest, with Docker)
+
+ServiceHub encrypts stored connection strings at rest, so it needs two secrets generated on your
+machine before first run. There are no defaults — a shipped default key would be identical across
+every deployment that never overrode it.
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git
@@ -392,10 +285,16 @@ printf 'SECURITY__SPATOKEN__SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
 docker compose up --build
 ```
 
-Step-by-step with screenshots (no Docker/command-line experience assumed):
-[LOCAL-DEPLOYMENT.md](LOCAL-DEPLOYMENT.md).
+Open **[http://localhost:8080](http://localhost:8080)**, then connect a namespace with your own
+cloud credentials. The port is bound to `127.0.0.1` (loopback) only by default, so it isn't
+reachable from your network until you deliberately change that. One image serves both the SPA and
+the API.
 
-Open **[http://localhost:8080](http://localhost:8080)**, then connect a namespace with your own cloud credentials. One image serves both the SPA and the API.
+Prefer not to build locally? Pull the official image instead of `--build`:
+`docker pull ghcr.io/debdevops/servicehub:latest` (see [Container Image](#container-image)).
+
+If you skip the `.env` step, `docker compose` stops immediately and names the variable that is
+missing rather than starting a container that fails its configuration check.
 
 To point at real cloud messaging with persisted data and production hardening, run the image in Production mode. Every variable below is **required** — the app validates its Production configuration at startup and refuses to start if any is missing or still holds a `SET_VIA_ENV_VAR` placeholder:
 
@@ -458,6 +357,33 @@ AWS and GCP least-privilege IAM policies (exact SDK actions ServiceHub calls, JS
 `gcloud` commands included) are in [Self-Hosting → Cloud credentials](self-hosting/README.md#cloud-credentials-least-privilege-setup).
 Quick "create a resource, connect it, verify it, tear it down" walkthroughs for all three
 clouds are in [Self-Hosting → Quick end-to-end test](self-hosting/README.md#quick-end-to-end-test).
+
+<details>
+<summary>Two additional, experimental standalone apps exist in this repo (<code>apps/demo</code>, <code>apps/sandbox</code>) — click to expand</summary>
+
+`./run.sh demo` and `./run.sh sandbox` (or `./run.sh all`) start two separate exploratory apps on
+ports 5174 and 5175. They're real and launchable, but **experimental and unsupported** — no test
+suite, not covered by the e2e suite, CI only checks that they build and typecheck. If you just want
+to try ServiceHub, use the in-app demo mentioned above instead. See
+[`apps/demo/README.md`](apps/demo/README.md) and [`apps/sandbox/README.md`](apps/sandbox/README.md)
+for what each one is for.
+
+</details>
+
+---
+
+## Deployment Model
+
+ServiceHub is **self-hosted, single-instance software for one team** — not a multi-tenant SaaS
+platform. Every deployment is one process: one SQLite database (DLQ history, auto-replay rules,
+audit trail) and one in-process event bus, both scoped to that process's own lifetime. There is no
+shared state between instances and no supported way to run two instances against the same data
+directory.
+
+This is a **deliberate choice for this release, not an omission**. It keeps the architecture
+simple, the data local, and the operational surface small — the trade-off is no horizontal
+scaling and no built-in multi-tenant isolation beyond the per-owner scoping OIDC/API keys already
+provide.
 
 ---
 
@@ -542,7 +468,7 @@ all. Attach Azure Files storage the same way as App Service, mounted at both
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `docker compose up` exits immediately, names a missing variable | `SECURITY__ENCRYPTIONKEY` or `SECURITY__SPATOKEN__SECRET` unset | `cp .env.example .env` and fill both in — see [Try It](#try-it) |
+| `docker compose up` exits immediately, names a missing variable | `SECURITY__ENCRYPTIONKEY` or `SECURITY__SPATOKEN__SECRET` unset | `cp .env.example .env` and fill both in — see [Quick Start](#quick-start) |
 | App starts but every request is rejected / wrong host | `AllowedHosts` or `SITEURL` doesn't match the hostname you're actually visiting | Set both to the real external hostname, not `localhost`, once you're off loopback |
 | Creating an AWS or GCP namespace returns `503` | `CloudProviders:Aws:Enabled` / `CloudProviders:Gcp:Enabled` is `false` (Azure-only by default) | Set `CLOUDPROVIDERS__AWS__ENABLED=true` / `CLOUDPROVIDERS__GCP__ENABLED=true` before connecting that provider |
 | `/health/live` fails after deploy | Container isn't listening on the platform's expected port, or hasn't finished startup config validation | Confirm `WEBSITES_PORT`/`--target-port` is `8080`; check container logs for the startup config validator's specific missing-variable error |
@@ -578,6 +504,45 @@ When enabled, telemetry is strictly limited to request durations, error codes, a
 ## Architecture
 
 ServiceHub is a modern Single Page Application communicating with a .NET Core backend.
+
+```mermaid
+%%{init: {'theme':'dark', 'themeVariables': { 'fontSize':'22px', 'primaryTextColor':'#ffffff', 'fontFamily':'arial', 'lineColor':'#ffffff'}}}%%
+graph TB
+    subgraph UI["🌐 UI — React 19 SPA"]
+        SPA["TanStack Query hooks<br/>Axios API client"]
+    end
+
+    subgraph Core["🧭 PROVIDER-NEUTRAL CORE"]
+        ROUTER["CloudProviderRouter<br/>the extension point — one interface, N providers"]
+        CAPS["ProviderCapabilities<br/>honest per-provider asymmetry"]
+        SAFETY["Safety rails<br/>Peek-only by default · replay/send blocked on production namespaces"]
+    end
+
+    subgraph Providers["☁️ CLOUD PROVIDERS — same ICloudMessagingProvider contract"]
+        AZ["Azure Service Bus<br/>GA"]
+        AWS["AWS SQS / SNS<br/>Preview"]
+        GCP["GCP Pub/Sub<br/>Preview"]
+    end
+
+    subgraph Storage["💾 PERSISTENCE — two stores, by design"]
+        JSON["Namespaces<br/>JSON file"]
+        SQLITE["DLQ history · audit · bulk ops<br/>SQLite"]
+    end
+
+    SPA --> ROUTER
+    ROUTER --> CAPS
+    ROUTER --> SAFETY
+    ROUTER --> AZ
+    ROUTER --> AWS
+    ROUTER --> GCP
+    ROUTER --> JSON
+    ROUTER --> SQLITE
+
+    style UI fill:#1565c0,stroke:#0d47a1,stroke-width:3px,color:#fff
+    style Core fill:#388e3c,stroke:#1b5e20,stroke-width:3px,color:#fff
+    style Providers fill:#d84315,stroke:#bf360c,stroke-width:3px,color:#fff
+    style Storage fill:#004d40,stroke:#00695c,stroke-width:3px,color:#fff
+```
 
 ```
 Browser (React 19 SPA)
@@ -666,7 +631,7 @@ Have a use-case that should shape this? [Open a feature request](https://github.
 
 <div align="center">
 
-**ServiceHub** — Because your Service Bus messages should not be invisible during incidents.
+**ServiceHub** — Investigate. Recover. Prove it happened. Because your Service Bus messages should not be invisible during incidents.
 
 Built for DevOps, Platform, and SRE Engineers.
 

@@ -156,7 +156,8 @@ npm run test:e2e   # starts its own dev server against client-side Demo Mode —
 ### TypeScript / React (Frontend)
 
 - All exported components must have a JSDoc comment
-- Hooks live in `src/hooks/`; API calls live in `src/lib/api/`
+- Hooks live in `packages/servicehub-ui-shared/src/hooks/`; API calls live in
+  `packages/servicehub-ui-shared/src/lib/api/` — not under `apps/web/src/`
 - Do not add new `any` types — use proper generics or `unknown`
 - Run `npx tsc -b` before committing to catch type errors
 

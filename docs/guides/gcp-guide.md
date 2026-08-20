@@ -99,6 +99,24 @@ provider:
 
 ![Recovery Evidence ledger showing real GCP replay entries with accurate message counts](../screenshots/guides/gcp/05-recovery-evidence.png)
 
+### 4. Bulk Replay and Bulk Purge
+
+GCP isn't limited to one-at-a-time recovery. Like AWS, **DLQ Intelligence** (`/dlq-history`)
+offers **Bulk Replay** and **Bulk Purge** for a GCP subscription's dead-letter backlog — the same
+preview-before-action UI shown in the
+[AWS guide's Bulk Replay](aws-guide.md#4-bulk-replay--with-a-real-safety-gate) and
+[Bulk Purge](aws-guide.md#6-bulk-purge--the-same-permanence-at-scale) sections: a match count and
+message-ID sample first, nothing mutates until you explicitly confirm, and Bulk Purge carries the
+same "no undo" warning as a single-message purge. Both are gated by the same production-namespace
+safety guard as every other mutating action.
+
+### 5. Next: Failure Signatures
+
+Seeing the same DLQ reason keep coming back? **Failure Signatures** cluster recurring dead-letter
+patterns into a named, trackable case — with lifecycle status and guided replay — instead of
+leaving you to re-diagnose the same failure every time it recurs. See
+[Quick Access Guide → Failure Signatures](quick-access-guide.md#failure-signatures).
+
 ---
 
 ## What's supported for GCP
@@ -107,7 +125,7 @@ provider:
 |---|---|---|
 | Topic/subscription browsing, search, message detail | Yes | |
 | DLQ investigation, AI pattern clustering | Yes | Honestly abstains when Pub/Sub gives no per-message reason |
-| Manual replay, purge | Yes | |
+| Manual replay, purge, bulk replay/purge | Yes | Same safety gates as AWS — see the Bulk Replay/Purge walkthrough above |
 | Unicode/emoji/special-character-safe rendering | Yes | |
 | **Manual dead-lettering of a message** | **No** | Pub/Sub's API has no equivalent of Azure's "move to DLQ" operation |
 | **Live message counts on a subscription** | **No** | Pub/Sub has no depth-reporting API — shown honestly as "—" |

@@ -148,6 +148,13 @@ There is no undo and no recycle bin — purged messages cannot be recovered."** 
 nothing happens until you review the sample and explicitly click **Purge N messages**; closing
 the dialog or clicking **Cancel** purges nothing.
 
+### 7. Next: Failure Signatures
+
+Replaying the same DLQ reason over and over? **Failure Signatures** cluster recurring dead-letter
+patterns into a named, trackable case — with lifecycle status and guided replay — instead of
+leaving you to re-diagnose the same failure each time it shows up. See
+[Quick Access Guide → Failure Signatures](quick-access-guide.md#failure-signatures).
+
 ---
 
 ## What's supported for AWS
@@ -161,7 +168,7 @@ the dialog or clicking **Cancel** purges nothing.
 | **True non-destructive peek** | **No** | SQS has no such API — every read is a delivery attempt |
 | **Live Tail (real-time streaming)** | **No** | Same underlying limitation — the button doesn't appear |
 | **Scheduled Messages** | **No** | SQS has no native message-scheduling concept the way Service Bus does |
-| Exact, always-current message counts | **Approximate** | `ApproximateNumberOfMessages` is AWS's own term — SQS counts are eventually consistent, not a live snapshot |
+| Exact, always-current message counts | **Approximate** | `ApproximateNumberOfMessages` is AWS's own term — SQS counts are *eventually consistent* (the number can lag a few seconds behind reality after a burst of sends/deletes), not a live snapshot |
 
 ![Scheduled Messages page: AWS shown as "not supported," not an empty table or error](../screenshots/guides/aws/06-scheduled-not-supported.png)
 

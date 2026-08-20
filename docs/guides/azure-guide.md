@@ -134,7 +134,14 @@ Every replay (manual or automatic) is permanently recorded in the **Recovery Evi
 rule), what was asked of Azure, and how many messages were actually targeted. This ledger is
 append-only — nothing in it can be edited or deleted after the fact, even by an administrator.
 
-### 7. Scheduled Messages
+### 7. Next: Failure Signatures
+
+Seeing the same DLQ reason keep coming back? **Failure Signatures** cluster recurring dead-letter
+patterns into a named, trackable case — with lifecycle status and guided replay — instead of
+leaving you to re-diagnose the same failure every time it recurs. See
+[Quick Access Guide → Failure Signatures](quick-access-guide.md#failure-signatures).
+
+### 8. Scheduled Messages
 
 If your application uses Service Bus's scheduled-delivery feature, ServiceHub's **Scheduled
 Messages** page (`/scheduled`) shows every message queued for future delivery, with a live

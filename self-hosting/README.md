@@ -180,7 +180,7 @@ whose flag is off.
 A minimal "create a throwaway resource, connect it, verify a message round-trips, tear it
 down" loop for each cloud. These use the read-only-plus-send-on-DEV policies above; run
 ServiceHub locally (`docker compose up --build`, see root
-[README → Try It](../README.md#try-it)) before starting.
+[README → Quick Start](../README.md#quick-start)) before starting.
 
 ### Azure
 
