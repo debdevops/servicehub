@@ -8,6 +8,7 @@ using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.SignatureReplay;
 using ServiceHub.Shared.Results;
 
@@ -39,8 +40,14 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         _dbContext.Dispose();
     }
 
-    private SignatureReplayExecutor CreateSut() =>
-        new(_dbContext, _namespaceRepositoryMock.Object, _messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+    private SignatureReplayExecutor CreateSut()
+    {
+        var ledger = new RecoveryLedgerService(_dbContext);
+        return new SignatureReplayExecutor(
+            _dbContext, _namespaceRepositoryMock.Object, _messageOperationsMock.Object,
+            ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance),
+            NullLogger<SignatureReplayExecutor>.Instance);
+    }
 
     private Namespace SetupNamespace(Guid? namespaceId = null, EnvironmentType environment = EnvironmentType.Dev)
     {
@@ -94,6 +101,8 @@ public sealed class SignatureReplayExecutorTests : IDisposable
             TotalMatched = messageIds.Count,
             CreatedAt = DateTimeOffset.UtcNow,
             CancellationRequestedAt = cancellationRequestedAt,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = RecoveryActorKind.User,
         };
         _dbContext.SignatureReplayJobs.Add(job);
         _dbContext.SaveChanges();
@@ -116,7 +125,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         reloaded.Status.Should().Be(BulkOperationStatus.Cancelled);
         reloaded.ProcessedCount.Should().Be(0);
         _messageOperationsMock.Verify(
-            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -132,7 +141,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         var reloaded = await ReloadAsync(job.Id);
         reloaded.Status.Should().Be(BulkOperationStatus.Running);
         _messageOperationsMock.Verify(
-            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -153,7 +162,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         reloaded.ErrorSummary.Should().Contain("Production");
         reloaded.ProcessedCount.Should().Be(0);
         _messageOperationsMock.Verify(
-            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -173,7 +182,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         reloaded.Status.Should().Be(BulkOperationStatus.Failed);
         reloaded.ErrorSummary.Should().Contain("Namespace no longer exists");
         _messageOperationsMock.Verify(
-            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -193,8 +202,8 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         var sut = CreateSut();
         var message = AddDlqMessage(seq: 42);
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(message.NamespaceId, "orders", null, 42, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(message.NamespaceId, "orders", null, 42, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         var job = CreateJob([message.Id]);
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
@@ -218,8 +227,8 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         var sut = CreateSut();
         var message = AddDlqMessage(seq: 7);
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(message.NamespaceId, "orders", null, 7, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Failure(Error.ExternalService("Provider.Error", "boom")));
+            .Setup(m => m.ReplayMessageAsync(message.NamespaceId, "orders", null, 7, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Failure(Error.ExternalService("Provider.Error", "boom")));
 
         var job = CreateJob([message.Id]);
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
@@ -246,7 +255,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         reloaded.SkippedCount.Should().Be(1);
         reloaded.SuccessCount.Should().Be(0);
         _messageOperationsMock.Verify(
-            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -261,9 +270,9 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         using var cts = new CancellationTokenSource();
 
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(first.NamespaceId, "orders", null, 1, It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(first.NamespaceId, "orders", null, 1, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .Callback(() => cts.Cancel())
-            .ReturnsAsync(Result.Success());
+            .ReturnsAsync(Result<bool>.Success(true));
 
         await sut.ExecuteAsync(job.Id, cts.Token);
 
@@ -271,7 +280,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         reloaded.Status.Should().Be(BulkOperationStatus.Cancelled);
         reloaded.ProcessedCount.Should().Be(1);
         _messageOperationsMock.Verify(
-            m => m.ReplayMessageAsync(second.NamespaceId, "orders", null, 2, It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(second.NamespaceId, "orders", null, 2, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -297,8 +306,8 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         await _dbContext.SaveChangesAsync();
 
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders-topic", "orders-sub", 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders-topic", "orders-sub", 1, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         var job = CreateJob([message.Id]);
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
@@ -306,7 +315,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         var reloaded = await ReloadAsync(job.Id);
         reloaded.SuccessCount.Should().Be(1);
         _messageOperationsMock.Verify(
-            m => m.ReplayMessageAsync(_namespaceId, "orders-topic", "orders-sub", 1, It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(_namespaceId, "orders-topic", "orders-sub", 1, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -362,13 +371,15 @@ public sealed class SignatureReplayExecutorTests : IDisposable
             MessageIdsJson = JsonSerializer.Serialize(new List<long> { decoy.Id, target.Id }),
             TotalMatched = 2,
             CreatedAt = DateTimeOffset.UtcNow,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = RecoveryActorKind.User,
         };
         dbContext.SignatureReplayJobs.Add(job);
         await dbContext.SaveChangesAsync();
 
         var messageOperationsMock = new Mock<IMessageOperationsService>();
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, decoy.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, decoy.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .Returns(async () =>
             {
                 // While this job is still processing the decoy, a different worker (its own
@@ -380,20 +391,21 @@ public sealed class SignatureReplayExecutorTests : IDisposable
                 racingCopy.ReplaySuccess = true;
                 await racingContext.SaveChangesAsync();
 
-                return Result.Success();
+                return Result<bool>.Success(true);
             });
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, target.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, target.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
-        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+        var ledger = new RecoveryLedgerService(dbContext);
+        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance), NullLogger<SignatureReplayExecutor>.Instance);
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
         // This job's own claim attempt for `target` lost the race — it must never have
         // reached the provider a second time.
         messageOperationsMock.Verify(
-            m => m.ReplayMessageAsync(_namespaceId, "orders", null, target.SequenceNumber, It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(_namespaceId, "orders", null, target.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
         var reloaded = await dbContext.SignatureReplayJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
@@ -455,13 +467,15 @@ public sealed class SignatureReplayExecutorTests : IDisposable
             MessageIdsJson = JsonSerializer.Serialize(new List<long> { target.Id }),
             TotalMatched = 1,
             CreatedAt = DateTimeOffset.UtcNow,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = RecoveryActorKind.User,
         };
         dbContext.SignatureReplayJobs.Add(job);
         await dbContext.SaveChangesAsync();
 
         var messageOperationsMock = new Mock<IMessageOperationsService>();
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, target.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, target.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .Returns(async () =>
             {
                 // By this point the real claim save has already committed (it runs before
@@ -486,7 +500,8 @@ public sealed class SignatureReplayExecutorTests : IDisposable
                 throw new OperationCanceledException();
             });
 
-        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+        var ledger = new RecoveryLedgerService(dbContext);
+        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance), NullLogger<SignatureReplayExecutor>.Instance);
 
         var act = async () => await sut.ExecuteAsync(job.Id, CancellationToken.None);
         await act.Should().NotThrowAsync();
@@ -552,16 +567,18 @@ public sealed class SignatureReplayExecutorTests : IDisposable
             MessageIdsJson = JsonSerializer.Serialize(new List<long> { first.Id, second.Id }),
             TotalMatched = 2,
             CreatedAt = DateTimeOffset.UtcNow,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = RecoveryActorKind.User,
         };
         dbContext.SignatureReplayJobs.Add(job);
         await dbContext.SaveChangesAsync();
 
         var messageOperationsMock = new Mock<IMessageOperationsService>();
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, first.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, first.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, second.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, second.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .Returns(async () =>
             {
                 // `first` already finished processing cleanly (its own outcome save committed,
@@ -579,10 +596,11 @@ public sealed class SignatureReplayExecutorTests : IDisposable
                 racingCopy.ReplaySuccess = true;
                 await racingContext.SaveChangesAsync();
 
-                return Result.Success();
+                return Result<bool>.Success(true);
             });
 
-        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+        var ledger = new RecoveryLedgerService(dbContext);
+        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance), NullLogger<SignatureReplayExecutor>.Instance);
 
         var act = async () => await sut.ExecuteAsync(job.Id, CancellationToken.None);
         await act.Should().NotThrowAsync();
@@ -646,6 +664,8 @@ public sealed class SignatureReplayExecutorTests : IDisposable
             MessageIdsJson = JsonSerializer.Serialize(new List<long> { first.Id, second.Id }),
             TotalMatched = 2,
             CreatedAt = DateTimeOffset.UtcNow,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = RecoveryActorKind.User,
         };
         dbContext.SignatureReplayJobs.Add(job);
         await dbContext.SaveChangesAsync();
@@ -654,19 +674,20 @@ public sealed class SignatureReplayExecutorTests : IDisposable
 
         var messageOperationsMock = new Mock<IMessageOperationsService>();
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, first.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, first.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, second.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, second.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .Returns(async () =>
             {
                 await using var observerContext = new DlqDbContext(options);
                 var observedFirst = await observerContext.DlqMessages.AsNoTracking().SingleAsync(m => m.Id == first.Id);
                 firstMessageStatusObservedDuringSecondMessage = observedFirst.Status;
-                return Result.Success();
+                return Result<bool>.Success(true);
             });
 
-        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
+        var ledger = new RecoveryLedgerService(dbContext);
+        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance), NullLogger<SignatureReplayExecutor>.Instance);
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 

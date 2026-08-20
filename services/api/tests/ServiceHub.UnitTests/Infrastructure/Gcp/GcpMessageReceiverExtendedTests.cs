@@ -373,7 +373,7 @@ public sealed class GcpMessageReceiverExtendedTests
 
         var sut = new GcpMessageReceiver(factory.Object, repo.Object, NullLogger<GcpMessageReceiver>.Instance);
 
-        var result = await sut.ReplayMessageAsync(TestNamespaceId, "my-sub", null, 42L);
+        var result = await sut.ReplayMessageAsync(TestNamespaceId, "my-sub", null, 42L, null);
 
         result.IsSuccess.Should().BeFalse();
         result.Error.Code.Should().Be("GCP.PubSub.NoDlq");

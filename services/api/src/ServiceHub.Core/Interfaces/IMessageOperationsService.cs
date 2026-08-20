@@ -73,13 +73,25 @@ public interface IMessageOperationsService
     /// <param name="entityName">The queue or topic name.</param>
     /// <param name="subscriptionName">Optional subscription name for topics.</param>
     /// <param name="sequenceNumber">The sequence number of the message to replay.</param>
+    /// <param name="recoveryEntryId">
+    /// The <c>RecoveryLedgerEntry.Id</c> to stamp onto the replayed message as the
+    /// <c>x-servicehub-recovery-id</c> marker, so a later recurrence can be attributed to this
+    /// exact replay rather than matched heuristically. Null skips stamping. Whether stamping is
+    /// actually attempted also depends on the <c>RecoveryEvidence:StampReplayMarker</c>
+    /// configuration flag and the provider's <c>SupportsRecoveryMarker</c> capability.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A result indicating success or failure.</returns>
-    Task<Result> ReplayMessageAsync(
+    /// <returns>
+    /// A result indicating success or failure. On success, the value is whether the marker was
+    /// actually applied — false whenever <paramref name="recoveryEntryId"/> was null, stamping
+    /// was disabled/unsupported, or the provider refused it (e.g. SQS's 10-attribute cap).
+    /// </returns>
+    Task<Result<bool>> ReplayMessageAsync(
         Guid namespaceId,
         string entityName,
         string? subscriptionName,
         long sequenceNumber,
+        Guid? recoveryEntryId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

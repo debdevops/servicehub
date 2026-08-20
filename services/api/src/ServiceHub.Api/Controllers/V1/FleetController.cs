@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using ServiceHub.Api.Telemetry;
+using ServiceHub.Infrastructure.Telemetry;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Shared.Constants;

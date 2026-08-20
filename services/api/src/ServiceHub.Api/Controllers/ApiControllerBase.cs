@@ -1,6 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
+using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Security;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 
@@ -31,6 +35,31 @@ public abstract class ApiControllerBase : ControllerBase
         HttpContext.Items.TryGetValue("AllowedNamespaceIds", out var v) && v is IReadOnlySet<Guid> ids
             ? ids
             : null;
+
+    /// <summary>
+    /// Resolves the <see cref="RecoveryActor"/> for the current request — the only way an actor
+    /// identity enters the Recovery Evidence Ledger (see <see cref="IRecoveryLedger"/>).
+    /// Extracts the same primitives <see cref="SecurityAuditLogger.ResolveUserIdentity"/> reads
+    /// from <c>HttpContext</c> (API key name → claims identity name → <see cref="OwnerId"/>) and
+    /// passes them to <see cref="ActorIdentityResolver.ResolveHttpActor"/>, which has no
+    /// dependency on ASP.NET Core and so cannot read <c>HttpContext</c> itself.
+    /// </summary>
+    protected RecoveryActor ResolveRecoveryActor()
+    {
+        var apiKeyName = HttpContext.Items.TryGetValue("ApiKeyName", out var keyName) && keyName is string name
+            ? name
+            : null;
+
+        var claimsIdentityName = HttpContext.User?.Identity?.Name;
+
+        var scopes = HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj)
+            && keyConfigObj is ApiKeyConfiguration keyConfig
+            && keyConfig.Scopes is { Length: > 0 }
+            ? string.Join(',', keyConfig.Scopes)
+            : null;
+
+        return ActorIdentityResolver.ResolveHttpActor(apiKeyName, claimsIdentityName, OwnerId, scopes);
+    }
 
     /// <summary>
     /// Fetches a namespace by ID and verifies <see cref="OwnerId"/> may access it — either as

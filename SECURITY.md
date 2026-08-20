@@ -93,4 +93,6 @@ Do not attempt key rotation in production. Treat the encryption key as a critica
 up securely and store it in a secrets manager (Azure Key Vault, Hashicorp Vault, etc.) outside
 the deployment host.
 
-Key rotation is planned for a future release; this limitation will be removed.
+Key rotation is not currently supported and is not on a committed release timeline. If this
+blocks your deployment, [open a feature request](https://github.com/debdevops/servicehub/issues/new)
+describing your use case.

@@ -183,7 +183,7 @@ function NamespaceDlqWidget({
       </span>
       <span
         className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-          activeDlq > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-400'
+          activeDlq > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
         }`}
       >
         {activeDlq.toLocaleString()} active
@@ -385,7 +385,7 @@ export function DlqHistoryPage() {
               Dead-letter queue message history and monitoring
               <HelpTooltip {...tooltips.dlqHistory.trendChart} position="right" className="ml-1" />
               {currentNamespace && (
-                <span className="text-primary-600 ml-1">
+                <span className="text-primary-700 ml-1">
                   — {currentNamespace.displayName || currentNamespace.name}
                 </span>
               )}

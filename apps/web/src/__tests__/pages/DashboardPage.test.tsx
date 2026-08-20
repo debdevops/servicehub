@@ -116,6 +116,9 @@ describe('DashboardPage', () => {
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(screen.getByText('No namespaces connected yet')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /connect a namespace/i })).toBeInTheDocument();
+    // Provider-neutral: this empty state is reachable before any provider is chosen, so it must
+    // not name Azure's product (Service Bus) — AWS/GCP users see it too.
+    expect(screen.queryByText(/service bus/i)).not.toBeInTheDocument();
   });
 
   it('Connect button navigates to /app/connect', () => {

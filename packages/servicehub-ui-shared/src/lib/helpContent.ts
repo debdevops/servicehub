@@ -3,6 +3,11 @@
 // Every user-facing explanation lives here so it's easy to maintain.
 // ────────────────────────────────────────────────────────────────
 
+// One canonical explanation, reused wherever the production safety guard is
+// described, instead of three independently-drifting copies.
+const PRODUCTION_SAFETY_GUARD =
+  'Production namespaces have safety guards: the Quick Actions button (FAB) is hidden, and send, generate, dead-letter, and replay actions are all disabled. Dev and UAT allow full operations when the SAS policy has Manage permission.';
+
 // ─── Azure Service Bus Glossary ──────────────────────────────
 export const glossary: Record<string, { term: string; definition: string }> = {
   namespace: {
@@ -42,8 +47,7 @@ export const glossary: Record<string, { term: string; definition: string }> = {
   },
   environment: {
     term: 'Environment',
-    definition:
-      'Classifies a namespace as Development, UAT, or Production. Production namespaces have safety guards — the Quick Actions button (FAB), send, dead-letter, and replay actions are all disabled to prevent accidental data modification.',
+    definition: `Classifies a namespace as Development, UAT, or Production. ${PRODUCTION_SAFETY_GUARD}`,
   },
 };
 
@@ -71,8 +75,7 @@ export const tooltips = {
     } as TooltipContent,
     environment: {
       text: "Classify this namespace\u2019s environment",
-      detail:
-        'Production namespaces have safety guards: the Quick Actions button (FAB) is hidden, and send, generate, dead-letter, and replay actions are all disabled. Dev and UAT allow full operations when the SAS policy has Manage permission.',
+      detail: PRODUCTION_SAFETY_GUARD,
       action: 'Select "Prod" for live namespaces, "Dev" or "Uat" for lower environments.',
     } as TooltipContent,
     savedConnections: {
@@ -333,8 +336,7 @@ export const helpSections: HelpSection[] = [
       },
       {
         question: 'What does the environment selector do?',
-        answer:
-          'It classifies the namespace as Dev, UAT, or Prod. Production namespaces have strict safety guards — the Quick Actions button (FAB) is completely hidden, and send, generate, dead-letter, and replay actions are all disabled. Dev and UAT allow full operations when the SAS policy has Manage permission.',
+        answer: `It classifies the namespace as Dev, UAT, or Prod. ${PRODUCTION_SAFETY_GUARD}`,
       },
       {
         question: 'How do I navigate between namespaces?',
@@ -502,6 +504,73 @@ export const helpSections: HelpSection[] = [
         question: 'What is Scalar API Docs (/scalar/v1)?',
         answer:
           'Scalar is an interactive API documentation viewer, only available in Development mode. It lets developers explore and test all API endpoints. It is automatically disabled in Production deployments for security.',
+      },
+    ],
+  },
+  {
+    id: 'quick-access',
+    title: 'Quick Access — Every Destination',
+    icon: '🧭',
+    items: [
+      {
+        question: 'Namespace Overview',
+        answer:
+          'Home base — live active/DLQ/scheduled counts per namespace, sorted by DLQ severity, with one-click jumps into any namespace.',
+      },
+      {
+        question: 'Incident Center',
+        answer:
+          'Rolls up every Failure Signature across every connected namespace into one "what needs attention right now" screen.',
+      },
+      {
+        question: 'Fleet Health',
+        answer:
+          'Cross-namespace dead-letter health at a glance — total active backlog, what changed in the last 24h–7d, and a worst-first namespace table.',
+      },
+      {
+        question: 'Live Tail',
+        answer:
+          'Watch new messages arrive on one queue or subscription in real time. Available for Azure and GCP — AWS SQS has no non-destructive peek, so it can\'t be tailed safely.',
+      },
+      {
+        question: 'Scheduled Messages (all clouds)',
+        answer:
+          'View, reschedule, and cancel messages queued for future delivery. Azure Service Bus only — AWS and GCP show an honest "not supported" panel instead of an empty table.',
+      },
+      {
+        question: 'Cloud Bridge',
+        answer:
+          'A provider-agnostic browser for every queue, topic, and subscription in a connected AWS or GCP namespace.',
+      },
+      {
+        question: 'Multi-Cloud Trace',
+        answer:
+          'Trace a single Correlation ID or message GUID as it routes across Azure, AWS, and GCP namespaces at once.',
+      },
+      {
+        question: 'Audit Trail',
+        answer:
+          'Every send, replay, purge, dead-letter, and rule change, logged with timestamp, user, cloud/environment, and outcome — exportable and isolated per owner.',
+      },
+      {
+        question: 'Recovery Evidence',
+        answer:
+          'The permanent, append-only, hash-chained record of every replay/purge decision ServiceHub made and what it subsequently observed — proof a recovery happened, not just a log line saying it was attempted.',
+      },
+      {
+        question: 'Security & Privacy',
+        answer:
+          'An in-app page showing exactly how your data flows (browser → ServiceHub server → cloud SDK), what\'s encrypted, what\'s redacted from logs, and what\'s never stored.',
+      },
+      {
+        question: 'Failure Signatures',
+        answer:
+          'Recurring dead-letter patterns clustered into a named, confidence-scored case with its own lifecycle and guided replay — so the fifth time a failure repeats, you\'re managing a known case instead of re-diagnosing from scratch.',
+      },
+      {
+        question: 'Where can I see a full, screenshot-illustrated walkthrough of these?',
+        answer:
+          'The public Quick Access Guide on GitHub covers all 16 destinations with real screenshots — open it from this repo\'s docs/guides/quick-access-guide.md, or via the GitHub link in the footer below.',
       },
     ],
   },

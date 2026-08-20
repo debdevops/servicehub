@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Infrastructure;
@@ -26,16 +28,22 @@ public sealed class FleetOverviewService : IFleetOverviewService
 
     private readonly DlqDbContext _dbContext;
     private readonly INamespaceRepository _namespaceRepository;
+    private readonly CloudProviderRouter _router;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<FleetOverviewService> _logger;
 
     /// <summary>Initializes a new instance of the <see cref="FleetOverviewService"/> class.</summary>
     public FleetOverviewService(
         DlqDbContext dbContext,
         INamespaceRepository namespaceRepository,
+        CloudProviderRouter router,
+        IConfiguration configuration,
         ILogger<FleetOverviewService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
+        _router = router ?? throw new ArgumentNullException(nameof(router));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -133,6 +141,8 @@ public sealed class FleetOverviewService : IFleetOverviewService
                     ? activeRows.Min(r => r.DetectedAtUtc)
                     : (DateTimeOffset?)null;
 
+                var (coverage, coverageNote) = DetermineCoverage(ns?.Provider ?? CloudProviderType.Azure);
+
                 namespaceHealth.Add(new FleetNamespaceHealth(
                     NamespaceId: namespaceId,
                     NamespaceName: ns?.DisplayName ?? ns?.Name ?? "(deleted namespace)",
@@ -146,7 +156,9 @@ public sealed class FleetOverviewService : IFleetOverviewService
                     TopEntityCount: topEntity?.Count ?? 0,
                     TopCategory: topCategory?.Category.ToString(),
                     OldestActiveDetectedAt: oldestActive,
-                    Severity: DetermineSeverity(activeCount, newInWindow)));
+                    Severity: DetermineSeverity(activeCount, newInWindow, coverage),
+                    Coverage: coverage,
+                    CoverageNote: coverageNote));
             }
 
             var ordered = namespaceHealth
@@ -185,13 +197,40 @@ public sealed class FleetOverviewService : IFleetOverviewService
         }
     }
 
-    private static FleetHealthSeverity DetermineSeverity(int activeCount, int newInWindow)
+    private static FleetHealthSeverity DetermineSeverity(int activeCount, int newInWindow, FleetMonitoringCoverage coverage)
     {
         if (newInWindow >= CriticalNewInWindow || activeCount >= CriticalActiveBacklog)
             return FleetHealthSeverity.Critical;
         if (activeCount > 0 || newInWindow > 0)
             return FleetHealthSeverity.Warning;
-        return FleetHealthSeverity.Healthy;
+
+        // Zero known dead-letters is only "Healthy" if the namespace was actually scanned — a
+        // namespace that was never observed must never render the same as a clean one (blueprint
+        // Gap 1: this is the one place ServiceHub could make an affirmative false safety claim).
+        return coverage == FleetMonitoringCoverage.Scanned
+            ? FleetHealthSeverity.Healthy
+            : FleetHealthSeverity.Unknown;
+    }
+
+    /// <summary>
+    /// Mirrors the coverage check <c>DlqMonitorService.ScanNamespaceAsync</c> performs before
+    /// scanning a namespace, so Fleet Health never claims visibility it doesn't have.
+    /// </summary>
+    private (FleetMonitoringCoverage Coverage, string? Note) DetermineCoverage(CloudProviderType provider)
+    {
+        if (!_router.IsRegistered(provider))
+        {
+            return (FleetMonitoringCoverage.ProviderNotRegistered, $"No provider is registered for '{provider}'.");
+        }
+
+        var capabilities = _router.Resolve(provider).Capabilities;
+        if (!capabilities.SupportsRepeatablePeek
+            && !_configuration.GetValue($"DlqMonitor:AllowDestructivePeek:{provider}", false))
+        {
+            return (FleetMonitoringCoverage.NotMonitored, capabilities.Notes);
+        }
+
+        return (FleetMonitoringCoverage.Scanned, null);
     }
 
     private static List<FleetTrendPoint> BuildTrend(List<RelevantRow> rows, DateTimeOffset now)

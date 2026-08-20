@@ -464,7 +464,7 @@ public sealed class MessageReceiverTests
     public async Task ReplayMessageAsync_EmptyNamespaceId_ReturnsValidationError()
     {
         // Act
-        var result = await _sut.ReplayMessageAsync(Guid.Empty, "queue", null, 1);
+        var result = await _sut.ReplayMessageAsync(Guid.Empty, "queue", null, 1, null);
 
         // Assert
         result.IsFailure.Should().BeTrue();
@@ -478,7 +478,7 @@ public sealed class MessageReceiverTests
     public async Task ReplayMessageAsync_NullOrWhiteSpaceEntityName_ReturnsValidationError(string? entityName)
     {
         // Act
-        var result = await _sut.ReplayMessageAsync(Guid.NewGuid(), entityName!, null, 1);
+        var result = await _sut.ReplayMessageAsync(Guid.NewGuid(), entityName!, null, 1, null);
 
         // Assert
         result.IsFailure.Should().BeTrue();
@@ -502,11 +502,12 @@ public sealed class MessageReceiverTests
                 It.IsAny<string>(),
                 It.IsAny<string>(),
                 It.IsAny<long>(),
+                It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .ReturnsAsync(Result<bool>.Success(true));
 
         // Act
-        var result = await _sut.ReplayMessageAsync(@namespace.Id, "queue", null, 123);
+        var result = await _sut.ReplayMessageAsync(@namespace.Id, "queue", null, 123, null);
 
         // Assert
         result.IsSuccess.Should().BeTrue();

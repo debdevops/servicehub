@@ -5,6 +5,7 @@ using ServiceHub.Infrastructure.Security;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 
@@ -79,6 +80,15 @@ public sealed class SubscriptionsController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+
+        if (!ProviderCapabilities.For(ns.Provider).SupportsSubscriptions)
+        {
+            return ToActionResult<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(
+                Error.Validation(
+                    ErrorCodes.Subscription.NotSupported,
+                    $"Subscriptions are not supported for {ns.Provider}. " +
+                    $"See provider capabilities: {ProviderCapabilities.For(ns.Provider).Notes}"));
+        }
 
         if (ns.Provider != CloudProviderType.Azure)
         {

@@ -27,6 +27,13 @@ import type {
 } from '../api/dlqSignatures';
 import type { DlqTimelineEvent, DlqHistoryItem, PaginatedResponse as DlqHistoryPage } from '../api/dlqHistory';
 import type { BulkOperationJob, PaginatedBulkOperationJobs } from '../api/bulkOperations';
+import type {
+  RecoveryOperation,
+  RecoveryOperationDetail,
+  RecoveryLedgerEntry,
+  RecoveryEvent,
+  RecoveryEntryState,
+} from '../api/recovery';
 import type { AuditLogItem, AuditPageResponse } from '../api/audit';
 import type { FleetOverview, FleetNamespaceHealth, FleetHealthSeverity } from '../api/fleet';
 import type { RuleResponse } from '../api/rules';
@@ -922,6 +929,10 @@ function buildDemoFleetNamespaceHealth(provider: CloudProviderType): FleetNamesp
     topCategory: topActive?.dominantDeadletterReason ?? null,
     oldestActiveDetectedAt: oldestActive?.firstSeenAt ?? null,
     severity,
+    // Demo Mode simulates a fully-monitored namespace for every provider — there is no real scan
+    // to be honest about here, unlike the live FleetOverviewService.
+    coverage: 'scanned',
+    coverageNote: null,
   };
 }
 
@@ -1083,4 +1094,294 @@ export function getMockDlqHistory(): DlqHistoryPage<DlqHistoryItem> {
 // yet, so this returns an empty page so the Audit page renders its real empty state.
 export function getMockAuditLogs(): AuditPageResponse {
   return { items: [], totalCount: 0, page: 1, pageSize: 20, hasNextPage: false, hasPreviousPage: false };
+}
+
+// ─── Recovery Evidence Ledger ────────────────────────────────────────────────
+//
+// One curated story (roadmap §20): 214 messages dead-lettered on `orders-processing` from a
+// downstream timeout. Operator alex@contoso.com replays them with reason "Downstream payment
+// API restored — INC-4471". Outcomes are chosen to demonstrate honesty rather than success —
+// Unverified is a first-class, non-apologetic result here, not an embarrassment hidden from the
+// demo. Every exported artefact built from this fixture carries `demoMode: true` and a
+// `demo-`-prefixed filename (roadmap principle: Demo Mode never presents fabricated data as real
+// evidence).
+
+export const DEMO_RECOVERY_OPERATION_ID = 'demo-recovery-op-orders-processing';
+const DEMO_RECOVERY_ACTOR = 'alex@contoso.com';
+const DEMO_RECOVERY_REASON = 'Downstream payment API restored — INC-4471';
+const DEMO_RECOVERY_ENTITY = 'orders-processing';
+const DEMO_RECOVERY_OPENED_AT = '2026-08-10T09:14:00Z';
+
+interface DemoRecoverySpec {
+  count: number;
+  state: RecoveryEntryState;
+  disposition: string;
+  verificationResult: RecoveryLedgerEntry['verificationResult'];
+  verificationConfidence: RecoveryLedgerEntry['verificationConfidence'];
+  provider: string;
+  markerApplied: boolean;
+}
+
+const DEMO_RECOVERY_SPECS: DemoRecoverySpec[] = [
+  { count: 187, state: 'Recovered', disposition: 'Recovered', verificationResult: 'Recovered', verificationConfidence: null, provider: 'azure', markerApplied: true },
+  { count: 11, state: 'Returned', disposition: 'Returned', verificationResult: 'Returned', verificationConfidence: 'Exact', provider: 'azure', markerApplied: true },
+  { count: 14, state: 'Unverified', disposition: 'Unverified', verificationResult: 'Unverified', verificationConfidence: null, provider: 'aws', markerApplied: false },
+  { count: 2, state: 'ExecutionFailed', disposition: 'Failed', verificationResult: null, verificationConfidence: null, provider: 'azure', markerApplied: true },
+];
+
+function buildDemoRecoveryEntries(operationId: string): RecoveryLedgerEntry[] {
+  const entries: RecoveryLedgerEntry[] = [];
+  let index = 0;
+  for (const spec of DEMO_RECOVERY_SPECS) {
+    for (let i = 0; i < spec.count; i++) {
+      index += 1;
+      const begunAt = new Date(new Date(DEMO_RECOVERY_OPENED_AT).getTime() + index * 15_000).toISOString();
+      entries.push({
+        id: `${operationId}-entry-${index}`,
+        operationId,
+        dlqMessageId: 90_000 + index,
+        namespaceId: DEMO_NAMESPACE_IDS[spec.provider as CloudProviderType],
+        namespaceNameSnapshot: spec.provider === 'aws' ? 'acme-prod (AWS)' : 'contoso-prod (Azure)',
+        providerSnapshot: spec.provider,
+        environmentSnapshot: 'prod',
+        entityNameSnapshot: DEMO_RECOVERY_ENTITY,
+        entityTypeSnapshot: 'Queue',
+        topicNameSnapshot: null,
+        bodyHash: `sha256-demo-${index.toString(16).padStart(8, '0')}`,
+        failureCategorySnapshot: 'TransientDependency',
+        deadLetterReasonSnapshot: 'MaxDeliveryCountExceeded',
+        signatureHashSnapshot: null,
+        targetEntity: DEMO_RECOVERY_ENTITY,
+        begunAt,
+        markerApplied: spec.markerApplied,
+        state: spec.state,
+        disposition: spec.disposition,
+        verificationResult: spec.verificationResult,
+        verificationConfidence: spec.verificationConfidence,
+        observationWindowEndsAt: spec.state === 'Executing' || spec.state === 'Observing'
+          ? new Date(new Date(begunAt).getTime() + 24 * 3_600_000).toISOString()
+          : null,
+        closedAt: spec.state === 'Executing' || spec.state === 'Observing' ? null : begunAt,
+      });
+    }
+  }
+  return entries;
+}
+
+function buildDemoRecoveryOperation(): RecoveryOperation {
+  return {
+    id: DEMO_RECOVERY_OPERATION_ID,
+    kind: 'Replay',
+    trigger: 'Manual',
+    actorIdentity: DEMO_RECOVERY_ACTOR,
+    actorKind: 'User',
+    reason: DEMO_RECOVERY_REASON,
+    namespaceId: DEMO_NAMESPACE_IDS.azure,
+    namespaceNameSnapshot: 'contoso-prod (Azure)',
+    providerSnapshot: 'azure',
+    environmentSnapshot: 'prod',
+    scopeDescription: `entity=${DEMO_RECOVERY_ENTITY}; category=TransientDependency`,
+    sourceRuleId: null,
+    sourceJobId: null,
+    serviceVersion: '3.7.0',
+    openedAt: DEMO_RECOVERY_OPENED_AT,
+    targetCount: 214,
+    entryCount: 214,
+  };
+}
+
+function buildDemoRecoveryEvents(operationId: string, entries: RecoveryLedgerEntry[]): RecoveryEvent[] {
+  let seq = 1;
+  const events: RecoveryEvent[] = [];
+  const push = (entryId: string | null, eventType: string, occurredAt: string, detailJson: string | null = null) => {
+    events.push({
+      id: `${operationId}-event-${seq}`,
+      ownerId: 'demo-owner',
+      seq,
+      entryId,
+      operationId,
+      eventType,
+      occurredAt,
+      actorIdentity: DEMO_RECOVERY_ACTOR,
+      actorKind: 'User',
+      detailJson,
+      prevHash: seq === 1 ? '0'.repeat(64) : `demo-hash-${seq - 1}`,
+      entryHash: `demo-hash-${seq}`,
+      schemaVersion: 1,
+    });
+    seq += 1;
+  };
+
+  push(null, 'OperationOpened', DEMO_RECOVERY_OPENED_AT);
+  for (const entry of entries) {
+    push(entry.id, 'EntryBegun', entry.begunAt);
+    push(entry.id, entry.state === 'ExecutionFailed' ? 'ProviderRejected' : 'ProviderAccepted', entry.begunAt);
+    if (entry.state === 'Returned') {
+      push(entry.id, 'RecurrenceObserved', entry.closedAt ?? entry.begunAt);
+    } else if (entry.state === 'Recovered') {
+      push(entry.id, 'NoRecurrenceObserved', entry.closedAt ?? entry.begunAt);
+    } else if (entry.state === 'Unverified') {
+      // All Unverified demo entries are AWS (DEMO_RECOVERY_SPECS) — a real, accurate reason
+      // code for this fixture, not an invented one, so Demo Mode exercises the same honesty
+      // path a real AWS deployment hits (docs/RECOVERY-EVIDENCE.md §4).
+      push(entry.id, 'ObservationUnavailable', entry.closedAt ?? entry.begunAt, JSON.stringify({ reason: 'AWS_NO_ABSENCE_PROOF' }));
+    }
+  }
+  return events;
+}
+
+const DEMO_STUCK_OPERATION_ID = 'demo-recovery-op-payments-reconciliation';
+const DEMO_STUCK_ENTITY = 'payments-reconciliation';
+const DEMO_STUCK_BEGUN_AT = new Date(Date.now() - 12 * 86_400_000).toISOString();
+
+function buildDemoStuckOperation(): RecoveryOperation {
+  return {
+    id: DEMO_STUCK_OPERATION_ID,
+    kind: 'Replay',
+    trigger: 'Manual',
+    actorIdentity: DEMO_RECOVERY_ACTOR,
+    actorKind: 'User',
+    reason: 'Retrying after a transient gateway timeout — INC-4502',
+    namespaceId: DEMO_NAMESPACE_IDS.azure,
+    namespaceNameSnapshot: 'contoso-prod (Azure)',
+    providerSnapshot: 'azure',
+    environmentSnapshot: 'prod',
+    scopeDescription: `entity=${DEMO_STUCK_ENTITY}; category=TransientDependency`,
+    sourceRuleId: null,
+    sourceJobId: null,
+    serviceVersion: '3.7.0',
+    openedAt: DEMO_STUCK_BEGUN_AT,
+    targetCount: 1,
+    entryCount: 1,
+  };
+}
+
+function buildDemoStuckEntry(): RecoveryLedgerEntry {
+  return {
+    id: 'demo-stuck-entry-1',
+    operationId: DEMO_STUCK_OPERATION_ID,
+    dlqMessageId: 80_001,
+    namespaceId: DEMO_NAMESPACE_IDS.azure,
+    namespaceNameSnapshot: 'contoso-prod (Azure)',
+    providerSnapshot: 'azure',
+    environmentSnapshot: 'prod',
+    entityNameSnapshot: DEMO_STUCK_ENTITY,
+    entityTypeSnapshot: 'Queue',
+    topicNameSnapshot: null,
+    bodyHash: 'sha256-demo-stuck-0001',
+    failureCategorySnapshot: 'TransientDependency',
+    deadLetterReasonSnapshot: 'MaxDeliveryCountExceeded',
+    signatureHashSnapshot: null,
+    targetEntity: DEMO_STUCK_ENTITY,
+    begunAt: DEMO_STUCK_BEGUN_AT,
+    markerApplied: true,
+    // ExecutionUnknown — the process died mid-call (roadmap §7.1) and no one has resolved it
+    // since. This is exactly the kind of entry the ageing worker exists to surface: still
+    // non-terminal, past the default 7-day threshold, waiting for an operator to write it off
+    // or for it to resolve on its own.
+    state: 'ExecutionUnknown',
+    disposition: null,
+    verificationResult: null,
+    verificationConfidence: null,
+    observationWindowEndsAt: null,
+    closedAt: null,
+  };
+}
+
+/** Demo Mode fixture for `GET /recovery/operations` — the curated story plus the stuck-entry demo. */
+export function getMockRecoveryOperations(): RecoveryOperation[] {
+  return [buildDemoRecoveryOperation(), buildDemoStuckOperation()];
+}
+
+/**
+ * Demo Mode fixture for `GET /recovery/operations/{id}` — the full curated story by default, or
+ * the single stuck-entry operation when `operationId` names it (the ageing report's "View
+ * operation" link, and the `11-recovery-ageing` e2e spec, both navigate there).
+ */
+export function getMockRecoveryOperationDetail(operationId?: string): RecoveryOperationDetail {
+  if (operationId === DEMO_STUCK_OPERATION_ID) {
+    const operation = buildDemoStuckOperation();
+    const entries = [buildDemoStuckEntry()];
+    const events = buildDemoRecoveryEvents(operation.id, entries);
+    return { operation, entries, events };
+  }
+
+  const operation = buildDemoRecoveryOperation();
+  const entries = buildDemoRecoveryEntries(operation.id);
+  const events = buildDemoRecoveryEvents(operation.id, entries);
+  return { operation, entries, events };
+}
+
+/**
+ * Demo Mode fixture for `GET /recovery/ageing` — one entry: an `ExecutionUnknown` replay from an
+ * unrelated, smaller incident that has sat open for 12 days. The curated 214-message story's
+ * entries all reach a terminal state by design (roadmap §20's demonstrate-honesty story), so a
+ * genuinely open entry needs its own, separately-reasoned fixture rather than an arbitrary one
+ * invented just to populate this page.
+ */
+export function getMockRecoveryAgeing(): RecoveryLedgerEntry[] {
+  return [buildDemoStuckEntry()];
+}
+
+/**
+ * Builds a watermarked evidence export entirely client-side, from fixture data only — Demo Mode
+ * makes no backend calls (CLAUDE.md), so the real `IRecoveryEvidenceExporter` is never involved.
+ * Every field the real manifest carries is present, plus `demoMode: true`, so nothing here can be
+ * mistaken for real evidence if it leaves the browser. `format=package` is not a real zip in Demo
+ * Mode (no client zip dependency exists in this repo) — it downloads the same bundle with a
+ * `.json` extension, which the filename and content both disclose.
+ */
+export function buildDemoRecoveryExportBundle(operationId?: string): { filename: string; content: string; mimeType: string } {
+  const { operation, entries, events } = getMockRecoveryOperationDetail(operationId);
+  const counts: Record<string, number> = {};
+  for (const entry of entries) {
+    counts[entry.state] = (counts[entry.state] ?? 0) + 1;
+  }
+
+  const manifest = {
+    schemaVersion: 1,
+    serviceVersion: operation.serviceVersion,
+    exportedAt: new Date().toISOString(),
+    exportedBy: 'demo-mode',
+    ownerId: 'demo-owner',
+    operationId: operation.id,
+    demoMode: true,
+    chain: {
+      scope: 'owner',
+      firstSeq: events[0]?.seq ?? 0,
+      lastSeq: events[events.length - 1]?.seq ?? 0,
+      verified: true,
+      algorithm: 'SHA-256 over pipe-delimited canonical fields plus PrevHash (see docs/RECOVERY-EVIDENCE.md)',
+      tamperEvidentNotTamperProof: true,
+    },
+    counts,
+    whatServiceHubKnows: [
+      'Who initiated each recovery decision and under what stated reason',
+      'What ServiceHub asked the provider to do, and the provider\'s response',
+    ],
+    whatServiceHubObserved: [
+      'Whether a message carrying this operation\'s recovery marker re-entered the dead-letter queue',
+      'The scan coverage over each entry\'s observation window',
+    ],
+    whatServiceHubDoesNotKnow: [
+      'Whether any consumer processed the message successfully',
+      'Whether the corresponding business transaction completed',
+      'Anything about messages removed by systems other than ServiceHub',
+      'This entire export is Demo Mode fixture data — it does not describe any real recovery',
+    ],
+    limitations: [
+      {
+        code: 'DEMO_DATA_NOT_REAL_EVIDENCE',
+        appliesToEntries: entries.length,
+        text: 'This package was generated from Demo Mode fixture data, not the Recovery Evidence Ledger. It does not describe any real recovery operation.',
+      },
+    ],
+  };
+
+  const bundle = { manifest, operation, entries, events };
+  return {
+    filename: `demo-recovery-evidence-${operation.id}.json`,
+    content: JSON.stringify(bundle, null, 2),
+    mimeType: 'application/json',
+  };
 }

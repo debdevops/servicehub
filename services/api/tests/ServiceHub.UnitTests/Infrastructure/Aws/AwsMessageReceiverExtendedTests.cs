@@ -327,7 +327,7 @@ public sealed class AwsMessageReceiverExtendedTests
         var sut = new AwsMessageReceiver(new Mock<IAwsClientFactory>().Object,
             repo.Object, NullLogger<AwsMessageReceiver>.Instance);
 
-        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, 999L);
+        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, 999L, null);
 
         result.IsSuccess.Should().BeFalse();
         result.Error.Code.Should().Be("NS.NotFound");
@@ -353,7 +353,7 @@ public sealed class AwsMessageReceiverExtendedTests
 
         var sut = new AwsMessageReceiver(factory.Object, repo.Object, NullLogger<AwsMessageReceiver>.Instance);
 
-        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, 42L);
+        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, 42L, null);
 
         result.IsSuccess.Should().BeFalse();
         result.Error.Code.Should().Be("AWS.SQS.NoDlq");
@@ -391,7 +391,7 @@ public sealed class AwsMessageReceiverExtendedTests
         var sut = new AwsMessageReceiver(factory.Object, repo.Object, NullLogger<AwsMessageReceiver>.Instance);
 
         // No message in the DLQ hashes to sequence number 99999
-        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, 99999L);
+        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, 99999L, null);
 
         result.IsSuccess.Should().BeFalse();
         result.Error.Code.Should().Be("AWS.SQS.MessageNotFound");

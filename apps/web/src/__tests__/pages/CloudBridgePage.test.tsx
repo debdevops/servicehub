@@ -65,24 +65,46 @@ describe('CloudBridgePage', () => {
     expect(screen.getByText(/checking providers/i)).toBeInTheDocument();
   });
 
-  it('shows Disabled badges when all providers are disabled', () => {
+  it('shows "Not available on this server" for disabled providers, distinct from "Not configured"', () => {
     mockUseProviderStatus.mockReturnValue({
-      data: { Aws: false, Gcp: false },
+      data: { Azure: false, Aws: false, Gcp: false },
       isLoading: false,
     });
     renderPage();
-    const disabledBadges = screen.getAllByText(/disabled/i);
-    expect(disabledBadges.length).toBeGreaterThanOrEqual(2);
+    const unavailableBadges = screen.getAllByText(/not available on this server/i);
+    expect(unavailableBadges.length).toBe(3);
+    expect(screen.queryByText(/not configured/i)).not.toBeInTheDocument();
   });
 
-  it('shows Active badges when providers are enabled', () => {
+  it('shows "Connected" (not "Active") badges for enabled providers with ≥1 namespace', () => {
     mockUseProviderStatus.mockReturnValue({
-      data: { Aws: true, Gcp: true },
+      data: { Azure: true, Aws: true, Gcp: true },
+      isLoading: false,
+    });
+    mockUseNamespaces.mockReturnValue({
+      data: [
+        { id: 'ns-1', name: 'azure-ns', isActive: true, cloudProvider: 'azure' },
+        { id: 'ns-2', name: 'aws-ns', isActive: true, cloudProvider: 'aws' },
+        { id: 'ns-3', name: 'gcp-ns', isActive: true, cloudProvider: 'gcp' },
+      ],
       isLoading: false,
     });
     renderPage();
-    const activeBadges = screen.getAllByText(/active/i);
-    expect(activeBadges.length).toBeGreaterThanOrEqual(2);
+    const connectedBadges = screen.getAllByText('Connected');
+    expect(connectedBadges.length).toBe(3);
+    expect(screen.queryByText('Active')).not.toBeInTheDocument();
+  });
+
+  it('shows "Not configured" (not "Active") for an enabled provider with zero namespaces, with an add-connection link', () => {
+    mockUseProviderStatus.mockReturnValue({
+      data: { Azure: true, Aws: true, Gcp: true },
+      isLoading: false,
+    });
+    // No namespaces at all — every enabled provider has 0.
+    renderPage();
+    const notConfiguredBadges = screen.getAllByText('Not configured');
+    expect(notConfiguredBadges.length).toBe(3);
+    expect(screen.getAllByText('+ Add a connection').length).toBe(3);
   });
 
   it('shows no-providers warning when all disabled', () => {
@@ -110,6 +132,29 @@ describe('CloudBridgePage', () => {
     });
     renderPage();
     expect(screen.getByText(/select a namespace above/i)).toBeInTheDocument();
+  });
+
+  it('shows amber "Connection issue" (not green) while still displaying stats, when a namespace test failed', () => {
+    mockUseProviderStatus.mockReturnValue({
+      data: { Azure: true, Aws: true, Gcp: true },
+      isLoading: false,
+    });
+    mockUseNamespaces.mockReturnValue({
+      data: [{ id: 'ns-1', name: 'aws-ns', isActive: true, cloudProvider: 'aws', lastConnectionTestSucceeded: false }],
+      isLoading: false,
+    });
+    renderPage();
+    expect(screen.getByText('Connection issue')).toBeInTheDocument();
+    expect(screen.getByText(/namespace.*connected/i)).toBeInTheDocument();
+  });
+
+  it('still resolves to "Not available on this server" (never a false "Connected") when provider-status has no data, as in Demo Mode', () => {
+    // useProviderStatus() is disabled in Demo Mode and its `data` never resolves — this
+    // mirrors that shape without depending on DemoContext internals.
+    mockUseProviderStatus.mockReturnValue({ data: undefined, isLoading: false });
+    renderPage();
+    expect(screen.getAllByText('Not available on this server').length).toBe(3);
+    expect(screen.queryByLabelText(/namespace/i)).not.toBeInTheDocument();
   });
 
   it('populates namespace options from hook data', () => {

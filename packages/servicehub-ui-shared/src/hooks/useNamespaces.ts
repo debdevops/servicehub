@@ -99,7 +99,7 @@ export function useTestConnection() {
       if (data.isConnected) {
         toast.success(data.message || 'Connection successful');
       } else {
-        toast.error(data.message || 'Connection failed. Check if the Service Bus namespace is accessible.', {
+        toast.error(data.message || 'Connection failed. Check if the namespace is accessible.', {
           duration: 5000,
         });
       }

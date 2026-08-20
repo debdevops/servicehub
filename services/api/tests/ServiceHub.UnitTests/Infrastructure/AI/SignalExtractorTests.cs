@@ -58,6 +58,33 @@ public class SignalExtractorTests
     }
 
     [Fact]
+    public void CombinedText_NoReasonOrDescription_IncludesApplicationProperties()
+    {
+        // AWS SQS's native redrive-policy dead-lettering never populates DeadLetterReason
+        // or DeadLetterErrorDescription — application properties are the only failure signal.
+        var msg = new DlqMessage
+        {
+            MessageId = "msg-1",
+            SequenceNumber = 1,
+            BodyHash = "hash",
+            NamespaceId = Guid.NewGuid(),
+            OwnerId = TestConstants.TestOwnerId,
+            EntityName = "test-queue",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            DeadLetterReason = null,
+            DeadLetterErrorDescription = null,
+            BodyPreview = "{ \"orderId\": \"ORD-1\" }",
+            ApplicationPropertiesJson = "{\"shs-error-type\":\"PaymentTimeout\"}"
+        };
+
+        var result = SignalExtractor.CombinedText(msg);
+
+        result.Should().Contain("paymenttimeout");
+    }
+
+    [Fact]
     public void CombinedText_OnlyReason_ContainsReason()
     {
         var msg = new DlqMessage

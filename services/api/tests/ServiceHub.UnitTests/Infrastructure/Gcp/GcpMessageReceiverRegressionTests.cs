@@ -114,6 +114,36 @@ public sealed class GcpMessageReceiverRegressionTests
     }
 
     [Fact]
+    public async Task PeekMessagesAsync_ShortReadBatch_SkipsConfirmatoryPullAndSpendsOnlyOneDeliveryAttempt()
+    {
+        // Regresses a live-verified bug: a batch shorter than requested is Pub/Sub's normal
+        // signal that nothing more is immediately available, but the old loop always issued one
+        // more confirmatory Pull regardless. Every Pull is a real Pub/Sub delivery that counts
+        // toward the subscription's MaxDeliveryAttempts dead-letter policy even when its result
+        // is a duplicate the loop discards — so a single peek of a small, healthy subscription
+        // silently burned 2 delivery attempts per call. Verified live against a subscription
+        // with maxDeliveryAttempts=5: 2-3 refreshes of a never-actually-failing message were
+        // enough to dead-letter it purely from being viewed. This test pins the fix: when the
+        // first batch already comes back short (fewer than requested), PullAsync must be called
+        // exactly once, not twice.
+        var ns = BuildNamespace();
+        var pull = new PullResponse
+        {
+            ReceivedMessages = { BuildReceived("ack-1", "m1", "{\"orderId\":1}") },
+        };
+        var (sut, subscriber) = BuildSut(ns, SubId, pull);
+
+        var result = await sut.PeekMessagesAsync(new GetMessagesRequest(TestNamespaceId, SubId, null, false, 10));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(1);
+        subscriber.Verify(s => s.PullAsync(It.IsAny<PullRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+        subscriber.Verify(s => s.ModifyAckDeadlineAsync(
+            It.Is<ModifyAckDeadlineRequest>(r => r.AckIds.Count == 1 && r.AckIds.Contains("ack-1")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task PeekMessagesAsync_MessageCarriesCorrelationIdAttribute_PopulatesCorrelationId()
     {
         // Regresses the Multi-Cloud Trace gap this fix closes: Pub/Sub (like SQS) has no
@@ -281,7 +311,7 @@ public sealed class GcpMessageReceiverRegressionTests
             .ReturnsAsync(subscriber.Object);
         var sut = new GcpMessageReceiver(factory.Object, BuildRepo(ns).Object, NullLogger<GcpMessageReceiver>.Instance);
 
-        var replay = await sut.ReplayMessageAsync(TestNamespaceId, SubId, null, sequenceNumber: 123456);
+        var replay = await sut.ReplayMessageAsync(TestNamespaceId, SubId, null, sequenceNumber: 123456, recoveryMarker: null);
 
         replay.IsSuccess.Should().BeFalse();
         replay.Error.Code.Should().Be("GCP.PubSub.NoDlq");

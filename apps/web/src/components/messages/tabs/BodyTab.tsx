@@ -158,12 +158,14 @@ export function BodyTab({ body, contentType }: BodyTabProps) {
   };
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="relative flex-1 flex flex-col overflow-hidden p-4">
+    <div className="p-4">
+      {/* Body Content — sized to its content and scrolled by the shared tab
+          content viewport, same as the other tabs (no nested scrollbar) */}
+      <div className="relative bg-gray-900 rounded-lg p-4 pt-12">
         {/* Copy Button */}
         <button
           onClick={handleCopy}
-          className="absolute top-7 right-7 p-2 rounded-md bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors z-10"
+          className="absolute top-3 right-3 p-2 rounded-md bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors z-10"
           title="Copy formatted JSON to clipboard"
           aria-label="Copy formatted JSON to clipboard"
         >
@@ -171,19 +173,16 @@ export function BodyTab({ body, contentType }: BodyTabProps) {
         </button>
 
         {/* Content Type Badge */}
-        <div className="absolute top-7 left-7 z-10">
+        <div className="absolute top-3 left-3 z-10">
           <span className="px-2 py-1 text-xs font-medium rounded bg-gray-700 text-gray-300">
             {contentType}
           </span>
         </div>
 
-        {/* Body Content */}
-        <div className="bg-gray-900 rounded-lg p-4 pt-12 overflow-y-auto flex-1">
-          <div className="text-sm text-gray-100">
-            {isJSON ? highlightJSON(formattedBody) : (
-              <pre className="font-mono whitespace-pre-wrap break-words">{body}</pre>
-            )}
-          </div>
+        <div className="text-sm text-gray-100">
+          {isJSON ? highlightJSON(formattedBody) : (
+            <pre className="font-mono whitespace-pre-wrap break-words">{body}</pre>
+          )}
         </div>
       </div>
     </div>

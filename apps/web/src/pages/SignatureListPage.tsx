@@ -3,10 +3,13 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { Sparkles } from 'lucide-react';
 import { useDlqSignatures } from '@servicehub/ui-shared/hooks/useDlqSignatures';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useDlqSummary } from '@servicehub/ui-shared/hooks/useDlqHistory';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import type { DlqClusterSignature } from '@servicehub/ui-shared/lib/api/dlqSignatures';
-import { StatusBadge, TrendBadge, FailureInvestigationPanel } from '@/components/dlq';
+import type { Namespace } from '@servicehub/ui-shared/lib/api/types';
+import type { DlqSummary } from '@servicehub/ui-shared/lib/api/dlqHistory';
+import { FailureInvestigationPanel, SignatureSummaryCard } from '@/components/dlq';
 
 const STATUS_OPTIONS = ['Active', 'Resolved', 'Reopened', 'Suppressed', 'Archived'] as const;
 const TREND_OPTIONS = ['New', 'Recurring', 'Escalating'] as const;
@@ -39,30 +42,29 @@ function matchesSearch(signature: DlqClusterSignature, query: string): boolean {
   return haystacks.some((h) => h?.toLowerCase().includes(q));
 }
 
-function SignatureListItem({ signature, namespaceId }: { signature: DlqClusterSignature; namespaceId: string }) {
+function SignatureListItem({
+  signature,
+  namespaceId,
+  namespace,
+  dlqSummary,
+}: {
+  signature: DlqClusterSignature;
+  namespaceId: string;
+  namespace?: Namespace;
+  dlqSummary?: DlqSummary;
+}) {
   const { isDemoMode, cloudProvider } = useDemoContext();
   const basePath = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
   return (
     <div className="space-y-3">
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex items-start justify-between gap-2 mb-2 flex-wrap">
-          <div className="flex items-center gap-2 flex-wrap">
-            <StatusBadge status={signature.status} />
-            <TrendBadge trend={signature.trend} />
-            <span className="text-xs text-gray-500">
-              {signature.size} message{signature.size === 1 ? '' : 's'} · {signature.dominantEntity}
-            </span>
-          </div>
-          <Link
-            to={`${basePath}/signatures/${signature.signatureHash}?namespace=${namespaceId}`}
-            className="text-xs text-primary-600 hover:text-primary-700 font-medium shrink-0"
-          >
-            View details →
-          </Link>
-        </div>
-
-        <p className="text-sm font-medium text-gray-900 mb-1">{signature.dominantDeadletterReason}</p>
-        <p className="text-sm text-gray-600">{signature.explanation}</p>
+      <div className="relative">
+        <Link
+          to={`${basePath}/signatures/${signature.signatureHash}?namespace=${namespaceId}`}
+          className="absolute top-4 right-4 text-xs text-primary-700 hover:text-primary-800 font-medium z-10"
+        >
+          View details →
+        </Link>
+        <SignatureSummaryCard signature={signature} namespace={namespace} dlqSummary={dlqSummary} />
       </div>
 
       <FailureInvestigationPanel cluster={signature} namespaceId={namespaceId} />
@@ -78,6 +80,7 @@ export function SignatureListPage() {
   const activeNamespace = namespaces?.find(ns => ns.isActive);
   const namespaceId = urlNamespaceId || activeNamespace?.id;
   const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
+  const { data: dlqSummary } = useDlqSummary(namespaceId);
 
   useEffect(() => {
     if (namespaceId && namespaceId !== urlNamespaceId && namespaces) {
@@ -104,6 +107,7 @@ export function SignatureListPage() {
   }, [data, statusFilter, trendFilter, reviewStatusFilter, searchQuery]);
 
   return (
+    <div className="flex-1 overflow-y-auto min-w-0">
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center gap-2 mb-4">
         <Sparkles className="w-5 h-5 text-primary-500" />
@@ -115,6 +119,7 @@ export function SignatureListPage() {
         <select
           value={namespaceId ?? ''}
           onChange={e => setSearchParams({ namespace: e.target.value })}
+          aria-label="Select a namespace"
           className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 bg-white"
         >
           <option value="" disabled>Select a namespace…</option>
@@ -147,7 +152,7 @@ export function SignatureListPage() {
             <span className="text-gray-500 font-medium">Status:</span>
             <button
               onClick={() => setStatusFilter(undefined)}
-              className={`px-2.5 py-1 rounded-full font-medium border ${!statusFilter ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200'}`}
+              className={`px-2.5 py-1 rounded-full font-medium border ${!statusFilter ? 'bg-primary-700 text-white border-primary-700' : 'bg-white text-gray-600 border-gray-200'}`}
             >
               All
             </button>
@@ -155,7 +160,7 @@ export function SignatureListPage() {
               <button
                 key={status}
                 onClick={() => setStatusFilter(status === statusFilter ? undefined : status)}
-                className={`px-2.5 py-1 rounded-full font-medium border ${statusFilter === status ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200'}`}
+                className={`px-2.5 py-1 rounded-full font-medium border ${statusFilter === status ? 'bg-primary-700 text-white border-primary-700' : 'bg-white text-gray-600 border-gray-200'}`}
               >
                 {status}
               </button>
@@ -165,7 +170,7 @@ export function SignatureListPage() {
               <button
                 key={trend}
                 onClick={() => setTrendFilter(trend === trendFilter ? undefined : trend)}
-                className={`px-2.5 py-1 rounded-full font-medium border ${trendFilter === trend ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200'}`}
+                className={`px-2.5 py-1 rounded-full font-medium border ${trendFilter === trend ? 'bg-primary-700 text-white border-primary-700' : 'bg-white text-gray-600 border-gray-200'}`}
               >
                 {trend}
               </button>
@@ -173,7 +178,7 @@ export function SignatureListPage() {
             <span className="text-gray-500 font-medium ml-3">Review:</span>
             <button
               onClick={() => setReviewStatusFilter(undefined)}
-              className={`px-2.5 py-1 rounded-full font-medium border ${!reviewStatusFilter ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200'}`}
+              className={`px-2.5 py-1 rounded-full font-medium border ${!reviewStatusFilter ? 'bg-primary-700 text-white border-primary-700' : 'bg-white text-gray-600 border-gray-200'}`}
             >
               All
             </button>
@@ -181,7 +186,7 @@ export function SignatureListPage() {
               <button
                 key={reviewStatus}
                 onClick={() => setReviewStatusFilter(reviewStatus === reviewStatusFilter ? undefined : reviewStatus)}
-                className={`px-2.5 py-1 rounded-full font-medium border ${reviewStatusFilter === reviewStatus ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200'}`}
+                className={`px-2.5 py-1 rounded-full font-medium border ${reviewStatusFilter === reviewStatus ? 'bg-primary-700 text-white border-primary-700' : 'bg-white text-gray-600 border-gray-200'}`}
               >
                 {reviewStatus}
               </button>
@@ -205,12 +210,15 @@ export function SignatureListPage() {
                   key={signature.signatureHash}
                   signature={signature}
                   namespaceId={namespaceId}
+                  namespace={currentNamespace}
+                  dlqSummary={dlqSummary}
                 />
               ))}
             </div>
           )}
         </>
       )}
+    </div>
     </div>
   );
 }

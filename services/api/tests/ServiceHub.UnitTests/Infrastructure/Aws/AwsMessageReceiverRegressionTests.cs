@@ -38,19 +38,29 @@ public sealed class AwsMessageReceiverRegressionTests
         string messageId,
         string receiptHandle,
         string body = "body",
-        Dictionary<string, MessageAttributeValue>? attributes = null)
-        => new()
+        Dictionary<string, MessageAttributeValue>? attributes = null,
+        Dictionary<string, string>? extraSystemAttributes = null)
+    {
+        var systemAttributes = new Dictionary<string, string>
+        {
+            ["SentTimestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(),
+            ["ApproximateReceiveCount"] = "1",
+        };
+        if (extraSystemAttributes is not null)
+        {
+            foreach (var (key, value) in extraSystemAttributes)
+                systemAttributes[key] = value;
+        }
+
+        return new()
         {
             MessageId = messageId,
             ReceiptHandle = receiptHandle,
             Body = body,
-            Attributes = new Dictionary<string, string>
-            {
-                ["SentTimestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(),
-                ["ApproximateReceiveCount"] = "1",
-            },
+            Attributes = systemAttributes,
             MessageAttributes = attributes ?? new Dictionary<string, MessageAttributeValue>(),
         };
+    }
 
     /// <summary>
     /// Builds a receiver whose SQS client serves the given receive rounds in order
@@ -274,6 +284,24 @@ public sealed class AwsMessageReceiverRegressionTests
             It.Is<ReceiveMessageRequest>(r => r.QueueUrl == DlqUrl), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
 
+    [Fact]
+    public async Task PeekDeadLetterMessagesAsync_MapsDeadLetterQueueSourceArnToDeadLetterSource()
+    {
+        // Mirrors Azure's DeadLetterSource mapping (ServiceBusClientWrapper), which SQS
+        // exposes via the DeadLetterQueueSourceArn system attribute on redriven messages.
+        var msg = BuildSqsMessage("m-dl", "rh-dl", "dead body",
+            extraSystemAttributes: new Dictionary<string, string>
+            {
+                ["DeadLetterQueueSourceArn"] = "arn:aws:sqs:us-east-1:123456:reg-queue",
+            });
+        var (sut, _, _) = BuildSut(new ReceiveMessageResponse { Messages = [msg] });
+
+        var result = await sut.PeekDeadLetterMessagesAsync(new GetMessagesRequest(TestNamespaceId, QueueName, null, true, 10));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value[0].DeadLetterSource.Should().Be("arn:aws:sqs:us-east-1:123456:reg-queue");
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Replay — send-before-delete ordering (no message loss window)
     // ─────────────────────────────────────────────────────────────────────────
@@ -296,7 +324,7 @@ public sealed class AwsMessageReceiverRegressionTests
             .ReturnsAsync(new DeleteMessageResponse());
 
         var seq = ComputeSequenceNumber("m-replay");
-        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq);
+        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq, null);
 
         result.IsSuccess.Should().BeTrue();
         // If the process dies between the two calls the message still exists in
@@ -310,6 +338,199 @@ public sealed class AwsMessageReceiverRegressionTests
             It.IsAny<CancellationToken>()), Times.Once);
         // The non-target message inspected during the scan must be released.
         releases.SelectMany(r => r.Entries).Select(e => e.ReceiptHandle).Should().Contain("rh-other");
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_WithRecoveryMarker_UnderAttributeCap_StampsAttributeAndReportsApplied()
+    {
+        var target = BuildSqsMessage("m-marker", "rh-marker", "marker body",
+            attributes: new Dictionary<string, MessageAttributeValue>
+            {
+                ["existing-attr"] = new MessageAttributeValue { DataType = "String", StringValue = "keep-me" },
+            });
+        var (sut, sqs, _) = BuildSut(new ReceiveMessageResponse { Messages = [target] });
+
+        SqsSendRequest? sent = null;
+        sqs.Setup(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<SqsSendRequest, CancellationToken>((req, _) => sent = req)
+            .ReturnsAsync(new SendMessageResponse());
+        sqs.Setup(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteMessageResponse());
+
+        var seq = ComputeSequenceNumber("m-marker");
+        var recoveryMarker = Guid.NewGuid().ToString();
+        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq, recoveryMarker);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeTrue(); // marker applied
+        sent.Should().NotBeNull();
+        sent!.MessageAttributes["x-servicehub-recovery-id"].StringValue.Should().Be(recoveryMarker);
+        // The existing attribute must survive — the marker is added, not swapped in.
+        sent.MessageAttributes["existing-attr"].StringValue.Should().Be("keep-me");
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_WithRecoveryMarker_AtAttributeCap_SkipsMarker_NeverDisplacesExisting()
+    {
+        // SQS caps messages at 10 attributes. With 10 already present, the marker must not be
+        // applied — and, critically, none of the 10 existing attributes may be dropped to make
+        // room for it.
+        var existingAttributes = Enumerable.Range(0, 10)
+            .ToDictionary(
+                i => $"attr-{i}",
+                i => new MessageAttributeValue { DataType = "String", StringValue = $"value-{i}" });
+
+        var target = BuildSqsMessage("m-full", "rh-full", "full body", attributes: existingAttributes);
+        var (sut, sqs, _) = BuildSut(new ReceiveMessageResponse { Messages = [target] });
+
+        SqsSendRequest? sent = null;
+        sqs.Setup(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<SqsSendRequest, CancellationToken>((req, _) => sent = req)
+            .ReturnsAsync(new SendMessageResponse());
+        sqs.Setup(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteMessageResponse());
+
+        var seq = ComputeSequenceNumber("m-full");
+        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq, Guid.NewGuid().ToString());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeFalse(); // marker not applied — the cap was already reached
+        sent.Should().NotBeNull();
+        sent!.MessageAttributes.Should().NotContainKey("x-servicehub-recovery-id");
+        sent.MessageAttributes.Should().HaveCount(10);
+        foreach (var (key, value) in existingAttributes)
+        {
+            sent.MessageAttributes[key].StringValue.Should().Be(value.StringValue);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Replay — cancellation/ambiguity around the Send/Delete pair
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ReplayMessageAsync_SendSucceeds_DeleteThrows_ReturnsDistinctAmbiguousFailure()
+    {
+        // The message is now confirmed duplicated-if-retried: Send already put a copy in the
+        // source queue, and Delete failing means the DLQ copy is still there too. Callers must
+        // be able to tell this apart from an ordinary failure (where nothing happened) so they
+        // route it to the Recovery Ledger's "Unknown" outcome instead of a retry-eligible
+        // "Rejected" — see AutoReplayExecutor/RulesController/BulkOperationExecutor/
+        // SignatureReplayExecutor/MessagesController's AWS.SQS.ReplayAmbiguous check.
+        var target = BuildSqsMessage("m-ambiguous", "rh-ambiguous", "ambiguous body");
+        var (sut, sqs, _) = BuildSut(new ReceiveMessageResponse { Messages = [target] });
+
+        sqs.Setup(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SendMessageResponse());
+        sqs.Setup(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ReceiptHandleIsInvalidException("The input receipt handle is invalid"));
+
+        var seq = ComputeSequenceNumber("m-ambiguous");
+        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq, null);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("AWS.SQS.ReplayAmbiguous");
+        result.Error.Message.Should().ContainAll("sent to the source queue", "not be deleted", "retry");
+        sqs.Verify(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_SendFails_ReturnsOrdinaryFailure_NotAmbiguous()
+    {
+        // Contrast case: nothing was sent, so this is a safe-to-retry ordinary failure, not the
+        // ambiguous duplicate-risk one.
+        var target = BuildSqsMessage("m-sendfail", "rh-sendfail", "body");
+        var (sut, sqs, _) = BuildSut(new ReceiveMessageResponse { Messages = [target] });
+
+        sqs.Setup(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new AmazonSQSException("throttled"));
+
+        var seq = ComputeSequenceNumber("m-sendfail");
+        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq, null);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("AWS.SQS.ReplayFailed");
+        sqs.Verify(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_CallerCancelsAfterSendAccepted_SendAndDeleteStillCompleteAndReplaySucceeds()
+    {
+        // Point-of-no-return regression: once Send is invoked, a caller-side cancellation (e.g.
+        // RulesController.ReplayAll's 30-second batch budget, or DlqMonitorWorker's
+        // stoppingToken) must not abandon the Send/Delete pair mid-flight — that would turn a
+        // knowable outcome into an ambiguous one for no reason, since it can't actually cancel
+        // the AWS-side operation. Both calls must complete even though the caller's token was
+        // already cancelled before this method was invoked.
+        var target = BuildSqsMessage("m-cancel", "rh-cancel", "body");
+        var (sut, sqs, _) = BuildSut();
+
+        using var cts = new CancellationTokenSource();
+
+        // The scan/lock phase (FindAndLockMessageAsync) is still cancellable — it holds a real
+        // SemaphoreSlim gate that checks the token. Cancel right as that phase hands back the
+        // target message, simulating the caller's budget running out at exactly the
+        // point-of-no-return boundary, immediately before Send.
+        sqs.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                cts.Cancel();
+                return new ReceiveMessageResponse { Messages = [target] };
+            });
+        sqs.Setup(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                cts.Token.IsCancellationRequested.Should().BeTrue(
+                    "the token must already be cancelled by the time Send runs, to prove Send ignores it");
+                return Task.FromResult(new SendMessageResponse());
+            });
+        sqs.Setup(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteMessageResponse());
+
+        var seq = ComputeSequenceNumber("m-cancel");
+        var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq, null, cts.Token);
+
+        result.IsSuccess.Should().BeTrue();
+        sqs.Verify(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+        sqs.Verify(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_UnexpectedException_ReturnsFailureResult_NeverThrows()
+    {
+        // IMessageReceiver.ReplayMessageAsync must never throw for an expected failure mode —
+        // callers (RulesController.ReplayAll, AutoReplayExecutor, BulkOperationExecutor,
+        // SignatureReplayExecutor, MessagesController) persist Recovery Ledger/DlqMessage state
+        // immediately after this returns, using CancellationToken.None specifically because "the
+        // provider call above already happened". Before this fix, an exception here (notably one
+        // from the pre-mutation scan phase, which still honors the caller's token) propagated
+        // raw past all of that persistence, stranding the claim until the next server restart.
+        // Mirrors ServiceBusClientWrapper.ReplayMessageAsync's catch-all for the same contract.
+        var (sut, sqs, _) = BuildSut();
+        sqs.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("unexpected SDK failure"));
+
+        var seq = ComputeSequenceNumber("m-unexpected");
+        var act = async () => await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq, null);
+
+        var result = await act.Should().NotThrowAsync();
+        result.Subject.IsFailure.Should().BeTrue();
+        result.Subject.Error.Code.Should().Be("AWS.SQS.UnexpectedError");
+    }
+
+    [Fact]
+    public async Task PurgeMessageAsync_UnexpectedException_ReturnsFailureResult_NeverThrows()
+    {
+        var (sut, sqs, _) = BuildSut();
+        sqs.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("unexpected SDK failure"));
+
+        var seq = ComputeSequenceNumber("m-unexpected-purge");
+        var act = async () => await sut.PurgeMessageAsync(TestNamespaceId, QueueName, null, seq, fromDeadLetter: true);
+
+        var result = await act.Should().NotThrowAsync();
+        result.Subject.IsFailure.Should().BeTrue();
+        result.Subject.Error.Code.Should().Be("AWS.SQS.UnexpectedError");
     }
 
     [Fact]
@@ -359,6 +580,76 @@ public sealed class AwsMessageReceiverRegressionTests
         // In-flight messages are still in the queue — hiding them made counts
         // read 0 during scans, which users report as "my messages vanished".
         result.Value.Should().Be(10);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // DLQ peek — operation timeout budget
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact(Timeout = 60_000)]
+    public async Task PeekDeadLetterMessagesAsync_SlowMultiRoundScan_CompletesWithinTimeoutBudget()
+    {
+        // A real DLQ scan long-polls several rounds before it's confident nothing more is
+        // left (SQS samples a subset of distributed hosts per call, so a lightly-populated
+        // queue needs multiple rounds — see PeekFromUrlAsync's quiet-round logic). Under real
+        // network latency this legitimately takes longer than a few seconds. With
+        // OperationTimeoutSeconds previously set to 15s, a scan like this one (~18s across 6
+        // rounds) timed out even though the queue and credentials were healthy — observed
+        // live as "SQS DLQ peek timed out after 15s". This pins the fix: the operation budget
+        // must survive a realistic multi-round scan.
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        var sqs = new Mock<IAmazonSQS>();
+        sqs.Setup(s => s.GetQueueUrlAsync(
+                It.Is<GetQueueUrlRequest>(r => r.QueueName == QueueName), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GetQueueUrlResponse { QueueUrl = QueueUrl });
+        sqs.Setup(s => s.GetQueueUrlAsync(
+                It.Is<GetQueueUrlRequest>(r => r.QueueName == "reg-queue-dlq"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GetQueueUrlResponse { QueueUrl = DlqUrl });
+        sqs.Setup(s => s.GetQueueAttributesAsync(
+                It.Is<GetQueueAttributesRequest>(r => r.AttributeNames.Contains("RedrivePolicy")),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GetQueueAttributesResponse
+            {
+                Attributes = new Dictionary<string, string>
+                {
+                    ["RedrivePolicy"] = @"{""maxReceiveCount"":5,""deadLetterTargetArn"":""arn:aws:sqs:us-east-1:123456:reg-queue-dlq""}",
+                },
+            });
+
+        // Round 0 finds the one real message; rounds 1-5 come back empty, which is the
+        // 5 consecutive quiet rounds PeekFromUrlAsync requires before it stops looking.
+        // Each round carries an artificial delay standing in for real long-poll + network
+        // latency, so total elapsed time (~18s) lands between the old 15s budget and the
+        // new one, proving the fix rather than just asserting the constant's value.
+        var call = 0;
+        sqs.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(async (ReceiveMessageRequest _, CancellationToken ct) =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(3), ct);
+                var round = call++;
+                return round == 0
+                    ? new ReceiveMessageResponse { Messages = [BuildSqsMessage("m-1", "rh-1")] }
+                    : new ReceiveMessageResponse { Messages = [] };
+            });
+
+        sqs.Setup(s => s.ChangeMessageVisibilityBatchAsync(
+                It.IsAny<ChangeMessageVisibilityBatchRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChangeMessageVisibilityBatchResponse());
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<SHNamespace>())).Returns(sqs.Object);
+
+        var sut = new AwsMessageReceiver(factory.Object, repo.Object, NullLogger<AwsMessageReceiver>.Instance);
+
+        var result = await sut.PeekDeadLetterMessagesAsync(
+            new GetMessagesRequest(TestNamespaceId, QueueName, null, true, 50));
+
+        result.IsSuccess.Should().BeTrue(because: "a ~18s multi-round scan must fit inside the operation timeout budget");
+        result.Value.Should().ContainSingle(m => m.MessageId == "m-1");
     }
 
     // Mirrors AwsMessageReceiver.ComputeSequenceNumber so tests can address

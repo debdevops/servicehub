@@ -238,7 +238,7 @@ apiClient.interceptors.response.use(
         if (!ownsErrorToast && shouldShowError(errorKey)) {
           toast.error(
             `Rate limit reached — the server is asking clients to slow down. Retrying is safe in ${retryAfterSec}s. ` +
-            `If this recurs, raise RateLimit:MaxRequests (see docs/CONFIGURATION.md).`,
+            `If this recurs, ask your ServiceHub administrator to raise the RateLimit:MaxRequests setting.`,
             { duration: Math.max(retryAfterSec * 1000, 8000) }
           );
         }

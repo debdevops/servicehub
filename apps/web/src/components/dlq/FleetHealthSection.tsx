@@ -11,6 +11,10 @@ const severityStyles: Record<FleetHealthSeverity, { dot: string; text: string; b
   critical: { dot: 'bg-red-500', text: 'text-red-700', bg: 'bg-red-50', label: 'Critical' },
   warning: { dot: 'bg-amber-500', text: 'text-amber-700', bg: 'bg-amber-50', label: 'Warning' },
   healthy: { dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50', label: 'Healthy' },
+  // FailureIntelligenceCenterService only ever includes Warning/Critical namespaces in
+  // topUnhealthyNamespaces, so 'unknown' is unreachable here today — this entry exists solely to
+  // satisfy Record<FleetHealthSeverity, ...>'s exhaustiveness.
+  unknown: { dot: 'bg-slate-400', text: 'text-slate-600', bg: 'bg-slate-50', label: 'Not monitored' },
 };
 
 interface FleetHealthSectionProps {

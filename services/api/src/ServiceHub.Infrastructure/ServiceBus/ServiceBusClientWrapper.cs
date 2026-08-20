@@ -1124,15 +1124,16 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
     }
 
     /// <inheritdoc/>
-    public async Task<Result> ReplayMessageAsync(
+    public async Task<Result<bool>> ReplayMessageAsync(
         string entityName,
         string? subscriptionName,
         long sequenceNumber,
+        string? recoveryMarker,
         CancellationToken cancellationToken = default)
     {
         if (_disposed || _client.IsClosed)
         {
-            return Result.Failure(Error.Internal(
+            return Result<bool>.Failure(Error.Internal(
                 ErrorCodes.General.ServiceUnavailable,
                 "The Service Bus client has been disposed or closed."));
         }
@@ -1198,7 +1199,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
                 var hint = scanned >= maxScanDepth
                     ? $" The DLQ was scanned up to {maxScanDepth:N0} messages without finding it. Your DLQ may contain more messages than the scan limit. Consider purging older messages first."
                     : string.Empty;
-                return Result.Failure(Error.NotFound(
+                return Result<bool>.Failure(Error.NotFound(
                     ErrorCodes.Message.NotFound,
                     $"Message with sequence number {sequenceNumber} not found in dead-letter queue.{hint}"));
             }
@@ -1235,6 +1236,17 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             replayMessage.ApplicationProperties["OriginalSequenceNumber"] = sequenceNumber;
             replayMessage.ApplicationProperties["OriginalDeadLetterReason"] = targetMessage.DeadLetterReason ?? "Unknown";
 
+            // Recovery Evidence Ledger marker — the one behavioural change replay makes for
+            // verification (see RecoveryLedgerEntry.RecoveryMarker). Service Bus has no
+            // documented cap on application-property count (only overall message size), so this
+            // is unconditional whenever a marker is supplied.
+            var markerApplied = false;
+            if (!string.IsNullOrEmpty(recoveryMarker))
+            {
+                replayMessage.ApplicationProperties["x-servicehub-recovery-id"] = recoveryMarker;
+                markerApplied = true;
+            }
+
             // Send to main queue/topic
             sender = _client.CreateSender(entityName);
             await sender.SendMessageAsync(replayMessage, cancellationToken).ConfigureAwait(false);
@@ -1247,26 +1259,26 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
                 sequenceNumber,
                 LogRedactor.SanitiseForLog(entityName));
 
-            return Result.Success();
+            return Result<bool>.Success(markerApplied);
         }
         catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
         {
             _logger.LogWarning(ex, "Entity {EntityName} not found", LogRedactor.SanitiseForLog(entityName));
-            return Result.Failure(Error.NotFound(
+            return Result<bool>.Failure(Error.NotFound(
                 ErrorCodes.Queue.NotFound,
                 $"The queue or topic '{entityName}' was not found."));
         }
         catch (ServiceBusException ex)
         {
             _logger.LogError(ex, "Service Bus error replaying message from {EntityName}", LogRedactor.SanitiseForLog(entityName));
-            return Result.Failure(Error.ExternalService(
+            return Result<bool>.Failure(Error.ExternalService(
                 ErrorCodes.Message.SendFailed,
                 $"Failed to replay message: {ex.Reason}"));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error replaying message from {EntityName}", LogRedactor.SanitiseForLog(entityName));
-            return Result.Failure(Error.Internal(
+            return Result<bool>.Failure(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
                 "An unexpected error occurred while replaying the message."));
         }

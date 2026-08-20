@@ -349,17 +349,20 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         }
     }
 
+    private const string RecoveryMarkerAttribute = "x-servicehub-recovery-id";
+
     /// <inheritdoc/>
-    public async Task<Result> ReplayMessageAsync(
+    public async Task<Result<bool>> ReplayMessageAsync(
         Guid namespaceId,
         string entityName,
         string? subscriptionName,
         long sequenceNumber,
+        string? recoveryMarker,
         CancellationToken cancellationToken = default)
     {
         var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken).ConfigureAwait(false);
         if (nsResult.IsFailure)
-            return Result.Failure(nsResult.Error);
+            return Result<bool>.Failure(nsResult.Error);
 
         var baseSubscriptionId = subscriptionName ?? entityName;
 
@@ -373,7 +376,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 nsResult.Value, baseSubscriptionId, cancellationToken).ConfigureAwait(false);
             if (dlqSubscriptionId is null || sourceTopicId is null)
             {
-                return Result.Failure(Error.Validation("GCP.PubSub.NoDlq",
+                return Result<bool>.Failure(Error.Validation("GCP.PubSub.NoDlq",
                     $"Subscription {baseSubscriptionId} has no dead-letter subscription to replay from."));
             }
 
@@ -385,7 +388,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 .ConfigureAwait(false);
             if (target is null)
             {
-                return Result.Failure(Error.NotFound("GCP.PubSub.MessageNotFound",
+                return Result<bool>.Failure(Error.NotFound("GCP.PubSub.MessageNotFound",
                     $"Message {sequenceNumber} not found in DLQ subscription {dlqSubscriptionId}."));
             }
 
@@ -394,6 +397,18 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             var republished = new PubsubMessage { Data = target.Message.Data };
             foreach (var attribute in target.Message.Attributes)
                 republished.Attributes[attribute.Key] = attribute.Value;
+
+            // Recovery Evidence Ledger marker — the one behavioural change replay makes for
+            // verification (see RecoveryLedgerEntry.RecoveryMarker). Pub/Sub allows up to 100
+            // attributes per message, far above what a dead-lettered message would realistically
+            // carry, so this is unconditional whenever a marker is supplied.
+            var markerApplied = false;
+            if (!string.IsNullOrEmpty(recoveryMarker))
+            {
+                republished.Attributes[RecoveryMarkerAttribute] = recoveryMarker;
+                markerApplied = true;
+            }
+
             await publisher.PublishAsync(republished).ConfigureAwait(false);
 
             // Acknowledge = permanently remove the DLQ copy now that a fresh one has been published.
@@ -406,12 +421,12 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             _logger.LogInformation(
                 "Replayed Pub/Sub message {Seq} from {DlqSubscription} to topic {Topic}",
                 sequenceNumber, SanitizeForLog(dlqSubscriptionId), SanitizeForLog(sourceTopicId));
-            return Result.Success();
+            return Result<bool>.Success(markerApplied);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error replaying Pub/Sub message {Seq} for {Subscription}", sequenceNumber, SanitizeForLog(baseSubscriptionId));
-            return Result.Failure(Error.ExternalService("GCP.PubSub.ReplayFailed", ex.Message));
+            return Result<bool>.Failure(Error.ExternalService("GCP.PubSub.ReplayFailed", ex.Message));
         }
     }
 
@@ -547,6 +562,18 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
     /// pullers on the same subscription, like <c>DlqMonitorWorker</c>'s own background scan —
     /// so this loops (deduping by MessageId) until a quiet round or <see cref="MaxScanBatches"/>
     /// is hit, mirroring the AWS provider's equivalent peek-completeness fix for SQS.
+    /// <para>
+    /// A batch shorter than requested stops the loop immediately instead of issuing one more
+    /// confirmatory Pull. Every Pull is a real Pub/Sub delivery that counts toward the
+    /// subscription's <c>MaxDeliveryAttempts</c> dead-letter policy, even when its result is a
+    /// re-nacked duplicate — verified live against a subscription with
+    /// <c>maxDeliveryAttempts=5</c>, where the previous always-do-one-more-pull behaviour burned
+    /// 2 delivery attempts per peek on an otherwise never-failing message, capable of dead-
+    /// lettering it purely from being viewed a few times. A short read is Pub/Sub's normal
+    /// signal that nothing more is immediately available, so skipping the confirmatory pull in
+    /// that case trades a rare miss under heavy concurrent contention for not silently spending
+    /// the entity's redelivery budget on every refresh.
+    /// </para>
     /// </summary>
     private async Task<List<ReceivedMessage>> PullAndNackAsync(
         SubscriberServiceApiClient subscriber, string subscriptionResourceName, int maxMessages, CancellationToken ct)
@@ -556,10 +583,11 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
 
         for (var i = 0; i < MaxScanBatches && messages.Count < maxMessages; i++)
         {
+            var requested = maxMessages - messages.Count;
             var response = await subscriber.PullAsync(new PullRequest
             {
                 Subscription = subscriptionResourceName,
-                MaxMessages = maxMessages - messages.Count
+                MaxMessages = requested
             }, ct).ConfigureAwait(false);
 
             if (response.ReceivedMessages.Count == 0)
@@ -582,6 +610,9 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             {
                 break; // quiet round: everything in this batch was a dup we've already released
             }
+
+            if (response.ReceivedMessages.Count < requested)
+                break; // short read: nothing more is immediately available, skip the extra Pull
         }
 
         return messages;

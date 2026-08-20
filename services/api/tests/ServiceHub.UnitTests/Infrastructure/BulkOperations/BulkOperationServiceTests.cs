@@ -21,6 +21,7 @@ public sealed class BulkOperationServiceTests : IDisposable
     private readonly Mock<IBulkOperationQueue> _queueMock = new();
     private readonly Guid _namespaceId = Guid.NewGuid();
     private const string OwnerId = "entra:test-owner-123";
+    private static readonly RecoveryActor TestActor = new(OwnerId, RecoveryActorKind.User);
 
     public BulkOperationServiceTests()
     {
@@ -262,7 +263,7 @@ public sealed class BulkOperationServiceTests : IDisposable
         AddDlqMessage(2);
 
         var result = await sut.CreateJobAsync(OwnerId,
-            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), "corr-1");
+            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), "corr-1", TestActor);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Status.Should().Be(nameof(BulkOperationStatus.Pending));
@@ -285,7 +286,7 @@ public sealed class BulkOperationServiceTests : IDisposable
         AddDlqMessage(1);
 
         var result = await sut.CreateJobAsync(OwnerId,
-            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null);
+            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null, TestActor);
 
         result.IsFailure.Should().BeTrue();
         (await _dbContext.BulkOperationJobs.CountAsync()).Should().Be(0);
@@ -300,7 +301,7 @@ public sealed class BulkOperationServiceTests : IDisposable
         SetupNamespace(CloudProviderType.Aws);
 
         var result = await sut.CreateJobAsync(OwnerId,
-            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null);
+            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null, TestActor);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("BulkOperation.NoMatches");
@@ -315,7 +316,7 @@ public sealed class BulkOperationServiceTests : IDisposable
         AddDlqMessage(1);
 
         var result = await sut.CreateJobAsync(OwnerId,
-            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null,
+            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null, TestActor,
             allowedNamespaceIds: new HashSet<Guid> { Guid.NewGuid() });
 
         result.IsFailure.Should().BeTrue();
@@ -333,7 +334,7 @@ public sealed class BulkOperationServiceTests : IDisposable
         AddDlqMessage(1);
 
         var result = await sut.CreateJobAsync(OwnerId,
-            new BulkOperationCreateRequest(BulkOperationType.Purge, Filter(_namespaceId)), null);
+            new BulkOperationCreateRequest(BulkOperationType.Purge, Filter(_namespaceId)), null, TestActor);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("BulkOperation.NotAllowed");
@@ -350,7 +351,7 @@ public sealed class BulkOperationServiceTests : IDisposable
         SetupNamespace(CloudProviderType.Aws);
         AddDlqMessage(1);
         var created = await sut.CreateJobAsync(OwnerId,
-            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null);
+            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null, TestActor);
 
         var result = await sut.GetJobAsync(OwnerId, created.Value.Id);
 
@@ -376,7 +377,7 @@ public sealed class BulkOperationServiceTests : IDisposable
         SetupNamespace(CloudProviderType.Aws);
         AddDlqMessage(1);
         var created = await sut.CreateJobAsync(OwnerId,
-            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null);
+            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null, TestActor);
 
         var result = await sut.GetJobAsync("entra:someone-else", created.Value.Id);
 
@@ -393,10 +394,10 @@ public sealed class BulkOperationServiceTests : IDisposable
         AddDlqMessage(2);
 
         var first = await sut.CreateJobAsync(OwnerId,
-            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null);
+            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null, TestActor);
         await Task.Delay(5); // ensure distinct CreatedAt ordering
         var second = await sut.CreateJobAsync(OwnerId,
-            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null);
+            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null, TestActor);
 
         var result = await sut.ListJobsAsync(OwnerId, namespaceId: null, page: 1, pageSize: 20);
 
@@ -416,7 +417,7 @@ public sealed class BulkOperationServiceTests : IDisposable
         SetupNamespace(CloudProviderType.Aws);
         AddDlqMessage(1);
         var created = await sut.CreateJobAsync(OwnerId,
-            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null);
+            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null, TestActor);
 
         var result = await sut.CancelJobAsync(OwnerId, created.Value.Id);
 
@@ -440,6 +441,8 @@ public sealed class BulkOperationServiceTests : IDisposable
             TotalMatched = 1,
             CreatedAt = DateTimeOffset.UtcNow,
             CompletedAt = DateTimeOffset.UtcNow,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = RecoveryActorKind.User,
         };
         _dbContext.BulkOperationJobs.Add(job);
         await _dbContext.SaveChangesAsync();

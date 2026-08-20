@@ -27,8 +27,12 @@ const FailureIntelligenceCenterPageLazy = lazy(() => import('./pages/FailureInte
 const CloudBridgePageLazy = lazy(() => import('./pages/CloudBridgePage').then(m => ({ default: m.CloudBridgePage })));
 const CrossCloudTracePageLazy = lazy(() => import('./pages/CrossCloudTracePage').then(m => ({ default: m.CrossCloudTracePage })));
 const AuditPageLazy = lazy(() => import('./pages/AuditPage').then(m => ({ default: m.AuditPage })));
+const RecoveryLedgerPageLazy = lazy(() => import('./pages/RecoveryLedgerPage'));
+const RecoveryAgeingPageLazy = lazy(() => import('./pages/RecoveryAgeingPage'));
+const RecoveryOperationDetailPageLazy = lazy(() => import('./pages/RecoveryOperationDetailPage'));
 const MessagesOverviewPageLazy = lazy(() => import('./pages/MessagesOverviewPage'));
 const MessagesPageLazy = lazy(() => import('./pages/MessagesPage').then(m => ({ default: m.MessagesPage })));
+const LiveTailPageLazy = lazy(() => import('./pages/LiveTailPage').then(m => ({ default: m.LiveTailPage })));
 const ConnectPageLazy = lazy(() => import('./pages/ConnectPage').then(m => ({ default: m.ConnectPage })));
 const RulesPageLazy = lazy(() => import('./pages/RulesPage').then(m => ({ default: m.RulesPage })));
 const HealthPageLazy = lazy(() => import('./pages/HealthPage').then(m => ({ default: m.HealthPage })));
@@ -71,6 +75,14 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <MessagesOverviewPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'live-tail',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <LiveTailPageLazy />
       </Suspense>
     ),
   },
@@ -191,6 +203,30 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <AuditPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'recovery',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <RecoveryLedgerPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'recovery/ageing',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <RecoveryAgeingPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'recovery/:operationId',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <RecoveryOperationDetailPageLazy />
       </Suspense>
     ),
   },

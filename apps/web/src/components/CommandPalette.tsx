@@ -114,7 +114,7 @@ const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
   {
     id: 'page-connect',
     label: 'Connect',
-    description: 'Add or manage Service Bus namespaces',
+    description: 'Add or manage cloud namespaces',
     group: 'Pages',
     icon: <Plug className="w-4 h-4" />,
     keywords: 'namespace add connection string',

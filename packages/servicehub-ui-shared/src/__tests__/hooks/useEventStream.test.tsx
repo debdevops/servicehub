@@ -89,6 +89,24 @@ describe('useEventStream', () => {
     expect(invalidateSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('invalidates the rules list for rule-category events (e.g. a circuit-breaker trip)', () => {
+    renderHook(() => useEventStream(), { wrapper });
+
+    act(() => {
+      capturedOptions!.onEvent(
+        buildFrame({
+          category: 'rule',
+          eventType: 'servicehub.rule.circuitbreaker.tripped.v1',
+          namespaceId: null,
+        }),
+      );
+      vi.advanceTimersByTime(2_000);
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['rules'] });
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('coalesces an event burst into a single invalidation per query key', () => {
     renderHook(() => useEventStream(), { wrapper });
 

@@ -8,6 +8,7 @@ using ServiceHub.Core.Events;
 using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.Security;
 
 namespace ServiceHub.Infrastructure.BackgroundServices;
@@ -302,10 +303,11 @@ public sealed class DlqMonitorWorker : BackgroundService
     {
         var ruleEngine = scopedServices.GetRequiredService<IRuleEngine>();
         var replayExecutor = scopedServices.GetRequiredService<IAutoReplayExecutor>();
+        var recoveryLedger = scopedServices.GetRequiredService<IRecoveryLedger>();
         var dbContext = scopedServices.GetRequiredService<Persistence.DlqDbContext>();
 
         var enabledRules = await dbContext.AutoReplayRules
-            .Where(r => r.Enabled)
+            .Where(r => r.Enabled && r.OwnerId == ns.OwnerId)
             .ToListAsync(cancellationToken);
 
         // Safety-by-default guard: auto-replay is blocked in production,
@@ -352,6 +354,48 @@ public sealed class DlqMonitorWorker : BackgroundService
             _ruleEvaluationCursors.TryRemove(ns.Id, out _);
         }
 
+        // One RecoveryOperation per rule, opened lazily the first time it fires in this scan
+        // cycle and reused for every message it replays afterward — matches the roadmap's "one
+        // operation per rule-firing batch" without restructuring this message x rule loop, whose
+        // natural unit is a single (message, first-matching-rule) pair, not a rule-level batch.
+        var ruleOperationIds = new Dictionary<long, Guid>();
+
+        async Task<Guid?> GetOrOpenOperationIdAsync(Core.Entities.AutoReplayRule rule)
+        {
+            if (ruleOperationIds.TryGetValue(rule.Id, out var existing))
+            {
+                return existing;
+            }
+
+            var actor = ActorIdentityResolver.ResolveAutomationActor("Rule", rule.Id.ToString(), rule.Name);
+            var operationResult = await recoveryLedger.OpenOperationAsync(new Core.Models.OpenRecoveryOperationRequest
+            {
+                OwnerId = rule.OwnerId,
+                Kind = Core.Enums.RecoveryOperationKind.Replay,
+                Trigger = Core.Enums.RecoveryTrigger.AutoRule,
+                Actor = actor,
+                Reason = rule.Description ?? rule.Name,
+                NamespaceId = ns.Id,
+                NamespaceNameSnapshot = ns.DisplayName ?? ns.Name,
+                ProviderSnapshot = ns.Provider,
+                EnvironmentSnapshot = ns.Environment,
+                ScopeDescription = $"auto-replay rule {rule.Id} ({rule.Name})",
+                SourceRuleId = rule.Id,
+                TargetCount = 0, // Unknown up front — this rule may fire against any number of messages this cycle.
+            }, cancellationToken);
+
+            if (operationResult.IsFailure)
+            {
+                _logger.LogError(
+                    "Failed to open recovery ledger operation for auto-replay rule {RuleId}/{RuleName}: {Error}",
+                    rule.Id, Security.LogRedactor.SanitiseForLog(rule.Name), operationResult.Error.Message);
+                return null;
+            }
+
+            ruleOperationIds[rule.Id] = operationResult.Value.Id;
+            return operationResult.Value.Id;
+        }
+
         foreach (var message in activeMessages)
         {
             var matchingRules = ruleEngine.FindMatchingRules(message, enabledRules);
@@ -366,8 +410,32 @@ public sealed class DlqMonitorWorker : BackgroundService
                     break;
                 }
 
+                // Cheap pre-check before paying for a ledger operation: once a message's
+                // lineage has already been recorded past the recurrence cap (MatchedCount grows
+                // with every recorded attempt, including a Declined one), the verdict can only
+                // ever be Escalate again — re-running the full executor would open a fresh,
+                // empty Recovery Evidence operation and add yet another Declined entry every
+                // poll cycle, forever, for a message that will never become eligible again.
+                // Skip silently once we're past the boundary; the first crossing (MatchedCount
+                // == cap) still goes through ExecuteAsync below so it's recorded exactly once.
+                var (preDecision, _) = await replayExecutor.EvaluateEligibilityAsync(message, rule, ns, cancellationToken);
+                if (preDecision.Verdict != Core.Enums.EligibilityVerdict.Allow
+                    && preDecision.MatchedCount > RecoveryEligibilityGate.RecurrenceLineageCap)
+                {
+                    break;
+                }
+
+                var operationId = await GetOrOpenOperationIdAsync(rule);
+                if (operationId is null)
+                {
+                    // No ledger coverage available for this rule this cycle — skip the replay
+                    // rather than move the message without a durable record. It will be
+                    // re-evaluated on a later poll cycle.
+                    break;
+                }
+
                 var replayResult = await replayExecutor.ExecuteAsync(
-                    message, rule, action, cancellationToken);
+                    message, rule, action, ns, operationId.Value, cancellationToken);
 
                 if (replayResult.IsSuccess)
                 {

@@ -12,30 +12,31 @@ vi.mock('react-router-dom', async () => {
 
 const mockDeleteNs = vi.fn().mockResolvedValue(undefined);
 
+const { mockUseNamespaces } = vi.hoisted(() => ({ mockUseNamespaces: vi.fn() }));
+
+const defaultNamespaces = [
+  {
+    id: 'ns-001',
+    name: 'production-sb',
+    displayName: 'Production',
+    isActive: true,
+    lastUsedAt: '2024-01-15T10:00:00Z',
+  },
+  {
+    id: 'ns-002',
+    name: 'staging-sb',
+    displayName: 'Staging',
+    isActive: false,
+    lastUsedAt: null,
+  },
+];
+
 vi.mock('@servicehub/ui-shared/hooks/useCloudBridge', () => ({
   useProviderStatus: () => ({ data: { Aws: false, Gcp: false } }),
 }));
 
 vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
-  useNamespaces: () => ({
-    data: [
-      {
-        id: 'ns-001',
-        name: 'production-sb',
-        displayName: 'Production',
-        isActive: true,
-        lastUsedAt: '2024-01-15T10:00:00Z',
-      },
-      {
-        id: 'ns-002',
-        name: 'staging-sb',
-        displayName: 'Staging',
-        isActive: false,
-        lastUsedAt: null,
-      },
-    ],
-    isLoading: false,
-  }),
+  useNamespaces: () => mockUseNamespaces(),
   useNamespace: () => ({ data: undefined, isLoading: false }),
   useCreateNamespace: () => ({
     mutateAsync: vi.fn().mockResolvedValue({ id: 'ns-new', name: 'new-ns', displayName: 'New NS' }),
@@ -72,6 +73,7 @@ describe('ConnectPage - Saved Connections', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDeleteNs.mockResolvedValue(undefined);
+    mockUseNamespaces.mockReturnValue({ data: defaultNamespaces, isLoading: false });
   });
 
   it('renders saved connections list', () => {
@@ -97,6 +99,16 @@ describe('ConnectPage - Saved Connections', () => {
     // Active namespace gets green dot; Staging gets gray dot
     const greenDots = document.querySelectorAll('.bg-green-500');
     expect(greenDots.length).toBeGreaterThan(0);
+  });
+
+  it('shows an amber dot instead of green when the last connection test failed', () => {
+    mockUseNamespaces.mockReturnValue({
+      data: [{ ...defaultNamespaces[0], lastConnectionTestSucceeded: false }, defaultNamespaces[1]],
+      isLoading: false,
+    });
+    renderConnectPage();
+    expect(document.querySelectorAll('.bg-amber-500').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.bg-green-500').length).toBe(0);
   });
 
   it('shows last used date for namespace that has one', () => {

@@ -10,6 +10,7 @@ using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Infrastructure.BackgroundServices;
@@ -26,7 +27,8 @@ public sealed class DlqMonitorWorkerRegressionTests
     private static Namespace BuildNamespace(string name = "reg-ns", EnvironmentType environment = EnvironmentType.Dev) =>
         Namespace.Create(name,
             "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey12=",
-            environment: environment).Value;
+            environment: environment,
+            ownerId: "owner").Value;
 
     private static DlqMessage BuildDlqMessage(Guid namespaceId, DateTimeOffset detectedAt, string messageId = "msg-1") =>
         new()
@@ -86,8 +88,11 @@ public sealed class DlqMonitorWorkerRegressionTests
                 rules.Select(r => (r, action)).ToList());
 
         var executor = new Mock<IAutoReplayExecutor>();
+        executor.Setup(e => e.EvaluateEligibilityAsync(
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<Namespace>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((EligibilityDecision.Allow, (string?)null));
         executor.Setup(e => e.ExecuteAsync(
-                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()))
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<string>.Success("replayed"));
 
         var services = new ServiceCollection();
@@ -97,6 +102,7 @@ public sealed class DlqMonitorWorkerRegressionTests
         services.AddSingleton(Mock.Of<IPlatformEventBus>());
         services.AddSingleton(ruleEngine.Object);
         services.AddSingleton(executor.Object);
+        services.AddSingleton<IRecoveryLedger>(new RecoveryLedgerService(db));
         var sp = services.BuildServiceProvider();
 
         return (db, sp, executor);
@@ -125,7 +131,7 @@ public sealed class DlqMonitorWorkerRegressionTests
 
         // The whole point of the grace period: nothing replays before it elapses.
         executor.Verify(e => e.ExecuteAsync(
-                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
         await db.Database.CloseConnectionAsync();
@@ -146,8 +152,44 @@ public sealed class DlqMonitorWorkerRegressionTests
         await RunOneCycleAsync(sp);
 
         executor.Verify(e => e.ExecuteAsync(
-                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.AtLeastOnce);
+
+        await db.Database.CloseConnectionAsync();
+        await db.DisposeAsync();
+        await sp.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task AutoReplay_MessageAlreadyPastRecurrenceLineageCap_DoesNotOpenFreshLedgerOperationEveryCycle()
+    {
+        // A message whose lineage was already declined past RecurrenceLineageCap on an earlier
+        // cycle can only ever be Escalate-declined again — re-opening a Recovery Evidence
+        // operation for it every poll cycle floods the ledger with empty (Targets: 0) rows for
+        // a message that will never become eligible again (see DlqMonitorWorker.cs).
+        var ns = BuildNamespace();
+        var (db, sp, executor) = await BuildHarnessAsync(
+            ns,
+            new RuleAction { AutoReplay = true, DelaySeconds = 0 },
+            detectedAt: DateTimeOffset.UtcNow.AddHours(-2));
+
+        executor.Setup(e => e.EvaluateEligibilityAsync(
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<Namespace>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((
+                new EligibilityDecision(
+                    EligibilityVerdict.Escalate,
+                    "RECURRENCE_CAP_EXCEEDED",
+                    MatchedCount: RecoveryEligibilityGate.RecurrenceLineageCap + 5),
+                (string?)null));
+
+        await RunOneCycleAsync(sp);
+
+        // No attempt should even be made — the pre-check must short-circuit before the
+        // executor (and therefore before any ledger operation) is ever reached.
+        executor.Verify(e => e.ExecuteAsync(
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        db.RecoveryOperations.Should().BeEmpty();
 
         await db.Database.CloseConnectionAsync();
         await db.DisposeAsync();
@@ -166,7 +208,7 @@ public sealed class DlqMonitorWorkerRegressionTests
         await RunOneCycleAsync(sp);
 
         executor.Verify(e => e.ExecuteAsync(
-                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.AtLeastOnce);
 
         await db.Database.CloseConnectionAsync();
@@ -186,7 +228,7 @@ public sealed class DlqMonitorWorkerRegressionTests
         await RunOneCycleAsync(sp);
 
         executor.Verify(e => e.ExecuteAsync(
-                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.AtLeastOnce);
 
         await db.Database.CloseConnectionAsync();
@@ -208,8 +250,98 @@ public sealed class DlqMonitorWorkerRegressionTests
         await RunOneCycleAsync(sp);
 
         executor.Verify(e => e.ExecuteAsync(
-                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<CancellationToken>()),
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);
+
+        await db.Database.CloseConnectionAsync();
+        await db.DisposeAsync();
+        await sp.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task AutoReplay_RuleOwnedByDifferentTenant_IsNotAppliedToNamespace()
+    {
+        // Owner A's enabled rule must never fire against Owner B's namespace/messages —
+        // the query that loads candidate rules previously had no OwnerId predicate at all.
+        var ownerBNamespace = Namespace.Create(
+            "owner-b-ns",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey12=",
+            environment: EnvironmentType.Dev,
+            ownerId: "owner-b").Value;
+
+        var ownerARule = new AutoReplayRule
+        {
+            Name = "owner-a-rule",
+            OwnerId = "owner-a",
+            Enabled = true,
+            ConditionsJson = "[]",
+            ActionsJson = "{}",
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        var ownerBMessage = new DlqMessage
+        {
+            MessageId = "owner-b-msg",
+            SequenceNumber = 1,
+            BodyHash = "hash",
+            NamespaceId = ownerBNamespace.Id,
+            OwnerId = "owner-b",
+            EntityName = "orders",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddHours(-2).AddMinutes(-1),
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddHours(-2),
+            Status = DlqMessageStatus.Active,
+        };
+
+        var options = new DbContextOptionsBuilder<DlqDbContext>()
+            .UseSqlite("DataSource=:memory:")
+            .Options;
+        var db = new DlqDbContext(options);
+        await db.Database.OpenConnectionAsync();
+        await db.Database.EnsureCreatedAsync();
+
+        db.AutoReplayRules.Add(ownerARule);
+        db.DlqMessages.Add(ownerBMessage);
+        await db.SaveChangesAsync();
+
+        // A rule engine that would match everything, so a false-positive replay can only
+        // be explained by the cross-owner rule leaking through the query — never by the
+        // matcher failing to match.
+        var ruleEngine = new Mock<IRuleEngine>();
+        ruleEngine.Setup(e => e.FindMatchingRules(It.IsAny<DlqMessage>(), It.IsAny<IReadOnlyList<AutoReplayRule>>()))
+            .Returns((DlqMessage _, IReadOnlyList<AutoReplayRule> rules) =>
+                rules.Select(r => (r, new RuleAction { AutoReplay = true, DelaySeconds = 0 })).ToList());
+
+        var executor = new Mock<IAutoReplayExecutor>();
+        executor.Setup(e => e.EvaluateEligibilityAsync(
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<Namespace>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((EligibilityDecision.Allow, (string?)null));
+        executor.Setup(e => e.ExecuteAsync(
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<string>.Success("replayed"));
+
+        var services = new ServiceCollection();
+        services.AddSingleton(db);
+        services.AddSingleton(ruleEngine.Object);
+        services.AddSingleton(executor.Object);
+        services.AddSingleton(Mock.Of<IPlatformEventBus>());
+        services.AddSingleton<IRecoveryLedger>(new RecoveryLedgerService(db));
+        var sp = services.BuildServiceProvider();
+
+        var worker = new DlqMonitorWorker(
+            sp, new ConfigurationBuilder().AddInMemoryCollection().Build(), NullLogger<DlqMonitorWorker>.Instance);
+
+        await worker.EvaluateAutoReplayRulesAsync(sp, ownerBNamespace, CancellationToken.None);
+
+        // No cross-owner replay: Owner A's rule is invisible to Owner B's evaluation.
+        executor.Verify(e => e.ExecuteAsync(
+                It.IsAny<DlqMessage>(), It.IsAny<AutoReplayRule>(), It.IsAny<RuleAction>(), It.IsAny<Namespace>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        ruleEngine.Verify(e => e.FindMatchingRules(It.IsAny<DlqMessage>(), It.IsAny<IReadOnlyList<AutoReplayRule>>()),
+            Times.Never);
+
+        var reloaded = await db.DlqMessages.SingleAsync(m => m.MessageId == "owner-b-msg");
+        reloaded.Status.Should().Be(DlqMessageStatus.Active);
 
         await db.Database.CloseConnectionAsync();
         await db.DisposeAsync();

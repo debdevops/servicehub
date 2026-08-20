@@ -196,6 +196,8 @@ export function CrossCloudTracePage() {
   };
 
   return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 overflow-y-auto">
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Page header */}
       <div className="flex items-center gap-3">
@@ -384,6 +386,8 @@ export function CrossCloudTracePage() {
           )}
         </div>
       )}
+    </div>
+    </div>
     </div>
   );
 }

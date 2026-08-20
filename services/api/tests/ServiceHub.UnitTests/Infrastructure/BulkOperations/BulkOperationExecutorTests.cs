@@ -8,8 +8,10 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Events;
 using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.BulkOperations;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Infrastructure.BulkOperations;
@@ -40,9 +42,14 @@ public sealed class BulkOperationExecutorTests : IDisposable
         _dbContext.Dispose();
     }
 
-    private BulkOperationExecutor CreateSut() => new(
-        _dbContext, _namespaceRepositoryMock.Object, _messageOperationsMock.Object,
-        _auditServiceMock.Object, _eventBusMock.Object, NullLogger<BulkOperationExecutor>.Instance);
+    private BulkOperationExecutor CreateSut()
+    {
+        var ledger = new RecoveryLedgerService(_dbContext);
+        return new BulkOperationExecutor(
+            _dbContext, _namespaceRepositoryMock.Object, _messageOperationsMock.Object,
+            ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance),
+            _auditServiceMock.Object, _eventBusMock.Object, NullLogger<BulkOperationExecutor>.Instance);
+    }
 
     private Namespace SetupNamespace(EnvironmentType environment = EnvironmentType.Dev)
     {
@@ -88,7 +95,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
         BulkOperationStatus status = BulkOperationStatus.Pending,
         int totalMatched = 1,
         DateTimeOffset? cancellationRequestedAt = null,
-        DlqMessageStatus? statusFilter = DlqMessageStatus.Active)
+        DlqMessageStatus? statusFilter = DlqMessageStatus.Active,
+        RecoveryActorKind requestedByActorKind = RecoveryActorKind.User)
     {
         var job = new BulkOperationJob
         {
@@ -101,6 +109,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
             TotalMatched = totalMatched,
             CreatedAt = DateTimeOffset.UtcNow,
             CancellationRequestedAt = cancellationRequestedAt,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = requestedByActorKind,
         };
         _dbContext.BulkOperationJobs.Add(job);
         await _dbContext.SaveChangesAsync();
@@ -130,7 +140,7 @@ public sealed class BulkOperationExecutorTests : IDisposable
         var stored = await _dbContext.BulkOperationJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
         stored.Status.Should().Be(BulkOperationStatus.Completed);
         _messageOperationsMock.Verify(
-            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -189,8 +199,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
         var job = await AddJobAsync();
 
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 42, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 42, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
@@ -218,8 +228,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
         var job = await AddJobAsync();
 
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 7, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Failure(Error.ExternalService("Provider.Error", "message not found")));
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 7, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Failure(Error.ExternalService("Provider.Error", "message not found")));
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
@@ -242,13 +252,13 @@ public sealed class BulkOperationExecutorTests : IDisposable
         var job = await AddJobAsync();
 
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders-topic", "orders-sub", 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders-topic", "orders-sub", 1, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
         _messageOperationsMock.Verify(
-            m => m.ReplayMessageAsync(_namespaceId, "orders-topic", "orders-sub", 1, It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(_namespaceId, "orders-topic", "orders-sub", 1, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -269,7 +279,7 @@ public sealed class BulkOperationExecutorTests : IDisposable
         storedJob.SkippedCount.Should().Be(1);
         storedJob.SuccessCount.Should().Be(0);
         _messageOperationsMock.Verify(
-            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -294,6 +304,158 @@ public sealed class BulkOperationExecutorTests : IDisposable
 
         var storedJob = await _dbContext.BulkOperationJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
         storedJob.SuccessCount.Should().Be(1);
+    }
+
+    // ── Eligibility Gate wiring (roadmap §9/§29.10, Phase B) ──────────────────
+    //
+    // BulkOperationExecutor used to resolve every job's actor as ActorKind=Automation
+    // unconditionally (ActorIdentityResolver.ResolveAutomationActor), even for a bulk-purge job a
+    // human requested through the UI — which the Eligibility Gate's predicate 1 (purge-origin
+    // prohibition) would then permanently deny once wired, a real regression of a shipped
+    // feature (roadmap §29.10, Changelog Pass 6). These two tests prove the fix: a job whose
+    // RequestedByActorKind reflects the true (human) requester still succeeds, while a job
+    // genuinely actored as Automation/System — the only case predicate 1 is meant to foreclose —
+    // is still denied and durably recorded as Declined.
+
+    [Fact]
+    public async Task ExecuteAsync_PurgeRequestedByHuman_SucceedsNotDeniedByEligibilityGate()
+    {
+        var sut = CreateSut();
+        SetupNamespace();
+        var message = AddDlqMessage(3);
+        var job = await AddJobAsync(
+            operationType: BulkOperationType.Purge, requestedByActorKind: RecoveryActorKind.User);
+
+        _messageOperationsMock
+            .Setup(m => m.PurgeMessageAsync(_namespaceId, "orders", null, 3, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        var storedMessage = await _dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == message.Id);
+        storedMessage.Status.Should().Be(DlqMessageStatus.Discarded);
+
+        var storedJob = await _dbContext.BulkOperationJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
+        storedJob.SuccessCount.Should().Be(1);
+        storedJob.SkippedCount.Should().Be(0);
+
+        _messageOperationsMock.Verify(
+            m => m.PurgeMessageAsync(_namespaceId, "orders", null, 3, true, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_PurgeActoredAsAutomation_DeniedAndRecordsDeclinedEntry()
+    {
+        var sut = CreateSut();
+        var ns = SetupNamespace();
+        AddDlqMessage(3);
+        var job = await AddJobAsync(
+            operationType: BulkOperationType.Purge, requestedByActorKind: RecoveryActorKind.Automation);
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        var storedJob = await _dbContext.BulkOperationJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
+        storedJob.SuccessCount.Should().Be(0);
+        storedJob.SkippedCount.Should().Be(1);
+
+        _messageOperationsMock.Verify(
+            m => m.PurgeMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        var ledger = new RecoveryLedgerService(_dbContext);
+        var operations = await ledger.QueryOperationsAsync(OwnerId, ns.Id, limit: 10);
+        var entries = await ledger.QueryEntriesAsync(new RecoveryEntryQuery
+        {
+            OwnerId = OwnerId,
+            OperationId = operations.Single().Id,
+        });
+        entries.Should().ContainSingle(e => e.State == RecoveryEntryState.Declined
+                                             && e.Disposition == RecoveryDisposition.Declined);
+    }
+
+    // ── Recurrence cap (§7.5), actor-conditional per the accepted Option B roadmap decision ───
+    //
+    // Predicate 3 used to escalate/deny any actor once 3+ prior lineage-matched attempts existed.
+    // Option B makes it actor-conditional: Automation/System still hard-stops (proven at the gate
+    // level and by AutoReplayExecutorTests), but a human (User/ApiKey) actor is not auto-denied —
+    // the gate keeps evaluating, and if every other predicate passes, the recovery proceeds and is
+    // recorded as its own real outcome, never a fabricated Declined entry.
+
+    private void SeedLineageEntry(string entityName, string bodyHash, DateTimeOffset begunAt)
+    {
+        var operation = new RecoveryOperation
+        {
+            OwnerId = OwnerId,
+            Kind = RecoveryOperationKind.Replay,
+            Trigger = RecoveryTrigger.AutoRule,
+            ActorIdentity = "test-rule",
+            ActorKind = RecoveryActorKind.Automation,
+            ScopeDescription = "test",
+            ServiceVersion = "test",
+            OpenedAt = begunAt,
+            TargetCount = 1,
+        };
+        _dbContext.RecoveryOperations.Add(operation);
+
+        var entry = new RecoveryLedgerEntry
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerId,
+            NamespaceId = _namespaceId,
+            EntityNameSnapshot = entityName,
+            BodyHash = bodyHash,
+            TargetEntity = entityName,
+            BegunAt = begunAt,
+            State = RecoveryEntryState.Recovered,
+            MarkerApplied = true,
+            VerificationConfidence = VerificationConfidence.Exact,
+            SourceMessageIdSnapshot = $"provider-msg-{Guid.NewGuid():N}",
+            SourceSequenceNumberSnapshot = Random.Shared.NextInt64(),
+        };
+        _dbContext.RecoveryLedgerEntries.Add(entry);
+        _dbContext.SaveChanges();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReplayRequestedByHumanAtRecurrenceCap_SucceedsNotDeniedByEligibilityGate()
+    {
+        var sut = CreateSut();
+        SetupNamespace();
+        var message = AddDlqMessage(3);
+        for (var i = 0; i < 3; i++)
+            SeedLineageEntry("orders", "hash-3", DateTimeOffset.UtcNow.AddDays(-i - 1));
+        var job = await AddJobAsync(requestedByActorKind: RecoveryActorKind.User);
+
+        _messageOperationsMock
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 3, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        var storedJob = await _dbContext.BulkOperationJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
+        storedJob.SuccessCount.Should().Be(1);
+        storedJob.SkippedCount.Should().Be(0);
+
+        var storedMessage = await _dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == message.Id);
+        storedMessage.Status.Should().Be(DlqMessageStatus.Replayed);
+
+        // The 3 seeded lineage rows remain untouched, and this run added its own real entry —
+        // never a Declined one.
+        var entries = await _dbContext.RecoveryLedgerEntries.AsNoTracking()
+            .Where(e => e.OwnerId == OwnerId).ToListAsync();
+        entries.Should().HaveCount(4);
+        entries.Should().NotContain(e => e.State == RecoveryEntryState.Declined);
+
+        // §9.4.1 / acceptance criteria: the cap being reached-but-allowed for a human actor is
+        // still evidenced — exactly one RecurrenceCapObserved event on the real entry, never a
+        // fabricated Declined entry.
+        var realEntry = entries.Single(e => e.State != RecoveryEntryState.Recovered);
+        var events = await _dbContext.RecoveryEvents.AsNoTracking()
+            .Where(e => e.OwnerId == OwnerId && e.EntryId == realEntry.Id).ToListAsync();
+        events.Should().ContainSingle(e => e.EventType == RecoveryEventType.RecurrenceCapObserved
+                                            && e.DetailJson!.Contains("RECURRENCE_CAP_EXCEEDED")
+                                            && e.DetailJson.Contains("3"));
     }
 
     // ── Purge eligibility (v3.6.0 P2-2) ──────────────────────────────────────
@@ -425,12 +587,12 @@ public sealed class BulkOperationExecutorTests : IDisposable
         // Cancel after the first message is processed, before the second.
         var callCount = 0;
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
                 callCount++;
                 if (callCount == 1) cts.Cancel();
-                return Result.Success();
+                return Result<bool>.Success(true);
             });
 
         await sut.ExecuteAsync(job.Id, cts.Token);
@@ -452,8 +614,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
         var job = await AddJobAsync();
 
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 1, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
@@ -474,8 +636,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
         var job = await AddJobAsync(operationType: BulkOperationType.Replay);
 
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 1, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
@@ -501,8 +663,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
         var job = await AddJobAsync();
 
         _messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 7, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Failure(Error.ExternalService("Provider.Error", "message not found")));
+            .Setup(m => m.ReplayMessageAsync(_namespaceId, "orders", null, 7, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Failure(Error.ExternalService("Provider.Error", "message not found")));
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
@@ -585,13 +747,15 @@ public sealed class BulkOperationExecutorTests : IDisposable
             StatusFilter = DlqMessageStatus.Active,
             TotalMatched = 2,
             CreatedAt = DateTimeOffset.UtcNow,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = RecoveryActorKind.User,
         };
         dbContext.BulkOperationJobs.Add(job);
         await dbContext.SaveChangesAsync();
 
         var messageOperationsMock = new Mock<IMessageOperationsService>();
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, decoy.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, decoy.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .Returns(async () =>
             {
                 // While this job is still processing the decoy, a different worker (its own
@@ -603,14 +767,16 @@ public sealed class BulkOperationExecutorTests : IDisposable
                 racingCopy.ReplaySuccess = true;
                 await racingContext.SaveChangesAsync();
 
-                return Result.Success();
+                return Result<bool>.Success(true);
             });
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, target.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, target.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
+        var ledger = new RecoveryLedgerService(dbContext);
         var sut = new BulkOperationExecutor(
             dbContext, namespaceRepositoryMock.Object, messageOperationsMock.Object,
+            ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance),
             Mock.Of<IAuditService>(), Mock.Of<IPlatformEventBus>(), NullLogger<BulkOperationExecutor>.Instance);
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
@@ -618,7 +784,7 @@ public sealed class BulkOperationExecutorTests : IDisposable
         // This job's own claim attempt for `target` lost the race — it must never have
         // reached the provider a second time.
         messageOperationsMock.Verify(
-            m => m.ReplayMessageAsync(namespaceId, "orders", null, target.SequenceNumber, It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(namespaceId, "orders", null, target.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
         var storedJob = await dbContext.BulkOperationJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
@@ -686,13 +852,15 @@ public sealed class BulkOperationExecutorTests : IDisposable
             StatusFilter = DlqMessageStatus.Active,
             TotalMatched = 1,
             CreatedAt = DateTimeOffset.UtcNow,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = RecoveryActorKind.User,
         };
         dbContext.BulkOperationJobs.Add(job);
         await dbContext.SaveChangesAsync();
 
         var messageOperationsMock = new Mock<IMessageOperationsService>();
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, target.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, target.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .Returns(async () =>
             {
                 // By this point the real claim save has already committed (it runs before
@@ -717,8 +885,10 @@ public sealed class BulkOperationExecutorTests : IDisposable
                 throw new OperationCanceledException();
             });
 
+        var ledger = new RecoveryLedgerService(dbContext);
         var sut = new BulkOperationExecutor(
             dbContext, namespaceRepositoryMock.Object, messageOperationsMock.Object,
+            ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance),
             Mock.Of<IAuditService>(), Mock.Of<IPlatformEventBus>(), NullLogger<BulkOperationExecutor>.Instance);
 
         var act = async () => await sut.ExecuteAsync(job.Id, CancellationToken.None);
@@ -792,16 +962,18 @@ public sealed class BulkOperationExecutorTests : IDisposable
             StatusFilter = DlqMessageStatus.Active,
             TotalMatched = 2,
             CreatedAt = DateTimeOffset.UtcNow,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = RecoveryActorKind.User,
         };
         dbContext.BulkOperationJobs.Add(job);
         await dbContext.SaveChangesAsync();
 
         var messageOperationsMock = new Mock<IMessageOperationsService>();
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, first.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, first.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, second.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, second.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .Returns(async () =>
             {
                 // `first` already finished processing cleanly (its own outcome save committed,
@@ -819,11 +991,13 @@ public sealed class BulkOperationExecutorTests : IDisposable
                 racingCopy.ReplaySuccess = true;
                 await racingContext.SaveChangesAsync();
 
-                return Result.Success();
+                return Result<bool>.Success(true);
             });
 
+        var ledger = new RecoveryLedgerService(dbContext);
         var sut = new BulkOperationExecutor(
             dbContext, namespaceRepositoryMock.Object, messageOperationsMock.Object,
+            ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance),
             Mock.Of<IAuditService>(), Mock.Of<IPlatformEventBus>(), NullLogger<BulkOperationExecutor>.Instance);
 
         var act = async () => await sut.ExecuteAsync(job.Id, CancellationToken.None);
@@ -895,6 +1069,8 @@ public sealed class BulkOperationExecutorTests : IDisposable
             StatusFilter = DlqMessageStatus.Active,
             TotalMatched = 2,
             CreatedAt = DateTimeOffset.UtcNow,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = RecoveryActorKind.User,
         };
         dbContext.BulkOperationJobs.Add(job);
         await dbContext.SaveChangesAsync();
@@ -903,20 +1079,22 @@ public sealed class BulkOperationExecutorTests : IDisposable
 
         var messageOperationsMock = new Mock<IMessageOperationsService>();
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, first.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, first.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
         messageOperationsMock
-            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, second.SequenceNumber, It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(namespaceId, "orders", null, second.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .Returns(async () =>
             {
                 await using var observerContext = new DlqDbContext(options);
                 var observedFirst = await observerContext.DlqMessages.AsNoTracking().SingleAsync(m => m.Id == first.Id);
                 firstMessageStatusObservedDuringSecondMessage = observedFirst.Status;
-                return Result.Success();
+                return Result<bool>.Success(true);
             });
 
+        var ledger = new RecoveryLedgerService(dbContext);
         var sut = new BulkOperationExecutor(
             dbContext, namespaceRepositoryMock.Object, messageOperationsMock.Object,
+            ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance),
             Mock.Of<IAuditService>(), Mock.Of<IPlatformEventBus>(), NullLogger<BulkOperationExecutor>.Instance);
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);

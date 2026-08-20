@@ -1,4 +1,5 @@
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Core.Interfaces;
@@ -30,9 +31,15 @@ public interface ILiveTailSessionFactory
     /// <param name="entityName">The queue or topic name.</param>
     /// <param name="subscriptionName">Optional subscription name for topic subscriptions.</param>
     /// <param name="fromDeadLetter">Whether to tail the dead-letter queue instead of the active entity.</param>
+    /// <param name="provider">
+    /// The namespace's provider — only Azure's <c>SequenceNumber</c> is stable/entity-wide
+    /// monotonic (AWS/GCP's rotate per redelivery), so only Azure can safely use it as a
+    /// sequential-catch-up cursor (see <see cref="ILiveTailSession"/> remarks).
+    /// </param>
     ILiveTailSession Create(
         Guid namespaceId,
         string entityName,
         string? subscriptionName,
-        bool fromDeadLetter);
+        bool fromDeadLetter,
+        CloudProviderType provider);
 }

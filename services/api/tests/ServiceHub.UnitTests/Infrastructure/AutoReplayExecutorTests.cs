@@ -1,14 +1,18 @@
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure;
+using ServiceHub.Infrastructure.AI;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Infrastructure;
@@ -18,7 +22,16 @@ public class AutoReplayExecutorTests : IDisposable
     private readonly DlqDbContext _dbContext;
     private readonly Mock<IMessageOperationsService> _messageOperations = new();
     private readonly Mock<ILogger<AutoReplayExecutor>> _logger = new();
+    private readonly IRecoveryLedger _recoveryLedger;
+    private readonly IRecoveryEligibilityGate _eligibilityGate;
+    private readonly IFailureFeatureExtractor _featureExtractor = new FailureFeatureExtractor();
+    private readonly IFailureFingerprintBuilder _fingerprintBuilder = new FailureFingerprintBuilder();
+    private readonly IConfiguration _configuration =
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build();
     private readonly AutoReplayExecutor _executor;
+    private readonly Namespace _testNamespace = Namespace.Create(
+        "test-namespace", "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
+        ownerId: TestConstants.TestOwnerId).Value;
 
     public AutoReplayExecutorTests()
     {
@@ -29,8 +42,47 @@ public class AutoReplayExecutorTests : IDisposable
         _dbContext.Database.OpenConnection();
         _dbContext.Database.EnsureCreated();
 
+        _recoveryLedger = new RecoveryLedgerService(_dbContext);
+        _eligibilityGate = new RecoveryEligibilityGate(_recoveryLedger, NullLogger<RecoveryEligibilityGate>.Instance);
         _executor = new AutoReplayExecutor(
-            _dbContext, _messageOperations.Object, _logger.Object);
+            _dbContext, _messageOperations.Object, _recoveryLedger, _eligibilityGate,
+            _featureExtractor, _fingerprintBuilder, _configuration, _logger.Object);
+    }
+
+    /// <summary>
+    /// Seeds an <c>AutonomyGrant</c> at Standing (L4) for the exact SignatureHash the executor
+    /// will independently compute for <paramref name="message"/> — predicate 5 (roadmap §9.4.3)
+    /// now requires an earned grant before <c>AutoReplayExecutor</c> may execute unattended, so
+    /// every test exercising the actual replay/provider path must earn one first.
+    /// </summary>
+    private async Task SeedStandingGrantAsync(DlqMessage message, string ownerId = TestConstants.TestOwnerId)
+    {
+        var features = (await _featureExtractor.ExtractAsync(message)).Value;
+        var fingerprint = (await _fingerprintBuilder.ComputeAsync(features)).Value;
+        var result = await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+            ownerId, fingerprint.Hash, RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "test: earned standing", evidenceJson: null);
+        result.IsSuccess.Should().BeTrue(result.IsFailure ? result.Error.Message : null);
+    }
+
+    /// <summary>
+    /// Opens a real <see cref="RecoveryOperation"/> so <c>ExecuteAsync</c>'s
+    /// <c>BeginEntryAsync</c> call has something to attach to — a random Guid would fail
+    /// with <c>RecoveryLedger.OperationNotFound</c> before the replay is ever attempted.
+    /// </summary>
+    private async Task<Guid> OpenOperationAsync(AutoReplayRule rule)
+    {
+        var result = await _recoveryLedger.OpenOperationAsync(new OpenRecoveryOperationRequest
+        {
+            OwnerId = rule.OwnerId,
+            Kind = RecoveryOperationKind.Replay,
+            Trigger = RecoveryTrigger.AutoRule,
+            Actor = new RecoveryActor("test-rule", RecoveryActorKind.Automation),
+            ScopeDescription = "test",
+            SourceRuleId = rule.Id,
+            TargetCount = 1,
+        });
+        return result.Value.Id;
     }
 
     public void Dispose()
@@ -84,21 +136,63 @@ public class AutoReplayExecutorTests : IDisposable
     [Fact]
     public void Constructor_NullDbContext_Throws()
     {
-        var act = () => new AutoReplayExecutor(null!, _messageOperations.Object, _logger.Object);
+        var act = () => new AutoReplayExecutor(
+            null!, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            _featureExtractor, _fingerprintBuilder, _configuration, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("dbContext");
     }
 
     [Fact]
     public void Constructor_NullMessageOperations_Throws()
     {
-        var act = () => new AutoReplayExecutor(_dbContext, null!, _logger.Object);
+        var act = () => new AutoReplayExecutor(
+            _dbContext, null!, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            _featureExtractor, _fingerprintBuilder, _configuration, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("messageOperations");
+    }
+
+    [Fact]
+    public void Constructor_NullEligibilityGate_Throws()
+    {
+        var act = () => new AutoReplayExecutor(
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), null!,
+            _featureExtractor, _fingerprintBuilder, _configuration, _logger.Object);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("eligibilityGate");
+    }
+
+    [Fact]
+    public void Constructor_NullFeatureExtractor_Throws()
+    {
+        var act = () => new AutoReplayExecutor(
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            null!, _fingerprintBuilder, _configuration, _logger.Object);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("featureExtractor");
+    }
+
+    [Fact]
+    public void Constructor_NullFingerprintBuilder_Throws()
+    {
+        var act = () => new AutoReplayExecutor(
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            _featureExtractor, null!, _configuration, _logger.Object);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("fingerprintBuilder");
+    }
+
+    [Fact]
+    public void Constructor_NullConfiguration_Throws()
+    {
+        var act = () => new AutoReplayExecutor(
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            _featureExtractor, _fingerprintBuilder, null!, _logger.Object);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("configuration");
     }
 
     [Fact]
     public void Constructor_NullLogger_Throws()
     {
-        var act = () => new AutoReplayExecutor(_dbContext, _messageOperations.Object, null!);
+        var act = () => new AutoReplayExecutor(
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            _featureExtractor, _fingerprintBuilder, _configuration, null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -142,6 +236,99 @@ public class AutoReplayExecutorTests : IDisposable
         result.Should().BeFalse();
     }
 
+    // ── CanReplayFleetWideAsync ───────────────────────────────
+
+    private AutoReplayExecutor CreateExecutorWithFleetCap(int cap)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["RecoveryEvidence:FleetReplayVelocityCapPerHour"] = cap.ToString()
+            })
+            .Build();
+        return new AutoReplayExecutor(
+            _dbContext, _messageOperations.Object, _recoveryLedger, _eligibilityGate,
+            _featureExtractor, _fingerprintBuilder, configuration, _logger.Object);
+    }
+
+    [Fact]
+    public async Task CanReplayFleetWide_NoHistory_ReturnsTrue()
+    {
+        var result = await _executor.CanReplayFleetWideAsync(TestConstants.TestOwnerId);
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CanReplayFleetWide_UnderCap_ReturnsTrue()
+    {
+        var executor = CreateExecutorWithFleetCap(cap: 5);
+        var result = await executor.CanReplayFleetWideAsync(TestConstants.TestOwnerId);
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CanReplayFleetWide_CapExceededAcrossMultipleRules_ReturnsFalse()
+    {
+        // Two separate rules, each individually well under its own per-rule limit, but their
+        // combined recent replay volume exceeds the fleet-wide cap.
+        var ruleA = CreateRule("Rule A", maxPerHour: 100);
+        var ruleB = CreateRule("Rule B", maxPerHour: 100);
+        var msg = CreateMessage(1);
+
+        for (int i = 0; i < 2; i++)
+        {
+            _dbContext.ReplayHistories.Add(new ReplayHistory
+            {
+                DlqMessageId = msg.Id, RuleId = ruleA.Id,
+                ReplayedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+                ReplayedBy = "test", ReplayStrategy = "original",
+                ReplayedToEntity = "q", OutcomeStatus = "Success"
+            });
+            _dbContext.ReplayHistories.Add(new ReplayHistory
+            {
+                DlqMessageId = msg.Id, RuleId = ruleB.Id,
+                ReplayedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+                ReplayedBy = "test", ReplayStrategy = "original",
+                ReplayedToEntity = "q", OutcomeStatus = "Success"
+            });
+        }
+        await _dbContext.SaveChangesAsync();
+
+        var executor = CreateExecutorWithFleetCap(cap: 3);
+        var result = await executor.CanReplayFleetWideAsync(TestConstants.TestOwnerId);
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CanReplayFleetWide_OnlyCountsSameOwner()
+    {
+        var otherOwnerRule = new AutoReplayRule
+        {
+            Name = "Other Owner Rule", OwnerId = "other-owner", Enabled = true,
+            ConditionsJson = "[]", ActionsJson = "{}",
+            CreatedAt = DateTimeOffset.UtcNow, MaxReplaysPerHour = 100,
+        };
+        _dbContext.AutoReplayRules.Add(otherOwnerRule);
+        await _dbContext.SaveChangesAsync();
+
+        var msg = CreateMessage(1);
+        for (int i = 0; i < 5; i++)
+        {
+            _dbContext.ReplayHistories.Add(new ReplayHistory
+            {
+                DlqMessageId = msg.Id, RuleId = otherOwnerRule.Id,
+                ReplayedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+                ReplayedBy = "test", ReplayStrategy = "original",
+                ReplayedToEntity = "q", OutcomeStatus = "Success"
+            });
+        }
+        await _dbContext.SaveChangesAsync();
+
+        var executor = CreateExecutorWithFleetCap(cap: 3);
+        var result = await executor.CanReplayFleetWideAsync(TestConstants.TestOwnerId);
+        result.Should().BeTrue();
+    }
+
     // ── ExecuteAsync ────────────────────────────────────────
 
     [Fact]
@@ -161,7 +348,7 @@ public class AutoReplayExecutorTests : IDisposable
         });
         await _dbContext.SaveChangesAsync();
 
-        var result = await _executor.ExecuteAsync(msg, rule, action);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
         result.IsFailure.Should().BeTrue();
     }
 
@@ -171,12 +358,13 @@ public class AutoReplayExecutorTests : IDisposable
         var rule = CreateRule();
         var msg = CreateMessage(1);
         var action = new RuleAction();
+        await SeedStandingGrantAsync(msg);
 
         _messageOperations
-            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
-        var result = await _executor.ExecuteAsync(msg, rule, action);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
         result.IsSuccess.Should().BeTrue();
         msg.Status.Should().Be(DlqMessageStatus.Replayed);
@@ -197,12 +385,13 @@ public class AutoReplayExecutorTests : IDisposable
         var rule = CreateRule();
         var msg = CreateMessage(1);
         var action = new RuleAction();
+        await SeedStandingGrantAsync(msg);
 
         _messageOperations
-            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Failure(Error.NotFound("NS_NOT_FOUND", "Namespace not found")));
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Failure(Error.NotFound("NS_NOT_FOUND", "Namespace not found")));
 
-        var result = await _executor.ExecuteAsync(msg, rule, action);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
         result.IsFailure.Should().BeTrue();
         msg.Status.Should().Be(DlqMessageStatus.ReplayFailed);
@@ -221,12 +410,13 @@ public class AutoReplayExecutorTests : IDisposable
         var rule = CreateRule();
         var msg = CreateMessage(1);
         var action = new RuleAction();
+        await SeedStandingGrantAsync(msg);
 
         _messageOperations
-            .Setup(m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .Setup(m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("boom"));
 
-        var result = await _executor.ExecuteAsync(msg, rule, action);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
         result.IsFailure.Should().BeTrue();
         msg.Status.Should().Be(DlqMessageStatus.ReplayFailed);
@@ -237,17 +427,68 @@ public class AutoReplayExecutorTests : IDisposable
     }
 
     [Fact]
+    public async Task Execute_AwsReplayAmbiguous_RecordsExecutionUnknown_NotExecutionFailed()
+    {
+        // Regresses the "duplicate replay risk" gap: AwsMessageReceiver.ReplayMessageAsync
+        // returns AWS.SQS.ReplayAmbiguous when Send to the source queue succeeded but Delete
+        // from the DLQ failed — the message is genuinely duplicated-if-retried, not a normal
+        // failure. AutoReplayExecutor must route that to the Recovery Ledger's
+        // RecoveryEntryState.ExecutionUnknown (a non-terminal state that keeps the entry live for
+        // later review), never RecoveryEntryState.ExecutionFailed (which asserts nothing
+        // happened and implicitly signals "safe to retry").
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+        await SeedStandingGrantAsync(msg);
+
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Failure(Error.Conflict("AWS.SQS.ReplayAmbiguous",
+                "Message was sent to the source queue but could not be deleted from the DLQ.")));
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsFailure.Should().BeTrue();
+
+        var entry = _dbContext.RecoveryLedgerEntries.Single(e => e.DlqMessageId == msg.Id);
+        entry.State.Should().Be(RecoveryEntryState.ExecutionUnknown);
+    }
+
+    [Fact]
+    public async Task Execute_AwsReplayOrdinaryFailure_RecordsExecutionFailed()
+    {
+        // Contrast case: an ordinary provider rejection (nothing sent) still records the
+        // terminal ExecutionFailed state, not ExecutionUnknown.
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+        await SeedStandingGrantAsync(msg);
+
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Failure(Error.ExternalService("AWS.SQS.ReplayFailed", "throttled")));
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsFailure.Should().BeTrue();
+
+        var entry = _dbContext.RecoveryLedgerEntries.Single(e => e.DlqMessageId == msg.Id);
+        entry.State.Should().Be(RecoveryEntryState.ExecutionFailed);
+    }
+
+    [Fact]
     public async Task Execute_TargetEntityOverride_ReplaysToAlternateEntity()
     {
         var rule = CreateRule();
         var msg = CreateMessage(1);
         var action = new RuleAction { TargetEntity = "retry-queue" };
+        await SeedStandingGrantAsync(msg);
 
         _messageOperations
-            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "retry-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "retry-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
-        var result = await _executor.ExecuteAsync(msg, rule, action);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
         result.IsSuccess.Should().BeTrue();
         var history = _dbContext.ReplayHistories.Single();
@@ -265,16 +506,17 @@ public class AutoReplayExecutorTests : IDisposable
             entityName: "orders-topic/subscriptions/orders-sub",
             topicName: "orders-topic");
         var action = new RuleAction();
+        await SeedStandingGrantAsync(msg);
 
         _messageOperations
-            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "orders-topic", "orders-sub", msg.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "orders-topic", "orders-sub", msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
-        var result = await _executor.ExecuteAsync(msg, rule, action);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
         result.IsSuccess.Should().BeTrue();
         _messageOperations.Verify(
-            m => m.ReplayMessageAsync(msg.NamespaceId, "orders-topic", "orders-sub", msg.SequenceNumber, It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(msg.NamespaceId, "orders-topic", "orders-sub", msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -286,17 +528,18 @@ public class AutoReplayExecutorTests : IDisposable
         var rule = CreateRule();
         var msg = CreateMessage(1, provider: provider);
         var action = new RuleAction();
+        await SeedStandingGrantAsync(msg);
 
         _messageOperations
-            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
-        var result = await _executor.ExecuteAsync(msg, rule, action);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
 
         result.IsSuccess.Should().BeTrue();
         msg.Status.Should().Be(DlqMessageStatus.Replayed);
         _messageOperations.Verify(
-            m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -350,16 +593,28 @@ public class AutoReplayExecutorTests : IDisposable
         }
 
         var messageOperations = new Mock<IMessageOperationsService>();
-        var executor = new AutoReplayExecutor(dbContext, messageOperations.Object, _logger.Object);
+        var racingLedger = new RecoveryLedgerService(dbContext);
+        var executor = new AutoReplayExecutor(
+            dbContext, messageOperations.Object, racingLedger,
+            new RecoveryEligibilityGate(racingLedger, NullLogger<RecoveryEligibilityGate>.Instance),
+            _featureExtractor, _fingerprintBuilder, _configuration, _logger.Object);
         var action = new RuleAction();
 
-        var result = await executor.ExecuteAsync(msg, rule, action);
+        // Earn predicate 5's grant against the same ledger this executor reads from — this test
+        // is exercising the concurrency claim, not autonomy enforcement.
+        var features = (await _featureExtractor.ExtractAsync(msg)).Value;
+        var fingerprint = (await _fingerprintBuilder.ComputeAsync(features)).Value;
+        await racingLedger.RecordAutonomyGrantTransitionAsync(
+            TestConstants.TestOwnerId, fingerprint.Hash, RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "test: earned standing", evidenceJson: null);
+
+        var result = await executor.ExecuteAsync(msg, rule, action, _testNamespace, Guid.NewGuid());
 
         result.IsFailure.Should().BeTrue();
         result.Error.Type.Should().Be(ErrorType.Conflict);
 
         messageOperations.Verify(
-            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
         var stored = await dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == msg.Id);
@@ -367,5 +622,342 @@ public class AutoReplayExecutorTests : IDisposable
 
         var historyCount = await dbContext.ReplayHistories.CountAsync(h => h.DlqMessageId == msg.Id);
         historyCount.Should().Be(0); // this call never wrote history — it never reached the provider
+    }
+
+    // ── Recurrence-lineage safety cap (Phase A) ──────────────
+
+    /// <summary>
+    /// Seeds a prior <see cref="RecoveryLedgerEntry"/> directly against the DbContext (bypassing
+    /// the executor) so its lineage-relevant fields — <see cref="RecoveryLedgerEntry.BegunAt"/>,
+    /// <see cref="RecoveryLedgerEntry.MarkerApplied"/>,
+    /// <see cref="RecoveryLedgerEntry.VerificationConfidence"/>,
+    /// <see cref="RecoveryLedgerEntry.SignatureHashSnapshot"/> — can be set precisely, simulating
+    /// a past automatic-replay attempt on this lineage.
+    /// </summary>
+    private RecoveryLedgerEntry SeedLineageEntry(
+        string ownerId,
+        Guid namespaceId,
+        string entityName,
+        string bodyHash,
+        DateTimeOffset begunAt,
+        bool markerApplied = true,
+        VerificationConfidence? confidence = null,
+        string? signatureHash = null)
+    {
+        var operation = new RecoveryOperation
+        {
+            OwnerId = ownerId,
+            Kind = RecoveryOperationKind.Replay,
+            Trigger = RecoveryTrigger.AutoRule,
+            ActorIdentity = "test-rule",
+            ActorKind = RecoveryActorKind.Automation,
+            ScopeDescription = "test",
+            ServiceVersion = "test",
+            OpenedAt = begunAt,
+            TargetCount = 1,
+        };
+        _dbContext.RecoveryOperations.Add(operation);
+
+        var entry = new RecoveryLedgerEntry
+        {
+            OperationId = operation.Id,
+            OwnerId = ownerId,
+            NamespaceId = namespaceId,
+            EntityNameSnapshot = entityName,
+            BodyHash = bodyHash,
+            TargetEntity = entityName,
+            BegunAt = begunAt,
+            State = RecoveryEntryState.Recovered,
+            MarkerApplied = markerApplied,
+            VerificationConfidence = confidence,
+            SignatureHashSnapshot = signatureHash,
+            // Distinct provider identity per seeded entry — proves the lineage match never
+            // depends on these fields (roadmap: provider MessageId/SequenceNumber are never
+            // recovery identity).
+            SourceMessageIdSnapshot = $"provider-msg-{Guid.NewGuid():N}",
+            SourceSequenceNumberSnapshot = Random.Shared.NextInt64(),
+        };
+        _dbContext.RecoveryLedgerEntries.Add(entry);
+        _dbContext.SaveChanges();
+        return entry;
+    }
+
+    [Fact]
+    public async Task Execute_FewerThanThreePriorLineageMatches_NotBlocked()
+    {
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+
+        SeedLineageEntry(TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1", DateTimeOffset.UtcNow.AddDays(-1));
+        SeedLineageEntry(TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1", DateTimeOffset.UtcNow.AddDays(-2));
+        await SeedStandingGrantAsync(msg);
+
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Execute_ThreePriorExactConfidenceLineageMatches_BlocksAndRecordsDeclinedEntry()
+    {
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+
+        for (var i = 0; i < 3; i++)
+        {
+            SeedLineageEntry(
+                TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+                DateTimeOffset.UtcNow.AddDays(-i - 1), confidence: VerificationConfidence.Exact);
+        }
+
+        var operationId = await OpenOperationAsync(rule);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, operationId);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("AutoReplay.RecurrenceCapExceeded");
+
+        _messageOperations.Verify(
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        var stored = await _dbContext.DlqMessages.AsNoTracking().SingleAsync(m => m.Id == msg.Id);
+        stored.Status.Should().Be(DlqMessageStatus.Active); // untouched — manual replay remains available
+
+        var events = await _recoveryLedger.GetEventsForOperationAsync(operationId, TestConstants.TestOwnerId);
+        events.Should().ContainSingle(e => e.EventType == RecoveryEventType.EligibilityDeclined
+                                            && e.DetailJson!.Contains("RECURRENCE_CAP_EXCEEDED"));
+
+        var entries = await _recoveryLedger.QueryEntriesAsync(new RecoveryEntryQuery
+        {
+            OwnerId = TestConstants.TestOwnerId,
+            OperationId = operationId,
+        });
+        entries.Should().ContainSingle(e => e.State == RecoveryEntryState.Declined
+                                             && e.Disposition == RecoveryDisposition.Declined);
+    }
+
+    [Fact]
+    public async Task Execute_ThreePriorLineageMatchesForDifferentOwner_DoesNotBlock()
+    {
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+
+        for (var i = 0; i < 3; i++)
+        {
+            SeedLineageEntry(
+                TestConstants.AltOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+                DateTimeOffset.UtcNow.AddDays(-i - 1), confidence: VerificationConfidence.Exact);
+        }
+        await SeedStandingGrantAsync(msg);
+
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Execute_ThreePriorLineageMatchesOutsideNinetyDayWindow_DoesNotBlock()
+    {
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+
+        for (var i = 0; i < 3; i++)
+        {
+            SeedLineageEntry(
+                TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+                DateTimeOffset.UtcNow.AddDays(-91 - i), confidence: VerificationConfidence.Exact);
+        }
+        await SeedStandingGrantAsync(msg);
+
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Execute_ThreePriorLineageMatchesJustInsideNinetyDayWindow_Blocks()
+    {
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+
+        for (var i = 0; i < 3; i++)
+        {
+            SeedLineageEntry(
+                TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+                DateTimeOffset.UtcNow.AddDays(-89 - (i * 0.1)), confidence: VerificationConfidence.Exact);
+        }
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("AutoReplay.RecurrenceCapExceeded");
+    }
+
+    [Fact]
+    public async Task Execute_AmbiguousBodyHashCollisionAcrossDistinctSignatures_FailsSafeAndBlocks()
+    {
+        // Roadmap §7.5 item 5's "200 identical test payloads" scenario: entries sharing BodyHash
+        // but carrying different SignatureHashSnapshot values are independent messages that
+        // happen to hash the same body, not the same lineage — but the cap still fails safe and
+        // counts them, under a distinct reason code, rather than silently allowing an unbounded
+        // replay loop through.
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+
+        SeedLineageEntry(
+            TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+            DateTimeOffset.UtcNow.AddDays(-1), markerApplied: false, confidence: null, signatureHash: "sig-A");
+        SeedLineageEntry(
+            TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+            DateTimeOffset.UtcNow.AddDays(-2), markerApplied: false, confidence: null, signatureHash: "sig-B");
+        SeedLineageEntry(
+            TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+            DateTimeOffset.UtcNow.AddDays(-3), markerApplied: false, confidence: null, signatureHash: "sig-B");
+
+        var operationId = await OpenOperationAsync(rule);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, operationId);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("AutoReplay.RecurrenceCapExceeded");
+
+        var events = await _recoveryLedger.GetEventsForOperationAsync(operationId, TestConstants.TestOwnerId);
+        events.Should().ContainSingle(e => e.EventType == RecoveryEventType.EligibilityDeclined
+                                            && e.DetailJson!.Contains("RECURRENCE_CAP_AMBIGUOUS_COLLISION"));
+    }
+
+    [Fact]
+    public async Task Execute_ReturnedMessageWithNewProviderIdentitySameBodyHash_StillBlockedAfterCap()
+    {
+        // A replayed message returns to the DLQ as a brand-new DlqMessage row (new MessageId,
+        // new SequenceNumber, new Id) — the exact gap roadmap §7.3 describes. Three prior entries
+        // for the same lineage (matched purely on BodyHash/EntityName, never provider identity)
+        // must still block a 4th attempt against this freshly-arrived row.
+        var rule = CreateRule();
+        // Fresh DlqMessage row (its own Id/MessageId/SequenceNumber) carrying the same BodyHash
+        // as the seeded lineage below — simulating the row DlqMonitorWorker sees after a replayed
+        // message returns to the DLQ under a brand-new provider identity.
+        var returnedMsg = CreateMessage(1);
+
+        for (var i = 0; i < 3; i++)
+        {
+            SeedLineageEntry(
+                TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+                DateTimeOffset.UtcNow.AddDays(-i - 1), confidence: VerificationConfidence.Exact);
+        }
+
+        var action = new RuleAction();
+        var result = await _executor.ExecuteAsync(returnedMsg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("AutoReplay.RecurrenceCapExceeded");
+    }
+
+    // ── Deterministic SignatureHash (roadmap: close the autonomous recovery loop) ────
+
+    private async Task<string> ComputeExpectedHashAsync(DlqMessage message)
+    {
+        var features = (await _featureExtractor.ExtractAsync(message)).Value;
+        return (await _fingerprintBuilder.ComputeAsync(features)).Value.Hash;
+    }
+
+    [Fact]
+    public async Task Execute_SuccessfulReplay_LedgerEntrySignatureHashIsNonNullAndMatchesEligibilityGateInput()
+    {
+        // Proves the gate-hash == ledger-hash invariant: predicate 5 could only have Allowed
+        // using this exact hash (the seeded grant is keyed on it), and the persisted
+        // RecoveryLedgerEntry must carry that same value — never a null/second hash.
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+        await SeedStandingGrantAsync(msg);
+
+        _messageOperations
+            .Setup(m => m.ReplayMessageAsync(msg.NamespaceId, "test-queue", null, msg.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        var operationId = await OpenOperationAsync(rule);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, operationId);
+
+        result.IsSuccess.Should().BeTrue();
+
+        var expectedHash = await ComputeExpectedHashAsync(msg);
+        expectedHash.Should().NotBeNullOrEmpty();
+
+        var entries = await _recoveryLedger.QueryEntriesAsync(new RecoveryEntryQuery
+        {
+            OwnerId = TestConstants.TestOwnerId,
+            OperationId = operationId,
+        });
+        entries.Should().ContainSingle(e => e.SignatureHashSnapshot == expectedHash);
+    }
+
+    [Fact]
+    public async Task Execute_NoAutonomyGrant_DeclinedLedgerEntryStillCarriesTheComputedSignatureHash()
+    {
+        // Predicate 5 escalating (no grant yet) must not fall back to a null SignatureHash on the
+        // Declined entry either — the hash is computed unconditionally, before the gate call.
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+
+        var operationId = await OpenOperationAsync(rule);
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, operationId);
+
+        result.IsFailure.Should().BeTrue();
+
+        var expectedHash = await ComputeExpectedHashAsync(msg);
+
+        var entries = await _recoveryLedger.QueryEntriesAsync(new RecoveryEntryQuery
+        {
+            OwnerId = TestConstants.TestOwnerId,
+            OperationId = operationId,
+        });
+        entries.Should().ContainSingle(e => e.State == RecoveryEntryState.Declined
+                                             && e.SignatureHashSnapshot == expectedHash);
+    }
+
+    [Fact]
+    public async Task ComputedSignatureHash_TwoMessagesWithIdenticalFailureCharacteristics_AreEqual()
+    {
+        var msg1 = CreateMessage(1, entityName: "orders-queue");
+        var msg2 = CreateMessage(2, entityName: "orders-queue");
+
+        var hash1 = await ComputeExpectedHashAsync(msg1);
+        var hash2 = await ComputeExpectedHashAsync(msg2);
+
+        hash1.Should().Be(hash2);
+        // ...despite carrying distinct provider-generated identity.
+        msg1.MessageId.Should().NotBe(msg2.MessageId);
+        msg1.SequenceNumber.Should().NotBe(msg2.SequenceNumber);
+    }
+
+    [Fact]
+    public async Task ComputedSignatureHash_MessagesWithDifferentEntityName_AreDifferent()
+    {
+        var msg1 = CreateMessage(1, entityName: "orders-queue");
+        var msg2 = CreateMessage(2, entityName: "payments-queue");
+
+        var hash1 = await ComputeExpectedHashAsync(msg1);
+        var hash2 = await ComputeExpectedHashAsync(msg2);
+
+        hash1.Should().NotBe(hash2);
     }
 }
