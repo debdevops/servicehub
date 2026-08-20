@@ -115,21 +115,6 @@ graph TB
 
 ---
 
-## Deployment Model
-
-ServiceHub is **self-hosted, single-instance software for one team** — not a multi-tenant SaaS
-platform. Every deployment is one process: one SQLite database (DLQ history, auto-replay rules,
-audit trail) and one in-process event bus, both scoped to that process's own lifetime. There is no
-shared state between instances and no supported way to run two instances against the same data
-directory.
-
-This is a **deliberate choice for this release, not an omission**. It keeps the architecture
-simple, the data local, and the operational surface small — the trade-off is no horizontal
-scaling and no built-in multi-tenant isolation beyond the per-owner scoping OIDC/API keys already
-provide.
-
----
-
 ## Try It
 
 > **New to the command line or Docker?** Follow
@@ -218,7 +203,7 @@ Click any message for complete forensic analysis:
 ### 🤖 AI Findings — Detect Patterns Across Thousands of Messages
 Click **AI Findings** to see error pattern clusters detected across your current queue view. The engine groups messages by error type, calculates confidence scores, and surfaces the most impactful clusters — so you know exactly where to look first.
 > [!NOTE]
-> **Zero-trust privacy:** All analysis runs entirely in your browser. No message content ever leaves your environment.
+> **Zero-trust privacy:** the primary AI Findings surface runs entirely as client-side heuristics in your browser — no message content ever leaves your environment. A richer, optional backend path exists for Failure Signature clustering; it can call a **self-hosted, disabled-by-default companion container you run on your own network** — never a third-party or cloud AI API — and transparently falls back to a local deterministic strategy whenever that container is off. Full boundary details: [`docs/ARCHITECTURE.md` § The AI capability boundary](docs/ARCHITECTURE.md#6a-the-ai-capability-boundary).
 
 ### 💀 Dead-Letter Queue Investigation & Recovery
 Select the **Dead-Letter** tab to inspect failed messages in full. Each DLQ message shows exactly why the broker moved it, the full error text, the assessment in plain English, and one-click actions: **Replay** it back to the main queue after fixing the root cause, or **Purge** it permanently (AWS & GCP — Azure's SDK has no reliable single-message delete, so the action is disabled there rather than pretending).
@@ -374,6 +359,21 @@ Follow this path before connecting to a production namespace. This protects your
 
 > [!WARNING]
 > While ServiceHub is read-only by default, replay and send operations are destructive. Validate your replay rules and message targets in lower environments first.
+
+---
+
+## Deployment Model
+
+ServiceHub is **self-hosted, single-instance software for one team** — not a multi-tenant SaaS
+platform. Every deployment is one process: one SQLite database (DLQ history, auto-replay rules,
+audit trail) and one in-process event bus, both scoped to that process's own lifetime. There is no
+shared state between instances and no supported way to run two instances against the same data
+directory.
+
+This is a **deliberate choice for this release, not an omission**. It keeps the architecture
+simple, the data local, and the operational surface small — the trade-off is no horizontal
+scaling and no built-in multi-tenant isolation beyond the per-owner scoping OIDC/API keys already
+provide.
 
 ---
 
@@ -558,7 +558,7 @@ ServiceHub is built for strict enterprise environments.
 ### What ServiceHub guarantees
 - **Read-only by default** — Uses `PeekMessagesAsync`; messages are **never removed or consumed**.
 - **AES-GCM encryption** — Connection strings encrypted at rest; key stored in local config, never returned to the browser.
-- **Zero external calls** — AI analysis runs entirely in-browser; no message data leaves your environment.
+- **No third-party or cloud AI calls, in either direction** — the primary AI analysis path runs entirely in-browser; an optional backend path for deeper clustering only ever reaches a self-hosted companion container on your own network, never an external service. No message data leaves your environment either way.
 - **No message persistence for live browsing** — Messages viewed on the Queues/Topics/Messages pages are in-memory only during your session, never written to a database. The deliberate exception is DLQ Intelligence, which stores a 500-character body preview and classification metadata per dead-lettered message in local SQLite to power History and 30-Day Trends.
 - **Log redaction** — Backend logging pipeline strips connection strings, API keys, and access tokens (best-effort pattern matching, not a formal guarantee).
 
@@ -626,7 +626,7 @@ No. ServiceHub only uses `PeekMessagesAsync`. Your consumers continue processing
 Yes. Listen-only mode is fully read-only. Deploy ServiceHub inside your private network for extra safety.
 
 **How does AI analysis work without an API key?**
-ServiceHub uses client-side heuristic pattern detection — pure JavaScript in your browser. No GPT, no external service, no data exfiltration.
+The primary AI Findings surface is client-side heuristic pattern detection — pure JavaScript in your browser, no API key needed. A deeper, optional backend path (Failure Signature clustering) can call a self-hosted companion container you run yourself, disabled by default — never GPT or any other third-party/cloud service, and no data exfiltration either way.
 
 **Can I delete a single message?**
 On AWS (delete by receipt handle) and GCP (acknowledge), yes — the Purge action, guarded by explicit-intent headers and blocked on production namespaces. Azure Service Bus has no reliable single-message delete in the SDK, so ServiceHub disables the action there instead of faking it.

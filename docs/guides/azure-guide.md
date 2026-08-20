@@ -142,6 +142,23 @@ countdown, and lets you reschedule or cancel any of them:
 
 ![Scheduled Messages page with real countdowns and Reschedule/Cancel actions](../screenshots/guides/azure/08-scheduled-messages.png)
 
+Click **Reschedule** to pick a new delivery time. ServiceHub tells you upfront exactly what
+this does under the hood — it isn't an in-place edit:
+
+![Reschedule Message dialog with the new-delivery-time picker](../screenshots/guides/azure/15-reschedule-dialog.png)
+
+**What to expect:** rescheduling **cancels the original scheduled message and re-enqueues a
+new one** at the delivery time you pick. This matters if your own systems track the original
+message ID — the rescheduled copy is a new send, not a mutation of the old one.
+
+Click **Cancel** to withdraw a scheduled message before it fires:
+
+![Cancel Scheduled Message confirmation dialog](../screenshots/guides/azure/16-cancel-scheduled-dialog.png)
+
+**What to expect:** ServiceHub asks for explicit confirmation and states plainly that
+**"This action cannot be undone."** Nothing is cancelled until you click **Yes, Cancel
+Message** — closing the dialog or clicking **Keep It** leaves the scheduled message untouched.
+
 ---
 
 ## What's supported for Azure

@@ -10,6 +10,19 @@ namespaces — not a mockup.
 
 ---
 
+## Where should I start?
+
+| If you're... | Go to |
+|---|---|
+| New to ServiceHub | [Namespace Overview](#namespace-overview) |
+| Investigating failures | [Dead-Letter](#dead-letter) / [DLQ Intelligence](#dlq-intelligence) |
+| Watching messages | [Live Tail](#live-tail) |
+| Understanding repeated failures | [Failure Signatures](#failure-signatures) |
+| Recovering messages | [Recovery Evidence](#recovery-evidence) |
+| Automating recovery | [Auto-Replay Rules](#auto-replay-rules) |
+
+---
+
 ## What is Quick Access?
 
 Quick Access is the panel of shortcuts on the left side of every screen, grouped into five
@@ -206,6 +219,10 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 
   ![Bulk Replay preview with the real safety gate](../screenshots/guides/quick-access/24-bulk-replay-safety-gate.png)
 
+  **Bulk Purge** carries the same preview-before-action pattern, but its consequence is
+  permanent rather than a retry — see the real preview dialog and its "no undo, no recycle
+  bin" warning in the [AWS guide](aws-guide.md#6-bulk-purge--the-same-permanence-at-scale).
+
 - **Important actions:** **Scan Now** forces an immediate re-scan for new AI patterns;
   **CSV**/**JSON** export the current DLQ history.
 - **Limitations:** Bulk Replay/Purge are **disabled entirely on production namespaces** — not
@@ -309,6 +326,25 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 - **What should you expect?** On the detail page: an entry table per target, a **Verify
   chain** button that independently confirms the hash chain hasn't been tampered with, and
   **Export evidence** for a downloadable record.
+
+  Click **Verify chain** and ServiceHub re-walks the entire hash chain server-side, not just
+  this operation's own entries — the result appears as a toast:
+
+  ![Chain verified toast — real result from clicking Verify chain](../screenshots/guides/quick-access/26-verify-chain-toast-closeup.png)
+
+  **What to expect:** a green **"Chain verified — N events intact"** confirmation naming the
+  actual number of events checked (tens of thousands in an active ledger) — this is a live
+  cryptographic check against the database, not a cached or precomputed answer.
+
+  Click **Export evidence** and ServiceHub downloads the full operation record as JSON
+  immediately — no dialog, no extra step:
+
+  ![Evidence export downloaded toast — real result from clicking Export evidence](../screenshots/guides/quick-access/27-export-evidence-toast.png)
+
+  **What to expect:** the download starts the moment you click; the confirmation toast is your
+  only feedback that it happened. The exported file contains the operation's metadata, every
+  target entry, and its event chain — suitable for attaching to an incident report or audit
+  request without needing ServiceHub itself open.
 
   ![Recovery operation detail, including an honest "Declined" outcome](../screenshots/guides/quick-access/23-recovery-operation-detail-declined.png)
 

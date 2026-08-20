@@ -66,6 +66,17 @@ Here's the queue's toolbar close-up — notice **Auto: OFF**, no Live Tail butto
 
 ![AWS toolbar: Auto refresh OFF by default, no Live Tail button](../screenshots/guides/aws/08-dlq-no-live-tail-toolbar.png)
 
+**DLQ History** (visible on the DLQ tab's toolbar) is a shortcut, not a separate feature —
+click it and ServiceHub takes you straight to **DLQ Intelligence** (`/dlq-history`), pre-scoped
+to the queue you came from:
+
+![DLQ History destination — DLQ Intelligence pre-scoped to the entity you clicked from](../screenshots/guides/aws/12-dlq-history-destination.png)
+
+**What to expect:** it's the same DLQ Intelligence page documented in the
+[Quick Access Guide](quick-access-guide.md#dlq-intelligence), just reached with one click from
+a specific queue's message list instead of navigating there and picking the namespace/provider
+tab yourself. GCP Pub/Sub subscriptions have the same button in the same place.
+
 If your queue is fed by an SNS topic, the sidebar shows the real fan-out relationship —
 topic → subscription → queue — instead of hiding it:
 
@@ -110,6 +121,32 @@ matched and flags any it considers unsafe to retry blindly:
 
 **What to expect:** nothing is replayed until you review the sample and explicitly confirm.
 This is a real, working gate — not a decorative warning.
+
+### 5. Purge a message — permanent, and clearly labeled as such
+
+Unlike Azure (whose SDK has no reliable single-message delete), SQS supports deleting a single
+DLQ message outright. Click **Purge** on a DLQ message's detail panel and ServiceHub asks for
+explicit confirmation before touching anything:
+
+![Permanently Delete Message confirmation dialog](../screenshots/guides/aws/14-purge-confirmation-dialog.png)
+
+**What to expect:** the dialog names the exact message ID and namespace/entity, and states
+plainly **"This action cannot be undone."** Nothing is deleted until you click the red
+**Delete** button — closing the dialog or clicking **Cancel** leaves the message in the DLQ
+untouched.
+
+### 6. Bulk Purge — the same permanence, at scale
+
+**DLQ Intelligence** also offers **Bulk Purge**, next to Bulk Replay. It carries the same
+preview-before-action pattern as Bulk Replay, but the consequence is irreversible:
+
+![Bulk Purge Preview — match count, a 10-message sample, and an explicit "no undo" warning](../screenshots/guides/aws/13-bulk-purge-preview.png)
+
+**What to expect:** the preview shows the exact match count, a sample of the first 10 message
+IDs it would delete, and a hard warning — **"This permanently deletes every matched message.
+There is no undo and no recycle bin — purged messages cannot be recovered."** Like Bulk Replay,
+nothing happens until you review the sample and explicitly click **Purge N messages**; closing
+the dialog or clicking **Cancel** purges nothing.
 
 ---
 
