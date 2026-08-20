@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
@@ -20,6 +21,7 @@ public sealed class MessageOperationsService : IMessageOperationsService
 {
     private readonly CloudProviderRouter _router;
     private readonly INamespaceRepository _namespaceRepository;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<MessageOperationsService> _logger;
 
     /// <summary>
@@ -27,14 +29,21 @@ public sealed class MessageOperationsService : IMessageOperationsService
     /// </summary>
     /// <param name="router">Router used to resolve cloud providers.</param>
     /// <param name="namespaceRepository">Repository for looking up namespace metadata.</param>
+    /// <param name="configuration">
+    /// Application configuration — reads <c>RecoveryEvidence:StampReplayMarker</c> (default
+    /// <c>true</c>), the single behavioural change replay makes for the Recovery Evidence
+    /// Ledger's verification model.
+    /// </param>
     /// <param name="logger">Logger instance.</param>
     public MessageOperationsService(
         CloudProviderRouter router,
         INamespaceRepository namespaceRepository,
+        IConfiguration configuration,
         ILogger<MessageOperationsService> logger)
     {
         _router = router ?? throw new ArgumentNullException(nameof(router));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -132,11 +141,12 @@ public sealed class MessageOperationsService : IMessageOperationsService
     /// <param name="entityName">Entity (queue/topic) name.</param>
     /// <param name="subscriptionName">Optional subscription name for topics.</param>
     /// <param name="sequenceNumber">Sequence number of the message to replay.</param>
+    /// <param name="recoveryEntryId">The recovery ledger entry to stamp as the marker, if any.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A <see cref="Result"/> indicating success or failure.</returns>
-    public Task<Result> ReplayMessageAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, CancellationToken cancellationToken = default)
+    /// <returns>A <see cref="Result{Boolean}"/> — the value is whether the marker was applied.</returns>
+    public Task<Result<bool>> ReplayMessageAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, Guid? recoveryEntryId = null, CancellationToken cancellationToken = default)
     {
-        return ReplayMessageInternalAsync(namespaceId, entityName, subscriptionName, sequenceNumber, cancellationToken);
+        return ReplayMessageInternalAsync(namespaceId, entityName, subscriptionName, sequenceNumber, recoveryEntryId, cancellationToken);
     }
 
     /// <summary>
@@ -314,18 +324,28 @@ public sealed class MessageOperationsService : IMessageOperationsService
             }
     }
 
-    private async Task<Result> ReplayMessageInternalAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, CancellationToken cancellationToken)
+    private async Task<Result<bool>> ReplayMessageInternalAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, Guid? recoveryEntryId, CancellationToken cancellationToken)
     {
         try
         {
             var (ns, provider) = await ResolveProviderAsync(namespaceId, cancellationToken).ConfigureAwait(false);
             _logger.LogDebug("NamespaceId: {NamespaceId}, Provider: {Provider}, Operation: ReplayMessage", ns.Id, ns.Provider);
             var receiver = GetReceiver(provider);
-            return await receiver.ReplayMessageAsync(namespaceId, entityName, subscriptionName, sequenceNumber, cancellationToken).ConfigureAwait(false);
+
+            // Whether to even attempt stamping the recovery marker is decided once here, the
+            // single choke point every replay path funnels through — not duplicated at each of
+            // the five call sites. The provider still decides whether the attempt succeeds for
+            // this specific message (e.g. SQS's 10-attribute cap).
+            var stampMarker = recoveryEntryId is not null
+                && provider.Capabilities.SupportsRecoveryMarker
+                && _configuration.GetValue("RecoveryEvidence:StampReplayMarker", true);
+            var recoveryMarker = stampMarker ? recoveryEntryId!.Value.ToString() : null;
+
+            return await receiver.ReplayMessageAsync(namespaceId, entityName, subscriptionName, sequenceNumber, recoveryMarker, cancellationToken).ConfigureAwait(false);
         }
             catch (Exception ex)
             {
-                return ConvertExceptionToResult(ex, ErrorCodes.Message.ReceiveFailed);
+                return ConvertExceptionToResult<bool>(ex, ErrorCodes.Message.ReceiveFailed);
             }
     }
 

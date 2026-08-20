@@ -16,8 +16,10 @@ import { LineChart, Line, XAxis, Tooltip, ResponsiveContainer, CartesianGrid } f
 import { useFleetOverview } from '@servicehub/ui-shared/hooks/useFleet';
 import { useHealthReport } from '@servicehub/ui-shared/hooks/useHealth';
 import { useAllNamespacesQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
-import { ProviderBadge, PROVIDER_STYLES } from '@servicehub/ui-shared/lib/providerStyles';
+import { ProviderBadge, PROVIDER_STYLES, PROVIDER_STATE_STYLES } from '@servicehub/ui-shared/lib/providerStyles';
+import type { ProviderInstallState } from '@servicehub/ui-shared/lib/providerConnectionState';
 import type { FleetHealthSeverity, FleetNamespaceHealth } from '@servicehub/ui-shared/lib/api/fleet';
 import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 
@@ -31,6 +33,9 @@ const severityStyles: Record<FleetHealthSeverity, { dot: string; text: string; l
   critical: { dot: 'bg-red-500', text: 'text-red-700', label: 'Critical' },
   warning: { dot: 'bg-amber-500', text: 'text-amber-700', label: 'Warning' },
   healthy: { dot: 'bg-emerald-500', text: 'text-emerald-700', label: 'Healthy' },
+  // Zero known dead-letters, but the namespace was never scanned — must read distinctly from
+  // "Healthy" (blueprint Gap 1: an unmonitored namespace must never render green).
+  unknown: { dot: 'bg-slate-400', text: 'text-slate-600', label: 'Not monitored' },
 };
 
 // Maps a provider connectivity health-check entry name (registered in Program.cs /
@@ -74,37 +79,57 @@ function StatTile({
   );
 }
 
+// Provider connectivity, cross-referenced against real namespace counts — a health check
+// reports "Healthy" for a flag-enabled provider with zero namespaces configured (see
+// AwsHealthCheck's "No AWS namespaces configured" case), so trusting `entry.status` alone
+// makes "never connected" look identical to "verified and connected." Namespace count is
+// the tie-breaker, since useNamespaces() is the authoritative per-provider count everywhere
+// else in the app. Every provider always renders here (never silently dropped when its
+// flag is off) so "not part of this installation" reads as an explicit state, not an
+// absence.
 function ConnectivityStrip() {
   const { data: report } = useHealthReport();
-  if (!report) return null;
+  const { data: namespaces } = useNamespaces();
+  if (!report || namespaces === undefined) return null;
 
-  const checks = CONNECTIVITY_CHECKS
-    .map(({ name, provider }) => ({ provider, entry: report.entries[name] }))
-    .filter((c): c is { provider: CloudProviderType; entry: NonNullable<typeof c.entry> } => !!c.entry);
+  const checks = CONNECTIVITY_CHECKS.map(({ name, provider }) => {
+    const entry = report.entries[name];
+    const nsCount = namespaces.filter((ns) => ns.cloudProvider === provider).length;
 
-  if (checks.length === 0) return null;
+    let state: ProviderInstallState;
+    if (!entry) {
+      state = 'unavailable';
+    } else if (nsCount === 0) {
+      state = 'available-unconfigured';
+    } else if (entry.status === 'Degraded' || entry.status === 'Unhealthy') {
+      state = 'connection-issue';
+    } else {
+      state = 'connected';
+    }
+
+    return { provider, entry, state };
+  });
 
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Provider connectivity</span>
-      {checks.map(({ provider, entry }) => {
-        const healthy = entry.status === 'Healthy';
-        const degraded = entry.status === 'Degraded';
+      {checks.map(({ provider, entry, state }) => {
+        const stateStyle = PROVIDER_STATE_STYLES[state];
         return (
           <span
             key={provider}
-            title={entry.description ?? entry.status}
+            title={entry?.description ?? stateStyle.label}
             className={`inline-flex items-center gap-1.5 pl-1.5 pr-2 py-1 rounded-full text-xs font-medium border ${
-              healthy
+              state === 'connected'
                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : degraded
+                : state === 'connection-issue'
                   ? 'bg-amber-50 text-amber-700 border-amber-200'
-                  : 'bg-red-50 text-red-700 border-red-200'
+                  : 'bg-gray-50 text-gray-500 border-gray-200'
             }`}
           >
-            <ProviderIcon provider={provider} className="w-3.5 h-3.5" />
+            <ProviderIcon provider={provider} className={`w-3.5 h-3.5 ${stateStyle.iconClass}`} />
             {PROVIDER_STYLES[provider].label}
-            <span className={`w-1.5 h-1.5 rounded-full ${healthy ? 'bg-emerald-500' : degraded ? 'bg-amber-500' : 'bg-red-500'}`} />
+            {stateStyle.dotClass && <span className={`w-1.5 h-1.5 rounded-full ${stateStyle.dotClass}`} />}
           </span>
         );
       })}
@@ -393,9 +418,20 @@ export default function FleetPage() {
                         >
                           <td className="px-4 py-2.5">
                             <div className="flex items-center gap-2">
-                              <span className={`w-2 h-2 rounded-full ${sev.dot}`} title={sev.label} />
+                              <span
+                                className={`w-2 h-2 rounded-full ${sev.dot}`}
+                                title={n.severity === 'unknown' ? (n.coverageNote ?? sev.label) : sev.label}
+                              />
                               <span className="font-medium text-gray-800">{n.namespaceName}</span>
                               <ProviderBadge provider={n.provider.toLowerCase() as CloudProviderType} />
+                              {n.coverage !== 'scanned' && n.severity !== 'unknown' && (
+                                <span
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200"
+                                  title={n.coverageNote ?? 'The background monitor does not scan this namespace automatically. An empty or low count here does not mean the queue is clean.'}
+                                >
+                                  Not monitored
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="px-4 py-2.5 text-gray-500">{n.environment}</td>

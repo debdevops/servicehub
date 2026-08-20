@@ -1,3 +1,4 @@
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 
 namespace ServiceHub.Infrastructure.LiveTail;
@@ -17,6 +18,7 @@ public sealed class LiveTailSessionFactory : ILiveTailSessionFactory
         Guid namespaceId,
         string entityName,
         string? subscriptionName,
-        bool fromDeadLetter) =>
-        new LiveTailSession(_messageOperationsService, namespaceId, entityName, subscriptionName, fromDeadLetter);
+        bool fromDeadLetter,
+        CloudProviderType provider) =>
+        new LiveTailSession(_messageOperationsService, namespaceId, entityName, subscriptionName, fromDeadLetter, provider);
 }

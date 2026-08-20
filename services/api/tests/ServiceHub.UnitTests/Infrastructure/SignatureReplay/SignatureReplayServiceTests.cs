@@ -24,6 +24,7 @@ public sealed class SignatureReplayServiceTests : IDisposable
     private readonly Mock<ISignatureReplayQueue> _queueMock = new();
     private readonly Guid _namespaceId = Guid.NewGuid();
     private const string OwnerId = "entra:test-owner-123";
+    private static readonly RecoveryActor TestActor = new(OwnerId, RecoveryActorKind.User);
     private static readonly string[] TopTerms = ["timeout", "connection"];
     private const string DominantReason = "MaxDeliveryCountExceeded";
     private static readonly string SignatureHash = ClusterSignatureHasher.ComputeHash(TopTerms, DominantReason);
@@ -257,7 +258,7 @@ public sealed class SignatureReplayServiceTests : IDisposable
         SetupNamespace();
         SetupSignatureWithMessages(BuildMessage(1), BuildMessage(2));
 
-        var result = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)));
+        var result = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)), TestActor);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.TotalMatched.Should().Be(2);
@@ -277,7 +278,7 @@ public sealed class SignatureReplayServiceTests : IDisposable
         SetupNamespace(EnvironmentType.Prod);
         SetupSignatureWithMessages(BuildMessage(1));
 
-        var result = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)));
+        var result = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)), TestActor);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("SignatureReplay.NotAllowed");
@@ -290,7 +291,7 @@ public sealed class SignatureReplayServiceTests : IDisposable
         SetupNamespace();
         SetupNoClusteredSignature();
 
-        var result = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)));
+        var result = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)), TestActor);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("SignatureReplay.NoMatches");
@@ -315,7 +316,7 @@ public sealed class SignatureReplayServiceTests : IDisposable
         var sut = CreateSut(BuildProviderMock(CloudProviderType.Aws).Object);
         SetupNamespace();
         SetupSignatureWithMessages(BuildMessage(1));
-        var created = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)));
+        var created = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)), TestActor);
 
         var cancelled = await sut.CancelJobAsync(OwnerId, created.Value.Id);
 
@@ -344,9 +345,9 @@ public sealed class SignatureReplayServiceTests : IDisposable
         var sut = CreateSut(BuildProviderMock(CloudProviderType.Aws).Object);
         SetupNamespace();
         SetupSignatureWithMessages(BuildMessage(1));
-        var first = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)));
+        var first = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)), TestActor);
         SetupSignatureWithMessages(BuildMessage(2));
-        var second = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)));
+        var second = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)), TestActor);
 
         var result = await sut.ListJobsAsync(OwnerId, _namespaceId, SignatureHash, page: 1, pageSize: 20);
 

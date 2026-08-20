@@ -30,6 +30,8 @@ export interface Namespace {
   isActive: boolean;
   createdAt: string;
   lastUsedAt?: string;
+  lastConnectionTestAt?: string | null;
+  lastConnectionTestSucceeded?: boolean | null;
   hasListenPermission?: boolean;
   hasSendPermission?: boolean;
   hasManagePermission?: boolean;

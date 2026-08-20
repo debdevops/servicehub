@@ -7,6 +7,7 @@ using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
@@ -89,7 +90,8 @@ public sealed class SignatureReplayService : ISignatureReplayService
 
     /// <inheritdoc />
     public async Task<Result<BulkOperationJobResponse>> StartAsync(
-        string ownerId, SignatureReplayStartRequest request, CancellationToken cancellationToken = default)
+        string ownerId, SignatureReplayStartRequest request, RecoveryActor requestedBy,
+        CancellationToken cancellationToken = default)
     {
         var nsResult = await ResolveOwnedNamespaceAsync(ownerId, request.Filter.NamespaceId, cancellationToken);
         if (nsResult.IsFailure)
@@ -126,6 +128,9 @@ public sealed class SignatureReplayService : ISignatureReplayService
             MessageIdsJson = JsonSerializer.Serialize(matched.Select(m => m.Id)),
             TotalMatched = matched.Count,
             CreatedAt = DateTimeOffset.UtcNow,
+            RequestedByIdentity = requestedBy.Identity,
+            RequestedByActorKind = requestedBy.Kind,
+            RequestedByScopes = requestedBy.Scopes,
         };
 
         _dbContext.SignatureReplayJobs.Add(job);

@@ -263,12 +263,14 @@ public sealed class DlqHistoryService : IDlqHistoryService
 
     // Manual triage may only move a message to one of these lifecycle states. Replayed /
     // ReplayFailed are outcomes of the replay flow and must not be settable by hand, so a
-    // "Replayed" status always corresponds to a real replay attempt.
+    // "Replayed" status always corresponds to a real replay attempt. Discarded must mean
+    // "ServiceHub destroyed this message via a provider call" — an operator has no such call to
+    // point to, so manual triage cannot declare it; Resolved (with ResolutionCause.DeclaredByOperator)
+    // is the honest equivalent for a human-observed removal.
     private static readonly HashSet<DlqMessageStatus> ManualTriageTargets =
     [
         DlqMessageStatus.Active,
         DlqMessageStatus.Archived,
-        DlqMessageStatus.Discarded,
         DlqMessageStatus.Resolved
     ];
 
@@ -284,7 +286,7 @@ public sealed class DlqHistoryService : IDlqHistoryService
         {
             return Result<DlqMessage>.Failure(Error.Validation(
                 "Dlq.InvalidStatusTransition",
-                $"'{newStatus}' is not a valid triage status. Allowed: Active, Archived, Discarded, Resolved."));
+                $"'{newStatus}' is not a valid triage status. Allowed: Active, Archived, Resolved."));
         }
 
         try
@@ -304,16 +306,20 @@ public sealed class DlqHistoryService : IDlqHistoryService
                 case DlqMessageStatus.Archived:
                     message.ArchivedAt = now;
                     message.ResolvedAt = null;
+                    message.ResolutionCause = null;
                     break;
                 case DlqMessageStatus.Resolved:
-                case DlqMessageStatus.Discarded:
                     message.ResolvedAt = now;
                     message.ArchivedAt = null;
+                    // The operator is declaring this resolved on their own observation, not a
+                    // ServiceHub provider call — that is the honest cause, not a guess.
+                    message.ResolutionCause = DlqResolutionCause.DeclaredByOperator;
                     break;
                 case DlqMessageStatus.Active:
                     // Re-opening a triaged message: clear the resolution stamps.
                     message.ArchivedAt = null;
                     message.ResolvedAt = null;
+                    message.ResolutionCause = null;
                     break;
             }
 
@@ -550,5 +556,119 @@ public sealed class DlqHistoryService : IDlqHistoryService
             return Result<DlqMessage>.Failure(
                 Error.Internal("Dlq.LookupFailed", $"Failed to lookup DLQ message: {ex.Message}"));
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<DlqMessage>> ClaimForRecoveryAsync(
+        long id,
+        string dlqMessageOwnerId,
+        DlqMessageStatus claimStatus,
+        CancellationToken cancellationToken = default)
+    {
+        var message = await _dbContext.DlqMessages
+            .FirstOrDefaultAsync(m => m.Id == id && m.OwnerId == dlqMessageOwnerId, cancellationToken);
+
+        if (message is null)
+        {
+            return Result<DlqMessage>.Failure(
+                Error.NotFound("Dlq.NotFound", $"DLQ message with ID {id} was not found"));
+        }
+
+        if (message.Status != DlqMessageStatus.Active && message.Status != DlqMessageStatus.ReplayFailed)
+        {
+            return Result<DlqMessage>.Failure(Error.Conflict(
+                "Dlq.NotClaimable",
+                $"Message status is now '{message.Status}', no longer eligible for this operation."));
+        }
+
+        message.Status = claimStatus;
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await _dbContext.Entry(message).ReloadAsync(cancellationToken);
+            return Result<DlqMessage>.Failure(Error.Conflict(
+                "Dlq.ClaimLost", "Message was claimed by another concurrent operation."));
+        }
+
+        return message;
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<DlqMessage>> FinalizeRecoveryAsync(
+        long id,
+        string dlqMessageOwnerId,
+        DlqMessageStatus expectedClaimStatus,
+        DlqMessageStatus terminalStatus,
+        ReplayHistoryDetails? replayHistory = null,
+        CancellationToken cancellationToken = default)
+    {
+        var message = await _dbContext.DlqMessages
+            .FirstOrDefaultAsync(m => m.Id == id && m.OwnerId == dlqMessageOwnerId, cancellationToken);
+
+        if (message is null)
+        {
+            return Result<DlqMessage>.Failure(
+                Error.NotFound("Dlq.NotFound", $"DLQ message with ID {id} was not found"));
+        }
+
+        // Ownership guard: only the caller that actually holds the claim (Status still equals
+        // what it claimed into) may finalize it. Covers a duplicate finalize call and a message
+        // that moved on for any other reason.
+        if (message.Status != expectedClaimStatus)
+        {
+            return Result<DlqMessage>.Failure(Error.Conflict(
+                "Dlq.ClaimNotHeld",
+                $"Message status is '{message.Status}', not the expected claim status '{expectedClaimStatus}' — cannot finalize."));
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        message.Status = terminalStatus;
+        if (terminalStatus == DlqMessageStatus.Replayed)
+        {
+            message.ReplayedAt = now;
+            message.ReplaySuccess = true;
+        }
+        else if (terminalStatus == DlqMessageStatus.ReplayFailed)
+        {
+            message.ReplaySuccess = false;
+        }
+
+        // Purge's terminal statuses (Discarded/Active) never reach here even if a caller passed
+        // replayHistory — a purge is not a replay attempt, matching every other purge path
+        // (BulkOperationExecutor's purge branch, InterruptedOperationRecovery's Purging->Active).
+        if (replayHistory is not null &&
+            (terminalStatus == DlqMessageStatus.Replayed || terminalStatus == DlqMessageStatus.ReplayFailed))
+        {
+            _dbContext.ReplayHistories.Add(new ReplayHistory
+            {
+                DlqMessageId = message.Id,
+                ReplayedAt = now,
+                ReplayedBy = replayHistory.ReplayedBy,
+                ReplayStrategy = replayHistory.ReplayStrategy,
+                ReplayedToEntity = replayHistory.ReplayedToEntity,
+                OutcomeStatus = terminalStatus == DlqMessageStatus.Replayed ? "Success" : "Failed",
+                ErrorDetails = replayHistory.ErrorDetails,
+            });
+        }
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await _dbContext.Entry(message).ReloadAsync(cancellationToken);
+            return Result<DlqMessage>.Failure(Error.Conflict(
+                "Dlq.ClaimLost", "Message claim was lost to another concurrent operation before it could be finalized."));
+        }
+
+        _logger.LogInformation(
+            "DLQ message {Id} recovery claim finalized: {ExpectedClaimStatus} -> {TerminalStatus}",
+            id, expectedClaimStatus, terminalStatus);
+
+        return message;
     }
 }

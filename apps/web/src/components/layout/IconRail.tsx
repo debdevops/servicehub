@@ -11,6 +11,7 @@ import {
   Route,
   Activity,
   Shield,
+  ShieldCheck,
   ScrollText,
   HelpCircle,
   Settings,
@@ -47,6 +48,7 @@ export function IconRail() {
     { to: `${navPrefix}/cross-cloud-trace`, label: 'Multi-Cloud Trace', icon: Route },
     { to: `${navPrefix}/health`, label: 'System Health', icon: Activity },
     { to: `${navPrefix}/audit`, label: 'Audit Trail', icon: ScrollText },
+    { to: `${navPrefix}/recovery`, label: 'Recovery Evidence', icon: ShieldCheck },
     { to: `${navPrefix}/security`, label: 'Security & Privacy', icon: Shield },
     { to: `${navPrefix}/help`, label: 'Help & Guide', icon: HelpCircle },
   ];

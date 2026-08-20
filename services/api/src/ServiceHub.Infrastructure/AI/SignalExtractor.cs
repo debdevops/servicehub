@@ -14,12 +14,15 @@ namespace ServiceHub.Infrastructure.AI;
 internal static partial class SignalExtractor
 {
     /// <summary>
-    /// Builds a combined, lower-cased text block from the reason,
-    /// error description, and body preview of the message.
+    /// Builds a combined, lower-cased text block from the reason, error description,
+    /// body preview, and application properties of the message. Application properties
+    /// are included because some providers (notably AWS SQS's native redrive-policy
+    /// dead-lettering) never populate DeadLetterReason/DeadLetterErrorDescription — the
+    /// only failure signal available is whatever the producer put in message attributes.
     /// </summary>
     internal static string CombinedText(DlqMessage msg)
     {
-        return $"{msg.DeadLetterReason} {msg.DeadLetterErrorDescription} {msg.BodyPreview}"
+        return $"{msg.DeadLetterReason} {msg.DeadLetterErrorDescription} {msg.BodyPreview} {msg.ApplicationPropertiesJson}"
             .ToLowerInvariant();
     }
 

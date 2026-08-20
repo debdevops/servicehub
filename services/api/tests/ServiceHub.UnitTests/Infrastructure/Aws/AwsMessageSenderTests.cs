@@ -3,6 +3,7 @@ using Amazon.SimpleNotificationService.Model;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Core.Entities;
@@ -361,5 +362,48 @@ public sealed class AwsMessageSenderTests
         var result = await sut.SendBatchAsync(requests, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SendBatchAsync_PartialFailure_SanitisesErrorTextBeforeLogging()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        var queueUrl = "https://sqs.us-east-1.amazonaws.com/123/my-queue";
+
+        var sqsClient = new Mock<IAmazonSQS>();
+        sqsClient.Setup(s => s.SendMessageBatchAsync(It.IsAny<SendMessageBatchRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SendMessageBatchResponse
+            {
+                Successful = new List<SendMessageBatchResultEntry>(),
+                Failed = new List<Amazon.SQS.Model.BatchResultErrorEntry>
+                {
+                    new()
+                    {
+                        Id = "0",
+                        Message = "Malformed body\r\nFAKE LOG LINE: admin logged in\nAuthorization: Bearer abc.def.ghi"
+                    }
+                }
+            });
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<Namespace>())).Returns(sqsClient.Object);
+
+        var logger = new Mock<ILogger<AwsMessageSender>>();
+        var sut = new AwsMessageSender(factory.Object, repo.Object, logger.Object);
+
+        var requests = new[] { new SHSendMessageRequest(TestNamespaceId, queueUrl, "body-1") };
+
+        var result = await sut.SendBatchAsync(requests, CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        logger.Invocations
+            .Where(i => i.Method.Name == "Log" && i.Arguments[0]!.Equals(LogLevel.Warning))
+            .Should().ContainSingle(i =>
+                !i.Arguments[2]!.ToString()!.Contains('\r') &&
+                !i.Arguments[2]!.ToString()!.Contains('\n'));
     }
 }

@@ -12,6 +12,7 @@ using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.BulkOperations;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Persistence.InMemory;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Infrastructure.Events;
@@ -190,6 +191,9 @@ public static class DependencyInjection
         services.AddHostedService<BulkOperationWorker>();
         services.AddHostedService<SignatureReplayWorker>();
         services.AddHostedService<AuditRetentionWorker>();
+        services.AddHostedService<RecoveryVerificationWorker>();
+        services.AddHostedService<RecoveryAgeingWorker>();
+        services.AddHostedService<AutonomyEvaluationWorker>();
 
         return services;
     }
@@ -252,6 +256,19 @@ public static class DependencyInjection
         // Failure Signature lifecycle (Active/Resolved/Reopened/Suppressed/Archived) — EF Core
         // (DlqDbContext)-backed, so Scoped like every other DlqDbContext-backed service.
         services.TryAddScoped<ISignatureLifecycleService, SignatureLifecycleService>();
+
+        // Recovery Evidence Ledger — EF Core (DlqDbContext)-backed, so Scoped like every other
+        // DlqDbContext-backed service. No callers yet; wired to the recovery paths in a later phase.
+        services.TryAddScoped<IRecoveryLedger, RecoveryLedgerService>();
+        services.TryAddScoped<IRecoveryEvidenceExporter, RecoveryEvidenceExporter>();
+
+        // Deterministic Eligibility Gate (roadmap §9/Phase B) — the single safety-decision point
+        // every recovery attempt passes through before a provider call.
+        services.TryAddScoped<IRecoveryEligibilityGate, RecoveryEligibilityGate>();
+
+        // Evidence-Derived Trust Scoring (roadmap §8.10/Phase C) — read-only aggregation over
+        // the ledger; never writes, never grants autonomy.
+        services.TryAddScoped<IRecoveryTrustScoringService, RecoveryTrustScoringService>();
 
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();

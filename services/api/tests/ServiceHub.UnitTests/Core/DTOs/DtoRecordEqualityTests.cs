@@ -36,7 +36,7 @@ public class DtoRecordEqualityTests
             BodyPreview: "{}", ApplicationPropertiesJson: "{\"a\":1}",
             FailureCategory: "Transient", CategoryConfidence: 0.9,
             Status: "Active", ReplayedAt: null, ReplaySuccess: null,
-            ArchivedAt: null, ResolvedAt: null, UserNotes: "note", CorrelationId: "c1",
+            ArchivedAt: null, ResolvedAt: null, ResolutionCause: null, UserNotes: "note", CorrelationId: "c1",
             SessionId: "s1", TopicName: null, ReplayHistory: replayHistory);
 
         var b = a with { Id = 42 }; // identical copy
@@ -392,7 +392,7 @@ public class DtoRecordEqualityTests
             BodyPreview: "{}", FailureCategory: "Transient",
             CategoryConfidence: 0.8, Status: "Active",
             ReplayedAt: null, ReplaySuccess: null, ArchivedAt: null,
-            ResolvedAt: null, UserNotes: null, CorrelationId: null, TopicName: null,
+            ResolvedAt: null, ResolutionCause: null, UserNotes: null, CorrelationId: null, TopicName: null,
             ForensicRootCause: null, ForensicConfidence: 0.0,
             ReplaySafety: null);
 
@@ -421,7 +421,8 @@ public class DtoRecordEqualityTests
             Conditions: new List<RuleCondition>(),
             Action: new RuleAction(), CreatedAt: DateTimeOffset.UtcNow,
             UpdatedAt: null, MatchCount: 0, SuccessCount: 0,
-            SuccessRate: 0, MaxReplaysPerHour: 100, PendingMatchCount: 0);
+            SuccessRate: 0, MaxReplaysPerHour: 100, PendingMatchCount: 0,
+            DisabledReason: null, DisabledReasonDetail: null);
 
         var updated = r with { Enabled = false, MatchCount = 10 };
         updated.Enabled.Should().BeFalse();
@@ -478,7 +479,7 @@ public class DtoRecordEqualityTests
             BodyPreview: null, ApplicationPropertiesJson: null,
             FailureCategory: "Unknown", CategoryConfidence: 0,
             Status: "Active", ReplayedAt: null, ReplaySuccess: null,
-            ArchivedAt: null, ResolvedAt: null, UserNotes: null, CorrelationId: null,
+            ArchivedAt: null, ResolvedAt: null, ResolutionCause: null, UserNotes: null, CorrelationId: null,
             SessionId: null, TopicName: null,
             ReplayHistory: new List<ReplayHistoryResponse>());
     }

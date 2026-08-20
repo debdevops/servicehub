@@ -65,7 +65,7 @@ export function DemoModeBanner() {
         >
           {scenarioName}
         </span>
-        <span className="text-white/70 text-xs hidden lg:block">
+        <span className="text-white text-xs hidden lg:block">
           — All cloud operations are read-only. Mock data only.
         </span>
       </div>

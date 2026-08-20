@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Moq;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.LiveTail;
 
@@ -19,7 +20,7 @@ public sealed class LiveTailSessionFactoryTests
     {
         var sut = new LiveTailSessionFactory(Mock.Of<IMessageOperationsService>());
 
-        var session = sut.Create(Guid.NewGuid(), "orders", null, false);
+        var session = sut.Create(Guid.NewGuid(), "orders", null, false, CloudProviderType.Azure);
 
         session.Should().NotBeNull();
         session.Should().BeAssignableTo<ILiveTailSession>();

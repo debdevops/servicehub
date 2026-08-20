@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useDeferredValue } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, Play, Pause, Radio, Inbox, Clock, Archive } from 'lucide-react';
+import { Search, Filter, RefreshCw, Sparkles, X, AlertCircle, AlertTriangle, Play, Pause, Radio, Inbox, Clock, Archive } from 'lucide-react';
 import { MessageList, MessageDetailPanel, LiveTailPanel, type QueueTab } from '@/components/messages';
 import { EmptyState } from '@/components/EmptyState';
 import { AwsTopicFanout } from '@/components/aws/AwsTopicFanout';
@@ -17,6 +17,9 @@ import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
+import { EnvironmentBadge } from '@/components/EnvironmentBadge';
+import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
+import { getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
 import type { Message, ContentType } from '@servicehub/ui-shared/lib/mockData';
 import type { Message as APIMessage, CloudProviderType, ApiError } from '@servicehub/ui-shared/lib/api/types';
 import toast from 'react-hot-toast';
@@ -67,7 +70,7 @@ function transformMessage(
     id,
     enqueuedTime: new Date(apiMessage.enqueuedTime),
     status,
-    preview: body ? body.substring(0, 100) : '[Body unavailable - may exceed size limit or API throttled]',
+    preview: body != null ? body.substring(0, 100) : '[Body unavailable - may exceed size limit or API throttled]',
     contentType: (apiMessage.contentType || 'application/json') as ContentType,
     deliveryCount: apiMessage.deliveryCount || 0,
     hasAIInsight: insightMessageIds.includes(id),
@@ -86,6 +89,7 @@ function transformMessage(
     displayTitle: displayTitle || eventType,
     deadLetterReason: apiMessage.deadLetterReason || undefined,
     deadLetterSource: apiMessage.deadLetterSource || undefined,
+    deadLetterErrorDescription: apiMessage.deadLetterErrorDescription || undefined,
     scheduledEnqueueTime: apiMessage.scheduledEnqueueTime ?? undefined,
   };
 }
@@ -128,6 +132,7 @@ export function MessagesPage() {
 
   // Fetch available namespaces to validate the current namespace ID
   const { data: namespaces } = useNamespaces();
+  const currentNamespace = namespaces?.find(ns => ns.id === namespaceId);
 
   // Auto-fix invalid namespace ID by redirecting to the first available namespace
   useEffect(() => {
@@ -156,6 +161,14 @@ export function MessagesPage() {
     () => searchParams.get('message')
   );
 
+  // Re-sync when the URL's message param changes for reasons other than our own
+  // setSelectedMessageId calls below (e.g. Back/Forward navigation) — otherwise
+  // the URL restores but the detail panel doesn't.
+  const messageParam = searchParams.get('message');
+  useEffect(() => {
+    setSelectedMessageId(messageParam);
+  }, [messageParam]);
+
   const syncMessageParam = (id: string | null) => {
     const newParams = new URLSearchParams(searchParams);
     if (id) {
@@ -163,9 +176,11 @@ export function MessagesPage() {
     } else {
       newParams.delete('message');
     }
-    setSearchParams(newParams, { replace: true });
+    // Opening a message is a distinct, back-able step; clearing it (tab
+    // switches, etc.) stays a replace so it doesn't litter history.
+    setSearchParams(newParams, { replace: id === null });
   };
-  
+
   // Queue tab: active or deadletter (sync with URL parameter)
   const [queueTab, setQueueTab] = useState<QueueTab>('active');
 
@@ -566,6 +581,29 @@ export function MessagesPage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden relative" data-tour="messages-area">
+      {/* Identity — the operator must never be one click from Replay/Purge without knowing
+          exactly which cloud, namespace, environment, and entity is in view. */}
+      <div className="bg-white border-b border-gray-100 px-4 py-1.5 flex items-center gap-2 shrink-0 min-w-0">
+        <h1 className="text-sm font-bold text-gray-900 truncate">{entityName}</h1>
+        {currentNamespace && (
+          <>
+            <span className="text-gray-300 shrink-0">·</span>
+            <ProviderIcon provider={currentNamespace.cloudProvider} className="w-3.5 h-3.5 shrink-0 text-gray-500" />
+            <span className="hidden sm:inline text-xs font-semibold uppercase tracking-wide text-gray-400 shrink-0">
+              {getProviderStyle(currentNamespace.cloudProvider).label}
+            </span>
+            <span
+              className="text-xs text-gray-500 truncate min-w-0"
+              title={currentNamespace.displayName || currentNamespace.name}
+            >
+              {currentNamespace.displayName || currentNamespace.name}
+            </span>
+            <span className="shrink-0">
+              <EnvironmentBadge env={currentNamespace.environment} />
+            </span>
+          </>
+        )}
+      </div>
       {/* Toolbar */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shrink-0">
         {/* Search */}
@@ -765,23 +803,33 @@ export function MessagesPage() {
         </div>
       )}
 
-      {/* More Messages Available Banner */}
-      {hasMoreMessages && !evidenceFilter && (
-        <div className="bg-blue-50 border-b border-blue-200 px-4 py-2.5 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-blue-600 shrink-0" />
-          <span className="text-xs text-blue-800 flex-1">
-            <span className="font-semibold">More messages available:</span> Showing {messages.length.toLocaleString()} of {totalMessagesInQueue.toLocaleString()} messages.
-            Scroll down or click "Load More" to view additional messages.
-            Search and filters only apply to the messages currently loaded.
-          </span>
-        </div>
-      )}
-
-      {/* AWS SQS semantics notice — browsing counts as deliveries */}
-      {isAwsNamespace && (
-        <div className="px-4 py-1.5 bg-amber-50 border-b border-amber-100 text-amber-700 text-xs shrink-0">
-          AWS SQS counts every view as a delivery — repeated refreshes can move messages to the DLQ
-          once the queue's redrive policy limit is reached. Auto-refresh is off by default here.
+      {/* Info notices — merged into a single compact row */}
+      {((hasMoreMessages && !evidenceFilter) || isAwsNamespace) && (
+        <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-200 flex items-center gap-4 text-xs shrink-0 flex-wrap">
+          {hasMoreMessages && !evidenceFilter && (
+            <span
+              className="flex items-center gap-1.5 text-blue-700"
+              title={`More messages available: Showing ${messages.length.toLocaleString()} of ${totalMessagesInQueue.toLocaleString()} messages. Search and filters only apply to the messages currently loaded.`}
+            >
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              Showing {messages.length.toLocaleString()} of {totalMessagesInQueue.toLocaleString()}
+              <button onClick={handleLoadMore} className="underline font-medium hover:text-blue-800">
+                Load More
+              </button>
+            </span>
+          )}
+          {hasMoreMessages && !evidenceFilter && isAwsNamespace && (
+            <span className="text-gray-300" aria-hidden="true">|</span>
+          )}
+          {isAwsNamespace && (
+            <span
+              className="flex items-center gap-1.5 text-amber-700"
+              title="AWS SQS counts every view as a delivery — repeated refreshes can move messages to the DLQ once the queue's redrive policy limit is reached. Auto-refresh is off by default here."
+            >
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              AWS: viewing counts as delivery
+            </span>
+          )}
         </div>
       )}
 

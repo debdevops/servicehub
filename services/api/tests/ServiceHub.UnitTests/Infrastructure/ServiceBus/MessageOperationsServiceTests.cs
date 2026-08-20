@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Core.DTOs.Requests;
@@ -18,7 +19,8 @@ namespace ServiceHub.UnitTests.Infrastructure.ServiceBus;
 
 public class MessageOperationsServiceTests
 {
-    private static (MessageOperationsService svc, Mock<INamespaceRepository> nsRepo, Mock<ICloudMessagingProvider> providerMock, Mock<IMessageSender> senderMock, Mock<IMessageReceiver> receiverMock, Namespace ns) CreateServiceWithProvider(CloudProviderType providerType)
+    private static (MessageOperationsService svc, Mock<INamespaceRepository> nsRepo, Mock<ICloudMessagingProvider> providerMock, Mock<IMessageSender> senderMock, Mock<IMessageReceiver> receiverMock, Namespace ns) CreateServiceWithProvider(
+        CloudProviderType providerType, IConfiguration? configuration = null)
     {
         var nsId = Guid.NewGuid();
         var nsRes = Namespace.CreateWithManagedIdentity("test", provider: providerType);
@@ -55,7 +57,7 @@ public class MessageOperationsServiceTests
 
         var router = new CloudProviderRouter(new[] { providerMock.Object });
 
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, configuration ?? new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         return (svc, nsRepo, providerMock, senderMock, receiverMock, ns);
     }
@@ -89,7 +91,7 @@ public class MessageOperationsServiceTests
         // Router with no providers registered -> the provider's flag is disabled
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
 
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var req = new SendMessageRequest(ns.Id, "queue", "body");
         var res = await svc.SendAsync(req);
@@ -110,7 +112,7 @@ public class MessageOperationsServiceTests
 
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
 
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var req = new SendMessageRequest(nsId, "queue", "body");
         var res = await svc.SendAsync(req);
@@ -150,7 +152,7 @@ public class MessageOperationsServiceTests
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var req = new GetMessagesRequest(ns.Id, "queue");
         var res = await svc.PeekMessagesAsync(req);
@@ -170,7 +172,7 @@ public class MessageOperationsServiceTests
             .ReturnsAsync(Result<Namespace>.Failure(ServiceHub.Shared.Results.Error.NotFound(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, "not found")));
 
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var req = new GetMessagesRequest(nsId, "queue");
         var res = await svc.PeekMessagesAsync(req);
@@ -206,13 +208,92 @@ public class MessageOperationsServiceTests
     {
         var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(providerType);
 
-        receiverMock.Setup(r => r.ReplayMessageAsync(ns.Id, "queue", null, 123L, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+        receiverMock.Setup(r => r.ReplayMessageAsync(ns.Id, "queue", null, 123L, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
 
         var res = await svc.ReplayMessageAsync(ns.Id, "queue", null, 123L);
 
         res.IsSuccess.Should().BeTrue();
-        receiverMock.Verify(r => r.ReplayMessageAsync(ns.Id, "queue", null, 123L, It.IsAny<CancellationToken>()), Times.Once);
+        receiverMock.Verify(r => r.ReplayMessageAsync(ns.Id, "queue", null, 123L, It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_RecoveryEntryIdProvided_PassesMarkerStringToReceiver()
+    {
+        var (svc, _, _, _, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+        var entryId = Guid.NewGuid();
+
+        string? capturedMarker = null;
+        receiverMock.Setup(r => r.ReplayMessageAsync(ns.Id, "queue", null, 123L, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, string, string?, long, string?, CancellationToken>((_, _, _, _, marker, _) => capturedMarker = marker)
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        await svc.ReplayMessageAsync(ns.Id, "queue", null, 123L, entryId);
+
+        capturedMarker.Should().Be(entryId.ToString());
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_StampReplayMarkerDisabled_DoesNotPassMarkerToReceiver()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["RecoveryEvidence:StampReplayMarker"] = "false" })
+            .Build();
+        var (svc, _, _, _, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure, config);
+        var entryId = Guid.NewGuid();
+
+        string? capturedMarker = "not-yet-set";
+        receiverMock.Setup(r => r.ReplayMessageAsync(ns.Id, "queue", null, 123L, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, string, string?, long, string?, CancellationToken>((_, _, _, _, marker, _) => capturedMarker = marker)
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        await svc.ReplayMessageAsync(ns.Id, "queue", null, 123L, entryId);
+
+        capturedMarker.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_NoRecoveryEntryId_DoesNotPassMarkerToReceiver()
+    {
+        var (svc, _, _, _, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        string? capturedMarker = "not-yet-set";
+        receiverMock.Setup(r => r.ReplayMessageAsync(ns.Id, "queue", null, 123L, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, string, string?, long, string?, CancellationToken>((_, _, _, _, marker, _) => capturedMarker = marker)
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        await svc.ReplayMessageAsync(ns.Id, "queue", null, 123L, recoveryEntryId: null);
+
+        capturedMarker.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ReplayMessageAsync_ProviderDoesNotSupportRecoveryMarker_DoesNotPassMarkerToReceiver()
+    {
+        var nsRes = Namespace.CreateWithManagedIdentity("test", provider: CloudProviderType.Azure);
+        var ns = nsRes.Value;
+
+        var nsRepo = new Mock<INamespaceRepository>();
+        nsRepo.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var receiverMock = new Mock<IMessageReceiver>();
+        string? capturedMarker = "not-yet-set";
+        receiverMock.Setup(r => r.ReplayMessageAsync(ns.Id, "queue", null, 123L, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, string, string?, long, string?, CancellationToken>((_, _, _, _, marker, _) => capturedMarker = marker)
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        var providerMock = new Mock<ICloudMessagingProvider>();
+        providerMock.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Azure);
+        providerMock.SetupGet(p => p.Capabilities).Returns(ServiceHub.Core.Models.ProviderCapabilities.Azure with { SupportsRecoveryMarker = false });
+        providerMock.Setup(p => p.GetMessageReceiver()).Returns(receiverMock.Object);
+
+        var router = new CloudProviderRouter(new[] { providerMock.Object });
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
+
+        await svc.ReplayMessageAsync(ns.Id, "queue", null, 123L, Guid.NewGuid());
+
+        capturedMarker.Should().BeNull();
     }
 
     [Theory]
@@ -448,7 +529,7 @@ public class MessageOperationsServiceTests
             .ReturnsAsync(Result<Namespace>.Failure(ServiceHub.Shared.Results.Error.NotFound(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, "not found")));
 
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var req = new GetMessagesRequest(nsId, "queue");
         var res = await svc.PeekDeadLetterMessagesAsync(req);
@@ -468,7 +549,7 @@ public class MessageOperationsServiceTests
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var req = new GetMessagesRequest(ns.Id, "queue");
         var res = await svc.PeekDeadLetterMessagesAsync(req);
@@ -502,7 +583,7 @@ public class MessageOperationsServiceTests
             .ReturnsAsync(Result<Namespace>.Failure(ServiceHub.Shared.Results.Error.NotFound(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, "not found")));
 
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var res = await svc.ReplayMessageAsync(nsId, "queue", null, 123L);
 
@@ -521,7 +602,7 @@ public class MessageOperationsServiceTests
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var res = await svc.ReplayMessageAsync(ns.Id, "queue", null, 123L);
 
@@ -535,7 +616,7 @@ public class MessageOperationsServiceTests
     {
         var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
 
-        receiverMock.Setup(r => r.ReplayMessageAsync(ns.Id, "queue", null, 123L, It.IsAny<CancellationToken>()))
+        receiverMock.Setup(r => r.ReplayMessageAsync(ns.Id, "queue", null, 123L, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("boom"));
 
         var res = await svc.ReplayMessageAsync(ns.Id, "queue", null, 123L);
@@ -553,7 +634,7 @@ public class MessageOperationsServiceTests
             .ReturnsAsync(Result<Namespace>.Failure(ServiceHub.Shared.Results.Error.NotFound(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, "not found")));
 
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var res = await svc.PurgeMessageAsync(nsId, "queue", null, 123L, false);
 
@@ -572,7 +653,7 @@ public class MessageOperationsServiceTests
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var res = await svc.PurgeMessageAsync(ns.Id, "queue", null, 123L, false);
 
@@ -604,7 +685,7 @@ public class MessageOperationsServiceTests
             .ReturnsAsync(Result<Namespace>.Failure(ServiceHub.Shared.Results.Error.NotFound(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, "not found")));
 
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var res = await svc.GetMessageCountAsync(nsId, "queue", null);
 
@@ -623,7 +704,7 @@ public class MessageOperationsServiceTests
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var res = await svc.GetMessageCountAsync(ns.Id, "queue", null);
 
@@ -641,7 +722,7 @@ public class MessageOperationsServiceTests
             .ReturnsAsync(Result<Namespace>.Failure(ServiceHub.Shared.Results.Error.NotFound(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, "not found")));
 
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var res = await svc.GetScheduledMessagesAsync(nsId, "queue", null, 10);
 
@@ -660,7 +741,7 @@ public class MessageOperationsServiceTests
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var res = await svc.GetScheduledMessagesAsync(ns.Id, "queue", null, 10);
 
@@ -708,7 +789,7 @@ public class MessageOperationsServiceTests
             .ReturnsAsync(Result<Namespace>.Failure(ServiceHub.Shared.Results.Error.NotFound(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, "not found")));
 
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var req = new DeadLetterRequest(nsId, "queue", null, 1, "ManualDeadLetter");
         var res = await svc.DeadLetterMessagesAsync(req);
@@ -743,7 +824,7 @@ public class MessageOperationsServiceTests
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var requests = new[] { new SendMessageRequest(ns.Id, "queue", "b1") };
         var res = await svc.SendBatchAsync(requests);
@@ -762,7 +843,7 @@ public class MessageOperationsServiceTests
             .ReturnsAsync(Result<Namespace>.Failure(ServiceHub.Shared.Results.Error.NotFound(ServiceHub.Shared.Constants.ErrorCodes.Namespace.NotFound, "not found")));
 
         var router = new CloudProviderRouter(Array.Empty<ICloudMessagingProvider>());
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         var requests = new[] { new SendMessageRequest(nsId, "queue", "b1") };
         var res = await svc.SendBatchAsync(requests);
@@ -839,7 +920,7 @@ public class MessageOperationsServiceTests
 
         var router = new CloudProviderRouter(new[] { providerMock.Object });
 
-        var svc = new MessageOperationsService(router, nsRepo.Object, NullLogger<MessageOperationsService>.Instance);
+        var svc = new MessageOperationsService(router, nsRepo.Object, new ConfigurationBuilder().Build(), NullLogger<MessageOperationsService>.Instance);
 
         return (svc, providerMock, ns);
     }

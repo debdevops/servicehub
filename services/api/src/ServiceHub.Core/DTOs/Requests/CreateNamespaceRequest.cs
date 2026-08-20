@@ -53,6 +53,13 @@ public sealed record CreateNamespaceRequest(
     /// <inheritdoc/>
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
+        if (Environment == EnvironmentType.Prod)
+        {
+            yield return new ValidationResult(
+                "Production namespace connectivity is disabled. Connect in Dev or UAT instead.",
+                [nameof(Environment)]);
+        }
+
         if (Provider == CloudProviderType.Aws)
         {
             if (string.IsNullOrWhiteSpace(AwsRegion))

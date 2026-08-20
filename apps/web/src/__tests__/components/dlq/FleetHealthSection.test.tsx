@@ -27,6 +27,8 @@ function namespaceHealth(overrides: Partial<FleetNamespaceHealth> = {}): FleetNa
     topCategory: 'Timeout',
     oldestActiveDetectedAt: '2026-08-01T00:00:00Z',
     severity: 'critical',
+    coverage: 'scanned',
+    coverageNote: null,
     ...overrides,
   };
 }

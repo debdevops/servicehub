@@ -77,6 +77,8 @@ describe('FailureIntelligenceCenterPage — Fleet Health section', () => {
           topCategory: 'Timeout',
           oldestActiveDetectedAt: new Date().toISOString(),
           severity: 'critical',
+          coverage: 'scanned',
+          coverageNote: null,
         },
       ],
     };

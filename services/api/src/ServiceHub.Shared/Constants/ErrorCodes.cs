@@ -223,6 +223,11 @@ public static class ErrorCodes
         /// Failed to get topic.
         /// </summary>
         public const string GetFailed = "Topic.Get.Failed";
+
+        /// <summary>
+        /// The provider has no topic concept.
+        /// </summary>
+        public const string NotSupported = "Topic.NotSupported";
     }
 
     /// <summary>
@@ -259,6 +264,11 @@ public static class ErrorCodes
         /// Failed to get subscription.
         /// </summary>
         public const string GetFailed = "Subscription.Get.Failed";
+
+        /// <summary>
+        /// The provider has no topic-subscription concept.
+        /// </summary>
+        public const string NotSupported = "Subscription.NotSupported";
     }
 
     /// <summary>

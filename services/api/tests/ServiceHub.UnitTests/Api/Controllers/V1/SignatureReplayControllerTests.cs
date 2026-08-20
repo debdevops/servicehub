@@ -9,6 +9,7 @@ using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Api.Controllers.V1;
@@ -76,7 +77,7 @@ public sealed class SignatureReplayControllerTests
         result.Result.Should().BeOfType<ObjectResult>()
             .Which.StatusCode.Should().Be(StatusCodes.Status428PreconditionRequired);
         _serviceMock.Verify(
-            s => s.StartAsync(It.IsAny<string>(), It.IsAny<SignatureReplayStartRequest>(), It.IsAny<CancellationToken>()),
+            s => s.StartAsync(It.IsAny<string>(), It.IsAny<SignatureReplayStartRequest>(), It.IsAny<RecoveryActor>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -90,6 +91,7 @@ public sealed class SignatureReplayControllerTests
                 It.IsAny<string>(),
                 It.Is<SignatureReplayStartRequest>(r =>
                     r.Filter.NamespaceId == _namespaceId && r.Filter.SignatureHash == SignatureHash),
+                It.IsAny<RecoveryActor>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<BulkOperationJobResponse>.Success(response));
 
@@ -104,7 +106,7 @@ public sealed class SignatureReplayControllerTests
     {
         SetIntentHeaders(IntentHeaders.IntentSignatureReplay);
         _serviceMock
-            .Setup(s => s.StartAsync(It.IsAny<string>(), It.IsAny<SignatureReplayStartRequest>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.StartAsync(It.IsAny<string>(), It.IsAny<SignatureReplayStartRequest>(), It.IsAny<RecoveryActor>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<BulkOperationJobResponse>.Failure(
                 Error.Validation("SignatureReplay.NoMatches", "No DLQ messages match this signature and filter.")));
 

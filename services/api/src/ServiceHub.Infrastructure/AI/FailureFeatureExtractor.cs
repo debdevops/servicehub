@@ -45,7 +45,11 @@ public sealed class FailureFeatureExtractor : IFailureFeatureExtractor
 
         return new FailureFeatures
         {
-            DeadLetterReason = message.DeadLetterReason ?? "Unknown",
+            // Match DeterministicClusteringStrategy's fallback chain: providers whose native
+            // dead-lettering never sets DeadLetterReason (e.g. AWS SQS redrive policy) can
+            // still have a forensic-engine-derived root cause — prefer that before "Unknown"
+            // so the fingerprint doesn't under-differentiate these messages.
+            DeadLetterReason = message.DeadLetterReason ?? message.ForensicRootCause ?? "Unknown",
             EntityName = message.EntityName ?? "Unknown",
             Provider = message.CloudProvider,
             FailureCategory = message.FailureCategory.ToString(),

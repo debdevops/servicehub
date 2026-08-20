@@ -7,6 +7,7 @@ using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
 
@@ -84,6 +85,15 @@ public sealed class TopicsController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
+
+        if (!ProviderCapabilities.For(ns.Provider).SupportsTopics)
+        {
+            return ToActionResult<IReadOnlyList<TopicRuntimePropertiesDto>>(
+                Error.Validation(
+                    ErrorCodes.Topic.NotSupported,
+                    $"Topics are not supported for {ns.Provider}. " +
+                    $"See provider capabilities: {ProviderCapabilities.For(ns.Provider).Notes}"));
+        }
 
         if (ns.Provider != CloudProviderType.Azure)
         {

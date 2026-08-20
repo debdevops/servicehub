@@ -38,6 +38,8 @@ describe('RuleBuilderDialog', () => {
       pendingMatchCount: 0,
       createdAt: new Date().toISOString(),
       updatedAt: null,
+      disabledReason: null,
+      disabledReasonDetail: null,
     };
     render(<RuleBuilderDialog {...defaultProps} editRule={editRule} />);
     expect(screen.getByText('Edit Auto-Replay Rule')).toBeInTheDocument();
@@ -58,6 +60,8 @@ describe('RuleBuilderDialog', () => {
       pendingMatchCount: 0,
       createdAt: new Date().toISOString(),
       updatedAt: null,
+      disabledReason: null,
+      disabledReasonDetail: null,
     };
     render(<RuleBuilderDialog {...defaultProps} editRule={editRule} />);
     const nameInput = screen.getByPlaceholderText(/e.g., Database Timeouts/i);

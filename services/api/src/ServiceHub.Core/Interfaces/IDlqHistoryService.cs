@@ -100,6 +100,64 @@ public interface IDlqHistoryService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Claims a tracked DLQ message for a recovery operation by transitioning it to a transient
+    /// claim status (<see cref="DlqMessageStatus.Replaying"/> or <see cref="DlqMessageStatus.Purging"/>),
+    /// using <see cref="DlqMessage.Status"/> as an EF Core concurrency token — the same
+    /// claim-before-provider-call protocol <c>BulkOperationExecutor</c>, <c>SignatureReplayExecutor</c>
+    /// and <c>AutoReplayExecutor</c> already use, exposed through the Core layer so API-layer
+    /// callers (which may not depend on <c>DlqDbContext</c> directly) can participate in it too.
+    /// Fails with a conflict if the message is not currently eligible (<c>Active</c> or
+    /// <c>ReplayFailed</c>) or if another caller wins the claim race concurrently.
+    /// </summary>
+    /// <param name="id">The DLQ message's primary key.</param>
+    /// <param name="dlqMessageOwnerId">
+    /// The message row's own <see cref="DlqMessage.OwnerId"/> — <b>not necessarily the acting
+    /// caller's owner ID</b>. For a shared namespace, the message's owner is the namespace owner,
+    /// while the caller performing the claim may be a different, shared-with owner (see roadmap
+    /// §14.8: ledger entries attribute to the acting owner, not the namespace owner).
+    /// </param>
+    /// <param name="claimStatus">The transient status to claim into.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<Result<DlqMessage>> ClaimForRecoveryAsync(
+        long id,
+        string dlqMessageOwnerId,
+        DlqMessageStatus claimStatus,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finalizes a recovery claim previously taken by <see cref="ClaimForRecoveryAsync"/>,
+    /// transitioning the tracked <see cref="DlqMessage"/> from its transient claim status
+    /// (<see cref="DlqMessageStatus.Replaying"/>/<see cref="DlqMessageStatus.Purging"/>) to a
+    /// terminal status once the provider operation has completed. Uses the same
+    /// <see cref="DlqMessage.Status"/>-as-concurrency-token protocol as
+    /// <see cref="ClaimForRecoveryAsync"/>: <paramref name="expectedClaimStatus"/> is checked
+    /// before the transition is applied, so only the caller that actually holds the claim can
+    /// finalize it — a stale or duplicate finalize call, or one racing a concurrent claim,
+    /// fails with a conflict instead of silently overwriting another operation's outcome.
+    /// </summary>
+    /// <param name="id">The DLQ message's primary key.</param>
+    /// <param name="dlqMessageOwnerId">The message row's own <see cref="DlqMessage.OwnerId"/> — see the same parameter on <see cref="ClaimForRecoveryAsync"/>.</param>
+    /// <param name="expectedClaimStatus">The transient claim status the message must currently hold.</param>
+    /// <param name="terminalStatus">The terminal status to transition to.</param>
+    /// <param name="replayHistory">
+    /// When supplied and <paramref name="terminalStatus"/> is <see cref="DlqMessageStatus.Replayed"/>
+    /// or <see cref="DlqMessageStatus.ReplayFailed"/>, records one <see cref="ReplayHistory"/> row for
+    /// this finalize call — the same audit trail <c>AutoReplayExecutor</c>, <c>BulkOperationExecutor</c>
+    /// and <c>SignatureReplayExecutor</c> already write for their own replay paths. Left <c>null</c> by
+    /// purge callers (terminal status <see cref="DlqMessageStatus.Discarded"/>/<see cref="DlqMessageStatus.Active"/>),
+    /// which never produce a <see cref="ReplayHistory"/> row — a purge is not a replay attempt, matching
+    /// every other purge path in this codebase.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<Result<DlqMessage>> FinalizeRecoveryAsync(
+        long id,
+        string dlqMessageOwnerId,
+        DlqMessageStatus expectedClaimStatus,
+        DlqMessageStatus terminalStatus,
+        ReplayHistoryDetails? replayHistory = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets multiple DLQ messages by ID in one query, scoped to the owner. Missing or
     /// out-of-tenant IDs are silently omitted from the result rather than failing the call —
     /// used to resolve a failure signature's related messages, where some IDs may no longer
@@ -152,3 +210,15 @@ public sealed record DlqTrendPoint(
     DateTimeOffset Date,
     int NewMessages,
     int ResolvedMessages);
+
+/// <summary>
+/// The fields <see cref="IDlqHistoryService.FinalizeRecoveryAsync"/> needs to write a
+/// <see cref="ReplayHistory"/> row for a manual single-message replay, mirroring the same fields
+/// <c>AutoReplayExecutor</c>/<c>BulkOperationExecutor</c>/<c>SignatureReplayExecutor</c> populate
+/// for their own replay paths.
+/// </summary>
+public sealed record ReplayHistoryDetails(
+    string ReplayedBy,
+    string ReplayStrategy,
+    string ReplayedToEntity,
+    string? ErrorDetails = null);

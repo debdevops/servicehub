@@ -73,6 +73,17 @@ export function useBulkOperationJob(jobId: string | null) {
     void queryClient.invalidateQueries({ queryKey: ['dlq-summary'] });
     void queryClient.invalidateQueries({ queryKey: ['bulk-operations', 'list'] });
     void queryClient.invalidateQueries({ queryKey: ['fleet-overview'] });
+    // Recovery Ledger otherwise only refreshes on its own 60s refetchInterval — without this,
+    // a bulk replay/purge that just recorded ledger entries can take up to a minute to show up
+    // on the Recovery Ledger page.
+    void queryClient.invalidateQueries({ queryKey: ['recovery-operations'] });
+    void queryClient.invalidateQueries({ queryKey: ['recovery-entries'] });
+    // Sidebar/queue-list DLQ counts and the Failure Signatures list otherwise never refresh
+    // after a bulk job completes — dlq-signatures in particular has no refetchInterval at all.
+    void queryClient.invalidateQueries({ queryKey: ['queues', job.namespaceId] });
+    void queryClient.invalidateQueries({ queryKey: ['namespace-stats', job.namespaceId] });
+    void queryClient.invalidateQueries({ queryKey: ['dlq-signatures', job.namespaceId] });
+    void queryClient.invalidateQueries({ queryKey: ['dlq-signature-detail', job.namespaceId], exact: false });
 
     if (job.status === 'Completed') {
       toast.success(`Bulk ${job.operationType.toLowerCase()} completed — ${job.successCount}/${job.totalMatched} succeeded`);

@@ -71,7 +71,7 @@ public sealed class DeterministicClusteringStrategy : ISignatureAnalysisStrategy
                     singletons.Add(new ClusterSingleton(
                         Ref: member.Index,
                         DominantEntity: member.Message.EntityName,
-                        DominantDeadletterReason: member.Message.DeadLetterReason ?? "Unknown"));
+                        DominantDeadletterReason: member.Message.DeadLetterReason ?? member.Message.ForensicRootCause ?? "Unknown"));
                 }
                 continue;
             }
@@ -79,6 +79,7 @@ public sealed class DeterministicClusteringStrategy : ISignatureAnalysisStrategy
             // Cluster: multiple messages with the same fingerprint.
             var representativeMessage = members[0].Message;
             var topTerms = ExtractTopTerms(members.Select(m => m.Message).ToList());
+            var representativeReason = representativeMessage.DeadLetterReason ?? representativeMessage.ForensicRootCause ?? "Unknown";
 
             var cluster = new ClusterSummary(
                 Size: members.Count,
@@ -87,12 +88,12 @@ public sealed class DeterministicClusteringStrategy : ISignatureAnalysisStrategy
                 FirstOccurrenceRef: members[0].Index,
                 LastOccurrenceRef: members[^1].Index,
                 DominantEntity: representativeMessage.EntityName,
-                DominantDeadletterReason: representativeMessage.DeadLetterReason ?? "Unknown",
+                DominantDeadletterReason: representativeReason,
                 MemberRefs: members.Select(m => m.Index).ToList(),
                 DominantDeadletterReasonCount: members.Count(m =>
                     string.Equals(
-                        m.Message.DeadLetterReason,
-                        representativeMessage.DeadLetterReason,
+                        m.Message.DeadLetterReason ?? m.Message.ForensicRootCause ?? "Unknown",
+                        representativeReason,
                         StringComparison.OrdinalIgnoreCase)));
 
             clusters.Add(cluster);

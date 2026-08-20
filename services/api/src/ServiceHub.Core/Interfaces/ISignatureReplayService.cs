@@ -1,5 +1,6 @@
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
+using ServiceHub.Core.Models;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Core.Interfaces;
@@ -27,10 +28,14 @@ public interface ISignatureReplayService
     /// Validates the request (production guard, Send permission, non-empty match), persists a
     /// <c>Pending</c> job, and enqueues it for the background worker. Returns the created job
     /// immediately — the caller polls <see cref="GetJobAsync"/> for progress.
+    /// <paramref name="requestedBy"/> is the requester's actor, resolved by the caller (HTTP
+    /// context) while it's still available — persisted on the job so the background worker that
+    /// executes it later can attribute ledger writes correctly (roadmap §29.10).
     /// </summary>
     Task<Result<BulkOperationJobResponse>> StartAsync(
         string ownerId,
         SignatureReplayStartRequest request,
+        RecoveryActor requestedBy,
         CancellationToken cancellationToken = default);
 
     /// <summary>Gets a single job's current state, scoped to the owner.</summary>

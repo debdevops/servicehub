@@ -105,7 +105,7 @@ public sealed class SignatureReplayController : ApiControllerBase
             detail: $"signatureHash={signatureHash}; statusFilter={filter.Status}");
 
         var result = await _signatureReplayService.StartAsync(
-            OwnerId, new SignatureReplayStartRequest(filter), cancellationToken);
+            OwnerId, new SignatureReplayStartRequest(filter), ResolveRecoveryActor(), cancellationToken);
 
         if (result.IsFailure)
         {

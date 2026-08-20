@@ -93,6 +93,10 @@ public sealed class DlqMessage
     /// <summary>When the message was detected as no longer present in the DLQ.</summary>
     public DateTimeOffset? ResolvedAt { get; set; }
 
+    /// <summary>Why this message is <see cref="DlqMessageStatus.Resolved"/>. Null for messages
+    /// resolved before this field existed, or for statuses other than Resolved.</summary>
+    public DlqResolutionCause? ResolutionCause { get; set; }
+
     /// <summary>User-added notes for investigation.</summary>
     public string? UserNotes { get; set; }
 

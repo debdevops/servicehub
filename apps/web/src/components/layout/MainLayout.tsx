@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Header } from './Header';
 import { IconRail } from './IconRail';
 import { QuickAccessPanel } from './QuickAccessPanel';
+import { QuickAccessToolbar } from './QuickAccessToolbar';
 import { NamespacesPanel } from './NamespacesPanel';
 import { Footer } from './Footer';
 import { DemoModeBanner } from './DemoModeBanner';
@@ -153,6 +154,7 @@ export function MainLayout() {
 
         {/* Content */}
         <main className="flex-1 overflow-hidden flex flex-col min-w-0">
+          <QuickAccessToolbar />
           <Outlet />
         </main>
       </div>

@@ -53,6 +53,7 @@ describe('QuickAccessPanel', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><QuickAccessPanel /></Wrapper>);
     expect(screen.getByText('Active Messages')).toBeInTheDocument();
+    expect(screen.getByText('Live Tail')).toBeInTheDocument();
     expect(screen.getByText('Dead-Letter')).toBeInTheDocument();
     expect(screen.getByText('Namespace Overview')).toBeInTheDocument();
     expect(screen.getByText('Fleet Health')).toBeInTheDocument();
@@ -65,6 +66,18 @@ describe('QuickAccessPanel', () => {
     expect(screen.getByText('Audit Trail')).toBeInTheDocument();
     expect(screen.getByText('Security & Privacy')).toBeInTheDocument();
     expect(screen.getByText('Help & Guide')).toBeInTheDocument();
+  });
+
+  it('places Live Tail between Active Messages and Dead-Letter', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><QuickAccessPanel /></Wrapper>);
+    const labels = ['Active Messages', 'Live Tail', 'Dead-Letter', 'Scheduled Messages', 'Cloud Bridge'];
+    for (let i = 0; i < labels.length - 1; i++) {
+      const current = screen.getByText(labels[i]);
+      const next = screen.getByText(labels[i + 1]);
+      // DOCUMENT_POSITION_FOLLOWING (4) means `next` comes after `current` in the DOM.
+      expect(current.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
   });
 
   it('groups shortcuts under section labels', () => {
@@ -87,6 +100,38 @@ describe('QuickAccessPanel', () => {
 
     fireEvent.click(screen.getByLabelText('Expand Quick Access'));
     expect(screen.getByText('Active Messages')).toBeInTheDocument();
+  });
+
+  it('labels "browse across clouds" shortcuts "All Namespaces" (not "All Clouds") on a single-provider installation', () => {
+    mockUseNamespaces.mockReturnValue({
+      data: [{ id: 'ns1', name: 'my-namespace', isActive: true, cloudProvider: 'aws' }],
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+    const Wrapper = createWrapper();
+    render(<Wrapper><QuickAccessPanel /></Wrapper>);
+    expect(screen.getAllByText('All Namespaces')).toHaveLength(2);
+    expect(screen.queryByText('All Clouds')).not.toBeInTheDocument();
+    expect(screen.getByText('Multi-Cloud Trace').closest('a')).toHaveAttribute(
+      'title',
+      'Needs at least two connected providers to trace a cross-cloud hop'
+    );
+  });
+
+  it('labels "browse across clouds" shortcuts "All Clouds" once ≥2 providers are configured', () => {
+    mockUseNamespaces.mockReturnValue({
+      data: [
+        { id: 'ns1', name: 'azure-ns', isActive: true, cloudProvider: 'azure' },
+        { id: 'ns2', name: 'aws-ns', isActive: true, cloudProvider: 'aws' },
+      ],
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+    const Wrapper = createWrapper();
+    render(<Wrapper><QuickAccessPanel /></Wrapper>);
+    expect(screen.getAllByText('All Clouds')).toHaveLength(2);
+    expect(screen.queryByText('All Namespaces')).not.toBeInTheDocument();
+    expect(screen.getByText('Multi-Cloud Trace').closest('a')).not.toHaveAttribute('title');
   });
 
 });

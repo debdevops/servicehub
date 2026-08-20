@@ -55,13 +55,14 @@ internal sealed class MockMessageReceiver : IMessageReceiver
         CancellationToken cancellationToken = default)
         => Task.FromResult(Result<int>.Success(0));
 
-    public Task<Result> ReplayMessageAsync(
+    public Task<Result<bool>> ReplayMessageAsync(
         Guid namespaceId,
         string entityName,
         string? subscriptionName,
         long sequenceNumber,
+        string? recoveryMarker,
         CancellationToken cancellationToken = default)
-        => Task.FromResult(Result.Success());
+        => Task.FromResult(Result<bool>.Success(recoveryMarker is not null));
 
     public Task<Result> PurgeMessageAsync(
         Guid namespaceId,

@@ -26,6 +26,8 @@ const sampleRule: RuleResponse = {
   pendingMatchCount: 0,
   createdAt: new Date().toISOString(),
   updatedAt: null,
+  disabledReason: null,
+  disabledReasonDetail: null,
 };
 
 describe('RuleTestDialog', () => {

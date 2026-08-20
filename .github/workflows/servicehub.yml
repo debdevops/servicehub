@@ -278,11 +278,23 @@ jobs:
           path: apps/web/coverage/
           retention-days: 14
 
-      - name: Run shared UI package tests (@servicehub/ui-shared)
+      - name: Run shared UI package tests with coverage (@servicehub/ui-shared)
         # apps/web consumes this workspace package, but its ~500 tests were never executed in
         # CI — only apps/web's own suite was. Same command developers run locally, so a green
         # local run and a green CI run now mean the same thing for the shared package.
-        run: npm run -w packages/servicehub-ui-shared test
+        # test:coverage runs vitest --coverage, which enforces the same 60%/60%/50%/60%
+        # lines/functions/branches/statements thresholds already configured in this package's
+        # own vite.config.ts (identical to apps/web's) — vitest fails the command itself if
+        # coverage regresses below them, so no separate bash threshold-check step is needed here.
+        run: npm run -w packages/servicehub-ui-shared test:coverage
+
+      - name: Upload shared package coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-shared-${{ github.run_number }}
+          path: packages/servicehub-ui-shared/coverage/
+          retention-days: 14
 
       - name: Type check with TypeScript
         run: npm exec -w apps/web -- tsc -b
@@ -296,6 +308,48 @@ jobs:
 
       - name: Build application
         run: npm run -w apps/web build
+
+  build-experimental-apps:
+    name: Build Experimental Apps (apps/demo, apps/sandbox)
+    runs-on: ubuntu-latest
+    # apps/demo and apps/sandbox are experimental, unsupported exploratory surfaces (see their
+    # own README.md) — no test suite exists for either yet, so this job intentionally runs only
+    # lint + typecheck + build, to catch a broken build or a type error introduced by a change
+    # to packages/servicehub-ui-shared (which both apps consume) without pretending there is
+    # behavioral test coverage that doesn't exist. Kept separate from build-and-test-frontend so
+    # a failure here is clearly attributed to the experimental apps, not the supported product.
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies (monorepo workspace)
+        run: npm ci --include=optional
+
+      - name: Lint apps/demo
+        run: npm run -w apps/demo lint
+
+      - name: Lint apps/sandbox
+        run: npm run -w apps/sandbox lint
+
+      - name: Type check apps/demo
+        run: npm exec -w apps/demo -- tsc -b
+
+      - name: Type check apps/sandbox
+        run: npm exec -w apps/sandbox -- tsc -b
+
+      - name: Build apps/demo
+        run: npm run -w apps/demo build
+
+      - name: Build apps/sandbox
+        run: npm run -w apps/sandbox build
 
   e2e-tests:
     name: E2E Tests (Playwright, Demo Mode)
@@ -509,7 +563,7 @@ jobs:
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [build-and-test-backend, build-and-test-frontend, e2e-tests, container-smoke-test, production-configuration-validation]
+    needs: [build-and-test-backend, build-and-test-frontend, build-experimental-apps, e2e-tests, container-smoke-test, production-configuration-validation]
     if: always()
 
     steps:
@@ -521,6 +575,10 @@ jobs:
           fi
           if [ "${{ needs.build-and-test-frontend.result }}" != "success" ]; then
             echo "❌ Frontend build/tests failed"
+            exit 1
+          fi
+          if [ "${{ needs.build-experimental-apps.result }}" != "success" ]; then
+            echo "❌ Experimental apps (apps/demo, apps/sandbox) failed to build"
             exit 1
           fi
           if [ "${{ needs.e2e-tests.result }}" != "success" ]; then

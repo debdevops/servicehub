@@ -103,10 +103,9 @@ public sealed class ServiceBusHealthCheck : IHealthCheck
                 data["SkippedNamespaces"] = skippedCount;
             }
 
-            if (unhealthyNamespaces.Count > 0)
-            {
-                data["UnhealthyNamespaceNames"] = string.Join(", ", unhealthyNamespaces);
-            }
+            // Namespace names are deliberately never exposed here: GetActiveAsync() returns every
+            // owner's namespaces unscoped, and /health is unauthenticated, so a name would leak
+            // one tenant's namespace naming to any caller who can merely reach the health endpoint.
 
             if (azureNamespaceCount == 0)
             {

@@ -97,8 +97,9 @@ public sealed class AwsHealthCheck : IHealthCheck
             data["HealthyAwsNamespaces"] = healthyCount;
             data["UnhealthyAwsNamespaces"] = unhealthyNames.Count;
 
-            if (unhealthyNames.Count > 0)
-                data["UnhealthyAwsNamespaceNames"] = string.Join(", ", unhealthyNames);
+            // Namespace names are deliberately never exposed here: GetActiveAsync() returns every
+            // owner's namespaces unscoped, and /health is unauthenticated, so a name would leak
+            // one tenant's namespace naming to any caller who can merely reach the health endpoint.
 
             if (unhealthyNames.Count == awsNamespaces.Count)
             {

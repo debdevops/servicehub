@@ -516,7 +516,7 @@ export function WelcomePage() {
                 </ul>
                 {provider.status === 'preview' && (
                   <div className="mb-4 p-2.5 rounded-lg bg-white/70 border border-dashed border-gray-300 text-xs text-gray-500">
-                    <strong className={provider.accentColor}>Preview.</strong> Implemented and unit-tested, not validated against live {provider.shortName} services, capability-gated (see the Provider Support Matrix), no parity guarantee with Azure. Demo mode available now; live browsing requires an operator to enable it on the server.
+                    <strong className={provider.accentColor}>Preview.</strong> Validated against live {provider.shortName} infrastructure, still capability-gated (see the Provider Support Matrix), no parity guarantee with Azure. Demo mode available now; live browsing requires an operator to enable it on the server.
                   </div>
                 )}
                 <button
@@ -850,7 +850,7 @@ export function WelcomePage() {
               <ul className="space-y-2.5 text-sm text-gray-500">
                 <li><a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 flex items-center gap-1.5 transition-colors"><Github className="w-4 h-4" /> GitHub Repository</a></li>
                 <li><a href={`${GITHUB_URL}/issues`} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors">Report an Issue</a></li>
-                <li><a href={`${GITHUB_URL}/discussions`} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors">Discussions</a></li>
+                <li><a href={`${GITHUB_URL}/issues/new`} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors">Feature Requests</a></li>
               </ul>
             </div>
             <div>

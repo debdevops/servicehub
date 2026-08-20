@@ -105,6 +105,8 @@ public sealed class SignatureReplayWorkerTests : IDisposable
             MessageIdsJson = "[]",
             CreatedAt = DateTimeOffset.UtcNow,
             StartedAt = status == BulkOperationStatus.Running ? DateTimeOffset.UtcNow : null,
+            RequestedByIdentity = "entra:test-owner",
+            RequestedByActorKind = RecoveryActorKind.User,
         };
         dbContext.SignatureReplayJobs.Add(job);
         dbContext.SaveChanges();

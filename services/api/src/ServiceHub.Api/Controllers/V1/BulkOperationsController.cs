@@ -90,7 +90,8 @@ public sealed class BulkOperationsController : ApiControllerBase
             detail: $"entityFilter={request.Filter.EntityName}; statusFilter={request.Filter.Status}");
 
         var correlationId = HttpContext.Items["CorrelationId"]?.ToString();
-        var result = await _bulkOperationService.CreateJobAsync(OwnerId, request, correlationId, AllowedNamespaceIds, cancellationToken);
+        var result = await _bulkOperationService.CreateJobAsync(
+            OwnerId, request, correlationId, ResolveRecoveryActor(), AllowedNamespaceIds, cancellationToken);
 
         if (result.IsFailure)
         {

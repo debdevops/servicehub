@@ -1,6 +1,7 @@
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using ServiceHub.Infrastructure.Telemetry;
 
 namespace ServiceHub.Api.Extensions;
 
@@ -67,7 +68,7 @@ public static class ObservabilityExtensions
             .WithMetrics(metrics =>
             {
                 metrics
-                    .AddMeter(Telemetry.ServiceHubMetrics.MeterName)
+                    .AddMeter(ServiceHubMetrics.MeterName)
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation();

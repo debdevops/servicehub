@@ -18,6 +18,21 @@ public sealed class SignatureReplayJob
     /// <summary>Owner ID for multi-user isolation. Same format as <see cref="DlqMessage.OwnerId"/>.</summary>
     public required string OwnerId { get; init; }
 
+    // ── Requester actor snapshot (roadmap §29.10) ──────────────────────────────
+    // See BulkOperationJob's identical fields for the full rationale: persisted at job-creation
+    // time so the background worker that executes the job later (no HttpContext) attributes
+    // ledger writes to the requesting human/API-key, not a synthetic Automation actor.
+
+    /// <summary>The requester's resolved actor identity — same value <see cref="Models.RecoveryActor.Identity"/> carries.</summary>
+    public required string RequestedByIdentity { get; init; }
+
+    /// <summary>The requester's actor kind, as resolved by <c>ApiControllerBase.ResolveRecoveryActor</c>
+    /// at job-creation time — always <c>User</c> or <c>ApiKey</c> for an HTTP-created job.</summary>
+    public required RecoveryActorKind RequestedByActorKind { get; init; }
+
+    /// <summary>The requester's granted scopes at job-creation time, for API key actors.</summary>
+    public string? RequestedByScopes { get; init; }
+
     /// <summary>Current lifecycle status.</summary>
     public BulkOperationStatus Status { get; set; } = BulkOperationStatus.Pending;
 

@@ -221,6 +221,7 @@ public class CoreDtoTests
             ReplaySuccess: null,
             ArchivedAt: null,
             ResolvedAt: null,
+            ResolutionCause: null,
             UserNotes: "Investigating",
             CorrelationId: "corr-1",
             TopicName: null,
@@ -268,6 +269,7 @@ public class CoreDtoTests
             ReplaySuccess: true,
             ArchivedAt: null,
             ResolvedAt: null,
+            ResolutionCause: null,
             UserNotes: null,
             CorrelationId: null,
             SessionId: null,
@@ -355,7 +357,9 @@ public class CoreDtoTests
             SuccessCount: 45,
             SuccessRate: 90.0,
             MaxReplaysPerHour: 100,
-            PendingMatchCount: 0);
+            PendingMatchCount: 0,
+            DisabledReason: null,
+            DisabledReasonDetail: null);
 
         response.Id.Should().Be(1);
         response.Name.Should().Be("Timeout Rule");

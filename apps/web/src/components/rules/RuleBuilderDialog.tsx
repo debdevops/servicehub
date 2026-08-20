@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Info, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Info, AlertTriangle, Globe2 } from 'lucide-react';
 import type { RuleCondition, RuleAction, RuleResponse, CreateRuleRequest } from '@servicehub/ui-shared/lib/api/rules';
 import { findRuleEntityWarnings, type KnownEntities } from '@servicehub/ui-shared/lib/ruleValidation';
+import { resolveRuleScope, type NamespaceEntityIndex } from '@servicehub/ui-shared/lib/ruleScope';
+import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
 const FIELD_OPTIONS = [
@@ -39,6 +41,11 @@ interface RuleBuilderDialogProps {
   initialAction?: RuleAction;
   isSaving?: boolean;
   knownEntities?: KnownEntities;
+  /** Same per-namespace entity index RulesPage builds for its own cards — passed through so this
+   * dialog can preview the rule's real scope live, using resolveRuleScope, instead of showing
+   * nothing while the rule is being written. Optional: omitted callers simply skip the preview. */
+  namespaceEntityIndex?: NamespaceEntityIndex[];
+  namespacesLoaded?: boolean;
 }
 
 const defaultCondition: RuleCondition = {
@@ -63,6 +70,8 @@ export function RuleBuilderDialog({
   initialAction,
   isSaving,
   knownEntities,
+  namespaceEntityIndex,
+  namespacesLoaded,
 }: RuleBuilderDialogProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -132,6 +141,15 @@ export function RuleBuilderDialog({
   };
 
   const canSave = name.trim().length > 0 && conditions.every((c) => c.value.trim().length > 0);
+
+  // Live scope preview — the same resolveRuleScope used by RulesPage's cards, run against the
+  // conditions currently being edited, so a user sees before saving whether this rule is global
+  // or targets a specific namespace/entity (see ruleScope.ts's header comment: rules carry no
+  // persisted scope of their own, so this is always inferred from EntityName/TopicName, never
+  // fabricated).
+  const liveScope = namespaceEntityIndex
+    ? resolveRuleScope(conditions, namespaceEntityIndex, !!namespacesLoaded)
+    : null;
 
   // Live cross-check against real entities so users see BEFORE saving that a
   // rule references a queue/topic that doesn't exist in any connected cloud.
@@ -239,7 +257,7 @@ export function RuleBuilderDialog({
               </label>
               <button
                 onClick={addCondition}
-                className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
+                className="flex items-center gap-1 text-xs text-primary-700 hover:text-primary-800 font-medium"
               >
                 <Plus className="w-3.5 h-3.5" />
                 Add Condition
@@ -255,10 +273,11 @@ export function RuleBuilderDialog({
                   <div className="flex items-center gap-2">
                     <div className="flex-1 grid grid-cols-3 gap-2">
                       <div>
-                        <label className="block text-[10px] text-gray-500 uppercase mb-0.5">
+                        <label htmlFor={`condition-field-${i}`} className="block text-[10px] text-gray-500 uppercase mb-0.5">
                           Field
                         </label>
                         <select
+                          id={`condition-field-${i}`}
                           value={condition.field}
                           onChange={(e) => updateCondition(i, { field: e.target.value })}
                           className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
@@ -271,10 +290,11 @@ export function RuleBuilderDialog({
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[10px] text-gray-500 uppercase mb-0.5">
+                        <label htmlFor={`condition-operator-${i}`} className="block text-[10px] text-gray-500 uppercase mb-0.5">
                           Operator
                         </label>
                         <select
+                          id={`condition-operator-${i}`}
                           value={condition.operator}
                           onChange={(e) => updateCondition(i, { operator: e.target.value })}
                           className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
@@ -287,10 +307,11 @@ export function RuleBuilderDialog({
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[10px] text-gray-500 uppercase mb-0.5">
+                        <label htmlFor={`condition-value-${i}`} className="block text-[10px] text-gray-500 uppercase mb-0.5">
                           Value
                         </label>
                         <input
+                          id={`condition-value-${i}`}
                           type="text"
                           value={condition.value}
                           onChange={(e) => updateCondition(i, { value: e.target.value })}
@@ -327,6 +348,50 @@ export function RuleBuilderDialog({
                 </div>
               ))}
             </div>
+
+            {liveScope && (
+              <div className="mt-2 flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-gray-50">
+                {liveScope.kind === 'global' && (
+                  <>
+                    <Globe2 className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                    <span className="text-gray-600 font-medium">Scope: all clouds · all namespaces</span>
+                  </>
+                )}
+                {liveScope.kind === 'pattern' && (
+                  <span className="text-gray-600">
+                    Scope: pattern match on <span className="font-medium">{liveScope.field}</span> — not a fixed namespace
+                  </span>
+                )}
+                {liveScope.kind === 'loading' && (
+                  <span className="text-gray-500">Resolving scope…</span>
+                )}
+                {liveScope.kind === 'unresolved' && (
+                  <>
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <span className="text-amber-700">
+                      Scope: &ldquo;{liveScope.value}&rdquo; not found in any connected namespace
+                    </span>
+                  </>
+                )}
+                {liveScope.kind === 'resolved' && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-gray-500">Scope:</span>
+                    {liveScope.matches.map((m, i) => (
+                      <span key={`${m.namespaceId}-${m.entityName}-${i}`} className="inline-flex items-center gap-1">
+                        <ProviderBadge provider={m.cloudProvider} />
+                        <span className="text-gray-700">{m.namespaceName} / {m.entityName}</span>
+                      </span>
+                    ))}
+                    {liveScope.matches.length > 1 && (
+                      <span className="text-amber-700 font-medium">(ambiguous — matches {liveScope.matches.length} locations)</span>
+                    )}
+                    {liveScope.provisional && (
+                      <span className="text-gray-400">confirming remaining namespaces…</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Actions */}
@@ -350,10 +415,11 @@ export function RuleBuilderDialog({
               {action.autoReplay && (
                 <div className="grid grid-cols-2 gap-3 pl-6">
                   <div>
-                    <label className="block text-[10px] text-gray-500 uppercase mb-0.5">
+                    <label htmlFor="action-delay-seconds" className="block text-[10px] text-gray-500 uppercase mb-0.5">
                       Delay (seconds)
                     </label>
                     <input
+                      id="action-delay-seconds"
                       type="number"
                       min={0}
                       max={86400}
@@ -365,10 +431,11 @@ export function RuleBuilderDialog({
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-gray-500 uppercase mb-0.5">
+                    <label htmlFor="action-max-retries" className="block text-[10px] text-gray-500 uppercase mb-0.5">
                       Max Retries
                     </label>
                     <input
+                      id="action-max-retries"
                       type="number"
                       min={1}
                       max={10}
@@ -414,10 +481,11 @@ export function RuleBuilderDialog({
 
           {/* Rate Limiting */}
           <div>
-            <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">
+            <label htmlFor="max-replays-per-hour" className="block text-xs font-semibold text-gray-600 uppercase mb-1">
               Max Replays Per Hour
             </label>
             <input
+              id="max-replays-per-hour"
               type="number"
               min={1}
               max={10000}
