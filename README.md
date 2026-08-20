@@ -162,7 +162,7 @@ Define rules that watch DLQ messages and automatically replay them when conditio
 - **Safety controls** with rate limiting to prevent overwhelming downstream services — including a **circuit breaker** that disables a rule automatically when its real-world success rate drops too low, so a bad rule can't quietly keep failing.
 
 ### 🎯 Failure Signature Intelligence — Name the Repeat, Not Just the Symptom
-Recurring dead-letter patterns get clustered into a named, confidence-scored **Failure Signature** with its own lifecycle (new → investigating → resolved) and guided replay — so the fifth time `PaymentGatewayError` shows up, you're managing a known case instead of re-diagnosing from scratch. Backed by a searchable knowledge base of what worked last time.
+Recurring dead-letter patterns get clustered into a named, confidence-scored **Failure Signature** with its own lifecycle (active → resolved, suppressed, or archived) and guided replay — so the fifth time `PaymentGatewayError` shows up, you're managing a known case instead of re-diagnosing from scratch. Backed by a searchable knowledge base of what worked last time.
 
 ### 🔎 Real-Time Search & Correlation Explorer
 Search across message body, properties, and headers instantly. Filter 1,000+ messages down to exactly what you need in under a second. Paste any Correlation ID to trace a message's full journey across all queues, topics, and namespaces.
@@ -620,13 +620,34 @@ npm run -w apps/web test:e2e
 
 ## Roadmap
 
-ServiceHub is built depth-first: make one workflow excellent before adding the next surface — and
-that order isn't accidental. **Investigate → Recover → Prove it happened** is where the product
-started, and it's the on-ramp for where it's headed next.
+ServiceHub is built depth-first: make one workflow excellent before adding the next surface. Here's
+where it stands and where it's headed.
 
-- **Now (MVP)** — the forensic core across Azure (GA) and AWS/GCP (preview): explore, search, DLQ investigation, replay, purge, send, auto-replay rules, live updates. Also shipped: bulk replay/purge with dry-run preview, a fleet dashboard across namespaces, Slack/Teams-native alerts (DLQ spikes, bulk operation completion), Live Tail (real-time "tail -f" for a queue/subscription, Azure and GCP — reachable from Quick Access → Browse across clouds, with its own provider/namespace/entity picker), a DLQ triage inbox, OIDC SSO (bring your own standards-compliant identity provider), role-based access via API key/OIDC scopes (Viewer/Operator/Auditor), an exportable per-owner audit trail, and Failure Signature Intelligence (clustering dead-letter messages into named, recurring failure patterns, with lifecycle tracking, guided replay, and a searchable knowledge base).
-- **Next** — team & governance: approval workflows for destructive operations, extending namespace sharing to cover shared DLQ history and audit visibility (not just live namespace access).
-- **Later — toward AI-guided, human-bounded operations** *(strategic direction, not a committed feature or date)*. The building blocks already ship today: Failure Signature Intelligence already names and tracks recurring failures, Auto-Replay Rules already act on them automatically under a circuit breaker and rate limits, and the Recovery Evidence Ledger already proves what was done, hash-chained and auditable. The natural next step is closing that loop — using those same signatures and that same evidence to recommend a recovery with its reasoning attached, and, only where an operator explicitly opts in, letting a known, high-confidence signature trigger its own bounded recovery inside the same safety gates enforced today. No autonomous or agentic behavior ships until it inherits every one of those invariants — read-only by default, production write-protection, rate limits, circuit breakers, and a permanent, provable record — rather than replacing them.
+| | Stage | Focus | Status |
+|---|---|---|---|
+| 🟢 | **Now** | Investigate → Recover → Prove | Shipped |
+| 🔵 | **Next** | Team & Governance | Planned |
+| 🟣 | **Later** | AI-Guided → Bounded Autonomous Operations | Strategic direction |
+
+**🟢 Now — Investigate → Recover → Prove.** The forensic core, live today across Azure Service Bus
+(GA) and AWS SQS/SNS + GCP Pub/Sub (preview): full message inspection, real-time search, client-side
+AI pattern detection, one-click and rule-based replay, purge, bulk operations with dry-run preview,
+a fleet dashboard, DLQ triage, Live Tail (Azure/GCP), Failure Signature Intelligence, and the
+Recovery Evidence Ledger — a hash-chained, tamper-evident record of every recovery. Also shipped:
+Slack/Teams alerts, OIDC SSO, role-based scopes (Viewer/Operator/Auditor), an exportable audit
+trail, and namespace sharing for live operations (Preview).
+
+**🔵 Next — Team & Governance.** Approval workflows for destructive operations, and extending
+namespace sharing so a collaborator also sees shared DLQ history and audit visibility — not just
+live namespace access.
+
+**🟣 Later — AI-Guided → Bounded Autonomous Operations** *(strategic direction, not a committed
+feature or date)*. Today's building blocks — named Failure Signatures, rule-based Auto-Replay under
+a circuit breaker, and the Recovery Evidence Ledger's proof of what was done — are the foundation
+for closing the loop: AI-guided recovery recommendations with reasoning attached, and, only where an
+operator opts in, bounded automation for known, high-confidence cases. Every safeguard in place
+today — operator control, production write-protection, rate limits, circuit breakers, permanent
+provable evidence — carries forward unchanged; no autonomous or agentic behavior ships without it.
 
 Have a use-case that should shape this? [Open a feature request](https://github.com/debdevops/servicehub/issues/new) — describe the problem, not just the solution.
 
