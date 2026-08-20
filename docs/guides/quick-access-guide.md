@@ -30,7 +30,13 @@ sections by workflow stage: **Overview → Browse across clouds → Diagnose & a
 Platform → Support**. It's always the first thing in the sidebar, and it's the fastest way to
 get anywhere in ServiceHub without knowing a URL or clicking through a namespace tree first.
 
-![Quick Access panel with all five groups visible](../screenshots/guides/quick-access/01-namespace-overview.png)
+![Quick Access panel with all five groups visible, marked 1 — Quick Access](../screenshots/guides/quick-access/00-quick-access-panel-overview.png)
+
+The green **1 — Quick Access panel** marker above shows the whole panel and all five groups at
+once: **Overview**, **Browse across clouds**, **Diagnose & automate**, **Platform**, and
+**Support**. Every section below shows one destination at a time the same way: a green **1**
+marks the exact item to click in this panel, and a blue **2** marks the resulting screen it
+opens.
 
 The panel is collapsible (click the pin icon's row header), draggable to reorder, and
 resizable — drag its right edge if you want more or less room for it.
@@ -46,7 +52,10 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 
 ### Namespace Overview
 
-![Namespace Overview dashboard](../screenshots/guides/quick-access/01-namespace-overview.png)
+![Namespace Overview dashboard, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/01-namespace-overview-annotated.png)
+
+Select **Namespace Overview** in Quick Access (green marker 1). The home dashboard shown on the
+right is the resulting screen (blue marker 2).
 
 - **What is it?** The home dashboard. A single-page rollup of every connected namespace: total
   namespace count, active message count, dead-letter count, scheduled count, and a "DLQ
@@ -67,7 +76,10 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 
 ### Incident Center
 
-![Incident Center operational command view](../screenshots/guides/quick-access/02-incident-center.png)
+![Incident Center operational command view, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/02-incident-center-annotated.png)
+
+Select **Incident Center** in Quick Access (green marker 1). The operational command view shown
+on the right is the resulting screen (blue marker 2).
 
 - **What is it?** An operational command center that rolls up every **Failure Signature**
   (a recurring, AI-clustered pattern of similar dead-letter failures) across all connected
@@ -87,7 +99,10 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 
 ### Fleet Health
 
-![Fleet Operations rollup with trend chart](../screenshots/guides/quick-access/03-fleet-health.png)
+![Fleet Operations rollup with trend chart, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/03-fleet-health-annotated.png)
+
+Select **Fleet Health** in Quick Access (green marker 1). The Fleet Health dashboard shown on
+the right is the resulting screen (blue marker 2).
 
 - **What is it?** A dead-letter health rollup across every namespace, with a 7-day trend chart
   and a breakdown of top failure categories.
@@ -108,7 +123,10 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 
 ### Active Messages
 
-![Active Messages Overview across all connected clouds](../screenshots/guides/quick-access/04-active-messages-overview.png)
+![Active Messages Overview across all connected clouds, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/04-active-messages-overview-annotated.png)
+
+Select **Active Messages** in Quick Access (green marker 1). The cross-cloud entity picker shown
+on the right is the resulting screen (blue marker 2).
 
 - **What is it?** A cross-cloud entity picker for browsing messages that are still waiting to
   be processed (not yet failed). Every connected namespace is listed, grouped by provider,
@@ -128,7 +146,10 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 
 ### Live Tail
 
-![Live Tail entity picker](../screenshots/guides/quick-access/05-live-tail.png)
+![Live Tail entity picker, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/05-live-tail-annotated.png)
+
+Select **Live Tail** in Quick Access (green marker 1). The namespace/entity picker shown on the
+right is the resulting screen (blue marker 2).
 
 - **What is it?** A real-time message stream — watch new messages arrive on one queue or topic
   subscription as they happen, without manually refreshing.
@@ -143,11 +164,17 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 - **Limitations:** **not available for AWS SQS** — the button is simply absent on an AWS
   queue's toolbar, because SQS has no non-destructive way to watch without consuming delivery
   attempts. This isn't a bug; it's an honest capability gap. See the
-  [AWS guide](aws-guide.md#whats-supported-for-aws).
+  [AWS guide](aws-guide.md#whats-supported-for-aws). Selecting an AWS entity on this picker
+  itself just highlights it without a distinct "unsupported" visual — the gap only becomes
+  visible one level deeper, on the queue's own toolbar, so it isn't captured as a separate
+  Quick Access screenshot here.
 
 ### Dead-Letter
 
-![Dead-Letter Overview across all connected clouds](../screenshots/guides/quick-access/06-dead-letter-overview.png)
+![Dead-Letter Overview across all connected clouds, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/06-dead-letter-overview-annotated.png)
+
+Select **Dead-Letter** in Quick Access (green marker 1). The cross-cloud dead-letter picker
+shown on the right is the resulting screen (blue marker 2).
 
 - **What is it?** The same cross-cloud entity picker as Active Messages, but scoped to
   dead-lettered (failed) messages — the ones that actually need investigating.
@@ -163,7 +190,11 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 
 ### Scheduled Messages
 
-![Scheduled Messages page with per-provider support badges](../screenshots/guides/quick-access/07-scheduled-messages.png)
+![Scheduled Messages page with per-provider support badges, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/07-scheduled-messages-annotated.png)
+
+Select **Scheduled Messages** in Quick Access (green marker 1). The resulting screen (blue
+marker 2) already shows all three providers' real support state side by side — Azure with a
+live scheduled count, AWS and GCP each honestly labeled **"not supported"**.
 
 - **What is it?** A view of every message queued for future delivery, with a live countdown,
   and the ability to reschedule or cancel any of them.
@@ -180,7 +211,10 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 
 ### Cloud Bridge
 
-![Cloud Bridge provider status and namespace browser](../screenshots/guides/quick-access/08-cloud-bridge.png)
+![Cloud Bridge provider status and namespace browser, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/08-cloud-bridge-annotated.png)
+
+Select **Cloud Bridge** in Quick Access (green marker 1). The provider status screen shown on
+the right is the resulting screen (blue marker 2).
 
 - **What is it?** A single screen showing the live connection status of all three providers
   (Azure Service Bus, AWS SQS/SNS, GCP Pub/Sub) at once, each with its namespace count and
@@ -203,7 +237,10 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 
 ### DLQ Intelligence
 
-![DLQ Intelligence page with Bulk Replay/Purge and 30-day trend](../screenshots/guides/quick-access/09-dlq-intelligence.png)
+![DLQ Intelligence page with Bulk Replay/Purge and 30-day trend, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/09-dlq-intelligence-annotated.png)
+
+Select **DLQ Intelligence** in Quick Access (green marker 1). The namespace's DLQ history and
+monitoring hub shown on the right is the resulting screen (blue marker 2).
 
 - **What is it?** The dead-letter history and monitoring hub for a specific namespace: per-tab
   provider switching, Bulk Replay/Bulk Purge, CSV/JSON export, and a 30-day trend chart.
@@ -230,7 +267,10 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 
 ### Auto-Replay Rules
 
-![Auto-Replay Rules page](../screenshots/guides/quick-access/10-auto-replay-rules.png)
+![Auto-Replay Rules page, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/10-auto-replay-rules-annotated.png)
+
+Select **Auto-Replay Rules** in Quick Access (green marker 1). The rule cards shown on the
+right are the resulting screen (blue marker 2).
 
 - **What is it?** Where you define rules that automatically replay dead-lettered messages
   matching specific conditions (e.g. "reason contains 'ThrottledException'"), without a human
@@ -252,7 +292,10 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 
 ### Multi-Cloud Trace
 
-![Multi-Cloud Trace search screen](../screenshots/guides/quick-access/11-multi-cloud-trace.png)
+![Multi-Cloud Trace search screen, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/11-multi-cloud-trace-annotated.png)
+
+Select **Multi-Cloud Trace** in Quick Access (green marker 1). The trace search screen shown on
+the right is the resulting screen (blue marker 2).
 
 - **What is it?** A tool to trace a single message's journey by Correlation ID or Trace ID as
   it hops between providers (e.g. Azure → AWS via an integration).
@@ -275,7 +318,10 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 
 ### System Health
 
-![System Health page](../screenshots/guides/quick-access/12-system-health.png)
+![System Health page, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/12-system-health-annotated.png)
+
+Select **System Health** in Quick Access (green marker 1). The runtime diagnostics screen shown
+on the right is the resulting screen (blue marker 2).
 
 - **What is it?** ServiceHub's own runtime diagnostics — not your cloud provider's health, but
   the ServiceHub server process itself (uptime, memory, threads, GC activity, version).
@@ -292,7 +338,10 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 
 ### Audit Trail
 
-![Audit Trail with search and per-event log](../screenshots/guides/quick-access/13-audit-trail.png)
+![Audit Trail with search and per-event log, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/13-audit-trail-annotated.png)
+
+Select **Audit Trail** in Quick Access (green marker 1). The event log shown on the right is
+the resulting screen (blue marker 2).
 
 - **What is it?** A persistent, searchable log of every critical operation and access event —
   who did what, when, to which resource, and whether it succeeded.
@@ -312,7 +361,10 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 
 ### Recovery Evidence
 
-![Recovery Evidence Ledger](../screenshots/guides/quick-access/14-recovery-evidence-ledger.png)
+![Recovery Evidence Ledger, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/14-recovery-evidence-ledger-annotated.png)
+
+Select **Recovery Evidence** in Quick Access (green marker 1). The ledger shown on the right is
+the resulting screen (blue marker 2).
 
 - **What is it?** The permanent, append-only record of every recovery decision ServiceHub has
   made — every replay, whether triggered by a human or an Auto-Replay Rule — including what it
@@ -361,7 +413,10 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 
 ### Security & Privacy
 
-![Security & Privacy page](../screenshots/guides/quick-access/15-security-privacy.png)
+![Security & Privacy page, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/15-security-privacy-annotated.png)
+
+Select **Security & Privacy** in Quick Access (green marker 1). The security explanation page
+shown on the right is the resulting screen (blue marker 2).
 
 - **What is it?** A plain-language explanation of exactly how ServiceHub handles your
   credentials and data, including a diagram of how data actually moves through the system.
@@ -383,7 +438,10 @@ deep in a message's Properties/Body/AI Insights/Headers tabs.
 
 ### Help & Guide
 
-![Help & Support landing page](../screenshots/guides/quick-access/16-help-guide.png)
+![Help & Support landing page, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/16-help-guide-annotated.png)
+
+Select **Help & Guide** in Quick Access (green marker 1). The help center shown on the right is
+the resulting screen (blue marker 2).
 
 - **What is it?** ServiceHub's built-in help center — searchable topics covering setup,
   every major feature, and troubleshooting.
