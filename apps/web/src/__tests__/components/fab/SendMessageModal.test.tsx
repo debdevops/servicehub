@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
@@ -97,6 +97,24 @@ describe('SendMessageModal', () => {
     // Check for close button in portal
     const buttons = screen.getAllByRole('button');
     expect(buttons.length).toBeGreaterThan(0);
+  });
+
+  // ── F2 regression: the Schedule delivery mode's `min` must be local wall-clock
+  // time, not UTC digits reinterpreted as local (see toDatetimeLocalValue).
+  it('sets the scheduled-delivery min in local wall-clock time, honoring a non-UTC offset', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2025-06-15T10:00:00.000Z'));
+    const offsetSpy = vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(-330); // IST, UTC+5:30
+    try {
+      renderWithProviders(<SendMessageModal {...defaultProps} />);
+      fireEvent.click(screen.getByRole('button', { name: /schedule/i }));
+      const input = document.querySelector('input[type="datetime-local"]') as HTMLInputElement;
+      // 10:00 UTC + 60s = 10:01 UTC, then +5:30 for IST = 15:31 local, NOT the raw "10:01" UTC digits.
+      expect(input.min).toBe('2025-06-15T15:31');
+    } finally {
+      offsetSpy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it('displays header with title', () => {

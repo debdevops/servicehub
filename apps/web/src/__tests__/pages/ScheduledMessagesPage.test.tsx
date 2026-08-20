@@ -386,6 +386,55 @@ describe('ScheduledMessagesPage', () => {
     expect(screen.getByRole('button', { name: /confirm reschedule/i })).toBeInTheDocument();
   });
 
+  // ── F2 regression: datetime-local values must reflect local wall-clock time,
+  // not UTC digits reinterpreted as local (see toDatetimeLocalValue in lib/utils.ts).
+  it('prefills the reschedule time in local wall-clock time, honoring a non-UTC offset', async () => {
+    const offsetSpy = vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(-330); // IST, UTC+5:30
+    try {
+      const istMessage = { ...mockMessages[0], scheduledEnqueueTime: '2025-06-15T10:00:00.000Z' };
+      mockUseScheduledMessages.mockReturnValue({
+        data: { items: [istMessage], totalCount: 1 },
+        isLoading: false,
+        isError: false,
+        refetch: vi.fn(),
+        isFetching: false,
+      });
+      renderPage('?namespace=ns-1&queue=orders-queue');
+      fireEvent.click(screen.getByRole('button', { name: /reschedule/i }));
+      await waitFor(() => screen.getByText('Reschedule Message'));
+      const input = screen.getByLabelText(/new delivery time/i) as HTMLInputElement;
+      // 10:00 UTC + 5:30 = 15:30 local — NOT the raw "10:00" UTC digits.
+      expect(input.value).toBe('2025-06-15T15:30');
+    } finally {
+      offsetSpy.mockRestore();
+    }
+  });
+
+  it('defaults the Schedule New Message delivery time to local wall-clock time, honoring a non-UTC offset', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2025-06-15T10:00:00.000Z'));
+    const offsetSpy = vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(480); // PST, UTC-8
+    try {
+      mockUseScheduledMessages.mockReturnValue({
+        data: { items: [], totalCount: 0 },
+        isLoading: false,
+        isError: false,
+        refetch: vi.fn(),
+        isFetching: false,
+      });
+      renderPage('?namespace=ns-1&queue=orders-queue');
+      fireEvent.click(screen.getByRole('button', { name: /^schedule$/i }));
+      expect(screen.getByText('Schedule New Message')).toBeInTheDocument();
+      // 10:00 UTC + 1h default, then -8h for PST = 03:00 local the same day.
+      const dialog = screen.getByRole('dialog', { name: /schedule new message/i });
+      const input = dialog.querySelector('input[type="datetime-local"]') as HTMLInputElement;
+      expect(input.value).toBe('2025-06-15T03:00');
+    } finally {
+      offsetSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   // ── Refresh button ─────────────────────────────────────────────────────────
 
   it('calls refetch when Refresh is clicked', () => {
