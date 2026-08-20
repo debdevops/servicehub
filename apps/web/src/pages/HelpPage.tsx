@@ -260,8 +260,8 @@ export function HelpPage() {
           <h2 className="text-xl font-bold mb-2">Still have questions?</h2>
           <p className="text-primary-100 mb-6">
             This page stays short on purpose. For a full, screenshot-illustrated walkthrough of
-            every provider and every Quick Access destination, read the public guides — or join
-            GitHub discussions for anything they don't cover.
+            every provider and every Quick Access destination, read the public guides — or open
+            a GitHub issue for anything they don't cover.
           </p>
           <div className="flex items-center justify-center gap-4 flex-wrap">
             <a
@@ -274,13 +274,13 @@ export function HelpPage() {
               Read the Guides
             </a>
             <a
-              href="https://github.com/debdevops/servicehub/discussions"
+              href="https://github.com/debdevops/servicehub/issues/new"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-6 py-2.5 border border-white text-white hover:bg-primary-800 font-semibold rounded-lg transition-colors"
             >
               <span>💬</span>
-              GitHub Discussions
+              Feature Requests
             </a>
             <Link
               to="/security"

@@ -94,5 +94,5 @@ up securely and store it in a secrets manager (Azure Key Vault, Hashicorp Vault,
 the deployment host.
 
 Key rotation is not currently supported and is not on a committed release timeline. If this
-blocks your deployment, [open a discussion](https://github.com/debdevops/servicehub/discussions)
+blocks your deployment, [open a feature request](https://github.com/debdevops/servicehub/issues/new)
 describing your use case.

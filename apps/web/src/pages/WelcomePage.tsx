@@ -850,7 +850,7 @@ export function WelcomePage() {
               <ul className="space-y-2.5 text-sm text-gray-500">
                 <li><a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 flex items-center gap-1.5 transition-colors"><Github className="w-4 h-4" /> GitHub Repository</a></li>
                 <li><a href={`${GITHUB_URL}/issues`} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors">Report an Issue</a></li>
-                <li><a href={`${GITHUB_URL}/discussions`} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors">Discussions</a></li>
+                <li><a href={`${GITHUB_URL}/issues/new`} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors">Feature Requests</a></li>
               </ul>
             </div>
             <div>

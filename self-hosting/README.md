@@ -175,6 +175,47 @@ whose flag is off.
 
 ---
 
+## Team features: alerts, roles, and namespace sharing
+
+These three roadmap capabilities are shipped and config/API-level by design — there's no
+dedicated settings page for them yet, so they're set the same way as everything else above.
+
+**Slack/Teams webhook alerts** — `Webhooks:Enabled=true` plus `Webhooks:Url` (a Slack or Teams
+Incoming Webhook URL) and `Webhooks:Format` (`Slack` | `Teams` | `Generic`, default `Generic`)
+send a DLQ-spike or completed-bulk-operation notification straight into a channel, no relay in
+between. Optional `Webhooks:PublicUrl` adds a deep "Investigate" link back into this instance;
+`Webhooks:DlqSpikeThreshold` / `Webhooks:CooldownSeconds` tune sensitivity.
+
+**RBAC roles for API keys and OIDC** — a scoped API key's `Scopes` array, or an OIDC token's
+`scope` claim, accepts named roles instead of enumerating individual scope strings: `Viewer`
+(read-only), `Operator` (Viewer + send/replay/purge), `Auditor` (Viewer + audit trail access).
+Example: `"Scopes": ["Viewer"]` in a `ScopedApiKeys` entry.
+
+**Namespace sharing (Preview)** — a namespace owner can grant another owner identity (an OIDC
+user, a scoped API key) live operational access to one namespace, without transferring
+ownership:
+
+```bash
+# Discover your own owner ID to share
+curl "$SITEURL/api/v1/me" -H "Authorization: Bearer <token>"
+
+# Grant access (owner-only)
+curl -X POST "$SITEURL/api/v1/namespaces/<id>/share" \
+  -H "X-ServiceHub-Intent: namespaces:share" -H "Content-Type: application/json" \
+  -d '{"ownerId": "<their-owner-id>"}'
+
+# Revoke access (owner-only)
+curl -X DELETE "$SITEURL/api/v1/namespaces/<id>/share/<their-owner-id>" \
+  -H "X-ServiceHub-Intent: namespaces:share"
+```
+
+A shared collaborator gets live browse/peek/replay/purge/Live Tail access to that namespace
+only — not the DLQ history, bulk-operation history, or audit trail entries recorded before the
+share (each is stamped with whichever owner acted at write time; retroactive shared visibility
+into that history is tracked as separate future work).
+
+---
+
 ## Quick end-to-end test
 
 A minimal "create a throwaway resource, connect it, verify a message round-trips, tear it
