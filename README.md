@@ -28,6 +28,7 @@ browsing, DLQ investigation, AI Insights, replay, and the Recovery Evidence Ledg
 live against a real namespace, with an honest, explicit list of what's supported and what isn't
 for that cloud:
 
+- **[🧭 Quick Access Guide](docs/guides/quick-access-guide.md)** — every navigation shortcut explained, with a full navigation map
 - **[☁️ Azure Service Bus Guide](docs/guides/azure-guide.md)** — the fully supported (GA) provider
 - **[🟧 AWS SQS/SNS Guide](docs/guides/aws-guide.md)** — Preview, with SQS's own limitations explained
 - **[🟩 GCP Pub/Sub Guide](docs/guides/gcp-guide.md)** — Preview, with Pub/Sub's own limitations explained
@@ -312,6 +313,26 @@ Every screenshot below is a real capture — live Azure Service Bus, AWS SQS/SNS
 <td width="33%"></td>
 </tr>
 </table>
+
+### 🛡️ Investigate → Recover → Prove It Happened
+
+<table>
+<tr>
+<td width="33%"><a href="docs/screenshots/guides/azure/05-ai-insights.png"><img src="docs/screenshots/guides/azure/05-ai-insights.png" width="100%"/></a><br/><sub><b>AI Insights</b> — heuristic pattern clustering, always labeled "not a confirmed fact"</sub></td>
+<td width="33%"><a href="docs/screenshots/guides/quick-access/14-recovery-evidence-ledger.png"><img src="docs/screenshots/guides/quick-access/14-recovery-evidence-ledger.png" width="100%"/></a><br/><sub><b>Recovery Evidence Ledger</b> — a permanent, append-only record of every replay</sub></td>
+<td width="33%"><a href="docs/screenshots/guides/quick-access/03-fleet-health.png"><img src="docs/screenshots/guides/quick-access/03-fleet-health.png" width="100%"/></a><br/><sub><b>Fleet Health</b> — dead-letter trend across every namespace, at a glance</sub></td>
+</tr>
+<tr>
+<td width="33%"><a href="docs/screenshots/guides/quick-access/05-live-tail.png"><img src="docs/screenshots/guides/quick-access/05-live-tail.png" width="100%"/></a><br/><sub><b>Live Tail</b> — watch messages arrive in real time (Azure &amp; GCP)</sub></td>
+<td width="33%"><a href="docs/screenshots/guides/quick-access/10-auto-replay-rules.png"><img src="docs/screenshots/guides/quick-access/10-auto-replay-rules.png" width="100%"/></a><br/><sub><b>Auto-Replay Rules</b> — with a real circuit breaker that self-disables on low success</sub></td>
+<td width="33%"><a href="docs/screenshots/guides/quick-access/21-failure-signature-detail.png"><img src="docs/screenshots/guides/quick-access/21-failure-signature-detail.png" width="100%"/></a><br/><sub><b>Failure Signature detail</b> — confidence-scored root-cause clustering</sub></td>
+</tr>
+</table>
+
+See the [Quick Access Guide](docs/guides/quick-access-guide.md) for what every one of these
+screens does, and the cloud provider guides linked near the top of this page
+([Azure](docs/guides/azure-guide.md) / [AWS](docs/guides/aws-guide.md) /
+[GCP](docs/guides/gcp-guide.md)) for a full walkthrough per provider.
 
 ---
 

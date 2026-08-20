@@ -42,6 +42,14 @@ queue list:
 
 ![GCP namespace connected — "Queues (0)" reflects that Pub/Sub has no queue concept](../screenshots/guides/gcp/01-connected-namespace.png)
 
+Expanded, the sidebar shows exactly what Pub/Sub actually has: **"No queues found"** under
+Queues, and your topics — each expandable to reveal its subscription(s), shown with an honest
+**"—"** instead of a fabricated count:
+
+![Sidebar: "No queues found" and a topic expanded to its subscription with a "—" count](../screenshots/guides/gcp/08-queues-zero-no-queue-concept.png)
+
+![A topic/subscription pair, further expanded](../screenshots/guides/gcp/09-topic-subscription-sidebar.png)
+
 ---
 
 ## How to use it
@@ -60,6 +68,11 @@ call that reports how many messages are sitting in a subscription — ServiceHub
 Message bodies — including Unicode, emoji, and special characters — render correctly and
 safely; nothing you see here is ever executed as code, even if a message body happens to
 contain something that looks like a script.
+
+Unlike AWS, GCP Pub/Sub **does** support Live Tail — the button is present in the toolbar
+alongside the honest "(—)" tab counts:
+
+![GCP toolbar: "(—)" counts on both tabs, Live Tail button present](../screenshots/guides/gcp/06-active-deadletter-dash-counts.png)
 
 ### 2. Investigate the Dead-Letter Queue
 

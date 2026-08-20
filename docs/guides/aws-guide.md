@@ -61,6 +61,16 @@ things look different from Azure right away — read them, they matter:
   without consuming delivery attempts, which SQS doesn't offer. ServiceHub simply doesn't show
   the button rather than showing a broken one.
 
+Here's the queue's toolbar close-up — notice **Auto: OFF**, no Live Tail button, but a
+**DLQ History** button is still present:
+
+![AWS toolbar: Auto refresh OFF by default, no Live Tail button](../screenshots/guides/aws/08-dlq-no-live-tail-toolbar.png)
+
+If your queue is fed by an SNS topic, the sidebar shows the real fan-out relationship —
+topic → subscription → queue — instead of hiding it:
+
+![Sidebar showing SNS topic fan-out into the SQS queue, plus a separate DLQ queue](../screenshots/guides/aws/11-sns-fanout-sidebar.png)
+
 ### 2. Investigate the Dead-Letter Queue
 
 Open a DLQ message and check the **AI Insights** tab. Many AWS DLQ messages arrive with no
@@ -74,6 +84,14 @@ inventing a fake pattern:
 Patterns Detected... appears to be processing normally" rather than a fabricated root cause.
 If your application *does* attach custom failure information as a message attribute,
 ServiceHub will pick it up and cluster on it just like it does for Azure.
+
+The **Properties** tab is honest in the same way. SQS itself doesn't attach a per-message
+dead-letter reason the way Azure does, so ServiceHub says exactly that instead of inventing
+one:
+
+![Properties tab: "Incomplete AWS Data" banner](../screenshots/guides/aws/09-incomplete-aws-data-banner.png)
+
+![DeadLetterReason field reading "Not provided by AWS SQS"](../screenshots/guides/aws/10-deadletterreason-not-provided.png)
 
 ### 3. Replay a message and verify it
 

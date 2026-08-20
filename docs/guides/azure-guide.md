@@ -68,6 +68,19 @@ if it's JSON), **AI Insights** (see below), and **Headers**.
 messages cannot be replayed" — this is intentional. ServiceHub only reads messages by default;
 replay only makes sense for a message that's already failed and landed in the DLQ.
 
+**Tip:** the namespace panel on the far left can be collapsed with the **«** icon in its
+header — this gives the message detail panel significantly more room, which helps once you're
+comparing tabs. Here's each tab on its own, with the panel collapsed:
+
+| Properties | Body | Headers |
+|---|---|---|
+| ![Properties tab](../screenshots/guides/azure/09-message-properties-tab.png) | ![Body tab](../screenshots/guides/azure/10-message-body-tab.png) | ![Headers tab](../screenshots/guides/azure/11-message-headers-tab.png) |
+
+**Properties** shows technical metadata (sequence number, delivery count, enqueue time).
+**Body** shows the raw content, syntax-highlighted when it's JSON, with a one-click **Copy**
+button. **Headers** lists every application property attached to the message as a plain
+name/value table.
+
 ### 3. Investigate the Dead-Letter Queue
 
 Switch to the **Dead-Letter** tab and open a failed message. ServiceHub shows you Azure's own
@@ -76,6 +89,11 @@ tab — this is a fact from Azure, not a guess:
 
 ![Dead-letter message showing Azure's real DeadLetterReason](../screenshots/guides/azure/04-dlq-message-detail.png)
 
+ServiceHub also adds its own plain-language interpretation on top of Azure's raw fields —
+labeled as ServiceHub's assessment, never confused with Azure's own data:
+
+![DLQ message Properties tab with ServiceHub's assessment and Azure's DeadLetterReason](../screenshots/guides/azure/12-dlq-message-properties-throttled.png)
+
 ### 4. Understand AI Insights (and its honesty label)
 
 The **AI Insights** tab groups similar failures together and suggests what might be going on.
@@ -83,6 +101,11 @@ Every single AI-generated insight carries a visible disclaimer, because it's a b
 guess based on patterns in the data — never a confirmed fact:
 
 ![AI Insights tab with the "not confirmed facts" honesty banner and confidence score](../screenshots/guides/azure/05-ai-insights.png)
+
+The disclaimer at the top of every AI Insights tab is not a one-time notice — it's shown on
+every single finding, every time:
+
+![Close-up of the "ServiceHub Interpretation (Not Azure Data)" disclaimer](../screenshots/guides/azure/13-ai-insights-honesty-banner.png)
 
 **What to expect:** a confidence percentage, a short recommendation, and a note telling you to
 verify in the Azure Portal before taking action. This entire analysis runs in your own browser
