@@ -14,7 +14,7 @@
 [![Version](https://img.shields.io/badge/version-3.7.0-brightgreen.svg)](.version)
 [![Self-Hosted](https://img.shields.io/badge/Deployment-Self--Hosted-0078D4.svg)](#quick-start)
 
-[⚡ Quick Start](#quick-start) · [🖥️ Run It Locally (Plain-Language Guide)](LOCAL-DEPLOYMENT.md) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security) · [🚀 Self-Hosting](self-hosting/README.md) · [📋 Changelog](CHANGELOG.md)
+[⚡ Quick Start](#quick-start) · [🖥️ Run It Locally (Plain-Language Guide)](LOCAL-DEPLOYMENT.md) · [📚 User Guides](#user-guides) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security) · [🚀 Self-Hosting](self-hosting/README.md) · [📋 Changelog](CHANGELOG.md)
 
 </div>
 
@@ -209,13 +209,13 @@ An in-app page that answers the trust question before anyone has to ask it: a di
 
 ---
 
-## 📚 User Guides — Cloud Provider Guides
+## User Guides
 
-Already connected and want to know what to actually *do* with ServiceHub? Each guide below is a
-plain-language, screenshot-illustrated walkthrough of the full message-debugging journey —
-browsing, DLQ investigation, AI Insights, replay, and the Recovery Evidence Ledger — verified
-live against a real namespace, with an honest, explicit list of what's supported and what isn't
-for that cloud:
+Already connected and want to know what to actually *do* with ServiceHub? This is the official
+ServiceHub user handbook — plain language, screenshot-illustrated, no code or scripting required.
+Each guide below walks the full message-debugging journey — browsing, DLQ investigation, AI
+Insights, replay, and the Recovery Evidence Ledger — verified live against a real namespace, with
+an honest, explicit list of what's supported and what isn't for that cloud:
 
 - **[🧭 Quick Access Guide](docs/guides/quick-access-guide.md)** — every navigation shortcut explained, with a full navigation map
 - **[☁️ Azure Service Bus Guide](docs/guides/azure-guide.md)** — the fully supported (GA) provider
@@ -620,10 +620,13 @@ npm run -w apps/web test:e2e
 
 ## Roadmap
 
-ServiceHub is built depth-first: make one workflow excellent before adding the next surface.
+ServiceHub is built depth-first: make one workflow excellent before adding the next surface — and
+that order isn't accidental. **Investigate → Recover → Prove it happened** is where the product
+started, and it's the on-ramp for where it's headed next.
 
 - **Now (MVP)** — the forensic core across Azure (GA) and AWS/GCP (preview): explore, search, DLQ investigation, replay, purge, send, auto-replay rules, live updates. Also shipped: bulk replay/purge with dry-run preview, a fleet dashboard across namespaces, Slack/Teams-native alerts (DLQ spikes, bulk operation completion), Live Tail (real-time "tail -f" for a queue/subscription, Azure and GCP — reachable from Quick Access → Browse across clouds, with its own provider/namespace/entity picker), a DLQ triage inbox, OIDC SSO (bring your own standards-compliant identity provider), role-based access via API key/OIDC scopes (Viewer/Operator/Auditor), an exportable per-owner audit trail, and Failure Signature Intelligence (clustering dead-letter messages into named, recurring failure patterns, with lifecycle tracking, guided replay, and a searchable knowledge base).
 - **Next** — team & governance: approval workflows for destructive operations, extending namespace sharing to cover shared DLQ history and audit visibility (not just live namespace access).
+- **Later — toward AI-guided, human-bounded operations** *(strategic direction, not a committed feature or date)*. The building blocks already ship today: Failure Signature Intelligence already names and tracks recurring failures, Auto-Replay Rules already act on them automatically under a circuit breaker and rate limits, and the Recovery Evidence Ledger already proves what was done, hash-chained and auditable. The natural next step is closing that loop — using those same signatures and that same evidence to recommend a recovery with its reasoning attached, and, only where an operator explicitly opts in, letting a known, high-confidence signature trigger its own bounded recovery inside the same safety gates enforced today. No autonomous or agentic behavior ships until it inherits every one of those invariants — read-only by default, production write-protection, rate limits, circuit breakers, and a permanent, provable record — rather than replacing them.
 
 Have a use-case that should shape this? [Open a feature request](https://github.com/debdevops/servicehub/issues/new) — describe the problem, not just the solution.
 
