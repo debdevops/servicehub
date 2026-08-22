@@ -49,6 +49,33 @@ public sealed class CorsConfigurationTests
     }
 
     [Fact]
+    public void AddCorsConfiguration_NoOriginsConfigured_ServiceHubPolicyHasNoOrigins()
+    {
+        // SECURITY REGRESSION: the production/staging policy (ServiceHubPolicy, selected by
+        // UseCorsConfiguration whenever the environment is not Development) must never fall back
+        // to the "http://localhost:*" DevelopmentDefaults when an operator forgets to configure
+        // Cors:AllowedOrigins. Falling back would let any page a victim's browser loads from its
+        // own localhost obtain credentialed cross-origin access to a real production deployment.
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Cors:DevelopmentDefaults:0"] = "http://localhost:3000",
+                ["Cors:DevelopmentDefaults:1"] = "http://localhost:5173",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddCorsConfiguration(config);
+
+        var sp = services.BuildServiceProvider();
+        var corsOptions = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Cors.Infrastructure.CorsOptions>>();
+
+        var policy = corsOptions.Value.GetPolicy(CorsConfiguration.PolicyName);
+        policy.Should().NotBeNull();
+        policy!.Origins.Should().BeEmpty();
+    }
+
+    [Fact]
     public void AddCorsConfiguration_EmptyConfig_StillAddsService()
     {
         var config = new ConfigurationBuilder()
