@@ -11,6 +11,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Gcp.Models;
 using ServiceHub.Infrastructure.Gcp.Resilience;
+using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Results;
 using Utf8Enc = System.Text.Encoding;
 
@@ -106,18 +107,18 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 return MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: false);
             }, linkedCts.Token).ConfigureAwait(false);
 
-            _logger.LogDebug("Peeked {Count} messages from Pub/Sub subscription {Subscription}", mapped.Count, SanitizeForLog(request.EntityName));
+            _logger.LogDebug("Peeked {Count} messages from Pub/Sub subscription {Subscription}", mapped.Count, LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Success<IReadOnlyList<Message>>(mapped);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning("GCP Pub/Sub peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, SanitizeForLog(request.EntityName));
+            _logger.LogWarning("GCP Pub/Sub peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
                 "GCP.PubSub.Timeout", $"Pub/Sub operation timed out after {OperationTimeoutSeconds}s."));
         }
         catch (Grpc.Core.RpcException ex) when (ex.Status.StatusCode == Grpc.Core.StatusCode.FailedPrecondition)
         {
-            _logger.LogWarning(ex, "Pub/Sub subscription {Subscription} does not support Pull", SanitizeForLog(subscriptionId));
+            _logger.LogWarning(ex, "Pub/Sub subscription {Subscription} does not support Pull", LogRedactor.SanitiseForLog(subscriptionId));
             return Result.Failure<IReadOnlyList<Message>>(UnsupportedSubscriptionTypeError(subscriptionId));
         }
         catch (Grpc.Core.RpcException ex) when (ex.Status.StatusCode == Grpc.Core.StatusCode.Cancelled)
@@ -129,7 +130,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             // because of that wrapping, so both cases land here and are told apart the same way.
             if (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
-                _logger.LogWarning("GCP Pub/Sub peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, SanitizeForLog(request.EntityName));
+                _logger.LogWarning("GCP Pub/Sub peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, LogRedactor.SanitiseForLog(request.EntityName));
                 return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
                     "GCP.PubSub.Timeout", $"Pub/Sub operation timed out after {OperationTimeoutSeconds}s."));
             }
@@ -141,7 +142,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error peeking Pub/Sub messages from {Subscription}", SanitizeForLog(request.EntityName));
+            _logger.LogError(ex, "Error peeking Pub/Sub messages from {Subscription}", LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService("GCP.PubSub.PeekFailed", ex.Message));
         }
     }
@@ -179,18 +180,18 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 return MapToMessages(messages, request.NamespaceId, request.EntityName, fromDlq: true);
             }, linkedCts.Token).ConfigureAwait(false);
 
-            _logger.LogDebug("Peeked {Count} DLQ messages for Pub/Sub subscription {Subscription}", mapped.Count, SanitizeForLog(subscriptionId));
+            _logger.LogDebug("Peeked {Count} DLQ messages for Pub/Sub subscription {Subscription}", mapped.Count, LogRedactor.SanitiseForLog(subscriptionId));
             return Result.Success<IReadOnlyList<Message>>(mapped);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning("GCP Pub/Sub DLQ peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, SanitizeForLog(subscriptionId));
+            _logger.LogWarning("GCP Pub/Sub DLQ peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, LogRedactor.SanitiseForLog(subscriptionId));
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
                 "GCP.PubSub.Timeout", $"Pub/Sub DLQ operation timed out after {OperationTimeoutSeconds}s."));
         }
         catch (Grpc.Core.RpcException ex) when (ex.Status.StatusCode == Grpc.Core.StatusCode.FailedPrecondition)
         {
-            _logger.LogWarning(ex, "Pub/Sub subscription {Subscription} does not support Pull", SanitizeForLog(subscriptionId));
+            _logger.LogWarning(ex, "Pub/Sub subscription {Subscription} does not support Pull", LogRedactor.SanitiseForLog(subscriptionId));
             return Result.Failure<IReadOnlyList<Message>>(UnsupportedSubscriptionTypeError(subscriptionId));
         }
         catch (Grpc.Core.RpcException ex) when (ex.Status.StatusCode == Grpc.Core.StatusCode.Cancelled)
@@ -201,7 +202,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             // the timeout (502 GCP.PubSub.Timeout).
             if (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
-                _logger.LogWarning("GCP Pub/Sub DLQ peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, SanitizeForLog(subscriptionId));
+                _logger.LogWarning("GCP Pub/Sub DLQ peek timed out after {Seconds}s for subscription {Subscription}", OperationTimeoutSeconds, LogRedactor.SanitiseForLog(subscriptionId));
                 return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
                     "GCP.PubSub.Timeout", $"Pub/Sub DLQ operation timed out after {OperationTimeoutSeconds}s."));
             }
@@ -210,7 +211,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error peeking Pub/Sub DLQ messages from {Subscription}", SanitizeForLog(subscriptionId));
+            _logger.LogError(ex, "Error peeking Pub/Sub DLQ messages from {Subscription}", LogRedactor.SanitiseForLog(subscriptionId));
             return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService("GCP.PubSub.DlqPeekFailed", ex.Message));
         }
     }
@@ -254,7 +255,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         // used by GetScheduledMessagesAsync (returns empty).
         _logger.LogDebug(
             "GCP Pub/Sub message count is unavailable via API; returning 0. Subscription: {Subscription}",
-            SanitizeForLog(entityName));
+            LogRedactor.SanitiseForLog(entityName));
         return Task.FromResult(Result.Success(0L));
     }
 
@@ -339,12 +340,12 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
 
             _logger.LogInformation(
                 "Dead-lettered {Count} messages from subscription {Subscription} to topic {Topic}",
-                ackIds.Count, SanitizeForLog(subscriptionId), SanitizeForLog(deadLetterTopicId));
+                ackIds.Count, LogRedactor.SanitiseForLog(subscriptionId), LogRedactor.SanitiseForLog(deadLetterTopicId));
             return Result.Success(ackIds.Count);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error dead-lettering Pub/Sub messages from {Subscription}", SanitizeForLog(subscriptionId));
+            _logger.LogError(ex, "Error dead-lettering Pub/Sub messages from {Subscription}", LogRedactor.SanitiseForLog(subscriptionId));
             return Result.Failure<int>(Error.ExternalService("GCP.PubSub.DlqFailed", ex.Message));
         }
     }
@@ -420,12 +421,12 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
 
             _logger.LogInformation(
                 "Replayed Pub/Sub message {Seq} from {DlqSubscription} to topic {Topic}",
-                sequenceNumber, SanitizeForLog(dlqSubscriptionId), SanitizeForLog(sourceTopicId));
+                sequenceNumber, LogRedactor.SanitiseForLog(dlqSubscriptionId), LogRedactor.SanitiseForLog(sourceTopicId));
             return Result<bool>.Success(markerApplied);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error replaying Pub/Sub message {Seq} for {Subscription}", sequenceNumber, SanitizeForLog(baseSubscriptionId));
+            _logger.LogError(ex, "Error replaying Pub/Sub message {Seq} for {Subscription}", sequenceNumber, LogRedactor.SanitiseForLog(baseSubscriptionId));
             return Result<bool>.Failure(Error.ExternalService("GCP.PubSub.ReplayFailed", ex.Message));
         }
     }
@@ -483,12 +484,12 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 AckIds = { target.AckId }
             }, cancellationToken).ConfigureAwait(false);
 
-            _logger.LogInformation("Purged Pub/Sub message {Seq} from {Subscription}", sequenceNumber, SanitizeForLog(subscriptionId));
+            _logger.LogInformation("Purged Pub/Sub message {Seq} from {Subscription}", sequenceNumber, LogRedactor.SanitiseForLog(subscriptionId));
             return Result.Success();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error purging Pub/Sub message {Seq} from {Subscription}", sequenceNumber, SanitizeForLog(baseSubscriptionId));
+            _logger.LogError(ex, "Error purging Pub/Sub message {Seq} from {Subscription}", sequenceNumber, LogRedactor.SanitiseForLog(baseSubscriptionId));
             return Result.Failure(Error.ExternalService("GCP.PubSub.PurgeFailed", ex.Message));
         }
     }
@@ -504,7 +505,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         _logger.LogWarning(
             "GCP Pub/Sub does not support scheduled message inspection. " +
             "Use Cloud Tasks or Cloud Scheduler for scheduled delivery. Subscription: {Subscription}",
-            SanitizeForLog(entityName));
+            LogRedactor.SanitiseForLog(entityName));
         return Task.FromResult(Result.Success<IReadOnlyList<Message>>(Array.Empty<Message>()));
     }
 
@@ -545,16 +546,12 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error getting ack deadline status for {Subscription}", SanitizeForLog(subscriptionId));
+            _logger.LogError(ex, "Error getting ack deadline status for {Subscription}", LogRedactor.SanitiseForLog(subscriptionId));
             return Result.Failure<GcpAckDeadlineStatus>(Error.ExternalService("GCP.PubSub.AckStatusFailed", ex.Message));
         }
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
-    private static string SanitizeForLog(string? value)
-        => (value ?? string.Empty)
-            .Replace("\r", string.Empty, StringComparison.Ordinal)
-            .Replace("\n", string.Empty, StringComparison.Ordinal);
     /// <summary>
     /// Pulls up to <paramref name="maxMessages"/> distinct messages, immediately nacking each
     /// batch to keep the read non-destructive. A single Pull call doesn't reliably return

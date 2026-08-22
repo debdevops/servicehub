@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useSearchParams } from 'react-router-dom';
 import {
   Layers,
   LayoutDashboard,
@@ -29,11 +29,17 @@ import { ResizablePanel } from './ResizablePanel';
  * Platform → Support. Collapsible, draggable, and independently resizable.
  */
 export function QuickAccessPanel() {
-  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { data: namespaces } = useNamespaces();
   const { isDemoMode, cloudProvider } = useDemoContext();
 
-  const activeNamespace = namespaces?.find((ns) => ns.isActive);
+  // The namespace the operator is currently viewing — read from the URL, the single
+  // source of truth every other namespace-aware component (MainLayout, Header,
+  // MessagesPage, LiveTailPage, ...) already uses. `isActive` on a namespace means
+  // "this connection is enabled", not "currently selected" — every namespace has it
+  // set, so using it here previously meant "whichever namespace is first in the list".
+  const currentNamespaceId = searchParams.get('namespace');
+  const currentNamespace = namespaces?.find((ns) => ns.id === currentNamespaceId);
   const demoStats = isDemoMode && cloudProvider ? getMockStats(cloudProvider) : null;
 
   // "All Clouds" is misleading on a single-provider installation — reads as though
@@ -123,16 +129,23 @@ export function QuickAccessPanel() {
 
         {/* ── Browse across clouds ── */}
         <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Browse across clouds</div>
-        <button
-          onClick={() => navigate(`${navPrefix}/messages-overview?tab=active`)}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border border-gray-200 hover:border-sky-300 shadow-sm"
+        <NavLink
+          to={`${navPrefix}/messages-overview?tab=active`}
+          className={({ isActive }) => {
+            const isExactMatch = isActive && new URLSearchParams(window.location.search).get('tab') === 'active';
+            return `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isExactMatch
+                ? 'bg-sky-50 text-sky-700 border-sky-300 font-medium'
+                : 'bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border-gray-200 hover:border-sky-300'
+            }`;
+          }}
         >
           <Database className="w-4 h-4 text-sky-500" />
           <span className="flex-1 text-left">Active Messages</span>
           <span className="text-xs text-sky-700 font-medium">{browseAllLabel}</span>
-        </button>
+        </NavLink>
         <NavLink
-          to={activeNamespace ? `${navPrefix}/live-tail?namespace=${activeNamespace.id}` : `${navPrefix}/live-tail`}
+          to={currentNamespace ? `${navPrefix}/live-tail?namespace=${currentNamespace.id}` : `${navPrefix}/live-tail`}
           className={({ isActive }) =>
             `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
               isActive
@@ -144,14 +157,21 @@ export function QuickAccessPanel() {
           <Radio className="w-4 h-4 text-emerald-500" />
           <span className="flex-1 text-left">Live Tail</span>
         </NavLink>
-        <button
-          onClick={() => navigate(`${navPrefix}/messages-overview?tab=deadletter`)}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-red-50 text-gray-700 hover:text-red-700 border border-gray-200 hover:border-red-300 shadow-sm"
+        <NavLink
+          to={`${navPrefix}/messages-overview?tab=deadletter`}
+          className={({ isActive }) => {
+            const isExactMatch = isActive && new URLSearchParams(window.location.search).get('tab') === 'deadletter';
+            return `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isExactMatch
+                ? 'bg-red-50 text-red-700 border-red-300 font-medium'
+                : 'bg-white hover:bg-red-50 text-gray-700 hover:text-red-700 border-gray-200 hover:border-red-300'
+            }`;
+          }}
         >
           <AlertCircle className="w-4 h-4 text-red-500" />
           <span className="flex-1 text-left">Dead-Letter</span>
           <span className="text-xs text-red-600 font-medium">{browseAllLabel}</span>
-        </button>
+        </NavLink>
         <NavLink
           to={`${navPrefix}/scheduled`}
           className={({ isActive }) =>
@@ -182,8 +202,14 @@ export function QuickAccessPanel() {
         {/* ── Diagnose & automate ── */}
         <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Diagnose &amp; automate</div>
         <NavLink
-          to={activeNamespace ? `${navPrefix}/dlq-history?namespace=${activeNamespace.id}` : `${navPrefix}/dlq-history`}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-purple-50 text-gray-700 hover:text-purple-700 border border-gray-200 hover:border-purple-300 shadow-sm"
+          to={currentNamespace ? `${navPrefix}/dlq-history?namespace=${currentNamespace.id}` : `${navPrefix}/dlq-history`}
+          className={({ isActive }) =>
+            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isActive
+                ? 'bg-purple-50 text-purple-700 border-purple-300 font-medium'
+                : 'bg-white hover:bg-purple-50 text-gray-700 hover:text-purple-700 border-gray-200 hover:border-purple-300'
+            }`
+          }
         >
           <BarChart3 className="w-4 h-4 text-purple-500" />
           <span className="flex-1 text-left">DLQ Intelligence</span>
@@ -191,7 +217,13 @@ export function QuickAccessPanel() {
         </NavLink>
         <NavLink
           to={`${navPrefix}/rules`}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-amber-50 text-gray-700 hover:text-amber-700 border border-gray-200 hover:border-amber-300 shadow-sm"
+          className={({ isActive }) =>
+            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isActive
+                ? 'bg-amber-50 text-amber-700 border-amber-300 font-medium'
+                : 'bg-white hover:bg-amber-50 text-gray-700 hover:text-amber-700 border-gray-200 hover:border-amber-300'
+            }`
+          }
         >
           <Zap className="w-4 h-4 text-amber-500" />
           <span className="flex-1 text-left">Auto-Replay Rules</span>
@@ -215,7 +247,13 @@ export function QuickAccessPanel() {
         <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Platform</div>
         <NavLink
           to={`${navPrefix}/health`}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border border-gray-200 hover:border-emerald-300 shadow-sm"
+          className={({ isActive }) =>
+            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isActive
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-medium'
+                : 'bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border-gray-200 hover:border-emerald-300'
+            }`
+          }
         >
           <Activity className="w-4 h-4 text-emerald-500" />
           <span className="flex-1 text-left">System Health</span>
@@ -266,7 +304,13 @@ export function QuickAccessPanel() {
         <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Support</div>
         <NavLink
           to={`${navPrefix}/help`}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border border-gray-200 hover:border-primary-300 shadow-sm"
+          className={({ isActive }) =>
+            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isActive
+                ? 'bg-primary-50 text-primary-700 border-primary-300 font-medium'
+                : 'bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border-gray-200 hover:border-primary-300'
+            }`
+          }
         >
           <HelpCircle className="w-4 h-4 text-primary-500" />
           <span className="flex-1 text-left">Help &amp; Guide</span>

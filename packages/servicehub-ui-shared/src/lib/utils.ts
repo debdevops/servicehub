@@ -26,3 +26,14 @@ export function formatRelativeTime(date: Date): string {
 export function formatNumber(num: number): string {
   return num.toLocaleString('en-US');
 }
+
+/**
+ * Convert a Date into the string a <input type="datetime-local"> expects, expressed
+ * in the browser's local time. `date.toISOString()` alone renders UTC digits, which a
+ * datetime-local input then (mis)interprets as local time — this offsets first so the
+ * digits are actually local.
+ */
+export function toDatetimeLocalValue(date: Date): string {
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
