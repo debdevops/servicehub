@@ -98,12 +98,39 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
         Guid namespaceId,
         CancellationToken ct)
     {
+        var scanResult = await ListEntitiesInternalAsync(namespaceId, ct).ConfigureAwait(false);
+        return scanResult.IsSuccess
+            ? Result.Success<IReadOnlyList<CloudEntity>>(scanResult.Value.Entities)
+            : Result.Failure<IReadOnlyList<CloudEntity>>(scanResult.Error);
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<EntityScanResult>> ListEntitiesForReconciliationAsync(
+        Guid namespaceId,
+        CancellationToken ct)
+        => await ListEntitiesInternalAsync(namespaceId, ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Shared implementation behind <see cref="ListEntitiesAsync"/> and
+    /// <see cref="ListEntitiesForReconciliationAsync"/>. AWS's per-entity discovery calls
+    /// (GetQueueAttributes, SNS ListTopics/ListSubscriptionsByTopic) can each fail independently
+    /// of the rest of the scan — every catch block below both logs (existing behavior) and records
+    /// the affected entity/topic name so reconciliation can tell "genuinely absent" apart from
+    /// "this scan just couldn't confirm it".
+    /// </summary>
+    private async Task<Result<EntityScanResult>> ListEntitiesInternalAsync(
+        Guid namespaceId,
+        CancellationToken ct)
+    {
         var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, ct).ConfigureAwait(false);
         if (nsResult.IsFailure)
-            return Result.Failure<IReadOnlyList<CloudEntity>>(nsResult.Error);
+            return Result.Failure<EntityScanResult>(nsResult.Error);
 
         var ns = nsResult.Value;
         var entities = new List<CloudEntity>();
+        var incompleteQueueNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var incompleteTopicNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var snsListingFailed = false;
 
         try
         {
@@ -144,6 +171,7 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
                 catch (AmazonSQSException ex)
                 {
                     _logger.LogWarning(ex, "Could not get attributes for queue {QueueUrl}", queueUrl);
+                    incompleteQueueNames.Add(queueUrl.Split('/').LastOrDefault() ?? queueUrl);
                 }
             }
 
@@ -207,25 +235,33 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
                     catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "Could not list SNS subscriptions for topic {TopicArn}", topic.TopicArn);
+                        incompleteTopicNames.Add(topicName);
                     }
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Could not list SNS topics for namespace {NamespaceId}", namespaceId);
+                snsListingFailed = true;
             }
 
-            return Result.Success<IReadOnlyList<CloudEntity>>(entities);
+            return Result.Success(new EntityScanResult
+            {
+                Entities = entities,
+                IncompleteQueueNames = incompleteQueueNames,
+                IncompleteTopicNames = incompleteTopicNames,
+                SnsListingFailed = snsListingFailed
+            });
         }
         catch (AmazonSQSException ex)
         {
             _logger.LogError(ex, "SQS error listing entities for namespace {NamespaceId}", namespaceId);
-            return Result.Failure<IReadOnlyList<CloudEntity>>(Error.ExternalService("AWS.SQS.ListFailed", ex.Message));
+            return Result.Failure<EntityScanResult>(Error.ExternalService("AWS.SQS.ListFailed", ex.Message));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error listing entities for namespace {NamespaceId}", namespaceId);
-            return Result.Failure<IReadOnlyList<CloudEntity>>(Error.ExternalService("AWS.SQS.ListFailed", ex.Message));
+            return Result.Failure<EntityScanResult>(Error.ExternalService("AWS.SQS.ListFailed", ex.Message));
         }
     }
 

@@ -44,6 +44,26 @@ public interface ICloudMessagingProvider
     Task<Result<IReadOnlyList<CloudEntity>>> ListEntitiesAsync(Guid namespaceId, CancellationToken ct);
 
     /// <summary>
+    /// Lists entities the same way <see cref="ListEntitiesAsync"/> does, but also reports which
+    /// entities (if any) this scan could not confirm the presence/absence of because a per-entity
+    /// discovery call failed. Used by DLQ reconciliation, which must never treat an unconfirmed
+    /// entity as deleted. Providers whose listing is atomic (succeeds or fails as a whole — Azure,
+    /// GCP, the in-memory mock) never have partial results, so the default implementation simply
+    /// wraps <see cref="ListEntitiesAsync"/>; only providers whose discovery can partially fail
+    /// per-entity (AWS SQS/SNS) need to override this.
+    /// </summary>
+    /// <param name="namespaceId">The identifier of the namespace to inspect.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A result containing the entity scan result on success.</returns>
+    async Task<Result<EntityScanResult>> ListEntitiesForReconciliationAsync(Guid namespaceId, CancellationToken ct)
+    {
+        var result = await ListEntitiesAsync(namespaceId, ct).ConfigureAwait(false);
+        return result.IsSuccess
+            ? Result.Success(new EntityScanResult { Entities = result.Value })
+            : Result.Failure<EntityScanResult>(result.Error);
+    }
+
+    /// <summary>
     /// Returns the message receiver bound to this provider's connection infrastructure.
     /// </summary>
     IMessageReceiver GetMessageReceiver();

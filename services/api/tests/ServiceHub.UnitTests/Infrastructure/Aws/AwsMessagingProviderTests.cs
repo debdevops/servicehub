@@ -273,6 +273,140 @@ public sealed class AwsMessagingProviderTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // ListEntitiesForReconciliationAsync — partial AWS listing failures (release-gate fix)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ListEntitiesForReconciliationAsync_OneQueueAttributesFail_MarksOnlyThatQueueIncomplete()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        const string goodQueueUrl = "https://sqs.us-east-1.amazonaws.com/123/good-queue";
+        const string badQueueUrl = "https://sqs.us-east-1.amazonaws.com/123/bad-queue";
+
+        var sqsClient = new Mock<IAmazonSQS>();
+        sqsClient.Setup(s => s.ListQueuesAsync(It.IsAny<ListQueuesRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListQueuesResponse { QueueUrls = new List<string> { goodQueueUrl, badQueueUrl } });
+
+        sqsClient.Setup(s => s.GetQueueAttributesAsync(
+                It.Is<GetQueueAttributesRequest>(r => r.QueueUrl == goodQueueUrl), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GetQueueAttributesResponse
+            {
+                Attributes = new Dictionary<string, string>
+                {
+                    ["ApproximateNumberOfMessages"] = "0",
+                    ["ApproximateNumberOfMessagesNotVisible"] = "0"
+                }
+            });
+        sqsClient.Setup(s => s.GetQueueAttributesAsync(
+                It.Is<GetQueueAttributesRequest>(r => r.QueueUrl == badQueueUrl), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new AmazonSQSException("Throttled"));
+
+        var snsClient = new Mock<IAmazonSimpleNotificationService>();
+        snsClient.Setup(s => s.ListTopicsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListTopicsResponse { Topics = new List<Topic>() });
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<Namespace>())).Returns(sqsClient.Object);
+        factory.Setup(f => f.GetSnsClient(It.IsAny<Namespace>())).Returns(snsClient.Object);
+
+        var provider = BuildProvider(factory: factory.Object, repo: repo.Object);
+
+        var scanResult = await provider.ListEntitiesForReconciliationAsync(TestNamespaceId, CancellationToken.None);
+
+        scanResult.IsSuccess.Should().BeTrue();
+        scanResult.Value.IncompleteQueueNames.Should().ContainSingle("bad-queue");
+        scanResult.Value.Entities.Should().ContainSingle(e => e.EntityType == "Queue" && e.Name == "good-queue");
+        scanResult.Value.Entities.Should().NotContain(e => e.Name == "bad-queue");
+        scanResult.Value.SnsListingFailed.Should().BeFalse();
+
+        // ListEntitiesAsync's own contract (used by every other caller) is unaffected — same
+        // successfully-collected entities, silently dropping the failed queue as it always did.
+        var plainResult = await provider.ListEntitiesAsync(TestNamespaceId, CancellationToken.None);
+        plainResult.IsSuccess.Should().BeTrue();
+        plainResult.Value.Should().ContainSingle(e => e.Name == "good-queue");
+    }
+
+    [Fact]
+    public async Task ListEntitiesForReconciliationAsync_SnsListTopicsThrows_SetsSnsListingFailed()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        var sqsClient = new Mock<IAmazonSQS>();
+        sqsClient.Setup(s => s.ListQueuesAsync(It.IsAny<ListQueuesRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListQueuesResponse { QueueUrls = new List<string>() });
+
+        var snsClient = new Mock<IAmazonSimpleNotificationService>();
+        snsClient.Setup(s => s.ListTopicsAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new AmazonSimpleNotificationServiceException("Throttled"));
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<Namespace>())).Returns(sqsClient.Object);
+        factory.Setup(f => f.GetSnsClient(It.IsAny<Namespace>())).Returns(snsClient.Object);
+
+        var provider = BuildProvider(factory: factory.Object, repo: repo.Object);
+
+        var scanResult = await provider.ListEntitiesForReconciliationAsync(TestNamespaceId, CancellationToken.None);
+
+        scanResult.IsSuccess.Should().BeTrue();
+        scanResult.Value.SnsListingFailed.Should().BeTrue();
+        scanResult.Value.IncompleteTopicNames.Should().BeEmpty();
+
+        // The overall list call still succeeds (SQS-only outcome), matching today's behavior.
+        var plainResult = await provider.ListEntitiesAsync(TestNamespaceId, CancellationToken.None);
+        plainResult.IsSuccess.Should().BeTrue();
+        plainResult.Value.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ListEntitiesForReconciliationAsync_OneTopicSubscriptionListingFails_MarksOnlyThatTopicIncomplete()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        const string goodTopicArn = "arn:aws:sns:us-east-1:123:billing-topic";
+        const string badTopicArn = "arn:aws:sns:us-east-1:123:orders-topic";
+
+        var sqsClient = new Mock<IAmazonSQS>();
+        sqsClient.Setup(s => s.ListQueuesAsync(It.IsAny<ListQueuesRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListQueuesResponse { QueueUrls = new List<string>() });
+
+        var snsClient = new Mock<IAmazonSimpleNotificationService>();
+        snsClient.Setup(s => s.ListTopicsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListTopicsResponse
+            {
+                Topics = new List<Topic> { new() { TopicArn = goodTopicArn }, new() { TopicArn = badTopicArn } }
+            });
+        snsClient.Setup(s => s.ListSubscriptionsByTopicAsync(goodTopicArn, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListSubscriptionsByTopicResponse { Subscriptions = new List<Subscription>() });
+        snsClient.Setup(s => s.ListSubscriptionsByTopicAsync(badTopicArn, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new AmazonSimpleNotificationServiceException("Throttled"));
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<Namespace>())).Returns(sqsClient.Object);
+        factory.Setup(f => f.GetSnsClient(It.IsAny<Namespace>())).Returns(snsClient.Object);
+
+        var provider = BuildProvider(factory: factory.Object, repo: repo.Object);
+
+        var scanResult = await provider.ListEntitiesForReconciliationAsync(TestNamespaceId, CancellationToken.None);
+
+        scanResult.IsSuccess.Should().BeTrue();
+        scanResult.Value.IncompleteTopicNames.Should().ContainSingle("orders-topic");
+        scanResult.Value.SnsListingFailed.Should().BeFalse();
+        // Both topics still appear — only the subscription listing under one of them failed.
+        scanResult.Value.Entities.Should().Contain(e => e.EntityType == "SNS Topic" && e.Name == "billing-topic");
+        scanResult.Value.Entities.Should().Contain(e => e.EntityType == "SNS Topic" && e.Name == "orders-topic");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // ListEntitiesAsync — SQS error
     // ─────────────────────────────────────────────────────────────────────────
 
