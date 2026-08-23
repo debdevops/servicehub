@@ -46,22 +46,16 @@ public static class CorsConfiguration
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToArray();
 
+                // SECURITY: this is the policy used in Staging/Production (see UseCorsConfiguration).
+                // No fallback to DevelopmentDefaults here — an operator who deploys without setting
+                // Cors:AllowedOrigins or SERVICEHUB_ALLOWED_ORIGINS must fail closed (no origin
+                // matches, so WithOrigins is simply never called), not silently trust the
+                // "http://localhost:*" defaults. Trusting localhost as a CORS origin combined with
+                // AllowCredentials() below would let any page a victim's browser loads from its own
+                // localhost grant itself credentialed cross-origin access to this API.
                 if (effectiveOrigins.Length > 0)
                 {
                     builder.WithOrigins(effectiveOrigins);
-                }
-                else
-                {
-                    // Fallback to development defaults if nothing is configured
-                    var devDefaults = corsSection.GetSection("DevelopmentDefaults").Get<string[]>() ?? [];
-                    var effectiveDefaults = devDefaults
-                        .Concat(envOrigins)
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToArray();
-                    if (effectiveDefaults.Length > 0)
-                    {
-                        builder.WithOrigins(effectiveDefaults);
-                    }
                 }
 
                 builder

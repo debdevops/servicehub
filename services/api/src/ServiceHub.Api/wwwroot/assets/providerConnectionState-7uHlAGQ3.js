@@ -1,0 +1,1 @@
+function e(e,t){return e?e[t.charAt(0).toUpperCase()+t.slice(1).toLowerCase()]===!0:!1}function t(t,n,r){if(!e(t,r))return`unavailable`;let i=(n??[]).filter(e=>e.cloudProvider===r);return i.length===0?`available-unconfigured`:i.some(e=>e.lastConnectionTestSucceeded===!1)?`connection-issue`:`connected`}export{t};

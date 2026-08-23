@@ -1,14 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Cloud, RefreshCw, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Inbox, Radio, GitBranch } from 'lucide-react';
-import { useProviderStatus, useCloudEntities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { useProviderStatus, useCloudEntities, useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
 import { getProviderStyle, PROVIDER_STATE_STYLES } from '@servicehub/ui-shared/lib/providerStyles';
 import { getProviderConnectionState, type ProviderInstallState } from '@servicehub/ui-shared/lib/providerConnectionState';
 import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
 import { EmptyState } from '@/components/EmptyState';
-import type { CloudEntity } from '@servicehub/ui-shared/lib/api/cloudBridge';
+import { getProviderCapabilities, type CloudEntity, type ProviderCapabilitiesMap } from '@servicehub/ui-shared/lib/api/cloudBridge';
 import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -235,11 +235,13 @@ function ProviderStatusCard({
   state,
   namespaceCount,
   dlqCount,
+  capabilitiesMap,
 }: {
   providerKey: string;
   state: ProviderInstallState;
   namespaceCount: number;
   dlqCount: number;
+  capabilitiesMap: ProviderCapabilitiesMap | undefined;
 }) {
   const providerType = PROVIDER_KEY_TO_TYPE[providerKey];
   const style = getProviderStyle(providerType);
@@ -247,6 +249,9 @@ function ProviderStatusCard({
   const label = PROVIDER_LABELS[providerKey] ?? providerKey;
   const isUnavailable = state === 'unavailable';
   const hasStats = state === 'connected' || state === 'connection-issue';
+  // GCP Pub/Sub has no count API — its DLQ total normalises to 0, indistinguishable
+  // from a confirmed-empty DLQ, so "No backlog" would be an unearned claim.
+  const supportsCounts = getProviderCapabilities(capabilitiesMap, providerType)?.supportsMessageCounts ?? true;
 
   return (
     <div
@@ -277,8 +282,10 @@ function ProviderStatusCard({
               <AlertTriangle className="w-3 h-3" />
               {dlqCount.toLocaleString()} dead-lettered
             </span>
-          ) : (
+          ) : supportsCounts ? (
             <span className="text-gray-400">No backlog</span>
+          ) : (
+            <span className="text-gray-400">No live count available</span>
           )}
         </div>
       )}
@@ -296,6 +303,7 @@ function ProviderStatusCard({
 
 export function CloudBridgePage() {
   const { data: providerStatus, isLoading: statusLoading } = useProviderStatus();
+  const { data: capabilitiesMap } = useProviderCapabilities();
   const { data: namespaces } = useNamespaces();
   const [selectedNamespaceId, setSelectedNamespaceId] = useState<string>('');
 
@@ -355,6 +363,7 @@ export function CloudBridgePage() {
                     state={state}
                     namespaceCount={nsForProvider.length}
                     dlqCount={dlqForProvider}
+                    capabilitiesMap={capabilitiesMap}
                   />
                 );
               })}

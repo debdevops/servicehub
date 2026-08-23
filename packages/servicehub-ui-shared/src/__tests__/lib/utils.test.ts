@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { formatRelativeTime, formatNumber } from '../../lib/utils';
+import { formatRelativeTime, formatNumber, toDatetimeLocalValue } from '../../lib/utils';
 
 // ─── formatRelativeTime ───────────────────────────────────────────────────────
 
@@ -98,5 +98,39 @@ describe('formatNumber', () => {
 
   it('formats large number with multiple separators', () => {
     expect(formatNumber(1_234_567_890)).toBe('1,234,567,890');
+  });
+});
+
+// ─── toDatetimeLocalValue ──────────────────────────────────────────────────────
+
+describe('toDatetimeLocalValue', () => {
+  const fixedUtc = new Date('2025-06-15T10:00:00.000Z');
+  let offsetSpy: ReturnType<typeof vi.spyOn>;
+
+  afterEach(() => {
+    offsetSpy?.mockRestore();
+  });
+
+  it('renders IST (UTC+5:30) wall-clock time, not raw UTC digits', () => {
+    // getTimezoneOffset() is minutes to ADD to local time to reach UTC — negative for zones ahead of UTC.
+    offsetSpy = vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(-330);
+    expect(toDatetimeLocalValue(fixedUtc)).toBe('2025-06-15T15:30');
+  });
+
+  it('renders a negative-UTC-offset zone (UTC-8, e.g. PST) correctly', () => {
+    offsetSpy = vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(480);
+    expect(toDatetimeLocalValue(fixedUtc)).toBe('2025-06-15T02:00');
+  });
+
+  it('renders UTC unchanged when the offset is zero', () => {
+    offsetSpy = vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(0);
+    expect(toDatetimeLocalValue(fixedUtc)).toBe('2025-06-15T10:00');
+  });
+
+  it('crosses a UTC day boundary correctly for a positive offset', () => {
+    // 23:30 UTC + 5:30 (IST) rolls into the next day.
+    const lateUtc = new Date('2025-06-15T23:30:00.000Z');
+    offsetSpy = vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(-330);
+    expect(toDatetimeLocalValue(lateUtc)).toBe('2025-06-16T05:00');
   });
 });

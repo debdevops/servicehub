@@ -6,6 +6,7 @@ using Polly;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Gcp.Resilience;
+using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Results;
 using Utf8Encoding = System.Text.Encoding;
 
@@ -69,12 +70,12 @@ public sealed class GcpMessageSender : IMessageSender
                 await publisher.PublishAsync(message).ConfigureAwait(false),
                 cancellationToken).ConfigureAwait(false);
 
-            _logger.LogInformation("Published Pub/Sub message {MessageId} to topic {TopicId}", messageId, SanitizeForLog(request.EntityName));
+            _logger.LogInformation("Published Pub/Sub message {MessageId} to topic {TopicId}", messageId, LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Success();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error publishing Pub/Sub message to topic {TopicId}", SanitizeForLog(request.EntityName));
+            _logger.LogError(ex, "Error publishing Pub/Sub message to topic {TopicId}", LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Failure(Error.ExternalService("GCP.PubSub.SendFailed", ex.Message));
         }
     }
@@ -114,21 +115,17 @@ public sealed class GcpMessageSender : IMessageSender
             await Task.WhenAll(tasks).ConfigureAwait(false);
 
             _logger.LogInformation("Batch published {Count} Pub/Sub messages to topic {TopicId}",
-                requestList.Count, SanitizeForLog(first.EntityName));
+                requestList.Count, LogRedactor.SanitiseForLog(first.EntityName));
             return Result.Success();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error batch publishing Pub/Sub messages to topic {TopicId}", SanitizeForLog(first.EntityName));
+            _logger.LogError(ex, "Error batch publishing Pub/Sub messages to topic {TopicId}", LogRedactor.SanitiseForLog(first.EntityName));
             return Result.Failure(Error.ExternalService("GCP.PubSub.BatchSendFailed", ex.Message));
         }
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
-    private static string SanitizeForLog(string? value)
-        => (value ?? string.Empty)
-            .Replace("\r", string.Empty, StringComparison.Ordinal)
-            .Replace("\n", string.Empty, StringComparison.Ordinal);
     private static PubsubMessage BuildPubSubMessage(SendMessageRequest request)
     {
         var message = new PubsubMessage

@@ -6,6 +6,7 @@ import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
 import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
 import { useSendMessage } from '@servicehub/ui-shared/hooks/useMessages';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
+import { toDatetimeLocalValue } from '@servicehub/ui-shared/lib/utils';
 
 // ============================================================================
 // SendMessageModal - Modal for composing and sending messages
@@ -386,7 +387,7 @@ export function SendMessageModal({
                   type="datetime-local"
                   value={scheduledEnqueueTime}
                   onChange={(e) => setScheduledEnqueueTime(e.target.value)}
-                  min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
+                  min={toDatetimeLocalValue(new Date(Date.now() + 60_000))}
                   className="w-full px-3 py-2 border border-sky-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 bg-sky-50"
                 />
                 {scheduledEnqueueTime && (
