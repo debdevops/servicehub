@@ -250,8 +250,10 @@ function ProviderStatusCard({
   const isUnavailable = state === 'unavailable';
   const hasStats = state === 'connected' || state === 'connection-issue';
   // GCP Pub/Sub has no count API — its DLQ total normalises to 0, indistinguishable
-  // from a confirmed-empty DLQ, so "No backlog" would be an unearned claim.
-  const supportsCounts = getProviderCapabilities(capabilitiesMap, providerType)?.supportsMessageCounts ?? true;
+  // from a confirmed-empty DLQ, so "No backlog" would be an unearned claim. Default to false
+  // (not true) while capabilities are still unknown/loading, for the same reason — an unknown
+  // provider must never be assumed to support live counts.
+  const supportsCounts = getProviderCapabilities(capabilitiesMap, providerType)?.supportsMessageCounts ?? false;
 
   return (
     <div

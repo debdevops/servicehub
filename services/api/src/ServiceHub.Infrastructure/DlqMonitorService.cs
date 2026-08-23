@@ -121,7 +121,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 $"DLQ monitoring is not available for namespace '{ns.Name}': {provider.Capabilities.Notes}"));
         }
 
-        var entitiesResult = await provider.ListEntitiesAsync(namespaceId, cancellationToken);
+        var entitiesResult = await provider.ListEntitiesForReconciliationAsync(namespaceId, cancellationToken);
         if (entitiesResult.IsFailure)
         {
             _logger.LogWarning(
@@ -130,6 +130,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
             return Result<int>.Failure(entitiesResult.Error);
         }
 
+        var scanResult = entitiesResult.Value;
         var receiver = provider.GetMessageReceiver();
         var totalNew = 0;
 
@@ -137,7 +138,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
         // Key = fullEntityName, Value = number of messages currently in the DLQ.
         var scannedEntities = new Dictionary<string, int>();
 
-        foreach (var entity in entitiesResult.Value)
+        foreach (var entity in scanResult.Entities)
         {
             if (entity.EntityType is not ("Queue" or "Subscription"))
                 continue;
@@ -202,7 +203,30 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 .Distinct()
                 .ToListAsync(cancellationToken);
 
+            // An entity this scan couldn't fully confirm (a provider-side listing call failed —
+            // see EntityScanResult) must never be reconciled as vanished: absence here might just
+            // mean the scan didn't look, not that the entity is gone.
+            bool IsUnconfirmed(string entityName)
+            {
+                var subIdx = entityName.IndexOf(SubscriptionPathSegment, StringComparison.Ordinal);
+                if (subIdx < 0)
+                    return scanResult.IncompleteQueueNames.Contains(entityName);
+
+                return scanResult.SnsListingFailed
+                    || scanResult.IncompleteTopicNames.Contains(entityName[..subIdx])
+                    || scanResult.IncompleteQueueNames.Contains(entityName[(subIdx + SubscriptionPathSegment.Length)..]);
+            }
+
+            var unconfirmedNames = activeEntityNames.Where(IsUnconfirmed).ToList();
+            if (unconfirmedNames.Count > 0)
+            {
+                _logger.LogInformation(
+                    "Skipped reconciliation for {Count} entities in namespace {NamespaceId}: provider listing was incomplete this scan",
+                    unconfirmedNames.Count, namespaceId);
+            }
+
             var entitiesToReconcile = activeEntityNames
+                .Where(name => !IsUnconfirmed(name))
                 .Where(name => !scannedEntities.TryGetValue(name, out var liveCount) || liveCount == 0)
                 .ToList();
 
