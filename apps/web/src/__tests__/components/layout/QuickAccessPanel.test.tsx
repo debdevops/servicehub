@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -22,12 +22,12 @@ import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 
-function createWrapper() {
+function createWrapper(initialEntries: string[] = ['/messages?namespace=ns1&queue=my-queue']) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return ({ children }: { children: React.ReactNode }) => (
-    <MemoryRouter initialEntries={['/messages?namespace=ns1&queue=my-queue']}>
+    <MemoryRouter initialEntries={initialEntries}>
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </MemoryRouter>
   );
@@ -132,6 +132,122 @@ describe('QuickAccessPanel', () => {
     expect(screen.getAllByText('All Clouds')).toHaveLength(2);
     expect(screen.queryByText('All Namespaces')).not.toBeInTheDocument();
     expect(screen.getByText('Multi-Cloud Trace').closest('a')).not.toHaveAttribute('title');
+  });
+
+  // ── F1 regression: Live Tail / DLQ Intelligence must preserve the operator's
+  // current namespace, not silently substitute whichever namespace happens to be
+  // `isActive` (a connection-enabled flag every namespace has, unrelated to selection).
+  describe('namespace context preservation (F1)', () => {
+    const multiCloudNamespaces = [
+      { id: 'azure-dev', name: 'azure-dev', isActive: true, cloudProvider: 'azure' },
+      { id: 'aws-dev', name: 'aws-dev', isActive: true, cloudProvider: 'aws' },
+      { id: 'gcp-dev', name: 'gcp-dev', isActive: true, cloudProvider: 'gcp' },
+    ];
+
+    beforeEach(() => {
+      mockUseNamespaces.mockReturnValue({ data: multiCloudNamespaces, isLoading: false, refetch: vi.fn() });
+    });
+
+    it('keeps Live Tail and DLQ Intelligence on AWS when the operator is currently on the AWS namespace', () => {
+      const Wrapper = createWrapper(['/messages?namespace=aws-dev&queue=orders']);
+      render(<Wrapper><QuickAccessPanel /></Wrapper>);
+      expect(screen.getByText('Live Tail').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=aws-dev'));
+      expect(screen.getByText('DLQ Intelligence').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=aws-dev'));
+    });
+
+    it('keeps Live Tail and DLQ Intelligence on GCP when the operator is currently on the GCP namespace', () => {
+      const Wrapper = createWrapper(['/messages?namespace=gcp-dev&queue=orders']);
+      render(<Wrapper><QuickAccessPanel /></Wrapper>);
+      expect(screen.getByText('Live Tail').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=gcp-dev'));
+      expect(screen.getByText('DLQ Intelligence').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=gcp-dev'));
+    });
+
+    it('keeps Live Tail and DLQ Intelligence on Azure when the operator is currently on the Azure namespace', () => {
+      const Wrapper = createWrapper(['/messages?namespace=azure-dev&queue=payments']);
+      render(<Wrapper><QuickAccessPanel /></Wrapper>);
+      expect(screen.getByText('Live Tail').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=azure-dev'));
+      expect(screen.getByText('DLQ Intelligence').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=azure-dev'));
+    });
+
+    it('follows a namespace switch instead of sticking to whichever namespace was current on first render', () => {
+      const Wrapper = createWrapper(['/messages?namespace=aws-dev&queue=orders']);
+      const { rerender } = render(<Wrapper><QuickAccessPanel /></Wrapper>);
+      expect(screen.getByText('Live Tail').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=aws-dev'));
+
+      rerender(
+        <MemoryRouter initialEntries={['/messages?namespace=gcp-dev&queue=orders']}>
+          <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+            <QuickAccessPanel />
+          </QueryClientProvider>
+        </MemoryRouter>
+      );
+      expect(screen.getByText('Live Tail').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=gcp-dev'));
+    });
+
+    it('omits the namespace param when the current URL has no namespace selected', () => {
+      const Wrapper = createWrapper(['/dashboard']);
+      render(<Wrapper><QuickAccessPanel /></Wrapper>);
+      expect(screen.getByText('Live Tail').closest('a')).toHaveAttribute('href', expect.not.stringContaining('namespace='));
+      expect(screen.getByText('DLQ Intelligence').closest('a')).toHaveAttribute('href', expect.not.stringContaining('namespace='));
+    });
+  });
+
+  // ── F3 regression: entries that share a pathname (Active Messages / Dead-Letter)
+  // or previously used a static className must actually highlight when active.
+  describe('active-state highlighting (F3)', () => {
+    afterEach(() => {
+      window.history.pushState({}, '', '/');
+    });
+
+    it('highlights only Active Messages, not Dead-Letter, on the active-messages tab', () => {
+      // MemoryRouter tracks its own in-memory location and never touches jsdom's
+      // window.location — but the component reads window.location.search directly
+      // (same pattern as NamespacesPanel.tsx), so the test URL must be synced too.
+      window.history.pushState({}, '', '/messages-overview?tab=active');
+      const Wrapper = createWrapper(['/messages-overview?tab=active']);
+      render(<Wrapper><QuickAccessPanel /></Wrapper>);
+      expect(screen.getByText('Active Messages').closest('a')).toHaveClass('bg-sky-50');
+      expect(screen.getByText('Dead-Letter').closest('a')).not.toHaveClass('bg-red-50');
+    });
+
+    it('highlights only Dead-Letter, not Active Messages, on the deadletter tab', () => {
+      window.history.pushState({}, '', '/messages-overview?tab=deadletter');
+      const Wrapper = createWrapper(['/messages-overview?tab=deadletter']);
+      render(<Wrapper><QuickAccessPanel /></Wrapper>);
+      expect(screen.getByText('Dead-Letter').closest('a')).toHaveClass('bg-red-50');
+      expect(screen.getByText('Active Messages').closest('a')).not.toHaveClass('bg-sky-50');
+    });
+
+    it('highlights DLQ Intelligence when on /dlq-history', () => {
+      const Wrapper = createWrapper(['/dlq-history']);
+      render(<Wrapper><QuickAccessPanel /></Wrapper>);
+      expect(screen.getByText('DLQ Intelligence').closest('a')).toHaveClass('bg-purple-50');
+    });
+
+    it('highlights Auto-Replay Rules when on /rules', () => {
+      const Wrapper = createWrapper(['/rules']);
+      render(<Wrapper><QuickAccessPanel /></Wrapper>);
+      expect(screen.getByText('Auto-Replay Rules').closest('a')).toHaveClass('bg-amber-50');
+    });
+
+    it('highlights System Health when on /health', () => {
+      const Wrapper = createWrapper(['/health']);
+      render(<Wrapper><QuickAccessPanel /></Wrapper>);
+      expect(screen.getByText('System Health').closest('a')).toHaveClass('bg-emerald-50');
+    });
+
+    it('highlights Help & Guide when on /help', () => {
+      const Wrapper = createWrapper(['/help']);
+      render(<Wrapper><QuickAccessPanel /></Wrapper>);
+      expect(screen.getByText('Help & Guide').closest('a')).toHaveClass('bg-primary-50');
+    });
+
+    it('does not regress the already-working entries — Namespace Overview still highlights on /dashboard', () => {
+      const Wrapper = createWrapper(['/dashboard']);
+      render(<Wrapper><QuickAccessPanel /></Wrapper>);
+      expect(screen.getByText('Namespace Overview').closest('a')).toHaveClass('bg-indigo-50');
+      expect(screen.getByText('DLQ Intelligence').closest('a')).not.toHaveClass('bg-purple-50');
+    });
   });
 
 });

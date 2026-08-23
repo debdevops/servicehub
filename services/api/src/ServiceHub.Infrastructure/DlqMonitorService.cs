@@ -190,23 +190,36 @@ public sealed class DlqMonitorService : IDlqMonitorService
         var reconciledCount = 0;
         try
         {
-            foreach (var (entityName2, liveCount) in scannedEntities)
-            {
-                if (liveCount == 0)
-                {
-                    var staleRecords = await _dbContext.DlqMessages
-                        .Where(m => m.NamespaceId == namespaceId
-                                    && m.EntityName == entityName2
-                                    && m.Status == DlqMessageStatus.Active)
-                        .ToListAsync(cancellationToken);
+            // scannedEntities only contains entities this scan actually found. An entity
+            // that has been deleted outright (not merely emptied) never appears there, so
+            // reconciling by iterating scannedEntities alone leaves its stale Active records
+            // orphaned forever. Reconcile against every entity with Active records instead —
+            // liveCount == 0 covers "found, empty"; missing from scannedEntities covers
+            // "not found at all" — both mean "no longer verifiably in the DLQ".
+            var activeEntityNames = await _dbContext.DlqMessages
+                .Where(m => m.NamespaceId == namespaceId && m.Status == DlqMessageStatus.Active)
+                .Select(m => m.EntityName)
+                .Distinct()
+                .ToListAsync(cancellationToken);
 
-                    foreach (var record in staleRecords)
-                    {
-                        record.Status = DlqMessageStatus.Resolved;
-                        record.ResolvedAt = DateTimeOffset.UtcNow;
-                        record.ResolutionCause = DlqResolutionCause.VanishedExternally;
-                        reconciledCount++;
-                    }
+            var entitiesToReconcile = activeEntityNames
+                .Where(name => !scannedEntities.TryGetValue(name, out var liveCount) || liveCount == 0)
+                .ToList();
+
+            foreach (var entityName2 in entitiesToReconcile)
+            {
+                var staleRecords = await _dbContext.DlqMessages
+                    .Where(m => m.NamespaceId == namespaceId
+                                && m.EntityName == entityName2
+                                && m.Status == DlqMessageStatus.Active)
+                    .ToListAsync(cancellationToken);
+
+                foreach (var record in staleRecords)
+                {
+                    record.Status = DlqMessageStatus.Resolved;
+                    record.ResolvedAt = DateTimeOffset.UtcNow;
+                    record.ResolutionCause = DlqResolutionCause.VanishedExternally;
+                    reconciledCount++;
                 }
             }
 

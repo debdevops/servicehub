@@ -451,6 +451,32 @@ public sealed class DlqMonitorServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ScanNamespace_EntityDeletedEntirely_NotJustEmptied_ReconcilesStaleMessagesAsResolved()
+    {
+        var sut = CreateSut(CloudProviderType.Azure);
+        SetupNamespace(CloudProviderType.Azure);
+
+        // Pre-insert an Active message for a queue that no longer exists at all — as opposed
+        // to ScanNamespace_AzureQueueWithZeroDlq_..., where the queue is still listed with 0.
+        _dbContext.DlqMessages.Add(MakeStoredMessage("stale-msg", 99, "deleted-queue"));
+        await _dbContext.SaveChangesAsync();
+
+        // The provider's listing omits "deleted-queue" entirely — it was deleted, not emptied.
+        SetupEntities();
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+
+        // A deleted entity proves absence just as much as an emptied one — it must not be
+        // left "Active" forever just because it never entered this scan's scannedEntities.
+        var msg = await _dbContext.DlqMessages.FirstAsync();
+        msg.Status.Should().Be(DlqMessageStatus.Resolved);
+        msg.ResolvedAt.Should().NotBeNull();
+        msg.ResolutionCause.Should().Be(DlqResolutionCause.VanishedExternally);
+    }
+
+    [Fact]
     public async Task ScanNamespace_DuplicateMessage_NotStoredAgain()
     {
         var sut = CreateSut(CloudProviderType.Azure);
