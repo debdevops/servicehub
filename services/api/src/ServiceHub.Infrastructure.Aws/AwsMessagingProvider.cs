@@ -182,7 +182,7 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
 
                     queueSnapshots.Add((queueName, visible + inFlight, ParseRedriveTargetName(attrs)));
                 }
-                catch (AmazonSQSException ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogWarning(ex, "Could not get attributes for queue {QueueUrl}", queueUrl);
                     incompleteQueueNames.Add(queueUrl.Split('/').LastOrDefault() ?? queueUrl);
@@ -277,7 +277,7 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
                     }
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogWarning(ex, "Could not list SNS topics for namespace {NamespaceId}", namespaceId);
                 snsListingFailed = true;

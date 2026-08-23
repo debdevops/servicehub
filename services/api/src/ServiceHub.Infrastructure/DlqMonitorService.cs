@@ -213,7 +213,8 @@ public sealed class DlqMonitorService : IDlqMonitorService
                     return scanResult.IncompleteQueueNames.Contains(entityName);
 
                 return scanResult.SnsListingFailed
-                    || scanResult.IncompleteTopicNames.Contains(entityName[..subIdx]);
+                    || scanResult.IncompleteTopicNames.Contains(entityName[..subIdx])
+                    || scanResult.IncompleteQueueNames.Contains(entityName[(subIdx + SubscriptionPathSegment.Length)..]);
             }
 
             var unconfirmedNames = activeEntityNames.Where(IsUnconfirmed).ToList();
