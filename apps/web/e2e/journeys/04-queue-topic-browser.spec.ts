@@ -44,7 +44,9 @@ const PROVIDERS: ProviderConfig[] = [
     demoBanner: /MedStream/i,
     activeTabLabel: /^Active/i,
     deadletterTabLabel: /Dead-Letter/i,
-    hasLiveTail: true,
+    // GCP Pub/Sub's pull-then-release peek still counts as a delivery attempt toward
+    // MaxDeliveryAttempts, so it no longer declares supportsRepeatablePeek — same as AWS.
+    hasLiveTail: false,
     hasScheduled: false,
   },
 ];

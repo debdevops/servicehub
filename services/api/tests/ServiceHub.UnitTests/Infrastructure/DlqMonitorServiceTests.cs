@@ -101,8 +101,14 @@ public sealed class DlqMonitorServiceTests : IDisposable
 
     private void SetupEntities(params CloudEntity[] entities)
     {
-        _providerMock.Setup(p => p.ListEntitiesAsync(_namespaceId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Success(entities));
+        _providerMock.Setup(p => p.ListEntitiesForReconciliationAsync(_namespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<EntityScanResult>.Success(new EntityScanResult { Entities = entities }));
+    }
+
+    private void SetupEntities(EntityScanResult scanResult)
+    {
+        _providerMock.Setup(p => p.ListEntitiesForReconciliationAsync(_namespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<EntityScanResult>.Success(scanResult));
     }
 
     private void SetupPeek(params Message[] messages)
@@ -268,7 +274,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("Dlq.ProviderNotSupported");
         _providerMock.Verify(
-            p => p.ListEntitiesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            p => p.ListEntitiesForReconciliationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -285,7 +291,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("Dlq.NotMonitored");
         _providerMock.Verify(
-            p => p.ListEntitiesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            p => p.ListEntitiesForReconciliationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _receiverMock.Verify(
             r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()),
@@ -311,10 +317,10 @@ public sealed class DlqMonitorServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ScanNamespaceAsync_AzureAndGcp_IgnoreAwsOptInFlag_AlwaysScan()
+    public async Task ScanNamespaceAsync_Azure_IgnoresAwsOptInFlag_AlwaysScans()
     {
-        // Azure and Gcp both declare SupportsRepeatablePeek: true, so the gate must never apply
-        // to them even though the config only ever carries an Aws-scoped key.
+        // Azure declares SupportsRepeatablePeek: true, so the gate must never apply to it even
+        // though the config only ever carries an Aws-scoped key.
         var azureSut = CreateSut(CloudProviderType.Azure);
         SetupNamespace(CloudProviderType.Azure);
         SetupEntities(MakeEntity("test-queue", "Queue", 1, CloudProviderType.Azure));
@@ -323,15 +329,47 @@ public sealed class DlqMonitorServiceTests : IDisposable
 
         var azureResult = await azureSut.ScanNamespaceAsync(_namespaceId);
         azureResult.IsSuccess.Should().BeTrue();
+    }
 
-        var gcpSut = CreateSut(CloudProviderType.Gcp);
+    // ── SupportsRepeatablePeek guard (GCP) ──────────────────────────
+    // GCP's pull-then-ModifyAckDeadline(0) peek still counts as a delivery attempt toward the
+    // subscription's MaxDeliveryAttempts, so it declares SupportsRepeatablePeek: false and is
+    // gated the same way AWS is above.
+
+    [Fact]
+    public async Task ScanNamespaceAsync_Gcp_NotOptedIn_SkipsEntirely_ReturnsNotMonitored()
+    {
+        var sut = CreateSut(CloudProviderType.Gcp); // allowDestructivePeek defaults to false
+        SetupNamespace(CloudProviderType.Gcp);
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Dlq.NotMonitored");
+        _providerMock.Verify(
+            p => p.ListEntitiesForReconciliationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _receiverMock.Verify(
+            r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ScanNamespaceAsync_Gcp_OptedIn_ProceedsNormally()
+    {
+        var sut = CreateSut(CloudProviderType.Gcp, allowDestructivePeek: true);
         SetupNamespace(CloudProviderType.Gcp);
         SetupEntities(MakeEntity("orders-sub", "Subscription", 0, CloudProviderType.Gcp));
         SetupPeek(MakeMessage(2, "pubsub-msg"));
         SetupForensic();
 
-        var gcpResult = await gcpSut.ScanNamespaceAsync(_namespaceId);
-        gcpResult.IsSuccess.Should().BeTrue();
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(1);
+        _receiverMock.Verify(
+            r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -377,8 +415,8 @@ public sealed class DlqMonitorServiceTests : IDisposable
         var sut = CreateSut(CloudProviderType.Azure);
         SetupNamespace(CloudProviderType.Azure);
 
-        _providerMock.Setup(p => p.ListEntitiesAsync(_namespaceId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Failure(
+        _providerMock.Setup(p => p.ListEntitiesForReconciliationAsync(_namespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<EntityScanResult>.Failure(
                 Error.ExternalService("err", "connection failed")));
 
         var result = await sut.ScanNamespaceAsync(_namespaceId);
@@ -444,6 +482,32 @@ public sealed class DlqMonitorServiceTests : IDisposable
 
         // An empty DLQ proves absence, not that ServiceHub replayed the message — a background
         // scan must never fabricate "Replayed" (see the critical invariant in DlqMonitorService).
+        var msg = await _dbContext.DlqMessages.FirstAsync();
+        msg.Status.Should().Be(DlqMessageStatus.Resolved);
+        msg.ResolvedAt.Should().NotBeNull();
+        msg.ResolutionCause.Should().Be(DlqResolutionCause.VanishedExternally);
+    }
+
+    [Fact]
+    public async Task ScanNamespace_EntityDeletedEntirely_NotJustEmptied_ReconcilesStaleMessagesAsResolved()
+    {
+        var sut = CreateSut(CloudProviderType.Azure);
+        SetupNamespace(CloudProviderType.Azure);
+
+        // Pre-insert an Active message for a queue that no longer exists at all — as opposed
+        // to ScanNamespace_AzureQueueWithZeroDlq_..., where the queue is still listed with 0.
+        _dbContext.DlqMessages.Add(MakeStoredMessage("stale-msg", 99, "deleted-queue"));
+        await _dbContext.SaveChangesAsync();
+
+        // The provider's listing omits "deleted-queue" entirely — it was deleted, not emptied.
+        SetupEntities();
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+
+        // A deleted entity proves absence just as much as an emptied one — it must not be
+        // left "Active" forever just because it never entered this scan's scannedEntities.
         var msg = await _dbContext.DlqMessages.FirstAsync();
         msg.Status.Should().Be(DlqMessageStatus.Resolved);
         msg.ResolvedAt.Should().NotBeNull();
@@ -885,6 +949,135 @@ public sealed class DlqMonitorServiceTests : IDisposable
         msg.ResolutionCause.Should().Be(DlqResolutionCause.VanishedExternally);
     }
 
+    // ── Release-gate regression: partial AWS listing must never look like deletion ──
+
+    [Fact]
+    public async Task ScanNamespace_AwsPartialQueueListingFailure_PreservesStaleActiveRecord()
+    {
+        // Scenario D: GetQueueAttributes failed for "orders" this scan (see EntityScanResult.
+        // IncompleteQueueNames) — the queue still exists, ServiceHub just couldn't confirm its
+        // DLQ state. The stale Active record must NOT be reconciled as vanished.
+        var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
+        SetupNamespace(CloudProviderType.Aws);
+
+        _dbContext.DlqMessages.Add(MakeStoredMessage("stale-msg", 1, "orders", CloudProviderType.Aws));
+        await _dbContext.SaveChangesAsync();
+
+        SetupEntities(new EntityScanResult
+        {
+            Entities = [],
+            IncompleteQueueNames = new HashSet<string> { "orders" },
+        });
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        var msg = await _dbContext.DlqMessages.FirstAsync();
+        msg.Status.Should().Be(DlqMessageStatus.Active);
+    }
+
+    [Fact]
+    public async Task ScanNamespace_AwsCompleteScanWithTrueDeletion_StillReconciles()
+    {
+        // Scenario C regression guard: a complete scan (no incomplete names) that genuinely
+        // finds no trace of the queue must still reconcile — proves the partial-listing fix
+        // doesn't weaken true-deletion behavior.
+        var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
+        SetupNamespace(CloudProviderType.Aws);
+
+        _dbContext.DlqMessages.Add(MakeStoredMessage("gone-msg", 1, "deleted-queue", CloudProviderType.Aws));
+        await _dbContext.SaveChangesAsync();
+
+        SetupEntities(new EntityScanResult { Entities = [] });
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        var msg = await _dbContext.DlqMessages.FirstAsync();
+        msg.Status.Should().Be(DlqMessageStatus.Resolved);
+        msg.ResolutionCause.Should().Be(DlqResolutionCause.VanishedExternally);
+    }
+
+    [Fact]
+    public async Task ScanNamespace_AwsMixedQueueSuccessAndFailure_ReconcilesSuccessfulOnly()
+    {
+        // Scenario E: one queue's listing failed while another's succeeded and came back empty —
+        // the successful queue reconciles normally, the failed one stays protected.
+        var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
+        SetupNamespace(CloudProviderType.Aws);
+
+        _dbContext.DlqMessages.Add(MakeStoredMessage("orders-msg", 1, "orders", CloudProviderType.Aws));
+        _dbContext.DlqMessages.Add(MakeStoredMessage("shipments-msg", 2, "shipments", CloudProviderType.Aws));
+        await _dbContext.SaveChangesAsync();
+
+        SetupEntities(new EntityScanResult
+        {
+            Entities = [MakeEntity("shipments", "Queue", 0, CloudProviderType.Aws)],
+            IncompleteQueueNames = new HashSet<string> { "orders" },
+        });
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        (await _dbContext.DlqMessages.FirstAsync(m => m.EntityName == "orders")).Status.Should().Be(DlqMessageStatus.Active);
+        (await _dbContext.DlqMessages.FirstAsync(m => m.EntityName == "shipments")).Status.Should().Be(DlqMessageStatus.Resolved);
+    }
+
+    [Fact]
+    public async Task ScanNamespace_AwsSnsTopicSubscriptionListingFailure_ProtectsOnlyThatTopicsSubscriptions()
+    {
+        // Scenario F (topic-scoped): ListSubscriptionsByTopic failed for "orders-topic" only —
+        // its subscriptions stay protected while "billing-topic"'s (successfully confirmed
+        // absent) still reconcile.
+        var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
+        SetupNamespace(CloudProviderType.Aws);
+
+        _dbContext.DlqMessages.Add(MakeStoredMessage(
+            "orders-sub-msg", 1, "orders-topic/subscriptions/sub-a", CloudProviderType.Aws,
+            entityType: ServiceBusEntityType.Subscription));
+        _dbContext.DlqMessages.Add(MakeStoredMessage(
+            "billing-sub-msg", 2, "billing-topic/subscriptions/sub-b", CloudProviderType.Aws,
+            entityType: ServiceBusEntityType.Subscription));
+        await _dbContext.SaveChangesAsync();
+
+        SetupEntities(new EntityScanResult
+        {
+            Entities = [],
+            IncompleteTopicNames = new HashSet<string> { "orders-topic" },
+        });
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        (await _dbContext.DlqMessages.FirstAsync(m => m.EntityName == "orders-topic/subscriptions/sub-a"))
+            .Status.Should().Be(DlqMessageStatus.Active);
+        (await _dbContext.DlqMessages.FirstAsync(m => m.EntityName == "billing-topic/subscriptions/sub-b"))
+            .Status.Should().Be(DlqMessageStatus.Resolved);
+    }
+
+    [Fact]
+    public async Task ScanNamespace_AwsSnsListingFailedEntirely_ProtectsAllSubscriptions()
+    {
+        // Scenario F (namespace-wide): ListTopics itself failed, so no topic names are known at
+        // all this scan — every subscription's Active record must stay protected regardless of
+        // which topic it belongs to.
+        var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
+        SetupNamespace(CloudProviderType.Aws);
+
+        _dbContext.DlqMessages.Add(MakeStoredMessage(
+            "orders-sub-msg", 1, "orders-topic/subscriptions/sub-a", CloudProviderType.Aws,
+            entityType: ServiceBusEntityType.Subscription));
+        await _dbContext.SaveChangesAsync();
+
+        SetupEntities(new EntityScanResult { Entities = [], SnsListingFailed = true });
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        var msg = await _dbContext.DlqMessages.FirstAsync();
+        msg.Status.Should().Be(DlqMessageStatus.Active);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // ScanNamespaceAsync — GCP
     // ═══════════════════════════════════════════════════════════════
@@ -892,7 +1085,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
     [Fact]
     public async Task ScanNamespace_GcpSubscription_Scanned_StoresWithGcpProvider()
     {
-        var sut = CreateSut(CloudProviderType.Gcp);
+        var sut = CreateSut(CloudProviderType.Gcp, allowDestructivePeek: true);
         SetupNamespace(CloudProviderType.Gcp);
 
         // GCP subscriptions are listed by bare subscription ID (no "/subscriptions/" path).
@@ -919,7 +1112,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
     [Fact]
     public async Task ScanNamespace_GcpDlqSubscription_Skipped()
     {
-        var sut = CreateSut(CloudProviderType.Gcp);
+        var sut = CreateSut(CloudProviderType.Gcp, allowDestructivePeek: true);
         SetupNamespace(CloudProviderType.Gcp);
 
         // "orders-sub-dlq" is the dead-letter subscription itself and must not be scanned.
@@ -944,7 +1137,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
     [Fact]
     public async Task ScanNamespace_GcpSameMessageIdDifferentSequenceNumber_NotDuplicated()
     {
-        var sut = CreateSut(CloudProviderType.Gcp);
+        var sut = CreateSut(CloudProviderType.Gcp, allowDestructivePeek: true);
         SetupNamespace(CloudProviderType.Gcp);
 
         // GCP sequence numbers are hashes of per-delivery ack IDs and change every scan.

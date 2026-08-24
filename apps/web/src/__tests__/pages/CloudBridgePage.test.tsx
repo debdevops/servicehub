@@ -8,6 +8,7 @@ vi.mock('@servicehub/ui-shared/hooks/useCloudBridge', () => ({
   useProviderStatus: vi.fn(),
   useCloudEntities: vi.fn(),
   useVisibilityStatus: vi.fn(),
+  useProviderCapabilities: vi.fn(),
 }));
 
 vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
@@ -22,10 +23,11 @@ vi.mock('@servicehub/ui-shared/lib/api/client', () => ({
   },
 }));
 
-import { useProviderStatus } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { useProviderStatus, useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 
 const mockUseProviderStatus = useProviderStatus as ReturnType<typeof vi.fn>;
+const mockUseProviderCapabilities = useProviderCapabilities as ReturnType<typeof vi.fn>;
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 
 function renderPage() {
@@ -45,6 +47,7 @@ describe('CloudBridgePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseNamespaces.mockReturnValue({ data: [], isLoading: false });
+    mockUseProviderCapabilities.mockReturnValue({ data: undefined, isLoading: false });
   });
 
   it('renders page heading', () => {
@@ -93,6 +96,53 @@ describe('CloudBridgePage', () => {
     const connectedBadges = screen.getAllByText('Connected');
     expect(connectedBadges.length).toBe(3);
     expect(screen.queryByText('Active')).not.toBeInTheDocument();
+  });
+
+  // ── F4 regression: GCP has no count API — "No backlog" would assert a fact the
+  // app can't actually verify for GCP. Azure/AWS genuinely report zero, so they keep it.
+  it('shows "No live count available" (not "No backlog") for GCP, whose capabilities report no live count', () => {
+    mockUseProviderStatus.mockReturnValue({
+      data: { Azure: true, Aws: true, Gcp: true },
+      isLoading: false,
+    });
+    mockUseNamespaces.mockReturnValue({
+      data: [
+        { id: 'ns-1', name: 'azure-ns', isActive: true, cloudProvider: 'azure' },
+        { id: 'ns-2', name: 'aws-ns', isActive: true, cloudProvider: 'aws' },
+        { id: 'ns-3', name: 'gcp-ns', isActive: true, cloudProvider: 'gcp' },
+      ],
+      isLoading: false,
+    });
+    mockUseProviderCapabilities.mockReturnValue({
+      data: {
+        Azure: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: false, supportsScheduledMessages: true, supportsRepeatablePeek: true, notes: '' },
+        Aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, notes: '' },
+        Gcp: { supportsMessageCounts: false, supportsManualDeadLetter: false, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: true, notes: '' },
+      },
+      isLoading: false,
+    });
+    renderPage();
+    expect(screen.getByText('No live count available')).toBeInTheDocument();
+    expect(screen.getAllByText('No backlog').length).toBe(2); // Azure + AWS
+  });
+
+  // Release-gate regression: capabilities still unknown (map not yet loaded) must never be
+  // treated as "this provider supports live counts" — that would assert an unearned "No
+  // backlog" for a provider whose real capability hasn't come back yet.
+  it('shows "No live count available" (not "No backlog") while capabilities are still unknown/loading', () => {
+    mockUseProviderStatus.mockReturnValue({
+      data: { Azure: true },
+      isLoading: false,
+    });
+    mockUseNamespaces.mockReturnValue({
+      data: [{ id: 'ns-1', name: 'azure-ns', isActive: true, cloudProvider: 'azure' }],
+      isLoading: false,
+    });
+    // beforeEach already leaves capabilities as { data: undefined, isLoading: false } — the
+    // shape useProviderCapabilities has before its query resolves.
+    renderPage();
+    expect(screen.getByText('No live count available')).toBeInTheDocument();
+    expect(screen.queryByText('No backlog')).not.toBeInTheDocument();
   });
 
   it('shows "Not configured" (not "Active") for an enabled provider with zero namespaces, with an add-connection link', () => {

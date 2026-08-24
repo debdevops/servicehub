@@ -16,6 +16,7 @@ import { apiClient } from '@servicehub/ui-shared/lib/api/client';
 import { Message, Namespace } from '@servicehub/ui-shared/lib/api/types';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
+import { toDatetimeLocalValue } from '@servicehub/ui-shared/lib/utils';
 import toast from 'react-hot-toast';
 
 /**
@@ -150,13 +151,13 @@ function RescheduleModal({ message, namespaceId, queueName, onClose }: Reschedul
 
   // Pre-fill with the existing scheduled time (or 1 hour from now)
   const defaultValue = message.scheduledEnqueueTime
-    ? new Date(message.scheduledEnqueueTime).toISOString().slice(0, 16)
-    : new Date(Date.now() + 60 * 60_000).toISOString().slice(0, 16);
+    ? toDatetimeLocalValue(new Date(message.scheduledEnqueueTime))
+    : toDatetimeLocalValue(new Date(Date.now() + 60 * 60_000));
 
   const [newTime, setNewTime] = useState(defaultValue);
   const [busy, setBusy] = useState(false);
 
-  const minValue = new Date(Date.now() + 30_000).toISOString().slice(0, 16);
+  const minValue = toDatetimeLocalValue(new Date(Date.now() + 30_000));
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -263,14 +264,14 @@ function ScheduleNewMessageModal({ namespaceId, queueName, onClose }: ScheduleNe
   const scheduleDialogRef = useFocusTrap<HTMLDivElement>(true);
   const [messageBody, setMessageBody] = useState('');
   const [scheduledTime, setScheduledTime] = useState(
-    new Date(Date.now() + 60 * 60_000).toISOString().slice(0, 16)
+    toDatetimeLocalValue(new Date(Date.now() + 60 * 60_000))
   );
   const [correlationId, setCorrelationId] = useState('');
   const [sessionId, setSessionId] = useState('');
   const [contentType, setContentType] = useState('application/json');
   const [busy, setBusy] = useState(false);
 
-  const minValue = new Date(Date.now() + 30_000).toISOString().slice(0, 16);
+  const minValue = toDatetimeLocalValue(new Date(Date.now() + 30_000));
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {

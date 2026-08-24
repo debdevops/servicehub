@@ -4,7 +4,7 @@
 
 ### The Forensic Debugger for Cloud Messaging — Azure Service Bus (Supported) · AWS SQS/SNS & GCP Pub/Sub (Preview)
 
-![ServiceHub Banner](docs/screenshots/servicehub-banner.png)
+![ServiceHub Banner](docs/screenshots/servicehub-cover-v3.7.0.png)
 
 [![CI](https://github.com/debdevops/servicehub/actions/workflows/servicehub.yml/badge.svg)](https://github.com/debdevops/servicehub/actions/workflows/servicehub.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
