@@ -578,38 +578,51 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         var messages = new List<ReceivedMessage>();
         var seenIds = new HashSet<string>(StringComparer.Ordinal);
 
-        for (var i = 0; i < MaxScanBatches && messages.Count < maxMessages; i++)
+        // Shares FindAndLockMessageAsync's per-subscription gate: without it, a peek/background
+        // scan pull running concurrently with a replay/purge scan-to-find can nack a message the
+        // other side hasn't reached yet, momentarily handing it to whichever puller happens to
+        // land next instead of the one holding the 30s lock.
+        var gate = GetScanGate(subscriptionResourceName);
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            var requested = maxMessages - messages.Count;
-            var response = await subscriber.PullAsync(new PullRequest
+            for (var i = 0; i < MaxScanBatches && messages.Count < maxMessages; i++)
             {
-                Subscription = subscriptionResourceName,
-                MaxMessages = requested
-            }, ct).ConfigureAwait(false);
-
-            if (response.ReceivedMessages.Count == 0)
-                break;
-
-            var newlySeen = response.ReceivedMessages.Where(m => seenIds.Add(m.Message.MessageId)).ToList();
-            messages.AddRange(newlySeen);
-
-            if (newlySeen.Count > 0)
-            {
-                // ModifyAckDeadline(0) = immediately re-queue (peek pattern)
-                await subscriber.ModifyAckDeadlineAsync(new ModifyAckDeadlineRequest
+                var requested = maxMessages - messages.Count;
+                var response = await subscriber.PullAsync(new PullRequest
                 {
                     Subscription = subscriptionResourceName,
-                    AckIds = { newlySeen.Select(m => m.AckId) },
-                    AckDeadlineSeconds = 0
+                    MaxMessages = requested
                 }, ct).ConfigureAwait(false);
-            }
-            else
-            {
-                break; // quiet round: everything in this batch was a dup we've already released
-            }
 
-            if (response.ReceivedMessages.Count < requested)
-                break; // short read: nothing more is immediately available, skip the extra Pull
+                if (response.ReceivedMessages.Count == 0)
+                    break;
+
+                var newlySeen = response.ReceivedMessages.Where(m => seenIds.Add(m.Message.MessageId)).ToList();
+                messages.AddRange(newlySeen);
+
+                if (newlySeen.Count > 0)
+                {
+                    // ModifyAckDeadline(0) = immediately re-queue (peek pattern)
+                    await subscriber.ModifyAckDeadlineAsync(new ModifyAckDeadlineRequest
+                    {
+                        Subscription = subscriptionResourceName,
+                        AckIds = { newlySeen.Select(m => m.AckId) },
+                        AckDeadlineSeconds = 0
+                    }, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    break; // quiet round: everything in this batch was a dup we've already released
+                }
+
+                if (response.ReceivedMessages.Count < requested)
+                    break; // short read: nothing more is immediately available, skip the extra Pull
+            }
+        }
+        finally
+        {
+            gate.Release();
         }
 
         return messages;

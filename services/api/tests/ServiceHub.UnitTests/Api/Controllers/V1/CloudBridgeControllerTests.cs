@@ -89,7 +89,7 @@ public sealed class CloudBridgeControllerTests
 
         capabilities["Azure"].SupportsRepeatablePeek.Should().BeTrue();
         capabilities["Aws"].SupportsRepeatablePeek.Should().BeFalse();
-        capabilities["Gcp"].SupportsRepeatablePeek.Should().BeTrue();
+        capabilities["Gcp"].SupportsRepeatablePeek.Should().BeFalse();
 
         // CanProveDlqAbsence is the fact that determines whether a provider can ever earn L4/L5
         // auto-replay — must be surfaced to the frontend, not left backend-only.

@@ -317,10 +317,10 @@ public sealed class DlqMonitorServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ScanNamespaceAsync_AzureAndGcp_IgnoreAwsOptInFlag_AlwaysScan()
+    public async Task ScanNamespaceAsync_Azure_IgnoresAwsOptInFlag_AlwaysScans()
     {
-        // Azure and Gcp both declare SupportsRepeatablePeek: true, so the gate must never apply
-        // to them even though the config only ever carries an Aws-scoped key.
+        // Azure declares SupportsRepeatablePeek: true, so the gate must never apply to it even
+        // though the config only ever carries an Aws-scoped key.
         var azureSut = CreateSut(CloudProviderType.Azure);
         SetupNamespace(CloudProviderType.Azure);
         SetupEntities(MakeEntity("test-queue", "Queue", 1, CloudProviderType.Azure));
@@ -329,15 +329,47 @@ public sealed class DlqMonitorServiceTests : IDisposable
 
         var azureResult = await azureSut.ScanNamespaceAsync(_namespaceId);
         azureResult.IsSuccess.Should().BeTrue();
+    }
 
-        var gcpSut = CreateSut(CloudProviderType.Gcp);
+    // ── SupportsRepeatablePeek guard (GCP) ──────────────────────────
+    // GCP's pull-then-ModifyAckDeadline(0) peek still counts as a delivery attempt toward the
+    // subscription's MaxDeliveryAttempts, so it declares SupportsRepeatablePeek: false and is
+    // gated the same way AWS is above.
+
+    [Fact]
+    public async Task ScanNamespaceAsync_Gcp_NotOptedIn_SkipsEntirely_ReturnsNotMonitored()
+    {
+        var sut = CreateSut(CloudProviderType.Gcp); // allowDestructivePeek defaults to false
+        SetupNamespace(CloudProviderType.Gcp);
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Dlq.NotMonitored");
+        _providerMock.Verify(
+            p => p.ListEntitiesForReconciliationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _receiverMock.Verify(
+            r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ScanNamespaceAsync_Gcp_OptedIn_ProceedsNormally()
+    {
+        var sut = CreateSut(CloudProviderType.Gcp, allowDestructivePeek: true);
         SetupNamespace(CloudProviderType.Gcp);
         SetupEntities(MakeEntity("orders-sub", "Subscription", 0, CloudProviderType.Gcp));
         SetupPeek(MakeMessage(2, "pubsub-msg"));
         SetupForensic();
 
-        var gcpResult = await gcpSut.ScanNamespaceAsync(_namespaceId);
-        gcpResult.IsSuccess.Should().BeTrue();
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(1);
+        _receiverMock.Verify(
+            r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -1053,7 +1085,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
     [Fact]
     public async Task ScanNamespace_GcpSubscription_Scanned_StoresWithGcpProvider()
     {
-        var sut = CreateSut(CloudProviderType.Gcp);
+        var sut = CreateSut(CloudProviderType.Gcp, allowDestructivePeek: true);
         SetupNamespace(CloudProviderType.Gcp);
 
         // GCP subscriptions are listed by bare subscription ID (no "/subscriptions/" path).
@@ -1080,7 +1112,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
     [Fact]
     public async Task ScanNamespace_GcpDlqSubscription_Skipped()
     {
-        var sut = CreateSut(CloudProviderType.Gcp);
+        var sut = CreateSut(CloudProviderType.Gcp, allowDestructivePeek: true);
         SetupNamespace(CloudProviderType.Gcp);
 
         // "orders-sub-dlq" is the dead-letter subscription itself and must not be scanned.
@@ -1105,7 +1137,7 @@ public sealed class DlqMonitorServiceTests : IDisposable
     [Fact]
     public async Task ScanNamespace_GcpSameMessageIdDifferentSequenceNumber_NotDuplicated()
     {
-        var sut = CreateSut(CloudProviderType.Gcp);
+        var sut = CreateSut(CloudProviderType.Gcp, allowDestructivePeek: true);
         SetupNamespace(CloudProviderType.Gcp);
 
         // GCP sequence numbers are hashes of per-delivery ack IDs and change every scan.
