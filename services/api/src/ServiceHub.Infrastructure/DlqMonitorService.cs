@@ -100,10 +100,11 @@ public sealed class DlqMonitorService : IDlqMonitorService
         var provider = _router.Resolve(ns.Provider);
 
         // Providers that declare SupportsRepeatablePeek: false have no non-destructive peek —
-        // every call is a real receive that increments the message's ReceiveCount (AWS SQS).
-        // Timer-driven and manual scans alike must not silently mutate customer delivery state,
-        // so this is checked before ListEntitiesAsync is ever called. An operator who accepts
-        // that consequence can opt back in via DlqMonitor:AllowDestructivePeek:{Provider}.
+        // every call is a real receive that increments the message's ReceiveCount (AWS SQS) or
+        // counts as a delivery attempt toward MaxDeliveryAttempts (GCP Pub/Sub). Timer-driven and
+        // manual scans alike must not silently mutate customer delivery state, so this is checked
+        // before ListEntitiesAsync is ever called. An operator who accepts that consequence can
+        // opt back in via DlqMonitor:AllowDestructivePeek:{Provider}.
         if (!provider.Capabilities.SupportsRepeatablePeek
             && !_configuration.GetValue($"DlqMonitor:AllowDestructivePeek:{ns.Provider}", false))
         {
@@ -111,7 +112,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
             {
                 _logger.LogWarning(
                     "DLQ background scanning is disabled for provider {Provider}: {Notes} Set " +
-                    "DlqMonitor:AllowDestructivePeek:{Provider}=true to re-enable if the ReceiveCount " +
+                    "DlqMonitor:AllowDestructivePeek:{Provider}=true to re-enable if the redelivery-count " +
                     "increment this causes on every scan is acceptable.",
                     ns.Provider, provider.Capabilities.Notes, ns.Provider);
             }
@@ -325,6 +326,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
         {
             var allPeekedMessages = new List<Message>();
             long? fromSequenceNumber = null;
+            var hitScanCap = false;
 
             for (var batch = 0; batch < MaxScanBatchesPerEntity; batch++)
             {
@@ -366,7 +368,25 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 if (!useSequenceKey || batchMessages.Count < PeekBatchSize)
                     break;
 
+                if (batch == MaxScanBatchesPerEntity - 1)
+                {
+                    // The final batch was still full — more messages may exist past the cap.
+                    // This scan cannot be treated as exhaustive for this entity this cycle
+                    // (relevant to CanProveDlqAbsence-gated recovery verification: a recurrence
+                    // could be sitting beyond this cap, unseen).
+                    hitScanCap = true;
+                    break;
+                }
+
                 fromSequenceNumber = batchMessages[^1].SequenceNumber + 1;
+            }
+
+            if (hitScanCap)
+            {
+                _logger.LogWarning(
+                    "DLQ scan for {EntityType} {EntityName} hit the {Cap}-message scan cap this cycle; " +
+                    "more messages may exist beyond it and this scan is not exhaustive for that entity",
+                    entityType, LogRedactor.SanitiseForLog(entityName), MaxScanBatchesPerEntity * PeekBatchSize);
             }
 
             var detectedAt = DateTimeOffset.UtcNow;

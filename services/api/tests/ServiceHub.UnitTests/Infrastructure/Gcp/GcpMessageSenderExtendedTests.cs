@@ -183,4 +183,44 @@ public sealed class GcpMessageSenderExtendedTests
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("GCP.PubSub.InvalidRequest");
     }
+
+    [Fact]
+    public async Task SendBatchAsync_MixedTopics_PublishesEachMessageToItsOwnTopic()
+    {
+        // MessageOperationsService only validates that a batch shares a namespace, not a topic
+        // (see MessageOperationsService.SendBatchInternalAsync) — a batch spanning multiple GCP
+        // topics must route each message to its own publisher, not silently send everything
+        // through the first request's topic.
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        var ordersPublisher = new Mock<PublisherClient>();
+        ordersPublisher.Setup(p => p.PublishAsync(It.IsAny<PubsubMessage>())).ReturnsAsync("orders-msg-id");
+
+        var billingPublisher = new Mock<PublisherClient>();
+        billingPublisher.Setup(p => p.PublishAsync(It.IsAny<PubsubMessage>())).ReturnsAsync("billing-msg-id");
+
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetPublisherClientAsync(It.IsAny<Namespace>(), "orders-topic", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ordersPublisher.Object);
+        factory.Setup(f => f.GetPublisherClientAsync(It.IsAny<Namespace>(), "billing-topic", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(billingPublisher.Object);
+
+        var sut = new GcpMessageSender(factory.Object, repo.Object, NullLogger<GcpMessageSender>.Instance);
+
+        var requests = new[]
+        {
+            new SendMessageRequest(TestNamespaceId, "orders-topic", "order-msg-1"),
+            new SendMessageRequest(TestNamespaceId, "billing-topic", "billing-msg-1"),
+            new SendMessageRequest(TestNamespaceId, "orders-topic", "order-msg-2"),
+        };
+
+        var result = await sut.SendBatchAsync(requests);
+
+        result.IsSuccess.Should().BeTrue();
+        ordersPublisher.Verify(p => p.PublishAsync(It.IsAny<PubsubMessage>()), Times.Exactly(2));
+        billingPublisher.Verify(p => p.PublishAsync(It.IsAny<PubsubMessage>()), Times.Once);
+    }
 }

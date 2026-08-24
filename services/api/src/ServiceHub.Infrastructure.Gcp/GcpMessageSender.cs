@@ -103,24 +103,37 @@ public sealed class GcpMessageSender : IMessageSender
 
         try
         {
-            var publisher = await _clientFactory.GetPublisherClientAsync(
-                nsResult.Value, first.EntityName, cancellationToken).ConfigureAwait(false);
+            // MessageOperationsService only guarantees every request in the batch shares a
+            // namespace, not a topic — group by EntityName so a mixed-topic batch publishes
+            // each message to its own topic instead of silently routing all of it through the
+            // first request's publisher.
+            var byTopic = requestList.GroupBy(req => req.EntityName, StringComparer.Ordinal);
 
-            // Pub/Sub batches are managed internally by PublisherClient (auto-batching),
-            // which also retries transient RPCs per message. We deliberately do NOT wrap this
-            // in the outer resilience pipeline: a whole-batch retry over independent
-            // PublishAsync calls would re-publish messages that already succeeded when only
-            // one failed, duplicating them. (SendAsync — a single publish — is safe to wrap.)
-            var tasks = requestList.Select(req => publisher.PublishAsync(BuildPubSubMessage(req)));
-            await Task.WhenAll(tasks).ConfigureAwait(false);
+            foreach (var group in byTopic)
+            {
+                if (group.Key is null)
+                    return Result.Failure(Error.Validation("GCP.PubSub.InvalidRequest",
+                        "EntityName is required for every request in a batch."));
 
-            _logger.LogInformation("Batch published {Count} Pub/Sub messages to topic {TopicId}",
-                requestList.Count, LogRedactor.SanitiseForLog(first.EntityName));
+                var publisher = await _clientFactory.GetPublisherClientAsync(
+                    nsResult.Value, group.Key, cancellationToken).ConfigureAwait(false);
+
+                // Pub/Sub batches are managed internally by PublisherClient (auto-batching),
+                // which also retries transient RPCs per message. We deliberately do NOT wrap this
+                // in the outer resilience pipeline: a whole-batch retry over independent
+                // PublishAsync calls would re-publish messages that already succeeded when only
+                // one failed, duplicating them. (SendAsync — a single publish — is safe to wrap.)
+                var tasks = group.Select(req => publisher.PublishAsync(BuildPubSubMessage(req)));
+                await Task.WhenAll(tasks).ConfigureAwait(false);
+            }
+
+            _logger.LogInformation("Batch published {Count} Pub/Sub messages across {TopicCount} topic(s) in namespace {NamespaceId}",
+                requestList.Count, byTopic.Count(), first.NamespaceId);
             return Result.Success();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Error batch publishing Pub/Sub messages to topic {TopicId}", LogRedactor.SanitiseForLog(first.EntityName));
+            _logger.LogError(ex, "Error batch publishing Pub/Sub messages in namespace {NamespaceId}", first.NamespaceId);
             return Result.Failure(Error.ExternalService("GCP.PubSub.BatchSendFailed", ex.Message));
         }
     }

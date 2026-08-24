@@ -410,6 +410,95 @@ public sealed class AwsMessagingProviderTests
         scanResult.Value.Entities.Should().Contain(e => e.EntityType == "SNS Topic" && e.Name == "orders-topic");
     }
 
+    [Fact]
+    public async Task ListEntitiesForReconciliationAsync_SourceQueueSubscriptionListingThrowsCancellation_Propagates()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        const string topicArn = "arn:aws:sns:us-east-1:123:orders-topic";
+
+        var sqsClient = new Mock<IAmazonSQS>();
+        sqsClient.Setup(s => s.ListQueuesAsync(It.IsAny<ListQueuesRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListQueuesResponse { QueueUrls = new List<string>() });
+
+        var snsClient = new Mock<IAmazonSimpleNotificationService>();
+        snsClient.Setup(s => s.ListTopicsAsync(It.IsAny<ListTopicsRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListTopicsResponse { Topics = new List<Topic> { new() { TopicArn = topicArn } } });
+        snsClient.Setup(s => s.ListSubscriptionsByTopicAsync(
+                It.IsAny<ListSubscriptionsByTopicRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<Namespace>())).Returns(sqsClient.Object);
+        factory.Setup(f => f.GetSnsClient(It.IsAny<Namespace>())).Returns(snsClient.Object);
+
+        var provider = BuildProvider(factory: factory.Object, repo: repo.Object);
+
+        // Cancellation must propagate as a genuine cancellation, not be swallowed into an
+        // "incomplete topic" marker that lets the scan report a false success.
+        var act = () => provider.ListEntitiesForReconciliationAsync(TestNamespaceId, CancellationToken.None);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task ListEntitiesForReconciliationAsync_RedriveTargetAttributesFail_MarksSourceQueueIncompleteToo()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        const string sourceQueueUrl = "https://sqs.us-east-1.amazonaws.com/123/orders";
+        const string dlqQueueUrl = "https://sqs.us-east-1.amazonaws.com/123/orders-dlq";
+        const string redrivePolicy = @"{""maxReceiveCount"":3,""deadLetterTargetArn"":""arn:aws:sqs:us-east-1:123:orders-dlq""}";
+
+        var sqsClient = new Mock<IAmazonSQS>();
+        sqsClient.Setup(s => s.ListQueuesAsync(It.IsAny<ListQueuesRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListQueuesResponse { QueueUrls = new List<string> { sourceQueueUrl, dlqQueueUrl } });
+
+        sqsClient.Setup(s => s.GetQueueAttributesAsync(
+                It.Is<GetQueueAttributesRequest>(r => r.QueueUrl == sourceQueueUrl), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GetQueueAttributesResponse
+            {
+                Attributes = new Dictionary<string, string>
+                {
+                    ["ApproximateNumberOfMessages"] = "0",
+                    ["ApproximateNumberOfMessagesNotVisible"] = "0",
+                    ["RedrivePolicy"] = redrivePolicy
+                }
+            });
+        // The DLQ target's own attribute fetch fails — its live count can never be confirmed.
+        sqsClient.Setup(s => s.GetQueueAttributesAsync(
+                It.Is<GetQueueAttributesRequest>(r => r.QueueUrl == dlqQueueUrl), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new AmazonSQSException("Throttled"));
+
+        var snsClient = new Mock<IAmazonSimpleNotificationService>();
+        snsClient.Setup(s => s.ListTopicsAsync(It.IsAny<ListTopicsRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListTopicsResponse { Topics = new List<Topic>() });
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<Namespace>())).Returns(sqsClient.Object);
+        factory.Setup(f => f.GetSnsClient(It.IsAny<Namespace>())).Returns(snsClient.Object);
+
+        var provider = BuildProvider(factory: factory.Object, repo: repo.Object);
+
+        var scanResult = await provider.ListEntitiesForReconciliationAsync(TestNamespaceId, CancellationToken.None);
+
+        scanResult.IsSuccess.Should().BeTrue();
+        // Both the failed target and the source that redrives into it must be treated as
+        // unconfirmed — otherwise DlqMonitorService would trust the source's fallback
+        // DeadLetterCount of 0 as a confirmed-empty DLQ and reconcile it as vanished.
+        scanResult.Value.IncompleteQueueNames.Should().Contain("orders-dlq");
+        scanResult.Value.IncompleteQueueNames.Should().Contain("orders");
+
+        var sourceEntity = scanResult.Value.Entities.Should().ContainSingle(e => e.Name == "orders").Which;
+        sourceEntity.DeadLetterCount.Should().Be(0);
+        sourceEntity.DeadLetterTargetName.Should().Be("orders-dlq");
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // ListEntitiesForReconciliationAsync — pagination (release-gate fix)
     //

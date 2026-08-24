@@ -192,6 +192,18 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
             // SQS surfaces the DLQ as a separate queue; report its depth as the source
             // queue's dead-letter count so the UI's Azure-style DLQ tab shows real numbers.
             var countsByName = queueSnapshots.ToDictionary(q => q.Name, q => q.ActiveCount, StringComparer.OrdinalIgnoreCase);
+
+            // A source queue's DeadLetterCount below falls back to 0 when its redrive target is
+            // missing from countsByName. That fallback is only trustworthy when the target
+            // genuinely wasn't returned by ListQueues — if instead GetQueueAttributes failed for
+            // the target (target name is in incompleteQueueNames), the source's count is
+            // unconfirmed too and must not be reconciled as a confirmed-empty DLQ.
+            foreach (var (queueName, _, redriveTargetName) in queueSnapshots)
+            {
+                if (redriveTargetName is not null && incompleteQueueNames.Contains(redriveTargetName))
+                    incompleteQueueNames.Add(queueName);
+            }
+
             foreach (var (queueName, activeCount, redriveTargetName) in queueSnapshots)
             {
                 entities.Add(new CloudEntity
@@ -270,7 +282,7 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
                             });
                         }
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         _logger.LogWarning(ex, "Could not list SNS subscriptions for topic {TopicArn}", topic.TopicArn);
                         incompleteTopicNames.Add(topicName);
