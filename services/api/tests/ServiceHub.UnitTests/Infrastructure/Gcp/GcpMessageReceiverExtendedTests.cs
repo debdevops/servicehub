@@ -378,4 +378,61 @@ public sealed class GcpMessageReceiverExtendedTests
         result.IsSuccess.Should().BeFalse();
         result.Error.Code.Should().Be("GCP.PubSub.NoDlq");
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PullAndNackAsync — shares FindAndLockMessageAsync's per-subscription gate
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task PullAndNackAsync_ConcurrentPeeksOnSameSubscription_NeverOverlapTheirPulls()
+    {
+        // Peek (PullAndNackAsync) and the replay/purge scan-to-find (FindAndLockMessageAsync)
+        // share one per-subscription gate so a concurrent peek can't nack a message the other
+        // side hasn't reached yet while it's mid-search for a specific target. This proves the
+        // gate actually serializes concurrent PullAsync calls on the same subscription.
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var concurrentEntries = 0;
+        var maxConcurrentEntries = 0;
+        var sync = new object();
+
+        var subscriber = new Mock<SubscriberServiceApiClient>();
+        subscriber.Setup(s => s.PullAsync(It.IsAny<PullRequest>(), It.IsAny<CancellationToken>()))
+            .Returns<PullRequest, CancellationToken>(async (_, _) =>
+            {
+                lock (sync)
+                {
+                    concurrentEntries++;
+                    maxConcurrentEntries = Math.Max(maxConcurrentEntries, concurrentEntries);
+                }
+
+                await Task.Delay(50);
+
+                lock (sync)
+                {
+                    concurrentEntries--;
+                }
+
+                return new PullResponse();
+            });
+
+        // Distinct namespace instances (unique Ids) so this doesn't rely on a shared static gate
+        // key colliding across unrelated test runs — only the subscription resource name (same
+        // project + subscription id here) determines the gate.
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetSubscriberClientAsync(ns, "gate-test-sub", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(subscriber.Object);
+
+        var sut = new GcpMessageReceiver(factory.Object, repo.Object, NullLogger<GcpMessageReceiver>.Instance);
+        var request = new GetMessagesRequest(TestNamespaceId, "gate-test-sub", null, false, 10);
+
+        var t1 = sut.PeekMessagesAsync(request, CancellationToken.None);
+        var t2 = sut.PeekMessagesAsync(request, CancellationToken.None);
+        await Task.WhenAll(t1, t2);
+
+        maxConcurrentEntries.Should().Be(1);
+    }
 }

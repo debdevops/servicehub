@@ -60,9 +60,11 @@ public sealed class DlqMonitorServiceRecurrenceTests : IDisposable
         _providerMock.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Azure);
         _providerMock.SetupGet(p => p.Capabilities).Returns(ProviderCapabilities.Azure);
         _providerMock.Setup(p => p.GetMessageReceiver()).Returns(_receiverMock.Object);
-        _providerMock.Setup(p => p.ListEntitiesAsync(_namespaceId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<IReadOnlyList<CloudEntity>>.Success(
-                new[] { new CloudEntity { Name = EntityName, EntityType = "Queue", DeadLetterCount = 1, Provider = CloudProviderType.Azure } }));
+        _providerMock.Setup(p => p.ListEntitiesForReconciliationAsync(_namespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<EntityScanResult>.Success(new EntityScanResult
+            {
+                Entities = new[] { new CloudEntity { Name = EntityName, EntityType = "Queue", DeadLetterCount = 1, Provider = CloudProviderType.Azure } }
+            }));
 
         _forensicMock.Setup(f => f.Analyse(It.IsAny<DlqMessage>()))
             .Returns(new ForensicEngineResult(FailureCategory.MaxDelivery, 0.99, "Max delivery", "Safe", "Deterministic"));

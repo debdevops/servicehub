@@ -919,7 +919,9 @@ public sealed class MessagesController : ApiControllerBase
     /// Not available for providers whose peek isn't safe to repeat (see
     /// <see cref="Core.Models.ProviderCapabilities.SupportsRepeatablePeek"/>) — AWS SQS has no
     /// non-destructive peek, so polling it on an interval would push messages toward their
-    /// queue's <c>maxReceiveCount</c> and risk accidental dead-lettering.
+    /// queue's <c>maxReceiveCount</c>, and GCP Pub/Sub's pull-then-release still counts as a
+    /// delivery attempt toward <c>MaxDeliveryAttempts</c> — both risk accidental dead-lettering
+    /// purely from being watched.
     /// </remarks>
     /// <param name="namespaceId">The namespace ID.</param>
     /// <param name="entityName">The queue or topic name.</param>

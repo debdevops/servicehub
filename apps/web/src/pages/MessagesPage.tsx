@@ -187,26 +187,29 @@ export function MessagesPage() {
   // Auto-refresh control
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
 
-  // SQS has no true peek: every browse is a receive that increments the message's
-  // ReceiveCount, so background polling would push messages over the queue's
-  // maxReceiveCount and silently dead-letter them. Disable auto-refresh for AWS —
-  // the user can still refresh manually or re-enable the toggle deliberately.
-  const isAwsNamespace = namespaces?.find(ns => ns.id === namespaceId)?.cloudProvider === 'aws';
+  const currentProvider = namespaces?.find(ns => ns.id === namespaceId)?.cloudProvider;
+  const { data: capabilitiesMap } = useProviderCapabilities();
+  const supportsRepeatablePeek = getProviderCapabilities(capabilitiesMap, currentProvider)?.supportsRepeatablePeek ?? true;
+
+  const isAwsNamespace = currentProvider === 'aws';
 
   // AWS SNS topics render the fan-out dashboard, so their (non-existent)
   // message list must never be fetched.
   const isAwsTopicFanout = isAwsNamespace && !!topicName && !subscriptionName;
+
+  // A provider whose peek isn't safe to repeat (SupportsRepeatablePeek: false — AWS SQS
+  // increments ReceiveCount on every receive, GCP Pub/Sub counts every pull-then-release
+  // toward MaxDeliveryAttempts) must not be polled in the background, or auto-refresh would
+  // silently dead-letter messages purely from being watched. Disable auto-refresh for such a
+  // provider — the user can still refresh manually or re-enable the toggle deliberately.
   useEffect(() => {
-    if (isAwsNamespace) {
+    if (!supportsRepeatablePeek) {
       setAutoRefreshEnabled(false);
     }
-  }, [isAwsNamespace, namespaceId]);
+  }, [supportsRepeatablePeek, namespaceId]);
 
   // Live Tail
   const [liveTailOpen, setLiveTailOpen] = useState(false);
-  const currentProvider = namespaces?.find(ns => ns.id === namespaceId)?.cloudProvider;
-  const { data: capabilitiesMap } = useProviderCapabilities();
-  const supportsRepeatablePeek = getProviderCapabilities(capabilitiesMap, currentProvider)?.supportsRepeatablePeek ?? true;
   const canLiveTail = supportsRepeatablePeek && !isAwsTopicFanout && !!entityName;
   const supportsScheduledMessages = getProviderCapabilities(capabilitiesMap, currentProvider)?.supportsScheduledMessages ?? true;
   const canViewScheduled = entityType === 'queue' && !!namespaceId && !!queueName && supportsScheduledMessages;

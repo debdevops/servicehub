@@ -195,9 +195,9 @@ describe('mockProviders', () => {
         supportsManualDeadLetter: false,
         supportsPurge: true,
         supportsScheduledMessages: false,
-        supportsRepeatablePeek: true,
+        supportsRepeatablePeek: false,
         notes:
-          'Message counts and manual dead-lettering are not supported — Pub/Sub has no count API and dead-lettering is policy-driven via MaxDeliveryAttempts. Scheduled messages are not supported either.',
+          "Message counts and manual dead-lettering are not supported — Pub/Sub has no count API and dead-lettering is policy-driven via MaxDeliveryAttempts. Scheduled messages are not supported either. Repeated/live polling is also not supported — every pull-then-release still counts as a delivery attempt toward the subscription's MaxDeliveryAttempts.",
       });
     });
   });

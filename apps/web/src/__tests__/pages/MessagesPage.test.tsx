@@ -21,6 +21,9 @@ vi.mock('@servicehub/ui-shared/hooks/useSubscriptions', () => ({
 vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({
   useNamespaces: vi.fn(),
 }));
+vi.mock('@servicehub/ui-shared/hooks/useCloudBridge', () => ({
+  useProviderCapabilities: vi.fn(),
+}));
 
 // Mock heavy components
 vi.mock('@/components/messages', () => ({
@@ -57,6 +60,7 @@ import { useClientSideInsights, useInsightsSummary } from '@servicehub/ui-shared
 import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
 import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 
 const mockUseMessages = useMessages as ReturnType<typeof vi.fn>;
 const mockUseClientSideInsights = useClientSideInsights as ReturnType<typeof vi.fn>;
@@ -64,6 +68,7 @@ const mockUseInsightsSummary = useInsightsSummary as ReturnType<typeof vi.fn>;
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;
 const mockUseSubscriptions = useSubscriptions as ReturnType<typeof vi.fn>;
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
+const mockUseProviderCapabilities = useProviderCapabilities as ReturnType<typeof vi.fn>;
 
 const mockNamespaces = [
   {
@@ -149,6 +154,7 @@ beforeEach(() => {
     refetch: vi.fn(),
   });
   mockUseSubscriptions.mockReturnValue({ data: [], refetch: vi.fn() });
+  mockUseProviderCapabilities.mockReturnValue({ data: undefined });
 });
 
 describe('MessagesPage', () => {
@@ -379,6 +385,46 @@ describe('MessagesPage', () => {
     const Wrapper = createWrapper('/messages?namespace=ns1&topic=orders&subscription=sub1');
     render(<Wrapper><MessagesPage /></Wrapper>);
     expect(screen.getByTestId('message-list')).toBeInTheDocument();
+  });
+
+  describe('Auto-refresh default (SupportsRepeatablePeek)', () => {
+    // Release-gate regression: GCP's SupportsRepeatablePeek flipped to false (every
+    // pull-then-release still counts as a delivery attempt toward MaxDeliveryAttempts) but the
+    // auto-refresh default guard only ever checked cloudProvider === 'aws', so a GCP subscription
+    // kept auto-polling every 30s by default — silently dead-lettering a watched message purely
+    // from being displayed. The guard must key off the capability, not a hardcoded provider name.
+    it('disables auto-refresh by default for a GCP namespace (SupportsRepeatablePeek: false)', () => {
+      mockUseNamespaces.mockReturnValue({
+        data: [{ id: 'ns-gcp', name: 'gcp-ns', isActive: true, cloudProvider: 'gcp', environment: 'dev' }],
+      });
+      mockUseProviderCapabilities.mockReturnValue({
+        data: { Gcp: { supportsMessageCounts: false, supportsManualDeadLetter: false, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, notes: '' } },
+      });
+      const Wrapper = createWrapper('/messages?namespace=ns-gcp&topic=orders-topic&subscription=orders-sub');
+      render(<Wrapper><MessagesPage /></Wrapper>);
+      expect(screen.getByLabelText('Resume auto-refresh')).toBeInTheDocument();
+    });
+
+    it('still disables auto-refresh by default for an AWS namespace (SupportsRepeatablePeek: false)', () => {
+      mockUseNamespaces.mockReturnValue({
+        data: [{ id: 'ns-aws', name: 'aws-ns', isActive: true, cloudProvider: 'aws', environment: 'dev' }],
+      });
+      mockUseProviderCapabilities.mockReturnValue({
+        data: { Aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, notes: '' } },
+      });
+      const Wrapper = createWrapper('/messages?namespace=ns-aws&queue=test-queue');
+      render(<Wrapper><MessagesPage /></Wrapper>);
+      expect(screen.getByLabelText('Resume auto-refresh')).toBeInTheDocument();
+    });
+
+    it('leaves auto-refresh enabled by default for a provider that supports repeatable peek (Azure)', () => {
+      mockUseProviderCapabilities.mockReturnValue({
+        data: { Azure: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: false, supportsScheduledMessages: true, supportsRepeatablePeek: true, notes: '' } },
+      });
+      const Wrapper = createWrapper();
+      render(<Wrapper><MessagesPage /></Wrapper>);
+      expect(screen.getByLabelText('Pause auto-refresh')).toBeInTheDocument();
+    });
   });
 
   describe('Message deep links', () => {

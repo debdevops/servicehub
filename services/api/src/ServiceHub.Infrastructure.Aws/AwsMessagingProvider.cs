@@ -98,25 +98,66 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
         Guid namespaceId,
         CancellationToken ct)
     {
+        var scanResult = await ListEntitiesInternalAsync(namespaceId, ct).ConfigureAwait(false);
+        return scanResult.IsSuccess
+            ? Result.Success<IReadOnlyList<CloudEntity>>(scanResult.Value.Entities)
+            : Result.Failure<IReadOnlyList<CloudEntity>>(scanResult.Error);
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<EntityScanResult>> ListEntitiesForReconciliationAsync(
+        Guid namespaceId,
+        CancellationToken ct)
+        => await ListEntitiesInternalAsync(namespaceId, ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Shared implementation behind <see cref="ListEntitiesAsync"/> and
+    /// <see cref="ListEntitiesForReconciliationAsync"/>. AWS's per-entity discovery calls
+    /// (GetQueueAttributes, SNS ListTopics/ListSubscriptionsByTopic) can each fail independently
+    /// of the rest of the scan — every catch block below both logs (existing behavior) and records
+    /// the affected entity/topic name so reconciliation can tell "genuinely absent" apart from
+    /// "this scan just couldn't confirm it".
+    /// </summary>
+    private async Task<Result<EntityScanResult>> ListEntitiesInternalAsync(
+        Guid namespaceId,
+        CancellationToken ct)
+    {
         var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, ct).ConfigureAwait(false);
         if (nsResult.IsFailure)
-            return Result.Failure<IReadOnlyList<CloudEntity>>(nsResult.Error);
+            return Result.Failure<EntityScanResult>(nsResult.Error);
 
         var ns = nsResult.Value;
         var entities = new List<CloudEntity>();
+        var incompleteQueueNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var incompleteTopicNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var snsListingFailed = false;
 
         try
         {
             var sqs = _clientFactory.GetSqsClient(ns);
 
-            // List all SQS queues
-            var listResponse = await _resiliencePipeline.ExecuteAsync(
-                async token => await sqs.ListQueuesAsync(new ListQueuesRequest(), token).ConfigureAwait(false),
-                ct).ConfigureAwait(false);
+            // List all SQS queues. MaxResults must be set for AWS to return a NextToken at all —
+            // without it, ListQueues silently truncates at 1,000 results with no signal that more
+            // exist (see the AWS SDK docs on ListQueuesRequest.MaxResults).
+            var queueUrls = new List<string>();
+            string? queuesNextToken = null;
+            do
+            {
+                var listResponse = await _resiliencePipeline.ExecuteAsync(
+                    async token => await sqs.ListQueuesAsync(new ListQueuesRequest
+                    {
+                        MaxResults = 1000,
+                        NextToken = queuesNextToken
+                    }, token).ConfigureAwait(false),
+                    ct).ConfigureAwait(false);
+
+                queueUrls.AddRange(listResponse.QueueUrls);
+                queuesNextToken = listResponse.NextToken;
+            } while (!string.IsNullOrEmpty(queuesNextToken));
 
             var queueSnapshots = new List<(string Name, long ActiveCount, string? RedriveTargetName)>();
 
-            foreach (var queueUrl in listResponse.QueueUrls)
+            foreach (var queueUrl in queueUrls)
             {
                 try
                 {
@@ -141,15 +182,28 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
 
                     queueSnapshots.Add((queueName, visible + inFlight, ParseRedriveTargetName(attrs)));
                 }
-                catch (AmazonSQSException ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogWarning(ex, "Could not get attributes for queue {QueueUrl}", queueUrl);
+                    incompleteQueueNames.Add(queueUrl.Split('/').LastOrDefault() ?? queueUrl);
                 }
             }
 
             // SQS surfaces the DLQ as a separate queue; report its depth as the source
             // queue's dead-letter count so the UI's Azure-style DLQ tab shows real numbers.
             var countsByName = queueSnapshots.ToDictionary(q => q.Name, q => q.ActiveCount, StringComparer.OrdinalIgnoreCase);
+
+            // A source queue's DeadLetterCount below falls back to 0 when its redrive target is
+            // missing from countsByName. That fallback is only trustworthy when the target
+            // genuinely wasn't returned by ListQueues — if instead GetQueueAttributes failed for
+            // the target (target name is in incompleteQueueNames), the source's count is
+            // unconfirmed too and must not be reconciled as a confirmed-empty DLQ.
+            foreach (var (queueName, _, redriveTargetName) in queueSnapshots)
+            {
+                if (redriveTargetName is not null && incompleteQueueNames.Contains(redriveTargetName))
+                    incompleteQueueNames.Add(queueName);
+            }
+
             foreach (var (queueName, activeCount, redriveTargetName) in queueSnapshots)
             {
                 entities.Add(new CloudEntity
@@ -166,15 +220,26 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
                 });
             }
 
-            // List SNS topics
+            // List SNS topics. ListTopics/ListSubscriptionsByTopic always cap each page at 100
+            // regardless of request options, so pagination must be consumed unconditionally —
+            // unlike ListQueues, there is no way to opt out of paging on these two calls.
             try
             {
                 var sns = _clientFactory.GetSnsClient(ns);
-                var topicsResponse = await _resiliencePipeline.ExecuteAsync(
-                    async token => await sns.ListTopicsAsync(token).ConfigureAwait(false),
-                    ct).ConfigureAwait(false);
+                var topics = new List<Topic>();
+                string? topicsNextToken = null;
+                do
+                {
+                    var topicsResponse = await _resiliencePipeline.ExecuteAsync(
+                        async token => await sns.ListTopicsAsync(
+                            new ListTopicsRequest { NextToken = topicsNextToken }, token).ConfigureAwait(false),
+                        ct).ConfigureAwait(false);
 
-                foreach (var topic in topicsResponse.Topics)
+                    topics.AddRange(topicsResponse.Topics);
+                    topicsNextToken = topicsResponse.NextToken;
+                } while (!string.IsNullOrEmpty(topicsNextToken));
+
+                foreach (var topic in topics)
                 {
                     // ARNs contain ':' which breaks URL routing downstream — expose the friendly name.
                     var topicName = topic.TopicArn[(topic.TopicArn.LastIndexOf(':') + 1)..];
@@ -187,11 +252,24 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
 
                     try
                     {
-                        var subsResponse = await _resiliencePipeline.ExecuteAsync(
-                            async token => await sns.ListSubscriptionsByTopicAsync(topic.TopicArn, token).ConfigureAwait(false),
-                            ct).ConfigureAwait(false);
+                        var subscriptions = new List<Subscription>();
+                        string? subsNextToken = null;
+                        do
+                        {
+                            var subsResponse = await _resiliencePipeline.ExecuteAsync(
+                                async token => await sns.ListSubscriptionsByTopicAsync(
+                                    new ListSubscriptionsByTopicRequest
+                                    {
+                                        TopicArn = topic.TopicArn,
+                                        NextToken = subsNextToken
+                                    }, token).ConfigureAwait(false),
+                                ct).ConfigureAwait(false);
 
-                        foreach (var sub in subsResponse.Subscriptions)
+                            subscriptions.AddRange(subsResponse.Subscriptions);
+                            subsNextToken = subsResponse.NextToken;
+                        } while (!string.IsNullOrEmpty(subsNextToken));
+
+                        foreach (var sub in subscriptions)
                         {
                             var endpointName = string.IsNullOrEmpty(sub.Endpoint)
                                 ? sub.Protocol
@@ -204,28 +282,36 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
                             });
                         }
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         _logger.LogWarning(ex, "Could not list SNS subscriptions for topic {TopicArn}", topic.TopicArn);
+                        incompleteTopicNames.Add(topicName);
                     }
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogWarning(ex, "Could not list SNS topics for namespace {NamespaceId}", namespaceId);
+                snsListingFailed = true;
             }
 
-            return Result.Success<IReadOnlyList<CloudEntity>>(entities);
+            return Result.Success(new EntityScanResult
+            {
+                Entities = entities,
+                IncompleteQueueNames = incompleteQueueNames,
+                IncompleteTopicNames = incompleteTopicNames,
+                SnsListingFailed = snsListingFailed
+            });
         }
         catch (AmazonSQSException ex)
         {
             _logger.LogError(ex, "SQS error listing entities for namespace {NamespaceId}", namespaceId);
-            return Result.Failure<IReadOnlyList<CloudEntity>>(Error.ExternalService("AWS.SQS.ListFailed", ex.Message));
+            return Result.Failure<EntityScanResult>(Error.ExternalService("AWS.SQS.ListFailed", ex.Message));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error listing entities for namespace {NamespaceId}", namespaceId);
-            return Result.Failure<IReadOnlyList<CloudEntity>>(Error.ExternalService("AWS.SQS.ListFailed", ex.Message));
+            return Result.Failure<EntityScanResult>(Error.ExternalService("AWS.SQS.ListFailed", ex.Message));
         }
     }
 

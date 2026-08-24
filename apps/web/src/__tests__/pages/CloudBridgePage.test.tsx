@@ -126,6 +126,25 @@ describe('CloudBridgePage', () => {
     expect(screen.getAllByText('No backlog').length).toBe(2); // Azure + AWS
   });
 
+  // Release-gate regression: capabilities still unknown (map not yet loaded) must never be
+  // treated as "this provider supports live counts" — that would assert an unearned "No
+  // backlog" for a provider whose real capability hasn't come back yet.
+  it('shows "No live count available" (not "No backlog") while capabilities are still unknown/loading', () => {
+    mockUseProviderStatus.mockReturnValue({
+      data: { Azure: true },
+      isLoading: false,
+    });
+    mockUseNamespaces.mockReturnValue({
+      data: [{ id: 'ns-1', name: 'azure-ns', isActive: true, cloudProvider: 'azure' }],
+      isLoading: false,
+    });
+    // beforeEach already leaves capabilities as { data: undefined, isLoading: false } — the
+    // shape useProviderCapabilities has before its query resolves.
+    renderPage();
+    expect(screen.getByText('No live count available')).toBeInTheDocument();
+    expect(screen.queryByText('No backlog')).not.toBeInTheDocument();
+  });
+
   it('shows "Not configured" (not "Active") for an enabled provider with zero namespaces, with an add-connection link', () => {
     mockUseProviderStatus.mockReturnValue({
       data: { Azure: true, Aws: true, Gcp: true },

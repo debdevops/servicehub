@@ -135,7 +135,12 @@ export function SendMessageModal({
             correlationId: correlationId || undefined,
             sessionId: sessionId || undefined,
             timeToLive: timeToLive ? parseInt(timeToLive) : undefined,
-            scheduledEnqueueTime: scheduledEnqueueTime || undefined,
+            // scheduledEnqueueTime is a datetime-local value (local wall-clock, no offset) —
+            // convert to an absolute instant before it becomes scheduledEnqueueTimeUtc, matching
+            // the reschedule flow in ScheduledMessagesPage.tsx.
+            scheduledEnqueueTime: scheduledEnqueueTime
+              ? new Date(scheduledEnqueueTime).toISOString()
+              : undefined,
           },
         });
       }

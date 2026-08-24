@@ -100,10 +100,11 @@ public sealed class DlqMonitorService : IDlqMonitorService
         var provider = _router.Resolve(ns.Provider);
 
         // Providers that declare SupportsRepeatablePeek: false have no non-destructive peek —
-        // every call is a real receive that increments the message's ReceiveCount (AWS SQS).
-        // Timer-driven and manual scans alike must not silently mutate customer delivery state,
-        // so this is checked before ListEntitiesAsync is ever called. An operator who accepts
-        // that consequence can opt back in via DlqMonitor:AllowDestructivePeek:{Provider}.
+        // every call is a real receive that increments the message's ReceiveCount (AWS SQS) or
+        // counts as a delivery attempt toward MaxDeliveryAttempts (GCP Pub/Sub). Timer-driven and
+        // manual scans alike must not silently mutate customer delivery state, so this is checked
+        // before ListEntitiesAsync is ever called. An operator who accepts that consequence can
+        // opt back in via DlqMonitor:AllowDestructivePeek:{Provider}.
         if (!provider.Capabilities.SupportsRepeatablePeek
             && !_configuration.GetValue($"DlqMonitor:AllowDestructivePeek:{ns.Provider}", false))
         {
@@ -111,7 +112,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
             {
                 _logger.LogWarning(
                     "DLQ background scanning is disabled for provider {Provider}: {Notes} Set " +
-                    "DlqMonitor:AllowDestructivePeek:{Provider}=true to re-enable if the ReceiveCount " +
+                    "DlqMonitor:AllowDestructivePeek:{Provider}=true to re-enable if the redelivery-count " +
                     "increment this causes on every scan is acceptable.",
                     ns.Provider, provider.Capabilities.Notes, ns.Provider);
             }
@@ -121,7 +122,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 $"DLQ monitoring is not available for namespace '{ns.Name}': {provider.Capabilities.Notes}"));
         }
 
-        var entitiesResult = await provider.ListEntitiesAsync(namespaceId, cancellationToken);
+        var entitiesResult = await provider.ListEntitiesForReconciliationAsync(namespaceId, cancellationToken);
         if (entitiesResult.IsFailure)
         {
             _logger.LogWarning(
@@ -130,6 +131,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
             return Result<int>.Failure(entitiesResult.Error);
         }
 
+        var scanResult = entitiesResult.Value;
         var receiver = provider.GetMessageReceiver();
         var totalNew = 0;
 
@@ -137,7 +139,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
         // Key = fullEntityName, Value = number of messages currently in the DLQ.
         var scannedEntities = new Dictionary<string, int>();
 
-        foreach (var entity in entitiesResult.Value)
+        foreach (var entity in scanResult.Entities)
         {
             if (entity.EntityType is not ("Queue" or "Subscription"))
                 continue;
@@ -202,7 +204,30 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 .Distinct()
                 .ToListAsync(cancellationToken);
 
+            // An entity this scan couldn't fully confirm (a provider-side listing call failed —
+            // see EntityScanResult) must never be reconciled as vanished: absence here might just
+            // mean the scan didn't look, not that the entity is gone.
+            bool IsUnconfirmed(string entityName)
+            {
+                var subIdx = entityName.IndexOf(SubscriptionPathSegment, StringComparison.Ordinal);
+                if (subIdx < 0)
+                    return scanResult.IncompleteQueueNames.Contains(entityName);
+
+                return scanResult.SnsListingFailed
+                    || scanResult.IncompleteTopicNames.Contains(entityName[..subIdx])
+                    || scanResult.IncompleteQueueNames.Contains(entityName[(subIdx + SubscriptionPathSegment.Length)..]);
+            }
+
+            var unconfirmedNames = activeEntityNames.Where(IsUnconfirmed).ToList();
+            if (unconfirmedNames.Count > 0)
+            {
+                _logger.LogInformation(
+                    "Skipped reconciliation for {Count} entities in namespace {NamespaceId}: provider listing was incomplete this scan",
+                    unconfirmedNames.Count, namespaceId);
+            }
+
             var entitiesToReconcile = activeEntityNames
+                .Where(name => !IsUnconfirmed(name))
                 .Where(name => !scannedEntities.TryGetValue(name, out var liveCount) || liveCount == 0)
                 .ToList();
 
@@ -301,6 +326,7 @@ public sealed class DlqMonitorService : IDlqMonitorService
         {
             var allPeekedMessages = new List<Message>();
             long? fromSequenceNumber = null;
+            var hitScanCap = false;
 
             for (var batch = 0; batch < MaxScanBatchesPerEntity; batch++)
             {
@@ -342,7 +368,25 @@ public sealed class DlqMonitorService : IDlqMonitorService
                 if (!useSequenceKey || batchMessages.Count < PeekBatchSize)
                     break;
 
+                if (batch == MaxScanBatchesPerEntity - 1)
+                {
+                    // The final batch was still full — more messages may exist past the cap.
+                    // This scan cannot be treated as exhaustive for this entity this cycle
+                    // (relevant to CanProveDlqAbsence-gated recovery verification: a recurrence
+                    // could be sitting beyond this cap, unseen).
+                    hitScanCap = true;
+                    break;
+                }
+
                 fromSequenceNumber = batchMessages[^1].SequenceNumber + 1;
+            }
+
+            if (hitScanCap)
+            {
+                _logger.LogWarning(
+                    "DLQ scan for {EntityType} {EntityName} hit the {Cap}-message scan cap this cycle; " +
+                    "more messages may exist beyond it and this scan is not exhaustive for that entity",
+                    entityType, LogRedactor.SanitiseForLog(entityName), MaxScanBatchesPerEntity * PeekBatchSize);
             }
 
             var detectedAt = DateTimeOffset.UtcNow;

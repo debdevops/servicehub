@@ -35,11 +35,13 @@ namespace ServiceHub.Core.Models;
 /// <param name="SupportsRepeatablePeek">
 /// Whether the provider's peek is safe to call on a short, repeating interval (auto-refresh,
 /// Live Tail) without side effects that accumulate toward the entity's own redelivery limits.
-/// Azure Service Bus peek is genuinely non-destructive. GCP Pub/Sub peek re-queues via
-/// <c>ModifyAckDeadline(0)</c> with no consumer left blocked, matching the existing DLQ
-/// background scan's polling cadence. AWS SQS has no non-destructive peek at all — every call
-/// is a real receive that increments the message's <c>ReceiveCount</c>, so repeated polling
-/// can push a message over its queue's <c>maxReceiveCount</c> and dead-letter it by accident.
+/// Azure Service Bus peek is genuinely non-destructive. AWS SQS and GCP Pub/Sub both have no
+/// non-destructive peek at all: every SQS receive increments the message's <c>ReceiveCount</c>,
+/// and every Pub/Sub pull-then-<c>ModifyAckDeadline(0)</c> still counts as a delivery attempt
+/// toward the subscription's <c>MaxDeliveryAttempts</c> dead-letter policy even though it
+/// unblocks the next consumer immediately — so on both providers, repeated polling (Live Tail,
+/// background DLQ scanning) can push a message over its redelivery limit and dead-letter it by
+/// accident, purely from being watched.
 /// </param>
 /// <param name="Notes">
 /// A short, human-readable explanation of the provider's constraints, suitable for a UI
@@ -113,8 +115,8 @@ public sealed record ProviderCapabilities(
         SupportsManualDeadLetter: false,
         SupportsPurge: true,
         SupportsScheduledMessages: false,
-        SupportsRepeatablePeek: true,
-        Notes: "Message counts and manual dead-lettering are not supported — Pub/Sub has no count API and dead-lettering is policy-driven via MaxDeliveryAttempts. Scheduled messages are not supported either.",
+        SupportsRepeatablePeek: false,
+        Notes: "Message counts and manual dead-lettering are not supported — Pub/Sub has no count API and dead-lettering is policy-driven via MaxDeliveryAttempts. Scheduled messages are not supported either. Repeated/live polling is also not supported — every pull-then-release still counts as a delivery attempt toward the subscription's MaxDeliveryAttempts, so watching a message repeatedly can dead-letter it by accident.",
         SupportsRecoveryMarker: true,
         CanProveDlqAbsence: false);
 
