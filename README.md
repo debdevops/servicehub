@@ -596,6 +596,9 @@ The primary AI Findings surface is client-side heuristic pattern detection — p
 **Can I delete a single message?**
 On AWS (delete by receipt handle) and GCP (acknowledge), yes — the Purge action, guarded by explicit-intent headers and blocked on production namespaces. Azure Service Bus has no reliable single-message delete in the SDK, so ServiceHub disables the action there instead of faking it.
 
+**How is this different from Service Bus Explorer?**
+Service Bus Explorer is a well-established, Azure-only desktop tool for browsing and managing Service Bus entities. ServiceHub also covers Azure Service Bus, but adds full-text message search, batch DLQ analysis with client-side AI pattern detection, auto-replay rules, a persistent multi-namespace fleet dashboard, cross-cloud correlation tracing, and the hash-chained Recovery Evidence Ledger — plus preview support for AWS SQS/SNS and GCP Pub/Sub in the same tool. Both are free and self-hosted; the difference is investigation/recovery depth and multi-cloud scope.
+
 ---
 
 ## Contributing
