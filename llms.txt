@@ -1,0 +1,24 @@
+# ServiceHub
+
+> Self-hosted, open-source forensic debugger for cloud messaging. Investigate dead-letter queues,
+> inspect and search message content, recover failed messages, and prove what happened with
+> tamper-evident recovery evidence. Azure Service Bus is GA/supported; AWS SQS/SNS and GCP Pub/Sub
+> are preview.
+
+ServiceHub is single-instance, self-hosted software for one team — not a multi-tenant SaaS. It is
+read-only by default (peek, never consume), encrypts connection strings at rest, and runs its
+primary AI-assisted analysis entirely client-side in the browser with no message data sent to any
+third-party or cloud AI service.
+
+## Docs
+
+- [README](https://github.com/debdevops/servicehub/blob/main/README.md): What ServiceHub is, feature tour, quick start, security model, FAQ
+- [Recovery Evidence Ledger](https://github.com/debdevops/servicehub/blob/main/docs/RECOVERY-EVIDENCE.md): The hash-chained recovery evidence model introduced in v3.7.0
+- [Architecture](https://github.com/debdevops/servicehub/blob/main/docs/ARCHITECTURE.md): System design, provider abstraction, and the AI capability boundary
+- [Adding a provider](https://github.com/debdevops/servicehub/blob/main/docs/extending/adding-a-provider.md): How the Azure/AWS/GCP provider abstraction extends to new backends
+- [Releases](https://github.com/debdevops/servicehub/releases): Version history and release notes
+- [License](https://github.com/debdevops/servicehub/blob/main/LICENSE): MIT
+
+## Optional
+
+- [Contributing](https://github.com/debdevops/servicehub/blob/main/CONTRIBUTING.md): How to contribute, including adding a new messaging provider
