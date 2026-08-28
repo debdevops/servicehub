@@ -254,6 +254,27 @@ public static class DependencyInjection
             return new SqliteBusyRetryOptions { MaxRetryAttempts = maxRetryAttempts };
         });
 
+        // Basic DB observability (roadmap §8 F-track item 4) — file size, WAL-checkpoint
+        // status, slow-query-equivalent logging, surfaced through the health check
+        // infrastructure that already exists. Singleton for the same reason as
+        // SqliteBusyRetryOptions above.
+        services.TryAddSingleton(serviceProvider =>
+        {
+            var resolvedConfiguration = serviceProvider.GetRequiredService<IConfiguration>();
+            return new SqliteDatabaseHealthCheckOptions
+            {
+                WalSizeWarningThresholdBytes = resolvedConfiguration.GetValue(
+                    "DlqDatabase:HealthCheck:WalSizeWarningThresholdBytes",
+                    SqliteDatabaseHealthCheckOptions.Default.WalSizeWarningThresholdBytes),
+                SlowCheckThreshold = TimeSpan.FromMilliseconds(resolvedConfiguration.GetValue(
+                    "DlqDatabase:HealthCheck:SlowCheckThresholdMilliseconds",
+                    SqliteDatabaseHealthCheckOptions.Default.SlowCheckThreshold.TotalMilliseconds))
+            };
+        });
+
+        services.AddHealthChecks()
+            .AddCheck<SqliteDatabaseHealthCheck>("sqlite", tags: ["ready", "database"]);
+
         // Register DLQ services
         services.TryAddSingleton<DlqNotMonitoredLogGuard>();
         services.TryAddScoped<IDlqMonitorService, DlqMonitorService>();
