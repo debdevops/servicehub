@@ -8,6 +8,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.AI;
+using ServiceHub.Infrastructure.Backup;
 using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.BulkOperations;
 using ServiceHub.Infrastructure.Persistence;
@@ -194,6 +195,7 @@ public static class DependencyInjection
         services.AddHostedService<RecoveryVerificationWorker>();
         services.AddHostedService<RecoveryAgeingWorker>();
         services.AddHostedService<AutonomyEvaluationWorker>();
+        services.AddHostedService<BackupWorker>();
 
         return services;
     }
@@ -327,6 +329,13 @@ public static class DependencyInjection
 
         // Failure Intelligence Center — aggregation service for incident command center
         services.TryAddScoped<IFailureIntelligenceCenterService, FailureIntelligenceCenterService>();
+
+        // Backup & Restore (roadmap F2) — Scoped like every other DlqDbContext-backed service;
+        // BackupWorker creates its own scope per scheduled run (same pattern as DlqMonitorWorker).
+        // BackupOptions itself is bound + validated by
+        // ConfigurationValidationExtensions.AddServiceHubConfigurationValidation (mirrors
+        // AuditRetentionOptions), not here.
+        services.TryAddScoped<IBackupService, BackupService>();
 
         return services;
     }

@@ -416,6 +416,13 @@ public static class ApiRoutes
         public const string Summary = $"{Base}/summary";
     }
 
+    /// <summary>Routes for on-demand and scheduled backups (roadmap F2).</summary>
+    public static class Backup
+    {
+        /// <summary>Base route for backup operations: POST to create, GET to list.</summary>
+        public const string Base = $"{VersionedBase}/admin/backup";
+    }
+
     /// <summary>Route for the caller-identity ("whoami") endpoint.</summary>
     public static class Me
     {

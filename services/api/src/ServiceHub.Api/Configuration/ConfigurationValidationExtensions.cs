@@ -85,6 +85,16 @@ public static class ConfigurationValidationExtensions
                 "Audit:Retention:SweepIntervalHours must be at least 1.")
             .ValidateOnStart();
 
+        services.AddOptions<BackupOptions>()
+            .Bind(configuration.GetSection(BackupOptions.SectionName))
+            .Validate(
+                o => o.ScheduledBackupIntervalHours >= 0,
+                "Backup:ScheduledBackupIntervalHours must be non-negative (0 disables scheduled backups).")
+            .Validate(
+                o => o.RetentionCount >= 1,
+                "Backup:RetentionCount must be at least 1.")
+            .ValidateOnStart();
+
         return services;
     }
 
