@@ -22,6 +22,7 @@ public sealed class AnomalyDetectionWorker : BackgroundService
     private readonly ILogger<AnomalyDetectionWorker> _logger;
     private readonly TimeSpan _detectionInterval;
     private readonly TimeSpan _currentWindow;
+    private readonly IWorkerHeartbeatStore? _heartbeatStore;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AnomalyDetectionWorker"/> class.
@@ -44,6 +45,10 @@ public sealed class AnomalyDetectionWorker : BackgroundService
         _currentWindow = TimeSpan.FromHours(Math.Clamp(
             configuration.GetValue("AnomalyDetection:CurrentWindowHours", DefaultCurrentWindowHours),
             1, 168));
+
+        // Optional: GetService (not GetRequiredService) so tests that build a root provider
+        // without registering it keep working — heartbeat recording degrades to a no-op instead.
+        _heartbeatStore = serviceProvider.GetService<IWorkerHeartbeatStore>();
     }
 
     /// <inheritdoc/>
@@ -61,6 +66,7 @@ public sealed class AnomalyDetectionWorker : BackgroundService
             try
             {
                 await RunDetectionCycleAsync(stoppingToken).ConfigureAwait(false);
+                _heartbeatStore?.RecordHeartbeat(nameof(AnomalyDetectionWorker), _detectionInterval);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

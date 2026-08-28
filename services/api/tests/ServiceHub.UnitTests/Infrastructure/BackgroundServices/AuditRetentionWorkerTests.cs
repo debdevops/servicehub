@@ -12,9 +12,11 @@ namespace ServiceHub.UnitTests.Infrastructure.BackgroundServices;
 public sealed class AuditRetentionWorkerTests
 {
     private readonly Mock<IAuditService> _auditServiceMock = new();
+    private readonly Mock<IWorkerHeartbeatStore> _heartbeatStoreMock = new();
 
     private AuditRetentionWorker CreateWorker(AuditRetentionOptions options, TimeSpan? initialDelay = null) =>
-        new(_auditServiceMock.Object, Options.Create(options), NullLogger<AuditRetentionWorker>.Instance, initialDelay);
+        new(_auditServiceMock.Object, Options.Create(options), NullLogger<AuditRetentionWorker>.Instance,
+            initialDelay, _heartbeatStoreMock.Object);
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -56,6 +58,21 @@ public sealed class AuditRetentionWorkerTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_Disabled_RecordsOneHeartbeatWithNoExpectedInterval()
+    {
+        var worker = CreateWorker(new AuditRetentionOptions { Enabled = false });
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        await worker.StartAsync(cts.Token);
+        await Task.Delay(300);
+        await worker.StopAsync(CancellationToken.None);
+
+        _heartbeatStoreMock.Verify(
+            s => s.RecordHeartbeat("AuditRetentionWorker", null),
+            Times.Once);
+    }
+
     // ── Enabled ──────────────────────────────────────────────────────────────
 
     [Fact]
@@ -82,6 +99,10 @@ public sealed class AuditRetentionWorkerTests
             Times.AtLeastOnce);
         capturedCutoff.Should().NotBeNull();
         capturedCutoff!.Value.Should().BeCloseTo(DateTimeOffset.UtcNow.AddDays(-90), TimeSpan.FromMinutes(1));
+
+        _heartbeatStoreMock.Verify(
+            s => s.RecordHeartbeat("AuditRetentionWorker", TimeSpan.FromHours(24)),
+            Times.AtLeastOnce);
     }
 
     [Fact]

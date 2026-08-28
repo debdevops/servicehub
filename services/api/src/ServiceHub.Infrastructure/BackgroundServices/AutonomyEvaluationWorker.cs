@@ -38,6 +38,7 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
     private readonly IPlatformEventBus _eventBus;
     private readonly Telemetry.ServiceHubMetrics? _metrics;
     private readonly ILogger<AutonomyEvaluationWorker> _logger;
+    private readonly IWorkerHeartbeatStore? _heartbeatStore;
 
     private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(45);
     private const int DefaultSweepIntervalSeconds = 3600;
@@ -90,6 +91,10 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
         // Optional: GetService (not GetRequiredService) so tests that build a root provider
         // without registering it keep working — metrics recording degrades to a no-op instead.
         _metrics = serviceProvider.GetService<Telemetry.ServiceHubMetrics>();
+
+        // Same optional-resolution convention as _metrics above — heartbeat recording degrades
+        // to a no-op instead of failing tests that don't register it.
+        _heartbeatStore = serviceProvider.GetService<IWorkerHeartbeatStore>();
     }
 
     /// <inheritdoc />
@@ -132,6 +137,8 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
                         "Autonomy Evaluation Worker could not list active namespaces: {Error}",
                         namespacesResult.Error.Message);
                 }
+
+                _heartbeatStore?.RecordHeartbeat(nameof(AutonomyEvaluationWorker), _sweepInterval);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

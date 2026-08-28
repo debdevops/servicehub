@@ -4,6 +4,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
@@ -32,6 +33,7 @@ public sealed class SignatureReplayWorkerTests : IDisposable
     // Shared-cache in-memory databases live only while at least one connection to them is open.
     private readonly SqliteConnection _keepAliveConnection;
     private readonly ServiceProvider _serviceProvider;
+    private readonly Mock<IWorkerHeartbeatStore> _heartbeatStoreMock = new();
 
     public SignatureReplayWorkerTests()
     {
@@ -41,6 +43,7 @@ public sealed class SignatureReplayWorkerTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<DlqDbContext>(options => options.UseSqlite(_connectionString));
         services.AddSingleton<ISignatureReplayQueue, RecoverySignallingQueue>();
+        services.AddSingleton(_heartbeatStoreMock.Object);
         _serviceProvider = services.BuildServiceProvider();
 
         using var scope = _serviceProvider.CreateScope();
@@ -161,6 +164,27 @@ public sealed class SignatureReplayWorkerTests : IDisposable
         reloaded.StartedAt.Should().BeNull();
         reloaded.CompletedAt.Should().BeNull();
         reloaded.ErrorSummary.Should().BeNull();
+
+        cts.Cancel();
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AfterStartupRecovery_RecordsAHeartbeatWithNoExpectedInterval()
+    {
+        var queue = (RecoverySignallingQueue)_serviceProvider.GetRequiredService<ISignatureReplayQueue>();
+        var worker = new SignatureReplayWorker(_serviceProvider, queue, NullLogger<SignatureReplayWorker>.Instance);
+
+        using var cts = new CancellationTokenSource();
+        await worker.StartAsync(cts.Token);
+        await queue.RecoveryCompleted;
+
+        // Queue-driven: no fixed cadence, so the worker reports null (see
+        // IWorkerHeartbeatStore's docs on event-driven workers) — this alone proves the worker
+        // actually entered its dequeue loop, without waiting on a job to be processed.
+        _heartbeatStoreMock.Verify(
+            s => s.RecordHeartbeat("SignatureReplayWorker", null),
+            Times.AtLeastOnce);
 
         cts.Cancel();
         await worker.StopAsync(CancellationToken.None);
