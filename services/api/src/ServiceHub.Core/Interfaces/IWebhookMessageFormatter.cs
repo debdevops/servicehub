@@ -19,4 +19,10 @@ public interface IWebhookMessageFormatter
 
     /// <summary>Builds the payload object for a bulk operation completion alert. Serialized as JSON by the caller.</summary>
     object BuildBulkOperationCompletedPayload(BulkOperationCompletedNotification notification);
+
+    /// <summary>Builds the payload object for an autonomy grant transition alert. Serialized as JSON by the caller.</summary>
+    object BuildAutonomyTransitionPayload(AutonomyTransitionNotification notification);
+
+    /// <summary>Builds the payload object for a circuit breaker trip alert. Serialized as JSON by the caller.</summary>
+    object BuildCircuitBreakerTrippedPayload(CircuitBreakerTrippedNotification notification);
 }

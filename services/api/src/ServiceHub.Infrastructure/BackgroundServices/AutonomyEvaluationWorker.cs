@@ -238,8 +238,35 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
                 if (transitionResult.IsSuccess)
                 {
                     transitionsWritten++;
-                    var direction = transition.Value.NewLevel > currentLevel ? "promotion" : "demotion";
+                    var isPromotion = transition.Value.NewLevel > currentLevel;
+                    var direction = isPromotion ? "promotion" : "demotion";
                     _metrics?.RecordAutonomyTransition(direction, currentLevel.ToString(), transition.Value.NewLevel.ToString());
+
+                    // Owner-scoped, no NamespaceId (a signature is not tied to one namespace) —
+                    // Actor must be the raw OwnerId for PlatformEventStreamBroker's visibility
+                    // check to resolve it to the right SSE connections, same convention as the
+                    // circuit-breaker trip event below.
+                    var transitionEvt = new PlatformEvent
+                    {
+                        Source = "ServiceHub.Infrastructure.BackgroundServices.AutonomyEvaluationWorker",
+                        Category = EventCategories.Autonomy,
+                        EventType = EventTypes.AutonomyGrantTransitioned,
+                        Severity = isPromotion ? EventSeverity.Info : EventSeverity.Warning,
+                        Actor = ownerId,
+                        TargetScope = signatureHash,
+                        Payload = new AutonomyGrantTransitionedPayload
+                        {
+                            OwnerId = ownerId,
+                            SignatureHash = signatureHash,
+                            OperationKind = RecoveryOperationKind.Replay,
+                            PreviousLevel = currentLevel,
+                            NewLevel = transition.Value.NewLevel,
+                            Reason = transition.Value.Reason,
+                            TransitionedAtUtc = DateTimeOffset.UtcNow,
+                        },
+                    };
+
+                    await _eventBus.PublishAsync(transitionEvt, cancellationToken);
                 }
                 else
                 {

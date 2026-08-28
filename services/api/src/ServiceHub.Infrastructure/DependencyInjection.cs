@@ -412,6 +412,14 @@ public static class DependencyInjection
         // IWebhookNotifier — same pattern as WebhookDlqSpikeHandler above.
         services.AddSingleton<WebhookBulkOperationCompletedHandler>();
 
+        // WebhookAutonomyTransitionHandler bridges AutonomyGrantTransitioned events to
+        // IWebhookNotifier — same pattern as WebhookDlqSpikeHandler above.
+        services.AddSingleton<WebhookAutonomyTransitionHandler>();
+
+        // WebhookCircuitBreakerTrippedHandler bridges AutoReplayRuleCircuitBreakerTripped
+        // events to IWebhookNotifier — same pattern as WebhookDlqSpikeHandler above.
+        services.AddSingleton<WebhookCircuitBreakerTrippedHandler>();
+
         return services;
     }
 
@@ -430,5 +438,11 @@ public static class DependencyInjection
 
         var bulkOperationWebhookHandler = serviceProvider.GetRequiredService<WebhookBulkOperationCompletedHandler>();
         bus.Subscribe(bulkOperationWebhookHandler.HandleAsync);
+
+        var autonomyTransitionWebhookHandler = serviceProvider.GetRequiredService<WebhookAutonomyTransitionHandler>();
+        bus.Subscribe(autonomyTransitionWebhookHandler.HandleAsync);
+
+        var circuitBreakerWebhookHandler = serviceProvider.GetRequiredService<WebhookCircuitBreakerTrippedHandler>();
+        bus.Subscribe(circuitBreakerWebhookHandler.HandleAsync);
     }
 }

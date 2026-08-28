@@ -69,6 +69,55 @@ public sealed class SlackWebhookFormatter : IWebhookMessageFormatter
             Blocks: blocks);
     }
 
+    /// <inheritdoc />
+    public object BuildAutonomyTransitionPayload(AutonomyTransitionNotification n)
+    {
+        var isPromotion = n.NewLevel > n.PreviousLevel;
+        var (emoji, headline) = isPromotion
+            ? ("⬆️", "Autonomy grant promoted")
+            : ("⬇️", "Autonomy grant demoted");
+
+        var blocks = new List<object>
+        {
+            new SlackHeaderBlock($"{emoji} {headline}"),
+            new SlackSectionBlock(new[]
+            {
+                new SlackTextField($"*Signature:*\n{n.SignatureHash}"),
+                new SlackTextField($"*Transition:*\n{n.PreviousLevel} → {n.NewLevel}"),
+            }),
+            new SlackContextBlock(n.Reason),
+        };
+
+        if (n.InvestigateUrl is not null)
+            blocks.Add(new SlackActionsBlock("View Signature", n.InvestigateUrl));
+
+        return new SlackMessage(
+            Text: $"{emoji} {n.SignatureHash}: {n.PreviousLevel} → {n.NewLevel}",
+            Blocks: blocks);
+    }
+
+    /// <inheritdoc />
+    public object BuildCircuitBreakerTrippedPayload(CircuitBreakerTrippedNotification n)
+    {
+        var blocks = new List<object>
+        {
+            new SlackHeaderBlock("🛑 Circuit breaker tripped"),
+            new SlackSectionBlock(new[]
+            {
+                new SlackTextField($"*Rule:*\n{n.RuleName}"),
+                new SlackTextField($"*Verified Success Rate:*\n{n.VerifiedSuccessRate:P0} over last {n.SampleSize} outcomes"),
+            }),
+            new SlackContextBlock($"Tripped {n.TrippedAtUtc:yyyy-MM-dd HH:mm} UTC — rule disabled"),
+        };
+
+        if (n.InvestigateUrl is not null)
+            blocks.Add(new SlackActionsBlock("View Rules", n.InvestigateUrl));
+
+        return new SlackMessage(
+            Text: $"🛑 Auto-replay rule '{n.RuleName}' disabled by circuit breaker",
+            Blocks: blocks);
+    }
+
     // ── Slack Block Kit shapes (Incoming Webhook payload) ───────────────────
 
     private sealed record SlackMessage(

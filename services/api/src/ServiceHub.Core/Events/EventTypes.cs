@@ -61,6 +61,15 @@ public static class EventTypes
     /// </summary>
     public const string AutoReplayRuleCircuitBreakerTripped = "servicehub.rule.circuitbreaker.tripped.v1";
 
+    // ── Autonomy ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Raised when a failure signature's <c>AutonomyGrant</c> transitions to a new level — a
+    /// promotion (evidence earned more standing trust) or a demotion (a verified-outcome floor
+    /// breach or a duplicate-business-effect flag withdrew it).
+    /// </summary>
+    public const string AutonomyGrantTransitioned = "servicehub.autonomy.grant.transitioned.v1";
+
     // ── Bulk Operations ──────────────────────────────────────────────────────
 
     /// <summary>

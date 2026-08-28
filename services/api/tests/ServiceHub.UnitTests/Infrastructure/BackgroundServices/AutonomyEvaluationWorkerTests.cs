@@ -6,6 +6,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Events;
+using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.BackgroundServices;
@@ -55,10 +57,11 @@ public sealed class AutonomyEvaluationWorkerTests : IDisposable
     // IPlatformEventBus is resolved from the root provider in the constructor (mirrors
     // DlqMonitorWorker's existing convention for the same dependency) — must be present even
     // when a test never trips the circuit breaker, or construction itself throws.
-    private static AutonomyEvaluationWorker CreateWorker(IDictionary<string, string?>? config = null)
+    private static AutonomyEvaluationWorker CreateWorker(
+        IDictionary<string, string?>? config = null, IPlatformEventBus? eventBus = null)
     {
         var rootServices = new ServiceCollection();
-        rootServices.AddSingleton(Mock.Of<IPlatformEventBus>());
+        rootServices.AddSingleton(eventBus ?? Mock.Of<IPlatformEventBus>());
         return new(
             rootServices.BuildServiceProvider(),
             new ConfigurationBuilder().AddInMemoryCollection(config ?? new Dictionary<string, string?>()).Build(),
@@ -196,6 +199,28 @@ public sealed class AutonomyEvaluationWorkerTests : IDisposable
         var promoted = await _dbContext.RecoveryEvents
             .SingleAsync(e => e.EventType == RecoveryEventType.AutonomyGrantPromoted);
         promoted.DetailJson.Should().Contain("sig-good").And.Contain("\"newLevel\":\"Standing\"");
+    }
+
+    [Fact]
+    public async Task SweepOwnerAsync_MeetsL4SampleAndRate_PublishesAutonomyGrantTransitionedEvent()
+    {
+        await SeedRecoveredEntriesAsync(OwnerA, "sig-good", count: 10, "body");
+
+        var eventBusMock = new Mock<IPlatformEventBus>();
+        await CreateWorker(eventBus: eventBusMock.Object)
+            .SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        eventBusMock.Verify(
+            b => b.PublishAsync(
+                It.Is<PlatformEvent>(e =>
+                    e.EventType == EventTypes.AutonomyGrantTransitioned &&
+                    e.Category == EventCategories.Autonomy &&
+                    e.Actor == OwnerA &&
+                    e.TargetScope == "sig-good" &&
+                    ((AutonomyGrantTransitionedPayload)e.Payload!).PreviousLevel == AutonomyLevel.Approve &&
+                    ((AutonomyGrantTransitionedPayload)e.Payload!).NewLevel == AutonomyLevel.Standing),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
