@@ -36,18 +36,21 @@ public sealed class RecoveryController : ApiControllerBase
     private readonly IRecoveryEvidenceExporter _evidenceExporter;
     private readonly IRecoveryTrustScoringService _trustScoring;
     private readonly IApprovalQueueService _approvalQueue;
+    private readonly IAutonomyDashboardService _autonomyDashboard;
 
     /// <summary>Initializes a new instance of the <see cref="RecoveryController"/> class.</summary>
     public RecoveryController(
         IRecoveryLedger recoveryLedger,
         IRecoveryEvidenceExporter evidenceExporter,
         IRecoveryTrustScoringService trustScoring,
-        IApprovalQueueService approvalQueue)
+        IApprovalQueueService approvalQueue,
+        IAutonomyDashboardService autonomyDashboard)
     {
         _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _evidenceExporter = evidenceExporter ?? throw new ArgumentNullException(nameof(evidenceExporter));
         _trustScoring = trustScoring ?? throw new ArgumentNullException(nameof(trustScoring));
         _approvalQueue = approvalQueue ?? throw new ArgumentNullException(nameof(approvalQueue));
+        _autonomyDashboard = autonomyDashboard ?? throw new ArgumentNullException(nameof(autonomyDashboard));
     }
 
     /// <summary>
@@ -230,6 +233,25 @@ public sealed class RecoveryController : ApiControllerBase
             OwnerId, namespaceId, ClampLimit(limit), cancellationToken);
 
         return Ok(entries);
+    }
+
+    /// <summary>
+    /// Gets the fleet-wide autonomy dashboard (roadmap §11 item 5, §15 item 9): how many
+    /// signatures currently stand at each autonomy level, per action kind; every currently
+    /// standing <c>AutonomyGrant</c>; every <see cref="Core.Entities.AutoReplayRule"/> the
+    /// success-rate circuit breaker has tripped; the owner-scoped emergency-stop status; and the
+    /// most recent promotions/demotions. Pure read-side aggregation — no new trust computation,
+    /// no schema change.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.RecoveryRead)]
+    [HttpGet("autonomy-dashboard")]
+    [ProducesResponseType(typeof(AutonomyDashboardOverview), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AutonomyDashboardOverview>> GetAutonomyDashboard(
+        CancellationToken cancellationToken = default)
+    {
+        var overview = await _autonomyDashboard.GetOverviewAsync(OwnerId, cancellationToken);
+        return Ok(overview);
     }
 
     /// <summary>

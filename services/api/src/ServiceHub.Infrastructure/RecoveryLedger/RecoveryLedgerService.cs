@@ -1066,6 +1066,85 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
         return detailJsonValues.Any(json => TryParseFlagKind(json) == RecoveryOutcomeFlagKind.DuplicateBusinessEffect);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<AutonomyGrant>> GetAutonomyGrantsAsync(
+        string ownerId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.AutonomyGrants
+            .AsNoTracking()
+            .Where(g => g.OwnerId == ownerId)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<AutonomyTransitionRecord>> GetRecentAutonomyTransitionsAsync(
+        string ownerId, int limit, CancellationToken cancellationToken = default)
+    {
+        var events = await _dbContext.RecoveryEvents
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId
+                && (e.EventType == RecoveryEventType.AutonomyGrantPromoted
+                    || e.EventType == RecoveryEventType.AutonomyGrantDemoted))
+            .OrderByDescending(e => e.Seq)
+            .Take(Math.Clamp(limit, 1, 500))
+            .ToListAsync(cancellationToken);
+
+        var results = new List<AutonomyTransitionRecord>(events.Count);
+        foreach (var evt in events)
+        {
+            if (TryParseTransitionDetail(evt.DetailJson) is { } transition)
+            {
+                results.Add(transition with { OccurredAtUtc = evt.OccurredAt });
+            }
+        }
+
+        return results;
+    }
+
+    private static AutonomyTransitionRecord? TryParseTransitionDetail(string? detailJson)
+    {
+        if (string.IsNullOrEmpty(detailJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(detailJson);
+            var root = document.RootElement;
+
+            if (!root.TryGetProperty("signatureHash", out var signatureHashProp)
+                || !root.TryGetProperty("actionKind", out var actionKindProp)
+                || !root.TryGetProperty("previousLevel", out var previousLevelProp)
+                || !root.TryGetProperty("newLevel", out var newLevelProp)
+                || !root.TryGetProperty("reason", out var reasonProp))
+            {
+                return null;
+            }
+
+            if (!Enum.TryParse<RecoveryOperationKind>(actionKindProp.GetString(), out var actionKind)
+                || !Enum.TryParse<AutonomyLevel>(previousLevelProp.GetString(), out var previousLevel)
+                || !Enum.TryParse<AutonomyLevel>(newLevelProp.GetString(), out var newLevel))
+            {
+                return null;
+            }
+
+            var signatureHash = signatureHashProp.GetString();
+            var reason = reasonProp.GetString();
+            if (signatureHash is null || reason is null)
+            {
+                return null;
+            }
+
+            return new AutonomyTransitionRecord(
+                signatureHash, actionKind, previousLevel, newLevel, reason, OccurredAtUtc: default);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private static RecoveryOutcomeFlagKind? TryParseFlagKind(string? detailJson)
     {
         if (detailJson is null)

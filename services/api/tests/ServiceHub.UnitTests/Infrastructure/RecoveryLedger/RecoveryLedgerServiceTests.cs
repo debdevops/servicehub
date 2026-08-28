@@ -1272,6 +1272,99 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
             .Should().BeNull("a grant is scoped to its owner — owner isolation must hold on the read side too");
     }
 
+    // ── GetAutonomyGrantsAsync / GetRecentAutonomyTransitionsAsync (fleet-wide autonomy dashboard, roadmap §11 item 5) ──
+
+    [Fact]
+    public async Task GetAutonomyGrantsAsync_NoGrantsForOwner_ReturnsEmpty()
+    {
+        (await _service.GetAutonomyGrantsAsync(OwnerA)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetAutonomyGrantsAsync_ReturnsOnlyCallerOwnedGrants()
+    {
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-dash-1", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "owner A's grant", null);
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerB, "sig-dash-2", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "owner B's grant", null);
+
+        var grants = await _service.GetAutonomyGrantsAsync(OwnerA);
+
+        grants.Should().ContainSingle().Which.SignatureHash.Should().Be("sig-dash-1");
+    }
+
+    [Fact]
+    public async Task GetAutonomyGrantsAsync_AfterDemotion_ReflectsCurrentProjectionNotHistory()
+    {
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-dash-3", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "promoted", null);
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-dash-3", RecoveryOperationKind.Replay,
+            AutonomyLevel.Standing, AutonomyLevel.Approve, "demoted back", null);
+
+        var grants = await _service.GetAutonomyGrantsAsync(OwnerA);
+
+        grants.Should().ContainSingle().Which.CurrentLevel.Should().Be(AutonomyLevel.Approve);
+    }
+
+    [Fact]
+    public async Task GetRecentAutonomyTransitionsAsync_NoTransitions_ReturnsEmpty()
+    {
+        (await _service.GetRecentAutonomyTransitionsAsync(OwnerA, 20)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetRecentAutonomyTransitionsAsync_ReturnsNewestFirstDecodedFromDetailJson()
+    {
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-dash-4", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "first promotion", null);
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-dash-4", RecoveryOperationKind.Replay,
+            AutonomyLevel.Standing, AutonomyLevel.Unattended, "second promotion", null);
+
+        var transitions = await _service.GetRecentAutonomyTransitionsAsync(OwnerA, 20);
+
+        transitions.Should().HaveCount(2);
+        transitions[0].Reason.Should().Be("second promotion");
+        transitions[0].PreviousLevel.Should().Be(AutonomyLevel.Standing);
+        transitions[0].NewLevel.Should().Be(AutonomyLevel.Unattended);
+        transitions[1].Reason.Should().Be("first promotion");
+    }
+
+    [Fact]
+    public async Task GetRecentAutonomyTransitionsAsync_DifferentOwner_ExcludesOtherOwnersTransitions()
+    {
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-dash-5", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "owner A's transition", null);
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerB, "sig-dash-6", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "owner B's transition", null);
+
+        var transitions = await _service.GetRecentAutonomyTransitionsAsync(OwnerA, 20);
+
+        transitions.Should().ContainSingle().Which.SignatureHash.Should().Be("sig-dash-5");
+    }
+
+    [Fact]
+    public async Task GetRecentAutonomyTransitionsAsync_RespectsLimit()
+    {
+        for (var i = 0; i < 5; i++)
+        {
+            await _service.RecordAutonomyGrantTransitionAsync(
+                OwnerA, $"sig-dash-limit-{i}", RecoveryOperationKind.Replay,
+                AutonomyLevel.Approve, AutonomyLevel.Standing, $"promotion {i}", null);
+        }
+
+        var transitions = await _service.GetRecentAutonomyTransitionsAsync(OwnerA, 3);
+
+        transitions.Should().HaveCount(3);
+    }
+
     // ── Emergency Stop: IsEmergencyStopActiveAsync / RecordEmergencyControlEventAsync (§9.4.2, §15.2) ──
 
     [Fact]

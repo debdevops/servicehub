@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Search, LayoutDashboard, MessageSquare, Clock, GitMerge,
   AlertCircle, RefreshCw, BarChart2, HelpCircle, Plug,
-  Database, ChevronRight, X, Layers, Cloud, Shield, CheckCircle2
+  Database, ChevronRight, X, Layers, Cloud, Shield, CheckCircle2, Gauge
 } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
@@ -96,6 +96,14 @@ const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
     keywords: 'approve escalate eligibility gate declined',
   },
   {
+    id: 'page-autonomy-dashboard',
+    label: 'Autonomy Dashboard',
+    description: 'Fleet-wide autonomy levels, circuit breaker trips, and recent transitions',
+    group: 'Pages',
+    icon: <Gauge className="w-4 h-4" />,
+    keywords: 'autonomy trust level standing unattended circuit breaker',
+  },
+  {
     id: 'page-health',
     label: 'System Health',
     description: 'API and service health status',
@@ -147,6 +155,7 @@ const PAGE_ROUTES: Record<string, string> = {
   'page-dlq': '/dlq-history',
   'page-rules': '/rules',
   'page-approval-queue': '/approval-queue',
+  'page-autonomy-dashboard': '/autonomy-dashboard',
   'page-health': '/health',
   'page-audit': '/audit',
   'page-security': '/security',

@@ -462,6 +462,9 @@ public static class ApiRoutes
 
         /// <summary>Route for the Approval Queue — auto-replay rule matches escalated for manual review (roadmap §11 item 1).</summary>
         public const string ApprovalQueue = $"{Base}/approval-queue";
+
+        /// <summary>Route for the fleet-wide autonomy dashboard (roadmap §11 item 5, §15 item 9).</summary>
+        public const string AutonomyDashboard = $"{Base}/autonomy-dashboard";
     }
 
     /// <summary>Routes for the Investigation Center — incident command for failure investigation.</summary>

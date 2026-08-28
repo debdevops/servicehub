@@ -8,15 +8,22 @@ vi.mock('../../lib/api/recovery', () => ({
     getOperations: vi.fn(),
     getEntries: vi.fn(),
     getApprovalQueue: vi.fn(),
+    getAutonomyDashboard: vi.fn(),
   },
 }));
 
 import { recoveryApi } from '../../lib/api/recovery';
-import { useRecoveryOperations, useRecoveryEntries, useApprovalQueue } from '../../hooks/useRecoveryLedger';
+import {
+  useRecoveryOperations,
+  useRecoveryEntries,
+  useApprovalQueue,
+  useAutonomyDashboard,
+} from '../../hooks/useRecoveryLedger';
 
 const mockGetOperations = recoveryApi.getOperations as ReturnType<typeof vi.fn>;
 const mockGetEntries = recoveryApi.getEntries as ReturnType<typeof vi.fn>;
 const mockGetApprovalQueue = recoveryApi.getApprovalQueue as ReturnType<typeof vi.fn>;
+const mockGetAutonomyDashboard = recoveryApi.getAutonomyDashboard as ReturnType<typeof vi.fn>;
 
 function createWrapper() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -80,5 +87,27 @@ describe('useApprovalQueue', () => {
     renderHook(() => useApprovalQueue('ns-1'), { wrapper: createWrapper() });
 
     await waitFor(() => expect(mockGetApprovalQueue).toHaveBeenCalledWith('ns-1', 100));
+  });
+});
+
+describe('useAutonomyDashboard', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('returns the fleet-wide overview on success', async () => {
+    mockGetAutonomyDashboard.mockResolvedValueOnce({
+      generatedAt: '2026-08-28T00:00:00Z',
+      emergencyStopActive: false,
+      totalSignatures: 2,
+      levelCounts: [{ actionKind: 'Replay', level: 4, levelLabel: 'Standing (L4)', count: 2 }],
+      grants: [],
+      circuitBreakerTrips: [],
+      recentTransitions: [],
+    });
+
+    const { result } = renderHook(() => useAutonomyDashboard(), { wrapper: createWrapper() });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.totalSignatures).toBe(2);
+    expect(mockGetAutonomyDashboard).toHaveBeenCalled();
   });
 });
