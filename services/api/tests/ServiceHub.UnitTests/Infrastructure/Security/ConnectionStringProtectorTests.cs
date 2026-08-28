@@ -578,4 +578,55 @@ public sealed class ConnectionStringProtectorTests
             if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true);
         }
     }
+
+    // ── GetKeyFingerprint (roadmap F2) ──────────────────────────────────────
+
+    [Fact]
+    public void GetKeyFingerprint_ReturnsStableValueAcrossCalls()
+    {
+        var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
+
+        var first = protector.GetKeyFingerprint();
+        var second = protector.GetKeyFingerprint();
+
+        first.Should().Be(second);
+    }
+
+    [Fact]
+    public void GetKeyFingerprint_HasExpectedFormat_AndNeverContainsKeyMaterial()
+    {
+        var protector = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
+
+        var fingerprint = protector.GetKeyFingerprint();
+
+        fingerprint.Should().StartWith("sha256:");
+        fingerprint.Should().MatchRegex("^sha256:[0-9a-f]{16}$");
+        fingerprint.Should().NotContain("test-encryption-key-for-unit-tests-32bytes-minimum-length");
+    }
+
+    [Fact]
+    public void GetKeyFingerprint_DiffersAcrossDifferentKeys()
+    {
+        var protectorA = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
+
+        var configB = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Security:EncryptionKey"] = "a-completely-different-test-key-32bytes-minimum-length",
+                ["Security:EnableConnectionStringEncryption"] = "true"
+            })
+            .Build();
+        var protectorB = new ConnectionStringProtector(configB, _environmentMock.Object, _loggerMock.Object);
+
+        protectorA.GetKeyFingerprint().Should().NotBe(protectorB.GetKeyFingerprint());
+    }
+
+    [Fact]
+    public void GetKeyFingerprint_SameKeyAcrossInstances_ProducesSameFingerprint()
+    {
+        var protectorA = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
+        var protectorB = new ConnectionStringProtector(_configuration, _environmentMock.Object, _loggerMock.Object);
+
+        protectorA.GetKeyFingerprint().Should().Be(protectorB.GetKeyFingerprint());
+    }
 }

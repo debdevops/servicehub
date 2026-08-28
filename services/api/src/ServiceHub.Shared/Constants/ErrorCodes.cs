@@ -361,6 +361,21 @@ public static class ErrorCodes
     }
 
     /// <summary>
+    /// Error codes related to backup and restore operations.
+    /// </summary>
+    public static class Backup
+    {
+        /// <summary>The SQLite snapshot failed its post-copy integrity check.</summary>
+        public const string IntegrityCheckFailed = "Backup.IntegrityCheckFailed";
+
+        /// <summary>The backup operation failed before or during snapshot creation.</summary>
+        public const string CreateFailed = "Backup.CreateFailed";
+
+        /// <summary>Failed to enumerate existing backups.</summary>
+        public const string ListFailed = "Backup.ListFailed";
+    }
+
+    /// <summary>
     /// General error codes.
     /// </summary>
     public static class General

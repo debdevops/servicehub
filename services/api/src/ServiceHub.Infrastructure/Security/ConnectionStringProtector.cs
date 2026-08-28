@@ -237,6 +237,18 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
         return masked;
     }
 
+    /// <inheritdoc/>
+    public string GetKeyFingerprint()
+    {
+        // SHA-256 of the *derived* 256-bit key, not the operator-configured key string — the
+        // derived key is already the product of HKDF/PBKDF2, so hashing it again cannot leak
+        // any information that would help recover the original key material. Truncated to 16
+        // hex chars: enough to distinguish keys across environments, short enough that nobody
+        // mistakes it for a secret worth protecting.
+        var hash = SHA256.HashData(_encryptionKey);
+        return $"sha256:{Convert.ToHexString(hash)[..16].ToLowerInvariant()}";
+    }
+
     /// <summary>
     /// Encrypts plaintext using AES-GCM authenticated encryption.
     /// Output format: Base64(nonce || ciphertext || tag)
