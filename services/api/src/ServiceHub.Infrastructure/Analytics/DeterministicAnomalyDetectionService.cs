@@ -58,7 +58,21 @@ public sealed class DeterministicAnomalyDetectionService : IAnomalyDetectionServ
         }
 
         var windowLength = endTime - startTime;
-        var baselineStart = startTime - TimeSpan.FromTicks(windowLength.Ticks * BaselinePeriods);
+
+        DateTimeOffset baselineStart;
+        try
+        {
+            checked
+            {
+                baselineStart = startTime - TimeSpan.FromTicks(windowLength.Ticks * BaselinePeriods);
+            }
+        }
+        catch (Exception ex) when (ex is OverflowException or ArgumentOutOfRangeException)
+        {
+            return Result.Failure<IReadOnlyList<Anomaly>>(Error.Validation(
+                ErrorCodes.General.InvalidRequest,
+                "The requested time window is too large to compute a baseline for."));
+        }
 
         // Raw timestamps pulled and grouped in memory, matching DlqHistoryService.GetSummaryAsync's
         // approach: SQLite cannot reliably translate DateTimeOffset arithmetic/bucketing into SQL,

@@ -50,6 +50,8 @@ public class ApiKeyScopesTests
         ApiKeyScopes.TopicsRead.Should().Be("topics:read");
         ApiKeyScopes.SubscriptionsRead.Should().Be("subscriptions:read");
         ApiKeyScopes.AnomaliesRead.Should().Be("anomalies:read");
+        ApiKeyScopes.DriftFindingsRead.Should().Be("drift-findings:read");
+        ApiKeyScopes.CorrelationFindingsRead.Should().Be("correlation-findings:read");
         ApiKeyScopes.DlqRead.Should().Be("dlq:read");
         ApiKeyScopes.DlqWrite.Should().Be("dlq:write");
         ApiKeyScopes.Admin.Should().Be("admin");

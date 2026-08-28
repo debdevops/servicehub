@@ -229,6 +229,48 @@ public static class ApiRoutes
     }
 
     /// <summary>
+    /// Routes for message-shape drift detection endpoints.
+    /// </summary>
+    public static class DriftFindings
+    {
+        /// <summary>
+        /// Base route for drift finding operations.
+        /// </summary>
+        public const string Base = $"{VersionedBase}/drift-findings";
+
+        /// <summary>
+        /// Route for a specific drift finding by ID.
+        /// </summary>
+        public const string ById = $"{Base}/{{id:guid}}";
+
+        /// <summary>
+        /// Route for triggering drift detection.
+        /// </summary>
+        public const string Detect = $"{Base}/detect";
+    }
+
+    /// <summary>
+    /// Routes for same-provider proactive correlation endpoints.
+    /// </summary>
+    public static class CorrelationFindings
+    {
+        /// <summary>
+        /// Base route for correlation finding operations.
+        /// </summary>
+        public const string Base = $"{VersionedBase}/correlation-findings";
+
+        /// <summary>
+        /// Route for a specific correlation finding by ID.
+        /// </summary>
+        public const string ById = $"{Base}/{{id:guid}}";
+
+        /// <summary>
+        /// Route for triggering correlation detection.
+        /// </summary>
+        public const string Detect = $"{Base}/detect";
+    }
+
+    /// <summary>
     /// Routes for DLQ Intelligence endpoints.
     /// </summary>
     public static class Dlq
