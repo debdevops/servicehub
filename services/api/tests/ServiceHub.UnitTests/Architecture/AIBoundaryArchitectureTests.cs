@@ -16,10 +16,13 @@ namespace ServiceHub.UnitTests.Architecture;
 /// Phase 1 (AI-adjacent discovery) is dependency-based, not namespace-list-based (roadmap
 /// Changelog Pass 11): a type is AI-adjacent if it is declared in
 /// <c>ServiceHub.Infrastructure.AI</c>, OR any method it declares directly calls a member of
-/// <see cref="IAIServiceClient"/> — found this way specifically because
-/// <c>AnomalyDetectionWorker</c> resolves <see cref="IAIServiceClient"/> from a per-cycle DI
-/// scope inside its method body rather than holding it as a field, which a
-/// constructor/field-reflection scan would miss entirely.
+/// <see cref="IAIServiceClient"/> — route b exists to catch a type that resolves
+/// <see cref="IAIServiceClient"/> from a per-cycle DI scope inside a method body rather than
+/// holding it as a field, which a constructor/field-reflection scan would miss entirely.
+/// (<c>AnomalyDetectionWorker</c> and <c>AnomaliesController</c> previously matched route b before
+/// roadmap §5.B I3 replaced their AI-service-gated anomaly detection with deterministic
+/// statistics; they no longer call any <see cref="IAIServiceClient"/> member, so route b now
+/// correctly excludes them.)
 /// Phase 2 (forbidden-reference scan) is per-type, not per-caller: once a type is AI-adjacent,
 /// every method it declares — not only the one Phase 1 matched on — is checked against every
 /// mutating <see cref="IRecoveryLedger"/>/<see cref="IMessageOperationsService"/> member.
@@ -110,20 +113,22 @@ public sealed class AIBoundaryArchitectureTests
         var aiAdjacentTypes = DiscoverAiAdjacentTypes(allTypes);
 
         // Canary: a scanner that silently finds nothing would pass vacuously forever. Verified
-        // this session against current source (roadmap §9.4.5 Pass 11): the AI-adjacent set must
-        // include the AI-namespace types plus the two dependency-discovered outliers.
+        // this session against current source (roadmap §5.B I3): AnomalyDetectionWorker and
+        // AnomaliesController were deliberately decoupled from IAIServiceClient as part of
+        // replacing the anomaly-detection stub with deterministic statistics (no ML, no LLM) —
+        // route b no longer finds them, since neither calls any IAIServiceClient member anymore.
+        // The AI-adjacent set is now just the namespace-based (route a) types.
         aiAdjacentTypes.Should().Contain(typeof(ServiceHub.Infrastructure.AI.DeterministicClassifier),
             "namespace-based discovery (route a) should find ServiceHub.Infrastructure.AI types");
-        aiAdjacentTypes.Should().Contain(typeof(ServiceHub.Infrastructure.BackgroundServices.AnomalyDetectionWorker),
-            "call-site discovery (route b) must find AnomalyDetectionWorker even though it resolves " +
-            "IAIServiceClient from a per-cycle DI scope inside its method body rather than holding it " +
-            "as a field (roadmap §9.4.5 Pass 11) — a declared-member scan would miss this");
-        aiAdjacentTypes.Should().Contain(typeof(ServiceHub.Api.Controllers.V1.AnomaliesController),
-            "call-site discovery (route b) must find AnomaliesController's constructor-injected client " +
-            "the same way it finds AnomalyDetectionWorker's DI-scope-resolved one");
-        aiAdjacentTypes.Count.Should().BeGreaterThanOrEqualTo(13,
-            "the eleven ServiceHub.Infrastructure.AI-namespace types plus the two dependency-discovered " +
-            "outliers — finding fewer means discovery itself has regressed, not that coverage improved");
+        aiAdjacentTypes.Should().NotContain(typeof(ServiceHub.Infrastructure.BackgroundServices.AnomalyDetectionWorker),
+            "roadmap §5.B I3 replaced its AI-service-gated detection with IAnomalyDetectionService " +
+            "(deterministic statistics) — it no longer calls any IAIServiceClient member");
+        aiAdjacentTypes.Should().NotContain(typeof(ServiceHub.Api.Controllers.V1.AnomaliesController),
+            "roadmap §5.B I3 replaced its AI-service-gated detection with IAnomalyDetectionService " +
+            "(deterministic statistics) — it no longer calls any IAIServiceClient member");
+        aiAdjacentTypes.Count.Should().BeGreaterThanOrEqualTo(11,
+            "the eleven ServiceHub.Infrastructure.AI-namespace types — finding fewer means discovery " +
+            "itself has regressed, not that coverage improved");
 
         var violations = new List<string>();
 

@@ -40,28 +40,4 @@ public interface IAIServiceClient
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A result indicating whether the service is available.</returns>
     Task<Result<bool>> IsAvailableAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Detects anomalies in a namespace within a time window.
-    /// </summary>
-    /// <param name="namespaceId">The namespace ID.</param>
-    /// <param name="startTime">The start of the analysis window.</param>
-    /// <param name="endTime">The end of the analysis window.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A result containing detected anomalies.</returns>
-    Task<Result<IReadOnlyList<Anomaly>>> DetectAnomaliesAsync(
-        Guid namespaceId,
-        DateTimeOffset startTime,
-        DateTimeOffset endTime,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Gets an anomaly by its ID.
-    /// </summary>
-    /// <param name="anomalyId">The anomaly ID.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A result containing the anomaly.</returns>
-    Task<Result<Anomaly>> GetAnomalyByIdAsync(
-        Guid anomalyId,
-        CancellationToken cancellationToken = default);
 }

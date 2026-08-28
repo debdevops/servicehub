@@ -287,6 +287,8 @@ public static class DependencyInjection
         services.TryAddScoped<IDlqMonitorService, DlqMonitorService>();
         services.TryAddScoped<IDlqHistoryService, DlqHistoryService>();
         services.TryAddScoped<INamespaceSignatureLookupService, NamespaceSignatureLookupService>();
+        services.TryAddScoped<IAnomalyDetectionService, Analytics.DeterministicAnomalyDetectionService>();
+        services.TryAddSingleton<IAnomalyResultCache, Analytics.InMemoryAnomalyResultCache>();
 
         // Register signature analysis strategies.
         // AIClusteringStrategy wraps the AI service client and provides rich clustering.
