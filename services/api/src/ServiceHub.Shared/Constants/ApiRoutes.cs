@@ -459,6 +459,9 @@ public static class ApiRoutes
 
         /// <summary>Route for one signature's Evidence-Derived Trust Scoring report (roadmap §8.10).</summary>
         public const string Trust = $"{Base}/trust/{{signatureHash}}";
+
+        /// <summary>Route for the Approval Queue — auto-replay rule matches escalated for manual review (roadmap §11 item 1).</summary>
+        public const string ApprovalQueue = $"{Base}/approval-queue";
     }
 
     /// <summary>Routes for the Investigation Center — incident command for failure investigation.</summary>

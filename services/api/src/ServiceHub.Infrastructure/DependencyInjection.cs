@@ -291,6 +291,11 @@ public static class DependencyInjection
         // the ledger; never writes, never grants autonomy.
         services.TryAddScoped<IRecoveryTrustScoringService, RecoveryTrustScoringService>();
 
+        // Approval Queue (roadmap §11 item 1) — read-only view over rule-triggered Escalate
+        // declines; approval itself reuses the existing single-message replay endpoint, so this
+        // service never writes.
+        services.TryAddScoped<IApprovalQueueService, ApprovalQueueService>();
+
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();

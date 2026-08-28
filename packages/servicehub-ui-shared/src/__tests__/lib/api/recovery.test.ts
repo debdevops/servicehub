@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   RECOVERY_STATE_EXPLANATIONS,
   RECOVERY_UNVERIFIED_REASON_LABELS,
+  APPROVAL_QUEUE_REASON_LABELS,
   describeRecoveryDetailReason,
+  describeApprovalQueueReason,
   type RecoveryEntryState,
 } from '../../../lib/api/recovery';
 
@@ -47,5 +49,19 @@ describe('describeRecoveryDetailReason', () => {
 
   it('returns null when the reason field is absent', () => {
     expect(describeRecoveryDetailReason(JSON.stringify({ somethingElse: true }))).toBeNull();
+  });
+});
+
+describe('describeApprovalQueueReason', () => {
+  it('returns null for null input', () => {
+    expect(describeApprovalQueueReason(null)).toBeNull();
+  });
+
+  it.each(Object.keys(APPROVAL_QUEUE_REASON_LABELS))('resolves the known code %s to its human sentence', (code) => {
+    expect(describeApprovalQueueReason(code)).toBe(APPROVAL_QUEUE_REASON_LABELS[code]);
+  });
+
+  it('returns the raw code, not a fabricated label, for an unrecognized reason code', () => {
+    expect(describeApprovalQueueReason('SOME_FUTURE_CODE')).toBe('SOME_FUTURE_CODE');
   });
 });

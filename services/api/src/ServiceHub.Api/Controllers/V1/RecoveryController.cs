@@ -35,16 +35,19 @@ public sealed class RecoveryController : ApiControllerBase
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly IRecoveryEvidenceExporter _evidenceExporter;
     private readonly IRecoveryTrustScoringService _trustScoring;
+    private readonly IApprovalQueueService _approvalQueue;
 
     /// <summary>Initializes a new instance of the <see cref="RecoveryController"/> class.</summary>
     public RecoveryController(
         IRecoveryLedger recoveryLedger,
         IRecoveryEvidenceExporter evidenceExporter,
-        IRecoveryTrustScoringService trustScoring)
+        IRecoveryTrustScoringService trustScoring,
+        IApprovalQueueService approvalQueue)
     {
         _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _evidenceExporter = evidenceExporter ?? throw new ArgumentNullException(nameof(evidenceExporter));
         _trustScoring = trustScoring ?? throw new ArgumentNullException(nameof(trustScoring));
+        _approvalQueue = approvalQueue ?? throw new ArgumentNullException(nameof(approvalQueue));
     }
 
     /// <summary>
@@ -203,6 +206,30 @@ public sealed class RecoveryController : ApiControllerBase
         }, cancellationToken);
 
         return Ok(entries.Select(MapToResponse).ToList());
+    }
+
+    /// <summary>
+    /// Lists the Approval Queue (roadmap §11 item 1): auto-replay rule matches the Eligibility
+    /// Gate escalated for manual review, whose underlying DLQ message is still <c>Active</c>.
+    /// Purely a read — approving an entry is a normal call to the existing
+    /// <c>POST /api/v1/messages/replay</c> endpoint using the fields this response returns; no new
+    /// execution path is introduced.
+    /// </summary>
+    /// <param name="namespaceId">Optional namespace filter.</param>
+    /// <param name="limit">Maximum number of entries to return (1-500, default 100).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.RecoveryRead)]
+    [HttpGet("approval-queue")]
+    [ProducesResponseType(typeof(IReadOnlyList<ApprovalQueueEntryResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<ApprovalQueueEntryResponse>>> GetApprovalQueue(
+        [FromQuery] Guid? namespaceId = null,
+        [FromQuery] int limit = DefaultLimit,
+        CancellationToken cancellationToken = default)
+    {
+        var entries = await _approvalQueue.GetPendingApprovalsAsync(
+            OwnerId, namespaceId, ClampLimit(limit), cancellationToken);
+
+        return Ok(entries);
     }
 
     /// <summary>

@@ -16,6 +16,7 @@ import {
   Pin,
   AlertTriangle,
   Radio,
+  CheckCircle2,
 } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
@@ -227,6 +228,19 @@ export function QuickAccessPanel() {
         >
           <Zap className="w-4 h-4 text-amber-500" />
           <span className="flex-1 text-left">Auto-Replay Rules</span>
+        </NavLink>
+        <NavLink
+          to={`${navPrefix}/approval-queue`}
+          className={({ isActive }) =>
+            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isActive
+                ? 'bg-amber-50 text-amber-700 border-amber-300 font-medium'
+                : 'bg-white hover:bg-amber-50 text-gray-700 hover:text-amber-700 border-gray-200 hover:border-amber-300'
+            }`
+          }
+        >
+          <CheckCircle2 className="w-4 h-4 text-amber-500" />
+          <span className="flex-1 text-left">Approval Queue</span>
         </NavLink>
         <NavLink
           to={`${navPrefix}/cross-cloud-trace`}

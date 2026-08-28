@@ -5,6 +5,7 @@ import {
   type RecoveryLedgerEntry,
   type RecoveryEntriesParams,
   type SignatureAutonomyStatus,
+  type ApprovalQueueEntry,
 } from '../lib/api/recovery';
 import { useDemoContext } from '../lib/demo/DemoContext';
 import { getMockRecoveryOperations, getMockRecoveryOperationDetail } from '../lib/demo/mockProviders';
@@ -79,6 +80,38 @@ export function useSignatureAutonomyStatus(signatureHash?: string, actionKind: '
           enabled: !isDemoMode && !!signatureHash,
           staleTime: 30_000,
         };
+
+  return useQuery(options);
+}
+
+/**
+ * Hook for fetching the Approval Queue (roadmap §11 item 1): auto-replay rule matches the
+ * Eligibility Gate escalated for manual review, still `Active` and so still approvable. Demo mode
+ * has no synthetic Declined ledger fixture — rather than fabricate one, it honestly reports an
+ * empty queue.
+ */
+export function useApprovalQueue(namespaceId?: string, limit = 100) {
+  const { isDemoMode } = useDemoContext();
+
+  const options: UseQueryOptions<ApprovalQueueEntry[]> = isDemoMode
+    ? {
+        queryKey: ['recovery-approval-queue', 'demo'],
+        queryFn: (): Promise<ApprovalQueueEntry[]> => Promise.resolve([]),
+      }
+    : {
+        queryKey: ['recovery-approval-queue', namespaceId, limit],
+        queryFn: () => recoveryApi.getApprovalQueue(namespaceId, limit),
+        enabled: !isDemoMode,
+        staleTime: 15_000,
+        refetchInterval: 30_000,
+        refetchIntervalInBackground: false,
+        retry: (failureCount, error: unknown) => {
+          const err = error as { response?: { status?: number } };
+          if (err?.response?.status === 404) return false;
+          if (err?.response?.status === 403) return false;
+          return failureCount < 2;
+        },
+      };
 
   return useQuery(options);
 }
