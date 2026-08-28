@@ -40,6 +40,7 @@ public sealed class RecoveryAgeingWorker : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<RecoveryAgeingWorker> _logger;
+    private readonly IWorkerHeartbeatStore? _heartbeatStore;
 
     private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(30);
     private const int DefaultSweepIntervalSeconds = 3600;
@@ -80,6 +81,10 @@ public sealed class RecoveryAgeingWorker : BackgroundService
         _maxAgeingBatchSize = Math.Clamp(
             configuration.GetValue("RecoveryEvidence:MaxAgeingBatchSize", DefaultMaxAgeingBatchSize),
             1, 100_000);
+
+        // Optional: GetService (not GetRequiredService) so tests that build a root provider
+        // without registering it keep working — heartbeat recording degrades to a no-op instead.
+        _heartbeatStore = serviceProvider.GetService<IWorkerHeartbeatStore>();
     }
 
     /// <inheritdoc />
@@ -126,6 +131,8 @@ public sealed class RecoveryAgeingWorker : BackgroundService
                         "Recovery Ageing Worker could not list active namespaces: {Error}",
                         namespacesResult.Error.Message);
                 }
+
+                _heartbeatStore?.RecordHeartbeat(nameof(RecoveryAgeingWorker), _sweepInterval);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

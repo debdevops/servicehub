@@ -24,6 +24,7 @@ public sealed class BackupWorker : BackgroundService
     private readonly BackupOptions _options;
     private readonly ILogger<BackupWorker> _logger;
     private readonly TimeSpan _initialDelay;
+    private readonly IWorkerHeartbeatStore? _heartbeatStore;
 
     /// <summary>Initializes a new instance of the <see cref="BackupWorker"/> class.</summary>
     /// <param name="serviceProvider">Root service provider, used to create a scope per backup
@@ -43,6 +44,10 @@ public sealed class BackupWorker : BackgroundService
         _options = options.Value;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _initialDelay = initialDelay ?? DefaultInitialDelay;
+
+        // Optional: GetService (not GetRequiredService) so tests that build a root provider
+        // without registering it keep working — heartbeat recording degrades to a no-op instead.
+        _heartbeatStore = serviceProvider.GetService<IWorkerHeartbeatStore>();
     }
 
     /// <inheritdoc />
@@ -54,6 +59,10 @@ public sealed class BackupWorker : BackgroundService
                 "Backup Worker starting in disabled mode — no scheduled backups. " +
                 "Set Backup:ScheduledBackupIntervalHours to a positive value to opt in, or use " +
                 "POST /api/v1/admin/backup for an on-demand backup.");
+
+            // No cadence to judge staleness against while disabled by configuration — a long
+            // gap after this single heartbeat is the expected, intentional state, not a stall.
+            _heartbeatStore?.RecordHeartbeat(nameof(BackupWorker), expectedInterval: null);
             return;
         }
 
@@ -88,6 +97,8 @@ public sealed class BackupWorker : BackgroundService
                 {
                     _logger.LogInformation("Scheduled backup {BackupId} completed", result.Value.BackupId);
                 }
+
+                _heartbeatStore?.RecordHeartbeat(nameof(BackupWorker), interval);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

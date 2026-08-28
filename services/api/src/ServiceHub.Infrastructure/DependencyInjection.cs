@@ -199,6 +199,25 @@ public static class DependencyInjection
         services.AddHostedService<AutonomyEvaluationWorker>();
         services.AddHostedService<BackupWorker>();
 
+        // Self-observability of the autonomy machinery itself (roadmap §6, cross-cutting
+        // foundation item 4) — registered alongside the workers above as a matched unit, so an
+        // environment that skips AddBackgroundWorkers() (no workers running) also skips the
+        // health check that watches them, rather than reporting every worker perpetually
+        // "never reported".
+        services.TryAddSingleton<IWorkerHeartbeatStore, InMemoryWorkerHeartbeatStore>();
+        services.TryAddSingleton(serviceProvider =>
+        {
+            var resolvedConfiguration = serviceProvider.GetRequiredService<IConfiguration>();
+            return new WorkerHeartbeatHealthCheckOptions
+            {
+                StalenessMultiplier = resolvedConfiguration.GetValue(
+                    "WorkerHeartbeat:StalenessMultiplier",
+                    WorkerHeartbeatHealthCheckOptions.Default.StalenessMultiplier),
+            };
+        });
+        services.AddHealthChecks()
+            .AddCheck<WorkerHeartbeatHealthCheck>("worker-heartbeat", tags: ["workers"]);
+
         return services;
     }
 

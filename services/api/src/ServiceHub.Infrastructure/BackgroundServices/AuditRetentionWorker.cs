@@ -27,6 +27,7 @@ public sealed class AuditRetentionWorker : BackgroundService
     private readonly AuditRetentionOptions _options;
     private readonly ILogger<AuditRetentionWorker> _logger;
     private readonly TimeSpan _initialDelay;
+    private readonly IWorkerHeartbeatStore? _heartbeatStore;
 
     /// <summary>Initializes a new instance of the <see cref="AuditRetentionWorker"/> class.</summary>
     /// <param name="auditService">The audit service, used to run the purge sweep.</param>
@@ -37,17 +38,26 @@ public sealed class AuditRetentionWorker : BackgroundService
     /// the way DLQ scanning is, so there's no need to rush it at cold start); overridable for
     /// tests that don't want to wait a full minute.
     /// </param>
+    /// <param name="heartbeatStore">
+    /// Self-observability sink (roadmap §6 item 4). Optional trailing parameter, like
+    /// <paramref name="initialDelay"/> — <see langword="null"/> degrades heartbeat recording to
+    /// a no-op rather than requiring every test construction site to supply one. This worker has
+    /// no <c>IServiceProvider</c> constructor parameter to resolve it from optionally the way
+    /// most other workers do, so it is a constructor parameter here instead.
+    /// </param>
     public AuditRetentionWorker(
         IAuditService auditService,
         IOptions<AuditRetentionOptions> options,
         ILogger<AuditRetentionWorker> logger,
-        TimeSpan? initialDelay = null)
+        TimeSpan? initialDelay = null,
+        IWorkerHeartbeatStore? heartbeatStore = null)
     {
         _auditService = auditService ?? throw new ArgumentNullException(nameof(auditService));
         ArgumentNullException.ThrowIfNull(options);
         _options = options.Value;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _initialDelay = initialDelay ?? DefaultInitialDelay;
+        _heartbeatStore = heartbeatStore;
     }
 
     /// <inheritdoc />
@@ -58,6 +68,10 @@ public sealed class AuditRetentionWorker : BackgroundService
             _logger.LogInformation(
                 "Audit Retention Worker starting in disabled mode — audit logs are kept forever. " +
                 "Set Audit:Retention:Enabled=true to opt in to automatic purging.");
+
+            // No cadence to judge staleness against while disabled by configuration — a long
+            // gap after this single heartbeat is the expected, intentional state, not a stall.
+            _heartbeatStore?.RecordHeartbeat(nameof(AuditRetentionWorker), expectedInterval: null);
             return;
         }
 
@@ -87,6 +101,8 @@ public sealed class AuditRetentionWorker : BackgroundService
                 {
                     _logger.LogWarning("Audit retention sweep failed: {Error}", result.Error.Message);
                 }
+
+                _heartbeatStore?.RecordHeartbeat(nameof(AuditRetentionWorker), sweepInterval);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

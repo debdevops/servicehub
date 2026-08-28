@@ -22,6 +22,7 @@ public sealed class DlqMonitorWorker : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly IPlatformEventBus _eventBus;
     private readonly ILogger<DlqMonitorWorker> _logger;
+    private readonly IWorkerHeartbeatStore? _heartbeatStore;
 
     private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(5);  // Fast startup
 
@@ -81,6 +82,10 @@ public sealed class DlqMonitorWorker : BackgroundService
         // IPlatformEventBus is a singleton — resolve once from the root provider.
         // This avoids resolving it from a scoped context on every poll cycle.
         _eventBus = serviceProvider.GetRequiredService<IPlatformEventBus>();
+
+        // Optional: GetService (not GetRequiredService) so tests that build a root provider
+        // without registering it keep working — heartbeat recording degrades to a no-op instead.
+        _heartbeatStore = serviceProvider.GetService<IWorkerHeartbeatStore>();
     }
 
     /// <inheritdoc />
@@ -271,6 +276,7 @@ public sealed class DlqMonitorWorker : BackgroundService
                 });
 
                 await Task.WhenAll(tasks);
+                _heartbeatStore?.RecordHeartbeat(nameof(DlqMonitorWorker), _pollInterval);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
