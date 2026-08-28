@@ -25,4 +25,8 @@ public interface IWebhookMessageFormatter
 
     /// <summary>Builds the payload object for a circuit breaker trip alert. Serialized as JSON by the caller.</summary>
     object BuildCircuitBreakerTrippedPayload(CircuitBreakerTrippedNotification notification);
+
+    /// <summary>Builds the payload object for an insight-detected alert (anomaly, drift,
+    /// correlation, or narration — roadmap §5, I5). Serialized as JSON by the caller.</summary>
+    object BuildInsightDetectedPayload(InsightDetectedNotification notification);
 }

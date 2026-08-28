@@ -271,6 +271,27 @@ public static class ApiRoutes
     }
 
     /// <summary>
+    /// Routes for deterministic narration endpoints (roadmap §5.B, I4 — "Narrate").
+    /// </summary>
+    public static class Narrations
+    {
+        /// <summary>
+        /// Base route for narration operations.
+        /// </summary>
+        public const string Base = $"{VersionedBase}/narrations";
+
+        /// <summary>
+        /// Route for a specific narration by ID.
+        /// </summary>
+        public const string ById = $"{Base}/{{id:guid}}";
+
+        /// <summary>
+        /// Route for triggering narration generation.
+        /// </summary>
+        public const string Generate = $"{Base}/generate";
+    }
+
+    /// <summary>
     /// Routes for DLQ Intelligence endpoints.
     /// </summary>
     public static class Dlq

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Events;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.BackgroundServices;
@@ -18,17 +19,27 @@ public sealed class CorrelationDetectionWorkerTests
     private readonly Mock<IAnomalyDetectionService> _anomalyDetectionMock = new();
     private readonly Mock<ICorrelationDetectionService> _correlationDetectionMock = new();
     private readonly Mock<ICorrelationResultCache> _cacheMock = new();
+    private readonly Mock<IPlatformEventBus> _eventBusMock = new();
 
     private static IConfiguration EmptyConfig() =>
         new ConfigurationBuilder().AddInMemoryCollection().Build();
 
-    private IServiceProvider BuildServiceProvider()
+    private static IConfiguration ConfigWithPushThreshold(int threshold) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Insight:PushSeverityThreshold"] = threshold.ToString() })
+            .Build();
+
+    private IServiceProvider BuildServiceProvider(bool registerEventBus = false)
     {
         var services = new ServiceCollection();
         services.AddSingleton(_repoMock.Object);
         services.AddSingleton(_anomalyDetectionMock.Object);
         services.AddSingleton(_correlationDetectionMock.Object);
         services.AddSingleton(_cacheMock.Object);
+        if (registerEventBus)
+        {
+            services.AddSingleton(_eventBusMock.Object);
+        }
         return services.BuildServiceProvider();
     }
 
@@ -198,6 +209,62 @@ public sealed class CorrelationDetectionWorkerTests
 
         await act.Should().NotThrowAsync();
         _correlationDetectionMock.Verify(c => c.DetectCorrelations(It.Is<IReadOnlyList<AnomalyObservation>>(o => o.Count == 1)), Times.Once);
+    }
+
+    // ── Roadmap §5, I5 — Push ────────────────────────────────────────
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_CorrelationAtOrAboveThreshold_PublishesInsightDetectedEvent()
+    {
+        var ns = CreateTestNamespace(ownerId: "key_owner1");
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var anomaly = Anomaly.Create(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 80, "spike");
+        _anomalyDetectionMock.Setup(d => d.DetectAnomaliesAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new[] { anomaly }));
+
+        var correlation = CorrelationFinding.Create(
+            "key_owner1", CloudProviderType.Azure,
+            new[] { new CorrelationMember(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 80) },
+            80, "correlated");
+        _correlationDetectionMock.Setup(c => c.DetectCorrelations(It.IsAny<IReadOnlyList<AnomalyObservation>>()))
+            .Returns(new[] { correlation });
+
+        var worker = new CorrelationDetectionWorker(BuildServiceProvider(registerEventBus: true), ConfigWithPushThreshold(70), NullLogger<CorrelationDetectionWorker>.Instance);
+
+        await worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        _eventBusMock.Verify(
+            b => b.PublishAsync(
+                It.Is<PlatformEvent>(e => e.EventType == EventTypes.InsightDetected && e.Actor == "key_owner1" && e.NamespaceId == null),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_CorrelationBelowThreshold_DoesNotPublish()
+    {
+        var ns = CreateTestNamespace(ownerId: "key_owner1");
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var anomaly = Anomaly.Create(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 40, "minor");
+        _anomalyDetectionMock.Setup(d => d.DetectAnomaliesAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new[] { anomaly }));
+
+        var correlation = CorrelationFinding.Create(
+            "key_owner1", CloudProviderType.Azure,
+            new[] { new CorrelationMember(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 40) },
+            40, "minor correlation");
+        _correlationDetectionMock.Setup(c => c.DetectCorrelations(It.IsAny<IReadOnlyList<AnomalyObservation>>()))
+            .Returns(new[] { correlation });
+
+        var worker = new CorrelationDetectionWorker(BuildServiceProvider(registerEventBus: true), ConfigWithPushThreshold(70), NullLogger<CorrelationDetectionWorker>.Instance);
+
+        await worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        _eventBusMock.Verify(b => b.PublishAsync(It.IsAny<PlatformEvent>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

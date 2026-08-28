@@ -615,6 +615,111 @@ public sealed class WebhookNotifierTests
             .Should().Be("https://servicehub.example.com/rules");
     }
 
+    // ── NotifyInsightDetectedAsync ───────────────────────
+
+    [Fact]
+    public async Task NotifyInsightDetected_Disabled_ReturnsSuccessWithoutSending()
+    {
+        var opts = new WebhookOptions { Enabled = false, Url = "https://hooks.example.com" };
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var sut = CreateSut(opts, handler);
+
+        var result = await sut.NotifyInsightDetectedAsync(
+            InsightKind.Anomaly, Guid.NewGuid(), TestNamespaceId, TestNamespaceName, "orders-queue", "spike", 85);
+
+        result.IsSuccess.Should().BeTrue();
+        handler.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task NotifyInsightDetected_InvalidUrl_ReturnsFailure()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var sut = CreateSut(DefaultEnabledOptions(url: "http://not-https.example.com"), handler);
+
+        var result = await sut.NotifyInsightDetectedAsync(
+            InsightKind.Anomaly, Guid.NewGuid(), TestNamespaceId, TestNamespaceName, "orders-queue", "spike", 85);
+
+        result.IsFailure.Should().BeTrue();
+        handler.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task NotifyInsightDetected_GenericFormat_SendsExpectedFields()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var sut = CreateSut(DefaultEnabledOptions(), handler);
+        var findingId = Guid.NewGuid();
+
+        await sut.NotifyInsightDetectedAsync(
+            InsightKind.Drift, findingId, TestNamespaceId, TestNamespaceName, "orders-queue", "shape changed", 90);
+
+        var json = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        json.GetProperty("kind").GetString().Should().Be("Drift");
+        json.GetProperty("findingId").GetGuid().Should().Be(findingId);
+        json.GetProperty("namespaceId").GetGuid().Should().Be(TestNamespaceId);
+        json.GetProperty("entityName").GetString().Should().Be("orders-queue");
+        json.GetProperty("severity").GetInt32().Should().Be(90);
+    }
+
+    [Fact]
+    public async Task NotifyInsightDetected_CorrelationWithNoNamespace_OmitsNamespaceFromDeepLink()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var opts = DefaultEnabledOptions(publicUrl: "https://servicehub.example.com");
+        var sut = CreateSut(opts, handler);
+
+        await sut.NotifyInsightDetectedAsync(
+            InsightKind.Correlation, Guid.NewGuid(), null, null, null, "correlated spike", 80);
+
+        var json = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        json.GetProperty("namespaceId").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task NotifyInsightDetected_SlackFormat_SendsBlockKitPayload()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var sut = CreateSut(DefaultEnabledOptions(format: WebhookFormat.Slack), handler);
+
+        await sut.NotifyInsightDetectedAsync(
+            InsightKind.Anomaly, Guid.NewGuid(), TestNamespaceId, TestNamespaceName, "orders-queue", "spike", 85);
+
+        var json = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        json.GetProperty("blocks")[0].GetProperty("type").GetString().Should().Be("header");
+    }
+
+    [Fact]
+    public async Task NotifyInsightDetected_TeamsFormat_SendsMessageCardPayload()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var sut = CreateSut(DefaultEnabledOptions(format: WebhookFormat.Teams), handler);
+
+        await sut.NotifyInsightDetectedAsync(
+            InsightKind.Anomaly, Guid.NewGuid(), TestNamespaceId, TestNamespaceName, "orders-queue", "spike", 85);
+
+        var json = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        json.GetProperty("@type").GetString().Should().Be("MessageCard");
+    }
+
+    [Fact]
+    public async Task NotifyInsightDetected_WithPublicUrlAndNamespace_BuildsNamespaceScopedInvestigateLink()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var opts = DefaultEnabledOptions(format: WebhookFormat.Slack, publicUrl: "https://servicehub.example.com");
+        var sut = CreateSut(opts, handler);
+
+        await sut.NotifyInsightDetectedAsync(
+            InsightKind.Anomaly, Guid.NewGuid(), TestNamespaceId, TestNamespaceName, "orders-queue", "spike", 85);
+
+        var json = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        var actionsBlock = json.GetProperty("blocks").EnumerateArray()
+            .FirstOrDefault(b => b.GetProperty("type").GetString() == "actions");
+        actionsBlock.ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        actionsBlock.GetProperty("elements")[0].GetProperty("url").GetString()
+            .Should().Be($"https://servicehub.example.com/dlq-history?namespace={TestNamespaceId}");
+    }
+
     // ── Helpers ──────────────────────────────────────────────
 
     /// <summary>

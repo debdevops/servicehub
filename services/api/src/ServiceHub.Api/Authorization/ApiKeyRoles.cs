@@ -38,6 +38,7 @@ public static class ApiKeyRoles
                 ApiKeyScopes.AnomaliesRead,
                 ApiKeyScopes.DriftFindingsRead,
                 ApiKeyScopes.CorrelationFindingsRead,
+                ApiKeyScopes.NarrationsRead,
             ],
             [Operator] =
             [
@@ -52,6 +53,7 @@ public static class ApiKeyRoles
                 ApiKeyScopes.AnomaliesRead,
                 ApiKeyScopes.DriftFindingsRead,
                 ApiKeyScopes.CorrelationFindingsRead,
+                ApiKeyScopes.NarrationsRead,
             ],
             [Auditor] =
             [
@@ -64,6 +66,7 @@ public static class ApiKeyRoles
                 ApiKeyScopes.AnomaliesRead,
                 ApiKeyScopes.DriftFindingsRead,
                 ApiKeyScopes.CorrelationFindingsRead,
+                ApiKeyScopes.NarrationsRead,
                 ApiKeyScopes.AuditRead,
             ],
         };

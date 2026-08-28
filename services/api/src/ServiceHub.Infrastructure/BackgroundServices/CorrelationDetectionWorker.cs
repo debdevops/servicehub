@@ -2,6 +2,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Enums;
+using ServiceHub.Core.Events;
+using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 
@@ -20,12 +23,15 @@ public sealed class CorrelationDetectionWorker : BackgroundService
 
     private const int DefaultDetectionIntervalMinutes = 60;
     private const int DefaultCurrentWindowHours = 24;
+    private const int DefaultPushSeverityThreshold = 70;
 
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<CorrelationDetectionWorker> _logger;
     private readonly TimeSpan _detectionInterval;
     private readonly TimeSpan _currentWindow;
+    private readonly int _pushSeverityThreshold;
     private readonly IWorkerHeartbeatStore? _heartbeatStore;
+    private readonly IPlatformEventBus? _eventBus;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CorrelationDetectionWorker"/> class.
@@ -48,10 +54,15 @@ public sealed class CorrelationDetectionWorker : BackgroundService
         _currentWindow = TimeSpan.FromHours(Math.Clamp(
             configuration.GetValue("CorrelationDetection:CurrentWindowHours", DefaultCurrentWindowHours),
             1, 168));
+        _pushSeverityThreshold = Math.Clamp(
+            configuration.GetValue("Insight:PushSeverityThreshold", DefaultPushSeverityThreshold),
+            0, 100);
 
         // Optional: GetService (not GetRequiredService) so tests that build a root provider
-        // without registering it keep working — heartbeat recording degrades to a no-op instead.
+        // without registering these keep working — heartbeat recording and push notification
+        // (roadmap §5, I5) degrade to a no-op instead.
         _heartbeatStore = serviceProvider.GetService<IWorkerHeartbeatStore>();
+        _eventBus = serviceProvider.GetService<IPlatformEventBus>();
     }
 
     /// <inheritdoc/>
@@ -160,5 +171,41 @@ public sealed class CorrelationDetectionWorker : BackgroundService
             "Correlation detection cycle complete: {NamespaceCount} namespace(s) scanned, {FindingCount} correlation(s) found",
             namespaces.Count,
             findings.Count);
+
+        if (_eventBus is not null)
+        {
+            foreach (var finding in findings.Where(f => f.Severity >= _pushSeverityThreshold))
+            {
+                await PublishInsightDetectedAsync(finding, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    // Roadmap §5, I5 — "Push": surface findings at/above the significance threshold without
+    // waiting for an operator to open DLQ Intelligence, via the existing webhook/SSE
+    // infrastructure (WebhookInsightDetectedHandler / PlatformEventStreamBroker).
+    private async Task PublishInsightDetectedAsync(Core.Entities.CorrelationFinding finding, CancellationToken cancellationToken)
+    {
+        // Owner-scoped, no NamespaceId (a correlation spans multiple namespaces) — Actor must be
+        // the raw OwnerId for PlatformEventStreamBroker's visibility check to resolve it to the
+        // right SSE connections, same as AutonomyEvaluationWorker's circuit-breaker event.
+        var evt = new PlatformEvent
+        {
+            Source = "ServiceHub.Infrastructure.BackgroundServices.CorrelationDetectionWorker",
+            Category = EventCategories.Insight,
+            EventType = EventTypes.InsightDetected,
+            Severity = EventSeverity.Warning,
+            Actor = finding.OwnerId,
+            Payload = new InsightDetectedPayload
+            {
+                Kind = InsightKind.Correlation,
+                FindingId = finding.Id,
+                Description = finding.Description,
+                Severity = finding.Severity,
+                DetectedAtUtc = finding.DetectedAt,
+            },
+        };
+
+        await _eventBus!.PublishAsync(evt, cancellationToken).ConfigureAwait(false);
     }
 }

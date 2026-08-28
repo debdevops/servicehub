@@ -190,6 +190,7 @@ public static class DependencyInjection
         services.AddHostedService<AnomalyDetectionWorker>();
         services.AddHostedService<DriftDetectionWorker>();
         services.AddHostedService<CorrelationDetectionWorker>();
+        services.AddHostedService<NarrationWorker>();
         services.AddHostedService<DlqMonitorWorker>();
         services.AddHostedService<BulkOperationWorker>();
         services.AddHostedService<SignatureReplayWorker>();
@@ -307,6 +308,8 @@ public static class DependencyInjection
         services.TryAddSingleton<IDriftResultCache, Analytics.InMemoryDriftResultCache>();
         services.TryAddScoped<ICorrelationDetectionService, Analytics.DeterministicCorrelationDetectionService>();
         services.TryAddSingleton<ICorrelationResultCache, Analytics.InMemoryCorrelationResultCache>();
+        services.TryAddScoped<INarrationService, Analytics.DeterministicNarrationService>();
+        services.TryAddSingleton<INarrationResultCache, Analytics.InMemoryNarrationResultCache>();
 
         // Register signature analysis strategies.
         // AIClusteringStrategy wraps the AI service client and provides rich clustering.
@@ -473,6 +476,10 @@ public static class DependencyInjection
         // events to IWebhookNotifier — same pattern as WebhookDlqSpikeHandler above.
         services.AddSingleton<WebhookCircuitBreakerTrippedHandler>();
 
+        // WebhookInsightDetectedHandler bridges InsightDetected events (roadmap §5, I5 — "Push")
+        // to IWebhookNotifier — same pattern as WebhookDlqSpikeHandler above.
+        services.AddSingleton<WebhookInsightDetectedHandler>();
+
         return services;
     }
 
@@ -497,5 +504,8 @@ public static class DependencyInjection
 
         var circuitBreakerWebhookHandler = serviceProvider.GetRequiredService<WebhookCircuitBreakerTrippedHandler>();
         bus.Subscribe(circuitBreakerWebhookHandler.HandleAsync);
+
+        var insightDetectedWebhookHandler = serviceProvider.GetRequiredService<WebhookInsightDetectedHandler>();
+        bus.Subscribe(insightDetectedWebhookHandler.HandleAsync);
     }
 }

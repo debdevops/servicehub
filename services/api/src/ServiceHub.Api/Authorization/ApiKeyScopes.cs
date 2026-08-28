@@ -32,6 +32,9 @@ public static class ApiKeyScopes
     // Same-provider proactive correlation scopes
     public const string CorrelationFindingsRead = "correlation-findings:read";
 
+    // Deterministic narration scopes (roadmap §5.B, I4)
+    public const string NarrationsRead = "narrations:read";
+
     // DLQ Intelligence scopes
     public const string DlqRead = "dlq:read";
     public const string DlqWrite = "dlq:write";
