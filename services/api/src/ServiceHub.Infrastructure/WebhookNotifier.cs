@@ -160,6 +160,85 @@ public sealed class WebhookNotifier : IWebhookNotifier
             cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<Result> NotifyAutonomyTransitionAsync(
+        string signatureHash,
+        AutonomyLevel previousLevel,
+        AutonomyLevel newLevel,
+        string reason,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_options.Enabled)
+        {
+            _logger.LogDebug("Webhook notifications are disabled, skipping autonomy transition alert");
+            return Result.Success();
+        }
+
+        if (!TryGetSafeWebhookUri(_options.Url, out var webhookUri))
+        {
+            _logger.LogWarning("Configured webhook URL is not a permitted destination (must be HTTPS and not an internal address)");
+            return Result.Failure(Error.Validation("Webhook.InvalidUrl",
+                "Webhook URL must be an HTTPS URL pointing to an external host"));
+        }
+
+        // No threshold/cooldown gate: a grant transition is a single, deliberate,
+        // evidence-derived event, not a recurring scan result — every transition is worth
+        // reporting once.
+        var notification = new AutonomyTransitionNotification(
+            SignatureHash: signatureHash,
+            PreviousLevel: previousLevel,
+            NewLevel: newLevel,
+            Reason: reason,
+            TransitionedAtUtc: DateTimeOffset.UtcNow,
+            InvestigateUrl: BuildSignatureUrl(signatureHash));
+
+        var formatter = ResolveFormatter();
+        var payload = formatter.BuildAutonomyTransitionPayload(notification);
+
+        return await PostAsync(webhookUri, payload,
+            $"autonomy transition webhook for signature {signatureHash}",
+            cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> NotifyCircuitBreakerTrippedAsync(
+        long ruleId,
+        string ruleName,
+        int sampleSize,
+        double verifiedSuccessRate,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_options.Enabled)
+        {
+            _logger.LogDebug("Webhook notifications are disabled, skipping circuit breaker trip alert");
+            return Result.Success();
+        }
+
+        if (!TryGetSafeWebhookUri(_options.Url, out var webhookUri))
+        {
+            _logger.LogWarning("Configured webhook URL is not a permitted destination (must be HTTPS and not an internal address)");
+            return Result.Failure(Error.Validation("Webhook.InvalidUrl",
+                "Webhook URL must be an HTTPS URL pointing to an external host"));
+        }
+
+        // No threshold/cooldown gate: a circuit breaker trip is itself already a rare,
+        // protective action — every trip is worth reporting once.
+        var notification = new CircuitBreakerTrippedNotification(
+            RuleId: ruleId,
+            RuleName: ruleName,
+            SampleSize: sampleSize,
+            VerifiedSuccessRate: verifiedSuccessRate,
+            TrippedAtUtc: DateTimeOffset.UtcNow,
+            InvestigateUrl: BuildRulesUrl());
+
+        var formatter = ResolveFormatter();
+        var payload = formatter.BuildCircuitBreakerTrippedPayload(notification);
+
+        return await PostAsync(webhookUri, payload,
+            $"circuit breaker webhook for rule {ruleId}",
+            cancellationToken);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private IWebhookMessageFormatter ResolveFormatter() =>
@@ -171,6 +250,16 @@ public sealed class WebhookNotifier : IWebhookNotifier
         string.IsNullOrWhiteSpace(_options.PublicUrl)
             ? null
             : $"{_options.PublicUrl.TrimEnd('/')}/dlq-history?namespace={namespaceId}";
+
+    private string? BuildSignatureUrl(string signatureHash) =>
+        string.IsNullOrWhiteSpace(_options.PublicUrl)
+            ? null
+            : $"{_options.PublicUrl.TrimEnd('/')}/signatures/{Uri.EscapeDataString(signatureHash)}";
+
+    private string? BuildRulesUrl() =>
+        string.IsNullOrWhiteSpace(_options.PublicUrl)
+            ? null
+            : $"{_options.PublicUrl.TrimEnd('/')}/rules";
 
     private async Task<Result> PostAsync(Uri webhookUri, object payload, string logDescription, CancellationToken cancellationToken)
     {

@@ -52,4 +52,41 @@ public interface IWebhookNotifier
         int failureCount,
         int skippedCount,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies external systems that a failure signature's autonomy grant transitioned
+    /// (promotion or demotion). Like the bulk-operation alert, this is not threshold-gated or
+    /// cooled-down — each transition is a single, meaningful, evidence-derived event worth
+    /// reporting once.
+    /// </summary>
+    /// <param name="signatureHash">The failure signature whose grant transitioned.</param>
+    /// <param name="previousLevel">The level before this transition.</param>
+    /// <param name="newLevel">The level after this transition.</param>
+    /// <param name="reason">Human-readable reason for the transition.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Success or failure result.</returns>
+    Task<Result> NotifyAutonomyTransitionAsync(
+        string signatureHash,
+        AutonomyLevel previousLevel,
+        AutonomyLevel newLevel,
+        string reason,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies external systems that the success-rate circuit breaker automatically disabled an
+    /// auto-replay rule. Not threshold-gated or cooled-down — a trip is itself already a rare,
+    /// deliberate protective action, worth reporting once.
+    /// </summary>
+    /// <param name="ruleId">Identifier of the disabled auto-replay rule.</param>
+    /// <param name="ruleName">Display name of the disabled rule.</param>
+    /// <param name="sampleSize">How many recent verified outcomes the trip was computed from.</param>
+    /// <param name="verifiedSuccessRate">The verified success rate that fell below the floor.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Success or failure result.</returns>
+    Task<Result> NotifyCircuitBreakerTrippedAsync(
+        long ruleId,
+        string ruleName,
+        int sampleSize,
+        double verifiedSuccessRate,
+        CancellationToken cancellationToken = default);
 }

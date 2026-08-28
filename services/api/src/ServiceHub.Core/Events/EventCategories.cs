@@ -33,4 +33,10 @@ public static class EventCategories
     /// Events raised by bulk replay/purge job lifecycle transitions.
     /// </summary>
     public const string BulkOperation = "bulk-operation";
+
+    /// <summary>
+    /// Events raised by the earned-autonomy trust model — <c>AutonomyGrant</c> promotions and
+    /// demotions.
+    /// </summary>
+    public const string Autonomy = "autonomy";
 }

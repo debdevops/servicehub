@@ -424,6 +424,197 @@ public sealed class WebhookNotifierTests
             .Should().NotContain(i => i.Arguments[2]!.ToString()!.Contains(secretUrl));
     }
 
+    // ── NotifyAutonomyTransitionAsync ─────────────────────────
+
+    [Fact]
+    public async Task NotifyAutonomyTransition_Disabled_ReturnsSuccessWithoutSending()
+    {
+        var opts = new WebhookOptions { Enabled = false, Url = "https://hooks.example.com" };
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var sut = CreateSut(opts, handler);
+
+        var result = await sut.NotifyAutonomyTransitionAsync(
+            "sig-abc", AutonomyLevel.Approve, AutonomyLevel.Standing, "Promoted");
+
+        result.IsSuccess.Should().BeTrue();
+        handler.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task NotifyAutonomyTransition_NoThresholdGate_AlwaysSendsWhenEnabled()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var opts = DefaultEnabledOptions();
+        opts.DlqSpikeThreshold = 1000;
+        var sut = CreateSut(opts, handler);
+
+        var result = await sut.NotifyAutonomyTransitionAsync(
+            "sig-abc", AutonomyLevel.Approve, AutonomyLevel.Standing, "Promoted");
+
+        result.IsSuccess.Should().BeTrue();
+        handler.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task NotifyAutonomyTransition_InvalidUrl_ReturnsFailure()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var sut = CreateSut(DefaultEnabledOptions(url: "http://not-https.example.com"), handler);
+
+        var result = await sut.NotifyAutonomyTransitionAsync(
+            "sig-abc", AutonomyLevel.Approve, AutonomyLevel.Standing, "Promoted");
+
+        result.IsFailure.Should().BeTrue();
+        handler.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task NotifyAutonomyTransition_GenericFormat_SendsExpectedFields()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var sut = CreateSut(DefaultEnabledOptions(), handler);
+
+        await sut.NotifyAutonomyTransitionAsync(
+            "sig-abc", AutonomyLevel.Standing, AutonomyLevel.Approve, "Demoted: rate below floor");
+
+        var json = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        json.GetProperty("signatureHash").GetString().Should().Be("sig-abc");
+        json.GetProperty("previousLevel").GetString().Should().Be("Standing");
+        json.GetProperty("newLevel").GetString().Should().Be("Approve");
+        json.GetProperty("reason").GetString().Should().Be("Demoted: rate below floor");
+    }
+
+    [Fact]
+    public async Task NotifyAutonomyTransition_SlackFormat_SendsBlockKitPayload()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var sut = CreateSut(DefaultEnabledOptions(format: WebhookFormat.Slack), handler);
+
+        await sut.NotifyAutonomyTransitionAsync(
+            "sig-abc", AutonomyLevel.Approve, AutonomyLevel.Standing, "Promoted");
+
+        var json = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        json.GetProperty("text").GetString().Should().Contain("sig-abc");
+        json.GetProperty("blocks")[0].GetProperty("type").GetString().Should().Be("header");
+    }
+
+    [Fact]
+    public async Task NotifyAutonomyTransition_TeamsFormat_SendsMessageCardPayload()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var sut = CreateSut(DefaultEnabledOptions(format: WebhookFormat.Teams), handler);
+
+        await sut.NotifyAutonomyTransitionAsync(
+            "sig-abc", AutonomyLevel.Approve, AutonomyLevel.Standing, "Promoted");
+
+        var json = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        json.GetProperty("@type").GetString().Should().Be("MessageCard");
+        json.GetProperty("sections")[0].GetProperty("facts").GetArrayLength().Should().Be(4);
+    }
+
+    [Fact]
+    public async Task NotifyAutonomyTransition_WithPublicUrl_BuildsSignatureInvestigateLink()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var opts = DefaultEnabledOptions(format: WebhookFormat.Slack, publicUrl: "https://servicehub.example.com");
+        var sut = CreateSut(opts, handler);
+
+        await sut.NotifyAutonomyTransitionAsync(
+            "sig-abc", AutonomyLevel.Approve, AutonomyLevel.Standing, "Promoted");
+
+        var json = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        var actionsBlock = json.GetProperty("blocks").EnumerateArray()
+            .FirstOrDefault(b => b.GetProperty("type").GetString() == "actions");
+        actionsBlock.ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        actionsBlock.GetProperty("elements")[0].GetProperty("url").GetString()
+            .Should().Be("https://servicehub.example.com/signatures/sig-abc");
+    }
+
+    // ── NotifyCircuitBreakerTrippedAsync ───────────────────────
+
+    [Fact]
+    public async Task NotifyCircuitBreakerTripped_Disabled_ReturnsSuccessWithoutSending()
+    {
+        var opts = new WebhookOptions { Enabled = false, Url = "https://hooks.example.com" };
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var sut = CreateSut(opts, handler);
+
+        var result = await sut.NotifyCircuitBreakerTrippedAsync(42, "orders-dlq-rule", 20, 0.35);
+
+        result.IsSuccess.Should().BeTrue();
+        handler.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task NotifyCircuitBreakerTripped_InvalidUrl_ReturnsFailure()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var sut = CreateSut(DefaultEnabledOptions(url: "http://not-https.example.com"), handler);
+
+        var result = await sut.NotifyCircuitBreakerTrippedAsync(42, "orders-dlq-rule", 20, 0.35);
+
+        result.IsFailure.Should().BeTrue();
+        handler.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task NotifyCircuitBreakerTripped_GenericFormat_SendsExpectedFields()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var sut = CreateSut(DefaultEnabledOptions(), handler);
+
+        await sut.NotifyCircuitBreakerTrippedAsync(42, "orders-dlq-rule", 20, 0.35);
+
+        var json = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        json.GetProperty("ruleId").GetInt64().Should().Be(42);
+        json.GetProperty("ruleName").GetString().Should().Be("orders-dlq-rule");
+        json.GetProperty("sampleSize").GetInt32().Should().Be(20);
+        json.GetProperty("verifiedSuccessRate").GetDouble().Should().Be(0.35);
+    }
+
+    [Fact]
+    public async Task NotifyCircuitBreakerTripped_SlackFormat_SendsBlockKitPayload()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var sut = CreateSut(DefaultEnabledOptions(format: WebhookFormat.Slack), handler);
+
+        await sut.NotifyCircuitBreakerTrippedAsync(42, "orders-dlq-rule", 20, 0.35);
+
+        var json = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        json.GetProperty("text").GetString().Should().Contain("orders-dlq-rule");
+        json.GetProperty("blocks")[0].GetProperty("type").GetString().Should().Be("header");
+    }
+
+    [Fact]
+    public async Task NotifyCircuitBreakerTripped_TeamsFormat_SendsMessageCardPayload()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var sut = CreateSut(DefaultEnabledOptions(format: WebhookFormat.Teams), handler);
+
+        await sut.NotifyCircuitBreakerTrippedAsync(42, "orders-dlq-rule", 20, 0.35);
+
+        var json = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        json.GetProperty("@type").GetString().Should().Be("MessageCard");
+        json.GetProperty("title").GetString().Should().Contain("Circuit breaker");
+    }
+
+    [Fact]
+    public async Task NotifyCircuitBreakerTripped_WithPublicUrl_BuildsRulesInvestigateLink()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var opts = DefaultEnabledOptions(format: WebhookFormat.Slack, publicUrl: "https://servicehub.example.com");
+        var sut = CreateSut(opts, handler);
+
+        await sut.NotifyCircuitBreakerTrippedAsync(42, "orders-dlq-rule", 20, 0.35);
+
+        var json = JsonDocument.Parse(handler.LastRequestBody!).RootElement;
+        var actionsBlock = json.GetProperty("blocks").EnumerateArray()
+            .FirstOrDefault(b => b.GetProperty("type").GetString() == "actions");
+        actionsBlock.ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        actionsBlock.GetProperty("elements")[0].GetProperty("url").GetString()
+            .Should().Be("https://servicehub.example.com/rules");
+    }
+
     // ── Helpers ──────────────────────────────────────────────
 
     /// <summary>
