@@ -242,9 +242,11 @@ Two stores, for historical reasons:
 | Namespace credential store | `NamespaceRepository:DataDirectory` (JSON file, crash-safe temp-file-then-atomic-rename) | Encrypted connection strings / auth config per namespace |
 
 Schema changes to the SQLite store ship as real EF Core migrations under
-`Infrastructure/Persistence/Migrations/`. The namespace store predates the SQLite database and was
-never migrated into it — unifying them is a known, deliberately deferred simplification, not an
-active defect (see the "Frozen" list in [`CLAUDE.md`](../CLAUDE.md)).
+`Infrastructure/Persistence/Migrations/` — currently frozen for the RC1 release cycle; no migration
+may be authored or applied without explicit, dated user sign-off (see
+[ADR-0006](adr/0006-rc1-migration-freeze.md)). The namespace store predates the SQLite database and
+was never migrated into it — unifying them is a known, deliberately deferred simplification, not an
+active defect.
 
 ## 8. Authentication and security boundaries
 

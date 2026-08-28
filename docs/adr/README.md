@@ -13,8 +13,10 @@ the way they were.
 | [0003](0003-single-instance-sqlite.md) | Single-instance process, SQLite persistence |
 | [0004](0004-self-hosted-security-model.md) | Self-hosted-only; no multi-tenant SaaS mode |
 | [0005](0005-ai-capability-boundary.md) | AI is heuristic, client-side, and architecturally forbidden from mutation |
+| [0006](0006-rc1-migration-freeze.md) | RC1 migration freeze: active, lifted only by explicit dated sign-off |
 
 Each ADR states its Status. An ADR marked `Accepted` is currently in force — do not propose
 reversing it without the same level of justification the ADR itself required. `CLAUDE.md`'s
-"Frozen" list names the exact set of architectural changes considered out of scope; these ADRs are
-the reasoning behind several of those entries.
+"Frozen" list, where an operator maintains one, names further architectural changes considered out
+of scope; these ADRs are the reasoning behind several of those entries, and are the tracked,
+authoritative source for the ones — like the RC1 migration freeze — that also live here.
