@@ -1,5 +1,9 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Microsoft.Extensions.Logging;
+using Polly;
+using Polly.Retry;
 using ServiceHub.Core.Entities;
 
 namespace ServiceHub.Infrastructure.Persistence;
@@ -10,11 +14,23 @@ namespace ServiceHub.Infrastructure.Persistence;
 /// </summary>
 public sealed class DlqDbContext : DbContext
 {
+    private readonly ResiliencePipeline _saveChangesRetryPipeline;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="DlqDbContext"/> class.
     /// </summary>
-    public DlqDbContext(DbContextOptions<DlqDbContext> options) : base(options)
+    /// <param name="options">The EF Core context options.</param>
+    /// <param name="retryOptions">Busy/locked retry tunables for <see cref="SaveChanges"/> and
+    /// <see cref="SaveChangesAsync(bool, CancellationToken)"/>. Optional and resolved from DI in
+    /// production; defaults apply when omitted, as every existing test fixture that constructs
+    /// this type directly with only <paramref name="options"/> does.</param>
+    /// <param name="logger">Optional logger for retry attempts; silent when not supplied.</param>
+    public DlqDbContext(
+        DbContextOptions<DlqDbContext> options,
+        SqliteBusyRetryOptions? retryOptions = null,
+        ILogger<DlqDbContext>? logger = null) : base(options)
     {
+        _saveChangesRetryPipeline = BuildSaveChangesRetryPipeline(retryOptions ?? SqliteBusyRetryOptions.Default, logger);
     }
 
     /// <summary>Dead-letter queue messages.</summary>
@@ -97,7 +113,7 @@ public sealed class DlqDbContext : DbContext
     {
         RecoveryLedgerAppendOnlyGuard.Enforce(ChangeTracker);
         StampAutonomyGrantConcurrencyTokens();
-        return base.SaveChanges(acceptAllChangesOnSuccess);
+        return _saveChangesRetryPipeline.Execute(() => base.SaveChanges(acceptAllChangesOnSuccess));
     }
 
     /// <inheritdoc />
@@ -105,8 +121,59 @@ public sealed class DlqDbContext : DbContext
     {
         RecoveryLedgerAppendOnlyGuard.Enforce(ChangeTracker);
         StampAutonomyGrantConcurrencyTokens();
-        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        return _saveChangesRetryPipeline
+            .ExecuteAsync(
+                async ct => await base.SaveChangesAsync(acceptAllChangesOnSuccess, ct).ConfigureAwait(false),
+                cancellationToken)
+            .AsTask();
     }
+
+    /// <summary>
+    /// Builds the Polly pipeline that retries <see cref="SaveChanges"/>/<see cref="SaveChangesAsync(bool, CancellationToken)"/>
+    /// when — and only when — the failure is SQLITE_BUSY (another connection holds the write
+    /// lock) or SQLITE_LOCKED (a conflicting lock within the same connection). busy_timeout
+    /// (see <see cref="SqlitePragmaConnectionInterceptor"/>) already absorbs short contention
+    /// inside the SQLite driver itself; this is the outer safety net for when contention
+    /// outlasts that. Deliberately never retries <see cref="DbUpdateConcurrencyException"/> or
+    /// constraint-violation <see cref="DbUpdateException"/>s — every caller across the app that
+    /// already catches those for optimistic-concurrency handling must keep seeing them
+    /// immediately (roadmap F1).
+    /// </summary>
+    private static ResiliencePipeline BuildSaveChangesRetryPipeline(SqliteBusyRetryOptions retryOptions, ILogger<DlqDbContext>? logger)
+    {
+        return new ResiliencePipelineBuilder()
+            .AddRetry(new RetryStrategyOptions
+            {
+                MaxRetryAttempts = retryOptions.MaxRetryAttempts,
+                Delay = TimeSpan.FromMilliseconds(250),
+                MaxDelay = TimeSpan.FromSeconds(2),
+                BackoffType = DelayBackoffType.Exponential,
+                UseJitter = true,
+                ShouldHandle = new PredicateBuilder().Handle<Exception>(IsTransientSqliteContention),
+                OnRetry = args =>
+                {
+                    logger?.LogWarning(
+                        "DlqDbContext.SaveChanges retry attempt {AttemptNumber} after SQLite busy/locked contention, waiting {DelayMs}ms. {ExceptionMessage}",
+                        args.AttemptNumber,
+                        args.RetryDelay.TotalMilliseconds,
+                        args.Outcome.Exception?.Message);
+                    return default;
+                }
+            })
+            .Build();
+    }
+
+    private static bool IsTransientSqliteContention(Exception exception) =>
+        exception switch
+        {
+            SqliteException sqliteException => IsBusyOrLocked(sqliteException),
+            DbUpdateException { InnerException: SqliteException inner } => IsBusyOrLocked(inner),
+            _ => false
+        };
+
+    // SQLITE_BUSY = 5, SQLITE_LOCKED = 6.
+    private static bool IsBusyOrLocked(SqliteException exception) =>
+        exception.SqliteErrorCode is 5 or 6;
 
     /// <summary>
     /// Assigns a fresh <see cref="AutonomyGrant.ConcurrencyStamp"/> to every tracked

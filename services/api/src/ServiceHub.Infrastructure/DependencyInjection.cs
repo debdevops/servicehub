@@ -224,6 +224,13 @@ public static class DependencyInjection
             var dbPath = Path.Combine(dataDir, "servicehub-dlq.db");
             options.UseSqlite($"Data Source={dbPath}");
 
+            // WAL journaling + busy_timeout (roadmap F1) — eight independent background
+            // workers write to this single file with no such configuration otherwise.
+            var busyTimeoutMilliseconds = resolvedConfiguration.GetValue(
+                "DlqDatabase:BusyTimeoutMilliseconds",
+                SqlitePragmaConnectionInterceptor.DefaultBusyTimeoutMilliseconds);
+            options.AddInterceptors(new SqlitePragmaConnectionInterceptor(busyTimeoutMilliseconds));
+
             // EnableDetailedErrors surfaces EF Core internals (SQL, schema) in error messages.
             // Only enable in Development to prevent information leakage in production.
             var env = serviceProvider.GetService<IHostEnvironment>();
@@ -231,6 +238,18 @@ public static class DependencyInjection
             {
                 options.EnableDetailedErrors();
             }
+        });
+
+        // SaveChanges retry tunables (roadmap F1) — Singleton is fine: Scoped DlqDbContext
+        // instances may depend on a Singleton, and the retry attempt count has no per-request
+        // state of its own.
+        services.TryAddSingleton(serviceProvider =>
+        {
+            var resolvedConfiguration = serviceProvider.GetRequiredService<IConfiguration>();
+            var maxRetryAttempts = resolvedConfiguration.GetValue(
+                "DlqDatabase:MaxBusyRetryAttempts",
+                SqliteBusyRetryOptions.Default.MaxRetryAttempts);
+            return new SqliteBusyRetryOptions { MaxRetryAttempts = maxRetryAttempts };
         });
 
         // Register DLQ services
