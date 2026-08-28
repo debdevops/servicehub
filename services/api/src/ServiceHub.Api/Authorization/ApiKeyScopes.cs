@@ -26,6 +26,12 @@ public static class ApiKeyScopes
     // Anomaly detection scopes
     public const string AnomaliesRead = "anomalies:read";
 
+    // Message-shape drift detection scopes
+    public const string DriftFindingsRead = "drift-findings:read";
+
+    // Same-provider proactive correlation scopes
+    public const string CorrelationFindingsRead = "correlation-findings:read";
+
     // DLQ Intelligence scopes
     public const string DlqRead = "dlq:read";
     public const string DlqWrite = "dlq:write";

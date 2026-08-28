@@ -65,6 +65,22 @@ public sealed class DeterministicAnomalyDetectionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DetectAnomaliesAsync_WindowTooLargeToComputeBaseline_ReturnsValidationFailureInsteadOfThrowing()
+    {
+        // startTime near DateTimeOffset.MinValue with a window large enough that subtracting
+        // BaselinePeriods (4) worth of ticks would overflow/underflow — must fail cleanly, not
+        // throw an unhandled exception (this also protects CorrelationFindingsController, which
+        // calls this method once per namespace with caller-supplied start/end times).
+        var start = DateTimeOffset.MinValue.AddYears(2);
+        var end = DateTimeOffset.MaxValue.AddYears(-2);
+
+        var act = async () => await _sut.DetectAnomaliesAsync(_namespaceId, start, end);
+
+        var result = await act.Should().NotThrowAsync();
+        result.Subject.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task DetectAnomaliesAsync_VolumeSpike_FlagsHighMessageVolume()
     {
         var now = DateTimeOffset.UtcNow;

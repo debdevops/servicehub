@@ -188,6 +188,8 @@ public static class DependencyInjection
     public static IServiceCollection AddBackgroundWorkers(this IServiceCollection services)
     {
         services.AddHostedService<AnomalyDetectionWorker>();
+        services.AddHostedService<DriftDetectionWorker>();
+        services.AddHostedService<CorrelationDetectionWorker>();
         services.AddHostedService<DlqMonitorWorker>();
         services.AddHostedService<BulkOperationWorker>();
         services.AddHostedService<SignatureReplayWorker>();
@@ -261,6 +263,10 @@ public static class DependencyInjection
         services.TryAddScoped<INamespaceSignatureLookupService, NamespaceSignatureLookupService>();
         services.TryAddScoped<IAnomalyDetectionService, Analytics.DeterministicAnomalyDetectionService>();
         services.TryAddSingleton<IAnomalyResultCache, Analytics.InMemoryAnomalyResultCache>();
+        services.TryAddScoped<IDriftDetectionService, Analytics.DeterministicDriftDetectionService>();
+        services.TryAddSingleton<IDriftResultCache, Analytics.InMemoryDriftResultCache>();
+        services.TryAddScoped<ICorrelationDetectionService, Analytics.DeterministicCorrelationDetectionService>();
+        services.TryAddSingleton<ICorrelationResultCache, Analytics.InMemoryCorrelationResultCache>();
 
         // Register signature analysis strategies.
         // AIClusteringStrategy wraps the AI service client and provides rich clustering.
