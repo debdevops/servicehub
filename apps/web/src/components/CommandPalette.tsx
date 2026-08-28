@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Search, LayoutDashboard, MessageSquare, Clock, GitMerge,
   AlertCircle, RefreshCw, BarChart2, HelpCircle, Plug,
-  Database, ChevronRight, X, Layers, Cloud, Shield
+  Database, ChevronRight, X, Layers, Cloud, Shield, CheckCircle2
 } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
@@ -88,6 +88,14 @@ const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
     keywords: 'replay retry automation',
   },
   {
+    id: 'page-approval-queue',
+    label: 'Approval Queue',
+    description: 'Rule matches escalated for manual review',
+    group: 'Pages',
+    icon: <CheckCircle2 className="w-4 h-4" />,
+    keywords: 'approve escalate eligibility gate declined',
+  },
+  {
     id: 'page-health',
     label: 'System Health',
     description: 'API and service health status',
@@ -138,6 +146,7 @@ const PAGE_ROUTES: Record<string, string> = {
   'page-cloud-bridge': '/cloud-bridge',
   'page-dlq': '/dlq-history',
   'page-rules': '/rules',
+  'page-approval-queue': '/approval-queue',
   'page-health': '/health',
   'page-audit': '/audit',
   'page-security': '/security',

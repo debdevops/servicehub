@@ -102,6 +102,29 @@ export interface RecoveryEntriesParams {
   limit?: number;
 }
 
+/**
+ * Mirrors ServiceHub.Core.DTOs.Responses.ApprovalQueueEntryResponse — one auto-replay rule match
+ * the Eligibility Gate escalated for manual review, still `Active` and so still approvable.
+ * Carries everything `messagesApi.replay` needs: approving an entry is a plain call to that
+ * already-gated endpoint using these fields, not a separate execution path.
+ */
+export interface ApprovalQueueEntry {
+  entryId: string;
+  namespaceId: string;
+  namespaceName: string | null;
+  provider: string | null;
+  environment: string | null;
+  entityName: string;
+  subscriptionName: string | null;
+  sequenceNumber: number;
+  failureCategory: string | null;
+  ruleId: number;
+  ruleName: string;
+  reasonCode: string | null;
+  matchedCount: number | null;
+  declinedAt: string;
+}
+
 /** Mirrors ServiceHub.Core.DTOs.Responses.SignatureAutonomyStatusResponse. */
 export interface SignatureAutonomyStatus {
   signatureHash: string;
@@ -249,6 +272,31 @@ export const RECOVERY_STATE_EXPLANATIONS: Record<RecoveryEntryState, RecoverySta
   },
 };
 
+// Humanized sentences for the Eligibility Gate's Escalate-verdict reason codes
+// (services/api ...RecoveryEligibilityGate.cs) — the only reason codes an Approval Queue entry
+// can carry (Deny-verdict codes are excluded server-side; see ApprovalQueueService).
+export const APPROVAL_QUEUE_REASON_LABELS: Record<string, string> = {
+  EMERGENCY_STOP_ACTIVE: 'Blocked by an active emergency stop for this owner.',
+  EMERGENCY_STOP_QUERY_ERROR: 'The emergency-stop check itself failed, so the attempt was blocked to fail closed.',
+  RECURRENCE_CAP_EXCEEDED: 'This message has recurred past the automatic-replay cap on this lineage.',
+  RECURRENCE_CAP_EXCEEDED_HEURISTIC: 'This message has recurred past the automatic-replay cap (heuristic match).',
+  RECURRENCE_CAP_AMBIGUOUS_COLLISION: 'Multiple failure signatures matched this lineage — the cap fired on an ambiguous match.',
+  RECURRENCE_CAP_QUERY_ERROR: 'The recurrence-lineage check itself failed, so the attempt was blocked to fail closed.',
+  AUTONOMY_SIGNATURE_HASH_MISSING: 'No failure signature could be computed for this message, so unattended replay was refused.',
+  AUTONOMY_GRANT_QUERY_ERROR: 'The autonomy-grant check itself failed, so the attempt was blocked to fail closed.',
+  AUTONOMY_GRANT_INSUFFICIENT: 'This failure signature has not yet earned unattended (Standing/Unattended) trust.',
+  PROVIDER_CANNOT_VERIFY_ABSENCE: "This message's cloud provider cannot independently verify DLQ absence, so unattended replay was refused.",
+};
+
+/**
+ * Human sentence for an Approval Queue entry's reason code. An unrecognized code is returned
+ * verbatim rather than dropped — same "say so honestly" rule as {@link describeRecoveryDetailReason}.
+ */
+export function describeApprovalQueueReason(reasonCode: string | null): string | null {
+  if (!reasonCode) return null;
+  return APPROVAL_QUEUE_REASON_LABELS[reasonCode] ?? reasonCode;
+}
+
 // ─── API Client ─────────────────────────────────────────────────────────────
 
 export const recoveryApi = {
@@ -271,6 +319,13 @@ export const recoveryApi = {
 
   getAgeing: async (): Promise<RecoveryLedgerEntry[]> => {
     const response = await apiClient.get<RecoveryLedgerEntry[]>('/recovery/ageing');
+    return response.data;
+  },
+
+  getApprovalQueue: async (namespaceId?: string, limit = 100): Promise<ApprovalQueueEntry[]> => {
+    const response = await apiClient.get<ApprovalQueueEntry[]>('/recovery/approval-queue', {
+      params: { namespaceId, limit },
+    });
     return response.data;
   },
 

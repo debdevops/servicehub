@@ -26,6 +26,7 @@ public sealed class RecoveryControllerTests : IDisposable
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly IRecoveryEvidenceExporter _evidenceExporter;
     private readonly IRecoveryTrustScoringService _trustScoring;
+    private readonly IApprovalQueueService _approvalQueue;
     private readonly RecoveryController _controller;
 
     public RecoveryControllerTests()
@@ -40,10 +41,11 @@ public sealed class RecoveryControllerTests : IDisposable
         _recoveryLedger = new RecoveryLedgerService(_dbContext);
         _evidenceExporter = new RecoveryEvidenceExporter(_recoveryLedger);
         _trustScoring = new RecoveryTrustScoringService(_recoveryLedger);
+        _approvalQueue = new ApprovalQueueService(_dbContext);
         _controller = CreateController(OwnerA);
     }
 
-    private RecoveryController CreateController(string ownerId) => new(_recoveryLedger, _evidenceExporter, _trustScoring)
+    private RecoveryController CreateController(string ownerId) => new(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue)
     {
         ControllerContext = new ControllerContext
         {
@@ -84,22 +86,29 @@ public sealed class RecoveryControllerTests : IDisposable
     [Fact]
     public void Constructor_NullRecoveryLedger_Throws()
     {
-        var act = () => new RecoveryController(null!, _evidenceExporter, _trustScoring);
+        var act = () => new RecoveryController(null!, _evidenceExporter, _trustScoring, _approvalQueue);
         act.Should().Throw<ArgumentNullException>().WithParameterName("recoveryLedger");
     }
 
     [Fact]
     public void Constructor_NullEvidenceExporter_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, null!, _trustScoring);
+        var act = () => new RecoveryController(_recoveryLedger, null!, _trustScoring, _approvalQueue);
         act.Should().Throw<ArgumentNullException>().WithParameterName("evidenceExporter");
     }
 
     [Fact]
     public void Constructor_NullTrustScoring_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, null!);
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, null!, _approvalQueue);
         act.Should().Throw<ArgumentNullException>().WithParameterName("trustScoring");
+    }
+
+    [Fact]
+    public void Constructor_NullApprovalQueue_Throws()
+    {
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, null!);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("approvalQueue");
     }
 
     [Fact]

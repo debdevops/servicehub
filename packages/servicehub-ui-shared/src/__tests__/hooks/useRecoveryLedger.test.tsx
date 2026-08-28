@@ -7,14 +7,16 @@ vi.mock('../../lib/api/recovery', () => ({
   recoveryApi: {
     getOperations: vi.fn(),
     getEntries: vi.fn(),
+    getApprovalQueue: vi.fn(),
   },
 }));
 
 import { recoveryApi } from '../../lib/api/recovery';
-import { useRecoveryOperations, useRecoveryEntries } from '../../hooks/useRecoveryLedger';
+import { useRecoveryOperations, useRecoveryEntries, useApprovalQueue } from '../../hooks/useRecoveryLedger';
 
 const mockGetOperations = recoveryApi.getOperations as ReturnType<typeof vi.fn>;
 const mockGetEntries = recoveryApi.getEntries as ReturnType<typeof vi.fn>;
+const mockGetApprovalQueue = recoveryApi.getApprovalQueue as ReturnType<typeof vi.fn>;
 
 function createWrapper() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -56,5 +58,27 @@ describe('useRecoveryEntries', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockGetEntries).toHaveBeenCalledWith({ dlqMessageId: 42 });
     expect(result.current.data?.[0].dlqMessageId).toBe(42);
+  });
+});
+
+describe('useApprovalQueue', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('returns pending approvals on success', async () => {
+    mockGetApprovalQueue.mockResolvedValueOnce([{ entryId: 'entry-1', ruleId: 1 }]);
+
+    const { result } = renderHook(() => useApprovalQueue(), { wrapper: createWrapper() });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toHaveLength(1);
+    expect(mockGetApprovalQueue).toHaveBeenCalledWith(undefined, 100);
+  });
+
+  it('passes the namespace filter through', async () => {
+    mockGetApprovalQueue.mockResolvedValueOnce([]);
+
+    renderHook(() => useApprovalQueue('ns-1'), { wrapper: createWrapper() });
+
+    await waitFor(() => expect(mockGetApprovalQueue).toHaveBeenCalledWith('ns-1', 100));
   });
 });
