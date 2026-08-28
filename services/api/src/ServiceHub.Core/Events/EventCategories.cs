@@ -39,4 +39,10 @@ public static class EventCategories
     /// demotions.
     /// </summary>
     public const string Autonomy = "autonomy";
+
+    /// <summary>
+    /// Events raised by the Investigate/Prevent/Correlate detection pillars — anomalies, drift
+    /// findings, correlation findings, and narrations (roadmap §5, I5 — "Push").
+    /// </summary>
+    public const string Insight = "insight";
 }

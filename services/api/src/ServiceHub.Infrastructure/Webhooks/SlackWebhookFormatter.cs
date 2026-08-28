@@ -118,6 +118,41 @@ public sealed class SlackWebhookFormatter : IWebhookMessageFormatter
             Blocks: blocks);
     }
 
+    /// <inheritdoc />
+    public object BuildInsightDetectedPayload(InsightDetectedNotification n)
+    {
+        var emoji = n.Kind switch
+        {
+            InsightKind.Anomaly => "🔎",
+            InsightKind.Drift => "📐",
+            InsightKind.Correlation => "🔗",
+            InsightKind.Narration => "📝",
+            _ => "ℹ️",
+        };
+
+        var scope = n.NamespaceName is not null
+            ? n.EntityName is not null ? $"{n.EntityName} — {n.NamespaceName}" : n.NamespaceName
+            : "cross-namespace";
+
+        var blocks = new List<object>
+        {
+            new SlackHeaderBlock($"{emoji} {n.Kind} detected"),
+            new SlackSectionBlock(new[]
+            {
+                new SlackTextField($"*Scope:*\n{scope}"),
+                new SlackTextField($"*Severity:*\n{n.Severity}/100"),
+            }),
+            new SlackContextBlock(n.Description),
+        };
+
+        if (n.InvestigateUrl is not null)
+            blocks.Add(new SlackActionsBlock("Investigate", n.InvestigateUrl));
+
+        return new SlackMessage(
+            Text: $"{emoji} {n.Kind} detected ({scope}, severity {n.Severity}/100)",
+            Blocks: blocks);
+    }
+
     // ── Slack Block Kit shapes (Incoming Webhook payload) ───────────────────
 
     private sealed record SlackMessage(

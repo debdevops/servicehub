@@ -58,6 +58,19 @@ public sealed class GenericWebhookFormatter : IWebhookMessageFormatter
         TrippedAtUtc = notification.TrippedAtUtc,
     };
 
+    /// <inheritdoc />
+    public object BuildInsightDetectedPayload(InsightDetectedNotification notification) => new InsightDetectedPayload
+    {
+        Kind = notification.Kind.ToString(),
+        FindingId = notification.FindingId,
+        NamespaceId = notification.NamespaceId,
+        NamespaceName = notification.NamespaceName,
+        EntityName = notification.EntityName,
+        Description = notification.Description,
+        Severity = notification.Severity,
+        DetectedAtUtc = notification.DetectedAtUtc,
+    };
+
     /// <summary>Original DLQ-spike webhook payload shape — field-for-field identical to pre-Phase-2.</summary>
     internal sealed class DlqSpikePayload
     {
@@ -156,6 +169,37 @@ public sealed class GenericWebhookFormatter : IWebhookMessageFormatter
 
         [JsonPropertyName("trippedAtUtc")]
         public DateTimeOffset TrippedAtUtc { get; init; }
+
+        [JsonPropertyName("source")]
+        public string Source { get; init; } = "ServiceHub";
+    }
+
+    /// <summary>Generic insight-detected webhook payload shape.</summary>
+    internal sealed class InsightDetectedPayload
+    {
+        [JsonPropertyName("kind")]
+        public string Kind { get; init; } = string.Empty;
+
+        [JsonPropertyName("findingId")]
+        public Guid FindingId { get; init; }
+
+        [JsonPropertyName("namespaceId")]
+        public Guid? NamespaceId { get; init; }
+
+        [JsonPropertyName("namespaceName")]
+        public string? NamespaceName { get; init; }
+
+        [JsonPropertyName("entityName")]
+        public string? EntityName { get; init; }
+
+        [JsonPropertyName("description")]
+        public string Description { get; init; } = string.Empty;
+
+        [JsonPropertyName("severity")]
+        public int Severity { get; init; }
+
+        [JsonPropertyName("detectedAtUtc")]
+        public DateTimeOffset DetectedAtUtc { get; init; }
 
         [JsonPropertyName("source")]
         public string Source { get; init; } = "ServiceHub";

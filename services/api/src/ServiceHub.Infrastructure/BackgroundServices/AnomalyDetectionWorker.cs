@@ -2,6 +2,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Enums;
+using ServiceHub.Core.Events;
+using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
 
 namespace ServiceHub.Infrastructure.BackgroundServices;
@@ -17,12 +20,15 @@ public sealed class AnomalyDetectionWorker : BackgroundService
 
     private const int DefaultDetectionIntervalMinutes = 60;
     private const int DefaultCurrentWindowHours = 24;
+    private const int DefaultPushSeverityThreshold = 70;
 
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<AnomalyDetectionWorker> _logger;
     private readonly TimeSpan _detectionInterval;
     private readonly TimeSpan _currentWindow;
+    private readonly int _pushSeverityThreshold;
     private readonly IWorkerHeartbeatStore? _heartbeatStore;
+    private readonly IPlatformEventBus? _eventBus;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AnomalyDetectionWorker"/> class.
@@ -45,10 +51,15 @@ public sealed class AnomalyDetectionWorker : BackgroundService
         _currentWindow = TimeSpan.FromHours(Math.Clamp(
             configuration.GetValue("AnomalyDetection:CurrentWindowHours", DefaultCurrentWindowHours),
             1, 168));
+        _pushSeverityThreshold = Math.Clamp(
+            configuration.GetValue("Insight:PushSeverityThreshold", DefaultPushSeverityThreshold),
+            0, 100);
 
         // Optional: GetService (not GetRequiredService) so tests that build a root provider
-        // without registering it keep working — heartbeat recording degrades to a no-op instead.
+        // without registering these keep working — heartbeat recording and push notification
+        // (roadmap §5, I5) degrade to a no-op instead.
         _heartbeatStore = serviceProvider.GetService<IWorkerHeartbeatStore>();
+        _eventBus = serviceProvider.GetService<IPlatformEventBus>();
     }
 
     /// <inheritdoc/>
@@ -144,11 +155,51 @@ public sealed class AnomalyDetectionWorker : BackgroundService
                 "Detected {AnomalyCount} anomaly(ies) in namespace {NamespaceId}",
                 detectionResult.Value.Count,
                 ns.Id);
+
+            if (_eventBus is not null)
+            {
+                foreach (var anomaly in detectionResult.Value.Where(a => a.Severity >= _pushSeverityThreshold))
+                {
+                    await PublishInsightDetectedAsync(anomaly, ns, cancellationToken).ConfigureAwait(false);
+                }
+            }
         }
 
         _logger.LogDebug(
             "Anomaly detection cycle complete: {NamespaceCount} namespace(s) scanned, {AnomalyCount} anomaly(ies) found",
             namespaces.Count,
             totalDetected);
+    }
+
+    // Roadmap §5, I5 — "Push": surface findings at/above the significance threshold without
+    // waiting for an operator to open DLQ Intelligence, via the existing webhook/SSE
+    // infrastructure (WebhookInsightDetectedHandler / PlatformEventStreamBroker).
+    private async Task PublishInsightDetectedAsync(
+        Core.Entities.Anomaly anomaly,
+        Core.Entities.Namespace ns,
+        CancellationToken cancellationToken)
+    {
+        var evt = new PlatformEvent
+        {
+            Source = "ServiceHub.Infrastructure.BackgroundServices.AnomalyDetectionWorker",
+            Category = EventCategories.Insight,
+            EventType = EventTypes.InsightDetected,
+            Severity = EventSeverity.Warning,
+            Actor = ns.OwnerId,
+            NamespaceId = ns.Id,
+            NamespaceName = ns.Name,
+            TargetScope = anomaly.EntityName,
+            Payload = new InsightDetectedPayload
+            {
+                Kind = InsightKind.Anomaly,
+                FindingId = anomaly.Id,
+                EntityName = anomaly.EntityName,
+                Description = anomaly.Description,
+                Severity = anomaly.Severity,
+                DetectedAtUtc = anomaly.DetectedAt,
+            },
+        };
+
+        await _eventBus!.PublishAsync(evt, cancellationToken).ConfigureAwait(false);
     }
 }

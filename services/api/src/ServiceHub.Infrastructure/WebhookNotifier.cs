@@ -239,6 +239,52 @@ public sealed class WebhookNotifier : IWebhookNotifier
             cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<Result> NotifyInsightDetectedAsync(
+        InsightKind kind,
+        Guid findingId,
+        Guid? namespaceId,
+        string? namespaceName,
+        string? entityName,
+        string description,
+        int severity,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_options.Enabled)
+        {
+            _logger.LogDebug("Webhook notifications are disabled, skipping insight-detected alert");
+            return Result.Success();
+        }
+
+        if (!TryGetSafeWebhookUri(_options.Url, out var webhookUri))
+        {
+            _logger.LogWarning("Configured webhook URL is not a permitted destination (must be HTTPS and not an internal address)");
+            return Result.Failure(Error.Validation("Webhook.InvalidUrl",
+                "Webhook URL must be an HTTPS URL pointing to an external host"));
+        }
+
+        // No threshold/cooldown gate here: the caller (a detection worker) only invokes this for
+        // findings that already cleared its own significance threshold, so every call is worth
+        // reporting once — same reasoning as NotifyAutonomyTransitionAsync/NotifyCircuitBreakerTrippedAsync.
+        var notification = new InsightDetectedNotification(
+            Kind: kind,
+            FindingId: findingId,
+            NamespaceId: namespaceId,
+            NamespaceName: namespaceName,
+            EntityName: entityName,
+            Description: description,
+            Severity: severity,
+            DetectedAtUtc: DateTimeOffset.UtcNow,
+            InvestigateUrl: BuildInsightUrl(namespaceId));
+
+        var formatter = ResolveFormatter();
+        var payload = formatter.BuildInsightDetectedPayload(notification);
+
+        return await PostAsync(webhookUri, payload,
+            $"insight-detected webhook for {kind} finding {findingId}",
+            cancellationToken);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private IWebhookMessageFormatter ResolveFormatter() =>
@@ -260,6 +306,17 @@ public sealed class WebhookNotifier : IWebhookNotifier
         string.IsNullOrWhiteSpace(_options.PublicUrl)
             ? null
             : $"{_options.PublicUrl.TrimEnd('/')}/rules";
+
+    private string? BuildInsightUrl(Guid? namespaceId)
+    {
+        if (string.IsNullOrWhiteSpace(_options.PublicUrl))
+        {
+            return null;
+        }
+
+        var baseUrl = $"{_options.PublicUrl.TrimEnd('/')}/dlq-history";
+        return namespaceId is Guid id ? $"{baseUrl}?namespace={id}" : baseUrl;
+    }
 
     private async Task<Result> PostAsync(Uri webhookUri, object payload, string logDescription, CancellationToken cancellationToken)
     {

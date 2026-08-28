@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Events;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Shared.Results;
@@ -16,16 +17,26 @@ public sealed class DriftDetectionWorkerTests
     private readonly Mock<INamespaceRepository> _repoMock = new();
     private readonly Mock<IDriftDetectionService> _detectionMock = new();
     private readonly Mock<IDriftResultCache> _cacheMock = new();
+    private readonly Mock<IPlatformEventBus> _eventBusMock = new();
 
     private static IConfiguration EmptyConfig() =>
         new ConfigurationBuilder().AddInMemoryCollection().Build();
 
-    private IServiceProvider BuildServiceProvider()
+    private static IConfiguration ConfigWithPushThreshold(int threshold) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Insight:PushSeverityThreshold"] = threshold.ToString() })
+            .Build();
+
+    private IServiceProvider BuildServiceProvider(bool registerEventBus = false)
     {
         var services = new ServiceCollection();
         services.AddSingleton(_repoMock.Object);
         services.AddSingleton(_detectionMock.Object);
         services.AddSingleton(_cacheMock.Object);
+        if (registerEventBus)
+        {
+            services.AddSingleton(_eventBusMock.Object);
+        }
         return services.BuildServiceProvider();
     }
 
@@ -151,6 +162,48 @@ public sealed class DriftDetectionWorkerTests
         await worker.RunDetectionCycleAsync(CancellationToken.None);
 
         _cacheMock.Verify(c => c.Store(It.Is<IEnumerable<DriftFinding>>(f => f.Contains(finding))), Times.Once);
+    }
+
+    // ── Roadmap §5, I5 — Push ────────────────────────────────────────
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_FindingAtOrAboveThreshold_PublishesInsightDetectedEvent()
+    {
+        var ns = CreateTestNamespace();
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var finding = DriftFinding.Create(ns.Id, "queue-1", DriftFindingType.SchemaShapeDrift, 90, "shape changed");
+        _detectionMock.Setup(d => d.DetectDriftAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<DriftFinding>>.Success(new[] { finding }));
+
+        var worker = new DriftDetectionWorker(BuildServiceProvider(registerEventBus: true), ConfigWithPushThreshold(70), NullLogger<DriftDetectionWorker>.Instance);
+
+        await worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        _eventBusMock.Verify(
+            b => b.PublishAsync(
+                It.Is<PlatformEvent>(e => e.EventType == EventTypes.InsightDetected && e.NamespaceId == ns.Id),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_FindingBelowThreshold_DoesNotPublish()
+    {
+        var ns = CreateTestNamespace();
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var finding = DriftFinding.Create(ns.Id, "queue-1", DriftFindingType.SchemaShapeDrift, 40, "minor shift");
+        _detectionMock.Setup(d => d.DetectDriftAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<DriftFinding>>.Success(new[] { finding }));
+
+        var worker = new DriftDetectionWorker(BuildServiceProvider(registerEventBus: true), ConfigWithPushThreshold(70), NullLogger<DriftDetectionWorker>.Instance);
+
+        await worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        _eventBusMock.Verify(b => b.PublishAsync(It.IsAny<PlatformEvent>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

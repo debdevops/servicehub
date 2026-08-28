@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Events;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Shared.Results;
@@ -16,16 +17,26 @@ public sealed class AnomalyDetectionWorkerTests
     private readonly Mock<INamespaceRepository> _repoMock = new();
     private readonly Mock<IAnomalyDetectionService> _detectionMock = new();
     private readonly Mock<IAnomalyResultCache> _cacheMock = new();
+    private readonly Mock<IPlatformEventBus> _eventBusMock = new();
 
     private static IConfiguration EmptyConfig() =>
         new ConfigurationBuilder().AddInMemoryCollection().Build();
 
-    private IServiceProvider BuildServiceProvider()
+    private static IConfiguration ConfigWithPushThreshold(int threshold) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Insight:PushSeverityThreshold"] = threshold.ToString() })
+            .Build();
+
+    private IServiceProvider BuildServiceProvider(bool registerEventBus = false)
     {
         var services = new ServiceCollection();
         services.AddSingleton(_repoMock.Object);
         services.AddSingleton(_detectionMock.Object);
         services.AddSingleton(_cacheMock.Object);
+        if (registerEventBus)
+        {
+            services.AddSingleton(_eventBusMock.Object);
+        }
         return services.BuildServiceProvider();
     }
 
@@ -151,6 +162,66 @@ public sealed class AnomalyDetectionWorkerTests
         await worker.RunDetectionCycleAsync(CancellationToken.None);
 
         _cacheMock.Verify(c => c.Store(It.Is<IEnumerable<Anomaly>>(a => a.Contains(anomaly))), Times.Once);
+    }
+
+    // ── Roadmap §5, I5 — Push ────────────────────────────────────────
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_AnomalyAtOrAboveThreshold_PublishesInsightDetectedEvent()
+    {
+        var ns = CreateTestNamespace();
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var anomaly = Anomaly.Create(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 80, "spike");
+        _detectionMock.Setup(d => d.DetectAnomaliesAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new[] { anomaly }));
+
+        var worker = new AnomalyDetectionWorker(BuildServiceProvider(registerEventBus: true), ConfigWithPushThreshold(70), NullLogger<AnomalyDetectionWorker>.Instance);
+
+        await worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        _eventBusMock.Verify(
+            b => b.PublishAsync(
+                It.Is<PlatformEvent>(e => e.EventType == EventTypes.InsightDetected && e.NamespaceId == ns.Id),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_AnomalyBelowThreshold_DoesNotPublish()
+    {
+        var ns = CreateTestNamespace();
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var anomaly = Anomaly.Create(ns.Id, "queue-1", AnomalyType.LowMessageVolume, 40, "drop");
+        _detectionMock.Setup(d => d.DetectAnomaliesAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new[] { anomaly }));
+
+        var worker = new AnomalyDetectionWorker(BuildServiceProvider(registerEventBus: true), ConfigWithPushThreshold(70), NullLogger<AnomalyDetectionWorker>.Instance);
+
+        await worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        _eventBusMock.Verify(b => b.PublishAsync(It.IsAny<PlatformEvent>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_NoEventBusRegistered_DoesNotThrow()
+    {
+        var ns = CreateTestNamespace();
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var anomaly = Anomaly.Create(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 95, "spike");
+        _detectionMock.Setup(d => d.DetectAnomaliesAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new[] { anomaly }));
+
+        var worker = new AnomalyDetectionWorker(BuildServiceProvider(registerEventBus: false), EmptyConfig(), NullLogger<AnomalyDetectionWorker>.Instance);
+
+        var act = () => worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]

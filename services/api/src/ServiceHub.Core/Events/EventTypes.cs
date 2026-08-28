@@ -77,4 +77,14 @@ public static class EventTypes
     /// (Completed, CompletedWithErrors, Failed, or Cancelled).
     /// </summary>
     public const string BulkOperationCompleted = "servicehub.bulkoperation.completed.v1";
+
+    // ── Insight (Investigate / Prevent / Correlate) ──────────────────────────────
+
+    /// <summary>
+    /// Raised when a detection worker (anomaly, drift, correlation, or narration) produces a
+    /// finding at or above its own significance threshold — the "push, don't wait to be asked"
+    /// half of roadmap §5, I5. See <see cref="ServiceHub.Core.Enums.InsightKind"/> for which
+    /// pillar produced it.
+    /// </summary>
+    public const string InsightDetected = "servicehub.insight.detected.v1";
 }
