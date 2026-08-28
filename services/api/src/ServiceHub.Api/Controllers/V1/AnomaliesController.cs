@@ -7,29 +7,33 @@ using ServiceHub.Shared.Constants;
 namespace ServiceHub.Api.Controllers.V1;
 
 /// <summary>
-/// Controller for AI-powered anomaly detection in Service Bus traffic.
-/// Provides endpoints for detecting and retrieving anomalies.
+/// Controller for deterministic, statistics-based anomaly detection in Service Bus traffic
+/// (roadmap §5.B, I3). Provides endpoints for detecting and retrieving anomalies.
 /// </summary>
 [Route(ApiRoutes.Anomalies.Base)]
 [Tags("Anomalies")]
 public sealed class AnomaliesController : ApiControllerBase
 {
-    private readonly IAIServiceClient _aiServiceClient;
+    private readonly IAnomalyDetectionService _anomalyDetectionService;
+    private readonly IAnomalyResultCache _anomalyResultCache;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly ILogger<AnomaliesController> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AnomaliesController"/> class.
     /// </summary>
-    /// <param name="aiServiceClient">The AI service client.</param>
+    /// <param name="anomalyDetectionService">The deterministic anomaly detection service.</param>
+    /// <param name="anomalyResultCache">Short-lived cache of recently detected anomalies.</param>
     /// <param name="namespaceRepository">The namespace repository.</param>
     /// <param name="logger">The logger.</param>
     public AnomaliesController(
-        IAIServiceClient aiServiceClient,
+        IAnomalyDetectionService anomalyDetectionService,
+        IAnomalyResultCache anomalyResultCache,
         INamespaceRepository namespaceRepository,
         ILogger<AnomaliesController> logger)
     {
-        _aiServiceClient = aiServiceClient ?? throw new ArgumentNullException(nameof(aiServiceClient));
+        _anomalyDetectionService = anomalyDetectionService ?? throw new ArgumentNullException(nameof(anomalyDetectionService));
+        _anomalyResultCache = anomalyResultCache ?? throw new ArgumentNullException(nameof(anomalyResultCache));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -44,12 +48,10 @@ public sealed class AnomaliesController : ApiControllerBase
     /// <returns>A list of detected anomalies.</returns>
     /// <response code="200">Anomalies detected successfully.</response>
     /// <response code="404">Namespace not found.</response>
-    /// <response code="503">AI service unavailable.</response>
     [RequireScope(ApiKeyScopes.AnomaliesRead)]
     [HttpPost("detect")]
     [ProducesResponseType(typeof(AnomalyDetectionResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<AnomalyDetectionResponse>> DetectAnomalies(
         [FromQuery] Guid namespaceId,
         [FromQuery] DateTimeOffset? startTime = null,
@@ -72,22 +74,7 @@ public sealed class AnomaliesController : ApiControllerBase
             return ToActionResult<AnomalyDetectionResponse>(namespaceResult.Error);
         }
 
-        // Check AI service availability
-        var availabilityResult = await _aiServiceClient.IsAvailableAsync(cancellationToken);
-        if (availabilityResult.IsFailure || !availabilityResult.Value)
-        {
-            return StatusCode(
-                StatusCodes.Status503ServiceUnavailable,
-                new ProblemDetails
-                {
-                    Status = StatusCodes.Status503ServiceUnavailable,
-                    Title = "AI Service Unavailable",
-                    Detail = "The AI anomaly detection service is currently unavailable."
-                });
-        }
-
-        // Detect anomalies
-        var result = await _aiServiceClient.DetectAnomaliesAsync(
+        var result = await _anomalyDetectionService.DetectAnomaliesAsync(
             namespaceId,
             start,
             end,
@@ -97,6 +84,10 @@ public sealed class AnomaliesController : ApiControllerBase
         {
             return ToActionResult<AnomalyDetectionResponse>(result.Error);
         }
+
+        // Cache the results so a subsequent GET /{id} can retrieve one of them (see
+        // IAnomalyResultCache for why this isn't backed by the database).
+        _anomalyResultCache.Store(result.Value);
 
         var anomalies = result.Value
             .Select(MapToAnomalyInfo)
@@ -133,16 +124,18 @@ public sealed class AnomaliesController : ApiControllerBase
     {
         _logger.LogInformation("Getting anomaly {AnomalyId}", id);
 
-        var result = await _aiServiceClient.GetAnomalyByIdAsync(id, cancellationToken);
-        if (result.IsFailure)
+        var anomaly = _anomalyResultCache.TryGet(id);
+        if (anomaly is null)
         {
-            return ToActionResult<AnomalyInfo>(result.Error);
+            return ToActionResult<AnomalyInfo>(ServiceHub.Shared.Results.Error.NotFound(
+                "Anomaly.NotFound",
+                $"Anomaly with ID '{id}' was not found."));
         }
 
         // TENANT ISOLATION: an anomaly is only visible to the owner of the namespace
         // it was detected in. Return 404 (not 403) on mismatch to avoid leaking that
         // the anomaly ID exists.
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(result.Value.NamespaceId, cancellationToken);
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(anomaly.NamespaceId, cancellationToken);
         if (namespaceResult.IsFailure
             && namespaceResult.Error.Type != ServiceHub.Shared.Results.ErrorType.NotFound)
         {
@@ -157,7 +150,7 @@ public sealed class AnomaliesController : ApiControllerBase
                 $"Anomaly with ID '{id}' was not found."));
         }
 
-        return Ok(MapToAnomalyInfo(result.Value));
+        return Ok(MapToAnomalyInfo(anomaly));
     }
 
     /// <summary>
