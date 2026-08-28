@@ -299,6 +299,11 @@ public static class DependencyInjection
         services.TryAddScoped<IApprovalQueueService, ApprovalQueueService>();
 
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
+
+        // Fleet-wide autonomy dashboard (roadmap §11 item 5, §15 item 9) — read-only aggregation
+        // over AutonomyGrants/AutoReplayRules/RecoveryEvents; never writes, never grants autonomy.
+        services.TryAddScoped<IAutonomyDashboardService, AutonomyDashboardService>();
+
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();
 

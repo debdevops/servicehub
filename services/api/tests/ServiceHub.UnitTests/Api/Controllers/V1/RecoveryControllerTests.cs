@@ -27,6 +27,7 @@ public sealed class RecoveryControllerTests : IDisposable
     private readonly IRecoveryEvidenceExporter _evidenceExporter;
     private readonly IRecoveryTrustScoringService _trustScoring;
     private readonly IApprovalQueueService _approvalQueue;
+    private readonly IAutonomyDashboardService _autonomyDashboard;
     private readonly RecoveryController _controller;
 
     public RecoveryControllerTests()
@@ -42,10 +43,11 @@ public sealed class RecoveryControllerTests : IDisposable
         _evidenceExporter = new RecoveryEvidenceExporter(_recoveryLedger);
         _trustScoring = new RecoveryTrustScoringService(_recoveryLedger);
         _approvalQueue = new ApprovalQueueService(_dbContext);
+        _autonomyDashboard = new AutonomyDashboardService(_recoveryLedger, _dbContext);
         _controller = CreateController(OwnerA);
     }
 
-    private RecoveryController CreateController(string ownerId) => new(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue)
+    private RecoveryController CreateController(string ownerId) => new(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard)
     {
         ControllerContext = new ControllerContext
         {
@@ -86,29 +88,36 @@ public sealed class RecoveryControllerTests : IDisposable
     [Fact]
     public void Constructor_NullRecoveryLedger_Throws()
     {
-        var act = () => new RecoveryController(null!, _evidenceExporter, _trustScoring, _approvalQueue);
+        var act = () => new RecoveryController(null!, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard);
         act.Should().Throw<ArgumentNullException>().WithParameterName("recoveryLedger");
     }
 
     [Fact]
     public void Constructor_NullEvidenceExporter_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, null!, _trustScoring, _approvalQueue);
+        var act = () => new RecoveryController(_recoveryLedger, null!, _trustScoring, _approvalQueue, _autonomyDashboard);
         act.Should().Throw<ArgumentNullException>().WithParameterName("evidenceExporter");
     }
 
     [Fact]
     public void Constructor_NullTrustScoring_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, null!, _approvalQueue);
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, null!, _approvalQueue, _autonomyDashboard);
         act.Should().Throw<ArgumentNullException>().WithParameterName("trustScoring");
     }
 
     [Fact]
     public void Constructor_NullApprovalQueue_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, null!);
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, null!, _autonomyDashboard);
         act.Should().Throw<ArgumentNullException>().WithParameterName("approvalQueue");
+    }
+
+    [Fact]
+    public void Constructor_NullAutonomyDashboard_Throws()
+    {
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, null!);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("autonomyDashboard");
     }
 
     [Fact]
@@ -709,5 +718,34 @@ public sealed class RecoveryControllerTests : IDisposable
         response.CanAutoReplay.Should().BeFalse();
         response.CanProveDlqAbsence.Should().BeFalse();
         response.BlockedReason.Should().Contain("Aws");
+    }
+
+    [Fact]
+    public async Task GetAutonomyDashboard_NoDataForOwner_ReturnsEmptySnapshot()
+    {
+        var result = await _controller.GetAutonomyDashboard();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var overview = ok.Value.Should().BeOfType<AutonomyDashboardOverview>().Subject;
+        overview.TotalSignatures.Should().Be(0);
+        overview.Grants.Should().BeEmpty();
+        overview.EmergencyStopActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetAutonomyDashboard_ScopesToCallerOwner()
+    {
+        await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-dashboard-a", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "owner A earned it", null);
+        await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+            OwnerB, "sig-dashboard-b", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "owner B earned it", null);
+
+        var result = await _controller.GetAutonomyDashboard();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var overview = ok.Value.Should().BeOfType<AutonomyDashboardOverview>().Subject;
+        overview.Grants.Should().ContainSingle().Which.SignatureHash.Should().Be("sig-dashboard-a");
     }
 }

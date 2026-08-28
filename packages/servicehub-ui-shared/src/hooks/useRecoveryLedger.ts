@@ -6,6 +6,7 @@ import {
   type RecoveryEntriesParams,
   type SignatureAutonomyStatus,
   type ApprovalQueueEntry,
+  type AutonomyDashboardOverview,
 } from '../lib/api/recovery';
 import { useDemoContext } from '../lib/demo/DemoContext';
 import { getMockRecoveryOperations, getMockRecoveryOperationDetail } from '../lib/demo/mockProviders';
@@ -104,6 +105,49 @@ export function useApprovalQueue(namespaceId?: string, limit = 100) {
         enabled: !isDemoMode,
         staleTime: 15_000,
         refetchInterval: 30_000,
+        refetchIntervalInBackground: false,
+        retry: (failureCount, error: unknown) => {
+          const err = error as { response?: { status?: number } };
+          if (err?.response?.status === 404) return false;
+          if (err?.response?.status === 403) return false;
+          return failureCount < 2;
+        },
+      };
+
+  return useQuery(options);
+}
+
+/**
+ * Hook for fetching the fleet-wide autonomy dashboard (roadmap §11 item 5, §15 item 9): how many
+ * signatures currently stand at each autonomy level, every currently standing grant, every
+ * circuit-breaker-tripped rule, the emergency-stop status, and recent promotions/demotions. Demo
+ * mode has no synthetic `AutonomyGrant`/`RecoveryEvent` fixture set spanning multiple signatures
+ * — rather than fabricate one, it honestly reports an empty, non-active snapshot, matching
+ * {@link useApprovalQueue}'s reasoning.
+ */
+export function useAutonomyDashboard() {
+  const { isDemoMode } = useDemoContext();
+
+  const options: UseQueryOptions<AutonomyDashboardOverview> = isDemoMode
+    ? {
+        queryKey: ['recovery-autonomy-dashboard', 'demo'],
+        queryFn: (): Promise<AutonomyDashboardOverview> =>
+          Promise.resolve({
+            generatedAt: new Date().toISOString(),
+            emergencyStopActive: false,
+            totalSignatures: 0,
+            levelCounts: [],
+            grants: [],
+            circuitBreakerTrips: [],
+            recentTransitions: [],
+          }),
+      }
+    : {
+        queryKey: ['recovery-autonomy-dashboard'],
+        queryFn: () => recoveryApi.getAutonomyDashboard(),
+        enabled: !isDemoMode,
+        staleTime: 30_000,
+        refetchInterval: 60_000,
         refetchIntervalInBackground: false,
         retry: (failureCount, error: unknown) => {
           const err = error as { response?: { status?: number } };

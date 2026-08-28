@@ -473,4 +473,29 @@ public interface IRecoveryLedger
         string ownerId,
         string signatureHash,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every <see cref="AutonomyGrant"/> currently on record for <paramref name="ownerId"/>,
+    /// across every signature and <see cref="Enums.RecoveryOperationKind"/> — the fleet-wide
+    /// autonomy dashboard's source query (roadmap §11 item 5, §15 item 9). A signature that has
+    /// never been promoted past L3 has no row here (see <see cref="GetAutonomyGrantAsync"/>'s doc
+    /// comment); this is the current-projection table as-is, no new aggregation or trust logic.
+    /// </summary>
+    Task<IReadOnlyList<AutonomyGrant>> GetAutonomyGrantsAsync(
+        string ownerId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The most recent <paramref name="limit"/> <see cref="Enums.RecoveryEventType.AutonomyGrantPromoted"/>/
+    /// <see cref="Enums.RecoveryEventType.AutonomyGrantDemoted"/> events for
+    /// <paramref name="ownerId"/>, newest first, decoded from each event's <c>DetailJson</c> (the
+    /// same structured payload <see cref="RecordAutonomyGrantTransitionAsync"/> writes) into a
+    /// <see cref="AutonomyTransitionRecord"/> — the fleet-wide autonomy dashboard's "recent
+    /// activity" feed. An event whose <c>DetailJson</c> cannot be decoded is skipped rather than
+    /// surfaced malformed.
+    /// </summary>
+    Task<IReadOnlyList<AutonomyTransitionRecord>> GetRecentAutonomyTransitionsAsync(
+        string ownerId,
+        int limit,
+        CancellationToken cancellationToken = default);
 }

@@ -36,6 +36,7 @@ const LiveTailPageLazy = lazy(() => import('./pages/LiveTailPage').then(m => ({ 
 const ConnectPageLazy = lazy(() => import('./pages/ConnectPage').then(m => ({ default: m.ConnectPage })));
 const RulesPageLazy = lazy(() => import('./pages/RulesPage').then(m => ({ default: m.RulesPage })));
 const ApprovalQueuePageLazy = lazy(() => import('./pages/ApprovalQueuePage'));
+const AutonomyDashboardPageLazy = lazy(() => import('./pages/AutonomyDashboardPage'));
 const HealthPageLazy = lazy(() => import('./pages/HealthPage').then(m => ({ default: m.HealthPage })));
 const HelpPageLazy = lazy(() => import('./pages/HelpPage').then(m => ({ default: m.HelpPage })));
 const ScheduledMessagesPageLazy = lazy(() => import('./pages/ScheduledMessagesPage').then(m => ({ default: m.ScheduledMessagesPage })));
@@ -108,6 +109,14 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <ApprovalQueuePageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'autonomy-dashboard',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <AutonomyDashboardPageLazy />
       </Suspense>
     ),
   },

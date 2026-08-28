@@ -136,6 +136,56 @@ export interface SignatureAutonomyStatus {
   blockedReason: string | null;
 }
 
+/** Mirrors ServiceHub.Core.Interfaces.AutonomyLevelCount (fleet-wide autonomy dashboard). */
+export interface AutonomyLevelCount {
+  actionKind: string;
+  level: number;
+  levelLabel: string;
+  count: number;
+}
+
+/** Mirrors ServiceHub.Core.Interfaces.AutonomyGrantSummary. */
+export interface AutonomyGrantSummary {
+  signatureHash: string;
+  actionKind: string;
+  currentLevel: number;
+  levelLabel: string;
+  updatedAtUtc: string;
+}
+
+/** Mirrors ServiceHub.Core.Interfaces.CircuitBreakerTrip. */
+export interface CircuitBreakerTrip {
+  ruleId: number;
+  ruleName: string;
+  disabledReasonDetail: string | null;
+}
+
+/** Mirrors ServiceHub.Core.Interfaces.AutonomyTransitionSummary. */
+export interface AutonomyTransitionSummary {
+  signatureHash: string;
+  actionKind: string;
+  previousLevel: number;
+  newLevel: number;
+  reason: string;
+  occurredAtUtc: string;
+}
+
+/**
+ * Mirrors ServiceHub.Core.Interfaces.AutonomyDashboardOverview — the fleet-wide "how much
+ * unattended trust has the fleet actually earned, and is anything currently constraining it?"
+ * snapshot (roadmap §11 item 5, §15 item 9). Pure read-side aggregation; never itself a trust
+ * decision.
+ */
+export interface AutonomyDashboardOverview {
+  generatedAt: string;
+  emergencyStopActive: boolean;
+  totalSignatures: number;
+  levelCounts: AutonomyLevelCount[];
+  grants: AutonomyGrantSummary[];
+  circuitBreakerTrips: CircuitBreakerTrip[];
+  recentTransitions: AutonomyTransitionSummary[];
+}
+
 // The verification-limitation sentence every surface rendering a verification result must show
 // verbatim (roadmap §13.4) — ServiceHub observes the queue, never the consumer.
 export const RECOVERY_LIMITATION_SENTENCE =
@@ -331,6 +381,11 @@ export const recoveryApi = {
 
   getAutonomyStatus: async (signatureHash: string): Promise<SignatureAutonomyStatus> => {
     const response = await apiClient.get<SignatureAutonomyStatus>(`/recovery/autonomy/${signatureHash}`);
+    return response.data;
+  },
+
+  getAutonomyDashboard: async (): Promise<AutonomyDashboardOverview> => {
+    const response = await apiClient.get<AutonomyDashboardOverview>('/recovery/autonomy-dashboard');
     return response.data;
   },
 
