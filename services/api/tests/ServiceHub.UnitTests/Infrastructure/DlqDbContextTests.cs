@@ -383,6 +383,153 @@ public class DlqDbContextTests : IDisposable
         msg.Status.Should().Be(DlqMessageStatus.Replayed);
     }
 
+    // ── F1: SQLITE_BUSY retry wrapper ───────────────────────────────────────────
+
+    [Fact]
+    public async Task SaveChangesAsync_RetriesOnSqliteBusy_AndEventuallySucceeds()
+    {
+        // A tiny busy_timeout so the blocking writer below reliably outlasts the SQLite
+        // driver's own internal wait and forces a genuine SQLITE_BUSY exception back to EF
+        // Core — proving it's the Polly wrapper in DlqDbContext, not just busy_timeout, that
+        // makes this call eventually succeed.
+        var connectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        using var keeperConnection = new SqliteConnection(connectionString);
+        keeperConnection.Open();
+
+        var options = new DbContextOptionsBuilder<DlqDbContext>()
+            .UseSqlite(connectionString)
+            .AddInterceptors(new SqlitePragmaConnectionInterceptor(busyTimeoutMilliseconds: 50))
+            .Options;
+
+        using var setupContext = new DlqDbContext(options);
+        setupContext.Database.EnsureCreated();
+
+        using var blockerConnection = new SqliteConnection(connectionString);
+        blockerConnection.Open();
+        using (var beginCommand = blockerConnection.CreateCommand())
+        {
+            beginCommand.CommandText = "BEGIN IMMEDIATE;";
+            beginCommand.ExecuteNonQuery();
+        }
+
+        var releaseBlockerAfterDelay = Task.Run(async () =>
+        {
+            await Task.Delay(400);
+            using var commitCommand = blockerConnection.CreateCommand();
+            commitCommand.CommandText = "COMMIT;";
+            commitCommand.ExecuteNonQuery();
+        });
+
+        using var contextUnderTest = new DlqDbContext(options, new SqliteBusyRetryOptions { MaxRetryAttempts = 5 });
+        contextUnderTest.DlqMessages.Add(new DlqMessage
+        {
+            MessageId = "msg-busy", SequenceNumber = 1, BodyHash = "hash-busy",
+            NamespaceId = Guid.NewGuid(), OwnerId = TestConstants.TestOwnerId, EntityName = "q1",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            DeliveryCount = 1, MessageSize = 50
+        });
+
+        var saved = await contextUnderTest.SaveChangesAsync();
+
+        saved.Should().Be(1);
+        await releaseBlockerAfterDelay;
+    }
+
+    // ── Hostile review: prove DbUpdateConcurrencyException / constraint-violation
+    // DbUpdateException are NOT retried by the Polly wrapper ──────────────────────
+
+    [Fact]
+    public async Task SaveChangesAsync_ConstraintViolation_DoesNotRetry_SurfacesWithoutRetryDelay()
+    {
+        // MaxRetryAttempts is set generously high (5) so that, if IsTransientSqliteContention
+        // ever regressed to treat a constraint violation as retryable, this test would fail
+        // slow (multiple 250ms+ exponential-backoff delays) rather than fail silently fast.
+        var options = new DbContextOptionsBuilder<DlqDbContext>()
+            .UseSqlite("DataSource=:memory:")
+            .Options;
+        using var dbContext = new DlqDbContext(options, new SqliteBusyRetryOptions { MaxRetryAttempts = 5 });
+        dbContext.Database.OpenConnection();
+        dbContext.Database.EnsureCreated();
+
+        var nsId = Guid.NewGuid();
+        dbContext.DlqMessages.Add(new DlqMessage
+        {
+            MessageId = "msg-1", SequenceNumber = 1, BodyHash = "hash-1",
+            NamespaceId = nsId, OwnerId = TestConstants.TestOwnerId, EntityName = "q1",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            DeliveryCount = 1, MessageSize = 50
+        });
+        await dbContext.SaveChangesAsync();
+
+        dbContext.DlqMessages.Add(new DlqMessage
+        {
+            // Same (OwnerId, NamespaceId, EntityName, SequenceNumber) — violates the unique index.
+            MessageId = "msg-2", SequenceNumber = 1, BodyHash = "hash-2",
+            NamespaceId = nsId, OwnerId = TestConstants.TestOwnerId, EntityName = "q1",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            DeliveryCount = 1, MessageSize = 50
+        });
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var act = () => dbContext.SaveChangesAsync();
+        await act.Should().ThrowAsync<DbUpdateException>();
+        stopwatch.Stop();
+
+        // The Polly pipeline's first retry delay alone is 250ms (before backoff/jitter grows
+        // it further for later attempts). An unretried failure surfaces in well under that.
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(200));
+
+        dbContext.Database.CloseConnection();
+    }
+
+    [Fact]
+    public async Task SaveChangesAsync_DbUpdateConcurrencyException_DoesNotRetry_SurfacesWithoutRetryDelay()
+    {
+        var connectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        using var keeperConnection = new SqliteConnection(connectionString);
+        keeperConnection.Open();
+
+        var options = new DbContextOptionsBuilder<DlqDbContext>().UseSqlite(connectionString).Options;
+
+        using var contextA = new DlqDbContext(options, new SqliteBusyRetryOptions { MaxRetryAttempts = 5 });
+        contextA.Database.EnsureCreated();
+
+        var namespaceId = Guid.NewGuid();
+        var msg = new DlqMessage
+        {
+            MessageId = "msg-race", SequenceNumber = 1, BodyHash = "hash-race",
+            NamespaceId = namespaceId, OwnerId = TestConstants.TestOwnerId, EntityName = "q1",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+            DetectedAtUtc = DateTimeOffset.UtcNow,
+            DeliveryCount = 1, MessageSize = 50,
+            Status = DlqMessageStatus.Active
+        };
+        contextA.DlqMessages.Add(msg);
+        await contextA.SaveChangesAsync();
+
+        using var contextB = new DlqDbContext(options);
+        var msgViaB = await contextB.DlqMessages.SingleAsync(m => m.Id == msg.Id);
+        msgViaB.Status = DlqMessageStatus.Replaying;
+        await contextB.SaveChangesAsync();
+
+        // contextA still holds its stale Active snapshot — the loser.
+        msg.Status = DlqMessageStatus.Replaying;
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var act = () => contextA.SaveChangesAsync();
+        await act.Should().ThrowAsync<DbUpdateConcurrencyException>();
+        stopwatch.Stop();
+
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(200));
+    }
+
     private static AutonomyGrant NewGrant(
         string ownerId = "owner-a", string signatureHash = "sig-1",
         RecoveryOperationKind actionKind = RecoveryOperationKind.Replay,
