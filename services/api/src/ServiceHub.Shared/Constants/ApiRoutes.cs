@@ -247,6 +247,11 @@ public static class ApiRoutes
         /// Route for triggering drift detection.
         /// </summary>
         public const string Detect = $"{Base}/detect";
+
+        /// <summary>
+        /// Route for generating a producer-facing contract-violation export.
+        /// </summary>
+        public const string Export = $"{Base}/export";
     }
 
     /// <summary>

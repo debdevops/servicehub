@@ -313,6 +313,7 @@ public static class DependencyInjection
         services.TryAddSingleton<IAnomalyResultCache, Analytics.InMemoryAnomalyResultCache>();
         services.TryAddScoped<IDriftDetectionService, Analytics.DeterministicDriftDetectionService>();
         services.TryAddSingleton<IDriftResultCache, Analytics.InMemoryDriftResultCache>();
+        services.TryAddScoped<IContractViolationExportService, Analytics.DeterministicContractViolationExportService>();
         services.TryAddScoped<ICorrelationDetectionService, Analytics.DeterministicCorrelationDetectionService>();
         services.TryAddSingleton<ICorrelationResultCache, Analytics.InMemoryCorrelationResultCache>();
         services.TryAddScoped<INarrationService, Analytics.DeterministicNarrationService>();
