@@ -26,4 +26,9 @@ public enum InsightKind
 
     /// <summary>A <see cref="Entities.BacklogForecast"/> (roadmap §5.E, P4).</summary>
     BacklogForecast = 4,
+
+    /// <summary>An <see cref="Entities.ExternalSignalCorrelation"/> (roadmap §5.D, C3). Distinct
+    /// from <see cref="Correlation"/> because it names a different entity (a deploy/config signal
+    /// correlated against one anomaly, not multiple anomalous entities grouped together).</summary>
+    ExternalSignalCorrelation = 5,
 }

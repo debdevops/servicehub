@@ -13,6 +13,7 @@ public sealed class WorkerHeartbeatHealthCheckTests
         nameof(AnomalyDetectionWorker),
         nameof(DriftDetectionWorker),
         nameof(CorrelationDetectionWorker),
+        nameof(ExternalSignalCorrelationWorker),
         nameof(NarrationWorker),
         nameof(BacklogForecastWorker),
         nameof(DlqMonitorWorker),

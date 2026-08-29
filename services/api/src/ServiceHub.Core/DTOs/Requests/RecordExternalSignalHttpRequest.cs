@@ -17,6 +17,6 @@ public sealed record RecordExternalSignalHttpRequest(
     ExternalSignalType SignalType,
     DateTimeOffset OccurredAt,
     [Required(ErrorMessage = "Source is required to record an external signal")]
-    [MinLength(1)]
+    [StringLength(256, MinimumLength = 1)]
     string Source,
     string? DetailJson);

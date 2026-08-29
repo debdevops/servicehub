@@ -193,6 +193,7 @@ public static class DependencyInjection
         services.AddHostedService<AnomalyDetectionWorker>();
         services.AddHostedService<DriftDetectionWorker>();
         services.AddHostedService<CorrelationDetectionWorker>();
+        services.AddHostedService<ExternalSignalCorrelationWorker>();
         services.AddHostedService<NarrationWorker>();
         services.AddHostedService<BacklogForecastWorker>();
         services.AddHostedService<DlqMonitorWorker>();
