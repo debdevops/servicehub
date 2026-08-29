@@ -590,6 +590,10 @@ public sealed class RulesController : ApiControllerBase
                         Error.Validation("Rule.NamespaceUnresolved", $"Rule '{rule.Name}' is scoped to a namespace that no longer resolves; refusing to replay-all."));
             }
 
+            var governanceResult = await EvaluateRuleGovernanceAsync(rule.NamespaceId, cancellationToken);
+            if (governanceResult.IsFailure)
+                return ToActionResult<ReplayAllResponse>(governanceResult.Error);
+
             _auditLogger.LogCriticalAction(
                 HttpContext,
                 OwnerId,
