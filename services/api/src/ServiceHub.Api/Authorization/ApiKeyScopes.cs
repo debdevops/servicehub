@@ -49,6 +49,10 @@ public static class ApiKeyScopes
     public const string RecoveryRead = "recovery:read";
     public const string RecoveryWrite = "recovery:write";
 
+    // Playbook Ledger scopes (M4 of the persistence wave)
+    public const string PlaybookRead = "playbook:read";
+    public const string PlaybookWrite = "playbook:write";
+
     // Administrative access (all operations)
     public const string Admin = "admin";
 

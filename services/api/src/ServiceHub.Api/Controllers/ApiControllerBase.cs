@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Security;
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.RecoveryLedger;
@@ -59,6 +60,34 @@ public abstract class ApiControllerBase : ControllerBase
             : null;
 
         return ActorIdentityResolver.ResolveHttpActor(apiKeyName, claimsIdentityName, OwnerId, scopes);
+    }
+
+    /// <summary>
+    /// Resolves the <see cref="PlaybookActor"/> for the current request — the only way a human
+    /// actor identity enters the Playbook Ledger via HTTP (see <see cref="IPlaybookLedger"/>).
+    /// Unlike <see cref="ResolveRecoveryActor"/>, every HTTP-resolved actor here is
+    /// <see cref="PlaybookActorKind.User"/> — <see cref="PlaybookActorKind"/> has no ApiKey/
+    /// Automation variant of its own, and <see cref="PlaybookActorKind.System"/>/
+    /// <see cref="PlaybookActorKind.ReasoningAgent"/> are reserved for background workers and the
+    /// (not-yet-built) reasoning companion, never an HTTP caller.
+    /// </summary>
+    protected PlaybookActor ResolvePlaybookActor()
+    {
+        var apiKeyName = HttpContext.Items.TryGetValue("ApiKeyName", out var keyName) && keyName is string name
+            ? name
+            : null;
+
+        var claimsIdentityName = HttpContext.User?.Identity?.Name;
+
+        var identity = !string.IsNullOrEmpty(apiKeyName)
+            ? $"ApiKey:{apiKeyName}"
+            : !string.IsNullOrEmpty(claimsIdentityName)
+                ? claimsIdentityName
+                : !string.IsNullOrEmpty(OwnerId)
+                    ? OwnerId
+                    : "Unknown";
+
+        return new PlaybookActor(identity, PlaybookActorKind.User);
     }
 
     /// <summary>

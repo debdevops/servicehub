@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   Gauge,
   Sparkles,
+  ClipboardList,
 } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
@@ -327,6 +328,19 @@ export function QuickAccessPanel() {
         >
           <ShieldCheck className="w-4 h-4 text-teal-500" />
           <span className="flex-1 text-left">Recovery Evidence</span>
+        </NavLink>
+        <NavLink
+          to={`${navPrefix}/playbook`}
+          className={({ isActive }) =>
+            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isActive
+                ? 'bg-indigo-50 text-indigo-700 border-indigo-300 font-medium'
+                : 'bg-white hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 border-gray-200 hover:border-indigo-300'
+            }`
+          }
+        >
+          <ClipboardList className="w-4 h-4 text-indigo-500" />
+          <span className="flex-1 text-left">Playbook Ledger</span>
         </NavLink>
         <NavLink
           to={`${navPrefix}/security`}

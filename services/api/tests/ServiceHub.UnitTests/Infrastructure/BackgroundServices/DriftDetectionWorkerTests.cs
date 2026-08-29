@@ -7,6 +7,7 @@ using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Events;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Shared.Results;
 
@@ -18,6 +19,7 @@ public sealed class DriftDetectionWorkerTests
     private readonly Mock<IDriftDetectionService> _detectionMock = new();
     private readonly Mock<IDriftResultCache> _cacheMock = new();
     private readonly Mock<IPlatformEventBus> _eventBusMock = new();
+    private readonly Mock<IPlaybookLedger> _playbookLedgerMock = new();
 
     private static IConfiguration EmptyConfig() =>
         new ConfigurationBuilder().AddInMemoryCollection().Build();
@@ -27,7 +29,20 @@ public sealed class DriftDetectionWorkerTests
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Insight:PushSeverityThreshold"] = threshold.ToString() })
             .Build();
 
-    private IServiceProvider BuildServiceProvider(bool registerEventBus = false)
+    private static PlaybookEntry CreatePlaybookEntry() => new()
+    {
+        OwnerId = "owner-a",
+        PillarKind = PillarKind.Prevent,
+        ProposalKind = "DriftFinding",
+        EvidenceRefJson = "{}",
+        ProposalJson = "{}",
+        ProposedAt = DateTimeOffset.UtcNow,
+        ProposerIdentity = "System:DriftDetectionWorker",
+        ProposerKind = PlaybookActorKind.System,
+        ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
+    };
+
+    private IServiceProvider BuildServiceProvider(bool registerEventBus = false, bool registerPlaybookLedger = false)
     {
         var services = new ServiceCollection();
         services.AddSingleton(_repoMock.Object);
@@ -36,6 +51,10 @@ public sealed class DriftDetectionWorkerTests
         if (registerEventBus)
         {
             services.AddSingleton(_eventBusMock.Object);
+        }
+        if (registerPlaybookLedger)
+        {
+            services.AddSingleton(_playbookLedgerMock.Object);
         }
         return services.BuildServiceProvider();
     }
@@ -204,6 +223,75 @@ public sealed class DriftDetectionWorkerTests
         await worker.RunDetectionCycleAsync(CancellationToken.None);
 
         _eventBusMock.Verify(b => b.PublishAsync(It.IsAny<PlatformEvent>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ── PERSISTENCE-EVOLUTION-DESIGN §11 — Playbook Ledger proposals ─
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_FindingAtOrAboveThreshold_ProposesPlaybookEntry()
+    {
+        var ns = CreateTestNamespace();
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var finding = DriftFinding.Create(ns.Id, "queue-1", DriftFindingType.SchemaShapeDrift, 90, "shape changed");
+        _detectionMock.Setup(d => d.DetectDriftAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<DriftFinding>>.Success(new[] { finding }));
+
+        _playbookLedgerMock.Setup(l => l.ProposeAsync(It.IsAny<ProposePlaybookEntryRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<PlaybookEntry>.Success(CreatePlaybookEntry()));
+
+        var worker = new DriftDetectionWorker(BuildServiceProvider(registerPlaybookLedger: true), ConfigWithPushThreshold(70), NullLogger<DriftDetectionWorker>.Instance);
+
+        await worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        _playbookLedgerMock.Verify(
+            l => l.ProposeAsync(
+                It.Is<ProposePlaybookEntryRequest>(r =>
+                    r.OwnerId == ns.OwnerId
+                    && r.PillarKind == PillarKind.Prevent
+                    && r.ProposalKind == "DriftFinding"
+                    && r.NamespaceId == ns.Id
+                    && r.Proposer.Kind == PlaybookActorKind.System),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_FindingBelowThreshold_DoesNotProposePlaybookEntry()
+    {
+        var ns = CreateTestNamespace();
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var finding = DriftFinding.Create(ns.Id, "queue-1", DriftFindingType.SchemaShapeDrift, 40, "minor shift");
+        _detectionMock.Setup(d => d.DetectDriftAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<DriftFinding>>.Success(new[] { finding }));
+
+        var worker = new DriftDetectionWorker(BuildServiceProvider(registerPlaybookLedger: true), ConfigWithPushThreshold(70), NullLogger<DriftDetectionWorker>.Instance);
+
+        await worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        _playbookLedgerMock.Verify(
+            l => l.ProposeAsync(It.IsAny<ProposePlaybookEntryRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_NoPlaybookLedgerRegistered_DoesNotThrow()
+    {
+        var ns = CreateTestNamespace();
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var finding = DriftFinding.Create(ns.Id, "queue-1", DriftFindingType.PayloadFormatDrift, 95, "format broke");
+        _detectionMock.Setup(d => d.DetectDriftAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<DriftFinding>>.Success(new[] { finding }));
+
+        var worker = new DriftDetectionWorker(BuildServiceProvider(registerPlaybookLedger: false), EmptyConfig(), NullLogger<DriftDetectionWorker>.Instance);
+
+        var act = () => worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]

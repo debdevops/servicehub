@@ -7,6 +7,7 @@ using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Events;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Shared.Results;
 
@@ -18,6 +19,7 @@ public sealed class AnomalyDetectionWorkerTests
     private readonly Mock<IAnomalyDetectionService> _detectionMock = new();
     private readonly Mock<IAnomalyResultCache> _cacheMock = new();
     private readonly Mock<IPlatformEventBus> _eventBusMock = new();
+    private readonly Mock<IPlaybookLedger> _playbookLedgerMock = new();
 
     private static IConfiguration EmptyConfig() =>
         new ConfigurationBuilder().AddInMemoryCollection().Build();
@@ -27,7 +29,20 @@ public sealed class AnomalyDetectionWorkerTests
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Insight:PushSeverityThreshold"] = threshold.ToString() })
             .Build();
 
-    private IServiceProvider BuildServiceProvider(bool registerEventBus = false)
+    private static PlaybookEntry CreatePlaybookEntry() => new()
+    {
+        OwnerId = "owner-a",
+        PillarKind = PillarKind.Investigate,
+        ProposalKind = "AnomalyFlag",
+        EvidenceRefJson = "{}",
+        ProposalJson = "{}",
+        ProposedAt = DateTimeOffset.UtcNow,
+        ProposerIdentity = "System:AnomalyDetectionWorker",
+        ProposerKind = PlaybookActorKind.System,
+        ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
+    };
+
+    private IServiceProvider BuildServiceProvider(bool registerEventBus = false, bool registerPlaybookLedger = false)
     {
         var services = new ServiceCollection();
         services.AddSingleton(_repoMock.Object);
@@ -36,6 +51,10 @@ public sealed class AnomalyDetectionWorkerTests
         if (registerEventBus)
         {
             services.AddSingleton(_eventBusMock.Object);
+        }
+        if (registerPlaybookLedger)
+        {
+            services.AddSingleton(_playbookLedgerMock.Object);
         }
         return services.BuildServiceProvider();
     }
@@ -218,6 +237,96 @@ public sealed class AnomalyDetectionWorkerTests
             .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new[] { anomaly }));
 
         var worker = new AnomalyDetectionWorker(BuildServiceProvider(registerEventBus: false), EmptyConfig(), NullLogger<AnomalyDetectionWorker>.Instance);
+
+        var act = () => worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    // ── PERSISTENCE-EVOLUTION-DESIGN §11 — Playbook Ledger proposals ─
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_AnomalyAtOrAboveThreshold_ProposesPlaybookEntry()
+    {
+        var ns = CreateTestNamespace();
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var anomaly = Anomaly.Create(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 80, "spike");
+        _detectionMock.Setup(d => d.DetectAnomaliesAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new[] { anomaly }));
+
+        _playbookLedgerMock.Setup(l => l.ProposeAsync(It.IsAny<ProposePlaybookEntryRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<PlaybookEntry>.Success(CreatePlaybookEntry()));
+
+        var worker = new AnomalyDetectionWorker(BuildServiceProvider(registerPlaybookLedger: true), ConfigWithPushThreshold(70), NullLogger<AnomalyDetectionWorker>.Instance);
+
+        await worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        _playbookLedgerMock.Verify(
+            l => l.ProposeAsync(
+                It.Is<ProposePlaybookEntryRequest>(r =>
+                    r.OwnerId == ns.OwnerId
+                    && r.PillarKind == PillarKind.Investigate
+                    && r.ProposalKind == "AnomalyFlag"
+                    && r.NamespaceId == ns.Id
+                    && r.Proposer.Kind == PlaybookActorKind.System),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_AnomalyBelowThreshold_DoesNotProposePlaybookEntry()
+    {
+        var ns = CreateTestNamespace();
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var anomaly = Anomaly.Create(ns.Id, "queue-1", AnomalyType.LowMessageVolume, 40, "drop");
+        _detectionMock.Setup(d => d.DetectAnomaliesAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new[] { anomaly }));
+
+        var worker = new AnomalyDetectionWorker(BuildServiceProvider(registerPlaybookLedger: true), ConfigWithPushThreshold(70), NullLogger<AnomalyDetectionWorker>.Instance);
+
+        await worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        _playbookLedgerMock.Verify(
+            l => l.ProposeAsync(It.IsAny<ProposePlaybookEntryRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_NoPlaybookLedgerRegistered_DoesNotThrow()
+    {
+        var ns = CreateTestNamespace();
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var anomaly = Anomaly.Create(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 95, "spike");
+        _detectionMock.Setup(d => d.DetectAnomaliesAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new[] { anomaly }));
+
+        var worker = new AnomalyDetectionWorker(BuildServiceProvider(registerPlaybookLedger: false), EmptyConfig(), NullLogger<AnomalyDetectionWorker>.Instance);
+
+        var act = () => worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_ProposeAsyncFails_DoesNotThrow()
+    {
+        var ns = CreateTestNamespace();
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var anomaly = Anomaly.Create(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 95, "spike");
+        _detectionMock.Setup(d => d.DetectAnomaliesAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new[] { anomaly }));
+
+        _playbookLedgerMock.Setup(l => l.ProposeAsync(It.IsAny<ProposePlaybookEntryRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<PlaybookEntry>.Failure(Error.Internal("ERR", "boom")));
+
+        var worker = new AnomalyDetectionWorker(BuildServiceProvider(registerPlaybookLedger: true), EmptyConfig(), NullLogger<AnomalyDetectionWorker>.Instance);
 
         var act = () => worker.RunDetectionCycleAsync(CancellationToken.None);
 

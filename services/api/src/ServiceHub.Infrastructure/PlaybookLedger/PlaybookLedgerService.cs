@@ -324,6 +324,13 @@ public sealed class PlaybookLedgerService : IPlaybookLedger
     }
 
     /// <inheritdoc/>
+    public async Task<PlaybookEntry?> GetEntryAsync(Guid entryId, string ownerId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.PlaybookEntries.AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == entryId && e.OwnerId == ownerId, cancellationToken);
+    }
+
+    /// <inheritdoc/>
     public async Task<ChainVerificationResult> VerifyChainAsync(string ownerId, CancellationToken cancellationToken = default)
     {
         var events = await _dbContext.PlaybookEvents.AsNoTracking()

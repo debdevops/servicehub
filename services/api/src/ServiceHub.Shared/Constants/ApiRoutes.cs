@@ -557,6 +557,28 @@ public static class ApiRoutes
         public const string AutonomyDashboard = $"{Base}/autonomy-dashboard";
     }
 
+    /// <summary>Routes for the Playbook Ledger (M4 of the persistence wave, roadmap item 10).</summary>
+    public static class Playbook
+    {
+        /// <summary>Base route for the Playbook Ledger.</summary>
+        public const string Base = $"{VersionedBase}/playbook";
+
+        /// <summary>Route for listing/creating Playbook Ledger entries.</summary>
+        public const string Entries = $"{Base}/entries";
+
+        /// <summary>Route for one Playbook Ledger entry by ID, plus its event chain.</summary>
+        public const string EntryById = $"{Entries}/{{id:guid}}";
+
+        /// <summary>Route for marking an entry under review.</summary>
+        public const string EntryReview = $"{EntryById}/review";
+
+        /// <summary>Route for a human's terminal disposition (approve/reject) of an entry.</summary>
+        public const string EntryDisposition = $"{EntryById}/disposition";
+
+        /// <summary>Route for verifying the caller's Playbook hash chain.</summary>
+        public const string Verify = $"{Base}/verify";
+    }
+
     /// <summary>Routes for the Investigation Center — incident command for failure investigation.</summary>
     public static class FailureIntelligence
     {
