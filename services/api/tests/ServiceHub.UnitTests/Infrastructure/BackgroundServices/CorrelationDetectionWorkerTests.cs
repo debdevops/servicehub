@@ -20,6 +20,7 @@ public sealed class CorrelationDetectionWorkerTests
     private readonly Mock<ICorrelationDetectionService> _correlationDetectionMock = new();
     private readonly Mock<ICorrelationResultCache> _cacheMock = new();
     private readonly Mock<IPlatformEventBus> _eventBusMock = new();
+    private readonly Mock<IPlaybookLedger> _playbookLedgerMock = new();
 
     private static IConfiguration EmptyConfig() =>
         new ConfigurationBuilder().AddInMemoryCollection().Build();
@@ -29,7 +30,20 @@ public sealed class CorrelationDetectionWorkerTests
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Insight:PushSeverityThreshold"] = threshold.ToString() })
             .Build();
 
-    private IServiceProvider BuildServiceProvider(bool registerEventBus = false)
+    private static PlaybookEntry CreatePlaybookEntry() => new()
+    {
+        OwnerId = "key_owner1",
+        PillarKind = PillarKind.Correlate,
+        ProposalKind = "CorrelationHypothesis",
+        EvidenceRefJson = "{}",
+        ProposalJson = "{}",
+        ProposedAt = DateTimeOffset.UtcNow,
+        ProposerIdentity = "System:CorrelationDetectionWorker",
+        ProposerKind = PlaybookActorKind.System,
+        ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
+    };
+
+    private IServiceProvider BuildServiceProvider(bool registerEventBus = false, bool registerPlaybookLedger = false)
     {
         var services = new ServiceCollection();
         services.AddSingleton(_repoMock.Object);
@@ -39,6 +53,10 @@ public sealed class CorrelationDetectionWorkerTests
         if (registerEventBus)
         {
             services.AddSingleton(_eventBusMock.Object);
+        }
+        if (registerPlaybookLedger)
+        {
+            services.AddSingleton(_playbookLedgerMock.Object);
         }
         return services.BuildServiceProvider();
     }
@@ -265,6 +283,96 @@ public sealed class CorrelationDetectionWorkerTests
         await worker.RunDetectionCycleAsync(CancellationToken.None);
 
         _eventBusMock.Verify(b => b.PublishAsync(It.IsAny<PlatformEvent>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ── PERSISTENCE-EVOLUTION-DESIGN §11 — Playbook Ledger proposals ─
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_CorrelationAtOrAboveThreshold_ProposesPlaybookEntry()
+    {
+        var ns = CreateTestNamespace(ownerId: "key_owner1");
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var anomaly = Anomaly.Create(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 80, "spike");
+        _anomalyDetectionMock.Setup(d => d.DetectAnomaliesAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new[] { anomaly }));
+
+        var correlation = CorrelationFinding.Create(
+            "key_owner1",
+            new[] { new CorrelationMember(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 80, CloudProviderType.Azure) },
+            80, "correlated");
+        _correlationDetectionMock.Setup(c => c.DetectCorrelations(It.IsAny<IReadOnlyList<AnomalyObservation>>()))
+            .Returns(new[] { correlation });
+
+        _playbookLedgerMock.Setup(l => l.ProposeAsync(It.IsAny<ProposePlaybookEntryRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<PlaybookEntry>.Success(CreatePlaybookEntry()));
+
+        var worker = new CorrelationDetectionWorker(BuildServiceProvider(registerPlaybookLedger: true), ConfigWithPushThreshold(70), NullLogger<CorrelationDetectionWorker>.Instance);
+
+        await worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        _playbookLedgerMock.Verify(
+            l => l.ProposeAsync(
+                It.Is<ProposePlaybookEntryRequest>(r =>
+                    r.OwnerId == "key_owner1"
+                    && r.PillarKind == PillarKind.Correlate
+                    && r.ProposalKind == "CorrelationHypothesis"
+                    && r.NamespaceId == null
+                    && r.Proposer.Kind == PlaybookActorKind.System),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_CorrelationBelowThreshold_DoesNotProposePlaybookEntry()
+    {
+        var ns = CreateTestNamespace(ownerId: "key_owner1");
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var anomaly = Anomaly.Create(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 40, "minor");
+        _anomalyDetectionMock.Setup(d => d.DetectAnomaliesAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new[] { anomaly }));
+
+        var correlation = CorrelationFinding.Create(
+            "key_owner1",
+            new[] { new CorrelationMember(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 40, CloudProviderType.Azure) },
+            40, "minor correlation");
+        _correlationDetectionMock.Setup(c => c.DetectCorrelations(It.IsAny<IReadOnlyList<AnomalyObservation>>()))
+            .Returns(new[] { correlation });
+
+        var worker = new CorrelationDetectionWorker(BuildServiceProvider(registerPlaybookLedger: true), ConfigWithPushThreshold(70), NullLogger<CorrelationDetectionWorker>.Instance);
+
+        await worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        _playbookLedgerMock.Verify(
+            l => l.ProposeAsync(It.IsAny<ProposePlaybookEntryRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_NoPlaybookLedgerRegistered_DoesNotThrow()
+    {
+        var ns = CreateTestNamespace(ownerId: "key_owner1");
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        var anomaly = Anomaly.Create(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 95, "spike");
+        _anomalyDetectionMock.Setup(d => d.DetectAnomaliesAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new[] { anomaly }));
+
+        var correlation = CorrelationFinding.Create(
+            "key_owner1",
+            new[] { new CorrelationMember(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 95, CloudProviderType.Azure) },
+            95, "correlated");
+        _correlationDetectionMock.Setup(c => c.DetectCorrelations(It.IsAny<IReadOnlyList<AnomalyObservation>>()))
+            .Returns(new[] { correlation });
+
+        var worker = new CorrelationDetectionWorker(BuildServiceProvider(registerPlaybookLedger: false), EmptyConfig(), NullLogger<CorrelationDetectionWorker>.Instance);
+
+        var act = () => worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]

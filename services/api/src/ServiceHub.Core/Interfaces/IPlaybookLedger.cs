@@ -64,6 +64,10 @@ public interface IPlaybookLedger
     Task<Result<IReadOnlyList<PlaybookEntry>>> QueryEntriesAsync(
         string ownerId, PillarKind? pillarKind = null, Guid? namespaceId = null, PlaybookEntryState? state = null, CancellationToken cancellationToken = default);
 
+    /// <summary>Gets one entry by ID, scoped to its owner. Returns null if it doesn't exist or
+    /// belongs to a different owner — mirrors <c>IRecoveryLedger.GetOperationAsync</c>.</summary>
+    Task<PlaybookEntry?> GetEntryAsync(Guid entryId, string ownerId, CancellationToken cancellationToken = default);
+
     /// <summary>Every event for one entry, ordered by <see cref="PlaybookEvent.Seq"/> ascending.</summary>
     Task<Result<IReadOnlyList<PlaybookEvent>>> GetEventsForEntryAsync(Guid entryId, string ownerId, CancellationToken cancellationToken = default);
 

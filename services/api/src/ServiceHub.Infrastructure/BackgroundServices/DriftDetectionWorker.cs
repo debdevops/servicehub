@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -6,6 +7,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Events;
 using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 
 namespace ServiceHub.Infrastructure.BackgroundServices;
 
@@ -22,6 +24,12 @@ public sealed class DriftDetectionWorker : BackgroundService
     private const int DefaultDetectionIntervalMinutes = 60;
     private const int DefaultCurrentWindowHours = 24;
     private const int DefaultPushSeverityThreshold = 70;
+
+    // PERSISTENCE-EVOLUTION-DESIGN §11 — the same significance threshold that gates a push
+    // notification also gates a durable Playbook Ledger proposal; a dedicated threshold isn't
+    // warranted until evidence says otherwise (§11's own "tuning decision, not architectural").
+    private static readonly TimeSpan ProposalExpiry = TimeSpan.FromDays(7);
+    private static readonly PlaybookActor Proposer = new("System:DriftDetectionWorker", PlaybookActorKind.System);
 
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<DriftDetectionWorker> _logger;
@@ -108,6 +116,7 @@ public sealed class DriftDetectionWorker : BackgroundService
         var detectionService = scope.ServiceProvider.GetRequiredService<IDriftDetectionService>();
         var resultCache = scope.ServiceProvider.GetRequiredService<IDriftResultCache>();
         var namespaceRepository = scope.ServiceProvider.GetRequiredService<INamespaceRepository>();
+        var playbookLedger = scope.ServiceProvider.GetService<IPlaybookLedger>();
 
         var namespacesResult = await namespaceRepository.GetActiveAsync(cancellationToken).ConfigureAwait(false);
         if (namespacesResult.IsFailure)
@@ -157,11 +166,23 @@ public sealed class DriftDetectionWorker : BackgroundService
                 detectionResult.Value.Count,
                 ns.Id);
 
+            var significantFindings = detectionResult.Value
+                .Where(f => f.Severity >= _pushSeverityThreshold)
+                .ToList();
+
             if (_eventBus is not null)
             {
-                foreach (var finding in detectionResult.Value.Where(f => f.Severity >= _pushSeverityThreshold))
+                foreach (var finding in significantFindings)
                 {
                     await PublishInsightDetectedAsync(finding, ns, cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            if (playbookLedger is not null)
+            {
+                foreach (var finding in significantFindings)
+                {
+                    await ProposePlaybookEntryAsync(playbookLedger, finding, ns, cancellationToken).ConfigureAwait(false);
                 }
             }
         }
@@ -202,5 +223,50 @@ public sealed class DriftDetectionWorker : BackgroundService
         };
 
         await _eventBus!.PublishAsync(evt, cancellationToken).ConfigureAwait(false);
+    }
+
+    // PERSISTENCE-EVOLUTION-DESIGN §11 — the direct enabler for C4 (correlation accountability)
+    // and a contributor to P5 (prevention-rule backtesting): a finding at/above the significance
+    // threshold gets a durable, human-dispositioned Playbook Ledger entry, not just an ephemeral
+    // cache row. Never itself a trigger — a human still decides whether the drift matters.
+    private async Task ProposePlaybookEntryAsync(
+        IPlaybookLedger playbookLedger,
+        Core.Entities.DriftFinding finding,
+        Core.Entities.Namespace ns,
+        CancellationToken cancellationToken)
+    {
+        var proposalJson = JsonSerializer.Serialize(new
+        {
+            finding.EntityName,
+            Type = finding.Type.ToString(),
+            finding.Severity,
+            finding.Description,
+            finding.RecommendedActions,
+        });
+        var evidenceRefJson = JsonSerializer.Serialize(new { DriftFindingId = finding.Id, finding.DetectedAt });
+
+        var result = await playbookLedger.ProposeAsync(new ProposePlaybookEntryRequest
+        {
+            OwnerId = ns.OwnerId,
+            PillarKind = PillarKind.Prevent,
+            ProposalKind = "DriftFinding",
+            EvidenceRefJson = evidenceRefJson,
+            ProposalJson = proposalJson,
+            Proposer = Proposer,
+            NamespaceId = ns.Id,
+            NamespaceNameSnapshot = ns.Name,
+            ProviderSnapshot = ns.Provider,
+            EnvironmentSnapshot = ns.Environment,
+            ExpiresAfter = ProposalExpiry,
+        }, cancellationToken).ConfigureAwait(false);
+
+        if (result.IsFailure)
+        {
+            _logger.LogWarning(
+                "Failed to propose Playbook Ledger entry for drift finding {DriftFindingId} in namespace {NamespaceId}: {Error}",
+                finding.Id,
+                ns.Id,
+                result.Error.Message);
+        }
     }
 }

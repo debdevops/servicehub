@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -24,6 +25,12 @@ public sealed class CorrelationDetectionWorker : BackgroundService
     private const int DefaultDetectionIntervalMinutes = 60;
     private const int DefaultCurrentWindowHours = 24;
     private const int DefaultPushSeverityThreshold = 70;
+
+    // PERSISTENCE-EVOLUTION-DESIGN §11 — the same significance threshold that gates a push
+    // notification also gates a durable Playbook Ledger proposal; a dedicated threshold isn't
+    // warranted until evidence says otherwise (§11's own "tuning decision, not architectural").
+    private static readonly TimeSpan ProposalExpiry = TimeSpan.FromDays(7);
+    private static readonly PlaybookActor Proposer = new("System:CorrelationDetectionWorker", PlaybookActorKind.System);
 
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<CorrelationDetectionWorker> _logger;
@@ -111,6 +118,7 @@ public sealed class CorrelationDetectionWorker : BackgroundService
         var correlationDetectionService = scope.ServiceProvider.GetRequiredService<ICorrelationDetectionService>();
         var resultCache = scope.ServiceProvider.GetRequiredService<ICorrelationResultCache>();
         var namespaceRepository = scope.ServiceProvider.GetRequiredService<INamespaceRepository>();
+        var playbookLedger = scope.ServiceProvider.GetService<IPlaybookLedger>();
 
         var namespacesResult = await namespaceRepository.GetActiveAsync(cancellationToken).ConfigureAwait(false);
         if (namespacesResult.IsFailure)
@@ -172,11 +180,21 @@ public sealed class CorrelationDetectionWorker : BackgroundService
             namespaces.Count,
             findings.Count);
 
+        var significantFindings = findings.Where(f => f.Severity >= _pushSeverityThreshold).ToList();
+
         if (_eventBus is not null)
         {
-            foreach (var finding in findings.Where(f => f.Severity >= _pushSeverityThreshold))
+            foreach (var finding in significantFindings)
             {
                 await PublishInsightDetectedAsync(finding, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (playbookLedger is not null)
+        {
+            foreach (var finding in significantFindings)
+            {
+                await ProposePlaybookEntryAsync(playbookLedger, finding, cancellationToken).ConfigureAwait(false);
             }
         }
     }
@@ -207,5 +225,49 @@ public sealed class CorrelationDetectionWorker : BackgroundService
         };
 
         await _eventBus!.PublishAsync(evt, cancellationToken).ConfigureAwait(false);
+    }
+
+    // PERSISTENCE-EVOLUTION-DESIGN §11 — this is the direct enabler for C4 (correlation
+    // accountability): "once the Playbook Ledger exists, every C1–C3 hypothesis is logged with
+    // human disposition." NamespaceId stays null — a correlation finding spans multiple
+    // namespaces, same reasoning as PublishInsightDetectedAsync's owner-only Actor above.
+    private async Task ProposePlaybookEntryAsync(
+        IPlaybookLedger playbookLedger, Core.Entities.CorrelationFinding finding, CancellationToken cancellationToken)
+    {
+        var proposalJson = JsonSerializer.Serialize(new
+        {
+            Providers = finding.Providers.Select(p => p.ToString()),
+            Members = finding.Members.Select(m => new
+            {
+                m.NamespaceId,
+                m.EntityName,
+                AnomalyType = m.AnomalyType.ToString(),
+                m.Severity,
+                Provider = m.Provider.ToString(),
+            }),
+            finding.Severity,
+            finding.Description,
+            finding.RecommendedActions,
+        });
+        var evidenceRefJson = JsonSerializer.Serialize(new { CorrelationFindingId = finding.Id, finding.DetectedAt });
+
+        var result = await playbookLedger.ProposeAsync(new ProposePlaybookEntryRequest
+        {
+            OwnerId = finding.OwnerId,
+            PillarKind = PillarKind.Correlate,
+            ProposalKind = "CorrelationHypothesis",
+            EvidenceRefJson = evidenceRefJson,
+            ProposalJson = proposalJson,
+            Proposer = Proposer,
+            ExpiresAfter = ProposalExpiry,
+        }, cancellationToken).ConfigureAwait(false);
+
+        if (result.IsFailure)
+        {
+            _logger.LogWarning(
+                "Failed to propose Playbook Ledger entry for correlation finding {CorrelationFindingId}: {Error}",
+                finding.Id,
+                result.Error.Message);
+        }
     }
 }

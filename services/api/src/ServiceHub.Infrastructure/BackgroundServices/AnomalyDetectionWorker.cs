@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -6,6 +7,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Events;
 using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 
 namespace ServiceHub.Infrastructure.BackgroundServices;
 
@@ -21,6 +23,12 @@ public sealed class AnomalyDetectionWorker : BackgroundService
     private const int DefaultDetectionIntervalMinutes = 60;
     private const int DefaultCurrentWindowHours = 24;
     private const int DefaultPushSeverityThreshold = 70;
+
+    // PERSISTENCE-EVOLUTION-DESIGN §11 — the same significance threshold that gates a push
+    // notification also gates a durable Playbook Ledger proposal; a dedicated threshold isn't
+    // warranted until evidence says otherwise (§11's own "tuning decision, not architectural").
+    private static readonly TimeSpan ProposalExpiry = TimeSpan.FromDays(7);
+    private static readonly PlaybookActor Proposer = new("System:AnomalyDetectionWorker", PlaybookActorKind.System);
 
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<AnomalyDetectionWorker> _logger;
@@ -107,6 +115,10 @@ public sealed class AnomalyDetectionWorker : BackgroundService
         var detectionService = scope.ServiceProvider.GetRequiredService<IAnomalyDetectionService>();
         var resultCache = scope.ServiceProvider.GetRequiredService<IAnomalyResultCache>();
         var namespaceRepository = scope.ServiceProvider.GetRequiredService<INamespaceRepository>();
+        // Optional, resolved per-cycle from the scope (DbContext-backed, Scoped) rather than the
+        // constructor — mirrors every other per-cycle service above, unlike _heartbeatStore/
+        // _eventBus which are process-lifetime singletons safely resolved once.
+        var playbookLedger = scope.ServiceProvider.GetService<IPlaybookLedger>();
 
         var namespacesResult = await namespaceRepository.GetActiveAsync(cancellationToken).ConfigureAwait(false);
         if (namespacesResult.IsFailure)
@@ -156,11 +168,23 @@ public sealed class AnomalyDetectionWorker : BackgroundService
                 detectionResult.Value.Count,
                 ns.Id);
 
+            var significantAnomalies = detectionResult.Value
+                .Where(a => a.Severity >= _pushSeverityThreshold)
+                .ToList();
+
             if (_eventBus is not null)
             {
-                foreach (var anomaly in detectionResult.Value.Where(a => a.Severity >= _pushSeverityThreshold))
+                foreach (var anomaly in significantAnomalies)
                 {
                     await PublishInsightDetectedAsync(anomaly, ns, cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            if (playbookLedger is not null)
+            {
+                foreach (var anomaly in significantAnomalies)
+                {
+                    await ProposePlaybookEntryAsync(playbookLedger, anomaly, ns, cancellationToken).ConfigureAwait(false);
                 }
             }
         }
@@ -201,5 +225,50 @@ public sealed class AnomalyDetectionWorker : BackgroundService
         };
 
         await _eventBus!.PublishAsync(evt, cancellationToken).ConfigureAwait(false);
+    }
+
+    // PERSISTENCE-EVOLUTION-DESIGN §11 — the direct enabler for C4 (correlation accountability)
+    // and a contributor to item 14 (backtesting): a finding at/above the significance threshold
+    // gets a durable, human-dispositioned Playbook Ledger entry, not just an ephemeral cache row.
+    // Never itself a trigger for anything — a human still decides whether the anomaly matters.
+    private async Task ProposePlaybookEntryAsync(
+        IPlaybookLedger playbookLedger,
+        Core.Entities.Anomaly anomaly,
+        Core.Entities.Namespace ns,
+        CancellationToken cancellationToken)
+    {
+        var proposalJson = JsonSerializer.Serialize(new
+        {
+            anomaly.EntityName,
+            Type = anomaly.Type.ToString(),
+            anomaly.Severity,
+            anomaly.Description,
+            anomaly.RecommendedActions,
+        });
+        var evidenceRefJson = JsonSerializer.Serialize(new { AnomalyId = anomaly.Id, anomaly.DetectedAt });
+
+        var result = await playbookLedger.ProposeAsync(new ProposePlaybookEntryRequest
+        {
+            OwnerId = ns.OwnerId,
+            PillarKind = PillarKind.Investigate,
+            ProposalKind = "AnomalyFlag",
+            EvidenceRefJson = evidenceRefJson,
+            ProposalJson = proposalJson,
+            Proposer = Proposer,
+            NamespaceId = ns.Id,
+            NamespaceNameSnapshot = ns.Name,
+            ProviderSnapshot = ns.Provider,
+            EnvironmentSnapshot = ns.Environment,
+            ExpiresAfter = ProposalExpiry,
+        }, cancellationToken).ConfigureAwait(false);
+
+        if (result.IsFailure)
+        {
+            _logger.LogWarning(
+                "Failed to propose Playbook Ledger entry for anomaly {AnomalyId} in namespace {NamespaceId}: {Error}",
+                anomaly.Id,
+                ns.Id,
+                result.Error.Message);
+        }
     }
 }
