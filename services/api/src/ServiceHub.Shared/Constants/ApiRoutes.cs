@@ -276,6 +276,21 @@ public static class ApiRoutes
     }
 
     /// <summary>
+    /// Routes for external-signal ingestion and correlation (roadmap §5.D, C3 — M5, ADR-0008).
+    /// </summary>
+    public static class ExternalSignals
+    {
+        /// <summary>Base route for recording/listing external signals.</summary>
+        public const string Base = $"{VersionedBase}/external-signals";
+
+        /// <summary>Route for triggering external-signal correlation detection.</summary>
+        public const string Detect = $"{Base}/detect";
+
+        /// <summary>Route for a specific external-signal correlation by ID.</summary>
+        public const string CorrelationById = $"{Base}/correlations/{{id:guid}}";
+    }
+
+    /// <summary>
     /// Routes for deterministic narration endpoints (roadmap §5.B, I4 — "Narrate").
     /// </summary>
     public static class Narrations

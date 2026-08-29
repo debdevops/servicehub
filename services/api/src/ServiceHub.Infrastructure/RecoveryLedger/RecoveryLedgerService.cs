@@ -427,6 +427,16 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     }
 
     /// <inheritdoc />
+    public async Task<RecoveryLedgerEntry?> GetEntryAsync(Guid entryId, string ownerId, CancellationToken cancellationToken = default)
+    {
+        var entry = await _dbContext.RecoveryLedgerEntries
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == entryId, cancellationToken);
+
+        return entry is not null && entry.OwnerId == ownerId ? entry : null;
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<RecoveryOperation>> QueryOperationsAsync(
         string ownerId, Guid? namespaceId, int limit, CancellationToken cancellationToken = default)
     {

@@ -15,6 +15,7 @@ the way they were.
 | [0005](0005-ai-capability-boundary.md) | AI is heuristic, client-side, and architecturally forbidden from mutation |
 | [0006](0006-rc1-migration-freeze.md) | RC1 migration freeze: active, lifted only by explicit dated sign-off |
 | [0007](0007-persistence-wave-m1-m4-authorized.md) | Persistence wave M1–M4 authorized: NamespaceId scoping, namespace consolidation, Governance/RBAC, Playbook Ledger |
+| [0008](0008-m5-external-signal-events-authorized.md) | M5 (`ExternalSignalEvents`) authorized for C3: narrow, single-unit freeze lift distinct from ADR-0007 |
 
 Each ADR states its Status. An ADR marked `Accepted` is currently in force — do not propose
 reversing it without the same level of justification the ADR itself required. `CLAUDE.md`'s
