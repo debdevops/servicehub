@@ -1,11 +1,12 @@
 import { Fragment, useState } from 'react';
-import { ClipboardList, AlertCircle, RefreshCw, Info, ChevronDown, ChevronRight, CheckCircle2, XCircle, Eye, Gauge } from 'lucide-react';
+import { ClipboardList, AlertCircle, RefreshCw, Info, ChevronDown, ChevronRight, CheckCircle2, XCircle, Eye, Gauge, Target } from 'lucide-react';
 import {
   usePlaybookEntries,
   usePlaybookEntry,
   useMarkPlaybookEntryUnderReview,
   useDispositionPlaybookEntry,
   useCorrelationAccountability,
+  useBacktestReport,
 } from '@servicehub/ui-shared/hooks/usePlaybookLedger';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
@@ -79,6 +80,38 @@ function CorrelationAccountabilityStrip() {
         <> &middot; {Math.round(report.approvalRate * 100)}% approved ({report.approvedCount} of {dispositioned} dispositioned)</>
       ) : (
         <> &middot; not enough evidence yet ({report.proposedCount + report.underReviewCount} awaiting a decision)</>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Counterfactual backtesting (roadmap §11 item 14): a compact strip reporting how often
+ * dispositioned anomaly-flag (I3) and drift-finding (P2) proposals were followed by real recovery
+ * activity for the same entity — "measurable against what actually happened, not just judged
+ * 'looks reasonable'." Shows an honest "not enough evidence yet" when nothing has been
+ * backtested.
+ */
+function BacktestStrip() {
+  const { data: report, isLoading } = useBacktestReport();
+
+  if (isLoading || !report) return null;
+
+  if (report.totalBacktested === 0) {
+    return (
+      <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-500">
+        <Target className="w-4 h-4 shrink-0 text-gray-400" />
+        Backtesting: no dispositioned findings to backtest yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-teal-50 border border-teal-200 text-xs text-teal-800">
+      <Target className="w-4 h-4 shrink-0" />
+      Backtesting: {report.totalBacktested} finding{report.totalBacktested === 1 ? '' : 's'} checked against what actually happened
+      {report.corroborationRate !== null && (
+        <> &middot; {Math.round(report.corroborationRate * 100)}% corroborated ({report.corroboratedCount} of {report.totalBacktested})</>
       )}
     </div>
   );
@@ -259,6 +292,7 @@ export default function PlaybookLedgerPage() {
         )}
 
         <CorrelationAccountabilityStrip />
+        <BacktestStrip />
 
         <div className="mt-3 flex items-center gap-2">
           <select

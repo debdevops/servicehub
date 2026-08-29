@@ -7,6 +7,7 @@ import {
   type PlaybookEntriesParams,
   type PlaybookDisposition,
   type CorrelationAccountabilityReport,
+  type BacktestReport,
 } from '../lib/api/playbook';
 import { useDemoContext, rejectDemoModeMutation } from '../lib/demo/DemoContext';
 
@@ -91,6 +92,7 @@ export function useDispositionPlaybookEntry() {
       queryClient.invalidateQueries({ queryKey: ['playbook-entries'] });
       queryClient.invalidateQueries({ queryKey: ['playbook-entry'] });
       queryClient.invalidateQueries({ queryKey: ['playbook-correlation-accountability'] });
+      queryClient.invalidateQueries({ queryKey: ['playbook-backtest'] });
       toast.success(variables.disposition === 'Approved' ? 'Proposal approved' : 'Proposal rejected');
     },
     onError: (error: unknown) => {
@@ -129,6 +131,38 @@ export function useCorrelationAccountability() {
     : {
         queryKey: ['playbook-correlation-accountability'],
         queryFn: () => playbookApi.getCorrelationAccountability(),
+        enabled: !isDemoMode,
+        staleTime: 30_000,
+      };
+
+  return useQuery(options);
+}
+
+/**
+ * Hook for fetching the counterfactual backtest report (roadmap §11 item 14) — whether
+ * dispositioned anomaly-flag (I3) and drift-finding (P2) proposals were followed by real recovery
+ * activity for the same entity. Demo Mode has no synthetic disposition/recovery history — rather
+ * than fabricate one, it honestly reports an all-zero, no-data snapshot, same reasoning as
+ * `useCorrelationAccountability`.
+ */
+export function useBacktestReport() {
+  const { isDemoMode } = useDemoContext();
+
+  const options: UseQueryOptions<BacktestReport> = isDemoMode
+    ? {
+        queryKey: ['playbook-backtest', 'demo'],
+        queryFn: (): Promise<BacktestReport> =>
+          Promise.resolve({
+            generatedAt: new Date().toISOString(),
+            totalBacktested: 0,
+            corroboratedCount: 0,
+            corroborationRate: null,
+            entries: [],
+          }),
+      }
+    : {
+        queryKey: ['playbook-backtest'],
+        queryFn: () => playbookApi.getBacktest(),
         enabled: !isDemoMode,
         staleTime: 30_000,
       };

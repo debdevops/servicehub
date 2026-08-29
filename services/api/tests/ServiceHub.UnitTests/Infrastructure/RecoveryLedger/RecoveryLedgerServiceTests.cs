@@ -658,6 +658,73 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
         matches.Select(m => m.Id).Should().NotContain(new[] { outsideWindow.Id, otherOwner.Id, otherHash.Id });
     }
 
+    [Fact]
+    public async Task FindEntriesForEntitySinceAsync_ReturnsOwnerNamespaceEntityAndSinceScopedSetOldestFirst()
+    {
+        var operation = await OpenOperationAsync();
+        var now = DateTimeOffset.UtcNow;
+
+        RecoveryLedgerEntry Seed(
+            DateTimeOffset begunAt, string ownerId = OwnerA, Guid? namespaceId = null, string entityName = "orders-dlq")
+        {
+            var entry = new RecoveryLedgerEntry
+            {
+                OperationId = operation.Id,
+                OwnerId = ownerId,
+                NamespaceId = namespaceId ?? operation.NamespaceId,
+                EntityNameSnapshot = entityName,
+                BodyHash = "irrelevant-hash",
+                TargetEntity = entityName,
+                BegunAt = begunAt,
+                State = RecoveryEntryState.Observing,
+            };
+            _dbContext.RecoveryLedgerEntries.Add(entry);
+            return entry;
+        }
+
+        var earlier = Seed(now.AddMinutes(-5));
+        var later = Seed(now.AddMinutes(5));
+        var beforeSince = Seed(now.AddMinutes(-10));
+        var otherOwner = Seed(now, ownerId: OwnerB);
+        var otherEntity = Seed(now, entityName: "payments-dlq");
+        var otherNamespace = Seed(now, namespaceId: Guid.NewGuid());
+        await _dbContext.SaveChangesAsync();
+
+        var matches = await _service.FindEntriesForEntitySinceAsync(
+            OwnerA, operation.NamespaceId, "orders-dlq", now.AddMinutes(-6));
+
+        matches.Select(m => m.Id).Should().Equal(earlier.Id, later.Id);
+        matches.Select(m => m.Id).Should().NotContain(new[] { beforeSince.Id, otherOwner.Id, otherEntity.Id, otherNamespace.Id });
+    }
+
+    [Fact]
+    public async Task FindEntriesForEntitySinceAsync_RespectsLimit()
+    {
+        var operation = await OpenOperationAsync();
+        var now = DateTimeOffset.UtcNow;
+
+        for (var i = 0; i < 3; i++)
+        {
+            _dbContext.RecoveryLedgerEntries.Add(new RecoveryLedgerEntry
+            {
+                OperationId = operation.Id,
+                OwnerId = OwnerA,
+                NamespaceId = operation.NamespaceId,
+                EntityNameSnapshot = "orders-dlq",
+                BodyHash = "irrelevant-hash",
+                TargetEntity = "orders-dlq",
+                BegunAt = now.AddMinutes(i),
+                State = RecoveryEntryState.Observing,
+            });
+        }
+        await _dbContext.SaveChangesAsync();
+
+        var matches = await _service.FindEntriesForEntitySinceAsync(
+            OwnerA, operation.NamespaceId, "orders-dlq", now.AddMinutes(-1), limit: 2);
+
+        matches.Should().HaveCount(2);
+    }
+
     // ── Illegal transitions ─────────────────────────────────────────────────
 
     [Fact]

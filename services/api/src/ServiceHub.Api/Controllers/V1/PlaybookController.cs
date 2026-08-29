@@ -29,12 +29,17 @@ public sealed class PlaybookController : ApiControllerBase
 
     private readonly IPlaybookLedger _playbookLedger;
     private readonly ICorrelationAccountabilityService _correlationAccountability;
+    private readonly IBacktestService _backtestService;
 
     /// <summary>Initializes a new instance of the <see cref="PlaybookController"/> class.</summary>
-    public PlaybookController(IPlaybookLedger playbookLedger, ICorrelationAccountabilityService correlationAccountability)
+    public PlaybookController(
+        IPlaybookLedger playbookLedger,
+        ICorrelationAccountabilityService correlationAccountability,
+        IBacktestService backtestService)
     {
         _playbookLedger = playbookLedger ?? throw new ArgumentNullException(nameof(playbookLedger));
         _correlationAccountability = correlationAccountability ?? throw new ArgumentNullException(nameof(correlationAccountability));
+        _backtestService = backtestService ?? throw new ArgumentNullException(nameof(backtestService));
     }
 
     /// <summary>
@@ -188,6 +193,30 @@ public sealed class PlaybookController : ApiControllerBase
         CancellationToken cancellationToken = default)
     {
         var report = await _correlationAccountability.GetReportAsync(OwnerId, cancellationToken);
+        return Ok(report);
+    }
+
+    /// <summary>
+    /// Counterfactual backtesting (roadmap §11 item 14): whether the caller's dispositioned
+    /// anomaly-flag (I3) and drift-finding (P2) proposals were followed by real recovery activity
+    /// for the same entity — making proactive-finding quality measurable against what actually
+    /// happened, not just judged "looks reasonable." Pure read-side join over the caller's
+    /// Playbook entries and Recovery Evidence Ledger history.
+    /// </summary>
+    /// <param name="pillarKind">Optional pillar filter (only <c>Investigate</c>/<c>Prevent</c>
+    /// proposals are ever backtestable today).</param>
+    /// <param name="limit">Maximum number of dispositioned proposals to backtest, most recently
+    /// proposed first (1-200, default 50).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.PlaybookRead)]
+    [HttpGet("backtest")]
+    [ProducesResponseType(typeof(BacktestReport), StatusCodes.Status200OK)]
+    public async Task<ActionResult<BacktestReport>> GetBacktestReport(
+        [FromQuery] PillarKind? pillarKind = null,
+        [FromQuery] int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var report = await _backtestService.GetReportAsync(OwnerId, pillarKind, limit, cancellationToken);
         return Ok(report);
     }
 

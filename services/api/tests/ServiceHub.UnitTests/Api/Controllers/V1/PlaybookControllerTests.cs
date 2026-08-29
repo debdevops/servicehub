@@ -5,11 +5,13 @@ using Microsoft.EntityFrameworkCore;
 using ServiceHub.Api.Controllers.V1;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
+using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.PlaybookLedger;
+using ServiceHub.Infrastructure.RecoveryLedger;
 
 namespace ServiceHub.UnitTests.Api.Controllers.V1;
 
@@ -21,6 +23,8 @@ public sealed class PlaybookControllerTests : IDisposable
     private readonly DlqDbContext _dbContext;
     private readonly IPlaybookLedger _playbookLedger;
     private readonly ICorrelationAccountabilityService _correlationAccountability;
+    private readonly IRecoveryLedger _recoveryLedger;
+    private readonly IBacktestService _backtestService;
     private readonly PlaybookController _controller;
 
     public PlaybookControllerTests()
@@ -34,10 +38,12 @@ public sealed class PlaybookControllerTests : IDisposable
 
         _playbookLedger = new PlaybookLedgerService(_dbContext);
         _correlationAccountability = new CorrelationAccountabilityService(_playbookLedger);
+        _recoveryLedger = new RecoveryLedgerService(_dbContext);
+        _backtestService = new BacktestService(_playbookLedger, _recoveryLedger);
         _controller = CreateController(OwnerA);
     }
 
-    private PlaybookController CreateController(string ownerId) => new(_playbookLedger, _correlationAccountability)
+    private PlaybookController CreateController(string ownerId) => new(_playbookLedger, _correlationAccountability, _backtestService)
     {
         ControllerContext = new ControllerContext
         {
@@ -58,7 +64,8 @@ public sealed class PlaybookControllerTests : IDisposable
         string ownerId,
         PillarKind pillarKind = PillarKind.Investigate,
         string proposalKind = "AnomalyFlag",
-        Guid? namespaceId = null)
+        Guid? namespaceId = null,
+        string? entityName = null)
     {
         var result = await _playbookLedger.ProposeAsync(new ProposePlaybookEntryRequest
         {
@@ -66,7 +73,7 @@ public sealed class PlaybookControllerTests : IDisposable
             PillarKind = pillarKind,
             ProposalKind = proposalKind,
             EvidenceRefJson = """{"anomalyId":"abc-123"}""",
-            ProposalJson = """{"severity":"high"}""",
+            ProposalJson = entityName is null ? """{"severity":"high"}""" : $$"""{"EntityName":"{{entityName}}","severity":"high"}""",
             Proposer = new PlaybookActor("System:Test", PlaybookActorKind.System),
             NamespaceId = namespaceId,
             ExpiresAfter = TimeSpan.FromDays(7),
@@ -77,15 +84,22 @@ public sealed class PlaybookControllerTests : IDisposable
     [Fact]
     public void Constructor_NullPlaybookLedger_Throws()
     {
-        var act = () => new PlaybookController(null!, _correlationAccountability);
+        var act = () => new PlaybookController(null!, _correlationAccountability, _backtestService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("playbookLedger");
     }
 
     [Fact]
     public void Constructor_NullCorrelationAccountability_Throws()
     {
-        var act = () => new PlaybookController(_playbookLedger, null!);
+        var act = () => new PlaybookController(_playbookLedger, null!, _backtestService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("correlationAccountability");
+    }
+
+    [Fact]
+    public void Constructor_NullBacktestService_Throws()
+    {
+        var act = () => new PlaybookController(_playbookLedger, _correlationAccountability, null!);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("backtestService");
     }
 
     // ── GetEntries ──────────────────────────────────────────────────
@@ -283,5 +297,117 @@ public sealed class PlaybookControllerTests : IDisposable
         report.RejectedCount.Should().Be(1);
         report.ProposedCount.Should().Be(1);
         report.ApprovalRate.Should().Be(0.5);
+    }
+
+    // ── GetBacktestReport ───────────────────────────────────────────
+
+    private void SeedRecoveredEntry(Guid namespaceId, string entityName, DateTimeOffset begunAt)
+    {
+        _dbContext.RecoveryLedgerEntries.Add(new RecoveryLedgerEntry
+        {
+            OperationId = Guid.NewGuid(),
+            OwnerId = OwnerA,
+            NamespaceId = namespaceId,
+            EntityNameSnapshot = entityName,
+            BodyHash = "irrelevant-hash",
+            TargetEntity = entityName,
+            BegunAt = begunAt,
+            State = RecoveryEntryState.Recovered,
+            Disposition = RecoveryDisposition.Recovered,
+        });
+        _dbContext.SaveChanges();
+    }
+
+    [Fact]
+    public async Task GetBacktestReport_NoDispositionedProposals_ReportsZerosAndNullRate()
+    {
+        var result = await _controller.GetBacktestReport();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var report = ok.Value.Should().BeOfType<BacktestReport>().Subject;
+        report.TotalBacktested.Should().Be(0);
+        report.CorroborationRate.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetBacktestReport_ApprovedFindingWithSubsequentRecovery_IsCorroborated()
+    {
+        var namespaceId = Guid.NewGuid();
+        var entryId = await ProposeEntryAsync(
+            OwnerA, pillarKind: PillarKind.Investigate, proposalKind: "AnomalyFlag",
+            namespaceId: namespaceId, entityName: "orders-dlq");
+        await _controller.Disposition(entryId, new DispositionPlaybookEntryRequest(PlaybookDisposition.Approved, null));
+
+        SeedRecoveredEntry(namespaceId, "orders-dlq", DateTimeOffset.UtcNow.AddMinutes(1));
+
+        var result = await _controller.GetBacktestReport();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var report = ok.Value.Should().BeOfType<BacktestReport>().Subject;
+        report.TotalBacktested.Should().Be(1);
+        report.CorroboratedCount.Should().Be(1);
+        report.CorroborationRate.Should().Be(1.0);
+        report.Entries.Should().ContainSingle().Which.SubsequentRecoveredCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetBacktestReport_ApprovedFindingWithNoSubsequentActivity_IsNotCorroborated()
+    {
+        var namespaceId = Guid.NewGuid();
+        var entryId = await ProposeEntryAsync(
+            OwnerA, pillarKind: PillarKind.Prevent, proposalKind: "DriftFinding",
+            namespaceId: namespaceId, entityName: "payments-dlq");
+        await _controller.Disposition(entryId, new DispositionPlaybookEntryRequest(PlaybookDisposition.Approved, null));
+
+        var result = await _controller.GetBacktestReport();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var report = ok.Value.Should().BeOfType<BacktestReport>().Subject;
+        report.TotalBacktested.Should().Be(1);
+        report.CorroboratedCount.Should().Be(0);
+        report.CorroborationRate.Should().Be(0.0);
+    }
+
+    [Fact]
+    public async Task GetBacktestReport_ExcludesNonBacktestableProposalKindsAndNonTerminalStates()
+    {
+        var namespaceId = Guid.NewGuid();
+        // CorrelationHypothesis is never backtestable — no single-entity join key.
+        var hypothesisId = await ProposeEntryAsync(
+            OwnerA, pillarKind: PillarKind.Correlate, proposalKind: "CorrelationHypothesis",
+            namespaceId: namespaceId, entityName: "orders-dlq");
+        await _controller.Disposition(hypothesisId, new DispositionPlaybookEntryRequest(PlaybookDisposition.Approved, null));
+
+        // Still Proposed — never dispositioned.
+        await ProposeEntryAsync(
+            OwnerA, pillarKind: PillarKind.Investigate, proposalKind: "AnomalyFlag",
+            namespaceId: namespaceId, entityName: "orders-dlq");
+
+        var result = await _controller.GetBacktestReport();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var report = ok.Value.Should().BeOfType<BacktestReport>().Subject;
+        report.TotalBacktested.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetBacktestReport_PillarKindFilter_OnlyBacktestsMatchingPillar()
+    {
+        var namespaceId = Guid.NewGuid();
+        var investigateId = await ProposeEntryAsync(
+            OwnerA, pillarKind: PillarKind.Investigate, proposalKind: "AnomalyFlag",
+            namespaceId: namespaceId, entityName: "orders-dlq");
+        var preventId = await ProposeEntryAsync(
+            OwnerA, pillarKind: PillarKind.Prevent, proposalKind: "DriftFinding",
+            namespaceId: namespaceId, entityName: "orders-dlq");
+        await _controller.Disposition(investigateId, new DispositionPlaybookEntryRequest(PlaybookDisposition.Approved, null));
+        await _controller.Disposition(preventId, new DispositionPlaybookEntryRequest(PlaybookDisposition.Approved, null));
+
+        var result = await _controller.GetBacktestReport(pillarKind: PillarKind.Prevent);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var report = ok.Value.Should().BeOfType<BacktestReport>().Subject;
+        report.TotalBacktested.Should().Be(1);
+        report.Entries.Should().ContainSingle().Which.PillarKind.Should().Be(PillarKind.Prevent);
     }
 }
