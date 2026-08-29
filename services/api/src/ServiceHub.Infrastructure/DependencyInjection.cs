@@ -191,6 +191,7 @@ public static class DependencyInjection
         services.AddHostedService<DriftDetectionWorker>();
         services.AddHostedService<CorrelationDetectionWorker>();
         services.AddHostedService<NarrationWorker>();
+        services.AddHostedService<BacklogForecastWorker>();
         services.AddHostedService<DlqMonitorWorker>();
         services.AddHostedService<BulkOperationWorker>();
         services.AddHostedService<SignatureReplayWorker>();
@@ -311,6 +312,8 @@ public static class DependencyInjection
         services.TryAddSingleton<ICorrelationResultCache, Analytics.InMemoryCorrelationResultCache>();
         services.TryAddScoped<INarrationService, Analytics.DeterministicNarrationService>();
         services.TryAddSingleton<INarrationResultCache, Analytics.InMemoryNarrationResultCache>();
+        services.TryAddScoped<IBacklogForecastService, Analytics.DeterministicBacklogForecastService>();
+        services.TryAddSingleton<IBacklogForecastResultCache, Analytics.InMemoryBacklogForecastResultCache>();
 
         // Register signature analysis strategies.
         // AIClusteringStrategy wraps the AI service client and provides rich clustering.

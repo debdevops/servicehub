@@ -39,6 +39,7 @@ public static class ApiKeyRoles
                 ApiKeyScopes.DriftFindingsRead,
                 ApiKeyScopes.CorrelationFindingsRead,
                 ApiKeyScopes.NarrationsRead,
+                ApiKeyScopes.BacklogForecastsRead,
             ],
             [Operator] =
             [
@@ -54,6 +55,7 @@ public static class ApiKeyRoles
                 ApiKeyScopes.DriftFindingsRead,
                 ApiKeyScopes.CorrelationFindingsRead,
                 ApiKeyScopes.NarrationsRead,
+                ApiKeyScopes.BacklogForecastsRead,
             ],
             [Auditor] =
             [

@@ -297,6 +297,28 @@ public static class ApiRoutes
     }
 
     /// <summary>
+    /// Routes for predictive backlog forecasting endpoints (roadmap §5.E, P4 — "Predictive
+    /// backlog signal").
+    /// </summary>
+    public static class BacklogForecasts
+    {
+        /// <summary>
+        /// Base route for backlog forecast operations.
+        /// </summary>
+        public const string Base = $"{VersionedBase}/backlog-forecasts";
+
+        /// <summary>
+        /// Route for a specific backlog forecast by ID.
+        /// </summary>
+        public const string ById = $"{Base}/{{id:guid}}";
+
+        /// <summary>
+        /// Route for triggering backlog forecast computation.
+        /// </summary>
+        public const string Forecast = $"{Base}/forecast";
+    }
+
+    /// <summary>
     /// Routes for DLQ Intelligence endpoints.
     /// </summary>
     public static class Dlq
