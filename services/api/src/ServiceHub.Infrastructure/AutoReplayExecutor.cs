@@ -164,7 +164,7 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
             {
                 try
                 {
-                    await ProposeReplayPlanAsync(message, rule, ns, entityName, signatureHash, cancellationToken);
+                    await ProposeReplayPlanAsync(message, rule, ns, signatureHash, cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -396,13 +396,37 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         DlqMessage message,
         AutoReplayRule rule,
         Namespace ns,
-        string entityName,
         string? signatureHash,
         CancellationToken cancellationToken)
     {
+        // Dedup guard: DlqMonitorWorker's fairness sweep (default 10s poll,
+        // DlqMonitor:PollIntervalSeconds) re-evaluates a still-Active message every cycle —
+        // RecordDeclinedAsync never changes DlqMessage.Status — until the recurrence-lineage cap
+        // finally intervenes (up to 3 cycles per distinct BodyHash). Without this check, every one
+        // of those cycles would propose its own near-duplicate ReplayPlan for the same signature,
+        // flooding a human reviewer's queue and skewing BacktestService's corroboration rate (one
+        // real recovery would "corroborate" every duplicate). Scoped to the still-Proposed state:
+        // once a human has started reviewing (UnderReview/Edited) or dispositioned it, this is a
+        // distinct question, not noise from this same unattended loop.
+        var existingResult = await _playbookLedger.QueryEntriesAsync(
+            rule.OwnerId, PillarKind.Recover, ns.Id, PlaybookEntryState.Proposed, cancellationToken).ConfigureAwait(false);
+
+        if (existingResult.IsSuccess
+            && existingResult.Value.Any(e => e.ProposalKind == "ReplayPlan" && e.SignatureHashSnapshot == signatureHash))
+        {
+            return;
+        }
+
+        // EntityName must be message.EntityName (the full provider path, e.g.
+        // "topic/subscriptions/sub") — NOT the topic-stripped/alternate-routed local `entityName`
+        // ExecuteAsync computes for provider dispatch. RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest
+        // always stamps RecoveryLedgerEntry.EntityNameSnapshot from message.EntityName regardless of
+        // TargetEntity, and BacktestService's join (via FindEntriesForEntitySinceAsync) matches on
+        // EntityNameSnapshot — using the dispatch-target name here would make every Subscription-type
+        // or alternate-entity-routed ReplayPlan silently never corroborate.
         var proposalJson = JsonSerializer.Serialize(new
         {
-            EntityName = entityName,
+            EntityName = message.EntityName,
             message.MessageId,
             TargetAction = "Replay",
             RuleId = rule.Id,
