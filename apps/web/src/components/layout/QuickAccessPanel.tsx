@@ -18,6 +18,7 @@ import {
   Radio,
   CheckCircle2,
   Gauge,
+  Sparkles,
 } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
@@ -255,6 +256,19 @@ export function QuickAccessPanel() {
         >
           <Gauge className="w-4 h-4 text-blue-500" />
           <span className="flex-1 text-left">Autonomy Dashboard</span>
+        </NavLink>
+        <NavLink
+          to={`${navPrefix}/insights`}
+          className={({ isActive }) =>
+            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isActive
+                ? 'bg-blue-50 text-blue-700 border-blue-300 font-medium'
+                : 'bg-white hover:bg-blue-50 text-gray-700 hover:text-blue-700 border-gray-200 hover:border-blue-300'
+            }`
+          }
+        >
+          <Sparkles className="w-4 h-4 text-blue-500" />
+          <span className="flex-1 text-left">Proactive Insights</span>
         </NavLink>
         <NavLink
           to={`${navPrefix}/cross-cloud-trace`}
