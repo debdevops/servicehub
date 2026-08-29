@@ -65,6 +65,10 @@ public sealed class ExternalSignalsController : ApiControllerBase
     /// </summary>
     /// <param name="request">The signal to record.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="400">
+    /// <paramref name="request"/> failed validation, or <see cref="RecordExternalSignalHttpRequest.NamespaceId"/>
+    /// does not resolve to a namespace the caller can access.
+    /// </response>
     [RequireScope(ApiKeyScopes.ExternalSignalsWrite)]
     [HttpPost]
     [ProducesResponseType(typeof(ExternalSignalEventResponse), StatusCodes.Status200OK)]
@@ -73,6 +77,21 @@ public sealed class ExternalSignalsController : ApiControllerBase
         [FromBody] RecordExternalSignalHttpRequest request,
         CancellationToken cancellationToken = default)
     {
+        // RequireNamespaceOwnershipAttribute only inspects route/query values (see its own
+        // remarks) — request.NamespaceId arrives in the body, so it needs the same inline
+        // ownership check every other namespace-scoped write in this codebase uses (e.g.
+        // RulesController.Create/Update) rather than being trusted as-is.
+        if (request.NamespaceId is { } requestedNamespaceId)
+        {
+            var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, requestedNamespaceId, cancellationToken);
+            if (namespaceResult.IsFailure)
+            {
+                return ToActionResult<ExternalSignalEventResponse>(Error.Validation(
+                    "ExternalSignal.NamespaceInvalid",
+                    $"Namespace '{requestedNamespaceId}' does not exist or is not accessible."));
+            }
+        }
+
         var result = await _externalSignalRepository.RecordAsync(new RecordExternalSignalRequest
         {
             OwnerId = OwnerId,

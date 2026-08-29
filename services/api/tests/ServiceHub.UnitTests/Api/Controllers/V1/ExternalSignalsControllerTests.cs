@@ -145,6 +145,43 @@ public sealed class ExternalSignalsControllerTests
         result.Result.Should().BeOfType<BadRequestObjectResult>();
     }
 
+    [Fact]
+    public async Task RecordSignal_NamespaceIdNotAccessibleToCaller_ReturnsBadRequestAndDoesNotRecord()
+    {
+        var foreignNamespaceId = Guid.NewGuid();
+        _namespaceRepository
+            .Setup(r => r.GetByIdAsync(foreignNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("Namespace.NotFound", "not found")));
+
+        var result = await _controller.RecordSignal(new RecordExternalSignalHttpRequest(
+            foreignNamespaceId, ExternalSignalType.Deploy, DateTimeOffset.UtcNow, "manual", null));
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+        _externalSignalRepository.Verify(
+            r => r.RecordAsync(It.IsAny<RecordExternalSignalRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RecordSignal_NamespaceIdAccessibleToCaller_Records()
+    {
+        var ns = CreateTestNamespace(ownerId: Namespace.SpaOwnerId);
+        _namespaceRepository
+            .Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var signal = CreateSignal(Namespace.SpaOwnerId, ns.Id);
+        _externalSignalRepository
+            .Setup(r => r.RecordAsync(It.IsAny<RecordExternalSignalRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ExternalSignalEvent>.Success(signal));
+
+        var result = await _controller.RecordSignal(new RecordExternalSignalHttpRequest(
+            ns.Id, ExternalSignalType.Deploy, DateTimeOffset.UtcNow, "manual", null));
+
+        result.Result.Should().BeOfType<OkObjectResult>();
+        _externalSignalRepository.Verify(
+            r => r.RecordAsync(It.Is<RecordExternalSignalRequest>(req => req.NamespaceId == ns.Id), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     #endregion
 
     #region GetSignals Tests

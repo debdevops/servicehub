@@ -13,8 +13,9 @@ public sealed class WorkerHeartbeatHealthCheckOptions
     /// <summary>
     /// How many multiples of a worker's own configured cadence may elapse since its last
     /// heartbeat before the check reports it stale. Deliberately a multiplier of each worker's
-    /// own interval rather than one fixed absolute threshold — the eleven workers this check
-    /// covers have cadences ranging from 10 seconds to an hour, and a single absolute cutoff
+    /// own interval rather than one fixed absolute threshold — the workers this check
+    /// covers (see <see cref="WorkerHeartbeatHealthCheck"/>'s own <c>ExpectedWorkers</c> list)
+    /// have cadences ranging from 10 seconds to an hour, and a single absolute cutoff
     /// would either false-positive on the slowest workers or never catch a stall in the
     /// fastest ones.
     /// </summary>

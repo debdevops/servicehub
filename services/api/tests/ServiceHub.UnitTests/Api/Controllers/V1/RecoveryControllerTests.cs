@@ -490,6 +490,34 @@ public sealed class RecoveryControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteOff_InsufficientGovernanceRoleAndMissingIntentHeader_ReturnsForbiddenNotPreconditionRequired()
+    {
+        // Governance is evaluated before the explicit-intent check (deliberately — an
+        // unauthorized caller should be told they lack the role, not learn what headers a
+        // properly-authorized call would additionally need), so a caller failing both checks at
+        // once must see 403, never 428.
+        var namespaceId = Guid.NewGuid();
+        var operation = await OpenOperationAsync(OwnerA, namespaceId);
+        var entry = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            NamespaceId = namespaceId,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-writeoff-forbidden-no-intent",
+            TargetEntity = "queue-writeoff-forbidden-no-intent",
+        });
+        _governanceAccessEvaluator
+            .Setup(e => e.EvaluateAsync(
+                OwnerA, It.IsAny<string>(), GovernanceRole.Operator, namespaceId, PillarKind.Recover, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Forbidden("Governance.InsufficientRole", "denied")));
+
+        var result = await _controller.WriteOff(entry.Value.Id, new WriteOffRecoveryEntryRequest("blocked"));
+
+        result.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
     public async Task WriteOff_EntryNotFound_ReturnsNotFoundWithoutGovernanceCheck()
     {
         var result = await _controller.WriteOff(Guid.NewGuid(), new WriteOffRecoveryEntryRequest("missing"));
