@@ -46,6 +46,14 @@ public class AutoReplayExecutorTests : IDisposable
         _recoveryLedger = new RecoveryLedgerService(_dbContext);
         _eligibilityGate = new RecoveryEligibilityGate(_recoveryLedger, NullLogger<RecoveryEligibilityGate>.Instance);
 
+        // Default: no existing open ReplayPlan proposal — the dedup-guard query
+        // ProposeReplayPlanAsync runs before every ProposeAsync call finds nothing to dedup
+        // against, so tests that don't care about the guard behave as if it were absent.
+        _playbookLedger
+            .Setup(p => p.QueryEntriesAsync(
+                It.IsAny<string>(), It.IsAny<PillarKind?>(), It.IsAny<Guid?>(), It.IsAny<PlaybookEntryState?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlyList<PlaybookEntry>>(Array.Empty<PlaybookEntry>()));
+
         // Default: every ProposeAsync call succeeds with a throwaway entry — tests that care about
         // the ReplayPlan proposal itself override this with their own Setup/Verify.
         _playbookLedger
@@ -991,6 +999,74 @@ public class AutoReplayExecutorTests : IDisposable
                 && r.ProposalJson.Contains("test-queue")),
             It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task Execute_NoAutonomyGrant_SubscriptionTypeMessage_ProposalUsesFullEntityPath()
+    {
+        // Regression: EntityName in the proposal must be message.EntityName (the full
+        // "topic/subscriptions/sub" path RecoveryLedgerEntry.EntityNameSnapshot always carries via
+        // BuildBeginEntryRequest), not the topic-stripped dispatch name ExecuteAsync computes for
+        // ReplayMessageAsync — otherwise BacktestService's join (FindEntriesForEntitySinceAsync
+        // matches on EntityNameSnapshot) would never corroborate a Subscription-type ReplayPlan.
+        var rule = CreateRule();
+        var msg = CreateMessage(
+            entityType: ServiceBusEntityType.Subscription,
+            entityName: "my-topic/subscriptions/my-sub",
+            topicName: "my-topic");
+        var action = new RuleAction();
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsFailure.Should().BeTrue();
+
+        _playbookLedger.Verify(p => p.ProposeAsync(
+            It.Is<ProposePlaybookEntryRequest>(r => r.ProposalJson.Contains("my-topic/subscriptions/my-sub")
+                                                     && !r.ProposalJson.Contains("\"EntityName\":\"my-topic\"")),
+            It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Execute_NoAutonomyGrant_OpenReplayPlanAlreadyProposedForSameSignature_SkipsDuplicateProposal()
+    {
+        // Regression: DlqMonitorWorker's fairness sweep re-evaluates a still-Active message every
+        // poll cycle (default 10s) — without this guard, each cycle would propose its own
+        // near-duplicate ReplayPlan for the same signature until the recurrence cap intervenes.
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+        var expectedHash = await ComputeExpectedHashAsync(msg);
+
+        _playbookLedger
+            .Setup(p => p.QueryEntriesAsync(
+                rule.OwnerId, PillarKind.Recover, _testNamespace.Id, PlaybookEntryState.Proposed, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlyList<PlaybookEntry>>(new[]
+            {
+                new PlaybookEntry
+                {
+                    OwnerId = rule.OwnerId,
+                    PillarKind = PillarKind.Recover,
+                    ProposalKind = "ReplayPlan",
+                    EvidenceRefJson = "{}",
+                    ProposalJson = "{}",
+                    ProposedAt = DateTimeOffset.UtcNow,
+                    ProposerIdentity = "System:AutoReplayExecutor",
+                    ProposerKind = PlaybookActorKind.System,
+                    SignatureHashSnapshot = expectedHash,
+                    NamespaceId = _testNamespace.Id,
+                    ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
+                    State = PlaybookEntryState.Proposed,
+                },
+            }));
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsFailure.Should().BeTrue();
+
+        _playbookLedger.Verify(
+            p => p.ProposeAsync(It.IsAny<ProposePlaybookEntryRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
