@@ -8,6 +8,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Constants;
+using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Api.Controllers.V1;
 
@@ -22,18 +23,38 @@ namespace ServiceHub.Api.Controllers.V1;
 public sealed class SignatureReplayController : ApiControllerBase
 {
     private readonly ISignatureReplayService _signatureReplayService;
+    private readonly IGovernanceAccessEvaluator _governanceAccessEvaluator;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<SignatureReplayController> _logger;
 
     /// <summary>Initialises a new instance of <see cref="SignatureReplayController"/>.</summary>
     public SignatureReplayController(
         ISignatureReplayService signatureReplayService,
+        IGovernanceAccessEvaluator governanceAccessEvaluator,
         IAuditLogger auditLogger,
         ILogger<SignatureReplayController> logger)
     {
         _signatureReplayService = signatureReplayService ?? throw new ArgumentNullException(nameof(signatureReplayService));
+        _governanceAccessEvaluator = governanceAccessEvaluator ?? throw new ArgumentNullException(nameof(governanceAccessEvaluator));
         _auditLogger = auditLogger ?? throw new ArgumentNullException(nameof(auditLogger));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Governance/RBAC check for cancelling a signature-replay job — mirrors
+    /// <c>BulkOperationsController.EvaluateBulkOperationGovernanceAsync</c>: the job's namespace
+    /// isn't a route/query value on <see cref="Cancel"/> (only the job ID is), so the declarative
+    /// <see cref="RequireGovernanceRoleAttribute"/> used on <see cref="Start"/> can't resolve it
+    /// here. Held to the same <see cref="GovernanceRole.Operator"/> bar as starting the job —
+    /// cancelling an in-flight Recover-pillar mutation is itself governed, the same way
+    /// <c>RecoveryController</c>'s emergency-stop activate/clear both require a role rather than
+    /// only the "start" direction being gated.
+    /// </summary>
+    private async Task<Result> EvaluateSignatureReplayGovernanceAsync(Guid namespaceId, CancellationToken cancellationToken)
+    {
+        var granteeIdentity = ResolveGovernanceGranteeIdentity();
+        return await _governanceAccessEvaluator.EvaluateAsync(
+            OwnerId, granteeIdentity, GovernanceRole.Operator, namespaceId, PillarKind.Recover, cancellationToken);
     }
 
     /// <summary>
@@ -168,7 +189,8 @@ public sealed class SignatureReplayController : ApiControllerBase
     /// <summary>
     /// Requests cancellation of a pending or running signature-replay job. Idempotent —
     /// cancelling an already finished job returns its current (terminal) state rather than an
-    /// error.
+    /// error. See <see cref="EvaluateSignatureReplayGovernanceAsync"/> for why this needs an
+    /// inline governance check rather than the declarative attribute <see cref="Start"/> uses.
     /// </summary>
     /// <param name="id">The job ID.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -179,6 +201,18 @@ public sealed class SignatureReplayController : ApiControllerBase
     public async Task<ActionResult<BulkOperationJobResponse>> Cancel(
         Guid id, CancellationToken cancellationToken = default)
     {
+        var jobResult = await _signatureReplayService.GetJobAsync(OwnerId, id, cancellationToken);
+        if (jobResult.IsFailure)
+        {
+            return ToActionResult(jobResult);
+        }
+
+        var governanceResult = await EvaluateSignatureReplayGovernanceAsync(jobResult.Value.NamespaceId, cancellationToken);
+        if (governanceResult.IsFailure)
+        {
+            return ToActionResult<BulkOperationJobResponse>(governanceResult.Error);
+        }
+
         var result = await _signatureReplayService.CancelJobAsync(OwnerId, id, cancellationToken);
         return ToActionResult(result);
     }

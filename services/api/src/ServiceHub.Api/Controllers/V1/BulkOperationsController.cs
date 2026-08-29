@@ -170,7 +170,11 @@ public sealed class BulkOperationsController : ApiControllerBase
 
     /// <summary>
     /// Requests cancellation of a pending or running job. Idempotent: cancelling an already
-    /// finished job returns its current (terminal) state rather than an error.
+    /// finished job returns its current (terminal) state rather than an error. Held to the same
+    /// <see cref="GovernanceRole.Operator"/> bar as <see cref="Create"/>: cancelling an in-flight
+    /// Recover-pillar mutation is itself a governed action, not a free pass, the same way
+    /// <c>RecoveryController</c>'s emergency-stop activate/clear both require a role rather than
+    /// only the "start" direction being gated.
     /// </summary>
     /// <param name="id">The job ID.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -181,6 +185,18 @@ public sealed class BulkOperationsController : ApiControllerBase
     public async Task<ActionResult<BulkOperationJobResponse>> Cancel(
         Guid id, CancellationToken cancellationToken = default)
     {
+        var jobResult = await _bulkOperationService.GetJobAsync(OwnerId, id, cancellationToken);
+        if (jobResult.IsFailure)
+        {
+            return ToActionResult(jobResult);
+        }
+
+        var governanceResult = await EvaluateBulkOperationGovernanceAsync(jobResult.Value.NamespaceId, cancellationToken);
+        if (governanceResult.IsFailure)
+        {
+            return ToActionResult<BulkOperationJobResponse>(governanceResult.Error);
+        }
+
         var result = await _bulkOperationService.CancelJobAsync(OwnerId, id, cancellationToken);
         return ToActionResult(result);
     }
