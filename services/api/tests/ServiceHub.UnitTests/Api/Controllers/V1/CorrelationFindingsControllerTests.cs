@@ -53,11 +53,10 @@ public class CorrelationFindingsControllerTests
     private static CorrelationFinding CreateTestFinding(string ownerId, Guid namespaceId) =>
         CorrelationFinding.Create(
             ownerId,
-            CloudProviderType.Azure,
             new[]
             {
-                new CorrelationMember(namespaceId, "queue-1", AnomalyType.HighMessageVolume, 80),
-                new CorrelationMember(Guid.NewGuid(), "queue-2", AnomalyType.HighMessageVolume, 60),
+                new CorrelationMember(namespaceId, "queue-1", AnomalyType.HighMessageVolume, 80, CloudProviderType.Azure),
+                new CorrelationMember(Guid.NewGuid(), "queue-2", AnomalyType.HighMessageVolume, 60, CloudProviderType.Azure),
             },
             80,
             "correlated spike");
@@ -116,6 +115,38 @@ public class CorrelationFindingsControllerTests
         var response = okResult.Value.Should().BeOfType<CorrelationDetectionResponse>().Subject;
         response.Findings.Should().HaveCount(1);
         _resultCache.Verify(c => c.Store(It.Is<IEnumerable<CorrelationFinding>>(f => f.Contains(finding))), Times.Once);
+    }
+
+    [Fact]
+    public async Task DetectCorrelations_CrossProviderFinding_ShouldReportAllProvidersOnResponse()
+    {
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByOwnerAsync(Namespace.SpaOwnerId, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        _anomalyDetectionService.Setup(a => a.DetectAnomaliesAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(Array.Empty<Anomaly>()));
+
+        var crossProviderFinding = CorrelationFinding.Create(
+            Namespace.SpaOwnerId,
+            new[]
+            {
+                new CorrelationMember(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 80, CloudProviderType.Azure),
+                new CorrelationMember(Guid.NewGuid(), "queue-2", AnomalyType.HighMessageVolume, 60, CloudProviderType.Aws),
+            },
+            80,
+            "cross-cloud correlated spike");
+        _correlationDetectionService.Setup(c => c.DetectCorrelations(It.IsAny<IReadOnlyList<AnomalyObservation>>()))
+            .Returns(new[] { crossProviderFinding });
+
+        var result = await _controller.DetectCorrelations();
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<CorrelationDetectionResponse>().Subject;
+        var findingInfo = response.Findings.Should().ContainSingle().Subject;
+        findingInfo.Providers.Should().BeEquivalentTo("Azure", "Aws");
+        findingInfo.Members.Should().Contain(m => m.EntityName == "queue-1" && m.Provider == "Azure");
+        findingInfo.Members.Should().Contain(m => m.EntityName == "queue-2" && m.Provider == "Aws");
     }
 
     [Fact]
@@ -206,11 +237,10 @@ public class CorrelationFindingsControllerTests
 
         var finding = CorrelationFinding.Create(
             "key_trueowner",
-            CloudProviderType.Azure,
             new[]
             {
-                new CorrelationMember(accessibleNamespaceId, "queue-1", AnomalyType.HighMessageVolume, 80),
-                new CorrelationMember(inaccessibleNamespaceId, "queue-2", AnomalyType.HighMessageVolume, 60),
+                new CorrelationMember(accessibleNamespaceId, "queue-1", AnomalyType.HighMessageVolume, 80, CloudProviderType.Azure),
+                new CorrelationMember(inaccessibleNamespaceId, "queue-2", AnomalyType.HighMessageVolume, 60, CloudProviderType.Azure),
             },
             80,
             "correlated spike");

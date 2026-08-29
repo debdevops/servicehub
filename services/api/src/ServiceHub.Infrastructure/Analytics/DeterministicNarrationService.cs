@@ -6,7 +6,7 @@ namespace ServiceHub.Infrastructure.Analytics;
 
 /// <summary>
 /// Deterministic, template-based implementation of <see cref="INarrationService"/> (roadmap
-/// §5.B, I4 — "Narrate"). Stitches I1–I3's structured output and P1/P2/C1 findings into plain
+/// §5.B, I4 — "Narrate"). Stitches I1–I3's structured output and P1/P2/C1/C2 findings into plain
 /// English via fixed sentence templates — no ML, no LLM, no external call.
 /// </summary>
 public sealed class DeterministicNarrationService : INarrationService
@@ -112,7 +112,11 @@ public sealed class DeterministicNarrationService : INarrationService
             })
             .ToList();
 
-        var headline = $"{correlation.Members.Count} entities across {memberNamespaceIds.Count} namespace(s) show a correlated {correlation.Provider} pattern";
+        var providerLabel = correlation.Providers.Count == 1
+            ? correlation.Providers[0].ToString()
+            : $"cross-cloud ({string.Join("/", correlation.Providers)})";
+
+        var headline = $"{correlation.Members.Count} entities across {memberNamespaceIds.Count} namespace(s) show a correlated {providerLabel} pattern";
 
         var recommendedActions = correlation.RecommendedActions.Take(MaxRecommendedActions).ToList();
 

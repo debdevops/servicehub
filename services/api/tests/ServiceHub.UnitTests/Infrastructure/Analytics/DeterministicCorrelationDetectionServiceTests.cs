@@ -56,7 +56,7 @@ public sealed class DeterministicCorrelationDetectionServiceTests
 
         var finding = result.Should().ContainSingle().Subject;
         finding.OwnerId.Should().Be("key_owner1");
-        finding.Provider.Should().Be(CloudProviderType.Azure);
+        finding.Providers.Should().BeEquivalentTo(new[] { CloudProviderType.Azure });
         finding.Members.Should().HaveCount(2);
         finding.Members.Select(m => m.EntityName).Should().BeEquivalentTo("orders-queue", "payments-queue");
         finding.Severity.Should().Be(80); // max of member severities
@@ -79,17 +79,46 @@ public sealed class DeterministicCorrelationDetectionServiceTests
     }
 
     [Fact]
-    public void DetectCorrelations_SameOwnerDifferentProviders_DoNotCorrelateTogether()
+    public void DetectCorrelations_SameOwnerDifferentProviders_CorrelateTogetherAcrossProviders()
     {
+        // Roadmap C2 — "Cross-cloud correlation": grouping is by owner alone, so two entities
+        // under the same owner on different clouds now form one finding instead of being
+        // silently dropped as C1 did.
+        var namespaceA = Guid.NewGuid();
+        var namespaceB = Guid.NewGuid();
         var observations = new[]
         {
-            new AnomalyObservation(CreateAnomaly(Guid.NewGuid(), "queue-1", 80), "key_owner1", CloudProviderType.Azure),
-            new AnomalyObservation(CreateAnomaly(Guid.NewGuid(), "queue-2", 80), "key_owner1", CloudProviderType.Aws),
+            new AnomalyObservation(CreateAnomaly(namespaceA, "queue-1", 80), "key_owner1", CloudProviderType.Azure),
+            new AnomalyObservation(CreateAnomaly(namespaceB, "queue-2", 60), "key_owner1", CloudProviderType.Aws),
         };
 
         var result = _sut.DetectCorrelations(observations);
 
-        result.Should().BeEmpty();
+        var finding = result.Should().ContainSingle().Subject;
+        finding.OwnerId.Should().Be("key_owner1");
+        finding.Providers.Should().BeEquivalentTo(new[] { CloudProviderType.Azure, CloudProviderType.Aws });
+        finding.Members.Should().HaveCount(2);
+        finding.Members.Should().Contain(m => m.EntityName == "queue-1" && m.Provider == CloudProviderType.Azure);
+        finding.Members.Should().Contain(m => m.EntityName == "queue-2" && m.Provider == CloudProviderType.Aws);
+        finding.Metrics["providerCount"].Should().Be(2);
+    }
+
+    [Fact]
+    public void DetectCorrelations_ThreeEntitiesThreeProviders_ProducesOneFindingWithAllProviders()
+    {
+        var observations = new[]
+        {
+            new AnomalyObservation(CreateAnomaly(Guid.NewGuid(), "queue-1", 50), "key_owner1", CloudProviderType.Azure),
+            new AnomalyObservation(CreateAnomaly(Guid.NewGuid(), "queue-2", 90), "key_owner1", CloudProviderType.Aws),
+            new AnomalyObservation(CreateAnomaly(Guid.NewGuid(), "queue-3", 60), "key_owner1", CloudProviderType.Gcp),
+        };
+
+        var result = _sut.DetectCorrelations(observations);
+
+        var finding = result.Should().ContainSingle().Subject;
+        finding.Providers.Should().BeEquivalentTo(new[] { CloudProviderType.Azure, CloudProviderType.Aws, CloudProviderType.Gcp });
+        finding.Members.Should().HaveCount(3);
+        finding.Severity.Should().Be(90);
     }
 
     [Fact]

@@ -255,7 +255,7 @@ public static class ApiRoutes
     }
 
     /// <summary>
-    /// Routes for same-provider proactive correlation endpoints.
+    /// Routes for proactive correlation endpoints (same-provider and cross-cloud).
     /// </summary>
     public static class CorrelationFindings
     {

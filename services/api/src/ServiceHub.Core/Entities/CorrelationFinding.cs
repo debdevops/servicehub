@@ -10,17 +10,20 @@ namespace ServiceHub.Core.Entities;
 /// <param name="EntityName">The queue, topic, or subscription name.</param>
 /// <param name="AnomalyType">The type of anomaly detected for this entity.</param>
 /// <param name="Severity">The anomaly's own severity (0-100).</param>
+/// <param name="Provider">The cloud provider of the namespace this member belongs to.</param>
 public sealed record CorrelationMember(
     Guid NamespaceId,
     string EntityName,
     AnomalyType AnomalyType,
-    int Severity);
+    int Severity,
+    CloudProviderType Provider);
 
 /// <summary>
-/// Represents two or more entities whose anomalies were detected in the same window and share a
-/// cloud provider — a proactively-surfaced hypothesis that they are one incident with a common
+/// Represents two or more entities whose anomalies were detected in the same window under the
+/// same owner — a proactively-surfaced hypothesis that they are one incident with a common
 /// downstream cause, rather than N disconnected signatures an operator has to notice are related
-/// (roadmap §5.D, C1 — "Same-provider proactive correlation").
+/// (roadmap §5.D, C1 — "Same-provider proactive correlation" — generalized by C2, "Cross-cloud
+/// correlation", to group across providers rather than requiring every member to share one).
 /// </summary>
 public sealed class CorrelationFinding
 {
@@ -30,8 +33,12 @@ public sealed class CorrelationFinding
     /// <summary>Gets the owner ID whose namespaces contributed to this finding.</summary>
     public string OwnerId { get; private set; }
 
-    /// <summary>Gets the cloud provider shared by every member of this finding.</summary>
-    public CloudProviderType Provider { get; private set; }
+    /// <summary>
+    /// Gets the distinct cloud providers represented among this finding's members, ordered by
+    /// enum value. Contains one entry for a same-provider (C1) finding and two or more for a
+    /// cross-cloud (C2) finding.
+    /// </summary>
+    public IReadOnlyList<CloudProviderType> Providers { get; private set; }
 
     /// <summary>Gets the entities whose simultaneous anomalies make up this correlation.</summary>
     public IReadOnlyList<CorrelationMember> Members { get; private set; }
@@ -54,6 +61,7 @@ public sealed class CorrelationFinding
     private CorrelationFinding()
     {
         OwnerId = string.Empty;
+        Providers = Array.Empty<CloudProviderType>();
         Description = string.Empty;
         Members = Array.Empty<CorrelationMember>();
         Metrics = new Dictionary<string, double>();
@@ -61,11 +69,13 @@ public sealed class CorrelationFinding
     }
 
     /// <summary>
-    /// Creates a new correlation finding instance.
+    /// Creates a new correlation finding instance. <see cref="Providers"/> is derived from the
+    /// distinct <see cref="CorrelationMember.Provider"/> values across <paramref name="members"/>
+    /// rather than accepted as a separate argument, so it can never drift from what the members
+    /// actually contain.
     /// </summary>
     public static CorrelationFinding Create(
         string ownerId,
-        CloudProviderType provider,
         IReadOnlyList<CorrelationMember> members,
         int severity,
         string description,
@@ -77,12 +87,14 @@ public sealed class CorrelationFinding
             throw new ArgumentException("Owner ID is required.", nameof(ownerId));
         }
 
+        ArgumentNullException.ThrowIfNull(members);
+
         return new CorrelationFinding
         {
             Id = Guid.NewGuid(),
             OwnerId = ownerId,
-            Provider = provider,
-            Members = members ?? throw new ArgumentNullException(nameof(members)),
+            Providers = members.Select(m => m.Provider).Distinct().OrderBy(p => (int)p).ToList(),
+            Members = members,
             Severity = Math.Clamp(severity, 0, 100),
             Description = description ?? throw new ArgumentNullException(nameof(description)),
             DetectedAt = DateTimeOffset.UtcNow,

@@ -8,11 +8,12 @@ using ServiceHub.Shared.Constants;
 namespace ServiceHub.Api.Controllers.V1;
 
 /// <summary>
-/// Controller for deterministic, same-provider proactive correlation (roadmap §5.D, C1).
-/// Unlike <see cref="AnomaliesController"/> and <see cref="DriftFindingsController"/>, detection
-/// here is inherently cross-namespace — a correlation only exists when two or more of a caller's
-/// namespaces are anomalous together — so this controller runs over every namespace the caller
-/// can access rather than a single <c>namespaceId</c>.
+/// Controller for deterministic proactive correlation, same-provider (roadmap §5.D, C1) and
+/// cross-cloud (C2). Unlike <see cref="AnomaliesController"/> and <see cref="DriftFindingsController"/>,
+/// detection here is inherently cross-namespace — a correlation only exists when two or more of a
+/// caller's namespaces are anomalous together, regardless of which cloud provider each lives on —
+/// so this controller runs over every namespace the caller can access rather than a single
+/// <c>namespaceId</c>.
 /// </summary>
 [Route(ApiRoutes.CorrelationFindings.Base)]
 [Tags("CorrelationFindings")]
@@ -42,8 +43,8 @@ public sealed class CorrelationFindingsController : ApiControllerBase
     }
 
     /// <summary>
-    /// Detects same-provider correlations across every namespace the caller can access, within a
-    /// specified time window.
+    /// Detects correlations (same-provider or cross-cloud) across every namespace the caller can
+    /// access, within a specified time window.
     /// </summary>
     /// <param name="startTime">The start of the analysis window (defaults to 24 hours ago).</param>
     /// <param name="endTime">The end of the analysis window (defaults to now).</param>
@@ -176,9 +177,9 @@ public sealed class CorrelationFindingsController : ApiControllerBase
     {
         return new CorrelationFindingInfo(
             Id: finding.Id,
-            Provider: finding.Provider.ToString(),
+            Providers: finding.Providers.Select(p => p.ToString()).ToList(),
             Members: finding.Members
-                .Select(m => new CorrelationMemberInfo(m.NamespaceId, m.EntityName, m.AnomalyType.ToString(), m.Severity))
+                .Select(m => new CorrelationMemberInfo(m.NamespaceId, m.EntityName, m.AnomalyType.ToString(), m.Severity, m.Provider.ToString()))
                 .ToList(),
             Severity: finding.Severity,
             Description: finding.Description,
@@ -195,14 +196,16 @@ public sealed record CorrelationMemberInfo(
     Guid NamespaceId,
     string EntityName,
     string AnomalyType,
-    int Severity);
+    int Severity,
+    string Provider);
 
 /// <summary>
-/// Information about a detected correlation finding.
+/// Information about a detected correlation finding. <see cref="Providers"/> has one entry for a
+/// same-provider (C1) finding and two or more for a cross-cloud (C2) finding.
 /// </summary>
 public sealed record CorrelationFindingInfo(
     Guid Id,
-    string Provider,
+    IReadOnlyList<string> Providers,
     IReadOnlyList<CorrelationMemberInfo> Members,
     int Severity,
     string Description,
