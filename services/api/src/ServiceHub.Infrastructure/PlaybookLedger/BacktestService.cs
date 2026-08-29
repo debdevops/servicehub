@@ -14,12 +14,16 @@ namespace ServiceHub.Infrastructure.PlaybookLedger;
 /// the payload as opaque), and joins that against
 /// <see cref="IRecoveryLedger.FindEntriesForEntitySinceAsync"/> — mirroring
 /// <c>CorrelationAccountabilityService</c>'s "count, filter, or grouping over rows already
-/// written" discipline. No schema change, no new trust computation.
+/// written" discipline. No schema change, no new trust computation. Roadmap item 14's "same
+/// engine, second application" on the Recover side: <c>ReplayPlan</c> proposals (from
+/// <c>AutoReplayExecutor</c>, when predicate 5 escalates for lack of earned autonomy) carry
+/// <c>EntityName</c> in the same shape as <c>AnomalyFlag</c>/<c>DriftFinding</c>, so they join
+/// identically — no separate signature-hash code path needed.
 /// </remarks>
 public sealed class BacktestService : IBacktestService
 {
     private static readonly IReadOnlyCollection<string> BacktestableProposalKinds =
-        new[] { "AnomalyFlag", "DriftFinding" };
+        new[] { "AnomalyFlag", "DriftFinding", "ReplayPlan" };
 
     private const int DefaultLimit = 50;
     private const int MaxLimit = 200;

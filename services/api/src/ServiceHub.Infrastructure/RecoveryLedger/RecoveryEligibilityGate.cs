@@ -41,7 +41,16 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
     private const string ReasonQueryError = "RECURRENCE_CAP_QUERY_ERROR";
     private const string ReasonAutonomySignatureHashMissing = "AUTONOMY_SIGNATURE_HASH_MISSING";
     private const string ReasonAutonomyGrantQueryError = "AUTONOMY_GRANT_QUERY_ERROR";
-    private const string ReasonAutonomyGrantInsufficient = "AUTONOMY_GRANT_INSUFFICIENT";
+
+    /// <summary>
+    /// Predicate 5's "hasn't earned it yet" reason code: the signature's <c>AutonomyGrant</c> is
+    /// at Approve (L3, the permanent human floor) or doesn't exist. Public so a caller (e.g.
+    /// <c>AutoReplayExecutor</c>) can distinguish this specific escalation from the recurrence-cap
+    /// one sharing the same decline path, to propose a Recover-pillar <c>ReplayPlan</c> Playbook
+    /// Ledger entry — a computed plan that hasn't earned unattended execution is exactly what a
+    /// human review candidate is, never a trigger for anything itself.
+    /// </summary>
+    public const string ReasonAutonomyGrantInsufficient = "AUTONOMY_GRANT_INSUFFICIENT";
 
     /// <summary>
     /// Predicate 5's independent-capability reason code: fires when a grant claims
