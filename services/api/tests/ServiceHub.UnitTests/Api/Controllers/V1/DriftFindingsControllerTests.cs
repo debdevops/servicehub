@@ -7,6 +7,7 @@ using ServiceHub.Api.Controllers.V1;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Api.Controllers.V1;
@@ -15,6 +16,7 @@ public class DriftFindingsControllerTests
 {
     private readonly Mock<IDriftDetectionService> _detectionService;
     private readonly Mock<IDriftResultCache> _resultCache;
+    private readonly Mock<IContractViolationExportService> _exportService;
     private readonly Mock<INamespaceRepository> _namespaceRepository;
     private readonly Mock<ILogger<DriftFindingsController>> _logger;
     private readonly DriftFindingsController _controller;
@@ -23,12 +25,14 @@ public class DriftFindingsControllerTests
     {
         _detectionService = new Mock<IDriftDetectionService>();
         _resultCache = new Mock<IDriftResultCache>();
+        _exportService = new Mock<IContractViolationExportService>();
         _namespaceRepository = new Mock<INamespaceRepository>();
         _logger = new Mock<ILogger<DriftFindingsController>>();
 
         _controller = new DriftFindingsController(
             _detectionService.Object,
             _resultCache.Object,
+            _exportService.Object,
             _namespaceRepository.Object,
             _logger.Object)
         {
@@ -60,21 +64,28 @@ public class DriftFindingsControllerTests
     [Fact]
     public void Constructor_NullDetectionService_ShouldThrow()
     {
-        var act = () => new DriftFindingsController(null!, _resultCache.Object, _namespaceRepository.Object, _logger.Object);
+        var act = () => new DriftFindingsController(null!, _resultCache.Object, _exportService.Object, _namespaceRepository.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
     public void Constructor_NullResultCache_ShouldThrow()
     {
-        var act = () => new DriftFindingsController(_detectionService.Object, null!, _namespaceRepository.Object, _logger.Object);
+        var act = () => new DriftFindingsController(_detectionService.Object, null!, _exportService.Object, _namespaceRepository.Object, _logger.Object);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Constructor_NullExportService_ShouldThrow()
+    {
+        var act = () => new DriftFindingsController(_detectionService.Object, _resultCache.Object, null!, _namespaceRepository.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
     public void Constructor_NullLogger_ShouldThrow()
     {
-        var act = () => new DriftFindingsController(_detectionService.Object, _resultCache.Object, _namespaceRepository.Object, null!);
+        var act = () => new DriftFindingsController(_detectionService.Object, _resultCache.Object, _exportService.Object, _namespaceRepository.Object, null!);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -153,6 +164,104 @@ public class DriftFindingsControllerTests
 
         result.Result.Should().NotBeOfType<OkObjectResult>();
         _resultCache.Verify(c => c.Store(It.IsAny<IEnumerable<DriftFinding>>()), Times.Never);
+    }
+
+    #endregion
+
+    #region Export Tests
+
+    [Fact]
+    public async Task Export_Success_ShouldReturnOk()
+    {
+        var ns = CreateTestNamespace();
+        var finding = CreateTestFinding(ns.Id);
+        var report = new ContractViolationReport(
+            ns.Id,
+            ns.Name,
+            DateTimeOffset.UtcNow.AddHours(-24),
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            new List<ContractViolationEntry>
+            {
+                new("test-queue", "Message field shape changed", "High", "Unusual schema drift", new List<string> { "Check recent producer deployments" }),
+            },
+            "# Contract Violation Report — Test NS");
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _detectionService.Setup(a => a.DetectDriftAsync(
+            ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<DriftFinding>>.Success(new List<DriftFinding> { finding }));
+
+        _exportService.Setup(e => e.BuildReport(ns, It.Is<IReadOnlyList<DriftFinding>>(f => f.Contains(finding)), It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>()))
+            .Returns(report);
+
+        var result = await _controller.Export(ns.Id);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<ContractViolationExportResponse>().Subject;
+        response.NamespaceId.Should().Be(ns.Id);
+        response.Violations.Should().HaveCount(1);
+        response.Violations[0].Priority.Should().Be("High");
+        response.MarkdownReport.Should().Be(report.MarkdownReport);
+    }
+
+    [Fact]
+    public async Task Export_NamespaceNotFound_ShouldReturnNotFound()
+    {
+        var id = Guid.NewGuid();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("NOT_FOUND", "Not found")));
+
+        var result = await _controller.Export(id);
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+        _exportService.Verify(e => e.BuildReport(It.IsAny<Namespace>(), It.IsAny<IReadOnlyList<DriftFinding>>(), It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Export_DetectionFails_ShouldReturnError()
+    {
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _detectionService.Setup(a => a.DetectDriftAsync(
+            ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<DriftFinding>>.Failure(Error.Validation("BAD_REQUEST", "Detection failed")));
+
+        var result = await _controller.Export(ns.Id);
+
+        result.Result.Should().NotBeOfType<OkObjectResult>();
+        _exportService.Verify(e => e.BuildReport(It.IsAny<Namespace>(), It.IsAny<IReadOnlyList<DriftFinding>>(), It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Export_WithTimeWindow_ShouldPassParameters()
+    {
+        var ns = CreateTestNamespace();
+        var start = DateTimeOffset.UtcNow.AddHours(-2);
+        var end = DateTimeOffset.UtcNow;
+        var report = new ContractViolationReport(ns.Id, ns.Name, start, end, DateTimeOffset.UtcNow, new List<ContractViolationEntry>(), "no violations");
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _detectionService.Setup(a => a.DetectDriftAsync(
+            ns.Id, start, end, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<DriftFinding>>.Success(new List<DriftFinding>()));
+
+        _exportService.Setup(e => e.BuildReport(ns, It.IsAny<IReadOnlyList<DriftFinding>>(), start, end))
+            .Returns(report);
+
+        var result = await _controller.Export(ns.Id, start, end);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<ContractViolationExportResponse>().Subject;
+        response.StartTime.Should().Be(start);
+        response.EndTime.Should().Be(end);
+        response.Violations.Should().BeEmpty();
     }
 
     #endregion
