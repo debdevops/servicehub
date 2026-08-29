@@ -13,6 +13,8 @@ public sealed class WorkerHeartbeatHealthCheckTests
         nameof(AnomalyDetectionWorker),
         nameof(DriftDetectionWorker),
         nameof(CorrelationDetectionWorker),
+        nameof(NarrationWorker),
+        nameof(BacklogForecastWorker),
         nameof(DlqMonitorWorker),
         nameof(BulkOperationWorker),
         nameof(SignatureReplayWorker),
@@ -21,6 +23,7 @@ public sealed class WorkerHeartbeatHealthCheckTests
         nameof(RecoveryAgeingWorker),
         nameof(AutonomyEvaluationWorker),
         nameof(BackupWorker),
+        nameof(PlaybookExpiryWorker),
     ];
 
     private static WorkerHeartbeatHealthCheck CreateSut(

@@ -323,6 +323,24 @@ public sealed class PlaybookLedgerService : IPlaybookLedger
         return Result.Success<IReadOnlyList<PlaybookEvent>>(events);
     }
 
+    private static readonly PlaybookEntryState[] NonTerminalStates =
+    [
+        PlaybookEntryState.Proposed, PlaybookEntryState.UnderReview, PlaybookEntryState.Edited,
+    ];
+
+    /// <inheritdoc/>
+    public async Task<Result<IReadOnlyList<PlaybookEntry>>> GetDueForExpiryAsync(
+        string ownerId, DateTimeOffset asOf, int limit = 1000, CancellationToken cancellationToken = default)
+    {
+        var entries = await _dbContext.PlaybookEntries.AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && NonTerminalStates.Contains(e.State) && e.ExpiresAt <= asOf)
+            .OrderBy(e => e.ExpiresAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
+        return Result.Success<IReadOnlyList<PlaybookEntry>>(entries);
+    }
+
     /// <inheritdoc/>
     public async Task<PlaybookEntry?> GetEntryAsync(Guid entryId, string ownerId, CancellationToken cancellationToken = default)
     {

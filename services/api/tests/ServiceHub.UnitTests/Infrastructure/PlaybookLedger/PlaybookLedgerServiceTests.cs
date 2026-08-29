@@ -269,4 +269,75 @@ public sealed class PlaybookLedgerServiceTests : IDisposable
         entryA.LastEventSeq.Should().Be(1);
         entryB.LastEventSeq.Should().Be(1, "each owner's chain starts its own Seq space at 1");
     }
+
+    // ── GetDueForExpiryAsync ────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDueForExpiryAsync_ExpiredNonTerminalEntry_IsReturned()
+    {
+        var entry = (await _service.ProposeAsync(BuildProposeRequest() with { ExpiresAfter = TimeSpan.FromDays(-1) })).Value;
+
+        var due = await _service.GetDueForExpiryAsync(OwnerId, DateTimeOffset.UtcNow);
+
+        due.Value.Should().ContainSingle(e => e.Id == entry.Id);
+    }
+
+    [Fact]
+    public async Task GetDueForExpiryAsync_NotYetExpired_IsExcluded()
+    {
+        await _service.ProposeAsync(BuildProposeRequest() with { ExpiresAfter = TimeSpan.FromDays(7) });
+
+        var due = await _service.GetDueForExpiryAsync(OwnerId, DateTimeOffset.UtcNow);
+
+        due.Value.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetDueForExpiryAsync_AlreadyTerminalEntry_IsExcludedEvenIfExpired()
+    {
+        var entry = (await _service.ProposeAsync(BuildProposeRequest() with { ExpiresAfter = TimeSpan.FromDays(-1) })).Value;
+        await _service.DispositionAsync(entry.Id, OwnerId, Human, PlaybookDisposition.Approved, null);
+
+        var due = await _service.GetDueForExpiryAsync(OwnerId, DateTimeOffset.UtcNow);
+
+        due.Value.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetDueForExpiryAsync_AnotherOwnersExpiredEntry_IsExcluded()
+    {
+        await _service.ProposeAsync(BuildProposeRequest(ownerId: "owner-b") with { ExpiresAfter = TimeSpan.FromDays(-1) });
+
+        var due = await _service.GetDueForExpiryAsync(OwnerId, DateTimeOffset.UtcNow);
+
+        due.Value.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetDueForExpiryAsync_OrdersOldestExpiryFirst_AndRespectsLimit()
+    {
+        var older = (await _service.ProposeAsync(BuildProposeRequest() with { ExpiresAfter = TimeSpan.FromDays(-3) })).Value;
+        var newer = (await _service.ProposeAsync(BuildProposeRequest() with { ExpiresAfter = TimeSpan.FromDays(-1) })).Value;
+
+        var due = await _service.GetDueForExpiryAsync(OwnerId, DateTimeOffset.UtcNow, limit: 1);
+
+        due.Value.Should().ContainSingle(e => e.Id == older.Id);
+        due.Value.Should().NotContain(e => e.Id == newer.Id);
+    }
+
+    [Fact]
+    public async Task GetDueForExpiryAsync_UnderReviewAndEdited_AreBothConsideredNonTerminal()
+    {
+        var underReview = (await _service.ProposeAsync(BuildProposeRequest() with { ExpiresAfter = TimeSpan.FromDays(-1) })).Value;
+        await _service.MarkUnderReviewAsync(underReview.Id, OwnerId, Human);
+
+        var edited = (await _service.ProposeAsync(BuildProposeRequest() with { ExpiresAfter = TimeSpan.FromDays(-1) })).Value;
+        await _service.ReviseAsync(edited.Id, OwnerId, Human, "{}");
+
+        var due = await _service.GetDueForExpiryAsync(OwnerId, DateTimeOffset.UtcNow);
+
+        due.Value.Should().HaveCount(2);
+        due.Value.Should().Contain(e => e.Id == underReview.Id);
+        due.Value.Should().Contain(e => e.Id == edited.Id);
+    }
 }

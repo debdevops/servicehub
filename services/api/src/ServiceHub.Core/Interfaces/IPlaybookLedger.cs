@@ -68,6 +68,14 @@ public interface IPlaybookLedger
     /// belongs to a different owner — mirrors <c>IRecoveryLedger.GetOperationAsync</c>.</summary>
     Task<PlaybookEntry?> GetEntryAsync(Guid entryId, string ownerId, CancellationToken cancellationToken = default);
 
+    /// <summary>Gets an owner's non-terminal entries whose <see cref="PlaybookEntry.ExpiresAt"/> is
+    /// at or before <paramref name="asOf"/>, oldest expiry first — the query a background expiry
+    /// sweep drives <see cref="ExpireAsync"/> from. Unlike the Recovery Evidence Ledger's ageing
+    /// sweep, no flag-then-expire two-pass is needed: <see cref="PlaybookEntry.ExpiresAt"/> is
+    /// already fixed at proposal time, so a single pass is sufficient.</summary>
+    Task<Result<IReadOnlyList<PlaybookEntry>>> GetDueForExpiryAsync(
+        string ownerId, DateTimeOffset asOf, int limit = 1000, CancellationToken cancellationToken = default);
+
     /// <summary>Every event for one entry, ordered by <see cref="PlaybookEvent.Seq"/> ascending.</summary>
     Task<Result<IReadOnlyList<PlaybookEvent>>> GetEventsForEntryAsync(Guid entryId, string ownerId, CancellationToken cancellationToken = default);
 
