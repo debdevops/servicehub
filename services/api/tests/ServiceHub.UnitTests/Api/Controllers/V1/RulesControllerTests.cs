@@ -27,6 +27,7 @@ public class RulesControllerTests : IDisposable
     private readonly DlqDbContext _dbContext;
     private readonly Mock<IRuleEngine> _ruleEngine = new();
     private readonly Mock<INamespaceRepository> _namespaceRepository = new();
+    private readonly Mock<IGovernanceAccessEvaluator> _governanceAccessEvaluator = new();
     private readonly Mock<ILogger<RulesController>> _logger = new();
     private readonly Mock<IAuditLogger> _auditLogger = new();
     private readonly RulesController _controller;
@@ -51,7 +52,15 @@ public class RulesControllerTests : IDisposable
             .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
 
-        _controller = new RulesController(_dbContext, _ruleEngine.Object, _namespaceRepository.Object, _logger.Object, _auditLogger.Object);
+        _governanceAccessEvaluator
+            .Setup(e => e.EvaluateAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<GovernanceRole>(),
+                It.IsAny<Guid?>(), It.IsAny<PillarKind?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        _controller = new RulesController(
+            _dbContext, _ruleEngine.Object, _namespaceRepository.Object, _governanceAccessEvaluator.Object,
+            _logger.Object, _auditLogger.Object);
         _controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext
@@ -136,28 +145,35 @@ public class RulesControllerTests : IDisposable
     [Fact]
     public void Constructor_NullDbContext_Throws()
     {
-        var act = () => new RulesController(null!, _ruleEngine.Object, _namespaceRepository.Object, _logger.Object);
+        var act = () => new RulesController(null!, _ruleEngine.Object, _namespaceRepository.Object, _governanceAccessEvaluator.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("dbContext");
     }
 
     [Fact]
     public void Constructor_NullRuleEngine_Throws()
     {
-        var act = () => new RulesController(_dbContext, null!, _namespaceRepository.Object, _logger.Object);
+        var act = () => new RulesController(_dbContext, null!, _namespaceRepository.Object, _governanceAccessEvaluator.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("ruleEngine");
     }
 
     [Fact]
     public void Constructor_NullNamespaceRepository_Throws()
     {
-        var act = () => new RulesController(_dbContext, _ruleEngine.Object, null!, _logger.Object);
+        var act = () => new RulesController(_dbContext, _ruleEngine.Object, null!, _governanceAccessEvaluator.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("namespaceRepository");
+    }
+
+    [Fact]
+    public void Constructor_NullGovernanceAccessEvaluator_Throws()
+    {
+        var act = () => new RulesController(_dbContext, _ruleEngine.Object, _namespaceRepository.Object, null!, _logger.Object);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("governanceAccessEvaluator");
     }
 
     [Fact]
     public void Constructor_NullLogger_Throws()
     {
-        var act = () => new RulesController(_dbContext, _ruleEngine.Object, _namespaceRepository.Object, null!);
+        var act = () => new RulesController(_dbContext, _ruleEngine.Object, _namespaceRepository.Object, _governanceAccessEvaluator.Object, null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -329,6 +345,26 @@ public class RulesControllerTests : IDisposable
         (await _dbContext.AutoReplayRules.AnyAsync()).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task Create_InsufficientGovernanceRole_ReturnsForbidden()
+    {
+        var ns = CreateNamespace();
+        _namespaceRepository
+            .Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+        _governanceAccessEvaluator
+            .Setup(e => e.EvaluateAsync(
+                TestConstants.TestOwnerId, It.IsAny<string>(), GovernanceRole.Operator,
+                ns.Id, PillarKind.Recover, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Forbidden("Governance.InsufficientRole", "denied")));
+
+        var request = CreateRuleRequest() with { NamespaceId = ns.Id };
+        var result = await _controller.Create(request);
+
+        result.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        (await _dbContext.AutoReplayRules.AnyAsync()).Should().BeFalse();
+    }
+
     // ── Update ──────────────────────────────────────────────
 
     [Fact]
@@ -370,6 +406,31 @@ public class RulesControllerTests : IDisposable
         result.Result.Should().NotBeOfType<OkObjectResult>();
         var persisted = await _dbContext.AutoReplayRules.AsNoTracking().SingleAsync(r => r.Id == rule.Id);
         persisted.NamespaceId.Should().BeNull();
+        persisted.Name.Should().Be("Test Rule");
+    }
+
+    [Fact]
+    public async Task Update_InsufficientGovernanceRole_ReturnsForbidden()
+    {
+        var rule = CreateRule();
+        _dbContext.AutoReplayRules.Add(rule);
+        await _dbContext.SaveChangesAsync();
+
+        var ns = CreateNamespace();
+        _namespaceRepository
+            .Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+        _governanceAccessEvaluator
+            .Setup(e => e.EvaluateAsync(
+                TestConstants.TestOwnerId, It.IsAny<string>(), GovernanceRole.Operator,
+                ns.Id, PillarKind.Recover, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Forbidden("Governance.InsufficientRole", "denied")));
+
+        var request = CreateRuleRequest("Updated Rule") with { NamespaceId = ns.Id };
+        var result = await _controller.Update(rule.Id, request);
+
+        result.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        var persisted = await _dbContext.AutoReplayRules.AsNoTracking().SingleAsync(r => r.Id == rule.Id);
         persisted.Name.Should().Be("Test Rule");
     }
 
@@ -569,6 +630,28 @@ public class RulesControllerTests : IDisposable
             It.IsAny<HttpContext>(), It.IsAny<string>(), "Rule.Toggle", It.IsAny<string>(),
             It.IsAny<Guid?>(), It.IsAny<EnvironmentType?>(), It.IsAny<string?>(), It.IsAny<string?>(),
             It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<long?>(), It.IsAny<string?>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Toggle_InsufficientGovernanceRole_ReturnsForbidden()
+    {
+        var ns = CreateNamespace();
+        var rule = CreateRule(enabled: true);
+        rule.NamespaceId = ns.Id;
+        _dbContext.AutoReplayRules.Add(rule);
+        await _dbContext.SaveChangesAsync();
+
+        _governanceAccessEvaluator
+            .Setup(e => e.EvaluateAsync(
+                TestConstants.TestOwnerId, It.IsAny<string>(), GovernanceRole.Operator,
+                ns.Id, PillarKind.Recover, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Forbidden("Governance.InsufficientRole", "denied")));
+
+        var result = await _controller.Toggle(rule.Id);
+
+        result.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        var persisted = await _dbContext.AutoReplayRules.AsNoTracking().SingleAsync(r => r.Id == rule.Id);
+        persisted.Enabled.Should().BeTrue();
     }
 
     // ── TestRule ─────────────────────────────────────────────

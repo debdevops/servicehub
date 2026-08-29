@@ -28,6 +28,7 @@ public sealed class RulesController : ApiControllerBase
     private readonly DlqDbContext _dbContext;
     private readonly IRuleEngine _ruleEngine;
     private readonly INamespaceRepository _namespaceRepository;
+    private readonly IGovernanceAccessEvaluator _governanceAccessEvaluator;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<RulesController> _logger;
 
@@ -44,14 +45,31 @@ public sealed class RulesController : ApiControllerBase
         DlqDbContext dbContext,
         IRuleEngine ruleEngine,
         INamespaceRepository namespaceRepository,
+        IGovernanceAccessEvaluator governanceAccessEvaluator,
         ILogger<RulesController> logger,
         IAuditLogger? auditLogger = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _ruleEngine = ruleEngine ?? throw new ArgumentNullException(nameof(ruleEngine));
         _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
+        _governanceAccessEvaluator = governanceAccessEvaluator ?? throw new ArgumentNullException(nameof(governanceAccessEvaluator));
         _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Requires <see cref="GovernanceRole.Operator"/> — the same role
+    /// <see cref="MessagesController.ReplayMessage"/> requires — scoped to the rule's own
+    /// <paramref name="namespaceId"/> under <see cref="PillarKind.Recover"/>. A declarative
+    /// <see cref="RequireGovernanceRoleAttribute"/> can't express this: on Create/Update
+    /// <c>namespaceId</c> is a body field, not route/query, and on Toggle the request carries no
+    /// <c>namespaceId</c> at all — it's read off the existing row instead.
+    /// </summary>
+    private async Task<Result> EvaluateRuleGovernanceAsync(Guid? namespaceId, CancellationToken cancellationToken)
+    {
+        var granteeIdentity = ResolveGovernanceGranteeIdentity();
+        return await _governanceAccessEvaluator.EvaluateAsync(
+            OwnerId, granteeIdentity, GovernanceRole.Operator, namespaceId, PillarKind.Recover, cancellationToken);
     }
 
     /// <summary>
@@ -225,6 +243,10 @@ public sealed class RulesController : ApiControllerBase
                 scopedNamespace = namespaceResult.Value;
             }
 
+            var governanceResult = await EvaluateRuleGovernanceAsync(request.NamespaceId, cancellationToken);
+            if (governanceResult.IsFailure)
+                return ToActionResult<RuleResponse>(governanceResult.Error);
+
             var entity = new AutoReplayRule
             {
                 Name = request.Name,
@@ -325,6 +347,10 @@ public sealed class RulesController : ApiControllerBase
 
                 scopedNamespace = namespaceResult.Value;
             }
+
+            var governanceResult = await EvaluateRuleGovernanceAsync(request.NamespaceId, cancellationToken);
+            if (governanceResult.IsFailure)
+                return ToActionResult<RuleResponse>(governanceResult.Error);
 
             // Update properties in-place — preserves the same ID, stats, and external references.
             var wasEnabled = rule.Enabled;
@@ -461,6 +487,10 @@ public sealed class RulesController : ApiControllerBase
         if (rule is null)
             return ToActionResult<RuleResponse>(
                 Error.NotFound(ErrorCodes.Rule.NotFound, $"Rule {id} not found"));
+
+        var governanceResult = await EvaluateRuleGovernanceAsync(rule.NamespaceId, cancellationToken);
+        if (governanceResult.IsFailure)
+            return ToActionResult<RuleResponse>(governanceResult.Error);
 
         var wasEnabled = rule.Enabled;
         rule.Enabled = !rule.Enabled;
