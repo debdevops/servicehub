@@ -222,7 +222,11 @@ public sealed class BulkOperationsControllerTests
     public async Task Cancel_DoesNotRequireIntentHeaders_DelegatesToService()
     {
         var jobId = Guid.NewGuid();
-        var response = SampleJobResponse(_namespaceId, jobId) with { Status = nameof(BulkOperationStatus.Cancelled) };
+        var job = SampleJobResponse(_namespaceId, jobId);
+        var response = job with { Status = nameof(BulkOperationStatus.Cancelled) };
+        _serviceMock
+            .Setup(s => s.GetJobAsync(It.IsAny<string>(), jobId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<BulkOperationJobResponse>.Success(job));
         _serviceMock
             .Setup(s => s.CancelJobAsync(It.IsAny<string>(), jobId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<BulkOperationJobResponse>.Success(response));
@@ -230,5 +234,40 @@ public sealed class BulkOperationsControllerTests
         var result = await _controller.Cancel(jobId);
 
         GetOkValue(result).Status.Should().Be(nameof(BulkOperationStatus.Cancelled));
+    }
+
+    [Fact]
+    public async Task Cancel_InsufficientGovernanceRole_ReturnsForbidden()
+    {
+        var jobId = Guid.NewGuid();
+        var job = SampleJobResponse(_namespaceId, jobId);
+        _serviceMock
+            .Setup(s => s.GetJobAsync(It.IsAny<string>(), jobId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<BulkOperationJobResponse>.Success(job));
+        _governanceAccessEvaluator
+            .Setup(e => e.EvaluateAsync(
+                It.IsAny<string>(), It.IsAny<string>(), GovernanceRole.Operator,
+                _namespaceId, PillarKind.Recover, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Forbidden("Governance.InsufficientRole", "denied")));
+
+        var result = await _controller.Cancel(jobId);
+
+        result.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        _serviceMock.Verify(s => s.CancelJobAsync(It.IsAny<string>(), jobId, It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Cancel_JobNotFound_ReturnsNotFoundWithoutGovernanceCheck()
+    {
+        var jobId = Guid.NewGuid();
+        _serviceMock
+            .Setup(s => s.GetJobAsync(It.IsAny<string>(), jobId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<BulkOperationJobResponse>.Failure(
+                Error.NotFound("BulkOperation.NotFound", "not found")));
+
+        var result = await _controller.Cancel(jobId);
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+        _serviceMock.Verify(s => s.CancelJobAsync(It.IsAny<string>(), jobId, It.IsAny<CancellationToken>()), Times.Never);
     }
 }
