@@ -328,6 +328,9 @@ public static class DependencyInjection
         services.TryAddScoped<IContractViolationExportService, Analytics.DeterministicContractViolationExportService>();
         services.TryAddScoped<ICorrelationDetectionService, Analytics.DeterministicCorrelationDetectionService>();
         services.TryAddSingleton<ICorrelationResultCache, Analytics.InMemoryCorrelationResultCache>();
+        services.TryAddScoped<IExternalSignalRepository, ExternalSignalRepository>();
+        services.TryAddScoped<IExternalSignalCorrelationService, Analytics.DeterministicExternalSignalCorrelationService>();
+        services.TryAddSingleton<IExternalSignalCorrelationCache, Analytics.InMemoryExternalSignalCorrelationCache>();
         services.TryAddScoped<INarrationService, Analytics.DeterministicNarrationService>();
         services.TryAddSingleton<INarrationResultCache, Analytics.InMemoryNarrationResultCache>();
         services.TryAddScoped<IBacklogForecastService, Analytics.DeterministicBacklogForecastService>();

@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Moq;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Controllers.V1;
 using ServiceHub.Api.Security;
@@ -14,6 +15,7 @@ using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.RecoveryLedger;
+using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Api.Controllers.V1;
 
@@ -28,6 +30,7 @@ public sealed class RecoveryControllerTests : IDisposable
     private readonly IRecoveryTrustScoringService _trustScoring;
     private readonly IApprovalQueueService _approvalQueue;
     private readonly IAutonomyDashboardService _autonomyDashboard;
+    private readonly Mock<IGovernanceAccessEvaluator> _governanceAccessEvaluator = new();
     private readonly RecoveryController _controller;
 
     public RecoveryControllerTests()
@@ -44,10 +47,18 @@ public sealed class RecoveryControllerTests : IDisposable
         _trustScoring = new RecoveryTrustScoringService(_recoveryLedger);
         _approvalQueue = new ApprovalQueueService(_dbContext);
         _autonomyDashboard = new AutonomyDashboardService(_recoveryLedger, _dbContext);
+
+        _governanceAccessEvaluator
+            .Setup(e => e.EvaluateAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<GovernanceRole>(),
+                It.IsAny<Guid?>(), It.IsAny<PillarKind?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
         _controller = CreateController(OwnerA);
     }
 
-    private RecoveryController CreateController(string ownerId) => new(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard)
+    private RecoveryController CreateController(string ownerId) => new(
+        _recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, _governanceAccessEvaluator.Object)
     {
         ControllerContext = new ControllerContext
         {
@@ -88,36 +99,43 @@ public sealed class RecoveryControllerTests : IDisposable
     [Fact]
     public void Constructor_NullRecoveryLedger_Throws()
     {
-        var act = () => new RecoveryController(null!, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard);
+        var act = () => new RecoveryController(null!, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, _governanceAccessEvaluator.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("recoveryLedger");
     }
 
     [Fact]
     public void Constructor_NullEvidenceExporter_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, null!, _trustScoring, _approvalQueue, _autonomyDashboard);
+        var act = () => new RecoveryController(_recoveryLedger, null!, _trustScoring, _approvalQueue, _autonomyDashboard, _governanceAccessEvaluator.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("evidenceExporter");
     }
 
     [Fact]
     public void Constructor_NullTrustScoring_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, null!, _approvalQueue, _autonomyDashboard);
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, null!, _approvalQueue, _autonomyDashboard, _governanceAccessEvaluator.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("trustScoring");
     }
 
     [Fact]
     public void Constructor_NullApprovalQueue_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, null!, _autonomyDashboard);
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, null!, _autonomyDashboard, _governanceAccessEvaluator.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("approvalQueue");
     }
 
     [Fact]
     public void Constructor_NullAutonomyDashboard_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, null!);
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, null!, _governanceAccessEvaluator.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("autonomyDashboard");
+    }
+
+    [Fact]
+    public void Constructor_NullGovernanceAccessEvaluator_Throws()
+    {
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, null!);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("governanceAccessEvaluator");
     }
 
     [Fact]
@@ -444,6 +462,44 @@ public sealed class RecoveryControllerTests : IDisposable
         var result = await _controller.WriteOff(entryB.Value.Id, new WriteOffRecoveryEntryRequest("not mine"));
 
         result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task WriteOff_InsufficientGovernanceRole_ReturnsForbidden()
+    {
+        var namespaceId = Guid.NewGuid();
+        var operation = await OpenOperationAsync(OwnerA, namespaceId);
+        var entry = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            NamespaceId = namespaceId,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-writeoff-forbidden",
+            TargetEntity = "queue-writeoff-forbidden",
+        });
+        SetExplicitIntent(_controller, IntentHeaders.IntentWriteOffRecovery);
+        _governanceAccessEvaluator
+            .Setup(e => e.EvaluateAsync(
+                OwnerA, It.IsAny<string>(), GovernanceRole.Operator, namespaceId, PillarKind.Recover, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Forbidden("Governance.InsufficientRole", "denied")));
+
+        var result = await _controller.WriteOff(entry.Value.Id, new WriteOffRecoveryEntryRequest("blocked"));
+
+        result.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task WriteOff_EntryNotFound_ReturnsNotFoundWithoutGovernanceCheck()
+    {
+        var result = await _controller.WriteOff(Guid.NewGuid(), new WriteOffRecoveryEntryRequest("missing"));
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+        _governanceAccessEvaluator.Verify(
+            e => e.EvaluateAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<GovernanceRole>(),
+                It.IsAny<Guid?>(), It.IsAny<PillarKind?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     // ── Emergency Stop endpoints (§9.4.2, §15.2) ─────────────────────────────

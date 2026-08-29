@@ -102,6 +102,10 @@ public sealed class DlqDbContext : DbContext
     /// fully independent chain from <see cref="RecoveryEvents"/> (M4).</summary>
     public DbSet<PlaybookEvent> PlaybookEvents => Set<PlaybookEvent>();
 
+    /// <summary>C3's raw input: durably recorded deploy/config-change signals (M5, ADR-0008). No
+    /// hash chain — see <see cref="ExternalSignalEvent"/>.</summary>
+    public DbSet<ExternalSignalEvent> ExternalSignalEvents => Set<ExternalSignalEvent>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -130,6 +134,7 @@ public sealed class DlqDbContext : DbContext
         ConfigureGovernanceGrant(modelBuilder);
         ConfigurePlaybookEntry(modelBuilder);
         ConfigurePlaybookEvent(modelBuilder);
+        ConfigureExternalSignalEvent(modelBuilder);
     }
 
     /// <inheritdoc />
@@ -1449,5 +1454,33 @@ public sealed class DlqDbContext : DbContext
 
         entity.HasIndex(e => new { e.EntryId, e.Seq })
             .HasDatabaseName("IX_PlaybookEvents_EntryId_Seq");
+    }
+
+    private static void ConfigureExternalSignalEvent(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<ExternalSignalEvent>();
+
+        entity.ToTable("ExternalSignalEvents");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.SignalType)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.Source)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        // No FK to Namespaces — NamespaceId is a soft reference, same convention as every other
+        // NamespaceId column in this schema (null means fleet-wide). No hash chain either — this
+        // is raw external input, not a system claim; see the entity's own remarks.
+
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.OccurredAt })
+            .HasDatabaseName("IX_ExternalSignalEvents_OwnerId_NamespaceId_OccurredAt");
     }
 }

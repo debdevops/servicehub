@@ -37,6 +37,7 @@ public sealed class RecoveryController : ApiControllerBase
     private readonly IRecoveryTrustScoringService _trustScoring;
     private readonly IApprovalQueueService _approvalQueue;
     private readonly IAutonomyDashboardService _autonomyDashboard;
+    private readonly IGovernanceAccessEvaluator _governanceAccessEvaluator;
 
     /// <summary>Initializes a new instance of the <see cref="RecoveryController"/> class.</summary>
     public RecoveryController(
@@ -44,13 +45,15 @@ public sealed class RecoveryController : ApiControllerBase
         IRecoveryEvidenceExporter evidenceExporter,
         IRecoveryTrustScoringService trustScoring,
         IApprovalQueueService approvalQueue,
-        IAutonomyDashboardService autonomyDashboard)
+        IAutonomyDashboardService autonomyDashboard,
+        IGovernanceAccessEvaluator governanceAccessEvaluator)
     {
         _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _evidenceExporter = evidenceExporter ?? throw new ArgumentNullException(nameof(evidenceExporter));
         _trustScoring = trustScoring ?? throw new ArgumentNullException(nameof(trustScoring));
         _approvalQueue = approvalQueue ?? throw new ArgumentNullException(nameof(approvalQueue));
         _autonomyDashboard = autonomyDashboard ?? throw new ArgumentNullException(nameof(autonomyDashboard));
+        _governanceAccessEvaluator = governanceAccessEvaluator ?? throw new ArgumentNullException(nameof(governanceAccessEvaluator));
     }
 
     /// <summary>
@@ -257,23 +260,44 @@ public sealed class RecoveryController : ApiControllerBase
     /// <summary>
     /// Declares a non-terminal recovery ledger entry unrecoverable. Requires a mandatory reason
     /// and the explicit-intent headers, since this is the one way an operator asserts a terminal
-    /// outcome without ServiceHub having observed it.
+    /// outcome without ServiceHub having observed it. Also requires
+    /// <see cref="GovernanceRole.Operator"/> for the entry's own namespace/<see cref="PillarKind.Recover"/>
+    /// scope — the same role every other Recover-pillar mutation (replay, purge, cancel) already
+    /// requires; a write-off is an operator declaring a terminal outcome on live queue state's
+    /// behalf, not a passive ledger annotation. A declarative <see cref="RequireGovernanceRoleAttribute"/>
+    /// can't express this because the namespace lives on the entry, not the route/query string —
+    /// same reason <see cref="PlaybookController"/>'s disposition endpoints evaluate inline.
     /// </summary>
     /// <param name="id">The entry to write off.</param>
     /// <param name="request">The mandatory reason.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="403">Caller's Governance role does not cover Operator for this entry's namespace/Recover pillar.</response>
     /// <response code="428">Missing explicit-intent headers.</response>
     [RequireScope(ApiKeyScopes.RecoveryWrite)]
     [HttpPost("entries/{id:guid}/write-off")]
     [ProducesResponseType(typeof(RecoveryLedgerEntryResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
     public async Task<ActionResult<RecoveryLedgerEntryResponse>> WriteOff(
         Guid id,
         [FromBody] WriteOffRecoveryEntryRequest request,
         CancellationToken cancellationToken = default)
     {
+        var entry = await _recoveryLedger.GetEntryAsync(id, OwnerId, cancellationToken);
+        if (entry is null)
+        {
+            return ToActionResult<RecoveryLedgerEntryResponse>(Error.NotFound(
+                "RecoveryLedger.EntryNotFound", "Recovery ledger entry not found."));
+        }
+
+        var governanceResult = await EvaluateWriteOffGovernanceAsync(entry, cancellationToken);
+        if (governanceResult.IsFailure)
+        {
+            return ToActionResult<RecoveryLedgerEntryResponse>(governanceResult.Error);
+        }
+
         if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentWriteOffRecovery))
         {
             return Problem(
@@ -291,6 +315,19 @@ public sealed class RecoveryController : ApiControllerBase
         }
 
         return Ok(MapToResponse(result.Value));
+    }
+
+    /// <summary>
+    /// Requires <see cref="GovernanceRole.Operator"/>, scoped to the entry's own
+    /// <see cref="RecoveryLedgerEntry.NamespaceId"/> and fixed to <see cref="PillarKind.Recover"/> —
+    /// mirrors <c>BulkOperationsController</c>'s <c>EvaluateBulkOperationGovernanceAsync</c>, the
+    /// established role/pillar pairing for every other Recover-pillar mutation.
+    /// </summary>
+    private async Task<Result> EvaluateWriteOffGovernanceAsync(RecoveryLedgerEntry entry, CancellationToken cancellationToken)
+    {
+        var granteeIdentity = ResolveGovernanceGranteeIdentity();
+        return await _governanceAccessEvaluator.EvaluateAsync(
+            OwnerId, granteeIdentity, GovernanceRole.Operator, entry.NamespaceId, PillarKind.Recover, cancellationToken);
     }
 
     /// <summary>

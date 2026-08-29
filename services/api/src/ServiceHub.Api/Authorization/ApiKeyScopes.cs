@@ -32,6 +32,10 @@ public static class ApiKeyScopes
     // Same-provider proactive correlation scopes
     public const string CorrelationFindingsRead = "correlation-findings:read";
 
+    // External-signal correlation scopes (roadmap §5.D, C3 — M5, ADR-0008)
+    public const string ExternalSignalsRead = "external-signals:read";
+    public const string ExternalSignalsWrite = "external-signals:write";
+
     // Deterministic narration scopes (roadmap §5.B, I4)
     public const string NarrationsRead = "narrations:read";
 

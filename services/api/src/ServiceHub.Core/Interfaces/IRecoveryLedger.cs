@@ -111,6 +111,16 @@ public interface IRecoveryLedger
         int limit,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Gets one ledger entry by ID, scoped to its owner. Returns null if it doesn't
+    /// exist or belongs to a different owner. Read-only lookup — e.g. so a caller can resolve an
+    /// entry's <see cref="Entities.RecoveryLedgerEntry.NamespaceId"/> for a per-namespace
+    /// Governance check before invoking a mutating method such as
+    /// <see cref="SetDispositionAsync"/>.</summary>
+    Task<RecoveryLedgerEntry?> GetEntryAsync(
+        Guid entryId,
+        string ownerId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Queries ledger entries for one owner, optionally filtered by operation,
     /// namespace, and/or state.</summary>
     Task<IReadOnlyList<RecoveryLedgerEntry>> QueryEntriesAsync(
