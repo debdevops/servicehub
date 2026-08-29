@@ -577,6 +577,9 @@ public static class ApiRoutes
 
         /// <summary>Route for verifying the caller's Playbook hash chain.</summary>
         public const string Verify = $"{Base}/verify";
+
+        /// <summary>Route for the correlation accountability report (roadmap §5.D C4, §11 item 17).</summary>
+        public const string CorrelationAccountability = $"{Base}/correlation-accountability";
     }
 
     /// <summary>Routes for the Investigation Center — incident command for failure investigation.</summary>

@@ -28,11 +28,13 @@ public sealed class PlaybookController : ApiControllerBase
     private const int MaxLimit = 500;
 
     private readonly IPlaybookLedger _playbookLedger;
+    private readonly ICorrelationAccountabilityService _correlationAccountability;
 
     /// <summary>Initializes a new instance of the <see cref="PlaybookController"/> class.</summary>
-    public PlaybookController(IPlaybookLedger playbookLedger)
+    public PlaybookController(IPlaybookLedger playbookLedger, ICorrelationAccountabilityService correlationAccountability)
     {
         _playbookLedger = playbookLedger ?? throw new ArgumentNullException(nameof(playbookLedger));
+        _correlationAccountability = correlationAccountability ?? throw new ArgumentNullException(nameof(correlationAccountability));
     }
 
     /// <summary>
@@ -170,6 +172,23 @@ public sealed class PlaybookController : ApiControllerBase
     {
         var result = await _playbookLedger.VerifyChainAsync(OwnerId, cancellationToken);
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Correlation accountability (roadmap §5.D C4, §11 item 17): how many correlation hypotheses
+    /// (C1 same-provider, C2 cross-cloud) ServiceHub has proposed and what humans decided about
+    /// them — making correlation quality measurable instead of a black box. Pure read-side
+    /// aggregation over the caller's Correlate-pillar Playbook entries.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.PlaybookRead)]
+    [HttpGet("correlation-accountability")]
+    [ProducesResponseType(typeof(CorrelationAccountabilityReport), StatusCodes.Status200OK)]
+    public async Task<ActionResult<CorrelationAccountabilityReport>> GetCorrelationAccountability(
+        CancellationToken cancellationToken = default)
+    {
+        var report = await _correlationAccountability.GetReportAsync(OwnerId, cancellationToken);
+        return Ok(report);
     }
 
     private static int ClampLimit(int limit) => Math.Clamp(limit, 1, MaxLimit);

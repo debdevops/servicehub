@@ -20,6 +20,7 @@ public sealed class PlaybookControllerTests : IDisposable
 
     private readonly DlqDbContext _dbContext;
     private readonly IPlaybookLedger _playbookLedger;
+    private readonly ICorrelationAccountabilityService _correlationAccountability;
     private readonly PlaybookController _controller;
 
     public PlaybookControllerTests()
@@ -32,10 +33,11 @@ public sealed class PlaybookControllerTests : IDisposable
         _dbContext.Database.EnsureCreated();
 
         _playbookLedger = new PlaybookLedgerService(_dbContext);
+        _correlationAccountability = new CorrelationAccountabilityService(_playbookLedger);
         _controller = CreateController(OwnerA);
     }
 
-    private PlaybookController CreateController(string ownerId) => new(_playbookLedger)
+    private PlaybookController CreateController(string ownerId) => new(_playbookLedger, _correlationAccountability)
     {
         ControllerContext = new ControllerContext
         {
@@ -75,8 +77,15 @@ public sealed class PlaybookControllerTests : IDisposable
     [Fact]
     public void Constructor_NullPlaybookLedger_Throws()
     {
-        var act = () => new PlaybookController(null!);
+        var act = () => new PlaybookController(null!, _correlationAccountability);
         act.Should().Throw<ArgumentNullException>().WithParameterName("playbookLedger");
+    }
+
+    [Fact]
+    public void Constructor_NullCorrelationAccountability_Throws()
+    {
+        var act = () => new PlaybookController(_playbookLedger, null!);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("correlationAccountability");
     }
 
     // ── GetEntries ──────────────────────────────────────────────────
@@ -238,5 +247,41 @@ public sealed class PlaybookControllerTests : IDisposable
         var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var verification = ok.Value.Should().BeOfType<ChainVerificationResult>().Subject;
         verification.IsValid.Should().BeTrue();
+    }
+
+    // ── GetCorrelationAccountability ───────────────────────────────
+
+    [Fact]
+    public async Task GetCorrelationAccountability_NoHypotheses_ReportsZerosAndNullApprovalRate()
+    {
+        var result = await _controller.GetCorrelationAccountability();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var report = ok.Value.Should().BeOfType<CorrelationAccountabilityReport>().Subject;
+        report.TotalHypotheses.Should().Be(0);
+        report.ApprovalRate.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetCorrelationAccountability_MixOfDispositions_ComputesApprovalRateOverTerminalOnly()
+    {
+        var approvedId = await ProposeEntryAsync(OwnerA, pillarKind: PillarKind.Correlate, proposalKind: "CorrelationHypothesis");
+        var rejectedId = await ProposeEntryAsync(OwnerA, pillarKind: PillarKind.Correlate, proposalKind: "CorrelationHypothesis");
+        await ProposeEntryAsync(OwnerA, pillarKind: PillarKind.Correlate, proposalKind: "CorrelationHypothesis"); // left Proposed
+        await ProposeEntryAsync(OwnerA, pillarKind: PillarKind.Investigate, proposalKind: "AnomalyFlag"); // different pillar, excluded
+        await ProposeEntryAsync(OwnerB, pillarKind: PillarKind.Correlate, proposalKind: "CorrelationHypothesis"); // different owner, excluded
+
+        await _controller.Disposition(approvedId, new DispositionPlaybookEntryRequest(PlaybookDisposition.Approved, null));
+        await _controller.Disposition(rejectedId, new DispositionPlaybookEntryRequest(PlaybookDisposition.Rejected, "not credible"));
+
+        var result = await _controller.GetCorrelationAccountability();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var report = ok.Value.Should().BeOfType<CorrelationAccountabilityReport>().Subject;
+        report.TotalHypotheses.Should().Be(3);
+        report.ApprovedCount.Should().Be(1);
+        report.RejectedCount.Should().Be(1);
+        report.ProposedCount.Should().Be(1);
+        report.ApprovalRate.Should().Be(0.5);
     }
 }

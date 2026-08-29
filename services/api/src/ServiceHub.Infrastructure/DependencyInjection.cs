@@ -315,6 +315,7 @@ public static class DependencyInjection
         services.TryAddScoped<INamespaceSignatureLookupService, NamespaceSignatureLookupService>();
         services.TryAddScoped<IGovernanceGrantService, GovernanceGrantService>();
         services.TryAddScoped<IPlaybookLedger, PlaybookLedgerService>();
+        services.TryAddScoped<ICorrelationAccountabilityService, CorrelationAccountabilityService>();
         services.TryAddScoped<IAnomalyDetectionService, Analytics.DeterministicAnomalyDetectionService>();
         services.TryAddSingleton<IAnomalyResultCache, Analytics.InMemoryAnomalyResultCache>();
         services.TryAddScoped<IDriftDetectionService, Analytics.DeterministicDriftDetectionService>();
