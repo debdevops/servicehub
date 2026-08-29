@@ -127,10 +127,14 @@ jobs:
           tail -60 /tmp/servicehub_degradation_api.log 2>/dev/null || echo "(no log file)"
           exit 1
 
-      - name: Wait for AI degradation cycle to run
-        # AnomalyDetectionWorker's first health check against the AI service fires ~30s
-        # after startup — give it time to run and log before checking the log below.
-        run: sleep 35
+      - name: Trigger AI degradation check
+        # Anomaly detection is fully deterministic and never touches the AI service, so nothing
+        # calls it on a background cadence. Hitting /health/ready runs the "ai" health check
+        # (AIServiceHealthCheck -> IAIServiceClient.IsAvailableAsync), which is what actually
+        # exercises the degrade-to-"not available" path and its once-per-process warning log.
+        run: |
+          curl -s -o /dev/null http://localhost:5153/health/ready || true
+          sleep 2
 
       - name: Verify AI unavailability is logged once, not spammed
         run: |

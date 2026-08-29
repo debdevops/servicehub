@@ -145,8 +145,12 @@ public static class DependencyInjection
     /// <summary>
     /// Adds AI infrastructure services.
     /// <para>
-    /// <see cref="IAIServiceClient"/> — singleton anomaly-detection client used by AnomaliesController
-    /// for real-time message analysis. <br/>
+    /// <see cref="IAIServiceClient"/> — singleton client wrapping the optional, self-hosted AI
+    /// service. Consumed by <see cref="AI.AIClusteringStrategy"/> (tried first, with automatic
+    /// fallback to <see cref="AI.DeterministicClusteringStrategy"/>) inside
+    /// <see cref="AI.DlqSignatureAnalysisService"/> for DLQ signature clustering. Anomaly
+    /// detection itself (<c>AnomalyDetectionWorker</c>) is fully deterministic and has no AI
+    /// dependency. <br/>
     /// <see cref="IForensicEngine"/> — scoped three-tier forensic classifier registered in
     /// <see cref="AddDlqDatabase"/> because it operates on per-request <c>DlqMessage</c> entities.
     /// </para>
@@ -178,6 +182,11 @@ public static class DependencyInjection
 
         // Signature recognition service (business-level layer)
         services.TryAddScoped<IFailureSignatureRecognitionService, AI.FailureSignatureRecognitionService>();
+
+        // Surfaces AI availability on /health (and /health/ready) without waiting for a real
+        // clustering request — Degraded, never Unhealthy, since AI is an optional dependency.
+        services.AddHealthChecks()
+            .AddCheck<AI.AIServiceHealthCheck>("ai", tags: ["ready", "ai"]);
 
         return services;
     }
