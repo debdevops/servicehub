@@ -430,6 +430,10 @@ public sealed class RulesController : ApiControllerBase
                 return ToActionResult(
                     Result.Failure(Error.NotFound(ErrorCodes.Rule.NotFound, $"Rule {id} not found")));
 
+            var governanceResult = await EvaluateRuleGovernanceAsync(rule.NamespaceId, cancellationToken);
+            if (governanceResult.IsFailure)
+                return ToActionResult(governanceResult);
+
             _dbContext.AutoReplayRules.Remove(rule);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -1329,6 +1333,10 @@ public sealed class RulesController : ApiControllerBase
     {
         try
         {
+            var governanceResult = await EvaluateRuleGovernanceAsync(namespaceId, cancellationToken);
+            if (governanceResult.IsFailure)
+                return ToActionResult<GenerateRulesResponse>(governanceResult.Error);
+
             // Load active DLQ messages, optionally filtered by namespace
             var query = _dbContext.DlqMessages
                 .AsNoTracking()
