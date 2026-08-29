@@ -562,6 +562,32 @@ public class RulesControllerTests : IDisposable
             It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<long?>(), It.IsAny<string?>()), Times.Never);
     }
 
+    [Fact]
+    public async Task Delete_InsufficientGovernanceRole_ReturnsForbidden()
+    {
+        var ns = CreateNamespace();
+        var rule = CreateRule();
+        rule.NamespaceId = ns.Id;
+        _dbContext.AutoReplayRules.Add(rule);
+        await _dbContext.SaveChangesAsync();
+
+        _governanceAccessEvaluator
+            .Setup(e => e.EvaluateAsync(
+                TestConstants.TestOwnerId, It.IsAny<string>(), GovernanceRole.Operator,
+                ns.Id, PillarKind.Recover, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Forbidden("Governance.InsufficientRole", "denied")));
+
+        var result = await _controller.Delete(rule.Id);
+
+        result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        var persisted = await _dbContext.AutoReplayRules.AsNoTracking().SingleOrDefaultAsync(r => r.Id == rule.Id);
+        persisted.Should().NotBeNull();
+        _auditLogger.Verify(a => a.LogCriticalAction(
+            It.IsAny<HttpContext>(), It.IsAny<string>(), "Rule.Delete", It.IsAny<string>(),
+            It.IsAny<Guid?>(), It.IsAny<EnvironmentType?>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<long?>(), It.IsAny<string?>()), Times.Never);
+    }
+
     // ── Toggle ──────────────────────────────────────────────
 
     [Fact]
@@ -925,6 +951,42 @@ public class RulesControllerTests : IDisposable
         response.AnalysedMessages.Should().Be(2);
         response.RulesCreated.Should().Be(0);
         response.RulesSkipped.Should().BeGreaterThanOrEqualTo(2);
+    }
+
+    [Fact]
+    public async Task GenerateRules_InsufficientGovernanceRole_ReturnsForbidden()
+    {
+        var namespaceId = Guid.NewGuid();
+
+        _dbContext.DlqMessages.Add(new DlqMessage
+        {
+            MessageId = "msg-301",
+            SequenceNumber = 301,
+            BodyHash = "hash-301",
+            NamespaceId = namespaceId,
+            OwnerId = TestConstants.TestOwnerId,
+            EntityName = "orders",
+            EntityType = ServiceBusEntityType.Queue,
+            EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-10),
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-9),
+            DeadLetterReason = "Timeout",
+            DeliveryCount = 3,
+            Status = DlqMessageStatus.Active,
+            FailureCategory = FailureCategory.Transient,
+        });
+        await _dbContext.SaveChangesAsync();
+
+        _governanceAccessEvaluator
+            .Setup(e => e.EvaluateAsync(
+                TestConstants.TestOwnerId, It.IsAny<string>(), GovernanceRole.Operator,
+                namespaceId, PillarKind.Recover, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Forbidden("Governance.InsufficientRole", "denied")));
+
+        var result = await _controller.GenerateRules(namespaceId);
+
+        result.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        var persisted = await _dbContext.AutoReplayRules.Where(r => r.Name.StartsWith("Auto:")).ToListAsync();
+        persisted.Should().BeEmpty();
     }
 
     // ── ReplayAll ───────────────────────────────────────────
