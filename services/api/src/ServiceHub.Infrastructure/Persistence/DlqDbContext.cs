@@ -83,6 +83,25 @@ public sealed class DlqDbContext : DbContext
     /// mutable table in the Recovery Evidence Ledger family. See <see cref="AutonomyGrant"/>.</summary>
     public DbSet<AutonomyGrant> AutonomyGrants => Set<AutonomyGrant>();
 
+    /// <summary>Namespace connection registrations — replaces the JSON-file-backed store (M2).</summary>
+    public DbSet<Core.Entities.Namespace> Namespaces => Set<Core.Entities.Namespace>();
+
+    /// <summary>Durable form of <see cref="Core.Entities.Namespace.SharedWithOwnerIds"/> — one row
+    /// per (namespace, shared-with-owner) pair (M2).</summary>
+    public DbSet<NamespaceSharedOwner> NamespaceSharedOwners => Set<NamespaceSharedOwner>();
+
+    /// <summary>Governance/RBAC grants — per-owner, per-namespace, per-pillar access model (M3).
+    /// Deliberately not hash-chained; see <see cref="GovernanceGrant"/>.</summary>
+    public DbSet<GovernanceGrant> GovernanceGrants => Set<GovernanceGrant>();
+
+    /// <summary>Playbook Ledger: immutable identity/context, one row per proposal, with a small
+    /// mutable lifecycle projection (M4). See <see cref="PlaybookEntry"/>.</summary>
+    public DbSet<PlaybookEntry> PlaybookEntries => Set<PlaybookEntry>();
+
+    /// <summary>Playbook Ledger: append-only, hash-chained events — the evidence itself, on a
+    /// fully independent chain from <see cref="RecoveryEvents"/> (M4).</summary>
+    public DbSet<PlaybookEvent> PlaybookEvents => Set<PlaybookEvent>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -106,12 +125,18 @@ public sealed class DlqDbContext : DbContext
         ConfigureRecoveryLedgerEntry(modelBuilder);
         ConfigureRecoveryEvent(modelBuilder);
         ConfigureAutonomyGrant(modelBuilder);
+        ConfigureNamespace(modelBuilder);
+        ConfigureNamespaceSharedOwner(modelBuilder);
+        ConfigureGovernanceGrant(modelBuilder);
+        ConfigurePlaybookEntry(modelBuilder);
+        ConfigurePlaybookEvent(modelBuilder);
     }
 
     /// <inheritdoc />
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         RecoveryLedgerAppendOnlyGuard.Enforce(ChangeTracker);
+        PlaybookLedgerAppendOnlyGuard.Enforce(ChangeTracker);
         StampAutonomyGrantConcurrencyTokens();
         return _saveChangesRetryPipeline.Execute(() => base.SaveChanges(acceptAllChangesOnSuccess));
     }
@@ -120,6 +145,7 @@ public sealed class DlqDbContext : DbContext
     public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
         RecoveryLedgerAppendOnlyGuard.Enforce(ChangeTracker);
+        PlaybookLedgerAppendOnlyGuard.Enforce(ChangeTracker);
         StampAutonomyGrantConcurrencyTokens();
         return _saveChangesRetryPipeline
             .ExecuteAsync(
@@ -413,6 +439,10 @@ public sealed class DlqDbContext : DbContext
 
         entity.Property(e => e.DisabledReasonDetail)
             .HasMaxLength(256);
+
+        // Soft reference — no FK, matching NamespaceSignature.NamespaceId/AuditLog.NamespaceId.
+        // NULL means fleet-wide (Global), unchanged from today's behavior.
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId });
     }
 
     private static void ConfigureAuditLog(ModelBuilder modelBuilder)
@@ -1161,5 +1191,263 @@ public sealed class DlqDbContext : DbContext
         entity.HasIndex(e => new { e.OwnerId, e.SignatureHash, e.ActionKind })
             .IsUnique()
             .HasDatabaseName("IX_AutonomyGrants_Owner_SignatureHash_ActionKind");
+    }
+
+    private static void ConfigureNamespace(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<Core.Entities.Namespace>();
+
+        entity.ToTable("Namespaces");
+        entity.HasKey(e => e.Id);
+
+        // Durable form lives in NamespaceSharedOwners (see ConfigureNamespaceSharedOwner) — the
+        // repository hydrates this property after querying rather than EF mapping it directly,
+        // since a plain string-list column would forfeit filterability for the same reason the
+        // persistence design rejected it for AutoReplayRule.NamespaceId.
+        entity.Ignore(e => e.SharedWithOwnerIds);
+
+        entity.Property(e => e.Name)
+            .HasMaxLength(Core.Entities.Namespace.MaxNameLength)
+            .IsRequired();
+
+        entity.Property(e => e.DisplayName)
+            .HasMaxLength(Core.Entities.Namespace.MaxDisplayNameLength);
+
+        entity.Property(e => e.Description)
+            .HasMaxLength(Core.Entities.Namespace.MaxDescriptionLength);
+
+        // Ciphertext moves byte-for-byte from the JSON store's ConnectionString field — same
+        // ENC[v1]/legacy envelope, no re-encryption. Column renamed for clarity at rest; the
+        // domain property name (ConnectionString) is unchanged.
+        entity.Property(e => e.ConnectionString)
+            .HasColumnName("ConnectionStringEncrypted");
+
+        entity.Property(e => e.ConnectionStringHash)
+            .HasMaxLength(64);
+
+        entity.Property(e => e.AuthType)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.Environment)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.Provider)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.AwsRegion)
+            .HasMaxLength(64);
+
+        entity.Property(e => e.GcpProjectId)
+            .HasMaxLength(128);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.HasIndex(e => new { e.OwnerId, e.Name })
+            .IsUnique()
+            .HasDatabaseName("IX_Namespaces_OwnerId_Name");
+
+        entity.HasIndex(e => e.OwnerId)
+            .HasDatabaseName("IX_Namespaces_OwnerId");
+
+        entity.HasIndex(e => e.IsActive)
+            .HasDatabaseName("IX_Namespaces_IsActive");
+    }
+
+    private static void ConfigureNamespaceSharedOwner(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<NamespaceSharedOwner>();
+
+        entity.ToTable("NamespaceSharedOwners");
+        entity.HasKey(e => new { e.NamespaceId, e.OwnerId });
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        // The one deliberate real FK in the whole M1-M4 wave: sharing metadata has no
+        // evidentiary value, so deleting a namespace should delete who it was shared with —
+        // unlike every ledger-adjacent NamespaceId, which stays a soft reference.
+        entity.HasOne<Core.Entities.Namespace>()
+            .WithMany()
+            .HasForeignKey(e => e.NamespaceId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        entity.HasIndex(e => e.OwnerId)
+            .HasDatabaseName("IX_NamespaceSharedOwners_OwnerId");
+    }
+
+    private static void ConfigureGovernanceGrant(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<GovernanceGrant>();
+
+        entity.ToTable("GovernanceGrants");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.GranteeIdentity)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.GranteeKind)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.Role)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.PillarKind)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
+        entity.Property(e => e.GrantedByIdentity)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.RevokedByIdentity)
+            .HasMaxLength(256);
+
+        // No FK on NamespaceId — soft reference, same convention as every other ledger-adjacent
+        // NamespaceId in this wave.
+
+        entity.HasIndex(e => new { e.OwnerId, e.GranteeIdentity })
+            .HasDatabaseName("IX_GovernanceGrants_OwnerId_GranteeIdentity");
+
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId })
+            .HasDatabaseName("IX_GovernanceGrants_OwnerId_NamespaceId");
+
+        // Prevents two simultaneously-active grants for the same (grantee, namespace, pillar)
+        // scope from silently disagreeing on Role. NOTE (SQL NULL semantics, not fixed here so as
+        // not to silently deviate from the approved design): SQLite (like standard SQL) treats
+        // NULL as distinct from NULL for uniqueness purposes, so this index does NOT actually
+        // prevent duplicate fleet-wide/all-pillar (NamespaceId=null, PillarKind=null) grants for
+        // the same grantee — worth knowing for whoever builds the enforcement layer this schema
+        // supports (roadmap item 10), since a duplicate there would only ever be redundant, never
+        // a security gap (grants are additive-permissive, never restrictive).
+        entity.HasIndex(e => new { e.OwnerId, e.GranteeIdentity, e.NamespaceId, e.PillarKind })
+            .IsUnique()
+            .HasFilter("[RevokedAt] IS NULL")
+            .HasDatabaseName("IX_GovernanceGrants_ActiveScope_Unique");
+    }
+
+    private static void ConfigurePlaybookEntry(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PlaybookEntry>();
+
+        entity.ToTable("PlaybookEntries");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.PillarKind)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.ProposalKind)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        entity.Property(e => e.EvidenceRefJson)
+            .IsRequired();
+
+        entity.Property(e => e.ProposalJson)
+            .IsRequired();
+
+        entity.Property(e => e.ProposerIdentity)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.ProposerKind)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.SignatureHashSnapshot)
+            .HasMaxLength(64);
+
+        entity.Property(e => e.NamespaceNameSnapshot)
+            .HasMaxLength(256);
+
+        entity.Property(e => e.ProviderSnapshot)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
+        entity.Property(e => e.EnvironmentSnapshot)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
+        entity.Property(e => e.State)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.Disposition)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
+        // No FK anywhere on this entity — SignatureHashSnapshot, NamespaceId, and
+        // RelatedRecoveryOperationId are all deliberate soft references, same convention as every
+        // other ledger-adjacent table in this codebase.
+
+        entity.HasIndex(e => new { e.OwnerId, e.State })
+            .HasDatabaseName("IX_PlaybookEntries_OwnerId_State");
+
+        entity.HasIndex(e => new { e.OwnerId, e.PillarKind })
+            .HasDatabaseName("IX_PlaybookEntries_OwnerId_PillarKind");
+
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId })
+            .HasDatabaseName("IX_PlaybookEntries_OwnerId_NamespaceId");
+    }
+
+    private static void ConfigurePlaybookEvent(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PlaybookEvent>();
+
+        entity.ToTable("PlaybookEvents");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.EventType)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.ActorIdentity)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.ActorKind)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        // No FK to PlaybookEntries (EntryId is a plain scalar column) and no FK of any kind to any
+        // Recovery ledger table — this chain must never become, or depend on, a cascade target.
+
+        entity.HasIndex(e => new { e.OwnerId, e.Seq })
+            .IsUnique()
+            .HasDatabaseName("IX_PlaybookEvents_OwnerId_Seq");
+
+        entity.HasIndex(e => new { e.EntryId, e.Seq })
+            .HasDatabaseName("IX_PlaybookEvents_EntryId_Seq");
     }
 }

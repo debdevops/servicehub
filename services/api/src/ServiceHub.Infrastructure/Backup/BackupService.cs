@@ -253,6 +253,10 @@ public sealed class BackupService : IBackupService
 
     private BackupFileInfo? CopyNamespaceStore(string bundleDir)
     {
+        // Post-M2 (namespace store migrated to SQLite), servicehub-namespaces.json has been
+        // renamed to servicehub-namespaces.json.migrated and this File.Exists check on the exact,
+        // literal active filename already returns false here — no separate detection change was
+        // needed, verified against CreateBackupAsync_NoNamespaceStore_CreatesSqliteSnapshotWithManifest.
         var sourcePath = ResolveNamespaceStorePath();
         if (!File.Exists(sourcePath))
         {

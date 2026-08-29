@@ -1,6 +1,9 @@
 # ADR-0006: RC1 migration freeze — active, and confirmed by explicit sign-off only
 
-**Status:** Accepted
+**Status:** Superseded for the M1–M4 persistence wave by
+[ADR-0007](0007-persistence-wave-m1-m4-authorized.md) (2026-08-29). This ADR remains the operative
+freeze for any migration not explicitly named in ADR-0007 — including M5 and any future schema
+change not yet designed.
 
 ## Context
 

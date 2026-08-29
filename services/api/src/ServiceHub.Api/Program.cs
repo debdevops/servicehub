@@ -142,6 +142,27 @@ using (var scope = app.Services.CreateScope())
         await dlqDbContext.Database.MigrateAsync();
         app.Logger.LogInformation("DLQ Intelligence database schema is up to date");
 
+        // One-shot, forward-only cutover from the JSON-file-backed namespace store to SQLite
+        // (M2 of the persistence wave). Must run after MigrateAsync (the Namespaces table needs
+        // to exist) and is allowed to throw — a failed import must not silently proceed with a
+        // partially-populated Namespaces table, so it shares the same non-Development rethrow
+        // behaviour as a failed MigrateAsync() below.
+        await NamespaceStoreImporter.ImportIfPresentAsync(dlqDbContext, app.Configuration, app.Logger);
+
+        // Grandfathers every existing account into a fleet-wide Admin grant, plus one
+        // namespace-scoped Operator grant per existing namespace share (M3 of the persistence
+        // wave). Must run after the M2 import above (reads Namespaces/NamespaceSharedOwners).
+        // Unlike the import above, a seed-count mismatch here only logs a warning — never gates
+        // startup — since grant seeding is recoverable by hand.
+        try
+        {
+            await GovernanceGrantSeeder.SeedIfEmptyAsync(dlqDbContext, app.Logger);
+        }
+        catch (Exception governanceSeedEx)
+        {
+            app.Logger.LogError(governanceSeedEx, "Failed to seed Governance grants at startup");
+        }
+
         // Reconcile messages stranded mid-replay or mid-purge by a previous process. This must
         // run here — after the schema is ready but before any hosted service starts — so that
         // every claimed row it sees is provably abandoned rather than actively in flight. See

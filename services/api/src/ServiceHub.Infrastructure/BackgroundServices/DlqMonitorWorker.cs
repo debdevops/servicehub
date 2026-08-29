@@ -313,7 +313,7 @@ public sealed class DlqMonitorWorker : BackgroundService
         var dbContext = scopedServices.GetRequiredService<Persistence.DlqDbContext>();
 
         var enabledRules = await dbContext.AutoReplayRules
-            .Where(r => r.Enabled && r.OwnerId == ns.OwnerId)
+            .Where(r => r.Enabled && r.OwnerId == ns.OwnerId && (r.NamespaceId == null || r.NamespaceId == ns.Id))
             .ToListAsync(cancellationToken);
 
         // Safety-by-default guard: auto-replay is blocked in production,

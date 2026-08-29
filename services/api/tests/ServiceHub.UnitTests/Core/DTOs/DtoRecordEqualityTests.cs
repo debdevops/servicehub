@@ -422,7 +422,8 @@ public class DtoRecordEqualityTests
             Action: new RuleAction(), CreatedAt: DateTimeOffset.UtcNow,
             UpdatedAt: null, MatchCount: 0, SuccessCount: 0,
             SuccessRate: 0, MaxReplaysPerHour: 100, PendingMatchCount: 0,
-            DisabledReason: null, DisabledReasonDetail: null);
+            DisabledReason: null, DisabledReasonDetail: null,
+            NamespaceId: null, NamespaceScope: RuleNamespaceScope.Global);
 
         var updated = r with { Enabled = false, MatchCount = 10 };
         updated.Enabled.Should().BeFalse();
