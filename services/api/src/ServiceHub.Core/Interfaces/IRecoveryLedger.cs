@@ -228,6 +228,23 @@ public interface IRecoveryLedger
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Every <see cref="RecoveryLedgerEntry"/> sharing (<paramref name="ownerId"/>,
+    /// <paramref name="namespaceId"/>, <paramref name="entityName"/>) begun on or after
+    /// <paramref name="since"/>, oldest first — counterfactual backtesting's (roadmap §11 item 14)
+    /// "what actually happened to this entity afterward" read. Mirrors
+    /// <see cref="FindLineageMatchesAsync"/>'s shape without the <c>bodyHash</c> constraint, since
+    /// a Playbook Ledger proposal (e.g. <c>AnomalyFlag</c>/<c>DriftFinding</c>) names an entity,
+    /// never a specific message body.
+    /// </summary>
+    Task<IReadOnlyList<RecoveryLedgerEntry>> FindEntriesForEntitySinceAsync(
+        string ownerId,
+        Guid? namespaceId,
+        string entityName,
+        DateTimeOffset since,
+        int limit = 100,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Writes a new <see cref="RecoveryLedgerEntry"/> already in terminal
     /// <see cref="Enums.RecoveryEntryState.Declined"/> state, plus its
     /// <see cref="Enums.RecoveryEventType.EligibilityDeclined"/> event, atomically in one

@@ -94,6 +94,39 @@ export interface CorrelationAccountabilityReport {
   approvalRate: number | null;
 }
 
+/**
+ * Counterfactual backtesting (roadmap §11 item 14): whether dispositioned anomaly-flag (I3) and
+ * drift-finding (P2) proposals were followed by real recovery activity for the same entity.
+ * `corroborationRate` is null until at least one proposal has been backtested — an honest "not
+ * enough evidence yet" rather than a fabricated 0%.
+ */
+export interface BacktestEntryResult {
+  playbookEntryId: string;
+  pillarKind: PillarKind;
+  proposalKind: string;
+  entityName: string;
+  namespaceId: string | null;
+  proposedAt: string;
+  disposition: string;
+  subsequentRecoveryAttempts: number;
+  subsequentRecoveredCount: number;
+  subsequentReturnedCount: number;
+  corroborated: boolean;
+}
+
+export interface BacktestReport {
+  generatedAt: string;
+  totalBacktested: number;
+  corroboratedCount: number;
+  corroborationRate: number | null;
+  entries: BacktestEntryResult[];
+}
+
+export interface BacktestParams {
+  pillarKind?: PillarKind;
+  limit?: number;
+}
+
 /** One-line meaning per lifecycle state, for a tooltip/help affordance next to the state badge. */
 export const PLAYBOOK_STATE_EXPLANATIONS: Record<PlaybookEntryState, string> = {
   Proposed: 'A detection worker raised this and no one has looked at it yet.',
@@ -138,6 +171,11 @@ export const playbookApi = {
 
   getCorrelationAccountability: async (): Promise<CorrelationAccountabilityReport> => {
     const response = await apiClient.get<CorrelationAccountabilityReport>('/playbook/correlation-accountability');
+    return response.data;
+  },
+
+  getBacktest: async (params: BacktestParams = {}): Promise<BacktestReport> => {
+    const response = await apiClient.get<BacktestReport>('/playbook/backtest', { params });
     return response.data;
   },
 };

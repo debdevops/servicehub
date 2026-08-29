@@ -8,6 +8,7 @@ import {
   useMarkPlaybookEntryUnderReview,
   useDispositionPlaybookEntry,
   useCorrelationAccountability,
+  useBacktestReport,
 } from '@servicehub/ui-shared/hooks/usePlaybookLedger';
 
 vi.mock('@servicehub/ui-shared/hooks/usePlaybookLedger', () => ({
@@ -16,6 +17,7 @@ vi.mock('@servicehub/ui-shared/hooks/usePlaybookLedger', () => ({
   useMarkPlaybookEntryUnderReview: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useDispositionPlaybookEntry: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useCorrelationAccountability: vi.fn(() => ({ data: undefined, isLoading: false })),
+  useBacktestReport: vi.fn(() => ({ data: undefined, isLoading: false })),
 }));
 
 const mockUsePlaybookEntries = usePlaybookEntries as ReturnType<typeof vi.fn>;
@@ -23,6 +25,7 @@ const mockUsePlaybookEntry = usePlaybookEntry as ReturnType<typeof vi.fn>;
 const mockUseMarkUnderReview = useMarkPlaybookEntryUnderReview as ReturnType<typeof vi.fn>;
 const mockUseDisposition = useDispositionPlaybookEntry as ReturnType<typeof vi.fn>;
 const mockUseCorrelationAccountability = useCorrelationAccountability as ReturnType<typeof vi.fn>;
+const mockUseBacktestReport = useBacktestReport as ReturnType<typeof vi.fn>;
 
 function renderPage() {
   return render(
@@ -180,6 +183,28 @@ describe('PlaybookLedgerPage', () => {
       });
       renderPage();
       expect(screen.getByText(/50% approved \(1 of 2 dispositioned\)/)).toBeInTheDocument();
+    });
+  });
+
+  describe('backtest strip', () => {
+    it('shows "no dispositioned findings" when nothing has been backtested', () => {
+      mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+      mockUseBacktestReport.mockReturnValue({
+        data: { generatedAt: '2026-08-29T09:00:00Z', totalBacktested: 0, corroboratedCount: 0, corroborationRate: null, entries: [] },
+        isLoading: false,
+      });
+      renderPage();
+      expect(screen.getByText(/no dispositioned findings to backtest yet/)).toBeInTheDocument();
+    });
+
+    it('shows the computed corroboration rate once findings have been backtested', () => {
+      mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+      mockUseBacktestReport.mockReturnValue({
+        data: { generatedAt: '2026-08-29T09:00:00Z', totalBacktested: 4, corroboratedCount: 3, corroborationRate: 0.75, entries: [] },
+        isLoading: false,
+      });
+      renderPage();
+      expect(screen.getByText(/75% corroborated \(3 of 4\)/)).toBeInTheDocument();
     });
   });
 });
