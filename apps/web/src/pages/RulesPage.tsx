@@ -12,8 +12,7 @@ import { useAllNamespacesQueues } from '@servicehub/ui-shared/hooks/useQueues';
 import { apiClient } from '@servicehub/ui-shared/lib/api/client';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { findRuleEntityWarnings, type KnownEntities } from '@servicehub/ui-shared/lib/ruleValidation';
-import { resolveRuleScope, type NamespaceEntityIndex, type RuleScope, type ScopedEntity } from '@servicehub/ui-shared/lib/ruleScope';
-import { ProviderBadge, getProviderStyle, getProviderServiceShortName } from '@servicehub/ui-shared/lib/providerStyles';
+import { ProviderBadge, getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
 import type { Topic, ApiError } from '@servicehub/ui-shared/lib/api/types';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 import { useEventStream } from '@servicehub/ui-shared/hooks/useEventStream';
@@ -32,6 +31,7 @@ import type {
   RuleAction,
   RuleTemplateResponse,
   CreateRuleRequest,
+  RuleNamespaceScope,
 } from '@servicehub/ui-shared/lib/api/rules';
 
 export function RulesPage() {
@@ -43,7 +43,7 @@ export function RulesPage() {
 
   // Entities across every connected namespace (all providers) — used to flag
   // rules whose entity references no longer exist anywhere.
-  const { data: namespaces, isLoading: namespacesLoading } = useNamespaces();
+  const { data: namespaces } = useNamespaces();
   const namespaceIds = useMemo(() => namespaces?.map((ns) => ns.id) ?? [], [namespaces]);
   const allQueueStats = useAllNamespacesQueues(namespaceIds, false);
   const topicResults = useQueries({
@@ -78,31 +78,6 @@ export function RulesPage() {
     [allQueueStats, topicResults, namespaceIds.length],
   );
 
-  // Same underlying data as knownEntities above, but keeping the per-namespace grouping
-  // (rather than flattening into one list) so a rule's EntityName/TopicName condition can be
-  // resolved back to the specific namespace(s)/cloud(s) it lives in — no extra network calls.
-  // Each entry carries its OWN loaded state (see NamespaceEntityIndex.loaded) so resolveRuleScope
-  // can resolve a rule the moment its namespace's data is in, rather than every card waiting on
-  // whichever connected namespace happens to be slowest.
-  const namespaceEntityIndex: NamespaceEntityIndex[] = useMemo(
-    () =>
-      (namespaces ?? []).map((ns) => {
-        const queueStat = allQueueStats.find((s) => s.namespaceId === ns.id);
-        const topicResult = topicResults[namespaceIds.indexOf(ns.id)];
-        return {
-          namespaceId: ns.id,
-          namespace: ns,
-          queues:
-            queueStat?.queues?.map((q) => ({
-              name: q.name,
-              deadLetterTargetQueue: q.deadLetterTargetQueue,
-            })) ?? [],
-          topics: topicResult?.data?.map((t) => t.name) ?? [],
-          loaded: !(queueStat?.isLoading ?? true) && !(topicResult?.isLoading ?? true),
-        };
-      }),
-    [namespaces, allQueueStats, topicResults, namespaceIds],
-  );
   const createMutation = useCreateRule();
   const updateMutation = useUpdateRule();
   const deleteMutation = useDeleteRule();
@@ -254,7 +229,6 @@ export function RulesPage() {
               <RuleCard
                 key={rule.id}
                 rule={rule}
-                scope={resolveRuleScope(rule.conditions, namespaceEntityIndex, !namespacesLoading)}
                 entityWarnings={findRuleEntityWarnings(rule.conditions, rule.action, knownEntities)}
                 onEdit={() => handleEdit(rule)}
                 onDelete={() => handleDelete(rule)}
@@ -285,8 +259,7 @@ export function RulesPage() {
         initialAction={templatePrefill?.action}
         isSaving={createMutation.isPending || updateMutation.isPending}
         knownEntities={knownEntities}
-        namespaceEntityIndex={namespaceEntityIndex}
-        namespacesLoaded={!namespacesLoading}
+        namespaces={namespaces}
       />
 
       <TemplateGalleryDialog
@@ -303,11 +276,6 @@ export function RulesPage() {
 
       <ReplayAllConfirmDialog
         rule={replayAllRule}
-        scope={
-          replayAllRule
-            ? resolveRuleScope(replayAllRule.conditions, namespaceEntityIndex, !namespacesLoading)
-            : null
-        }
         isExecuting={replayAllMutation.isPending}
         onConfirm={confirmReplayAll}
         onCancel={() => setReplayAllRule(null)}
@@ -329,51 +297,12 @@ export function RulesPage() {
 
 // ─── Sub-Components ────────────────────────────────────────────────
 
-// Identifies exactly ONE resolved namespace/cloud/entity a rule's EntityName/TopicName
-// condition matched. Four visually distinct facts, per the semantic rules this satisfies:
-// Cloud (badge, never icon-only), Namespace/environment, Provider service (distinct from
-// Cloud — "SQS" not "AWS SQS", since Cloud is already shown), and Entity/Topic+Subscription
-// (distinct from Namespace), plus a DLQ line only when one is genuinely derivable — never
-// fabricated (see buildDlqLabel in lib/ruleScope.ts for exactly what's real per provider).
-function ScopeIdentity({ match }: { match: ScopedEntity }) {
-  return (
-    <div className="space-y-1">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <ProviderBadge provider={match.cloudProvider} />
-        <span className="text-gray-400">·</span>
-        <span className="text-sm font-bold text-gray-900">{match.namespaceName}</span>
-        {match.environment && <EnvironmentBadge env={match.environment} />}
-      </div>
-      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
-        {getProviderServiceShortName(match.cloudProvider)}
-      </div>
-      <div className="text-xs font-mono text-gray-800 space-y-0.5">
-        {match.entityKind === 'subscription' ? (
-          <>
-            <div>Topic: {match.topicName}</div>
-            <div>Subscription: {match.subscriptionName}</div>
-          </>
-        ) : match.entityKind === 'topic' ? (
-          <div>Topic: {match.entityName}</div>
-        ) : (
-          <div>{match.entityName}</div>
-        )}
-      </div>
-      {match.dlqLabel && <div className="text-xs font-mono text-red-700">DLQ: {match.dlqLabel}</div>}
-    </div>
-  );
-}
-
-// Shows what a rule's EntityName/TopicName condition (if any) actually resolves to — the
-// semantic content shared by the rule card's top-of-card scope strip (ScopeHeader, below)
-// and the Replay All confirmation, where target ambiguity matters most. See lib/ruleScope.ts
-// for why this is inferred rather than stored, and never fabricated when unresolvable.
-function ScopeContent({ scope }: { scope: RuleScope }) {
-  if (scope.kind === 'loading') {
-    return <span className="text-xs text-gray-400 italic">Resolving scope…</span>;
-  }
-
-  if (scope.kind === 'global') {
+// Shows a rule's server-computed, authoritative namespace scope — the semantic content shared
+// by the rule card's top-of-card scope strip (ScopeHeader, below) and the Replay All
+// confirmation. Resolved from RuleResponse.namespaceId via INamespaceRepository on the API side
+// (see RuleNamespaceScope), never inferred client-side from conditions.
+function ScopeContent({ namespaceScope }: { namespaceScope: RuleNamespaceScope }) {
+  if (namespaceScope.kind === 'Global') {
     return (
       <div className="flex items-center gap-1.5 text-xs font-bold text-gray-600 tracking-wide">
         <Globe2 className="w-3.5 h-3.5 shrink-0" />
@@ -382,20 +311,7 @@ function ScopeContent({ scope }: { scope: RuleScope }) {
     );
   }
 
-  if (scope.kind === 'pattern') {
-    return (
-      <div>
-        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-0.5">
-          Pattern match — not a fixed namespace
-        </p>
-        <p className="text-xs font-mono text-gray-700">
-          {fieldLabel(scope.field)} {operatorLabel(scope.operator)} &quot;{scope.value}&quot;
-        </p>
-      </div>
-    );
-  }
-
-  if (scope.kind === 'unresolved') {
+  if (namespaceScope.kind === 'Unresolved') {
     return (
       <div>
         <p className="flex items-center gap-1 text-[10px] font-bold text-amber-700 uppercase tracking-wide mb-0.5">
@@ -403,47 +319,31 @@ function ScopeContent({ scope }: { scope: RuleScope }) {
           Scope unresolved
         </p>
         <p className="text-xs text-amber-800">
-          Target &quot;{scope.value}&quot; not found in any connected namespace
+          Scoped to a namespace that no longer exists or isn&apos;t accessible — Replay All is
+          blocked until this is fixed
         </p>
       </div>
     );
   }
 
-  const ambiguous = scope.matches.length > 1;
   return (
-    <div className="space-y-2">
-      {ambiguous && (
-        <p className="flex items-center gap-1 text-[10px] font-bold text-amber-700 uppercase tracking-wide">
-          <AlertTriangle className="w-3 h-3" />
-          Ambiguous target — matches {scope.matches.length} namespaces
-        </p>
-      )}
-      <div className="space-y-2">
-        {scope.matches.map((m, i) => (
-          <ScopeIdentity key={`${m.namespaceId}-${m.entityName}-${i}`} match={m} />
-        ))}
-      </div>
-      {scope.provisional && (
-        <p className="flex items-center gap-1 text-[10px] text-gray-400 italic">
-          <RefreshCw className="w-2.5 h-2.5 animate-spin" />
-          Confirming remaining namespaces — this may still turn out to be ambiguous
-        </p>
-      )}
+    <div className="flex flex-wrap items-center gap-1.5">
+      {namespaceScope.provider && <ProviderBadge provider={namespaceScope.provider} />}
+      <span className="text-sm font-bold text-gray-900">{namespaceScope.name}</span>
+      {namespaceScope.environment && <EnvironmentBadge env={namespaceScope.environment} />}
     </div>
   );
 }
 
-// Background/border tint for the rule card's top strip: the resolving provider's own brand
-// tint for a precise single-namespace match (headerBg/headerBorder — the same tokens
-// CloudBridgePage uses for its provider summary bar), amber for anything that needs an
-// operator's attention (ambiguous or unresolved), neutral gray otherwise (global/pattern —
-// true facts, not warnings).
-function scopeStripClasses(scope: RuleScope): string {
-  if (scope.kind === 'resolved' && scope.matches.length === 1) {
-    const style = getProviderStyle(scope.matches[0].cloudProvider);
+// Background/border tint for the rule card's top strip: the namespace's own provider brand tint
+// for a namespace-scoped rule (headerBg/headerBorder — the same tokens CloudBridgePage uses for
+// its provider summary bar), amber for a scope that no longer resolves, neutral gray for Global.
+function scopeStripClasses(namespaceScope: RuleNamespaceScope): string {
+  if (namespaceScope.kind === 'Namespace' && namespaceScope.provider) {
+    const style = getProviderStyle(namespaceScope.provider);
     return `${style.headerBg} ${style.headerBorder}`;
   }
-  if (scope.kind === 'resolved' || scope.kind === 'unresolved') {
+  if (namespaceScope.kind === 'Unresolved') {
     return 'bg-amber-50 border-amber-200';
   }
   return 'bg-gray-50 border-gray-200';
@@ -451,17 +351,16 @@ function scopeStripClasses(scope: RuleScope): string {
 
 // Top-of-card scope strip — the first thing an operator sees, so a rule card is
 // self-contained without cross-referencing the Namespaces panel.
-function ScopeHeader({ scope }: { scope: RuleScope }) {
+function ScopeHeader({ namespaceScope }: { namespaceScope: RuleNamespaceScope }) {
   return (
-    <div className={`px-4 py-2.5 border-b ${scopeStripClasses(scope)}`}>
-      <ScopeContent scope={scope} />
+    <div className={`px-4 py-2.5 border-b ${scopeStripClasses(namespaceScope)}`}>
+      <ScopeContent namespaceScope={namespaceScope} />
     </div>
   );
 }
 
 function RuleCard({
   rule,
-  scope,
   entityWarnings,
   onEdit,
   onDelete,
@@ -471,7 +370,6 @@ function RuleCard({
   isReplayingAll,
 }: {
   rule: RuleResponse;
-  scope: RuleScope;
   entityWarnings: string[];
   onEdit: () => void;
   onDelete: () => void;
@@ -505,8 +403,8 @@ function RuleCard({
             : 'border-gray-100 bg-gray-50 opacity-75'
       }`}
     >
-      {/* Scope — cloud/namespace/provider/entity, self-contained at a glance (see ScopeHeader) */}
-      <ScopeHeader scope={scope} />
+      {/* Scope — cloud/namespace/provider, self-contained at a glance (see ScopeHeader) */}
+      <ScopeHeader namespaceScope={rule.namespaceScope} />
 
       <div className="p-4">
       {/* Title Row */}
@@ -666,14 +564,16 @@ function RuleCard({
         </button>
         <button
           onClick={onReplayAll}
-          disabled={!rule.enabled || isReplayingAll}
+          disabled={!rule.enabled || rule.namespaceScope.kind === 'Unresolved' || isReplayingAll}
           className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           title={
             !rule.enabled
               ? 'Enable rule first'
-              : rule.pendingMatchCount === 0
-                ? 'No pending DLQ messages match this rule'
-                : `Replay ${rule.pendingMatchCount} matching DLQ messages`
+              : rule.namespaceScope.kind === 'Unresolved'
+                ? 'Scope unresolved — the namespace this rule is scoped to no longer exists or isn’t accessible'
+                : rule.pendingMatchCount === 0
+                  ? 'No pending DLQ messages match this rule'
+                  : `Replay ${rule.pendingMatchCount} matching DLQ messages`
           }
         >
           <Play className={`w-3.5 h-3.5 ${isReplayingAll ? 'animate-pulse' : ''}`} />
@@ -751,13 +651,11 @@ function EmptyState({
 
 function ReplayAllConfirmDialog({
   rule,
-  scope,
   isExecuting,
   onConfirm,
   onCancel,
 }: {
   rule: RuleResponse | null;
-  scope: RuleScope | null;
   isExecuting: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -819,11 +717,9 @@ function ReplayAllConfirmDialog({
             <div className="text-sm font-semibold text-gray-900 mb-1">
               Rule: {rule.name}
             </div>
-            {scope && (
-              <div className="mb-2">
-                <ScopeContent scope={scope} />
-              </div>
-            )}
+            <div className="mb-2">
+              <ScopeContent namespaceScope={rule.namespaceScope} />
+            </div>
             <div className="space-y-0.5">
               {rule.conditions.map((c, i) => (
                 <div key={i} className="text-xs text-gray-600 flex items-center gap-1">

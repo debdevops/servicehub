@@ -361,6 +361,33 @@ public static class ErrorCodes
     }
 
     /// <summary>
+    /// Error codes related to Governance/RBAC grants (M3 of the persistence wave).
+    /// </summary>
+    public static class Governance
+    {
+        /// <summary>The grant was not found.</summary>
+        public const string NotFound = "Governance.NotFound";
+
+        /// <summary>An active grant already exists for this exact (grantee, namespace, pillar) scope.</summary>
+        public const string AlreadyExists = "Governance.AlreadyExists";
+    }
+
+    /// <summary>
+    /// Error codes related to the Playbook Ledger (M4 of the persistence wave).
+    /// </summary>
+    public static class Playbook
+    {
+        /// <summary>The entry was not found.</summary>
+        public const string NotFound = "Playbook.NotFound";
+
+        /// <summary>The requested transition is not valid from the entry's current state.</summary>
+        public const string InvalidTransition = "Playbook.InvalidTransition";
+
+        /// <summary>A reason is required to reject a proposal.</summary>
+        public const string ReasonRequired = "Playbook.ReasonRequired";
+    }
+
+    /// <summary>
     /// Error codes related to backup and restore operations.
     /// </summary>
     public static class Backup

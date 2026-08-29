@@ -28,6 +28,8 @@ const sampleRule: RuleResponse = {
   updatedAt: null,
   disabledReason: null,
   disabledReasonDetail: null,
+  namespaceId: null,
+  namespaceScope: { kind: 'Global' },
 };
 
 describe('RuleTestDialog', () => {

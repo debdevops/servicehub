@@ -12,7 +12,7 @@ using ServiceHub.Infrastructure.Backup;
 using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.BulkOperations;
 using ServiceHub.Infrastructure.Persistence;
-using ServiceHub.Infrastructure.Persistence.InMemory;
+using ServiceHub.Infrastructure.PlaybookLedger;
 using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
@@ -119,8 +119,11 @@ public static class DependencyInjection
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddPersistence(this IServiceCollection services)
     {
-        // In-memory repository for MVP
-        services.TryAddSingleton<INamespaceRepository, InMemoryNamespaceRepository>();
+        // SQLite-backed (M2 of the persistence wave) — replaces the JSON-file-backed
+        // InMemoryNamespaceRepository. Scoped, not Singleton: SqliteNamespaceRepository depends on
+        // the per-request-scoped DlqDbContext (see AddDlqDatabase), matching every other
+        // DlqDbContext-backed service registration in this file.
+        services.TryAddScoped<INamespaceRepository, SqliteNamespaceRepository>();
 
         return services;
     }
@@ -303,6 +306,8 @@ public static class DependencyInjection
         services.TryAddScoped<IDlqMonitorService, DlqMonitorService>();
         services.TryAddScoped<IDlqHistoryService, DlqHistoryService>();
         services.TryAddScoped<INamespaceSignatureLookupService, NamespaceSignatureLookupService>();
+        services.TryAddScoped<IGovernanceGrantService, GovernanceGrantService>();
+        services.TryAddScoped<IPlaybookLedger, PlaybookLedgerService>();
         services.TryAddScoped<IAnomalyDetectionService, Analytics.DeterministicAnomalyDetectionService>();
         services.TryAddSingleton<IAnomalyResultCache, Analytics.InMemoryAnomalyResultCache>();
         services.TryAddScoped<IDriftDetectionService, Analytics.DeterministicDriftDetectionService>();

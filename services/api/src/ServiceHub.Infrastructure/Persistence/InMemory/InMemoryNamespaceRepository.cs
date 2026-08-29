@@ -1,12 +1,9 @@
-using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Entities;
-using ServiceHub.Core.Enums;
 using ServiceHub.Infrastructure.Security;
-using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Infrastructure.Persistence.InMemory;
 
@@ -18,11 +15,7 @@ public sealed class InMemoryNamespaceRepository : InMemoryNamespaceRepositoryBas
 {
     private readonly string _storagePath;
     private readonly object _saveLock = new();
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
+    private static readonly JsonSerializerOptions JsonOptions = NamespaceJsonSnapshot.JsonOptions;
 
     // Fixed GUIDs the removed ServiceHub.Simulator project's SimulatorDataSeeder used to
     // register its simulated namespaces directly in this shared repository. That project is
@@ -90,12 +83,12 @@ public sealed class InMemoryNamespaceRepository : InMemoryNamespaceRepositoryBas
             }
 
             var json = File.ReadAllText(_storagePath);
-            var snapshots = JsonSerializer.Deserialize<List<NamespaceSnapshot>>(json, JsonOptions) ?? [];
+            var snapshots = JsonSerializer.Deserialize<List<NamespaceJsonSnapshot.Entry>>(json, JsonOptions) ?? [];
 
             var loaded = 0;
             foreach (var snapshot in snapshots)
             {
-                var ns = Rehydrate(snapshot);
+                var ns = NamespaceJsonSnapshot.Rehydrate(snapshot, _logger);
                 if (ns is null)
                 {
                     continue;
@@ -253,141 +246,5 @@ public sealed class InMemoryNamespaceRepository : InMemoryNamespaceRepositoryBas
         }
     }
 
-    private static NamespaceSnapshot ToSnapshot(Namespace ns)
-        => new()
-        {
-            Id = ns.Id,
-            Name = ns.Name,
-            DisplayName = ns.DisplayName,
-            Description = ns.Description,
-            ConnectionString = ns.ConnectionString,
-            AuthType = ns.AuthType,
-            IsActive = ns.IsActive,
-            CreatedAt = ns.CreatedAt,
-            ModifiedAt = ns.ModifiedAt,
-            LastConnectionTestAt = ns.LastConnectionTestAt,
-            LastConnectionTestSucceeded = ns.LastConnectionTestSucceeded,
-            HasListenPermission = ns.HasListenPermission,
-            HasSendPermission = ns.HasSendPermission,
-            HasManagePermission = ns.HasManagePermission,
-            Environment = ns.Environment,
-            OwnerId = ns.OwnerId,
-            SharedWithOwnerIds = ns.SharedWithOwnerIds.Count > 0 ? [.. ns.SharedWithOwnerIds] : null,
-            ConnectionStringHash = ns.ConnectionStringHash,
-            Provider = ns.Provider,
-            AwsRegion = ns.AwsRegion,
-            GcpProjectId = ns.GcpProjectId,
-        };
-
-    private Namespace? Rehydrate(NamespaceSnapshot snapshot)
-    {
-        try
-        {
-            // Dispatch on stored credentials, not AuthType: AWS/GCP namespaces persist with
-            // AwsAccessKey/GcpServiceAccount auth types but still carry a connection string,
-            // and CreateWithManagedIdentity would reject (and drop) them on reload.
-            Result<Namespace> createResult = !string.IsNullOrWhiteSpace(snapshot.ConnectionString)
-                ? Namespace.Create(
-                    snapshot.Name,
-                    snapshot.ConnectionString ?? string.Empty,
-                    snapshot.DisplayName,
-                    snapshot.Description,
-                    snapshot.Environment,
-                    provider: snapshot.Provider,
-                    ownerId: snapshot.OwnerId,
-                    connectionStringHash: snapshot.ConnectionStringHash,
-                    awsRegion: snapshot.AwsRegion,
-                    gcpProjectId: snapshot.GcpProjectId)
-                : Namespace.CreateWithManagedIdentity(
-                    snapshot.Name,
-                    snapshot.AuthType,
-                    snapshot.DisplayName,
-                    snapshot.Description,
-                    snapshot.Environment,
-                    provider: snapshot.Provider,
-                    ownerId: snapshot.OwnerId,
-                    awsRegion: snapshot.AwsRegion,
-                    gcpProjectId: snapshot.GcpProjectId);
-
-            if (createResult.IsFailure)
-            {
-                _logger.LogWarning(
-                    "Skipping persisted namespace {Name} due to validation failure while rehydrating",
-                    LogRedactor.SanitiseForLog(snapshot.Name));
-                return null;
-            }
-
-            var ns = createResult.Value;
-
-            SetPrivateProperty(ns, nameof(Namespace.Id), snapshot.Id);
-            SetPrivateProperty(ns, nameof(Namespace.CreatedAt), snapshot.CreatedAt);
-            SetPrivateProperty(ns, nameof(Namespace.ModifiedAt), snapshot.ModifiedAt);
-            SetPrivateProperty(ns, nameof(Namespace.LastConnectionTestAt), snapshot.LastConnectionTestAt);
-            SetPrivateProperty(ns, nameof(Namespace.LastConnectionTestSucceeded), snapshot.LastConnectionTestSucceeded);
-            SetPrivateProperty(ns, nameof(Namespace.HasListenPermission), snapshot.HasListenPermission);
-            SetPrivateProperty(ns, nameof(Namespace.HasSendPermission), snapshot.HasSendPermission);
-            SetPrivateProperty(ns, nameof(Namespace.HasManagePermission), snapshot.HasManagePermission);
-            SetPrivateProperty(ns, nameof(Namespace.Environment), snapshot.Environment);
-            SetPrivateProperty(ns, nameof(Namespace.SharedWithOwnerIds), (IReadOnlyList<string>)(snapshot.SharedWithOwnerIds ?? []));
-
-            if (!snapshot.IsActive)
-            {
-                ns.Deactivate();
-            }
-
-            return ns;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to rehydrate persisted namespace {Name}", LogRedactor.SanitiseForLog(snapshot.Name));
-            return null;
-        }
-    }
-
-    private static void SetPrivateProperty<T>(Namespace target, string propertyName, T value)
-    {
-        var property = typeof(Namespace).GetProperty(
-            propertyName,
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-
-        property?.SetValue(target, value);
-    }
-
-    private sealed class NamespaceSnapshot
-    {
-        public Guid Id { get; init; }
-        public string Name { get; init; } = string.Empty;
-        public string? DisplayName { get; init; }
-        public string? Description { get; init; }
-        public string? ConnectionString { get; init; }
-        public ConnectionAuthType AuthType { get; init; }
-        public bool IsActive { get; init; }
-        public DateTimeOffset CreatedAt { get; init; }
-        public DateTimeOffset? ModifiedAt { get; init; }
-        public DateTimeOffset? LastConnectionTestAt { get; init; }
-        public bool? LastConnectionTestSucceeded { get; init; }
-        public bool HasListenPermission { get; init; }
-        public bool HasSendPermission { get; init; }
-        public bool HasManagePermission { get; init; }
-        public EnvironmentType Environment { get; init; }
-        /// <summary>
-        /// Owner identifier for tenant isolation. Defaults to the SPA owner so that
-        /// namespaces written before this field existed remain visible to the instance admin.
-        /// </summary>
-        public string OwnerId { get; init; } = Namespace.SpaOwnerId;
-        /// <summary>
-        /// Additional owner IDs this namespace is shared with. Null/absent on files written
-        /// before sharing existed — deserialises to null and is normalised to an empty list on
-        /// rehydration, so older snapshot files load unaffected.
-        /// </summary>
-        public List<string>? SharedWithOwnerIds { get; init; }
-        /// <summary>SHA-256 hash of the plaintext connection string for fast deduplication.</summary>
-        public string? ConnectionStringHash { get; init; }
-        /// <summary>Cloud provider (Azure, AWS, GCP). Defaults to Azure for backward compatibility.</summary>
-        public CloudProviderType Provider { get; init; } = CloudProviderType.Azure;
-        /// <summary>AWS region identifier. Null for non-AWS namespaces.</summary>
-        public string? AwsRegion { get; init; }
-        /// <summary>GCP project identifier. Null for non-GCP namespaces.</summary>
-        public string? GcpProjectId { get; init; }
-    }
+    private static NamespaceJsonSnapshot.Entry ToSnapshot(Namespace ns) => NamespaceJsonSnapshot.ToSnapshot(ns);
 }

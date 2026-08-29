@@ -1,3 +1,4 @@
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Models;
 
 namespace ServiceHub.Core.DTOs.Responses;
@@ -20,7 +21,29 @@ public sealed record RuleResponse(
     int MaxReplaysPerHour,
     int PendingMatchCount,
     string? DisabledReason,
-    string? DisabledReasonDetail);
+    string? DisabledReasonDetail,
+    Guid? NamespaceId,
+    RuleNamespaceScope NamespaceScope);
+
+/// <summary>
+/// Server-computed scope for a rule — the one object both the UI and rule execution trust,
+/// resolved from <see cref="RuleResponse.NamespaceId"/> via <c>INamespaceRepository</c> rather
+/// than inferred client-side from conditions.
+/// </summary>
+/// <param name="Kind"><c>"Global"</c> (matches every namespace), <c>"Namespace"</c> (scoped and
+/// resolved), or <c>"Unresolved"</c> (scoped to a namespace that no longer exists/is accessible).</param>
+/// <param name="Name">The namespace's display name, when <paramref name="Kind"/> is <c>"Namespace"</c>.</param>
+/// <param name="Provider">The namespace's cloud provider, when <paramref name="Kind"/> is <c>"Namespace"</c>.</param>
+/// <param name="Environment">The namespace's environment, when <paramref name="Kind"/> is <c>"Namespace"</c>.</param>
+public sealed record RuleNamespaceScope(
+    string Kind,
+    string? Name = null,
+    CloudProviderType? Provider = null,
+    EnvironmentType? Environment = null)
+{
+    public static readonly RuleNamespaceScope Global = new("Global");
+    public static readonly RuleNamespaceScope Unresolved = new("Unresolved");
+}
 
 /// <summary>
 /// Response DTO for rule test results.

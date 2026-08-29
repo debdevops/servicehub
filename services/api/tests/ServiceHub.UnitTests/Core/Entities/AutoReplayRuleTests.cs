@@ -95,4 +95,20 @@ public sealed class AutoReplayRuleTests
         var rule = MakeRule();
         rule.ReplayHistories.Should().NotBeNull().And.BeEmpty();
     }
+
+    [Fact]
+    public void Default_NamespaceId_IsNull_MeaningGlobal()
+    {
+        var rule = MakeRule();
+        rule.NamespaceId.Should().BeNull();
+    }
+
+    [Fact]
+    public void NamespaceId_CanBeScopedToANamespace()
+    {
+        var rule = MakeRule();
+        var namespaceId = Guid.NewGuid();
+        rule.NamespaceId = namespaceId;
+        rule.NamespaceId.Should().Be(namespaceId);
+    }
 }

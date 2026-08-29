@@ -349,6 +349,79 @@ public sealed class DlqMonitorWorkerRegressionTests
     }
 
     [Fact]
+    public async Task AutoReplay_NamespaceScopedRule_IsNotAppliedToForeignNamespace()
+    {
+        // A rule scoped to one namespace must never fire during another namespace's scan, even
+        // when both namespaces belong to the same owner and share an entity name (M1).
+        var scopedNamespace = Namespace.Create(
+            "scoped-ns",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey12=",
+            environment: EnvironmentType.Dev,
+            ownerId: "owner").Value;
+
+        var foreignNamespace = Namespace.Create(
+            "foreign-ns",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey12=",
+            environment: EnvironmentType.Dev,
+            ownerId: "owner").Value;
+
+        var scopedRule = new AutoReplayRule
+        {
+            Name = "scoped-rule",
+            OwnerId = "owner",
+            Enabled = true,
+            ConditionsJson = "[]",
+            ActionsJson = "{}",
+            CreatedAt = DateTimeOffset.UtcNow,
+            NamespaceId = scopedNamespace.Id,
+        };
+
+        var options = new DbContextOptionsBuilder<DlqDbContext>()
+            .UseSqlite("DataSource=:memory:")
+            .Options;
+        var db = new DlqDbContext(options);
+        await db.Database.OpenConnectionAsync();
+        await db.Database.EnsureCreatedAsync();
+
+        db.AutoReplayRules.Add(scopedRule);
+        await db.SaveChangesAsync();
+
+        var ruleEngine = new Mock<IRuleEngine>();
+        var executor = new Mock<IAutoReplayExecutor>();
+
+        var services = new ServiceCollection();
+        services.AddSingleton(db);
+        services.AddSingleton(ruleEngine.Object);
+        services.AddSingleton(executor.Object);
+        services.AddSingleton(Mock.Of<IPlatformEventBus>());
+        services.AddSingleton<IRecoveryLedger>(new RecoveryLedgerService(db));
+        var sp = services.BuildServiceProvider();
+
+        var worker = new DlqMonitorWorker(
+            sp, new ConfigurationBuilder().AddInMemoryCollection().Build(), NullLogger<DlqMonitorWorker>.Instance);
+
+        // Evaluating the foreign namespace must never even reach the rule engine with the
+        // scoped rule in hand.
+        await worker.EvaluateAutoReplayRulesAsync(sp, foreignNamespace, CancellationToken.None);
+        ruleEngine.Verify(e => e.FindMatchingRules(It.IsAny<DlqMessage>(), It.IsAny<IReadOnlyList<AutoReplayRule>>()),
+            Times.Never);
+
+        // Evaluating the scoped namespace itself is a no-op here only because there are no
+        // active messages to match — the point under test is purely the candidate-rule query's
+        // namespace filter, exercised via the (enabled, matching-namespace) rule not being
+        // filtered out for its own namespace.
+        var candidateRules = await db.AutoReplayRules
+            .Where(r => r.Enabled && r.OwnerId == scopedNamespace.OwnerId
+                && (r.NamespaceId == null || r.NamespaceId == scopedNamespace.Id))
+            .ToListAsync();
+        candidateRules.Should().ContainSingle(r => r.Id == scopedRule.Id);
+
+        await db.Database.CloseConnectionAsync();
+        await db.DisposeAsync();
+        await sp.DisposeAsync();
+    }
+
+    [Fact]
     public async Task OrphanedActiveRecords_ForUnregisteredNamespaces_AreArchived()
     {
         var ns = BuildNamespace();

@@ -27,6 +27,7 @@ public sealed class RulesController : ApiControllerBase
 {
     private readonly DlqDbContext _dbContext;
     private readonly IRuleEngine _ruleEngine;
+    private readonly INamespaceRepository _namespaceRepository;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<RulesController> _logger;
 
@@ -42,13 +43,29 @@ public sealed class RulesController : ApiControllerBase
     public RulesController(
         DlqDbContext dbContext,
         IRuleEngine ruleEngine,
+        INamespaceRepository namespaceRepository,
         ILogger<RulesController> logger,
         IAuditLogger? auditLogger = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _ruleEngine = ruleEngine ?? throw new ArgumentNullException(nameof(ruleEngine));
+        _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
         _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Loads every namespace accessible to the current caller into a lookup dictionary, used to
+    /// resolve <see cref="RuleNamespaceScope"/> for rule responses without an N+1 namespace fetch
+    /// per rule.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, Core.Entities.Namespace>> LoadNamespaceLookupAsync(
+        CancellationToken cancellationToken)
+    {
+        var result = await _namespaceRepository.GetByOwnerAsync(OwnerId, AllowedNamespaceIds, cancellationToken);
+        return result.IsSuccess
+            ? result.Value.ToDictionary(n => n.Id)
+            : new Dictionary<Guid, Core.Entities.Namespace>();
     }
 
     // ── 1. GET /api/v1/dlq/rules — List all rules ──────────────
@@ -86,6 +103,8 @@ public sealed class RulesController : ApiControllerBase
                 .Where(m => m.Status == DlqMessageStatus.Active && m.OwnerId == OwnerId)
                 .ToListAsync(cancellationToken);
 
+            var namespaceLookup = await LoadNamespaceLookupAsync(cancellationToken);
+
             var response = rules.Select(rule =>
             {
                 var conditions = DeserializeOrDefault<List<RuleCondition>>(rule.ConditionsJson) ?? [];
@@ -99,7 +118,7 @@ public sealed class RulesController : ApiControllerBase
                             pendingCount++;
                     }
                 }
-                return MapToResponse(rule, pendingCount);
+                return MapToResponse(rule, pendingCount, namespaceLookup);
             }).ToList();
             return Ok(response);
         }
@@ -165,7 +184,8 @@ public sealed class RulesController : ApiControllerBase
             }
         }
 
-        return Ok(MapToResponse(rule, pendingCount));
+        var namespaceLookup = await LoadNamespaceLookupAsync(cancellationToken);
+        return Ok(MapToResponse(rule, pendingCount, namespaceLookup));
     }
 
     // ── 3. POST /api/v1/dlq/rules — Create rule ────────────────
@@ -194,6 +214,17 @@ public sealed class RulesController : ApiControllerBase
                 return ToActionResult<RuleResponse>(
                     Error.Conflict(ErrorCodes.Rule.AlreadyExists, $"A rule named '{request.Name}' already exists"));
 
+            Core.Entities.Namespace? scopedNamespace = null;
+            if (request.NamespaceId.HasValue)
+            {
+                var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, request.NamespaceId.Value, cancellationToken);
+                if (namespaceResult.IsFailure)
+                    return ToActionResult<RuleResponse>(
+                        Error.Validation("Rule.NamespaceInvalid", $"Namespace '{request.NamespaceId}' does not exist or is not accessible."));
+
+                scopedNamespace = namespaceResult.Value;
+            }
+
             var entity = new AutoReplayRule
             {
                 Name = request.Name,
@@ -204,6 +235,7 @@ public sealed class RulesController : ApiControllerBase
                 ActionsJson = JsonSerializer.Serialize(request.Action, JsonOptions),
                 CreatedAt = DateTimeOffset.UtcNow,
                 MaxReplaysPerHour = request.MaxReplaysPerHour,
+                NamespaceId = request.NamespaceId,
             };
 
             _dbContext.AutoReplayRules.Add(entity);
@@ -218,10 +250,14 @@ public sealed class RulesController : ApiControllerBase
 
             _logger.LogInformation("Created auto-replay rule {RuleId}/{RuleName}", entity.Id, LogRedactor.SanitiseForLog(entity.Name));
 
+            var namespaceLookup = scopedNamespace is not null
+                ? new Dictionary<Guid, Core.Entities.Namespace> { [scopedNamespace.Id] = scopedNamespace }
+                : null;
+
             return CreatedAtAction(
                 nameof(GetById),
                 new { id = entity.Id },
-                MapToResponse(entity));
+                MapToResponse(entity, namespaceLookup: namespaceLookup));
         }
         catch (Exception ex)
         {
@@ -279,6 +315,17 @@ public sealed class RulesController : ApiControllerBase
                 return ToActionResult<RuleResponse>(
                     Error.Conflict(ErrorCodes.Rule.AlreadyExists, $"A rule named '{request.Name}' already exists"));
 
+            Core.Entities.Namespace? scopedNamespace = null;
+            if (request.NamespaceId.HasValue)
+            {
+                var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, request.NamespaceId.Value, cancellationToken);
+                if (namespaceResult.IsFailure)
+                    return ToActionResult<RuleResponse>(
+                        Error.Validation("Rule.NamespaceInvalid", $"Namespace '{request.NamespaceId}' does not exist or is not accessible."));
+
+                scopedNamespace = namespaceResult.Value;
+            }
+
             // Update properties in-place — preserves the same ID, stats, and external references.
             var wasEnabled = rule.Enabled;
             rule.Name = request.Name;
@@ -289,6 +336,7 @@ public sealed class RulesController : ApiControllerBase
             rule.ActionsJson = JsonSerializer.Serialize(request.Action, JsonOptions);
             rule.UpdatedAt = DateTimeOffset.UtcNow;
             rule.MaxReplaysPerHour = request.MaxReplaysPerHour;
+            rule.NamespaceId = request.NamespaceId;
 
             await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -301,7 +349,11 @@ public sealed class RulesController : ApiControllerBase
 
             _logger.LogInformation("Updated auto-replay rule {RuleId}/{RuleName}", rule.Id, LogRedactor.SanitiseForLog(rule.Name));
 
-            return Ok(MapToResponse(rule));
+            var namespaceLookup = scopedNamespace is not null
+                ? new Dictionary<Guid, Core.Entities.Namespace> { [scopedNamespace.Id] = scopedNamespace }
+                : null;
+
+            return Ok(MapToResponse(rule, namespaceLookup: namespaceLookup));
         }
         catch (Exception ex)
         {
@@ -427,7 +479,8 @@ public sealed class RulesController : ApiControllerBase
         _logger.LogInformation(
             "Toggled rule {RuleId} to {State}", rule.Id, rule.Enabled ? "enabled" : "disabled");
 
-        return Ok(MapToResponse(rule));
+        var namespaceLookup = await LoadNamespaceLookupAsync(cancellationToken);
+        return Ok(MapToResponse(rule, namespaceLookup: namespaceLookup));
     }
 
     // ── 7a. POST /api/v1/dlq/rules/{id}/replay-all — Replay all matched messages ──
@@ -493,6 +546,20 @@ public sealed class RulesController : ApiControllerBase
                 return ToActionResult<ReplayAllResponse>(
                     Error.Validation("Rule.Disabled", "Cannot replay-all with a disabled rule. Enable it first."));
 
+            // Namespace-scoped rules fail closed: if the scoped namespace no longer resolves (or
+            // is outside the caller's access), refuse rather than silently falling back to Global.
+            // Resolved via the service locator, matching every other namespace lookup in this
+            // action (below) rather than the constructor-injected repository used elsewhere in
+            // this controller.
+            if (rule.NamespaceId.HasValue)
+            {
+                var scopedNsRepo = HttpContext.RequestServices.GetRequiredService<INamespaceRepository>();
+                var scopedNamespaceResult = await GetOwnedNamespaceAsync(scopedNsRepo, rule.NamespaceId.Value, cancellationToken);
+                if (scopedNamespaceResult.IsFailure)
+                    return ToActionResult<ReplayAllResponse>(
+                        Error.Validation("Rule.NamespaceUnresolved", $"Rule '{rule.Name}' is scoped to a namespace that no longer resolves; refusing to replay-all."));
+            }
+
             _auditLogger.LogCriticalAction(
                 HttpContext,
                 OwnerId,
@@ -506,9 +573,15 @@ public sealed class RulesController : ApiControllerBase
             // Note: autoReplay flag is no longer required for manual Replay All.
             // User explicitly clicks Replay All — that IS their intent.
 
-            // Load all Active DLQ messages
-            var activeMessages = await _dbContext.DlqMessages
-                .Where(m => m.Status == DlqMessageStatus.Active && m.OwnerId == OwnerId)
+            // Load all Active DLQ messages, narrowed to the rule's own namespace scope when set —
+            // NULL (Global) matches every namespace, unchanged from today's behavior.
+            var activeMessagesQuery = _dbContext.DlqMessages
+                .Where(m => m.Status == DlqMessageStatus.Active && m.OwnerId == OwnerId);
+
+            if (rule.NamespaceId.HasValue)
+                activeMessagesQuery = activeMessagesQuery.Where(m => m.NamespaceId == rule.NamespaceId.Value);
+
+            var activeMessages = await activeMessagesQuery
                 .OrderBy(m => m.DetectedAtUtc)
                 .ToListAsync(ct);
 
@@ -1051,7 +1124,10 @@ public sealed class RulesController : ApiControllerBase
         }
     }
 
-    private RuleResponse MapToResponse(AutoReplayRule rule, int? pendingMatchCount = null)
+    private RuleResponse MapToResponse(
+        AutoReplayRule rule,
+        int? pendingMatchCount = null,
+        IReadOnlyDictionary<Guid, Core.Entities.Namespace>? namespaceLookup = null)
     {
         var conditions = DeserializeOrDefault<List<RuleCondition>>(rule.ConditionsJson) ?? [];
         var action = DeserializeOrDefault<RuleAction>(rule.ActionsJson) ?? new RuleAction();
@@ -1074,7 +1150,22 @@ public sealed class RulesController : ApiControllerBase
             MaxReplaysPerHour: rule.MaxReplaysPerHour,
             PendingMatchCount: pendingMatchCount ?? 0,
             DisabledReason: rule.DisabledReason,
-            DisabledReasonDetail: rule.DisabledReasonDetail);
+            DisabledReasonDetail: rule.DisabledReasonDetail,
+            NamespaceId: rule.NamespaceId,
+            NamespaceScope: ResolveNamespaceScope(rule.NamespaceId, namespaceLookup));
+    }
+
+    private static RuleNamespaceScope ResolveNamespaceScope(
+        Guid? namespaceId,
+        IReadOnlyDictionary<Guid, Core.Entities.Namespace>? namespaceLookup)
+    {
+        if (namespaceId is null)
+            return RuleNamespaceScope.Global;
+
+        if (namespaceLookup is not null && namespaceLookup.TryGetValue(namespaceId.Value, out var ns))
+            return new RuleNamespaceScope("Namespace", ns.DisplayName ?? ns.Name, ns.Provider, ns.Environment);
+
+        return RuleNamespaceScope.Unresolved;
     }
 
     private static T? DeserializeOrDefault<T>(string json)
@@ -1365,6 +1456,7 @@ public sealed class RulesController : ApiControllerBase
                     ActionsJson = JsonSerializer.Serialize(candidate.Action, JsonOptions),
                     CreatedAt = DateTimeOffset.UtcNow,
                     MaxReplaysPerHour = 50,
+                    NamespaceId = namespaceId,
                 };
 
                 _dbContext.AutoReplayRules.Add(entity);
@@ -1388,8 +1480,9 @@ public sealed class RulesController : ApiControllerBase
                 await _dbContext.SaveChangesAsync(cancellationToken);
             }
 
+            var namespaceLookup = await LoadNamespaceLookupAsync(cancellationToken);
             var createdResponses = created
-                .Select(x => MapToResponse(x.Entity, x.PendingCount))
+                .Select(x => MapToResponse(x.Entity, x.PendingCount, namespaceLookup))
                 .ToList();
 
             _logger.LogInformation(

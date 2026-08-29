@@ -359,7 +359,9 @@ public class CoreDtoTests
             MaxReplaysPerHour: 100,
             PendingMatchCount: 0,
             DisabledReason: null,
-            DisabledReasonDetail: null);
+            DisabledReasonDetail: null,
+            NamespaceId: null,
+            NamespaceScope: RuleNamespaceScope.Global);
 
         response.Id.Should().Be(1);
         response.Name.Should().Be("Timeout Rule");

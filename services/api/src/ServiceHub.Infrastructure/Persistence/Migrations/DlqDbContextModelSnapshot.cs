@@ -162,6 +162,9 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("NamespaceId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("OwnerId")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -174,6 +177,8 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "NamespaceId");
 
                     b.ToTable("AutoReplayRules", (string)null);
                 });
@@ -641,6 +646,70 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                     b.ToTable("FailureKnowledgeHistory", (string)null);
                 });
 
+            modelBuilder.Entity("ServiceHub.Core.Entities.GovernanceGrant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("GrantedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("GrantedByIdentity")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("GranteeIdentity")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("GranteeKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("NamespaceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PillarKind")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RevokedByIdentity")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "GranteeIdentity")
+                        .HasDatabaseName("IX_GovernanceGrants_OwnerId_GranteeIdentity");
+
+                    b.HasIndex("OwnerId", "NamespaceId")
+                        .HasDatabaseName("IX_GovernanceGrants_OwnerId_NamespaceId");
+
+                    b.HasIndex("OwnerId", "GranteeIdentity", "NamespaceId", "PillarKind")
+                        .IsUnique()
+                        .HasDatabaseName("IX_GovernanceGrants_ActiveScope_Unique")
+                        .HasFilter("[RevokedAt] IS NULL");
+
+                    b.ToTable("GovernanceGrants", (string)null);
+                });
+
             modelBuilder.Entity("ServiceHub.Core.Entities.MessageFeatureRecord", b =>
                 {
                     b.Property<long>("Id")
@@ -740,6 +809,117 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                     b.ToTable("MessageFeatureRecords", (string)null);
                 });
 
+            modelBuilder.Entity("ServiceHub.Core.Entities.Namespace", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AuthType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AwsRegion")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConnectionString")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("ConnectionStringEncrypted");
+
+                    b.Property<string>("ConnectionStringHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Environment")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("GcpProjectId")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("HasListenPermission")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("HasManagePermission")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("HasSendPermission")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastConnectionTestAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool?>("LastConnectionTestSucceeded")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("ModifiedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsActive")
+                        .HasDatabaseName("IX_Namespaces_IsActive");
+
+                    b.HasIndex("OwnerId")
+                        .HasDatabaseName("IX_Namespaces_OwnerId");
+
+                    b.HasIndex("OwnerId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Namespaces_OwnerId_Name");
+
+                    b.ToTable("Namespaces", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceHub.Core.Entities.NamespaceSharedOwner", b =>
+                {
+                    b.Property<Guid>("NamespaceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("NamespaceId", "OwnerId");
+
+                    b.HasIndex("OwnerId")
+                        .HasDatabaseName("IX_NamespaceSharedOwners_OwnerId");
+
+                    b.ToTable("NamespaceSharedOwners", (string)null);
+                });
+
             modelBuilder.Entity("ServiceHub.Core.Entities.NamespaceSignature", b =>
                 {
                     b.Property<long>("Id")
@@ -788,6 +968,163 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("IX_NamespaceSignatures_Owner_Namespace_SignatureHash");
 
                     b.ToTable("NamespaceSignatures", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceHub.Core.Entities.PlaybookEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Disposition")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EnvironmentSnapshot")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EvidenceRefJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("LastEventSeq")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("NamespaceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NamespaceNameSnapshot")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PillarKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProposalJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProposalKind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ProposedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProposerIdentity")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProposerKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProviderSnapshot")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("RelatedRecoveryOperationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SignatureHashSnapshot")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "NamespaceId")
+                        .HasDatabaseName("IX_PlaybookEntries_OwnerId_NamespaceId");
+
+                    b.HasIndex("OwnerId", "PillarKind")
+                        .HasDatabaseName("IX_PlaybookEntries_OwnerId_PillarKind");
+
+                    b.HasIndex("OwnerId", "State")
+                        .HasDatabaseName("IX_PlaybookEntries_OwnerId_State");
+
+                    b.ToTable("PlaybookEntries", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceHub.Core.Entities.PlaybookEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActorIdentity")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActorKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DetailJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EntryHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PrevHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("Seq")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EntryId", "Seq")
+                        .HasDatabaseName("IX_PlaybookEvents_EntryId_Seq");
+
+                    b.HasIndex("OwnerId", "Seq")
+                        .IsUnique()
+                        .HasDatabaseName("IX_PlaybookEvents_OwnerId_Seq");
+
+                    b.ToTable("PlaybookEvents", (string)null);
                 });
 
             modelBuilder.Entity("ServiceHub.Core.Entities.RecoveryEvent", b =>
@@ -1349,6 +1686,15 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("DlqMessage");
+                });
+
+            modelBuilder.Entity("ServiceHub.Core.Entities.NamespaceSharedOwner", b =>
+                {
+                    b.HasOne("ServiceHub.Core.Entities.Namespace", null)
+                        .WithMany()
+                        .HasForeignKey("NamespaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("ServiceHub.Core.Entities.ReplayHistory", b =>

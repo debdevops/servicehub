@@ -26,6 +26,7 @@ public class RulesControllerTests : IDisposable
 {
     private readonly DlqDbContext _dbContext;
     private readonly Mock<IRuleEngine> _ruleEngine = new();
+    private readonly Mock<INamespaceRepository> _namespaceRepository = new();
     private readonly Mock<ILogger<RulesController>> _logger = new();
     private readonly Mock<IAuditLogger> _auditLogger = new();
     private readonly RulesController _controller;
@@ -46,7 +47,11 @@ public class RulesControllerTests : IDisposable
         _dbContext.Database.OpenConnection();
         _dbContext.Database.EnsureCreated();
 
-        _controller = new RulesController(_dbContext, _ruleEngine.Object, _logger.Object, _auditLogger.Object);
+        _namespaceRepository
+            .Setup(r => r.GetByOwnerAsync(It.IsAny<string>(), It.IsAny<IReadOnlySet<Guid>?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new List<Namespace>()));
+
+        _controller = new RulesController(_dbContext, _ruleEngine.Object, _namespaceRepository.Object, _logger.Object, _auditLogger.Object);
         _controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext
@@ -131,21 +136,28 @@ public class RulesControllerTests : IDisposable
     [Fact]
     public void Constructor_NullDbContext_Throws()
     {
-        var act = () => new RulesController(null!, _ruleEngine.Object, _logger.Object);
+        var act = () => new RulesController(null!, _ruleEngine.Object, _namespaceRepository.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("dbContext");
     }
 
     [Fact]
     public void Constructor_NullRuleEngine_Throws()
     {
-        var act = () => new RulesController(_dbContext, null!, _logger.Object);
+        var act = () => new RulesController(_dbContext, null!, _namespaceRepository.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("ruleEngine");
+    }
+
+    [Fact]
+    public void Constructor_NullNamespaceRepository_Throws()
+    {
+        var act = () => new RulesController(_dbContext, _ruleEngine.Object, null!, _logger.Object);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("namespaceRepository");
     }
 
     [Fact]
     public void Constructor_NullLogger_Throws()
     {
-        var act = () => new RulesController(_dbContext, _ruleEngine.Object, null!);
+        var act = () => new RulesController(_dbContext, _ruleEngine.Object, _namespaceRepository.Object, null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
 
@@ -281,7 +293,85 @@ public class RulesControllerTests : IDisposable
             It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<long?>(), It.IsAny<string?>()), Times.Never);
     }
 
+    [Fact]
+    public async Task Create_WithValidNamespaceId_PersistsScopeAndReturnsResolvedScope()
+    {
+        var ns = CreateNamespace();
+        _namespaceRepository
+            .Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var request = CreateRuleRequest() with { NamespaceId = ns.Id };
+        var result = await _controller.Create(request);
+
+        var created = result.Result.Should().BeOfType<CreatedAtActionResult>().Subject;
+        var response = created.Value.Should().BeOfType<RuleResponse>().Subject;
+        response.NamespaceId.Should().Be(ns.Id);
+        response.NamespaceScope.Kind.Should().Be("Namespace");
+        response.NamespaceScope.Name.Should().Be(ns.Name);
+
+        var persisted = await _dbContext.AutoReplayRules.SingleAsync(r => r.Id == response.Id);
+        persisted.NamespaceId.Should().Be(ns.Id);
+    }
+
+    [Fact]
+    public async Task Create_WithInvalidNamespaceId_ReturnsValidationError()
+    {
+        var unknownId = Guid.NewGuid();
+        _namespaceRepository
+            .Setup(r => r.GetByIdAsync(unknownId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("NS_NOT_FOUND", "not found")));
+
+        var request = CreateRuleRequest() with { NamespaceId = unknownId };
+        var result = await _controller.Create(request);
+
+        result.Result.Should().NotBeOfType<CreatedAtActionResult>();
+        (await _dbContext.AutoReplayRules.AnyAsync()).Should().BeFalse();
+    }
+
     // ── Update ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task Update_WithValidNamespaceId_PersistsScope()
+    {
+        var rule = CreateRule();
+        _dbContext.AutoReplayRules.Add(rule);
+        await _dbContext.SaveChangesAsync();
+
+        var ns = CreateNamespace();
+        _namespaceRepository
+            .Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var request = CreateRuleRequest("Updated Rule") with { NamespaceId = ns.Id };
+        var result = await _controller.Update(rule.Id, request);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RuleResponse>().Subject;
+        response.NamespaceId.Should().Be(ns.Id);
+        response.NamespaceScope.Kind.Should().Be("Namespace");
+    }
+
+    [Fact]
+    public async Task Update_WithInvalidNamespaceId_ReturnsValidationError()
+    {
+        var rule = CreateRule();
+        _dbContext.AutoReplayRules.Add(rule);
+        await _dbContext.SaveChangesAsync();
+
+        var unknownId = Guid.NewGuid();
+        _namespaceRepository
+            .Setup(r => r.GetByIdAsync(unknownId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("NS_NOT_FOUND", "not found")));
+
+        var request = CreateRuleRequest("Updated Rule") with { NamespaceId = unknownId };
+        var result = await _controller.Update(rule.Id, request);
+
+        result.Result.Should().NotBeOfType<OkObjectResult>();
+        var persisted = await _dbContext.AutoReplayRules.AsNoTracking().SingleAsync(r => r.Id == rule.Id);
+        persisted.NamespaceId.Should().BeNull();
+        persisted.Name.Should().Be("Test Rule");
+    }
 
     [Fact]
     public async Task Update_Exists_ReturnsUpdated()
@@ -656,6 +746,12 @@ public class RulesControllerTests : IDisposable
         response.RulesCreated.Should().BeGreaterThan(0);
         response.Rules.Should().NotBeEmpty();
         response.Rules.Should().OnlyContain(r => r.Id > 0);
+
+        // M1 regression: the namespaceId query param was previously computed and then discarded —
+        // generated rules must actually persist the namespace they were analysed for.
+        response.Rules.Should().OnlyContain(r => r.NamespaceId == namespaceId);
+        var persisted = await _dbContext.AutoReplayRules.Where(r => r.Name.StartsWith("Auto:")).ToListAsync();
+        persisted.Should().OnlyContain(r => r.NamespaceId == namespaceId);
     }
 
     [Fact]
@@ -1096,5 +1192,96 @@ public class RulesControllerTests : IDisposable
 
         var secondLedgerEntries = await _dbContext.RecoveryLedgerEntries.AsNoTracking().Where(e => e.DlqMessageId == second.Id).ToListAsync();
         secondLedgerEntries.Should().BeEmpty();
+    }
+
+    // ── ReplayAll namespace scoping (M1) ─────────────────────
+
+    [Fact]
+    public async Task ReplayAll_NamespaceScopedRule_NeverReplaysAnotherNamespacesMessage_EvenWithSameEntityName()
+    {
+        // Two namespaces sharing an entity name ("orders" in both) — a rule scoped to one must
+        // never match the other's messages, even though the pure content matcher (mocked here to
+        // always match) can't tell them apart on its own.
+        var scopedNs = CreateNamespace("scoped-ns", CloudProviderType.Azure);
+        var foreignNs = CreateNamespace("foreign-ns", CloudProviderType.Aws);
+
+        var rule = CreateRule();
+        rule.NamespaceId = scopedNs.Id;
+        _dbContext.AutoReplayRules.Add(rule);
+
+        var scopedMessage = new DlqMessage
+        {
+            MessageId = "scoped-msg", SequenceNumber = 1, BodyHash = "hash-scoped",
+            NamespaceId = scopedNs.Id, OwnerId = TestConstants.TestOwnerId, EntityName = "orders",
+            EntityType = ServiceBusEntityType.Queue, EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-2),
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2), Status = DlqMessageStatus.Active,
+        };
+        var foreignMessage = new DlqMessage
+        {
+            MessageId = "foreign-msg", SequenceNumber = 1, BodyHash = "hash-foreign",
+            NamespaceId = foreignNs.Id, OwnerId = TestConstants.TestOwnerId, EntityName = "orders",
+            EntityType = ServiceBusEntityType.Queue, EnqueuedTimeUtc = DateTimeOffset.UtcNow.AddMinutes(-2),
+            DetectedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2), Status = DlqMessageStatus.Active,
+        };
+        _dbContext.DlqMessages.AddRange(scopedMessage, foreignMessage);
+        await _dbContext.SaveChangesAsync();
+
+        _ruleEngine.Setup(r => r.Evaluate(It.IsAny<DlqMessage>(), It.IsAny<IReadOnlyList<RuleCondition>>()))
+            .Returns(new RuleMatchResult { MessageId = 0, ServiceBusMessageId = "any", EntityName = "orders", IsMatch = true });
+
+        var messageOperations = new Mock<IMessageOperationsService>();
+        messageOperations
+            .Setup(m => m.ReplayMessageAsync(scopedNs.Id, "orders", null, scopedMessage.SequenceNumber, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        SetUpReplayAllServices(scopedNs, messageOperations);
+        SetIntentHeaders(IntentHeaders.IntentReplayAllRules);
+
+        var result = await _controller.ReplayAll(rule.Id);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<ReplayAllResponse>().Subject;
+        response.TotalMatched.Should().Be(1);
+        response.Replayed.Should().Be(1);
+
+        messageOperations.Verify(
+            m => m.ReplayMessageAsync(foreignNs.Id, It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        var reloadedForeign = await _dbContext.DlqMessages.AsNoTracking().SingleAsync(m => m.Id == foreignMessage.Id);
+        reloadedForeign.Status.Should().Be(DlqMessageStatus.Active);
+    }
+
+    [Fact]
+    public async Task ReplayAll_NamespaceScopedRule_UnresolvedNamespace_RefusesFailClosed()
+    {
+        var rule = CreateRule();
+        rule.NamespaceId = Guid.NewGuid(); // never registered / no longer resolves
+        _dbContext.AutoReplayRules.Add(rule);
+        await _dbContext.SaveChangesAsync();
+
+        var namespaceRepository = new Mock<INamespaceRepository>();
+        namespaceRepository
+            .Setup(r => r.GetByIdAsync(rule.NamespaceId.Value, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("NS_NOT_FOUND", "not found")));
+
+        var messageOperations = new Mock<IMessageOperationsService>();
+        var services = new ServiceCollection();
+        services.AddSingleton(namespaceRepository.Object);
+        services.AddSingleton(messageOperations.Object);
+        services.AddSingleton<IRecoveryLedger>(new RecoveryLedgerService(_dbContext));
+        services.AddSingleton<IRecoveryEligibilityGate>(
+            new RecoveryEligibilityGate(new RecoveryLedgerService(_dbContext), NullLogger<RecoveryEligibilityGate>.Instance));
+        services.AddSingleton(Mock.Of<IAutoReplayExecutor>());
+        _controller.ControllerContext.HttpContext.RequestServices = services.BuildServiceProvider();
+
+        SetIntentHeaders(IntentHeaders.IntentReplayAllRules);
+
+        var result = await _controller.ReplayAll(rule.Id);
+
+        result.Result.Should().NotBeOfType<OkObjectResult>();
+        messageOperations.Verify(
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 }
