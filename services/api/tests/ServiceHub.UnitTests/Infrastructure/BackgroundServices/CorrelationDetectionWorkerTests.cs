@@ -139,11 +139,11 @@ public sealed class CorrelationDetectionWorkerTests
             .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new[] { anomalyB }));
 
         var correlationFinding = CorrelationFinding.Create(
-            "key_owner1", CloudProviderType.Azure,
+            "key_owner1",
             new[]
             {
-                new CorrelationMember(nsA.Id, "queue-a", AnomalyType.HighMessageVolume, 80),
-                new CorrelationMember(nsB.Id, "queue-b", AnomalyType.HighMessageVolume, 60),
+                new CorrelationMember(nsA.Id, "queue-a", AnomalyType.HighMessageVolume, 80, CloudProviderType.Azure),
+                new CorrelationMember(nsB.Id, "queue-b", AnomalyType.HighMessageVolume, 60, CloudProviderType.Azure),
             },
             80, "correlated");
 
@@ -225,8 +225,8 @@ public sealed class CorrelationDetectionWorkerTests
             .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new[] { anomaly }));
 
         var correlation = CorrelationFinding.Create(
-            "key_owner1", CloudProviderType.Azure,
-            new[] { new CorrelationMember(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 80) },
+            "key_owner1",
+            new[] { new CorrelationMember(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 80, CloudProviderType.Azure) },
             80, "correlated");
         _correlationDetectionMock.Setup(c => c.DetectCorrelations(It.IsAny<IReadOnlyList<AnomalyObservation>>()))
             .Returns(new[] { correlation });
@@ -254,8 +254,8 @@ public sealed class CorrelationDetectionWorkerTests
             .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new[] { anomaly }));
 
         var correlation = CorrelationFinding.Create(
-            "key_owner1", CloudProviderType.Azure,
-            new[] { new CorrelationMember(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 40) },
+            "key_owner1",
+            new[] { new CorrelationMember(ns.Id, "queue-1", AnomalyType.HighMessageVolume, 40, CloudProviderType.Azure) },
             40, "minor correlation");
         _correlationDetectionMock.Setup(c => c.DetectCorrelations(It.IsAny<IReadOnlyList<AnomalyObservation>>()))
             .Returns(new[] { correlation });

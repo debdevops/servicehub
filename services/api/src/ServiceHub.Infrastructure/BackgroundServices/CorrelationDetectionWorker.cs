@@ -11,11 +11,11 @@ using ServiceHub.Core.Models;
 namespace ServiceHub.Infrastructure.BackgroundServices;
 
 /// <summary>
-/// Background worker that periodically runs same-provider proactive correlation (roadmap §5.D,
-/// C1) over every active namespace: it re-runs the same deterministic anomaly detection I3
-/// already established per namespace, then groups the results across namespaces that share an
-/// owner and cloud provider into <c>CorrelationFinding</c>s, cached for retrieval via
-/// <c>GET /v1/correlation-findings/{id}</c>.
+/// Background worker that periodically runs proactive correlation (roadmap §5.D, C1 same-provider,
+/// generalized by C2 cross-cloud) over every active namespace: it re-runs the same deterministic
+/// anomaly detection I3 already established per namespace, then groups the results across
+/// namespaces that share an owner — regardless of cloud provider — into <c>CorrelationFinding</c>s,
+/// cached for retrieval via <c>GET /v1/correlation-findings/{id}</c>.
 /// </summary>
 public sealed class CorrelationDetectionWorker : BackgroundService
 {

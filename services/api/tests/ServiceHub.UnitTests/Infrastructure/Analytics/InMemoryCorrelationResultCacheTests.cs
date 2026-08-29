@@ -12,11 +12,10 @@ public sealed class InMemoryCorrelationResultCacheTests
     private static CorrelationFinding CreateFinding() =>
         CorrelationFinding.Create(
             "key_testowner",
-            CloudProviderType.Azure,
             new[]
             {
-                new CorrelationMember(Guid.NewGuid(), "queue-1", AnomalyType.HighMessageVolume, 80),
-                new CorrelationMember(Guid.NewGuid(), "queue-2", AnomalyType.HighMessageVolume, 70),
+                new CorrelationMember(Guid.NewGuid(), "queue-1", AnomalyType.HighMessageVolume, 80, CloudProviderType.Azure),
+                new CorrelationMember(Guid.NewGuid(), "queue-2", AnomalyType.HighMessageVolume, 70, CloudProviderType.Azure),
             },
             80,
             "correlated spike");

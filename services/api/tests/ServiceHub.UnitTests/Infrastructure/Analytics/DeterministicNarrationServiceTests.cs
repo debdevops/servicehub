@@ -96,10 +96,9 @@ public sealed class DeterministicNarrationServiceTests
 
         var correlation = CorrelationFinding.Create(
             "owner-1",
-            CloudProviderType.Azure,
             [
-                new CorrelationMember(nsA.Id, "queue-a", AnomalyType.HighMessageVolume, 70),
-                new CorrelationMember(nsB.Id, "queue-b", AnomalyType.HighMessageVolume, 80),
+                new CorrelationMember(nsA.Id, "queue-a", AnomalyType.HighMessageVolume, 70, CloudProviderType.Azure),
+                new CorrelationMember(nsB.Id, "queue-b", AnomalyType.HighMessageVolume, 80, CloudProviderType.Azure),
             ],
             80,
             "correlated spike");
@@ -117,6 +116,31 @@ public sealed class DeterministicNarrationServiceTests
         narration.AccessNamespaceIds.Should().BeEquivalentTo([nsA.Id, nsB.Id]);
         narration.Severity.Should().Be(80);
         narration.ContributingCorrelationFindingIds.Should().ContainSingle().Which.Should().Be(correlation.Id);
+    }
+
+    [Fact]
+    public void GenerateNarrations_CrossProviderCorrelationFinding_HeadlineMentionsBothProviders()
+    {
+        var nsA = CreateNamespace("ns-a");
+        var nsB = CreateNamespace("ns-b");
+
+        var correlation = CorrelationFinding.Create(
+            "owner-1",
+            [
+                new CorrelationMember(nsA.Id, "queue-a", AnomalyType.HighMessageVolume, 70, CloudProviderType.Azure),
+                new CorrelationMember(nsB.Id, "queue-b", AnomalyType.HighMessageVolume, 80, CloudProviderType.Aws),
+            ],
+            80,
+            "cross-cloud correlated spike");
+
+        var result = _sut.GenerateNarrations(
+            new Dictionary<Guid, Namespace> { [nsA.Id] = nsA, [nsB.Id] = nsB },
+            Array.Empty<Anomaly>(),
+            Array.Empty<DriftFinding>(),
+            [correlation]);
+
+        result.Should().HaveCount(1);
+        result[0].Headline.Should().Contain("Azure").And.Contain("Aws");
     }
 
     [Fact]
