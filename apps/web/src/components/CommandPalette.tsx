@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Search, LayoutDashboard, MessageSquare, Clock, GitMerge,
   AlertCircle, RefreshCw, BarChart2, HelpCircle, Plug,
-  Database, ChevronRight, X, Layers, Cloud, Shield, CheckCircle2, Gauge
+  Database, ChevronRight, X, Layers, Cloud, Shield, CheckCircle2, Gauge, Sparkles
 } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
@@ -104,6 +104,14 @@ const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
     keywords: 'autonomy trust level standing unattended circuit breaker',
   },
   {
+    id: 'page-insights',
+    label: 'Proactive Insights',
+    description: 'Auto-narration, correlation findings, backlog forecasts, contract violations',
+    group: 'Pages',
+    icon: <Sparkles className="w-4 h-4" />,
+    keywords: 'narration narrate correlation forecast backlog contract violation drift push proactive',
+  },
+  {
     id: 'page-health',
     label: 'System Health',
     description: 'API and service health status',
@@ -156,6 +164,7 @@ const PAGE_ROUTES: Record<string, string> = {
   'page-rules': '/rules',
   'page-approval-queue': '/approval-queue',
   'page-autonomy-dashboard': '/autonomy-dashboard',
+  'page-insights': '/insights',
   'page-health': '/health',
   'page-audit': '/audit',
   'page-security': '/security',

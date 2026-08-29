@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Gauge,
+  Sparkles,
 } from 'lucide-react';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 
@@ -49,6 +50,7 @@ export function IconRail() {
     { to: `${navPrefix}/rules`, label: 'Auto-Replay Rules', icon: Zap },
     { to: `${navPrefix}/approval-queue`, label: 'Approval Queue', icon: CheckCircle2 },
     { to: `${navPrefix}/autonomy-dashboard`, label: 'Autonomy Dashboard', icon: Gauge },
+    { to: `${navPrefix}/insights`, label: 'Proactive Insights', icon: Sparkles },
     { to: `${navPrefix}/cross-cloud-trace`, label: 'Multi-Cloud Trace', icon: Route },
     { to: `${navPrefix}/health`, label: 'System Health', icon: Activity },
     { to: `${navPrefix}/audit`, label: 'Audit Trail', icon: ScrollText },
