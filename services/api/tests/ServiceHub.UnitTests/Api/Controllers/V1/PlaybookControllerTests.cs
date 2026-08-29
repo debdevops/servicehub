@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Moq;
 using ServiceHub.Api.Controllers.V1;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
@@ -12,6 +13,7 @@ using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.PlaybookLedger;
 using ServiceHub.Infrastructure.RecoveryLedger;
+using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Api.Controllers.V1;
 
@@ -25,6 +27,7 @@ public sealed class PlaybookControllerTests : IDisposable
     private readonly ICorrelationAccountabilityService _correlationAccountability;
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly IBacktestService _backtestService;
+    private readonly IGovernanceAccessEvaluator _governanceAccessEvaluator;
     private readonly PlaybookController _controller;
 
     public PlaybookControllerTests()
@@ -40,10 +43,20 @@ public sealed class PlaybookControllerTests : IDisposable
         _correlationAccountability = new CorrelationAccountabilityService(_playbookLedger);
         _recoveryLedger = new RecoveryLedgerService(_dbContext);
         _backtestService = new BacktestService(_playbookLedger, _recoveryLedger);
+
+        var governanceAccessEvaluatorMock = new Mock<IGovernanceAccessEvaluator>();
+        governanceAccessEvaluatorMock
+            .Setup(e => e.EvaluateAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<GovernanceRole>(),
+                It.IsAny<Guid?>(), It.IsAny<PillarKind?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+        _governanceAccessEvaluator = governanceAccessEvaluatorMock.Object;
+
         _controller = CreateController(OwnerA);
     }
 
-    private PlaybookController CreateController(string ownerId) => new(_playbookLedger, _correlationAccountability, _backtestService)
+    private PlaybookController CreateController(string ownerId) =>
+        new(_playbookLedger, _correlationAccountability, _backtestService, _governanceAccessEvaluator)
     {
         ControllerContext = new ControllerContext
         {
@@ -84,22 +97,29 @@ public sealed class PlaybookControllerTests : IDisposable
     [Fact]
     public void Constructor_NullPlaybookLedger_Throws()
     {
-        var act = () => new PlaybookController(null!, _correlationAccountability, _backtestService);
+        var act = () => new PlaybookController(null!, _correlationAccountability, _backtestService, _governanceAccessEvaluator);
         act.Should().Throw<ArgumentNullException>().WithParameterName("playbookLedger");
     }
 
     [Fact]
     public void Constructor_NullCorrelationAccountability_Throws()
     {
-        var act = () => new PlaybookController(_playbookLedger, null!, _backtestService);
+        var act = () => new PlaybookController(_playbookLedger, null!, _backtestService, _governanceAccessEvaluator);
         act.Should().Throw<ArgumentNullException>().WithParameterName("correlationAccountability");
     }
 
     [Fact]
     public void Constructor_NullBacktestService_Throws()
     {
-        var act = () => new PlaybookController(_playbookLedger, _correlationAccountability, null!);
+        var act = () => new PlaybookController(_playbookLedger, _correlationAccountability, null!, _governanceAccessEvaluator);
         act.Should().Throw<ArgumentNullException>().WithParameterName("backtestService");
+    }
+
+    [Fact]
+    public void Constructor_NullGovernanceAccessEvaluator_Throws()
+    {
+        var act = () => new PlaybookController(_playbookLedger, _correlationAccountability, _backtestService, null!);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("governanceAccessEvaluator");
     }
 
     // ── GetEntries ──────────────────────────────────────────────────
@@ -202,6 +222,22 @@ public sealed class PlaybookControllerTests : IDisposable
         result.Result.Should().BeOfType<ConflictObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status409Conflict);
     }
 
+    [Fact]
+    public async Task MarkUnderReview_InsufficientGovernanceRole_ReturnsForbidden()
+    {
+        var entryId = await ProposeEntryAsync(OwnerA);
+        var evaluatorMock = Mock.Get(_governanceAccessEvaluator);
+        evaluatorMock
+            .Setup(e => e.EvaluateAsync(
+                OwnerA, It.IsAny<string>(), GovernanceRole.Approver,
+                It.IsAny<Guid?>(), PillarKind.Investigate, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Forbidden("Governance.InsufficientRole", "denied")));
+
+        var result = await _controller.MarkUnderReview(entryId);
+
+        result.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
     // ── Disposition ─────────────────────────────────────────────────
 
     [Fact]
@@ -246,7 +282,27 @@ public sealed class PlaybookControllerTests : IDisposable
 
         var result = await _controller.Disposition(entryId, new DispositionPlaybookEntryRequest(PlaybookDisposition.Approved, null));
 
-        result.Result.Should().BeOfType<NotFoundObjectResult>();
+        // The Governance pre-check now loads the entry via the same owner-scoped GetEntryAsync
+        // GetEntryById uses (to resolve its NamespaceId/PillarKind before evaluating), so a
+        // cross-owner entry now short-circuits to the same plain NotFoundResult GetEntryById
+        // returns, before ever reaching IPlaybookLedger.DispositionAsync's own NotFound path.
+        result.Result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task Disposition_InsufficientGovernanceRole_ReturnsForbidden()
+    {
+        var entryId = await ProposeEntryAsync(OwnerA);
+        var evaluatorMock = Mock.Get(_governanceAccessEvaluator);
+        evaluatorMock
+            .Setup(e => e.EvaluateAsync(
+                OwnerA, It.IsAny<string>(), GovernanceRole.Approver,
+                It.IsAny<Guid?>(), PillarKind.Investigate, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Forbidden("Governance.InsufficientRole", "denied")));
+
+        var result = await _controller.Disposition(entryId, new DispositionPlaybookEntryRequest(PlaybookDisposition.Approved, null));
+
+        result.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
     }
 
     // ── VerifyChain ─────────────────────────────────────────────────

@@ -308,6 +308,7 @@ public static class DependencyInjection
         services.TryAddScoped<IDlqHistoryService, DlqHistoryService>();
         services.TryAddScoped<INamespaceSignatureLookupService, NamespaceSignatureLookupService>();
         services.TryAddScoped<IGovernanceGrantService, GovernanceGrantService>();
+        services.TryAddScoped<IGovernanceAccessEvaluator, Governance.GovernanceAccessEvaluator>();
         services.TryAddScoped<IPlaybookLedger, PlaybookLedgerService>();
         services.TryAddScoped<ICorrelationAccountabilityService, CorrelationAccountabilityService>();
         services.TryAddScoped<IBacktestService, BacktestService>();

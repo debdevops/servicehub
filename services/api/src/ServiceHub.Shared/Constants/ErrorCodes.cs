@@ -370,6 +370,9 @@ public static class ErrorCodes
 
         /// <summary>An active grant already exists for this exact (grantee, namespace, pillar) scope.</summary>
         public const string AlreadyExists = "Governance.AlreadyExists";
+
+        /// <summary>The caller's Governance role does not meet the action's required minimum.</summary>
+        public const string InsufficientRole = "Governance.InsufficientRole";
     }
 
     /// <summary>

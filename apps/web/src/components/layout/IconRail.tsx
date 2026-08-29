@@ -20,6 +20,7 @@ import {
   Gauge,
   Sparkles,
   ClipboardList,
+  Users,
 } from 'lucide-react';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 
@@ -57,6 +58,7 @@ export function IconRail() {
     { to: `${navPrefix}/audit`, label: 'Audit Trail', icon: ScrollText },
     { to: `${navPrefix}/recovery`, label: 'Recovery Evidence', icon: ShieldCheck },
     { to: `${navPrefix}/playbook`, label: 'Playbook Ledger', icon: ClipboardList },
+    { to: `${navPrefix}/governance`, label: 'Governance', icon: Users },
     { to: `${navPrefix}/security`, label: 'Security & Privacy', icon: Shield },
     { to: `${navPrefix}/help`, label: 'Help & Guide', icon: HelpCircle },
   ];

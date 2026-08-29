@@ -571,6 +571,7 @@ public sealed class MessagesController : ApiControllerBase
     /// ServiceHub is primarily read-only, but this operation is essential for DLQ recovery.
     /// </remarks>
     [RequireScope(ApiKeyScopes.MessagesSend)]
+    [RequireGovernanceRole(GovernanceRole.Operator, PillarKind.Recover)]
     [HttpPost("replay")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -757,6 +758,7 @@ public sealed class MessagesController : ApiControllerBase
     /// Azure Service Bus has no reliable single-message delete; the provider returns an error.
     /// </remarks>
     [RequireScope(ApiKeyScopes.MessagesSend)]
+    [RequireGovernanceRole(GovernanceRole.Operator, PillarKind.Recover)]
     [HttpDelete("purge")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

@@ -582,6 +582,20 @@ public static class ApiRoutes
         public const string CorrelationAccountability = $"{Base}/correlation-accountability";
     }
 
+    /// <summary>Routes for Governance/RBAC grant management (M3 of the persistence wave, roadmap
+    /// item 10's enforcement layer).</summary>
+    public static class Governance
+    {
+        /// <summary>Base route for Governance grants.</summary>
+        public const string Base = $"{VersionedBase}/governance";
+
+        /// <summary>Route for listing/creating grants.</summary>
+        public const string Grants = $"{Base}/grants";
+
+        /// <summary>Route for revoking one grant by ID.</summary>
+        public const string GrantRevoke = $"{Grants}/{{id:guid}}/revoke";
+    }
+
     /// <summary>Routes for the Investigation Center — incident command for failure investigation.</summary>
     public static class FailureIntelligence
     {
