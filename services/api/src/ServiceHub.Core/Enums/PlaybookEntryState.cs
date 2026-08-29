@@ -27,4 +27,13 @@ public enum PlaybookEntryState
 
     /// <summary>A later proposal for the same subject made this one moot.</summary>
     Superseded = 6,
+
+    /// <summary>An operator explicitly turned off a standing, re-evaluated construct (e.g. a
+    /// promoted <c>PreventionRule</c>) that was previously <see cref="Approved"/>. Reachable only
+    /// from <see cref="Approved"/>, and only for a <c>ProposalKind</c> on the ledger's own
+    /// revocable allow-list — see <c>PlaybookLedgerService.RevocableProposalKinds</c>. Unlike
+    /// <see cref="Rejected"/>/<see cref="Expired"/>/<see cref="Superseded"/>, this never closes out
+    /// a one-time decision (those stay permanently un-revocable) — it only ever stops a standing
+    /// condition from being re-evaluated going forward (roadmap P5, <c>PREVENTION-RULE-DESIGN-2026-08-29.md</c> §9).</summary>
+    Revoked = 7,
 }

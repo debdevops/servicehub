@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 
@@ -23,7 +24,27 @@ namespace ServiceHub.Infrastructure.PlaybookLedger;
 public sealed class BacktestService : IBacktestService
 {
     private static readonly IReadOnlyCollection<string> BacktestableProposalKinds =
-        new[] { "AnomalyFlag", "DriftFinding", "ReplayPlan" };
+        new[] { "AnomalyFlag", "DriftFinding", "ReplayPlan", "PreventionTrigger" };
+
+    // PreventionTrigger is deliberately exempt from the Approved/Rejected requirement below: per
+    // PREVENTION-RULE-DESIGN-2026-08-29.md §12, "a PreventionTrigger is never a decision request"
+    // — it is pure evidence a human is never asked to approve or reject, so in normal operation it
+    // never leaves Proposed until it expires. Gating candidacy on Approved/Rejected (as every
+    // other ProposalKind here correctly requires — "dispositioned proposals") would make a
+    // PreventionTrigger permanently unreachable, silently turning P5's backtest into dead code. It
+    // becomes a candidate in any state once it exists at all — the rare edge case of a human
+    // dispositioning one anyway (the generic Playbook disposition endpoint doesn't restrict by
+    // ProposalKind) is still valid evidence, not a case to special-case out.
+    private static readonly IReadOnlySet<PlaybookEntryState> BacktestableDispositionedStates =
+        new HashSet<PlaybookEntryState> { PlaybookEntryState.Approved, PlaybookEntryState.Rejected };
+
+    private const string PreventionTriggerProposalKind = "PreventionTrigger";
+
+    private static bool IsBacktestCandidate(PlaybookEntry entry) =>
+        entry.NamespaceId is not null
+        && BacktestableProposalKinds.Contains(entry.ProposalKind)
+        && (entry.ProposalKind == PreventionTriggerProposalKind
+            || BacktestableDispositionedStates.Contains(entry.State));
 
     private const int DefaultLimit = 50;
     private const int MaxLimit = 200;
@@ -60,9 +81,7 @@ public sealed class BacktestService : IBacktestService
         }
 
         var candidates = result.Value
-            .Where(e => e.NamespaceId is not null
-                        && (e.State == PlaybookEntryState.Approved || e.State == PlaybookEntryState.Rejected)
-                        && BacktestableProposalKinds.Contains(e.ProposalKind))
+            .Where(IsBacktestCandidate)
             .OrderByDescending(e => e.ProposedAt)
             .Take(Math.Clamp(limit, 1, MaxLimit))
             .ToList();

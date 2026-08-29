@@ -161,6 +161,43 @@ public sealed class BacktestServiceTests
     }
 
     [Fact]
+    public async Task GetReportAsync_PreventionTriggerProposal_IsBacktestable_EvenWhileStillProposed()
+    {
+        // P5's payoff (PREVENTION-RULE-DESIGN-2026-08-29.md §11/§12): a PreventionTrigger is pure
+        // evidence, never a decision request — it is never dispositioned, so unlike every other
+        // backtestable ProposalKind here it must become a candidate from Proposed (or Expired),
+        // never Approved/Rejected, or the join would be permanently unreachable dead code.
+        var namespaceId = Guid.NewGuid();
+        SetupPlaybookQuery(BuildEntry(
+            PlaybookEntryState.Proposed, proposalKind: "PreventionTrigger", pillarKind: PillarKind.Prevent,
+            namespaceId: namespaceId));
+        SetupRecoveryLookup(namespaceId, "orders-dlq", BuildRecoveryEntry(RecoveryDisposition.Recovered));
+
+        var report = await _service.GetReportAsync(OwnerId);
+
+        report.TotalBacktested.Should().Be(1);
+        report.CorroboratedCount.Should().Be(1);
+        report.Entries.Should().ContainSingle().Which.PillarKind.Should().Be(PillarKind.Prevent);
+    }
+
+    [Fact]
+    public async Task GetReportAsync_PreventionTriggerProposal_ApprovedState_StillBacktestable()
+    {
+        // Defence-in-depth: even though a trigger is never actually dispositioned in practice
+        // (§12), Approved must not be excluded for it either — the candidacy check is additive
+        // (Proposed/UnderReview/Expired) for this one ProposalKind, not a replacement gate.
+        var namespaceId = Guid.NewGuid();
+        SetupPlaybookQuery(BuildEntry(
+            PlaybookEntryState.Approved, proposalKind: "PreventionTrigger", pillarKind: PillarKind.Prevent,
+            namespaceId: namespaceId));
+        SetupRecoveryLookup(namespaceId, "orders-dlq", BuildRecoveryEntry(RecoveryDisposition.Recovered));
+
+        var report = await _service.GetReportAsync(OwnerId);
+
+        report.TotalBacktested.Should().Be(1);
+    }
+
+    [Fact]
     public async Task GetReportAsync_FleetWideEntryWithNoNamespace_Excluded()
     {
         SetupPlaybookQuery(BuildEntry(PlaybookEntryState.Approved, fleetWide: true));

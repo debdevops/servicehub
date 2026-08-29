@@ -42,7 +42,16 @@ public sealed class PlaybookLedgerService : IPlaybookLedger
 
     private static bool IsTerminal(PlaybookEntryState state) =>
         state is PlaybookEntryState.Approved or PlaybookEntryState.Rejected
-            or PlaybookEntryState.Expired or PlaybookEntryState.Superseded;
+            or PlaybookEntryState.Expired or PlaybookEntryState.Superseded or PlaybookEntryState.Revoked;
+
+    // The only ProposalKinds whose Approved state has ongoing behavioral consequences past the
+    // moment of approval — everything else's Approved is a permanent historical fact ("a human
+    // agreed this was sound") and must never be reachable from Revoked. See PREVENTION-RULE-DESIGN
+    // §9: this is deliberately a narrow allow-list, not a general "undo any approval" escape hatch.
+    private static readonly IReadOnlySet<string> RevocableProposalKinds = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "PreventionRuleProposal",
+    };
 
     private async Task<(long Seq, string PrevHash)> GetNextSeqAndPrevHashAsync(string ownerId, CancellationToken cancellationToken)
     {
@@ -273,6 +282,45 @@ public sealed class PlaybookLedgerService : IPlaybookLedger
 
         var detail = System.Text.Json.JsonSerializer.Serialize(new { supersededByEntryId });
         var evt = await AppendEventAsync(entry, PlaybookEventType.Superseded, actor, detail, cancellationToken);
+        entry.LastEventSeq = evt.Seq;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return Result.Success(entry);
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<PlaybookEntry>> RevokeAsync(
+        Guid entryId, string ownerId, PlaybookActor actor, string reason, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return Result.Failure<PlaybookEntry>(Error.Validation(
+                ErrorCodes.Playbook.ReasonRequired, "A reason is required to revoke an entry."));
+        }
+
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+
+        var entryResult = await LoadEntryAsync(entryId, ownerId, cancellationToken);
+        if (entryResult.IsFailure) return entryResult;
+        var entry = entryResult.Value;
+
+        if (!RevocableProposalKinds.Contains(entry.ProposalKind))
+        {
+            return Result.Failure<PlaybookEntry>(Error.Conflict(
+                ErrorCodes.Playbook.InvalidTransition,
+                $"Proposal kind '{entry.ProposalKind}' does not support revocation — its Approved state is a permanent historical fact."));
+        }
+
+        if (entry.State != PlaybookEntryState.Approved)
+        {
+            return Result.Failure<PlaybookEntry>(Error.Conflict(
+                ErrorCodes.Playbook.InvalidTransition, $"Cannot revoke from state {entry.State}."));
+        }
+
+        entry.State = PlaybookEntryState.Revoked;
+        entry.ClosedAt = DateTimeOffset.UtcNow;
+
+        var evt = await AppendEventAsync(entry, PlaybookEventType.Revoked, actor, reason, cancellationToken);
         entry.LastEventSeq = evt.Seq;
 
         await _dbContext.SaveChangesAsync(cancellationToken);

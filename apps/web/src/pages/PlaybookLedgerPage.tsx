@@ -19,7 +19,7 @@ import type { PillarKind, PlaybookEntryState, PlaybookEntry } from '@servicehub/
 const KNOWN_PROVIDERS: readonly CloudProviderType[] = ['azure', 'aws', 'gcp'];
 const PILLARS: readonly PillarKind[] = ['Investigate', 'Correlate', 'Prevent', 'Recover'];
 const STATES: readonly PlaybookEntryState[] = [
-  'Proposed', 'UnderReview', 'Approved', 'Edited', 'Rejected', 'Expired', 'Superseded',
+  'Proposed', 'UnderReview', 'Approved', 'Edited', 'Rejected', 'Expired', 'Superseded', 'Revoked',
 ];
 
 const STATE_COLORS: Record<PlaybookEntryState, string> = {
@@ -30,6 +30,7 @@ const STATE_COLORS: Record<PlaybookEntryState, string> = {
   Rejected: 'bg-red-100 text-red-700',
   Expired: 'bg-gray-100 text-gray-600',
   Superseded: 'bg-gray-100 text-gray-600',
+  Revoked: 'bg-gray-100 text-gray-600',
 };
 
 function CloudBadge({ provider }: { provider: string | null }) {
