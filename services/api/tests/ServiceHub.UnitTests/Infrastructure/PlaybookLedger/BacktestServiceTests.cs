@@ -142,6 +142,25 @@ public sealed class BacktestServiceTests
     }
 
     [Fact]
+    public async Task GetReportAsync_ReplayPlanProposal_IsBacktestable()
+    {
+        // Roadmap item 14's "same engine, second application" on the Recover side:
+        // AutoReplayExecutor's ReplayPlan proposals join identically to AnomalyFlag/DriftFinding —
+        // same EntityName-in-ProposalJson shape, no separate code path.
+        var namespaceId = Guid.NewGuid();
+        SetupPlaybookQuery(BuildEntry(
+            PlaybookEntryState.Approved, proposalKind: "ReplayPlan", pillarKind: PillarKind.Recover,
+            namespaceId: namespaceId));
+        SetupRecoveryLookup(namespaceId, "orders-dlq", BuildRecoveryEntry(RecoveryDisposition.Recovered));
+
+        var report = await _service.GetReportAsync(OwnerId);
+
+        report.TotalBacktested.Should().Be(1);
+        report.CorroboratedCount.Should().Be(1);
+        report.Entries.Should().ContainSingle().Which.PillarKind.Should().Be(PillarKind.Recover);
+    }
+
+    [Fact]
     public async Task GetReportAsync_FleetWideEntryWithNoNamespace_Excluded()
     {
         SetupPlaybookQuery(BuildEntry(PlaybookEntryState.Approved, fleetWide: true));

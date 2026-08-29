@@ -9,19 +9,19 @@ namespace ServiceHub.Core.Interfaces;
 /// (namespace, entity) the proposal named. No new schema, no new trust computation: it joins
 /// <see cref="Entities.PlaybookEntry"/> rows already durable since M4 against
 /// <see cref="IRecoveryLedger"/>'s existing entity-scoped history
-/// (<see cref="IRecoveryLedger.FindEntriesForEntitySinceAsync"/>). Scoped to the two proposal
-/// kinds that name a single entity today (<c>AnomalyFlag</c> — I3, <c>DriftFinding</c> — P2);
+/// (<see cref="IRecoveryLedger.FindEntriesForEntitySinceAsync"/>). Scoped to the proposal kinds
+/// that name a single entity today (<c>AnomalyFlag</c> — I3, <c>DriftFinding</c> — P2,
+/// <c>ReplayPlan</c> — Recover, roadmap item 14's "same engine, second application");
 /// <c>CorrelationHypothesis</c> spans multiple entities and is covered instead by
 /// <see cref="ICorrelationAccountabilityService"/> (C4). Extending this same engine to
-/// prevention-rule backtesting (P5) is future work for once prevention rules exist to execute —
-/// the roadmap's own "same engine, second application."
+/// prevention-rule backtesting (P5) is future work for once prevention rules exist to execute.
 /// </summary>
 public interface IBacktestService
 {
     /// <summary>Builds a backtest report for the given owner, optionally narrowed to one pillar.</summary>
     /// <param name="ownerId">Tenant/owner identifier for isolation.</param>
-    /// <param name="pillarKind">Optional pillar filter (only <c>Investigate</c>/<c>Prevent</c>
-    /// proposals are ever backtestable today).</param>
+    /// <param name="pillarKind">Optional pillar filter (only <c>Investigate</c>/<c>Prevent</c>/
+    /// <c>Recover</c> proposals are ever backtestable today).</param>
     /// <param name="limit">Maximum number of dispositioned proposals to backtest, most recently
     /// proposed first (1-200, default 50).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
