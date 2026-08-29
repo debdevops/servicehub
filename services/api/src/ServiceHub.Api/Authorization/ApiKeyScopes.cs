@@ -35,6 +35,9 @@ public static class ApiKeyScopes
     // Deterministic narration scopes (roadmap §5.B, I4)
     public const string NarrationsRead = "narrations:read";
 
+    // Predictive backlog forecast scopes (roadmap §5.E, P4)
+    public const string BacklogForecastsRead = "backlog-forecasts:read";
+
     // DLQ Intelligence scopes
     public const string DlqRead = "dlq:read";
     public const string DlqWrite = "dlq:write";

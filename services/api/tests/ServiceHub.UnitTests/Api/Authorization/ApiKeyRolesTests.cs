@@ -22,6 +22,7 @@ public sealed class ApiKeyRolesTests
             ApiKeyScopes.DriftFindingsRead,
             ApiKeyScopes.CorrelationFindingsRead,
             ApiKeyScopes.NarrationsRead,
+            ApiKeyScopes.BacklogForecastsRead,
         ]);
     }
 
