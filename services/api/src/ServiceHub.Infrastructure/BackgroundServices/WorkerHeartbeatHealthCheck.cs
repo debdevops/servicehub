@@ -14,8 +14,8 @@ namespace ServiceHub.Infrastructure.BackgroundServices;
 public sealed class WorkerHeartbeatHealthCheck : IHealthCheck
 {
     /// <summary>
-    /// The eleven workers <c>DependencyInjection.AddBackgroundWorkers</c> registers — the
-    /// "autonomy machinery" this check exists to watch over. <c>AuditService</c> and
+    /// The workers <c>DependencyInjection.AddBackgroundWorkers</c> registers — the "autonomy
+    /// machinery" this check exists to watch over. <c>AuditService</c> and
     /// <c>InProcessPlatformEventBus</c> are lower-level event/audit plumbing, registered
     /// separately from that method, and intentionally out of scope here.
     /// </summary>
@@ -24,6 +24,8 @@ public sealed class WorkerHeartbeatHealthCheck : IHealthCheck
         nameof(AnomalyDetectionWorker),
         nameof(DriftDetectionWorker),
         nameof(CorrelationDetectionWorker),
+        nameof(NarrationWorker),
+        nameof(BacklogForecastWorker),
         nameof(DlqMonitorWorker),
         nameof(BulkOperationWorker),
         nameof(SignatureReplayWorker),
@@ -32,6 +34,7 @@ public sealed class WorkerHeartbeatHealthCheck : IHealthCheck
         nameof(RecoveryAgeingWorker),
         nameof(AutonomyEvaluationWorker),
         nameof(BackupWorker),
+        nameof(PlaybookExpiryWorker),
     ];
 
     private readonly IWorkerHeartbeatStore _store;

@@ -201,6 +201,7 @@ public static class DependencyInjection
         services.AddHostedService<AuditRetentionWorker>();
         services.AddHostedService<RecoveryVerificationWorker>();
         services.AddHostedService<RecoveryAgeingWorker>();
+        services.AddHostedService<PlaybookExpiryWorker>();
         services.AddHostedService<AutonomyEvaluationWorker>();
         services.AddHostedService<BackupWorker>();
 
