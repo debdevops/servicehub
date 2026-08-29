@@ -388,6 +388,10 @@ public static class ErrorCodes
 
         /// <summary>A reason is required to reject a proposal.</summary>
         public const string ReasonRequired = "Playbook.ReasonRequired";
+
+        /// <summary>The proposal's own fields (e.g. a <c>PreventionRule</c>'s condition) failed
+        /// validation before it could be written to the ledger.</summary>
+        public const string ProposalInvalid = "Playbook.ProposalInvalid";
     }
 
     /// <summary>

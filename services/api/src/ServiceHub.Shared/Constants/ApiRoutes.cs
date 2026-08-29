@@ -582,6 +582,26 @@ public static class ApiRoutes
         public const string CorrelationAccountability = $"{Base}/correlation-accountability";
     }
 
+    /// <summary>Routes for P5 <c>PreventionRule</c> proposal/revocation (roadmap §5.C, staged
+    /// Option B — <c>PREVENTION-RULE-DESIGN-2026-08-29.md</c>). Review/approve/reject of a
+    /// proposed rule stays on the generic <see cref="Playbook"/> routes — this class only adds the
+    /// two actions the generic Playbook Ledger surface can't express: proposing a
+    /// rule-shaped payload from structured fields, and revoking an already-promoted one.</summary>
+    public static class PreventionRules
+    {
+        /// <summary>Base route for P5 PreventionRule actions.</summary>
+        public const string Base = $"{VersionedBase}/prevention-rules";
+
+        /// <summary>Route for proposing a new rule, or a new version of an existing one.</summary>
+        public const string Propose = Base;
+
+        /// <summary>Route for the currently active (promoted) rules, optionally filtered by namespace.</summary>
+        public const string Active = $"{Base}/active";
+
+        /// <summary>Route for revoking a promoted rule.</summary>
+        public const string Revoke = $"{Base}/{{id:guid}}/revoke";
+    }
+
     /// <summary>Routes for Governance/RBAC grant management (M3 of the persistence wave, roadmap
     /// item 10's enforcement layer).</summary>
     public static class Governance

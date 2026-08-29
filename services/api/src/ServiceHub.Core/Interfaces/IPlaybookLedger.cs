@@ -60,6 +60,20 @@ public interface IPlaybookLedger
     /// from <see cref="PlaybookEntryState.Proposed"/>/<see cref="PlaybookEntryState.UnderReview"/>.</summary>
     Task<Result<PlaybookEntry>> SupersedeAsync(Guid entryId, string ownerId, PlaybookActor actor, Guid supersededByEntryId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Turns off a standing, previously-<see cref="PlaybookEntryState.Approved"/> construct (e.g.
+    /// a promoted P5 <c>PreventionRule</c> — <c>PREVENTION-RULE-DESIGN-2026-08-29.md</c> §9) —
+    /// valid only from <see cref="PlaybookEntryState.Approved"/>, and only when the entry's
+    /// <see cref="PlaybookEntry.ProposalKind"/> is on the ledger's own small, explicit revocable
+    /// allow-list. A one-time decision (e.g. an approved <c>ReplayPlan</c> or
+    /// <c>CorrelationHypothesis</c>) is never revocable through this method —
+    /// <see cref="PlaybookEntryState.Approved"/> means "a human agreed this was sound," a
+    /// permanent historical fact, for every
+    /// <c>ProposalKind</c> not on that allow-list. <paramref name="reason"/> is always required,
+    /// mirroring <see cref="DispositionAsync"/>'s requirement for <see cref="PlaybookDisposition.Rejected"/>.
+    /// </summary>
+    Task<Result<PlaybookEntry>> RevokeAsync(Guid entryId, string ownerId, PlaybookActor actor, string reason, CancellationToken cancellationToken = default);
+
     /// <summary>Queries entries for an owner, optionally narrowed by pillar, namespace, and/or state.</summary>
     Task<Result<IReadOnlyList<PlaybookEntry>>> QueryEntriesAsync(
         string ownerId, PillarKind? pillarKind = null, Guid? namespaceId = null, PlaybookEntryState? state = null, CancellationToken cancellationToken = default);

@@ -74,7 +74,7 @@ public sealed class PlaybookController : ApiControllerBase
             return ToActionResult<IReadOnlyList<PlaybookEntryResponse>>(result.Error);
         }
 
-        return Ok(result.Value.Take(ClampLimit(limit)).Select(MapToResponse).ToList());
+        return Ok(result.Value.Take(ClampLimit(limit)).Select(PlaybookEntryResponseMapper.ToResponse).ToList());
     }
 
     /// <summary>
@@ -103,7 +103,7 @@ public sealed class PlaybookController : ApiControllerBase
         }
 
         return Ok(new PlaybookEntryDetailResponse(
-            MapToResponse(entry),
+            entry.ToResponse(),
             eventsResult.Value.Select(MapToResponse).ToList()));
     }
 
@@ -142,7 +142,7 @@ public sealed class PlaybookController : ApiControllerBase
             return ToActionResult<PlaybookEntryResponse>(result.Error);
         }
 
-        return Ok(MapToResponse(result.Value));
+        return Ok(result.Value.ToResponse());
     }
 
     /// <summary>
@@ -187,7 +187,7 @@ public sealed class PlaybookController : ApiControllerBase
             return ToActionResult<PlaybookEntryResponse>(result.Error);
         }
 
-        return Ok(MapToResponse(result.Value));
+        return Ok(result.Value.ToResponse());
     }
 
     /// <summary>
@@ -264,26 +264,6 @@ public sealed class PlaybookController : ApiControllerBase
     }
 
     private static int ClampLimit(int limit) => Math.Clamp(limit, 1, MaxLimit);
-
-    private static PlaybookEntryResponse MapToResponse(PlaybookEntry entry) => new(
-        Id: entry.Id,
-        PillarKind: entry.PillarKind.ToString(),
-        ProposalKind: entry.ProposalKind,
-        EvidenceRefJson: entry.EvidenceRefJson,
-        ProposalJson: entry.ProposalJson,
-        ProposedAt: entry.ProposedAt,
-        ProposerIdentity: entry.ProposerIdentity,
-        ProposerKind: entry.ProposerKind.ToString(),
-        SignatureHashSnapshot: entry.SignatureHashSnapshot,
-        NamespaceId: entry.NamespaceId,
-        NamespaceNameSnapshot: entry.NamespaceNameSnapshot,
-        ProviderSnapshot: entry.ProviderSnapshot?.ToString(),
-        EnvironmentSnapshot: entry.EnvironmentSnapshot?.ToString(),
-        RelatedRecoveryOperationId: entry.RelatedRecoveryOperationId,
-        ExpiresAt: entry.ExpiresAt,
-        State: entry.State.ToString(),
-        Disposition: entry.Disposition?.ToString(),
-        ClosedAt: entry.ClosedAt);
 
     private static PlaybookEventResponse MapToResponse(PlaybookEvent evt) => new(
         Id: evt.Id,

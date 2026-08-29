@@ -6,6 +6,7 @@ using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.PlaybookLedger;
+using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.UnitTests.Infrastructure.PlaybookLedger;
 
@@ -230,6 +231,84 @@ public sealed class PlaybookLedgerServiceTests : IDisposable
 
         var events = (await _service.GetEventsForEntryAsync(entry.Id, OwnerId)).Value;
         events.Should().ContainSingle(e => e.EventType == PlaybookEventType.Superseded && e.DetailJson!.Contains(newer.Id.ToString()));
+    }
+
+    // P5 (PREVENTION-RULE-DESIGN-2026-08-29.md §9): RevokeAsync is the one narrow ledger addition
+    // this design needs — turning off a standing, already-Approved construct. These tests cover
+    // its two safety properties: only a ProposalKind on the revocable allow-list, and only from
+    // Approved, ever transitions to Revoked.
+    [Fact]
+    public async Task RevokeAsync_ApprovedPreventionRuleProposal_SetsRevokedState()
+    {
+        var entry = (await _service.ProposeAsync(
+            BuildProposeRequest(pillarKind: PillarKind.Prevent) with { ProposalKind = "PreventionRuleProposal" })).Value;
+        await _service.DispositionAsync(entry.Id, OwnerId, Human, PlaybookDisposition.Approved, null);
+
+        var result = await _service.RevokeAsync(entry.Id, OwnerId, Human, "No longer needed.");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.State.Should().Be(PlaybookEntryState.Revoked);
+        result.Value.ClosedAt.Should().NotBeNull();
+
+        var events = (await _service.GetEventsForEntryAsync(entry.Id, OwnerId)).Value;
+        events.Should().ContainSingle(e => e.EventType == PlaybookEventType.Revoked && e.DetailJson == "No longer needed.");
+    }
+
+    [Fact]
+    public async Task RevokeAsync_WithoutReason_ReturnsValidationError()
+    {
+        var entry = (await _service.ProposeAsync(
+            BuildProposeRequest(pillarKind: PillarKind.Prevent) with { ProposalKind = "PreventionRuleProposal" })).Value;
+        await _service.DispositionAsync(entry.Id, OwnerId, Human, PlaybookDisposition.Approved, null);
+
+        var result = await _service.RevokeAsync(entry.Id, OwnerId, Human, "   ");
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be(ErrorCodes.Playbook.ReasonRequired);
+    }
+
+    [Fact]
+    public async Task RevokeAsync_NonRevocableProposalKind_Fails_EvenWhenApproved()
+    {
+        // ReplayPlan's Approved state means "a human agreed this was sound" — a permanent
+        // historical fact, never a standing construct that can be turned off.
+        var entry = (await _service.ProposeAsync(
+            BuildProposeRequest(pillarKind: PillarKind.Recover) with { ProposalKind = "ReplayPlan" })).Value;
+        await _service.DispositionAsync(entry.Id, OwnerId, Human, PlaybookDisposition.Approved, null);
+
+        var result = await _service.RevokeAsync(entry.Id, OwnerId, Human, "Trying to undo an approval.");
+
+        result.IsFailure.Should().BeTrue();
+
+        var reloaded = await _service.GetEntryAsync(entry.Id, OwnerId);
+        reloaded!.State.Should().Be(PlaybookEntryState.Approved, "a non-revocable ProposalKind's Approved state must never change");
+    }
+
+    [Fact]
+    public async Task RevokeAsync_FromProposed_Fails()
+    {
+        var entry = (await _service.ProposeAsync(
+            BuildProposeRequest(pillarKind: PillarKind.Prevent) with { ProposalKind = "PreventionRuleProposal" })).Value;
+
+        var result = await _service.RevokeAsync(entry.Id, OwnerId, Human, "Too early.");
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RevokeAsync_AlreadyRevoked_Fails_NotIdempotent()
+    {
+        // Deliberately distinct from ExpireAsync's idempotent-no-op contract: revocation is an
+        // explicit, reasoned operator action, not a background sweep that may see the same row
+        // more than once, so a second revoke attempt is a real conflict, not a silent success.
+        var entry = (await _service.ProposeAsync(
+            BuildProposeRequest(pillarKind: PillarKind.Prevent) with { ProposalKind = "PreventionRuleProposal" })).Value;
+        await _service.DispositionAsync(entry.Id, OwnerId, Human, PlaybookDisposition.Approved, null);
+        await _service.RevokeAsync(entry.Id, OwnerId, Human, "First revoke.");
+
+        var result = await _service.RevokeAsync(entry.Id, OwnerId, Human, "Second revoke.");
+
+        result.IsFailure.Should().BeTrue();
     }
 
     [Fact]

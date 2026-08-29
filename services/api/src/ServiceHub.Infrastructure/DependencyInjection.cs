@@ -202,6 +202,7 @@ public static class DependencyInjection
         services.AddHostedService<RecoveryVerificationWorker>();
         services.AddHostedService<RecoveryAgeingWorker>();
         services.AddHostedService<PlaybookExpiryWorker>();
+        services.AddHostedService<PreventionRuleExpiryWorker>();
         services.AddHostedService<AutonomyEvaluationWorker>();
         services.AddHostedService<BackupWorker>();
 
@@ -312,6 +313,7 @@ public static class DependencyInjection
         services.TryAddScoped<IPlaybookLedger, PlaybookLedgerService>();
         services.TryAddScoped<ICorrelationAccountabilityService, CorrelationAccountabilityService>();
         services.TryAddScoped<IBacktestService, BacktestService>();
+        services.TryAddScoped<IPreventionRuleEvaluationService, PreventionRuleEvaluationService>();
         services.TryAddScoped<IAnomalyDetectionService, Analytics.DeterministicAnomalyDetectionService>();
         services.TryAddSingleton<IAnomalyResultCache, Analytics.InMemoryAnomalyResultCache>();
         services.TryAddScoped<IDriftDetectionService, Analytics.DeterministicDriftDetectionService>();

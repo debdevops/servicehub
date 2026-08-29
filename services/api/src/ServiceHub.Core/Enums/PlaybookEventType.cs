@@ -24,4 +24,8 @@ public enum PlaybookEventType
 
     /// <summary>A later proposal for the same subject made this one moot.</summary>
     Superseded = 6,
+
+    /// <summary>A standing, previously-<see cref="PlaybookEntryState.Approved"/> construct was
+    /// explicitly turned off (roadmap P5). See <see cref="PlaybookEntryState.Revoked"/>.</summary>
+    Revoked = 7,
 }

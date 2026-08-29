@@ -20,6 +20,7 @@ public sealed class DriftDetectionWorkerTests
     private readonly Mock<IDriftResultCache> _cacheMock = new();
     private readonly Mock<IPlatformEventBus> _eventBusMock = new();
     private readonly Mock<IPlaybookLedger> _playbookLedgerMock = new();
+    private readonly Mock<IPreventionRuleEvaluationService> _preventionRuleEvaluationMock = new();
 
     private static IConfiguration EmptyConfig() =>
         new ConfigurationBuilder().AddInMemoryCollection().Build();
@@ -42,7 +43,8 @@ public sealed class DriftDetectionWorkerTests
         ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
     };
 
-    private IServiceProvider BuildServiceProvider(bool registerEventBus = false, bool registerPlaybookLedger = false)
+    private IServiceProvider BuildServiceProvider(
+        bool registerEventBus = false, bool registerPlaybookLedger = false, bool registerPreventionRuleEvaluation = false)
     {
         var services = new ServiceCollection();
         services.AddSingleton(_repoMock.Object);
@@ -55,6 +57,10 @@ public sealed class DriftDetectionWorkerTests
         if (registerPlaybookLedger)
         {
             services.AddSingleton(_playbookLedgerMock.Object);
+        }
+        if (registerPreventionRuleEvaluation)
+        {
+            services.AddSingleton(_preventionRuleEvaluationMock.Object);
         }
         return services.BuildServiceProvider();
     }
@@ -288,6 +294,72 @@ public sealed class DriftDetectionWorkerTests
             .ReturnsAsync(Result<IReadOnlyList<DriftFinding>>.Success(new[] { finding }));
 
         var worker = new DriftDetectionWorker(BuildServiceProvider(registerPlaybookLedger: false), EmptyConfig(), NullLogger<DriftDetectionWorker>.Instance);
+
+        var act = () => worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    // ── P5 PreventionRule evaluation wiring (PREVENTION-RULE-DESIGN-2026-08-29.md §4) ──────────
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_FindingsFound_CallsPreventionRuleEvaluationWithFullFindingSet()
+    {
+        var ns = CreateTestNamespace();
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+
+        // Deliberately below the push threshold — a promoted rule's own MinSeverity may sit below
+        // the fleet-wide push threshold, so evaluation must see every finding, not just the
+        // significance-thresholded subset that gates the DriftFinding-kind proposal.
+        var finding = DriftFinding.Create(ns.Id, "queue-1", DriftFindingType.SchemaShapeDrift, 40, "minor shift");
+        _detectionMock.Setup(d => d.DetectDriftAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<DriftFinding>>.Success(new[] { finding }));
+
+        var worker = new DriftDetectionWorker(
+            BuildServiceProvider(registerPreventionRuleEvaluation: true), ConfigWithPushThreshold(70), NullLogger<DriftDetectionWorker>.Instance);
+
+        await worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        _preventionRuleEvaluationMock.Verify(
+            e => e.EvaluateAsync(
+                It.Is<Namespace>(n => n.Id == ns.Id),
+                It.Is<IReadOnlyList<DriftFinding>>(f => f.Count == 1 && f[0].Id == finding.Id),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_NoFindings_DoesNotCallPreventionRuleEvaluation()
+    {
+        var ns = CreateTestNamespace();
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+        _detectionMock.Setup(d => d.DetectDriftAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<DriftFinding>>.Success(Array.Empty<DriftFinding>()));
+
+        var worker = new DriftDetectionWorker(
+            BuildServiceProvider(registerPreventionRuleEvaluation: true), EmptyConfig(), NullLogger<DriftDetectionWorker>.Instance);
+
+        await worker.RunDetectionCycleAsync(CancellationToken.None);
+
+        _preventionRuleEvaluationMock.Verify(
+            e => e.EvaluateAsync(It.IsAny<Namespace>(), It.IsAny<IReadOnlyList<DriftFinding>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task RunDetectionCycleAsync_NoPreventionRuleEvaluationRegistered_DoesNotThrow()
+    {
+        var ns = CreateTestNamespace();
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(new[] { ns }));
+        var finding = DriftFinding.Create(ns.Id, "queue-1", DriftFindingType.SchemaShapeDrift, 90, "shape changed");
+        _detectionMock.Setup(d => d.DetectDriftAsync(ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<DriftFinding>>.Success(new[] { finding }));
+
+        var worker = new DriftDetectionWorker(
+            BuildServiceProvider(registerPreventionRuleEvaluation: false), EmptyConfig(), NullLogger<DriftDetectionWorker>.Instance);
 
         var act = () => worker.RunDetectionCycleAsync(CancellationToken.None);
 

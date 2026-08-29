@@ -117,6 +117,7 @@ public sealed class DriftDetectionWorker : BackgroundService
         var resultCache = scope.ServiceProvider.GetRequiredService<IDriftResultCache>();
         var namespaceRepository = scope.ServiceProvider.GetRequiredService<INamespaceRepository>();
         var playbookLedger = scope.ServiceProvider.GetService<IPlaybookLedger>();
+        var preventionRuleEvaluation = scope.ServiceProvider.GetService<IPreventionRuleEvaluationService>();
 
         var namespacesResult = await namespaceRepository.GetActiveAsync(cancellationToken).ConfigureAwait(false);
         if (namespacesResult.IsFailure)
@@ -184,6 +185,16 @@ public sealed class DriftDetectionWorker : BackgroundService
                 {
                     await ProposePlaybookEntryAsync(playbookLedger, finding, ns, cancellationToken).ConfigureAwait(false);
                 }
+            }
+
+            // P5 "Observe/Evaluate" (roadmap §5.C, PREVENTION-RULE-DESIGN-2026-08-29.md §4): a
+            // second, additive pass over this cycle's full finding set (not just the
+            // significance-thresholded subset above — a promoted rule's own MinSeverity may sit
+            // below the fleet-wide push threshold). P1/P2 themselves are unmodified by this call;
+            // it only ever reads DriftFinding output and writes through IPlaybookLedger.
+            if (preventionRuleEvaluation is not null)
+            {
+                await preventionRuleEvaluation.EvaluateAsync(ns, detectionResult.Value, cancellationToken).ConfigureAwait(false);
             }
         }
 

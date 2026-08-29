@@ -15,7 +15,8 @@ export type PlaybookEntryState =
   | 'Edited'
   | 'Rejected'
   | 'Expired'
-  | 'Superseded';
+  | 'Superseded'
+  | 'Revoked';
 
 export type PlaybookDisposition = 'Approved' | 'Rejected';
 
@@ -136,6 +137,7 @@ export const PLAYBOOK_STATE_EXPLANATIONS: Record<PlaybookEntryState, string> = {
   Rejected: 'A human decided this proposal was not worth acting on.',
   Expired: 'No human decision was made before the proposal expired.',
   Superseded: 'A later proposal replaced this one for the same subject.',
+  Revoked: 'An operator turned off this standing rule (P5 PreventionRule only).',
 };
 
 // ─── API Client ─────────────────────────────────────────────────────────────
