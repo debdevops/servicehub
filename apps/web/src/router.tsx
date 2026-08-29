@@ -29,6 +29,7 @@ const CrossCloudTracePageLazy = lazy(() => import('./pages/CrossCloudTracePage')
 const AuditPageLazy = lazy(() => import('./pages/AuditPage').then(m => ({ default: m.AuditPage })));
 const RecoveryLedgerPageLazy = lazy(() => import('./pages/RecoveryLedgerPage'));
 const PlaybookLedgerPageLazy = lazy(() => import('./pages/PlaybookLedgerPage'));
+const GovernanceGrantsPageLazy = lazy(() => import('./pages/GovernanceGrantsPage'));
 const RecoveryAgeingPageLazy = lazy(() => import('./pages/RecoveryAgeingPage'));
 const RecoveryOperationDetailPageLazy = lazy(() => import('./pages/RecoveryOperationDetailPage'));
 const MessagesOverviewPageLazy = lazy(() => import('./pages/MessagesOverviewPage'));
@@ -263,6 +264,14 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <PlaybookLedgerPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'governance',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <GovernanceGrantsPageLazy />
       </Suspense>
     ),
   },

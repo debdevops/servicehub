@@ -19,6 +19,7 @@ const WORKSPACE_BASE_PATHS = new Set([
   'audit',
   'recovery',
   'playbook',
+  'governance',
   'security',
   'help',
 ]);
@@ -63,6 +64,8 @@ function getWorkspaceLabel(pathname: string, searchParams: URLSearchParams): str
       return 'Recovery Evidence';
     case 'playbook':
       return 'Playbook Ledger';
+    case 'governance':
+      return 'Governance';
     case 'security':
       return 'Security & Privacy';
     case 'help':

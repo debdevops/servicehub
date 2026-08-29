@@ -10,4 +10,10 @@ namespace ServiceHub.Core.DTOs.Responses;
 /// How this request authenticated: <c>SpaToken</c>, <c>EasyAuth</c>, <c>Oidc</c>, <c>ApiKey</c>,
 /// or null if authentication is disabled on this server.
 /// </param>
-public sealed record MeResponse(string OwnerId, string? AuthMethod);
+/// <param name="GovernanceRole">
+/// The caller's fleet-wide effective Governance role (<c>Viewer</c>/<c>Operator</c>/
+/// <c>Approver</c>/<c>Admin</c>), or null if no Governance grant covers this identity. Always
+/// <c>Admin</c> when Governance has not been activated yet for this owner (see
+/// <c>IGovernanceAccessEvaluator</c>).
+/// </param>
+public sealed record MeResponse(string OwnerId, string? AuthMethod, string? GovernanceRole);

@@ -8,6 +8,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Shared.Constants;
+using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Api.Controllers.V1;
 
@@ -30,16 +31,19 @@ public sealed class PlaybookController : ApiControllerBase
     private readonly IPlaybookLedger _playbookLedger;
     private readonly ICorrelationAccountabilityService _correlationAccountability;
     private readonly IBacktestService _backtestService;
+    private readonly IGovernanceAccessEvaluator _governanceAccessEvaluator;
 
     /// <summary>Initializes a new instance of the <see cref="PlaybookController"/> class.</summary>
     public PlaybookController(
         IPlaybookLedger playbookLedger,
         ICorrelationAccountabilityService correlationAccountability,
-        IBacktestService backtestService)
+        IBacktestService backtestService,
+        IGovernanceAccessEvaluator governanceAccessEvaluator)
     {
         _playbookLedger = playbookLedger ?? throw new ArgumentNullException(nameof(playbookLedger));
         _correlationAccountability = correlationAccountability ?? throw new ArgumentNullException(nameof(correlationAccountability));
         _backtestService = backtestService ?? throw new ArgumentNullException(nameof(backtestService));
+        _governanceAccessEvaluator = governanceAccessEvaluator ?? throw new ArgumentNullException(nameof(governanceAccessEvaluator));
     }
 
     /// <summary>
@@ -118,6 +122,18 @@ public sealed class PlaybookController : ApiControllerBase
     public async Task<ActionResult<PlaybookEntryResponse>> MarkUnderReview(
         Guid id, CancellationToken cancellationToken = default)
     {
+        var entry = await _playbookLedger.GetEntryAsync(id, OwnerId, cancellationToken);
+        if (entry is null)
+        {
+            return NotFound();
+        }
+
+        var governanceResult = await EvaluatePlaybookGovernanceAsync(entry, cancellationToken);
+        if (governanceResult.IsFailure)
+        {
+            return ToActionResult<PlaybookEntryResponse>(governanceResult.Error);
+        }
+
         var actor = ResolvePlaybookActor();
         var result = await _playbookLedger.MarkUnderReviewAsync(id, OwnerId, actor, cancellationToken);
 
@@ -150,6 +166,18 @@ public sealed class PlaybookController : ApiControllerBase
         [FromBody] DispositionPlaybookEntryRequest request,
         CancellationToken cancellationToken = default)
     {
+        var entry = await _playbookLedger.GetEntryAsync(id, OwnerId, cancellationToken);
+        if (entry is null)
+        {
+            return NotFound();
+        }
+
+        var governanceResult = await EvaluatePlaybookGovernanceAsync(entry, cancellationToken);
+        if (governanceResult.IsFailure)
+        {
+            return ToActionResult<PlaybookEntryResponse>(governanceResult.Error);
+        }
+
         var actor = ResolvePlaybookActor();
         var result = await _playbookLedger.DispositionAsync(
             id, OwnerId, actor, request.Disposition, request.Reason, cancellationToken);
@@ -218,6 +246,21 @@ public sealed class PlaybookController : ApiControllerBase
     {
         var report = await _backtestService.GetReportAsync(OwnerId, pillarKind, limit, cancellationToken);
         return Ok(report);
+    }
+
+    /// <summary>
+    /// Requires <see cref="GovernanceRole.Approver"/> — the role the persistence design's §14
+    /// defines as "can act on the L3 approval queue specifically" — scoped to the entry's own
+    /// <see cref="PlaybookEntry.NamespaceId"/>/<see cref="PlaybookEntry.PillarKind"/>. A
+    /// declarative <see cref="RequireGovernanceRoleAttribute"/> can't express this because the
+    /// pillar varies per entry rather than being fixed by the route, unlike
+    /// <see cref="MessagesController.ReplayMessage"/>'s always-Recover scope.
+    /// </summary>
+    private async Task<Result> EvaluatePlaybookGovernanceAsync(PlaybookEntry entry, CancellationToken cancellationToken)
+    {
+        var granteeIdentity = ResolveGovernanceGranteeIdentity();
+        return await _governanceAccessEvaluator.EvaluateAsync(
+            OwnerId, granteeIdentity, GovernanceRole.Approver, entry.NamespaceId, entry.PillarKind, cancellationToken);
     }
 
     private static int ClampLimit(int limit) => Math.Clamp(limit, 1, MaxLimit);

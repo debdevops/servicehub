@@ -456,6 +456,7 @@ public sealed class RecoveryController : ApiControllerBase
     /// <param name="request">Optional administrator justification.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     [RequireScope(ApiKeyScopes.Admin)]
+    [RequireGovernanceRole(GovernanceRole.Admin)]
     [HttpPost("emergency-stop/activate")]
     [ProducesResponseType(typeof(EmergencyStopStatusResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<EmergencyStopStatusResponse>> ActivateEmergencyStop(
@@ -483,6 +484,7 @@ public sealed class RecoveryController : ApiControllerBase
     /// <param name="request">Optional administrator justification.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     [RequireScope(ApiKeyScopes.Admin)]
+    [RequireGovernanceRole(GovernanceRole.Admin)]
     [HttpPost("emergency-stop/clear")]
     [ProducesResponseType(typeof(EmergencyStopStatusResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<EmergencyStopStatusResponse>> ClearEmergencyStop(

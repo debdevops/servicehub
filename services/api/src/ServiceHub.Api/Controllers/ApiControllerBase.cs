@@ -91,6 +91,25 @@ public abstract class ApiControllerBase : ControllerBase
     }
 
     /// <summary>
+    /// Resolves the caller's Governance/RBAC grantee identity — the same precedence
+    /// <see cref="ResolveRecoveryActor"/> and <see cref="ResolvePlaybookActor"/> already use
+    /// (API key name → claims identity name → <see cref="OwnerId"/>), via the same
+    /// <see cref="ActorIdentityResolver"/> the Governance authorization filter uses, so an inline
+    /// check here (e.g. Playbook disposition, scoped to an entry's own dynamic pillar) and the
+    /// attribute-driven filter check always resolve identically for the same request.
+    /// </summary>
+    protected string ResolveGovernanceGranteeIdentity()
+    {
+        var apiKeyName = HttpContext.Items.TryGetValue("ApiKeyName", out var keyName) && keyName is string name
+            ? name
+            : null;
+
+        var claimsIdentityName = HttpContext.User?.Identity?.Name;
+
+        return ActorIdentityResolver.ResolveHttpActor(apiKeyName, claimsIdentityName, OwnerId).Identity;
+    }
+
+    /// <summary>
     /// Fetches a namespace by ID and verifies <see cref="OwnerId"/> may access it — either as
     /// the namespace's owner, or because the owner explicitly shared it (see
     /// <see cref="Namespace.IsAccessibleBy(string)"/>) — so every controller enforces tenant isolation
