@@ -7,6 +7,7 @@ import {
   usePlaybookEntry,
   useMarkPlaybookEntryUnderReview,
   useDispositionPlaybookEntry,
+  useCorrelationAccountability,
 } from '@servicehub/ui-shared/hooks/usePlaybookLedger';
 
 vi.mock('@servicehub/ui-shared/hooks/usePlaybookLedger', () => ({
@@ -14,12 +15,14 @@ vi.mock('@servicehub/ui-shared/hooks/usePlaybookLedger', () => ({
   usePlaybookEntry: vi.fn(() => ({ data: undefined, isLoading: false })),
   useMarkPlaybookEntryUnderReview: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useDispositionPlaybookEntry: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useCorrelationAccountability: vi.fn(() => ({ data: undefined, isLoading: false })),
 }));
 
 const mockUsePlaybookEntries = usePlaybookEntries as ReturnType<typeof vi.fn>;
 const mockUsePlaybookEntry = usePlaybookEntry as ReturnType<typeof vi.fn>;
 const mockUseMarkUnderReview = useMarkPlaybookEntryUnderReview as ReturnType<typeof vi.fn>;
 const mockUseDisposition = useDispositionPlaybookEntry as ReturnType<typeof vi.fn>;
+const mockUseCorrelationAccountability = useCorrelationAccountability as ReturnType<typeof vi.fn>;
 
 function renderPage() {
   return render(
@@ -137,5 +140,46 @@ describe('PlaybookLedgerPage', () => {
     fireEvent.click(screen.getByText('Approve'));
 
     expect(mutate).toHaveBeenCalledWith({ entryId: 'entry-1', disposition: 'Approved' });
+  });
+
+  describe('correlation accountability strip', () => {
+    it('shows "no hypotheses proposed yet" when the report is all zeros', () => {
+      mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+      mockUseCorrelationAccountability.mockReturnValue({
+        data: {
+          generatedAt: '2026-08-29T09:00:00Z', totalHypotheses: 0, proposedCount: 0, underReviewCount: 0,
+          approvedCount: 0, rejectedCount: 0, expiredCount: 0, supersededCount: 0, approvalRate: null,
+        },
+        isLoading: false,
+      });
+      renderPage();
+      expect(screen.getByText(/no correlation hypotheses proposed yet/)).toBeInTheDocument();
+    });
+
+    it('shows "not enough evidence yet" when nothing has reached a terminal disposition', () => {
+      mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+      mockUseCorrelationAccountability.mockReturnValue({
+        data: {
+          generatedAt: '2026-08-29T09:00:00Z', totalHypotheses: 2, proposedCount: 2, underReviewCount: 0,
+          approvedCount: 0, rejectedCount: 0, expiredCount: 0, supersededCount: 0, approvalRate: null,
+        },
+        isLoading: false,
+      });
+      renderPage();
+      expect(screen.getByText(/not enough evidence yet/)).toBeInTheDocument();
+    });
+
+    it('shows the computed approval rate once hypotheses have been dispositioned', () => {
+      mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+      mockUseCorrelationAccountability.mockReturnValue({
+        data: {
+          generatedAt: '2026-08-29T09:00:00Z', totalHypotheses: 3, proposedCount: 1, underReviewCount: 0,
+          approvedCount: 1, rejectedCount: 1, expiredCount: 0, supersededCount: 0, approvalRate: 0.5,
+        },
+        isLoading: false,
+      });
+      renderPage();
+      expect(screen.getByText(/50% approved \(1 of 2 dispositioned\)/)).toBeInTheDocument();
+    });
   });
 });

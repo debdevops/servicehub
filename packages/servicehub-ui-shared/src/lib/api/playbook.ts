@@ -76,6 +76,24 @@ export interface PlaybookEntriesParams {
   limit?: number;
 }
 
+/**
+ * Correlation accountability (roadmap §5.D C4, §11 item 17): how many correlation hypotheses
+ * (C1 same-provider, C2 cross-cloud) ServiceHub has proposed and what humans decided about them.
+ * `approvalRate` is null until at least one hypothesis has reached a terminal disposition — an
+ * honest "not enough evidence yet" rather than a fabricated 0%.
+ */
+export interface CorrelationAccountabilityReport {
+  generatedAt: string;
+  totalHypotheses: number;
+  proposedCount: number;
+  underReviewCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+  expiredCount: number;
+  supersededCount: number;
+  approvalRate: number | null;
+}
+
 /** One-line meaning per lifecycle state, for a tooltip/help affordance next to the state badge. */
 export const PLAYBOOK_STATE_EXPLANATIONS: Record<PlaybookEntryState, string> = {
   Proposed: 'A detection worker raised this and no one has looked at it yet.',
@@ -115,6 +133,11 @@ export const playbookApi = {
 
   verifyChain: async (): Promise<ChainVerificationResult> => {
     const response = await apiClient.get<ChainVerificationResult>('/playbook/verify');
+    return response.data;
+  },
+
+  getCorrelationAccountability: async (): Promise<CorrelationAccountabilityReport> => {
+    const response = await apiClient.get<CorrelationAccountabilityReport>('/playbook/correlation-accountability');
     return response.data;
   },
 };

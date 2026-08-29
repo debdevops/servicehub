@@ -1,10 +1,11 @@
 import { Fragment, useState } from 'react';
-import { ClipboardList, AlertCircle, RefreshCw, Info, ChevronDown, ChevronRight, CheckCircle2, XCircle, Eye } from 'lucide-react';
+import { ClipboardList, AlertCircle, RefreshCw, Info, ChevronDown, ChevronRight, CheckCircle2, XCircle, Eye, Gauge } from 'lucide-react';
 import {
   usePlaybookEntries,
   usePlaybookEntry,
   useMarkPlaybookEntryUnderReview,
   useDispositionPlaybookEntry,
+  useCorrelationAccountability,
 } from '@servicehub/ui-shared/hooks/usePlaybookLedger';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
@@ -45,6 +46,41 @@ function StateBadge({ state }: { state: PlaybookEntryState }) {
     >
       {state}
     </span>
+  );
+}
+
+/**
+ * C4 — correlation accountability (roadmap §5.D, §11 item 17): a compact strip reporting how many
+ * correlation hypotheses (C1/C2) ServiceHub has proposed and what fraction of dispositioned ones a
+ * human approved — "making correlation quality measurable instead of a black box." Shows an honest
+ * "not enough evidence yet" rather than a fabricated rate when nothing has been dispositioned.
+ */
+function CorrelationAccountabilityStrip() {
+  const { data: report, isLoading } = useCorrelationAccountability();
+
+  if (isLoading || !report) return null;
+
+  if (report.totalHypotheses === 0) {
+    return (
+      <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-500">
+        <Gauge className="w-4 h-4 shrink-0 text-gray-400" />
+        Correlation accountability: no correlation hypotheses proposed yet.
+      </div>
+    );
+  }
+
+  const dispositioned = report.approvedCount + report.rejectedCount;
+
+  return (
+    <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-200 text-xs text-indigo-800">
+      <Gauge className="w-4 h-4 shrink-0" />
+      Correlation accountability: {report.totalHypotheses} hypothes{report.totalHypotheses === 1 ? 'is' : 'es'} proposed
+      {report.approvalRate !== null ? (
+        <> &middot; {Math.round(report.approvalRate * 100)}% approved ({report.approvedCount} of {dispositioned} dispositioned)</>
+      ) : (
+        <> &middot; not enough evidence yet ({report.proposedCount + report.underReviewCount} awaiting a decision)</>
+      )}
+    </div>
   );
 }
 
@@ -221,6 +257,8 @@ export default function PlaybookLedgerPage() {
             Demo Mode — the Playbook Ledger has no fixture data, so this view is always empty here.
           </div>
         )}
+
+        <CorrelationAccountabilityStrip />
 
         <div className="mt-3 flex items-center gap-2">
           <select

@@ -6,6 +6,7 @@ import {
   type PlaybookEntryDetail,
   type PlaybookEntriesParams,
   type PlaybookDisposition,
+  type CorrelationAccountabilityReport,
 } from '../lib/api/playbook';
 import { useDemoContext, rejectDemoModeMutation } from '../lib/demo/DemoContext';
 
@@ -89,6 +90,7 @@ export function useDispositionPlaybookEntry() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['playbook-entries'] });
       queryClient.invalidateQueries({ queryKey: ['playbook-entry'] });
+      queryClient.invalidateQueries({ queryKey: ['playbook-correlation-accountability'] });
       toast.success(variables.disposition === 'Approved' ? 'Proposal approved' : 'Proposal rejected');
     },
     onError: (error: unknown) => {
@@ -97,4 +99,39 @@ export function useDispositionPlaybookEntry() {
       toast.error(msg);
     },
   });
+}
+
+/**
+ * Hook for fetching the correlation accountability report (roadmap §5.D C4, §11 item 17) — how
+ * many correlation hypotheses ServiceHub has proposed and what humans decided about them. Demo
+ * Mode has no synthetic disposition history — rather than fabricate one, it honestly reports an
+ * all-zero, no-data snapshot, same reasoning as `usePlaybookEntries`.
+ */
+export function useCorrelationAccountability() {
+  const { isDemoMode } = useDemoContext();
+
+  const options: UseQueryOptions<CorrelationAccountabilityReport> = isDemoMode
+    ? {
+        queryKey: ['playbook-correlation-accountability', 'demo'],
+        queryFn: (): Promise<CorrelationAccountabilityReport> =>
+          Promise.resolve({
+            generatedAt: new Date().toISOString(),
+            totalHypotheses: 0,
+            proposedCount: 0,
+            underReviewCount: 0,
+            approvedCount: 0,
+            rejectedCount: 0,
+            expiredCount: 0,
+            supersededCount: 0,
+            approvalRate: null,
+          }),
+      }
+    : {
+        queryKey: ['playbook-correlation-accountability'],
+        queryFn: () => playbookApi.getCorrelationAccountability(),
+        enabled: !isDemoMode,
+        staleTime: 30_000,
+      };
+
+  return useQuery(options);
 }
