@@ -983,6 +983,33 @@ public class RulesControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task ReplayAll_InsufficientGovernanceRole_ReturnsForbidden()
+    {
+        var ns = CreateNamespace();
+        var rule = CreateRule();
+        rule.NamespaceId = ns.Id;
+        _dbContext.AutoReplayRules.Add(rule);
+        await _dbContext.SaveChangesAsync();
+
+        var messageOperations = new Mock<IMessageOperationsService>();
+        SetUpReplayAllServices(ns, messageOperations);
+        SetIntentHeaders(IntentHeaders.IntentReplayAllRules);
+
+        _governanceAccessEvaluator
+            .Setup(e => e.EvaluateAsync(
+                TestConstants.TestOwnerId, It.IsAny<string>(), GovernanceRole.Operator,
+                ns.Id, PillarKind.Recover, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Forbidden("Governance.InsufficientRole", "denied")));
+
+        var result = await _controller.ReplayAll(rule.Id);
+
+        result.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        messageOperations.Verify(
+            m => m.ReplayMessageAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<long>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task ReplayAll_Success_RoutesThroughMessageOperationsServiceAndRecordsLedgerEntry()
     {
         var ns = CreateNamespace();

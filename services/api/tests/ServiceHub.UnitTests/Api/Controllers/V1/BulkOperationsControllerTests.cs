@@ -18,13 +18,21 @@ namespace ServiceHub.UnitTests.Api.Controllers.V1;
 public sealed class BulkOperationsControllerTests
 {
     private readonly Mock<IBulkOperationService> _serviceMock = new();
+    private readonly Mock<IGovernanceAccessEvaluator> _governanceAccessEvaluator = new();
     private readonly Mock<ILogger<BulkOperationsController>> _loggerMock = new();
     private readonly BulkOperationsController _controller;
     private readonly Guid _namespaceId = Guid.NewGuid();
 
     public BulkOperationsControllerTests()
     {
-        _controller = new BulkOperationsController(_serviceMock.Object, NoOpAuditLogger.Instance, _loggerMock.Object)
+        _governanceAccessEvaluator
+            .Setup(e => e.EvaluateAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<GovernanceRole>(),
+                It.IsAny<Guid?>(), It.IsAny<PillarKind?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        _controller = new BulkOperationsController(
+            _serviceMock.Object, _governanceAccessEvaluator.Object, NoOpAuditLogger.Instance, _loggerMock.Object)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };
@@ -71,6 +79,25 @@ public sealed class BulkOperationsControllerTests
         IsCancellable: true);
 
     // ── Create ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Create_InsufficientGovernanceRole_ReturnsForbidden()
+    {
+        SetIntentHeaders(IntentHeaders.IntentBulkReplay);
+        var request = new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId));
+        _governanceAccessEvaluator
+            .Setup(e => e.EvaluateAsync(
+                It.IsAny<string>(), It.IsAny<string>(), GovernanceRole.Operator,
+                _namespaceId, PillarKind.Recover, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Forbidden("Governance.InsufficientRole", "denied")));
+
+        var result = await _controller.Create(request);
+
+        result.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        _serviceMock.Verify(
+            s => s.CreateJobAsync(It.IsAny<string>(), It.IsAny<BulkOperationCreateRequest>(), It.IsAny<string?>(), It.IsAny<RecoveryActor>(), It.IsAny<IReadOnlySet<Guid>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
 
     [Fact]
     public async Task Create_WithoutIntentHeaders_Returns428()

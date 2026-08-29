@@ -4,6 +4,7 @@ using ServiceHub.Api.Filters;
 using ServiceHub.Api.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Constants;
@@ -75,6 +76,7 @@ public sealed class SignatureReplayController : ApiControllerBase
     [HttpPost("~/" + ApiRoutes.Dlq.SignatureReplay)]
     [RequireNamespaceOwnership]
     [RequireScope(ApiKeyScopes.DlqWrite)]
+    [RequireGovernanceRole(GovernanceRole.Operator, PillarKind.Recover)]
     [ProducesResponseType(typeof(BulkOperationJobResponse), StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
