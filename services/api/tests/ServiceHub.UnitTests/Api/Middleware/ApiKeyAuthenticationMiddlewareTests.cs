@@ -224,6 +224,58 @@ public class ApiKeyAuthenticationMiddlewareTests
     }
 
     [Fact]
+    public async Task InvokeAsync_ScopedKeyWithDescription_ShouldStoreApiKeyName()
+    {
+        // Regression test: GovernanceAuthorizationFilter, SecurityAuditLogger, and
+        // ApiControllerBase all read context.Items["ApiKeyName"] to resolve a per-key actor
+        // identity (e.g. for GranteeKind.ApiKey governance grants and "ApiKey:<name>" audit/
+        // ledger entries). Without this, every key-authenticated call collapsed to the raw
+        // OwnerId, making individual API keys indistinguishable from each other.
+        var dict = new Dictionary<string, string?>
+        {
+            ["Security:Authentication:Enabled"] = "true",
+            ["Security:Authentication:ScopedApiKeys:0:Key"] = "named-key-12345",
+            ["Security:Authentication:ScopedApiKeys:0:Scopes:0"] = "Viewer",
+            ["Security:Authentication:ScopedApiKeys:0:Description"] = "CI automation key",
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Request.Headers["X-API-KEY"] = "named-key-12345";
+
+        await middleware.InvokeAsync(context);
+
+        context.Items["ApiKeyName"].Should().Be("CI automation key");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_KeyWithoutDescription_ShouldNotSetApiKeyName()
+    {
+        var dict = new Dictionary<string, string?>
+        {
+            ["Security:Authentication:Enabled"] = "true",
+            ["Security:Authentication:ScopedApiKeys:0:Key"] = "undescribed-key-12345",
+            ["Security:Authentication:ScopedApiKeys:0:Scopes:0"] = "Viewer",
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Request.Headers["X-API-KEY"] = "undescribed-key-12345";
+
+        await middleware.InvokeAsync(context);
+
+        context.Items.Should().NotContainKey("ApiKeyName");
+    }
+
+    [Fact]
     public async Task InvokeAsync_NoKeysConfigured_ShouldReturn401()
     {
         RequestDelegate next = _ => Task.CompletedTask;

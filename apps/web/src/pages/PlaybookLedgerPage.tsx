@@ -78,7 +78,7 @@ function CorrelationAccountabilityStrip() {
     <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-200 text-xs text-indigo-800">
       <Gauge className="w-4 h-4 shrink-0" />
       Correlation accountability: {report.totalHypotheses} hypothes{report.totalHypotheses === 1 ? 'is' : 'es'} proposed
-      {report.approvalRate !== null ? (
+      {report.approvalRate != null ? (
         <> &middot; {Math.round(report.approvalRate * 100)}% approved ({report.approvedCount} of {dispositioned} dispositioned)</>
       ) : (
         <> &middot; not enough evidence yet ({report.proposedCount + report.underReviewCount} awaiting a decision)</>
@@ -112,7 +112,7 @@ function BacktestStrip() {
     <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-teal-50 border border-teal-200 text-xs text-teal-800">
       <Target className="w-4 h-4 shrink-0" />
       Backtesting: {report.totalBacktested} finding{report.totalBacktested === 1 ? '' : 's'} checked against what actually happened
-      {report.corroborationRate !== null && (
+      {report.corroborationRate != null && (
         <> &middot; {Math.round(report.corroborationRate * 100)}% corroborated ({report.corroboratedCount} of {report.totalBacktested})</>
       )}
     </div>
