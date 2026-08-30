@@ -67,6 +67,20 @@ test.describe('Suite F — Accessibility smoke (azure)', () => {
     await scan(page);
   });
 
+  test('Autonomy page has no WCAG2 A/AA violations', async ({ page, noConsoleErrors }) => {
+    void noConsoleErrors;
+    await page.goto('/demo/azure/autonomy');
+    await expect(page.getByRole('heading', { name: 'Autonomy' })).toBeVisible();
+    await scan(page);
+  });
+
+  test('Advanced ServiceHub educational page has no WCAG2 A/AA violations', async ({ page, noConsoleErrors }) => {
+    void noConsoleErrors;
+    await page.goto('/demo/azure/advanced-servicehub');
+    await expect(page.getByRole('heading', { name: 'Advanced ServiceHub', level: 1 })).toBeVisible();
+    await scan(page);
+  });
+
   test('Fleet Health page has no WCAG2 A/AA violations', async ({ page, noConsoleErrors }) => {
     void noConsoleErrors;
     await page.goto('/demo/azure/fleet');

@@ -38,10 +38,11 @@ const LiveTailPageLazy = lazy(() => import('./pages/LiveTailPage').then(m => ({ 
 const ConnectPageLazy = lazy(() => import('./pages/ConnectPage').then(m => ({ default: m.ConnectPage })));
 const RulesPageLazy = lazy(() => import('./pages/RulesPage').then(m => ({ default: m.RulesPage })));
 const ApprovalQueuePageLazy = lazy(() => import('./pages/ApprovalQueuePage'));
-const AutonomyDashboardPageLazy = lazy(() => import('./pages/AutonomyDashboardPage'));
+const AutonomyPageLazy = lazy(() => import('./pages/AutonomyPage'));
 const ProactiveInsightsPageLazy = lazy(() => import('./pages/ProactiveInsightsPage'));
 const HealthPageLazy = lazy(() => import('./pages/HealthPage').then(m => ({ default: m.HealthPage })));
 const HelpPageLazy = lazy(() => import('./pages/HelpPage').then(m => ({ default: m.HelpPage })));
+const AdvancedServiceHubPageLazy = lazy(() => import('./pages/AdvancedServiceHubPage').then(m => ({ default: m.AdvancedServiceHubPage })));
 const ScheduledMessagesPageLazy = lazy(() => import('./pages/ScheduledMessagesPage').then(m => ({ default: m.ScheduledMessagesPage })));
 const SecurityPageLazy = lazy(() => import('./pages/SecurityPage').then(m => ({ default: m.SecurityPage })));
 
@@ -116,12 +117,18 @@ const sharedChildren = [
     ),
   },
   {
-    path: 'autonomy-dashboard',
+    path: 'autonomy',
     element: (
       <Suspense fallback={<PageLoading />}>
-        <AutonomyDashboardPageLazy />
+        <AutonomyPageLazy />
       </Suspense>
     ),
+  },
+  // Old route, renamed to '/autonomy' as part of the Advanced ServiceHub redesign — kept as a
+  // redirect so existing bookmarks and the browser back-button history don't 404.
+  {
+    path: 'autonomy-dashboard',
+    element: <Navigate to="../autonomy" replace />,
   },
   {
     path: 'insights',
@@ -144,6 +151,14 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <HelpPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'advanced-servicehub',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <AdvancedServiceHubPageLazy />
       </Suspense>
     ),
   },

@@ -1,4 +1,5 @@
 import { Fragment, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ClipboardList, AlertCircle, RefreshCw, Info, ChevronDown, ChevronRight, CheckCircle2, XCircle, Eye, Gauge, Target } from 'lucide-react';
 import {
   usePlaybookEntries,
@@ -252,7 +253,12 @@ function EntryDetailRow({ entry }: { entry: PlaybookEntry }) {
  */
 export default function PlaybookLedgerPage() {
   const { isDemoMode } = useDemoContext();
-  const [pillarFilter, setPillarFilter] = useState<'' | PillarKind>('');
+  const [searchParams] = useSearchParams();
+  // Deep-linked from the Autonomy page's per-pillar cards (?pillar=Investigate) — read once as
+  // the initial filter value, same as any other page reading its starting state from the URL.
+  const pillarParam = searchParams.get('pillar');
+  const initialPillar = PILLARS.includes(pillarParam as PillarKind) ? (pillarParam as PillarKind) : '';
+  const [pillarFilter, setPillarFilter] = useState<'' | PillarKind>(initialPillar);
   const [stateFilter, setStateFilter] = useState<'' | PlaybookEntryState>('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 

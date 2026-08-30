@@ -20,12 +20,18 @@ const WORKSPACE_ROUTES: Array<{ path: string; label: string }> = [
   { path: '/dlq-history', label: 'DLQ Intelligence' },
   { path: '/signatures', label: 'Failure Signatures' },
   { path: '/rules', label: 'Auto-Replay Rules' },
+  { path: '/approval-queue', label: 'Approval Queue' },
+  { path: '/autonomy', label: 'Autonomy' },
+  { path: '/insights', label: 'Proactive Insights' },
   { path: '/cross-cloud-trace', label: 'Multi-Cloud Trace' },
   { path: '/health', label: 'System Health' },
   { path: '/audit', label: 'Audit Trail' },
   { path: '/recovery', label: 'Recovery Evidence' },
+  { path: '/playbook', label: 'Playbook Ledger' },
+  { path: '/governance', label: 'Governance' },
   { path: '/security', label: 'Security & Privacy' },
   { path: '/help', label: 'Help & Guide' },
+  { path: '/advanced-servicehub', label: 'Advanced ServiceHub' },
 ];
 
 const ALL_BASE_PATHS = [...new Set(WORKSPACE_ROUTES.map((r) => r.path.split('?')[0])), '/connect'];

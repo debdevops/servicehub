@@ -27,9 +27,9 @@ const mockUseDisposition = useDispositionPlaybookEntry as ReturnType<typeof vi.f
 const mockUseCorrelationAccountability = useCorrelationAccountability as ReturnType<typeof vi.fn>;
 const mockUseBacktestReport = useBacktestReport as ReturnType<typeof vi.fn>;
 
-function renderPage() {
+function renderPage(initialEntry = '/playbook') {
   return render(
-    <MemoryRouter initialEntries={['/playbook']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <PlaybookLedgerPage />
     </MemoryRouter>,
   );
@@ -61,6 +61,19 @@ describe('PlaybookLedgerPage', () => {
     mockUsePlaybookEntries.mockReturnValue({ data: undefined, isLoading: true, isError: false, refetch: vi.fn(), isFetching: true });
     renderPage();
     expect(screen.getByText('Playbook Ledger')).toBeInTheDocument();
+  });
+
+  it('pre-selects the pillar filter from a ?pillar= deep link (e.g. from the Autonomy page)', () => {
+    mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    renderPage('/playbook?pillar=Correlate');
+    expect(screen.getByLabelText('Filter by pillar')).toHaveValue('Correlate');
+    expect(mockUsePlaybookEntries).toHaveBeenLastCalledWith({ pillarKind: 'Correlate', state: undefined });
+  });
+
+  it('ignores an invalid ?pillar= value and falls back to "All Pillars"', () => {
+    mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    renderPage('/playbook?pillar=NotAPillar');
+    expect(screen.getByLabelText('Filter by pillar')).toHaveValue('');
   });
 
   it('shows the empty state when there are no entries', () => {
