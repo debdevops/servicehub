@@ -292,6 +292,17 @@ public sealed class ApiKeyAuthenticationMiddleware
             ? Namespace.SpaOwnerId
             : ComputeScopedOwnerId(apiKey);
 
+        // Governance/RBAC (GovernanceAuthorizationFilter) and audit/actor logging
+        // (SecurityAuditLogger, ApiControllerBase) all read context.Items["ApiKeyName"] to
+        // differentiate individual API-key callers — without it they silently fall back to the
+        // raw OwnerId, which is either the single shared SPA owner (admin keys) or an opaque hash
+        // (scoped keys), collapsing every key sharing an owner into one indistinguishable identity.
+        // Description is the only per-key label the configuration carries, so it doubles as name.
+        if (!string.IsNullOrWhiteSpace(keyConfig.Description))
+        {
+            context.Items["ApiKeyName"] = keyConfig.Description;
+        }
+
         var allowedNamespaceIds = NamespaceAllowList.Parse(keyConfig.Namespaces);
         if (allowedNamespaceIds is not null)
         {

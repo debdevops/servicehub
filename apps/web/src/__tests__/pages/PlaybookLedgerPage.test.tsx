@@ -185,6 +185,26 @@ describe('PlaybookLedgerPage', () => {
       expect(screen.getByText(/not enough evidence yet/)).toBeInTheDocument();
     });
 
+    it('shows "not enough evidence yet" (not NaN%) when approvalRate is omitted from the response, not just when it is null', () => {
+      // Regression test: the API omits null fields entirely (JsonIgnoreCondition.WhenWritingNull
+      // or equivalent) rather than serializing an explicit `"approvalRate": null` — so the field
+      // arrives as `undefined` in JS, not `null`. A strict `!== null` check treated `undefined`
+      // as "a real rate", producing `Math.round(undefined * 100)` = "NaN% approved (0 of 0
+      // dispositioned)" in production even though every other test here (which mocks an explicit
+      // `approvalRate: null`) passed. This mock reproduces the real shape by omitting the field.
+      mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+      mockUseCorrelationAccountability.mockReturnValue({
+        data: {
+          generatedAt: '2026-08-29T09:00:00Z', totalHypotheses: 16, proposedCount: 16, underReviewCount: 0,
+          approvedCount: 0, rejectedCount: 0, expiredCount: 0, supersededCount: 0,
+        },
+        isLoading: false,
+      });
+      renderPage();
+      expect(screen.getByText(/not enough evidence yet/)).toBeInTheDocument();
+      expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+    });
+
     it('shows the computed approval rate once hypotheses have been dispositioned', () => {
       mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
       mockUseCorrelationAccountability.mockReturnValue({
