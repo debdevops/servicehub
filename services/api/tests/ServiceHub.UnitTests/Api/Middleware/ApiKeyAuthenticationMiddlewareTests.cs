@@ -7,6 +7,7 @@ using Moq;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Middleware;
 using ServiceHub.Api.Security;
+using ServiceHub.Core.Entities;
 
 namespace ServiceHub.UnitTests.Api.Middleware;
 
@@ -273,6 +274,111 @@ public class ApiKeyAuthenticationMiddlewareTests
         await middleware.InvokeAsync(context);
 
         context.Items.Should().NotContainKey("ApiKeyName");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_PlainLegacyKey_ShouldStoreSharedDescription()
+    {
+        // Pins existing backward-compatible behavior: a legacy ApiKeys entry given as a plain
+        // string (not an object) still resolves to the shared "Legacy admin key" identity.
+        var config = CreateConfig(enabled: true, apiKeys: ["plain-legacy-key-12345"]);
+
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Request.Headers["X-API-KEY"] = "plain-legacy-key-12345";
+
+        await middleware.InvokeAsync(context);
+
+        context.Items["ApiKeyName"].Should().Be("Legacy admin key");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_NamedLegacyKey_ShouldStoreItsOwnDescription()
+    {
+        // Regression test for ISSUE-1b (E2E-MULTICLOUD-VALIDATION-2026-08-30.md): a legacy
+        // ApiKeys entry can now be given as { "Key": ..., "Description": ... }, mirroring
+        // ScopedApiKeys, so an admin-scope key gets a governance/audit identity distinct from
+        // the shared "Legacy admin key" default.
+        var dict = new Dictionary<string, string?>
+        {
+            ["Security:Authentication:Enabled"] = "true",
+            ["Security:Authentication:ApiKeys:0:Key"] = "named-legacy-key-12345",
+            ["Security:Authentication:ApiKeys:0:Description"] = "Ops bootstrap key",
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Request.Headers["X-API-KEY"] = "named-legacy-key-12345";
+
+        await middleware.InvokeAsync(context);
+
+        context.Items["ApiKeyName"].Should().Be("Ops bootstrap key");
+        context.Items["OwnerId"].Should().Be(Namespace.SpaOwnerId);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_TwoNamedLegacyKeys_ShouldHaveDistinctApiKeyNames()
+    {
+        // The actual defect ISSUE-1b describes: before this fix, every legacy admin key
+        // collapsed onto the identical "Legacy admin key" identity, making two distinct
+        // credentials indistinguishable in governance grants and audit logs. Named entries fix
+        // that while both keys still share the same admin OwnerId (SpaOwnerId), by design.
+        var dict = new Dictionary<string, string?>
+        {
+            ["Security:Authentication:Enabled"] = "true",
+            ["Security:Authentication:ApiKeys:0:Key"] = "ops-admin-key-12345",
+            ["Security:Authentication:ApiKeys:0:Description"] = "Ops admin key",
+            ["Security:Authentication:ApiKeys:1:Key"] = "release-admin-key-12345",
+            ["Security:Authentication:ApiKeys:1:Description"] = "Release admin key",
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        var opsContext = new DefaultHttpContext();
+        opsContext.Request.Path = "/api/v1/namespaces";
+        opsContext.Request.Headers["X-API-KEY"] = "ops-admin-key-12345";
+        await middleware.InvokeAsync(opsContext);
+
+        var releaseContext = new DefaultHttpContext();
+        releaseContext.Request.Path = "/api/v1/namespaces";
+        releaseContext.Request.Headers["X-API-KEY"] = "release-admin-key-12345";
+        await middleware.InvokeAsync(releaseContext);
+
+        opsContext.Items["ApiKeyName"].Should().Be("Ops admin key");
+        releaseContext.Items["ApiKeyName"].Should().Be("Release admin key");
+        opsContext.Items["ApiKeyName"].Should().NotBe(releaseContext.Items["ApiKeyName"]);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_NamedLegacyKeyWithoutDescription_ShouldFallBackToSharedDescription()
+    {
+        // An object-shaped legacy entry with Key but no Description falls back to the same
+        // shared default a plain string would produce, rather than an empty/whitespace name.
+        var dict = new Dictionary<string, string?>
+        {
+            ["Security:Authentication:Enabled"] = "true",
+            ["Security:Authentication:ApiKeys:0:Key"] = "named-no-description-key-12345",
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = new ApiKeyAuthenticationMiddleware(next, _logger.Object, config);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/namespaces";
+        context.Request.Headers["X-API-KEY"] = "named-no-description-key-12345";
+
+        await middleware.InvokeAsync(context);
+
+        context.Items["ApiKeyName"].Should().Be("Legacy admin key");
     }
 
     [Fact]

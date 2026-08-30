@@ -94,22 +94,39 @@ public sealed class ApiKeyAuthenticationMiddleware
 
     private void LoadApiKeys(IConfiguration configuration)
     {
-        // Support both simple string array (backward compatible) and scoped keys
-        var simpleKeys = configuration.GetSection("Security:Authentication:ApiKeys").Get<string[]>();
-        if (simpleKeys != null && simpleKeys.Length > 0)
+        // Support both simple string entries (backward compatible — collapse to the shared
+        // "Legacy admin key" identity, as before) and named entries in the same shape as
+        // ScopedApiKeys ({ "Key": ..., "Description": ... }), so an operator running several
+        // legacy admin keys can tell them apart in governance grants and audit logs instead of
+        // every one of them resolving to the same indistinguishable actor identity.
+        foreach (var child in configuration.GetSection("Security:Authentication:ApiKeys").GetChildren())
         {
-            foreach (var key in simpleKeys)
+            string? key;
+            string description;
+
+            if (child.GetChildren().Any())
             {
-                if (!string.IsNullOrWhiteSpace(key) && !IsPlaceholderKey(key))
+                var named = child.Get<ApiKeyConfiguration>();
+                key = named?.Key;
+                description = string.IsNullOrWhiteSpace(named?.Description)
+                    ? "Legacy admin key"
+                    : named.Description;
+            }
+            else
+            {
+                key = child.Value;
+                description = "Legacy admin key";
+            }
+
+            if (!string.IsNullOrWhiteSpace(key) && !IsPlaceholderKey(key))
+            {
+                // Legacy keys always have admin scope, named or not (backward compatibility).
+                _apiKeyLookup[key] = new ApiKeyConfiguration
                 {
-                    // Simple keys have admin scope (backward compatibility)
-                    _apiKeyLookup[key] = new ApiKeyConfiguration
-                    {
-                        Key = key,
-                        Scopes = null, // null = admin
-                        Description = "Legacy admin key"
-                    };
-                }
+                    Key = key,
+                    Scopes = null, // null = admin
+                    Description = description
+                };
             }
         }
 
