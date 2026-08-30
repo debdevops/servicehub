@@ -14,6 +14,9 @@ const WORKSPACE_BASE_PATHS = new Set([
   'dlq-history',
   'signatures',
   'rules',
+  'approval-queue',
+  'autonomy',
+  'insights',
   'cross-cloud-trace',
   'health',
   'audit',
@@ -22,6 +25,7 @@ const WORKSPACE_BASE_PATHS = new Set([
   'governance',
   'security',
   'help',
+  'advanced-servicehub',
 ]);
 
 function getWorkspaceLabel(pathname: string, searchParams: URLSearchParams): string | null {
@@ -54,6 +58,12 @@ function getWorkspaceLabel(pathname: string, searchParams: URLSearchParams): str
       return 'Failure Signatures';
     case 'rules':
       return 'Auto-Replay Rules';
+    case 'approval-queue':
+      return 'Approval Queue';
+    case 'autonomy':
+      return 'Autonomy';
+    case 'insights':
+      return 'Proactive Insights';
     case 'cross-cloud-trace':
       return 'Multi-Cloud Trace';
     case 'health':
@@ -70,6 +80,8 @@ function getWorkspaceLabel(pathname: string, searchParams: URLSearchParams): str
       return 'Security & Privacy';
     case 'help':
       return 'Help & Guide';
+    case 'advanced-servicehub':
+      return 'Advanced ServiceHub';
     default:
       return null;
   }
@@ -79,10 +91,11 @@ function getWorkspaceLabel(pathname: string, searchParams: URLSearchParams): str
  * Browser-like Back/Forward for every Quick Access destination (Namespace
  * Overview, Incident Center, Fleet Health, Active Messages, Live Tail,
  * Dead-Letter, Scheduled Messages, Cloud Bridge, DLQ Intelligence, Failure
- * Signatures, Auto-Replay Rules, Multi-Cloud Trace, System Health, Audit
- * Trail, Recovery Evidence, Security & Privacy, Help & Guide). Renders
- * nothing outside those routes (e.g. /connect, which sits outside the Quick
- * Access menu).
+ * Signatures, Auto-Replay Rules, Approval Queue, Autonomy, Proactive
+ * Insights, Multi-Cloud Trace, System Health, Audit Trail, Recovery
+ * Evidence, Playbook Ledger, Governance, Security & Privacy, Help & Guide,
+ * Advanced ServiceHub). Renders nothing outside those routes (e.g.
+ * /connect, which sits outside the Quick Access menu).
  */
 export function QuickAccessToolbar() {
   const location = useLocation();

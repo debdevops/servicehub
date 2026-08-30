@@ -21,6 +21,7 @@ import {
   Sparkles,
   ClipboardList,
   Users,
+  GraduationCap,
 } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
@@ -31,7 +32,22 @@ import { ResizablePanel } from './ResizablePanel';
 /**
  * Quick Access — shortcuts to the most-used pages, grouped by workflow stage.
  * Always the first panel: Overview → Browse across clouds → Diagnose & automate →
- * Platform → Support. Collapsible, draggable, and independently resizable.
+ * Advanced ServiceHub → Platform → Learn ServiceHub → Support. Collapsible, draggable, and
+ * independently resizable.
+ *
+ * Advanced ServiceHub groups the pages that explain and govern ServiceHub's own autonomy —
+ * Autonomy (the "how autonomous is this, and why" page), the Recovery and Playbook ledgers, and
+ * Governance/RBAC — separate from the daily Diagnose & automate loop (DLQ Intelligence,
+ * Auto-Replay Rules, Approval Queue, Proactive Insights, Multi-Cloud Trace), which stays put
+ * since Approval Queue is a live, time-sensitive queue tied directly to Auto-Replay Rules, not a
+ * governance surface.
+ *
+ * Learn ServiceHub is deliberately a separate, single-item section, not folded into Advanced
+ * ServiceHub or Support: it's neither an operational feature (Advanced ServiceHub's four pages
+ * all do something) nor a support resource (Help & Guide answers "how do I do X"). It's pure
+ * architecture explanation — "what is Advanced ServiceHub and why does it exist" — so it gets its
+ * own section, placed directly above Support since that's the other "understand the product"
+ * destination.
  */
 export function QuickAccessPanel() {
   const [searchParams] = useSearchParams();
@@ -247,19 +263,6 @@ export function QuickAccessPanel() {
           <span className="flex-1 text-left">Approval Queue</span>
         </NavLink>
         <NavLink
-          to={`${navPrefix}/autonomy-dashboard`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-blue-50 text-blue-700 border-blue-300 font-medium'
-                : 'bg-white hover:bg-blue-50 text-gray-700 hover:text-blue-700 border-gray-200 hover:border-blue-300'
-            }`
-          }
-        >
-          <Gauge className="w-4 h-4 text-blue-500" />
-          <span className="flex-1 text-left">Autonomy Dashboard</span>
-        </NavLink>
-        <NavLink
           to={`${navPrefix}/insights`}
           className={({ isActive }) =>
             `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
@@ -287,35 +290,20 @@ export function QuickAccessPanel() {
           <span className="flex-1 text-left">Multi-Cloud Trace</span>
         </NavLink>
 
-        {/* ── Platform ── */}
-        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Platform</div>
+        {/* ── Advanced ServiceHub ── */}
+        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Advanced ServiceHub</div>
         <NavLink
-          to={`${navPrefix}/health`}
+          to={`${navPrefix}/autonomy`}
           className={({ isActive }) =>
             `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
               isActive
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-medium'
-                : 'bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border-gray-200 hover:border-emerald-300'
+                ? 'bg-blue-50 text-blue-700 border-blue-300 font-medium'
+                : 'bg-white hover:bg-blue-50 text-gray-700 hover:text-blue-700 border-gray-200 hover:border-blue-300'
             }`
           }
         >
-          <Activity className="w-4 h-4 text-emerald-500" />
-          <span className="flex-1 text-left">System Health</span>
-          <span className="text-xs text-emerald-600 font-medium">Status</span>
-        </NavLink>
-        <NavLink
-          to={`${navPrefix}/audit`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-primary-50 text-primary-700 border-primary-300 font-medium'
-                : 'bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border-gray-200 hover:border-primary-300'
-            }`
-          }
-        >
-          <Shield className="w-4 h-4 text-primary-500" />
-          <span className="flex-1 text-left">Audit Trail</span>
-          <span className="text-xs text-primary-600 font-medium">Logs</span>
+          <Gauge className="w-4 h-4 text-blue-500" />
+          <span className="flex-1 text-left">Autonomy</span>
         </NavLink>
         <NavLink
           to={`${navPrefix}/recovery`}
@@ -356,6 +344,37 @@ export function QuickAccessPanel() {
           <Users className="w-4 h-4 text-red-500" />
           <span className="flex-1 text-left">Governance</span>
         </NavLink>
+
+        {/* ── Platform ── */}
+        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Platform</div>
+        <NavLink
+          to={`${navPrefix}/health`}
+          className={({ isActive }) =>
+            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isActive
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-medium'
+                : 'bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border-gray-200 hover:border-emerald-300'
+            }`
+          }
+        >
+          <Activity className="w-4 h-4 text-emerald-500" />
+          <span className="flex-1 text-left">System Health</span>
+          <span className="text-xs text-emerald-600 font-medium">Status</span>
+        </NavLink>
+        <NavLink
+          to={`${navPrefix}/audit`}
+          className={({ isActive }) =>
+            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isActive
+                ? 'bg-primary-50 text-primary-700 border-primary-300 font-medium'
+                : 'bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border-gray-200 hover:border-primary-300'
+            }`
+          }
+        >
+          <Shield className="w-4 h-4 text-primary-500" />
+          <span className="flex-1 text-left">Audit Trail</span>
+          <span className="text-xs text-primary-600 font-medium">Logs</span>
+        </NavLink>
         <NavLink
           to={`${navPrefix}/security`}
           className={({ isActive }) =>
@@ -368,6 +387,22 @@ export function QuickAccessPanel() {
         >
           <Shield className="w-4 h-4 text-green-500" />
           <span className="flex-1 text-left">Security &amp; Privacy</span>
+        </NavLink>
+
+        {/* ── Learn ServiceHub ── */}
+        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Learn ServiceHub</div>
+        <NavLink
+          to={`${navPrefix}/advanced-servicehub`}
+          className={({ isActive }) =>
+            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isActive
+                ? 'bg-indigo-50 text-indigo-700 border-indigo-300 font-medium'
+                : 'bg-white hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 border-gray-200 hover:border-indigo-300'
+            }`
+          }
+        >
+          <GraduationCap className="w-4 h-4 text-indigo-500" />
+          <span className="flex-1 text-left">Advanced ServiceHub</span>
         </NavLink>
 
         {/* ── Support ── */}

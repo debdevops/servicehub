@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import {
   Search, LayoutDashboard, MessageSquare, Clock, GitMerge,
   AlertCircle, RefreshCw, BarChart2, HelpCircle, Plug,
-  Database, ChevronRight, X, Layers, Cloud, Shield, CheckCircle2, Gauge, Sparkles
+  Database, ChevronRight, X, Layers, Cloud, Shield, CheckCircle2, Gauge, Sparkles,
+  ShieldCheck, ClipboardList, Users, GraduationCap
 } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
@@ -96,20 +97,44 @@ const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
     keywords: 'approve escalate eligibility gate declined',
   },
   {
-    id: 'page-autonomy-dashboard',
-    label: 'Autonomy Dashboard',
-    description: 'Fleet-wide autonomy levels, circuit breaker trips, and recent transitions',
-    group: 'Pages',
-    icon: <Gauge className="w-4 h-4" />,
-    keywords: 'autonomy trust level standing unattended circuit breaker',
-  },
-  {
     id: 'page-insights',
     label: 'Proactive Insights',
     description: 'Auto-narration, correlation findings, backlog forecasts, contract violations',
     group: 'Pages',
     icon: <Sparkles className="w-4 h-4" />,
     keywords: 'narration narrate correlation forecast backlog contract violation drift push proactive',
+  },
+  {
+    id: 'page-autonomy',
+    label: 'Autonomy',
+    description: 'How autonomous ServiceHub is, per pillar, and what evidence and governance support it',
+    group: 'Pages',
+    icon: <Gauge className="w-4 h-4" />,
+    keywords: 'autonomy trust level standing unattended circuit breaker autonomous ai governance',
+  },
+  {
+    id: 'page-recovery',
+    label: 'Recovery Evidence',
+    description: 'Tamper-evident ledger of every replay and purge ServiceHub has executed',
+    group: 'Pages',
+    icon: <ShieldCheck className="w-4 h-4" />,
+    keywords: 'recovery ledger evidence replay purge chain',
+  },
+  {
+    id: 'page-playbook',
+    label: 'Playbook Ledger',
+    description: 'What ServiceHub proposed across all four pillars, and what a human decided',
+    group: 'Pages',
+    icon: <ClipboardList className="w-4 h-4" />,
+    keywords: 'playbook proposal prevention rule disposition review',
+  },
+  {
+    id: 'page-governance',
+    label: 'Governance',
+    description: 'Who holds which role, scoped to which namespace and pillar',
+    group: 'Pages',
+    icon: <Users className="w-4 h-4" />,
+    keywords: 'governance rbac role grant admin operator approver',
   },
   {
     id: 'page-health',
@@ -144,6 +169,14 @@ const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
     keywords: 'namespace add connection string',
   },
   {
+    id: 'page-advanced-servicehub',
+    label: 'Advanced ServiceHub',
+    description: 'What Advanced ServiceHub means: the autonomy model, evidence, and governance, explained',
+    group: 'Pages',
+    icon: <GraduationCap className="w-4 h-4" />,
+    keywords: 'learn advanced servicehub education architecture explain autonomy model ai agent',
+  },
+  {
     id: 'page-help',
     label: 'Help & Guide',
     description: 'Quick reference and shortcuts',
@@ -163,12 +196,16 @@ const PAGE_ROUTES: Record<string, string> = {
   'page-dlq': '/dlq-history',
   'page-rules': '/rules',
   'page-approval-queue': '/approval-queue',
-  'page-autonomy-dashboard': '/autonomy-dashboard',
   'page-insights': '/insights',
+  'page-autonomy': '/autonomy',
+  'page-recovery': '/recovery',
+  'page-playbook': '/playbook',
+  'page-governance': '/governance',
   'page-health': '/health',
   'page-audit': '/audit',
   'page-security': '/security',
   'page-connect': '/connect',
+  'page-advanced-servicehub': '/advanced-servicehub',
   'page-help': '/help',
 };
 
