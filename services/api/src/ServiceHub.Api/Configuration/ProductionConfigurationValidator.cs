@@ -131,16 +131,16 @@ public static class ProductionConfigurationValidator
 
     private static bool HasConfiguredApiKeys(IConfiguration configuration)
     {
-        // Check simple ApiKeys array
-        var simpleKeys = configuration.GetSection("Security:Authentication:ApiKeys").Get<string[]>();
-        if (simpleKeys is { Length: > 0 })
+        // Check ApiKeys entries — either a plain string or a named object
+        // ({ "Key": ..., "Description": ... }), mirroring
+        // ApiKeyAuthenticationMiddleware.LoadApiKeys. A plain Get<string[]>() would silently
+        // miss named entries, since a complex child node has no bindable string value.
+        foreach (var child in configuration.GetSection("Security:Authentication:ApiKeys").GetChildren())
         {
-            foreach (var key in simpleKeys)
+            var keyValue = child.GetChildren().Any() ? child.GetValue<string>("Key") : child.Value;
+            if (!string.IsNullOrWhiteSpace(keyValue) && !IsPlaceholderKey(keyValue))
             {
-                if (!string.IsNullOrWhiteSpace(key) && !IsPlaceholderKey(key))
-                {
-                    return true;
-                }
+                return true;
             }
         }
 
