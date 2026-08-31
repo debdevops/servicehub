@@ -214,7 +214,12 @@ function KnowledgeSection({
             {/* Key metrics */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
               <div>
-                <span className="text-gray-500 block">Occurrences</span>
+                <span
+                  className="text-gray-500 block"
+                  title="How many times ServiceHub's analysis has re-detected this pattern since it was first seen — not a count of affected messages."
+                >
+                  Occurrences
+                </span>
                 <span className="font-semibold text-gray-900">{occurrenceCount}</span>
               </div>
               <div>

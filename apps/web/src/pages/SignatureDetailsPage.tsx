@@ -11,6 +11,9 @@ import {
 } from '@servicehub/ui-shared/hooks/useDlqSignatures';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useDlqSummary } from '@servicehub/ui-shared/hooks/useDlqHistory';
+import { useSignatureReplayJob } from '@servicehub/ui-shared/hooks/useSignatureReplay';
+import { isTerminalBulkOperationStatus } from '@servicehub/ui-shared/lib/api/bulkOperations';
+import { useActiveJobs } from '@servicehub/ui-shared/lib/activeJobs/ActiveJobsContext';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { extractApiError } from '@servicehub/ui-shared/lib/api/errors';
 import type { ApiError } from '@servicehub/ui-shared/lib/api/types';
@@ -53,6 +56,7 @@ export function SignatureDetailsPage() {
   const { data: dlqSummary } = useDlqSummary(namespaceId);
   const { isDemoMode, cloudProvider } = useDemoContext();
   const basePath = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
+  const activeJobs = useActiveJobs();
 
   const {
     data: detail,
@@ -66,6 +70,12 @@ export function SignatureDetailsPage() {
   const [selectedMessageId, setSelectedMessageId] = useState<number | null>(null);
   const [showReplayPreview, setShowReplayPreview] = useState(false);
   const [replayJobId, setReplayJobId] = useState<string | null>(null);
+
+  // Same query SignatureReplayProgressPanel polls (React Query dedupes it) — used here only to
+  // decide whether "Replay Signature" should be clickable. Until the first poll response lands,
+  // treat a just-started job as active rather than momentarily re-enabling the button.
+  const { data: activeReplayJob } = useSignatureReplayJob(replayJobId, namespaceId, signatureHash);
+  const isReplayInFlight = !!replayJobId && (!activeReplayJob || !isTerminalBulkOperationStatus(activeReplayJob.status));
 
   const resolve = useResolveSignature();
   const reopen = useReopenSignature();
@@ -191,7 +201,12 @@ export function SignatureDetailsPage() {
                 <span className="font-medium text-gray-900">{formatDate(detail.windowEnd)}</span>
               </div>
               <div>
-                <span className="text-gray-500 block text-xs">Occurrence Count</span>
+                <span
+                  className="text-gray-500 block text-xs"
+                  title="How many times ServiceHub's analysis has re-detected this pattern since it was first seen — not a count of affected messages. See Related Messages below for that."
+                >
+                  Occurrence Count
+                </span>
                 <span className="font-medium text-gray-900">{detail.occurrenceCount}</span>
               </div>
               <div>
@@ -232,9 +247,11 @@ export function SignatureDetailsPage() {
               <CrossCloudTraceLink correlationId={correlationId} />
               <button
                 onClick={() => setShowReplayPreview(true)}
-                disabled={!detail.isCurrentlyClustered || detail.relatedMessages.length === 0}
+                disabled={!detail.isCurrentlyClustered || detail.relatedMessages.length === 0 || isReplayInFlight}
                 title={
-                  !detail.isCurrentlyClustered || detail.relatedMessages.length === 0
+                  isReplayInFlight
+                    ? 'A replay for this signature is already queued or running'
+                    : !detail.isCurrentlyClustered || detail.relatedMessages.length === 0
                     ? 'No currently resolvable messages for this signature'
                     : undefined
                 }
@@ -292,7 +309,10 @@ export function SignatureDetailsPage() {
 
           {/* Related Messages */}
           <div className="bg-white border border-gray-200 rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3">
+            <h2
+              className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3"
+              title="Messages currently in the DLQ that match this pattern right now — distinct from Occurrence Count above."
+            >
               Related Messages ({detail.relatedMessages.length})
             </h2>
             {detail.relatedMessages.length === 0 ? (
@@ -326,6 +346,9 @@ export function SignatureDetailsPage() {
               onJobStarted={(jobId) => {
                 setShowReplayPreview(false);
                 setReplayJobId(jobId);
+                // Tracked independently of this page's lifetime — the toast still fires (and
+                // caches still refresh) even if the user navigates away before it finishes.
+                activeJobs.trackSignatureReplay(jobId, namespaceId, signatureHash);
               }}
             />
           )}

@@ -39,10 +39,23 @@ export interface BulkOperationPreview {
   unsafeReplayCount: number;
 }
 
+/**
+ * Provider-agnostic bucket for why a replay/purge attempt failed — see the backend's
+ * ReplayFailureReason. "NotFound" deliberately doesn't distinguish consumed/replayed/expired:
+ * none of Azure/AWS/GCP's APIs report which of those actually happened.
+ */
+export type ReplayFailureReasonCategory =
+  | 'NotFound'
+  | 'AmbiguousOutcome'
+  | 'Retryable'
+  | 'ProviderError'
+  | 'Other';
+
 export interface BulkOperationFailureSample {
   messageId: string;
   entityName: string;
   reason: string;
+  reasonCategory?: ReplayFailureReasonCategory | null;
 }
 
 export interface BulkOperationJob {
@@ -67,6 +80,13 @@ export interface BulkOperationJob {
   startedAt: string | null;
   completedAt: string | null;
   isCancellable: boolean;
+  /**
+   * While status is Pending: how many other jobs are ahead of this one on the shared
+   * single-concurrency worker — 0 means "next up." Null/absent once Running/terminal, or for
+   * operation types not served by a single-concurrency worker (older cached responses and demo
+   * fixtures may also predate this field, hence optional).
+   */
+  queueAheadCount?: number | null;
 }
 
 export interface PaginatedBulkOperationJobs {

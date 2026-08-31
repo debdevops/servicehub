@@ -498,7 +498,10 @@ export function NamespaceCard({ namespace, dlqThreshold = DLQ_SPIKE_THRESHOLD, s
         ) : !supportsCounts ? (
           // "Healthy" here would be an assertion derived from counts this provider never
           // reports — the same misleading zero, one level of derivation removed.
-          <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-gray-600 text-sm">
+          <div
+            className="flex items-center gap-2 px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-gray-600 text-sm"
+            title="This provider has no message-count API — open the subscription to see actual messages"
+          >
             <Info className="w-4 h-4 shrink-0" />
             <span>Message counts unavailable for this provider</span>
           </div>

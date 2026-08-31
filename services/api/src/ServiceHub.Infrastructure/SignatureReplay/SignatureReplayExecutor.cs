@@ -226,7 +226,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var (outcome, reason) = await ProcessMessageAsync(message, recovery, cancellationToken);
+            var (outcome, reason, reasonCategory) = await ProcessMessageAsync(message, recovery, cancellationToken);
             job.ProcessedCount++;
 
             switch (outcome)
@@ -236,11 +236,11 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
                     break;
                 case MessageOutcome.Failure:
                     job.FailureCount++;
-                    AddToSample(failureSample, message, reason!);
+                    AddToSample(failureSample, message, reason!, reasonCategory);
                     break;
                 case MessageOutcome.Skipped:
                     job.SkippedCount++;
-                    AddToSample(failureSample, message, reason!);
+                    AddToSample(failureSample, message, reason!, reasonCategory);
                     break;
             }
 
@@ -255,7 +255,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         job.FailureSampleJson = failureSample.Count > 0 ? JsonSerializer.Serialize(failureSample) : null;
     }
 
-    private async Task<(MessageOutcome Outcome, string? Reason)> ProcessMessageAsync(
+    private async Task<(MessageOutcome Outcome, string? Reason, string? ReasonCategory)> ProcessMessageAsync(
         DlqMessage message, RecoveryContext recovery, CancellationToken cancellationToken)
     {
         // A message already moved on (e.g. replayed manually between job creation and
@@ -264,7 +264,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         // BulkOperationExecutor.ProcessMessageAsync applies.
         if (message.Status != DlqMessageStatus.Active && message.Status != DlqMessageStatus.ReplayFailed)
         {
-            return (MessageOutcome.Skipped, $"Message status is now '{message.Status}', no longer eligible for replay");
+            return (MessageOutcome.Skipped, $"Message status is now '{message.Status}', no longer eligible for replay", null);
         }
 
         var (entityName, subscriptionName) = BulkOperationExecutor.ResolveEntityAndSubscription(message);
@@ -280,7 +280,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         {
             await RecordDeclinedAsync(message, recovery, entityName, decision, cancellationToken);
             return (MessageOutcome.Skipped,
-                $"Blocked by the Eligibility Gate ({decision.ReasonCode}) — escalate for manual review");
+                $"Blocked by the Eligibility Gate ({decision.ReasonCode}) — escalate for manual review", null);
         }
 
         // Claim the message via optimistic concurrency (Status is a concurrency token — see
@@ -296,7 +296,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         catch (DbUpdateConcurrencyException)
         {
             await _dbContext.Entry(message).ReloadAsync(cancellationToken);
-            return (MessageOutcome.Skipped, "Message was claimed by another concurrent replay — skipped");
+            return (MessageOutcome.Skipped, "Message was claimed by another concurrent replay — skipped", null);
         }
 
         // CancellationToken.None from here through the provider call: the claim above is already
@@ -313,7 +313,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             // No message movement without ledger coverage: release the claim so a retry can pick
             // the message up again rather than call the provider unrecorded.
             message.Status = DlqMessageStatus.Active;
-            return (MessageOutcome.Skipped, $"Recovery ledger error: {beginResult.Error.Message}");
+            return (MessageOutcome.Skipped, $"Recovery ledger error: {beginResult.Error.Message}", null);
         }
 
         var entry = beginResult.Value;
@@ -328,12 +328,16 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
 
         // AWS.SQS.ReplayAmbiguous (send to source succeeded, delete from DLQ failed) routes to
         // Unknown rather than Rejected: the message is genuinely duplicated-if-retried, not
-        // safely retriable — see AwsMessageReceiver.ReplayMessageAsync.
+        // safely retriable — see AwsMessageReceiver.ReplayMessageAsync. Same distinction
+        // ReplayFailureClassifier makes as AmbiguousOutcome, kept as two separate checks here
+        // since RecoveryExecutionOutcome's ledger semantics and ReplayFailureReason's UI-facing
+        // taxonomy are deliberately independent concepts that happen to agree on this one case.
         var executionOutcome = result.IsSuccess
             ? RecoveryExecutionOutcome.Accepted
             : result.Error.Code == "AWS.SQS.ReplayAmbiguous"
                 ? RecoveryExecutionOutcome.Unknown
                 : RecoveryExecutionOutcome.Rejected;
+        var failureReasonCategory = result.IsSuccess ? null : ReplayFailureClassifier.Classify(result.Error).ToString();
 
         // CancellationToken.None: the provider call above already happened, so this outcome must
         // be recorded even if cancellation was requested in the meantime — same reasoning as the
@@ -393,8 +397,8 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         }
 
         return result.IsSuccess
-            ? (MessageOutcome.Success, null)
-            : (MessageOutcome.Failure, result.Error.Message);
+            ? (MessageOutcome.Success, null, null)
+            : (MessageOutcome.Failure, result.Error.Message, failureReasonCategory);
     }
 
     /// <summary>
@@ -446,12 +450,13 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         }
     }
 
-    private static void AddToSample(List<BulkOperationFailureSample> sample, DlqMessage message, string reason)
+    private static void AddToSample(
+        List<BulkOperationFailureSample> sample, DlqMessage message, string reason, string? reasonCategory)
     {
         if (sample.Count >= MaxFailureSampleSize)
             return;
 
-        sample.Add(new BulkOperationFailureSample(message.MessageId, message.EntityName, reason));
+        sample.Add(new BulkOperationFailureSample(message.MessageId, message.EntityName, reason, reasonCategory));
     }
 
     private enum MessageOutcome

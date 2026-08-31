@@ -89,7 +89,19 @@ export function useClientSideInsights(
   enabled: boolean = true
 ) {
   return useQuery({
-    queryKey: ['insights', 'client-side', context.namespaceId, context.entityName, messages?.length],
+    // Keyed on the actual message IDs (not just count) — two different tabs/pages can return
+    // the same number of messages, and a length-only key would return one tab's cached
+    // insights (and their affectedMessageIds) while a different set of messages is on screen,
+    // making "View affected messages" match nothing.
+    queryKey: [
+      'insights',
+      'client-side',
+      context.namespaceId,
+      context.entityName,
+      context.subscriptionName,
+      context.entityType,
+      messages?.map(m => m.messageId),
+    ],
     queryFn: () => {
       if (!messages || messages.length === 0) {
         return [];

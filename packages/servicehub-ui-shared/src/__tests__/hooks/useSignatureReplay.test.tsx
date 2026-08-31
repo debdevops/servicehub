@@ -28,6 +28,7 @@ import {
   useSignatureReplayJob,
   useCancelSignatureReplayJob,
   useSignatureReplayHistory,
+  __resetSignatureReplayNotificationsForTests,
 } from '../../hooks/useSignatureReplay';
 import { DemoModeProvider } from '../../lib/demo/DemoContext';
 
@@ -84,7 +85,13 @@ function makeJob(overrides: Partial<BulkOperationJob> = {}): BulkOperationJob {
   };
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Several cases below reuse the default fixture job id ("job-1") reaching a terminal status —
+  // without this, the module-level notified-job-ids dedup guard (see useSignatureReplay.ts)
+  // would treat a later case's "job-1" as already notified from an earlier case.
+  __resetSignatureReplayNotificationsForTests();
+});
 
 describe('useSignatureReplayPreview', () => {
   it('calls signatureReplayApi.preview with the given namespace/signature/filter', async () => {

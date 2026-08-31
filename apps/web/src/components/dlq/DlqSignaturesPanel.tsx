@@ -27,6 +27,11 @@ function ClusterCard({
               className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
                 cluster.isNew ? 'bg-amber-100 text-amber-700' : 'bg-primary-100 text-primary-700'
               }`}
+              title={
+                cluster.isNew
+                  ? undefined
+                  : `Detected ${cluster.occurrenceCount} time${cluster.occurrenceCount === 1 ? '' : 's'} by ServiceHub's analysis since it was first seen — not a count of messages. See the message count alongside this badge for that.`
+              }
             >
               {cluster.isNew ? '🆕 New' : `🔁 Recurring ×${cluster.occurrenceCount}`}
             </span>
