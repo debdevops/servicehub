@@ -22,6 +22,12 @@ vi.mock('@servicehub/ui-shared/hooks/useDlqHistory', () => ({
 vi.mock('@servicehub/ui-shared/lib/demo/DemoContext', () => ({
   useDemoContext: vi.fn(),
 }));
+vi.mock('@servicehub/ui-shared/hooks/useSignatureReplay', () => ({
+  useSignatureReplayJob: vi.fn(),
+}));
+vi.mock('@servicehub/ui-shared/lib/activeJobs/ActiveJobsContext', () => ({
+  useActiveJobs: vi.fn(),
+}));
 vi.mock('@/components/dlq', () => ({
   AutonomyStatus: ({ signatureHash }: { signatureHash: string }) => (
     <div data-testid="autonomy-status">Autonomy status for {signatureHash}</div>
@@ -68,6 +74,8 @@ import {
 } from '@servicehub/ui-shared/hooks/useDlqSignatures';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
+import { useSignatureReplayJob } from '@servicehub/ui-shared/hooks/useSignatureReplay';
+import { useActiveJobs } from '@servicehub/ui-shared/lib/activeJobs/ActiveJobsContext';
 
 const mockUseDlqSignatureDetail = useDlqSignatureDetail as ReturnType<typeof vi.fn>;
 const mockUseSignatureTimeline = useSignatureTimeline as ReturnType<typeof vi.fn>;
@@ -77,6 +85,9 @@ const mockUseSuppressSignature = useSuppressSignature as ReturnType<typeof vi.fn
 const mockUseArchiveSignature = useArchiveSignature as ReturnType<typeof vi.fn>;
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 const mockUseDemoContext = useDemoContext as ReturnType<typeof vi.fn>;
+const mockUseSignatureReplayJob = useSignatureReplayJob as ReturnType<typeof vi.fn>;
+const mockUseActiveJobs = useActiveJobs as ReturnType<typeof vi.fn>;
+const trackSignatureReplayMock = vi.fn();
 
 const mockNamespaces = [
   { id: 'ns1', name: 'my-namespace', displayName: 'My Namespace', isActive: true, cloudProvider: 'azure' },
@@ -129,6 +140,9 @@ beforeEach(() => {
   mockUseReopenSignature.mockReturnValue({ mutate: vi.fn(), isPending: false });
   mockUseSuppressSignature.mockReturnValue({ mutate: vi.fn(), isPending: false });
   mockUseArchiveSignature.mockReturnValue({ mutate: vi.fn(), isPending: false });
+  mockUseSignatureReplayJob.mockReturnValue({ data: undefined });
+  trackSignatureReplayMock.mockClear();
+  mockUseActiveJobs.mockReturnValue({ trackSignatureReplay: trackSignatureReplayMock });
 });
 
 describe('SignatureDetailsPage', () => {
@@ -268,6 +282,39 @@ describe('SignatureDetailsPage', () => {
       fireEvent.click(screen.getByText('Confirm replay'));
       expect(screen.queryByTestId('replay-preview-modal')).not.toBeInTheDocument();
       expect(screen.getByTestId('replay-progress-panel')).toHaveTextContent('Progress for job-123');
+    });
+
+    it('registers a started job with the global tracker, so it keeps being watched after this page is navigated away from', () => {
+      const Wrapper = createWrapper();
+      render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+
+      fireEvent.click(screen.getByRole('button', { name: /Replay Signature/ }));
+      fireEvent.click(screen.getByText('Confirm replay'));
+
+      expect(trackSignatureReplayMock).toHaveBeenCalledWith('job-123', 'ns1', 'hash-1');
+    });
+
+    it('disables the button once a replay job starts, so a second concurrent replay cannot be started from this page', () => {
+      const Wrapper = createWrapper();
+      render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+
+      fireEvent.click(screen.getByRole('button', { name: /Replay Signature/ }));
+      fireEvent.click(screen.getByText('Confirm replay'));
+
+      // Job just started — no poll response yet (data undefined) — must still count as in-flight,
+      // not momentarily re-enable the button until the first status poll lands.
+      expect(screen.getByRole('button', { name: /Replay Signature/ })).toBeDisabled();
+    });
+
+    it('re-enables the button once the active job reaches a terminal status', () => {
+      mockUseSignatureReplayJob.mockReturnValue({ data: { id: 'job-123', status: 'Completed' } });
+      const Wrapper = createWrapper();
+      render(<Wrapper><SignatureDetailsPage /></Wrapper>);
+
+      fireEvent.click(screen.getByRole('button', { name: /Replay Signature/ }));
+      fireEvent.click(screen.getByText('Confirm replay'));
+
+      expect(screen.getByRole('button', { name: /Replay Signature/ })).toBeEnabled();
     });
   });
 

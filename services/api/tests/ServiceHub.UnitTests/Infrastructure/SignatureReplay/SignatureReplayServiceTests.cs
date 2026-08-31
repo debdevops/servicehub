@@ -269,6 +269,46 @@ public sealed class SignatureReplayServiceTests : IDisposable
         stored.Should().NotBeNull();
         stored!.Status.Should().Be(BulkOperationStatus.Pending);
         _queueMock.Verify(q => q.Enqueue(result.Value.Id), Times.Once);
+        // Nothing else queued yet — next up as soon as the worker is free.
+        result.Value.QueueAheadCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task StartAsync_AnotherJobAheadInGlobalQueue_ReportsQueueAheadCount()
+    {
+        // The worker is a single global instance shared across every namespace/signature, so a
+        // job for one signature genuinely waits behind a Pending/Running job for a completely
+        // unrelated signature — this must be visible, not hidden behind a bare "Queued" spinner.
+        var sut = CreateSut(BuildProviderMock(CloudProviderType.Aws).Object);
+        SetupNamespace();
+        SetupSignatureWithMessages(BuildMessage(1));
+        var first = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)), TestActor);
+        first.IsSuccess.Should().BeTrue();
+        first.Value.QueueAheadCount.Should().Be(0);
+
+        var otherHash = ClusterSignatureHasher.ComputeHash(["other", "terms"], "OtherReason");
+        var otherCluster = new DlqClusterSignature(
+            Size: 1, MessageIds: [2], DominantEntity: "orders", DominantDeadletterReason: "OtherReason",
+            DominantDeadletterReasonCount: 1, TopTerms: ["other", "terms"], IsNew: false,
+            FirstSeenAt: DateTimeOffset.UtcNow.AddDays(-1), OccurrenceCount: 1,
+            WindowStart: DateTimeOffset.UtcNow.AddDays(-1), WindowEnd: DateTimeOffset.UtcNow, Explanation: "test");
+        _analysisServiceMock
+            .Setup(s => s.AnalyzeAsync(OwnerId, _namespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSignatureAnalysisResult>.Success(
+                new DlqSignatureAnalysisResult(true, "clustered", 1, [otherCluster], [])));
+        _historyServiceMock
+            .Setup(s => s.GetByIdsAsync(OwnerId, It.IsAny<IReadOnlyList<long>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<DlqMessage>>.Success([BuildMessage(2)]));
+
+        var second = await sut.StartAsync(
+            OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId) with { SignatureHash = otherHash }), TestActor);
+
+        second.IsSuccess.Should().BeTrue();
+        second.Value.QueueAheadCount.Should().Be(1);
+
+        // Re-fetching the first job still reports it's next up — nothing ahead of it.
+        var refetchedFirst = await sut.GetJobAsync(OwnerId, first.Value.Id);
+        refetchedFirst.Value.QueueAheadCount.Should().Be(0);
     }
 
     [Fact]
@@ -295,6 +335,78 @@ public sealed class SignatureReplayServiceTests : IDisposable
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("SignatureReplay.NoMatches");
+    }
+
+    [Theory]
+    [InlineData(BulkOperationStatus.Pending)]
+    [InlineData(BulkOperationStatus.Running)]
+    public async Task StartAsync_JobAlreadyPendingOrRunningForSameSignature_ReturnsConflict(BulkOperationStatus existingStatus)
+    {
+        var sut = CreateSut(BuildProviderMock(CloudProviderType.Aws).Object);
+        SetupNamespace();
+        SetupSignatureWithMessages(BuildMessage(1));
+        var first = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)), TestActor);
+        first.IsSuccess.Should().BeTrue();
+        var firstJob = await _dbContext.SignatureReplayJobs.FirstAsync(j => j.Id == first.Value.Id);
+        firstJob.Status = existingStatus;
+        await _dbContext.SaveChangesAsync();
+
+        var second = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)), TestActor);
+
+        second.IsFailure.Should().BeTrue();
+        second.Error.Code.Should().Be("SignatureReplay.AlreadyRunning");
+        // Only the first job should exist — the guard must reject before creating a second row.
+        (await _dbContext.SignatureReplayJobs.CountAsync()).Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(BulkOperationStatus.Completed)]
+    [InlineData(BulkOperationStatus.CompletedWithErrors)]
+    [InlineData(BulkOperationStatus.Failed)]
+    [InlineData(BulkOperationStatus.Cancelled)]
+    public async Task StartAsync_PriorJobForSameSignatureIsTerminal_Succeeds(BulkOperationStatus priorStatus)
+    {
+        var sut = CreateSut(BuildProviderMock(CloudProviderType.Aws).Object);
+        SetupNamespace();
+        SetupSignatureWithMessages(BuildMessage(1));
+        var first = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)), TestActor);
+        var firstJob = await _dbContext.SignatureReplayJobs.FirstAsync(j => j.Id == first.Value.Id);
+        firstJob.Status = priorStatus;
+        await _dbContext.SaveChangesAsync();
+        SetupSignatureWithMessages(BuildMessage(2));
+
+        var second = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)), TestActor);
+
+        second.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StartAsync_PendingJobForDifferentSignature_DoesNotBlock()
+    {
+        var sut = CreateSut(BuildProviderMock(CloudProviderType.Aws).Object);
+        SetupNamespace();
+        SetupSignatureWithMessages(BuildMessage(1));
+        var first = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)), TestActor);
+        first.IsSuccess.Should().BeTrue();
+
+        var otherHash = ClusterSignatureHasher.ComputeHash(["other", "terms"], "OtherReason");
+        var otherCluster = new DlqClusterSignature(
+            Size: 1, MessageIds: [2], DominantEntity: "orders", DominantDeadletterReason: "OtherReason",
+            DominantDeadletterReasonCount: 1, TopTerms: ["other", "terms"], IsNew: false,
+            FirstSeenAt: DateTimeOffset.UtcNow.AddDays(-1), OccurrenceCount: 1,
+            WindowStart: DateTimeOffset.UtcNow.AddDays(-1), WindowEnd: DateTimeOffset.UtcNow, Explanation: "test");
+        _analysisServiceMock
+            .Setup(s => s.AnalyzeAsync(OwnerId, _namespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSignatureAnalysisResult>.Success(
+                new DlqSignatureAnalysisResult(true, "clustered", 1, [otherCluster], [])));
+        _historyServiceMock
+            .Setup(s => s.GetByIdsAsync(OwnerId, It.IsAny<IReadOnlyList<long>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<DlqMessage>>.Success([BuildMessage(2)]));
+
+        var second = await sut.StartAsync(
+            OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId) with { SignatureHash = otherHash }), TestActor);
+
+        second.IsSuccess.Should().BeTrue();
     }
 
     // ── GetJobAsync / CancelJobAsync ─────────────────────────────────────────
@@ -346,6 +458,11 @@ public sealed class SignatureReplayServiceTests : IDisposable
         SetupNamespace();
         SetupSignatureWithMessages(BuildMessage(1));
         var first = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)), TestActor);
+        // Mark the first job terminal before starting the second — StartAsync now rejects a
+        // second concurrent replay for the same namespace+signature (see the AlreadyRunning test).
+        var firstJob = await _dbContext.SignatureReplayJobs.FirstAsync(j => j.Id == first.Value.Id);
+        firstJob.Status = BulkOperationStatus.Completed;
+        await _dbContext.SaveChangesAsync();
         SetupSignatureWithMessages(BuildMessage(2));
         var second = await sut.StartAsync(OwnerId, new SignatureReplayStartRequest(Filter(_namespaceId)), TestActor);
 

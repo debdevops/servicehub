@@ -130,7 +130,7 @@ public sealed record DlqTrendPointResponse(
 /// <summary>
 /// Request DTO for updating notes on a DLQ message.
 /// </summary>
-public sealed record UpdateDlqNotesRequest([property: StringLength(4096)] string Notes);
+public sealed record UpdateDlqNotesRequest([StringLength(4096)] string Notes);
 
 /// <summary>
 /// Request DTO for triaging a DLQ message (status transition).
@@ -139,4 +139,4 @@ public sealed record UpdateDlqNotesRequest([property: StringLength(4096)] string
 /// <param name="Notes">Optional notes to record alongside the transition.</param>
 public sealed record UpdateDlqStatusRequest(
     DlqMessageStatus Status,
-    [property: StringLength(4096)] string? Notes = null);
+    [StringLength(4096)] string? Notes = null);

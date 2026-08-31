@@ -72,6 +72,24 @@ describe('SignatureReplayProgressPanel', () => {
     expect(screen.getByText('Orders Namespace')).toBeInTheDocument();
   });
 
+  it('explains an indefinite Pending spinner as waiting behind other jobs on the shared worker', () => {
+    mockUseJob.mockReturnValue({
+      data: makeJob({ status: 'Pending', processedCount: 0, successCount: 0, queueAheadCount: 2 }),
+    });
+    render(<SignatureReplayProgressPanel jobId="job-1" namespaceId="ns-1" signatureHash="hash-1" onDismiss={vi.fn()} />);
+
+    expect(screen.getByText('Waiting behind 2 other replay jobs.')).toBeInTheDocument();
+  });
+
+  it('tells a next-up Pending job it will start as soon as the worker frees up', () => {
+    mockUseJob.mockReturnValue({
+      data: makeJob({ status: 'Pending', processedCount: 0, successCount: 0, queueAheadCount: 0 }),
+    });
+    render(<SignatureReplayProgressPanel jobId="job-1" namespaceId="ns-1" signatureHash="hash-1" onDismiss={vi.fn()} />);
+
+    expect(screen.getByText('Next up — the worker will pick this up as soon as it is free.')).toBeInTheDocument();
+  });
+
   it('shows a Cancel button for a cancellable running job', () => {
     mockUseJob.mockReturnValue({ data: makeJob() });
     render(<SignatureReplayProgressPanel jobId="job-1" namespaceId="ns-1" signatureHash="hash-1" onDismiss={vi.fn()} />);
@@ -90,5 +108,34 @@ describe('SignatureReplayProgressPanel', () => {
     expect(screen.queryByRole('button', { name: /Cancel/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     expect(onDismiss).toHaveBeenCalled();
+  });
+
+  it('labels each failure with its provider-agnostic reason category, distinguishing not-found from retryable', () => {
+    mockUseJob.mockReturnValue({
+      data: makeJob({
+        status: 'CompletedWithErrors',
+        failureCount: 2,
+        failureSample: [
+          {
+            messageId: 'msg-1',
+            entityName: 'orders',
+            reason: 'Message 42 was not found in the DLQ — it may have been consumed, replayed, or expired.',
+            reasonCategory: 'NotFound',
+          },
+          {
+            messageId: 'msg-2',
+            entityName: 'orders',
+            reason: 'Service temporarily unavailable',
+            reasonCategory: 'Retryable',
+          },
+        ],
+      }),
+    });
+    render(<SignatureReplayProgressPanel jobId="job-1" namespaceId="ns-1" signatureHash="hash-1" onDismiss={vi.fn()} />);
+
+    fireEvent.click(screen.getByText(/View failure details/));
+
+    expect(screen.getByText('Not found in DLQ')).toBeInTheDocument();
+    expect(screen.getByText('Retryable')).toBeInTheDocument();
   });
 });

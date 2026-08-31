@@ -22,7 +22,10 @@ export function SignatureLifecycleActions({
 }: SignatureLifecycleActionsProps) {
   if (status === 'Archived') {
     return (
-      <span className="px-2.5 py-1 text-xs font-medium rounded-md bg-gray-100 text-gray-500 border border-gray-200">
+      <span
+        className="px-2.5 py-1 text-xs font-medium rounded-md bg-gray-100 text-gray-500 border border-gray-200"
+        title="Archived is terminal — this signature is closed out and no longer tracked operationally"
+      >
         Archived
       </span>
     );

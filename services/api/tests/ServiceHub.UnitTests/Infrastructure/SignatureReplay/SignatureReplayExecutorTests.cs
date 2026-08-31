@@ -242,6 +242,27 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         stored.Status.Should().Be(DlqMessageStatus.ReplayFailed);
     }
 
+    [Theory]
+    [InlineData("Aws.NotFound", ErrorType.NotFound, "NotFound")]
+    [InlineData("Aws.ReplayAmbiguous", ErrorType.Conflict, "AmbiguousOutcome")]
+    [InlineData("Provider.Timeout", ErrorType.Timeout, "Retryable")]
+    [InlineData("Provider.External", ErrorType.ExternalService, "ProviderError")]
+    public async Task ExecuteAsync_FailedReplay_ClassifiesFailureReasonFromErrorType(
+        string errorCode, ErrorType errorType, string expectedCategory)
+    {
+        var sut = CreateSut();
+        var message = AddDlqMessage(seq: 7);
+        _messageOperationsMock
+            .Setup(m => m.ReplayMessageAsync(message.NamespaceId, "orders", null, 7, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Failure(new Error(errorCode, "boom", errorType)));
+
+        var job = CreateJob([message.Id]);
+        await sut.ExecuteAsync(job.Id, CancellationToken.None);
+
+        var reloaded = await ReloadAsync(job.Id);
+        reloaded.FailureSampleJson.Should().Contain($"\"ReasonCategory\":\"{expectedCategory}\"");
+    }
+
     [Fact]
     public async Task ExecuteAsync_MessageNoLongerEligible_IsSkipped()
     {
