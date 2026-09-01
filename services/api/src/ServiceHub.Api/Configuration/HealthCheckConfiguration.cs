@@ -42,10 +42,21 @@ public static class HealthCheckConfiguration
             ResponseWriter = WriteResponse
         });
 
-        // Readiness probe - checks if the application can handle requests
+        // Readiness probe - checks if the application can handle requests. Deliberately scoped to
+        // internal storage only (e.g. SQLite) — external cloud broker/AI connectivity is reported
+        // under /health/dependencies instead, so one unreachable namespace never flips this probe
+        // to Unhealthy and takes the whole instance out of a load balancer's rotation.
         app.MapHealthChecks("/health/ready", new HealthCheckOptions
         {
             Predicate = check => check.Tags.Contains("ready"),
+            ResponseWriter = WriteResponse
+        });
+
+        // Dependency probe - external cloud broker and AI connectivity. Never gates liveness or
+        // readiness: these are optional/degradable dependencies, not internal storage.
+        app.MapHealthChecks("/health/dependencies", new HealthCheckOptions
+        {
+            Predicate = check => check.Tags.Contains("dependencies"),
             ResponseWriter = WriteResponse
         });
 

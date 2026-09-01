@@ -35,9 +35,11 @@ public class RequestLoggingMiddlewareTests
     [InlineData("/health")]
     [InlineData("/health/ready")]
     [InlineData("/health/live")]
+    [InlineData("/health/dependencies")]
     [InlineData("/api/v1/health")]
     [InlineData("/api/v1/health/ready")]
     [InlineData("/api/v1/health/live")]
+    [InlineData("/api/v1/health/dependencies")]
     public async Task InvokeAsync_WithHealthPath_ShouldSkipLogging(string path)
     {
         var nextCalled = false;

@@ -91,9 +91,11 @@ public static class DependencyInjection
         services.TryAddScoped<Core.Interfaces.ICloudProviderRouter>(
             sp => sp.GetRequiredService<ServiceHub.Infrastructure.Routing.CloudProviderRouter>());
 
-        // Health check
+        // Health check. Tagged "dependencies", not "ready" — an unreachable Azure namespace is an
+        // external broker outage, not an internal-storage readiness failure, and must never flip
+        // /health/ready to Unhealthy and pull the whole instance out of load-balancer rotation.
         services.AddHealthChecks()
-            .AddCheck<ServiceBusHealthCheck>("servicebus", tags: ["ready", "servicebus"]);
+            .AddCheck<ServiceBusHealthCheck>("servicebus", tags: ["dependencies", "servicebus"]);
 
         return services;
     }
@@ -183,10 +185,11 @@ public static class DependencyInjection
         // Signature recognition service (business-level layer)
         services.TryAddScoped<IFailureSignatureRecognitionService, AI.FailureSignatureRecognitionService>();
 
-        // Surfaces AI availability on /health (and /health/ready) without waiting for a real
-        // clustering request — Degraded, never Unhealthy, since AI is an optional dependency.
+        // Surfaces AI availability on /health (and /health/dependencies) without waiting for a real
+        // clustering request — Degraded, never Unhealthy, since AI is an optional dependency. Tagged
+        // "dependencies", not "ready": AI is external and optional, never a readiness gate.
         services.AddHealthChecks()
-            .AddCheck<AI.AIServiceHealthCheck>("ai", tags: ["ready", "ai"]);
+            .AddCheck<AI.AIServiceHealthCheck>("ai", tags: ["dependencies", "ai"]);
 
         return services;
     }
