@@ -138,7 +138,7 @@ public sealed class BulkOperationService : IBulkOperationService
             "Bulk {OperationType} job {JobId} created for namespace {NamespaceId}: {TotalMatched} message(s) matched",
             job.OperationType, job.Id, job.NamespaceId, job.TotalMatched);
 
-        return ToResponse(job);
+        return await ToResponseAsync(job, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -152,7 +152,7 @@ public sealed class BulkOperationService : IBulkOperationService
         return job is null
             ? Result.Failure<BulkOperationJobResponse>(Error.NotFound(
                 "BulkOperation.NotFound", $"Bulk operation job {jobId} was not found"))
-            : ToResponse(job);
+            : await ToResponseAsync(job, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -173,8 +173,16 @@ public sealed class BulkOperationService : IBulkOperationService
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
+        // Sequential, not Task.WhenAll: DbContext is not thread-safe for concurrent queries, and
+        // ToResponseAsync issues its own query for each still-Pending item's QueueAheadCount.
+        var responses = new List<BulkOperationJobResponse>(items.Count);
+        foreach (var item in items)
+        {
+            responses.Add(await ToResponseAsync(item, cancellationToken));
+        }
+
         return new PaginatedResponse<BulkOperationJobResponse>(
-            Items: items.Select(ToResponse).ToList(),
+            Items: responses,
             TotalCount: totalCount,
             Page: page,
             PageSize: pageSize,
@@ -207,7 +215,7 @@ public sealed class BulkOperationService : IBulkOperationService
             _logger.LogInformation("Cancellation requested for bulk operation job {JobId}", jobId);
         }
 
-        return ToResponse(job);
+        return await ToResponseAsync(job, cancellationToken);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -282,28 +290,52 @@ public sealed class BulkOperationService : IBulkOperationService
             _dbContext, ownerId, filter.NamespaceId, filter.EntityName,
             filter.Status, filter.Category, filter.From, filter.To);
 
-    private static BulkOperationJobResponse ToResponse(BulkOperationJob job) => new(
-        Id: job.Id,
-        OperationType: job.OperationType.ToString(),
-        Status: job.Status.ToString(),
-        NamespaceId: job.NamespaceId,
-        NamespaceDisplayName: job.NamespaceDisplayName,
-        EntityNameFilter: job.EntityNameFilter,
-        StatusFilter: job.StatusFilter?.ToString(),
-        CategoryFilter: job.CategoryFilter?.ToString(),
-        From: job.FromFilter,
-        To: job.ToFilter,
-        TotalMatched: job.TotalMatched,
-        ProcessedCount: job.ProcessedCount,
-        SuccessCount: job.SuccessCount,
-        FailureCount: job.FailureCount,
-        SkippedCount: job.SkippedCount,
-        FailureSample: DeserializeFailureSample(job.FailureSampleJson),
-        ErrorSummary: job.ErrorSummary,
-        CreatedAt: job.CreatedAt,
-        StartedAt: job.StartedAt,
-        CompletedAt: job.CompletedAt,
-        IsCancellable: job.Status is BulkOperationStatus.Pending or BulkOperationStatus.Running);
+    /// <summary>
+    /// Maps a job row to its response shape, including — for a still-Pending job — how many
+    /// other jobs are ahead of it on the shared single-concurrency
+    /// <c>BulkOperationWorker</c> (see <see cref="BulkOperationJobResponse.QueueAheadCount"/>). Mirrors
+    /// <c>SignatureReplayService.ToResponseAsync</c>'s identical shape: the queue is a plain FIFO
+    /// channel fed immediately after the row commits, so enqueue order and <c>CreatedAt</c> order
+    /// are equivalent — "ahead" can be computed straight from the table. One shared worker
+    /// processes both Replay and Purge jobs, so the count spans both operation types rather than
+    /// being scoped to the job's own <see cref="BulkOperationJob.OperationType"/>.
+    /// </summary>
+    private async Task<BulkOperationJobResponse> ToResponseAsync(BulkOperationJob job, CancellationToken cancellationToken)
+    {
+        int? queueAheadCount = null;
+        if (job.Status == BulkOperationStatus.Pending)
+        {
+            var runningCount = await _dbContext.BulkOperationJobs.AsNoTracking()
+                .CountAsync(j => j.Status == BulkOperationStatus.Running, cancellationToken);
+            var pendingAheadCount = await _dbContext.BulkOperationJobs.AsNoTracking()
+                .CountAsync(j => j.Status == BulkOperationStatus.Pending && j.CreatedAt < job.CreatedAt, cancellationToken);
+            queueAheadCount = runningCount + pendingAheadCount;
+        }
+
+        return new(
+            Id: job.Id,
+            OperationType: job.OperationType.ToString(),
+            Status: job.Status.ToString(),
+            NamespaceId: job.NamespaceId,
+            NamespaceDisplayName: job.NamespaceDisplayName,
+            EntityNameFilter: job.EntityNameFilter,
+            StatusFilter: job.StatusFilter?.ToString(),
+            CategoryFilter: job.CategoryFilter?.ToString(),
+            From: job.FromFilter,
+            To: job.ToFilter,
+            TotalMatched: job.TotalMatched,
+            ProcessedCount: job.ProcessedCount,
+            SuccessCount: job.SuccessCount,
+            FailureCount: job.FailureCount,
+            SkippedCount: job.SkippedCount,
+            FailureSample: DeserializeFailureSample(job.FailureSampleJson),
+            ErrorSummary: job.ErrorSummary,
+            CreatedAt: job.CreatedAt,
+            StartedAt: job.StartedAt,
+            CompletedAt: job.CompletedAt,
+            IsCancellable: job.Status is BulkOperationStatus.Pending or BulkOperationStatus.Running,
+            QueueAheadCount: queueAheadCount);
+    }
 
     private static IReadOnlyList<BulkOperationFailureSample>? DeserializeFailureSample(string? json)
     {

@@ -41,9 +41,9 @@ public sealed record BulkOperationFailureSample(
     string Reason,
     // The provider-agnostic bucket the underlying provider error classifies into (see
     // ServiceHub.Core.Enums.ReplayFailureReason), as its string name — e.g. "NotFound",
-    // "Retryable", "ProviderError". Null for outcomes not classified this way (currently only
-    // populated by signature replay; plain "Skipped" outcomes carry no provider Error to
-    // classify).
+    // "Retryable", "ProviderError". Populated for signature-replay and bulk replay/purge
+    // failures alike (both go through ReplayFailureClassifier). Null for outcomes not classified
+    // this way — plain "Skipped" outcomes carry no provider Error to classify.
     string? ReasonCategory = null);
 
 /// <summary>

@@ -17,6 +17,18 @@ const STATUS_LABEL: Record<string, string> = {
   Cancelled: 'Cancelled',
 };
 
+// Mirrors the backend's ReplayFailureReason — see ReplayFailureClassifier, also applied to bulk
+// replay/purge failures. "Not found" covers consumed/replayed/expired alike: none of
+// Azure/AWS/GCP's APIs report which one actually happened, so pretending otherwise here would be
+// fabricating a distinction, not reporting one.
+const FAILURE_REASON_LABEL: Record<string, string> = {
+  NotFound: 'Not found in DLQ',
+  AmbiguousOutcome: 'Outcome uncertain — do not retry blindly',
+  Retryable: 'Retryable',
+  ProviderError: 'Provider error',
+  Other: 'Other',
+};
+
 /**
  * Floating, non-blocking progress card for an in-flight bulk operation job — polls
  * GET /bulk-operations/{id} (see useBulkOperationJob) rather than blocking the page, so the
@@ -61,6 +73,14 @@ export function BulkOperationProgressPanel({ jobId, onDismiss }: BulkOperationPr
       </div>
 
       <p className="text-xs text-gray-500 mb-2 truncate">{job.namespaceDisplayName}</p>
+
+      {job.status === 'Pending' && job.queueAheadCount != null && (
+        <p className="text-xs text-gray-500 mb-2">
+          {job.queueAheadCount === 0
+            ? 'Next up — the worker will pick this up as soon as it is free.'
+            : `Waiting behind ${job.queueAheadCount} other job${job.queueAheadCount === 1 ? '' : 's'}.`}
+        </p>
+      )}
 
       <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-2">
         <div
@@ -107,8 +127,13 @@ export function BulkOperationProgressPanel({ jobId, onDismiss }: BulkOperationPr
             <ul className="mt-2 max-h-32 overflow-y-auto space-y-1.5 border-t border-gray-100 pt-2">
               {job.failureSample.map((failure, index) => (
                 <li key={`${failure.messageId}-${index}`} className="text-xs">
-                  <p className="font-medium text-gray-700 truncate">
+                  <p className="font-medium text-gray-700 truncate flex items-center gap-1.5">
                     {failure.entityName} · {failure.messageId}
+                    {failure.reasonCategory && (
+                      <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 text-gray-600 border border-gray-200">
+                        {FAILURE_REASON_LABEL[failure.reasonCategory] ?? failure.reasonCategory}
+                      </span>
+                    )}
                   </p>
                   <p className="text-red-600 break-words">{failure.reason}</p>
                 </li>

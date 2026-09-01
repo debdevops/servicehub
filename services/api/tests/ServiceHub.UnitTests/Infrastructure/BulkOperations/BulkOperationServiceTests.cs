@@ -275,6 +275,36 @@ public sealed class BulkOperationServiceTests : IDisposable
         stored.TotalMatched.Should().Be(2);
 
         _queueMock.Verify(q => q.Enqueue(result.Value.Id), Times.Once);
+        // Nothing else queued yet — next up as soon as the worker is free.
+        result.Value.QueueAheadCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task CreateJobAsync_AnotherJobAheadInGlobalQueue_ReportsQueueAheadCount()
+    {
+        // BulkOperationWorker is a single global instance shared across every namespace and
+        // both operation types, so a job created while another is still Pending genuinely waits
+        // behind it — mirrors SignatureReplayService's identical QueueAheadCount contract.
+        var providerMock = BuildProviderMock(CloudProviderType.Aws, ProviderCapabilities.Aws);
+        var sut = CreateSut(providerMock.Object);
+        SetupNamespace(CloudProviderType.Aws);
+        AddDlqMessage(1);
+        AddDlqMessage(2);
+
+        var first = await sut.CreateJobAsync(OwnerId,
+            new BulkOperationCreateRequest(BulkOperationType.Replay, Filter(_namespaceId)), null, TestActor);
+        first.IsSuccess.Should().BeTrue();
+        first.Value.QueueAheadCount.Should().Be(0);
+
+        var second = await sut.CreateJobAsync(OwnerId,
+            new BulkOperationCreateRequest(BulkOperationType.Purge, Filter(_namespaceId)), null, TestActor);
+        second.IsSuccess.Should().BeTrue();
+        second.Value.QueueAheadCount.Should().Be(1,
+            "the two operation types share one worker, so a Purge job still waits behind a Pending Replay job");
+
+        // Re-fetching the first job still reports it's next up — nothing ahead of it.
+        var refetchedFirst = await sut.GetJobAsync(OwnerId, first.Value.Id);
+        refetchedFirst.Value.QueueAheadCount.Should().Be(0);
     }
 
     [Fact]
