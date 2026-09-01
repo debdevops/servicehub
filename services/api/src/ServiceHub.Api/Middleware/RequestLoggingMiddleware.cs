@@ -17,9 +17,11 @@ public sealed class RequestLoggingMiddleware
         "/health",
         "/health/ready",
         "/health/live",
+        "/health/dependencies",
         "/api/v1/health",
         "/api/v1/health/ready",
-        "/api/v1/health/live"
+        "/api/v1/health/live",
+        "/api/v1/health/dependencies"
     };
 
     /// <summary>
