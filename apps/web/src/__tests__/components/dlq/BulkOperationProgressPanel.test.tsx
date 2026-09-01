@@ -102,4 +102,51 @@ describe('BulkOperationProgressPanel', () => {
 
     expect(screen.getByText('Namespace no longer exists')).toBeInTheDocument();
   });
+
+  it('shows how many jobs are ahead of a Pending job in the shared queue', () => {
+    mockUseJob.mockReturnValue({
+      data: makeJob({ status: 'Pending', processedCount: 0, successCount: 0, queueAheadCount: 2 }),
+    });
+    render(<BulkOperationProgressPanel jobId="job-1" onDismiss={vi.fn()} />);
+
+    expect(screen.getByText('Waiting behind 2 other jobs.')).toBeInTheDocument();
+  });
+
+  it('shows "next up" when nothing is ahead of a Pending job', () => {
+    mockUseJob.mockReturnValue({
+      data: makeJob({ status: 'Pending', processedCount: 0, successCount: 0, queueAheadCount: 0 }),
+    });
+    render(<BulkOperationProgressPanel jobId="job-1" onDismiss={vi.fn()} />);
+
+    expect(screen.getByText('Next up — the worker will pick this up as soon as it is free.')).toBeInTheDocument();
+  });
+
+  it('labels each failure with its provider-agnostic reason category, distinguishing not-found from retryable', () => {
+    mockUseJob.mockReturnValue({
+      data: makeJob({
+        status: 'CompletedWithErrors',
+        failureCount: 2,
+        failureSample: [
+          {
+            messageId: 'msg-1',
+            entityName: 'orders',
+            reason: 'Message 42 was not found in the DLQ — it may have been consumed, replayed, or expired.',
+            reasonCategory: 'NotFound',
+          },
+          {
+            messageId: 'msg-2',
+            entityName: 'orders',
+            reason: 'Service temporarily unavailable',
+            reasonCategory: 'Retryable',
+          },
+        ],
+      }),
+    });
+    render(<BulkOperationProgressPanel jobId="job-1" onDismiss={vi.fn()} />);
+
+    fireEvent.click(screen.getByText(/View failure details/));
+
+    expect(screen.getByText('Not found in DLQ')).toBeInTheDocument();
+    expect(screen.getByText('Retryable')).toBeInTheDocument();
+  });
 });

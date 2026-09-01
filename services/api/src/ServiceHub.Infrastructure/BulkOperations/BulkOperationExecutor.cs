@@ -11,6 +11,7 @@ using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.Security;
+using ServiceHub.Infrastructure.SignatureReplay;
 
 namespace ServiceHub.Infrastructure.BulkOperations;
 
@@ -251,7 +252,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var (outcome, reason) = await ProcessMessageAsync(job.OperationType, message, recovery, cancellationToken);
+            var (outcome, reason, reasonCategory) = await ProcessMessageAsync(job.OperationType, message, recovery, cancellationToken);
             job.ProcessedCount++;
 
             switch (outcome)
@@ -261,11 +262,11 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
                     break;
                 case MessageOutcome.Failure:
                     job.FailureCount++;
-                    AddToSample(failureSample, message, reason!);
+                    AddToSample(failureSample, message, reason!, reasonCategory);
                     break;
                 case MessageOutcome.Skipped:
                     job.SkippedCount++;
-                    AddToSample(failureSample, message, reason!);
+                    AddToSample(failureSample, message, reason!, reasonCategory);
                     break;
             }
 
@@ -304,7 +305,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         return string.Join("; ", parts);
     }
 
-    private async Task<(MessageOutcome Outcome, string? Reason)> ProcessMessageAsync(
+    private async Task<(MessageOutcome Outcome, string? Reason, string? ReasonCategory)> ProcessMessageAsync(
         BulkOperationType operationType, DlqMessage message, RecoveryContext recovery, CancellationToken cancellationToken)
     {
         // A message already moved on (e.g. replayed manually between job creation and
@@ -322,7 +323,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         {
             var operationNoun = operationType == BulkOperationType.Replay ? "replay" : "purge";
             return (MessageOutcome.Skipped,
-                $"Message status is now '{message.Status}', no longer eligible for {operationNoun}");
+                $"Message status is now '{message.Status}', no longer eligible for {operationNoun}", null);
         }
 
         var (entityName, subscriptionName) = ResolveEntityAndSubscription(message);
@@ -339,7 +340,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         {
             await RecordDeclinedAsync(message, recovery, entityName, decision, cancellationToken);
             return (MessageOutcome.Skipped,
-                $"Blocked by the Eligibility Gate ({decision.ReasonCode}) — escalate for manual review");
+                $"Blocked by the Eligibility Gate ({decision.ReasonCode}) — escalate for manual review", null);
         }
 
         if (operationType == BulkOperationType.Replay)
@@ -357,7 +358,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
             catch (DbUpdateConcurrencyException)
             {
                 await _dbContext.Entry(message).ReloadAsync(cancellationToken);
-                return (MessageOutcome.Skipped, "Message was claimed by another concurrent replay — skipped");
+                return (MessageOutcome.Skipped, "Message was claimed by another concurrent replay — skipped", null);
             }
 
             // CancellationToken.None from here through the provider call: the claim above is
@@ -374,7 +375,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
                 // No message movement without ledger coverage: release the claim so a retry can
                 // pick the message up again rather than call the provider unrecorded.
                 message.Status = DlqMessageStatus.Active;
-                return (MessageOutcome.Skipped, $"Recovery ledger error: {beginResult.Error.Message}");
+                return (MessageOutcome.Skipped, $"Recovery ledger error: {beginResult.Error.Message}", null);
             }
 
             var entry = beginResult.Value;
@@ -395,6 +396,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
                 : result.Error.Code == "AWS.SQS.ReplayAmbiguous"
                     ? RecoveryExecutionOutcome.Unknown
                     : RecoveryExecutionOutcome.Rejected;
+            var replayFailureReasonCategory = result.IsSuccess ? null : ReplayFailureClassifier.Classify(result.Error).ToString();
 
             // CancellationToken.None: the provider call above already happened, so this outcome
             // must be recorded even if cancellation was requested in the meantime — the same
@@ -428,12 +430,12 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
                 message.Status = DlqMessageStatus.Replayed;
                 message.ReplayedAt = DateTimeOffset.UtcNow;
                 message.ReplaySuccess = true;
-                return (MessageOutcome.Success, null);
+                return (MessageOutcome.Success, null, null);
             }
 
             message.Status = DlqMessageStatus.ReplayFailed;
             message.ReplaySuccess = false;
-            return (MessageOutcome.Failure, result.Error.Message);
+            return (MessageOutcome.Failure, result.Error.Message, replayFailureReasonCategory);
         }
 
         // Purge — claimed exactly the way replay is, for the same reason. Status is an EF
@@ -450,7 +452,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         catch (DbUpdateConcurrencyException)
         {
             await _dbContext.Entry(message).ReloadAsync(cancellationToken);
-            return (MessageOutcome.Skipped, "Message was claimed by another concurrent purge — skipped");
+            return (MessageOutcome.Skipped, "Message was claimed by another concurrent purge — skipped", null);
         }
 
         // CancellationToken.None from here through the provider call — see the replay branch
@@ -463,7 +465,7 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         if (purgeBeginResult.IsFailure)
         {
             message.Status = DlqMessageStatus.Active;
-            return (MessageOutcome.Skipped, $"Recovery ledger error: {purgeBeginResult.Error.Message}");
+            return (MessageOutcome.Skipped, $"Recovery ledger error: {purgeBeginResult.Error.Message}", null);
         }
 
         var purgeEntry = purgeBeginResult.Value;
@@ -492,13 +494,14 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         if (purgeResult.IsSuccess)
         {
             message.Status = DlqMessageStatus.Discarded;
-            return (MessageOutcome.Success, null);
+            return (MessageOutcome.Success, null, null);
         }
 
         // Release the claim so a retry can pick the message up again. Leaving it Purging would
         // reproduce the stranded-claim defect that InterruptedOperationRecovery exists to fix.
         message.Status = DlqMessageStatus.Active;
-        return (MessageOutcome.Failure, purgeResult.Error.Message);
+        var purgeFailureReasonCategory = ReplayFailureClassifier.Classify(purgeResult.Error).ToString();
+        return (MessageOutcome.Failure, purgeResult.Error.Message, purgeFailureReasonCategory);
     }
 
     /// <summary>
@@ -570,12 +573,13 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         return (message.TopicName, subscriptionName);
     }
 
-    private static void AddToSample(List<BulkOperationFailureSample> sample, DlqMessage message, string reason)
+    private static void AddToSample(
+        List<BulkOperationFailureSample> sample, DlqMessage message, string reason, string? reasonCategory)
     {
         if (sample.Count >= MaxFailureSampleSize)
             return;
 
-        sample.Add(new BulkOperationFailureSample(message.MessageId, message.EntityName, reason));
+        sample.Add(new BulkOperationFailureSample(message.MessageId, message.EntityName, reason, reasonCategory));
     }
 
     private void RecordCompletionAudit(BulkOperationJob job)

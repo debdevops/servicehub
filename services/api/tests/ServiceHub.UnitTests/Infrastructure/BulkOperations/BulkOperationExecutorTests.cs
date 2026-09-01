@@ -1,8 +1,10 @@
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Events;
@@ -237,6 +239,10 @@ public sealed class BulkOperationExecutorTests : IDisposable
         storedJob.Status.Should().Be(BulkOperationStatus.CompletedWithErrors);
         storedJob.FailureCount.Should().Be(1);
         storedJob.FailureSampleJson.Should().Contain("message not found");
+
+        var sample = JsonSerializer.Deserialize<List<BulkOperationFailureSample>>(storedJob.FailureSampleJson!)!;
+        sample.Single().ReasonCategory.Should().Be("ProviderError",
+            "ExternalService errors classify the same way SignatureReplayExecutor's identical failure does");
 
         var storedMessage = await _dbContext.DlqMessages.AsNoTracking().FirstAsync(m => m.Id == message.Id);
         storedMessage.Status.Should().Be(DlqMessageStatus.ReplayFailed);
@@ -569,6 +575,10 @@ public sealed class BulkOperationExecutorTests : IDisposable
 
         var storedJob = await _dbContext.BulkOperationJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
         storedJob.FailureCount.Should().Be(1);
+
+        var sample = JsonSerializer.Deserialize<List<BulkOperationFailureSample>>(storedJob.FailureSampleJson!)!;
+        sample.Single().ReasonCategory.Should().Be("ProviderError",
+            "purge failures are classified the same generic Error-type taxonomy as replay failures");
     }
 
     // ── Cancellation mid-batch ───────────────────────────────────────────────
