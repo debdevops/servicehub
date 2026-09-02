@@ -1,10 +1,21 @@
 # Backup & Restore
 
-ServiceHub's persistent state lives in two independent stores: a SQLite database (DLQ
-intelligence, audit trail, recovery evidence ledger, and everything else EF Core owns) and a JSON
-file holding the namespace/connection registry. This document describes how ServiceHub backs both
-up, what a backup bundle contains, and how an operator restores from one. Restore is a **manual,
-operator-driven procedure** — there is no automated restore endpoint, by design (see §5).
+ServiceHub's persistent state lives in a single SQLite database — DLQ intelligence, audit trail,
+recovery evidence ledger, namespace/connection registry, and everything else EF Core owns. This
+document describes how ServiceHub backs it up, what a backup bundle contains, and how an operator
+restores from one. Restore is a **manual, operator-driven procedure** — there is no automated
+restore endpoint, by design (see §5).
+
+> **Namespaces moved into SQLite.** Namespaces were originally stored in a separate
+> `servicehub-namespaces.json` file, backed up and restored independently from the SQLite database
+> (the two-store model this document used to describe throughout). That JSON store was migrated
+> into the same SQLite database as everything else; on an instance that has started up since, the
+> one-time importer renames the old file to `servicehub-namespaces.json.migrated` and namespaces
+> live in SQLite from then on. `BackupService` still looks for `servicehub-namespaces.json`
+> verbatim and copies it into the bundle **only if found** — on any already-migrated instance that
+> will never happen again, so `manifest.json`'s `namespaceStore` field will simply be absent. The
+> rest of this document's references to a separate namespace JSON file describe the legacy
+> pre-migration case; skip them if your bundle has no `servicehub-namespaces.json`.
 
 ## 1. What gets backed up
 
@@ -14,7 +25,7 @@ configured backup directory, containing:
 | File | Contents |
 |---|---|
 | `servicehub-dlq.db` | A consistent snapshot of the SQLite database, taken via `VACUUM INTO`. |
-| `servicehub-namespaces.json` | A copy of the namespace JSON store, if one exists yet. Omitted on a fresh instance with no namespaces. |
+| `servicehub-namespaces.json` | **Legacy, pre-migration only** (see callout in the introduction) — a copy of the old namespace JSON store, present only on an instance that hasn't yet run the one-time SQLite import. Absent on every migrated instance. |
 | `manifest.json` | Metadata about the bundle — see §2. |
 
 ## 2. The manifest
@@ -29,12 +40,18 @@ configured backup directory, containing:
   connection-string encryption key that was active when the backup was taken. **The key itself is
   never included anywhere in a backup bundle.** Before restoring, compare this fingerprint against
   the fingerprint of the environment you're restoring into (see §4, step 2) — if they don't match,
-  the restored namespace JSON's encrypted connection strings will not decrypt, and every namespace
-  will need to be re-added with its plaintext connection string.
+  namespaces' encrypted connection strings (stored in SQLite; in the legacy JSON file on a
+  pre-migration bundle) will not decrypt, and every namespace will need to be re-added with its
+  plaintext connection string.
 - **`consistencyNote`** — a reminder of the model described in §3, embedded in the bundle itself so
   it travels with the backup.
 
 ## 3. Consistency model — read this before you restore
+
+**On a migrated instance (see the introduction's callout), this entire section is moot: namespaces
+live in the same SQLite database as everything else, so `VACUUM INTO` captures them atomically
+along with DLQ/audit/evidence data — there is no second store to be inconsistent with.** It only
+applies to a legacy bundle that still contains a `servicehub-namespaces.json` file.
 
 **The SQLite snapshot and the namespace JSON copy are captured independently. They are not a
 single atomic transaction across both stores.**
