@@ -11,26 +11,42 @@ using ServiceHub.Shared.Results;
 namespace ServiceHub.Infrastructure.Security;
 
 /// <summary>
-/// Provides AES-GCM encryption for connection strings with key versioning support.
-/// Uses authenticated encryption to ensure both confidentiality and integrity.
-/// Format: ENC[v1]:{base64-ciphertext} for versioned encryption.
+/// Provides AES-GCM encryption for connection strings, backed by an <see cref="EncryptionKeyRegistry"/>
+/// so an operator can rotate the active key without losing access to data encrypted under an older
+/// one — see ADR "Encryption Key Rotation for ServiceHub" (project memory
+/// <c>adr-encryption-key-rotation</c>), Phases 1-2.
+/// <para>
+/// Two envelope formats:
+/// <list type="bullet">
+/// <item><c>ENC[v1]:{base64}</c> — legacy, single-key. No AAD (predates key IDs). Used for new
+/// encryptions only while the registry has not been explicitly configured
+/// (<c>Security:EncryptionKeyRegistry</c> unset) — i.e. today's single-key deployments keep
+/// producing exactly the bytes they always have.</item>
+/// <item><c>ENC[v2:kid=&lt;id&gt;]:{base64}</c> — versioned, multi-key. The key ID is authenticated
+/// as AES-GCM additional authenticated data, so tampering with the envelope (swapping the kid)
+/// is detected at decrypt time, not silently accepted. Used once an operator opts into
+/// <c>Security:EncryptionKeyRegistry</c>.</item>
+/// </list>
+/// Both formats are always decryptable regardless of which one <see cref="Protect"/> currently
+/// produces — decryption looks up whichever key ID the envelope names, not just the active one.
+/// </para>
 /// </summary>
 public sealed partial class ConnectionStringProtector : IConnectionStringProtector
 {
-    // Current encryption version - increment when changing encryption algorithm
-    private const string CurrentVersion = "v1";
-    private const string EncryptedPrefix = "ENC[v1]:";
-    
-    // Legacy formats for backward compatibility
+    private const string V1Prefix = "ENC[v1]:";
+
+    // Legacy formats for backward compatibility — both predate the key registry and are assumed
+    // to have been encrypted under EncryptionKeyRegistry.LegacyKeyId, with no AAD.
     private const string LegacyV2Prefix = "ENC:V2:";
     private const string LegacyProtectedPrefix = "PROTECTED:";
-    
+
     private const string MaskPattern = "SharedAccessKey=***MASKED***";
     private const int KeySizeBytes = 32; // 256 bits
     private const int NonceSizeBytes = 12; // 96 bits for AES-GCM
     private const int TagSizeBytes = 16; // 128 bits
 
-    private readonly byte[] _encryptionKey;
+    private readonly EncryptionKeyRegistry _registry;
+    private readonly IReadOnlyDictionary<string, byte[]> _derivedKeys;
     private readonly ILogger<ConnectionStringProtector> _logger;
     private readonly bool _encryptionEnabled;
 
@@ -46,40 +62,38 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
         ILogger<ConnectionStringProtector> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
-        var keyString = configuration["Security:EncryptionKey"]
-            ?? throw new InvalidOperationException("Security:EncryptionKey is not configured.");
-
-        if (string.IsNullOrWhiteSpace(keyString))
-        {
-            throw new InvalidOperationException(
-                "Security:EncryptionKey is empty or whitespace. " +
-                "Set a secure random value via the SECURITY__ENCRYPTIONKEY environment variable " +
-                "or Azure App Service Application Settings.");
-        }
-
         _encryptionEnabled = configuration.GetValue("Security:EnableConnectionStringEncryption", true);
 
-        // Derive a proper 256-bit key from the configured key using SHA256
-        _encryptionKey = DeriveKey(keyString);
+        // Fatal at startup on any registry violation — never lazily on first use. See
+        // EncryptionKeyRegistry.Load for the full validation contract.
+        _registry = EncryptionKeyRegistry.Load(configuration);
+        _derivedKeys = _registry.Keys.ToDictionary(
+            k => k.Id, k => DeriveKey(k.Material), StringComparer.Ordinal);
 
-        // Validate that the key was changed from the default / placeholder
-        if (keyString.Contains("CHANGE_THIS", StringComparison.OrdinalIgnoreCase) ||
-            keyString.Contains("SET_VIA_", StringComparison.OrdinalIgnoreCase) ||
-            keyString.Contains("DEV_KEY_NOT_FOR_PRODUCTION", StringComparison.OrdinalIgnoreCase))
+        // Validate that the *active* key was changed from the default / placeholder. Only the
+        // active key matters here — it is the one new encryptions use.
+        var activeMaterial = _registry.GetActive().Material;
+        if (activeMaterial.Contains("CHANGE_THIS", StringComparison.OrdinalIgnoreCase) ||
+            activeMaterial.Contains("SET_VIA_", StringComparison.OrdinalIgnoreCase) ||
+            activeMaterial.Contains("DEV_KEY_NOT_FOR_PRODUCTION", StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning(
                 "Security warning: Encryption key appears to be a placeholder or development key. " +
-                "Set a cryptographically random value via the SECURITY__ENCRYPTIONKEY environment variable " +
-                "or Azure App Service Application Settings before using in production.");
+                "Set a cryptographically random value via the SECURITY__ENCRYPTIONKEY (or " +
+                "SECURITY__ENCRYPTIONKEYREGISTRY) environment variable before using in production.");
 
             if (!environment.IsDevelopment())
             {
                 throw new InvalidOperationException(
-                    "Security:EncryptionKey must be set to a cryptographically random value via " +
-                    "the SECURITY__ENCRYPTIONKEY environment variable in non-Development environments.");
+                    "The active encryption key must be set to a cryptographically random value via " +
+                    "the SECURITY__ENCRYPTIONKEY or SECURITY__ENCRYPTIONKEYREGISTRY environment " +
+                    "variable in non-Development environments.");
             }
         }
+
+        _logger.LogInformation(
+            "Encryption key registry loaded: {KeyCount} key(s) (active={ActiveKeyId}, mode={Mode})",
+            _registry.Keys.Count, _registry.ActiveKeyId, _registry.IsMultiKey ? "multi-key" : "single-key");
     }
 
     /// <inheritdoc/>
@@ -92,16 +106,48 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
                 "Connection string is required."));
         }
 
-        // Already encrypted with current version
-        if (connectionString.StartsWith(EncryptedPrefix, StringComparison.Ordinal))
+        // Already ENC[v2:kid=...] — re-encrypt to the active key only if it isn't already active.
+        var v2Match = EncV2Regex().Match(connectionString);
+        if (v2Match.Success)
         {
-            return Result.Success(connectionString);
+            var kid = v2Match.Groups[1].Value;
+            if (string.Equals(kid, _registry.ActiveKeyId, StringComparison.Ordinal))
+            {
+                return Result.Success(connectionString);
+            }
+
+            var decryptResult = DecryptV2(connectionString, kid);
+            if (decryptResult.IsFailure)
+            {
+                return Result.Failure<string>(decryptResult.Error);
+            }
+
+            return EncryptToActive(decryptResult.Value);
         }
 
-        // Handle legacy V2 format - re-encrypt with new versioned format
+        // Already ENC[v1]: — unchanged while the deployment stays single-key (kid is implicitly
+        // always the active one); re-encrypted to the active v2 key once multi-key rotation is on.
+        if (connectionString.StartsWith(V1Prefix, StringComparison.Ordinal))
+        {
+            if (!_registry.IsMultiKey ||
+                string.Equals(_registry.ActiveKeyId, EncryptionKeyRegistry.LegacyKeyId, StringComparison.Ordinal))
+            {
+                return Result.Success(connectionString);
+            }
+
+            var decryptResult = DecryptLegacy(connectionString, V1Prefix.Length, aad: null);
+            if (decryptResult.IsFailure)
+            {
+                return Result.Failure<string>(decryptResult.Error);
+            }
+
+            return EncryptToActive(decryptResult.Value);
+        }
+
+        // Handle legacy V2 format - re-encrypt with current format
         if (connectionString.StartsWith(LegacyV2Prefix, StringComparison.Ordinal))
         {
-            var legacyResult = UnprotectLegacyV2(connectionString);
+            var legacyResult = DecryptLegacy(connectionString, LegacyV2Prefix.Length, aad: null);
             if (legacyResult.IsFailure)
             {
                 // Do not fall through and re-encrypt the undecryptable ciphertext itself —
@@ -110,7 +156,7 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
             }
 
             connectionString = legacyResult.Value;
-            // Re-encrypt with new format below
+            // Re-encrypt with current format below
         }
 
         // Handle legacy protected strings - decrypt first if needed
@@ -134,8 +180,7 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
 
         try
         {
-            var encrypted = EncryptAesGcm(connectionString);
-            return Result.Success($"{EncryptedPrefix}{encrypted}");
+            return EncryptToActive(connectionString);
         }
         catch (CryptographicException ex)
         {
@@ -156,17 +201,22 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
                 "Protected connection string is required."));
         }
 
-        // Current versioned format
-        if (protectedConnectionString.StartsWith(EncryptedPrefix, StringComparison.Ordinal))
+        var v2Match = EncV2Regex().Match(protectedConnectionString);
+        if (v2Match.Success)
         {
-            return DecryptAesGcm(protectedConnectionString, EncryptedPrefix);
+            return DecryptV2(protectedConnectionString, v2Match.Groups[1].Value);
+        }
+
+        if (protectedConnectionString.StartsWith(V1Prefix, StringComparison.Ordinal))
+        {
+            return DecryptLegacy(protectedConnectionString, V1Prefix.Length, aad: null);
         }
 
         // Legacy V2 format (backward compatibility)
         if (protectedConnectionString.StartsWith(LegacyV2Prefix, StringComparison.Ordinal))
         {
             _logger.LogDebug("Decrypting legacy V2 format. Consider re-encrypting with versioned format.");
-            return DecryptAesGcm(protectedConnectionString, LegacyV2Prefix);
+            return DecryptLegacy(protectedConnectionString, LegacyV2Prefix.Length, aad: null);
         }
 
         // Legacy Base64 format (backward compatibility)
@@ -193,10 +243,15 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
             return string.Empty;
         }
 
-        // For encrypted strings, just indicate they're encrypted with version
-        if (connectionString.StartsWith(EncryptedPrefix, StringComparison.Ordinal))
+        var v2Match = EncV2Regex().Match(connectionString);
+        if (v2Match.Success)
         {
-            return $"[ENCRYPTED:{CurrentVersion}]";
+            return $"[ENCRYPTED:v2:kid={v2Match.Groups[1].Value}]";
+        }
+
+        if (connectionString.StartsWith(V1Prefix, StringComparison.Ordinal))
+        {
+            return "[ENCRYPTED:v1]";
         }
 
         if (connectionString.StartsWith(LegacyV2Prefix, StringComparison.Ordinal))
@@ -240,20 +295,83 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
     /// <inheritdoc/>
     public string GetKeyFingerprint()
     {
-        // SHA-256 of the *derived* 256-bit key, not the operator-configured key string — the
+        // SHA-256 of the *derived* active key, not the operator-configured key string — the
         // derived key is already the product of HKDF/PBKDF2, so hashing it again cannot leak
         // any information that would help recover the original key material. Truncated to 16
         // hex chars: enough to distinguish keys across environments, short enough that nobody
         // mistakes it for a secret worth protecting.
-        var hash = SHA256.HashData(_encryptionKey);
+        var hash = SHA256.HashData(_derivedKeys[_registry.ActiveKeyId]);
         return $"sha256:{Convert.ToHexString(hash)[..16].ToLowerInvariant()}";
+    }
+
+    /// <summary>
+    /// Encrypts <paramref name="plaintext"/> with the currently active key, using the
+    /// <c>ENC[v2:kid=...]</c> envelope once the registry is multi-key, or the legacy
+    /// <c>ENC[v1]:</c> envelope while it is still single-key — so a deployment that has not opted
+    /// into <see cref="EncryptionKeyRegistry.IsMultiKey"/> keeps producing exactly the bytes it
+    /// always has.
+    /// </summary>
+    private Result<string> EncryptToActive(string plaintext)
+    {
+        var activeId = _registry.ActiveKeyId;
+        var key = _derivedKeys[activeId];
+
+        if (!_registry.IsMultiKey)
+        {
+            return Result.Success($"{V1Prefix}{EncryptAesGcm(key, plaintext, aad: null)}");
+        }
+
+        var envelopeTag = $"ENC[v2:kid={activeId}]";
+        var aad = Encoding.UTF8.GetBytes(envelopeTag);
+        return Result.Success($"{envelopeTag}:{EncryptAesGcm(key, plaintext, aad)}");
+    }
+
+    /// <summary>Decrypts an <c>ENC[v2:kid=&lt;kid&gt;]:</c> envelope, verifying the kid as AAD.</summary>
+    private Result<string> DecryptV2(string encryptedString, string kid)
+    {
+        if (!_derivedKeys.TryGetValue(kid, out var key))
+        {
+            _logger.LogWarning(
+                "Failed to decrypt connection string: key ID '{KeyId}' not found in registry " +
+                "(possible key rotation without retaining the old key)", kid);
+            return Result.Failure<string>(Error.Validation(
+                ErrorCodes.Namespace.ConnectionStringInvalid,
+                $"Key ID '{kid}' not found in registry. Update Security:EncryptionKeyRegistry to " +
+                "include this key, or re-add this namespace."));
+        }
+
+        var envelopeTag = $"ENC[v2:kid={kid}]";
+        var prefix = $"{envelopeTag}:";
+        var aad = Encoding.UTF8.GetBytes(envelopeTag);
+        return DecryptAesGcm(key, encryptedString, prefix.Length, aad);
+    }
+
+    /// <summary>
+    /// Decrypts a pre-registry envelope (<c>ENC[v1]:</c> or the deprecated <c>ENC:V2:</c>), which
+    /// always used <see cref="EncryptionKeyRegistry.LegacyKeyId"/> and no AAD.
+    /// </summary>
+    private Result<string> DecryptLegacy(string encryptedString, int prefixLength, byte[]? aad)
+    {
+        if (!_derivedKeys.TryGetValue(EncryptionKeyRegistry.LegacyKeyId, out var key))
+        {
+            _logger.LogWarning(
+                "Failed to decrypt connection string: key ID '{KeyId}' not found in registry",
+                EncryptionKeyRegistry.LegacyKeyId);
+            return Result.Failure<string>(Error.Validation(
+                ErrorCodes.Namespace.ConnectionStringInvalid,
+                $"Key ID '{EncryptionKeyRegistry.LegacyKeyId}' not found in registry. Include the " +
+                "prior Security:EncryptionKey value under this ID in Security:EncryptionKeyRegistry " +
+                "to keep existing namespaces decryptable, or re-add this namespace."));
+        }
+
+        return DecryptAesGcm(key, encryptedString, prefixLength, aad);
     }
 
     /// <summary>
     /// Encrypts plaintext using AES-GCM authenticated encryption.
     /// Output format: Base64(nonce || ciphertext || tag)
     /// </summary>
-    private string EncryptAesGcm(string plaintext)
+    private static string EncryptAesGcm(byte[] key, string plaintext, byte[]? aad)
     {
         var plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
         var nonce = new byte[NonceSizeBytes];
@@ -263,8 +381,8 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
         // Generate cryptographically secure random nonce
         RandomNumberGenerator.Fill(nonce);
 
-        using var aesGcm = new AesGcm(_encryptionKey, TagSizeBytes);
-        aesGcm.Encrypt(nonce, plaintextBytes, ciphertext, tag);
+        using var aesGcm = new AesGcm(key, TagSizeBytes);
+        aesGcm.Encrypt(nonce, plaintextBytes, ciphertext, tag, aad);
 
         // Combine: nonce + ciphertext + tag
         var combined = new byte[nonce.Length + ciphertext.Length + tag.Length];
@@ -276,13 +394,13 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
     }
 
     /// <summary>
-    /// Decrypts AES-GCM encrypted data with specified prefix.
+    /// Decrypts AES-GCM encrypted data whose base64 payload starts at <paramref name="prefixLength"/>.
     /// </summary>
-    private Result<string> DecryptAesGcm(string encryptedString, string prefix)
+    private Result<string> DecryptAesGcm(byte[] key, string encryptedString, int prefixLength, byte[]? aad)
     {
         try
         {
-            var payload = encryptedString[prefix.Length..];
+            var payload = encryptedString[prefixLength..];
             var combined = Convert.FromBase64String(payload);
 
             if (combined.Length < NonceSizeBytes + TagSizeBytes + 1)
@@ -303,8 +421,8 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
 
             var plaintext = new byte[ciphertextLength];
 
-            using var aesGcm = new AesGcm(_encryptionKey, TagSizeBytes);
-            aesGcm.Decrypt(nonce, ciphertext, tag, plaintext);
+            using var aesGcm = new AesGcm(key, TagSizeBytes);
+            aesGcm.Decrypt(nonce, ciphertext, tag, plaintext, aad);
 
             return Result.Success(Encoding.UTF8.GetString(plaintext));
         }
@@ -326,15 +444,6 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
                 ErrorCodes.Namespace.ConnectionStringInvalid,
                 "Failed to decrypt connection string. The encryption key may have changed — please re-add this namespace."));
         }
-    }
-
-    /// <summary>
-    /// Decrypts legacy ENC:V2: formatted connection strings for backward compatibility.
-    /// </summary>
-    private Result<string> UnprotectLegacyV2(string protectedConnectionString)
-    {
-        _logger.LogInformation("Decrypting legacy V2 format connection string - consider re-encrypting to new format");
-        return DecryptAesGcm(protectedConnectionString, LegacyV2Prefix);
     }
 
     /// <summary>
@@ -394,6 +503,9 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
             hashAlgorithm: HashAlgorithmName.SHA256,
             outputLength: KeySizeBytes);
     }
+
+    [GeneratedRegex(@"^ENC\[v2:kid=([A-Za-z0-9-]{1,64})\]:")]
+    private static partial Regex EncV2Regex();
 
     [GeneratedRegex(@"SharedAccessKey=[^;]+", RegexOptions.IgnoreCase)]
     private static partial Regex SharedAccessKeyRegex();

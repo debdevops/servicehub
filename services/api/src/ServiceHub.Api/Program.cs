@@ -98,6 +98,12 @@ ProductionConfigurationValidator.ValidateProduction(
     app.Environment,
     app.Logger);
 
+// Eagerly resolve the connection-string protector so a broken or invalid encryption key
+// registry (Security:EncryptionKeyRegistry / Security:EncryptionKey) fails startup with a clear
+// error instead of surfacing lazily on the first namespace request — in every environment, not
+// just Production (ProductionConfigurationValidator above only runs there).
+app.Services.GetRequiredService<IConnectionStringProtector>();
+
 // Wire Platform Event subscribers before any hosted service starts.
 // This registers WebhookDlqSpikeHandler (and future handlers) with the
 // InProcessPlatformEventBus singleton drain loop.

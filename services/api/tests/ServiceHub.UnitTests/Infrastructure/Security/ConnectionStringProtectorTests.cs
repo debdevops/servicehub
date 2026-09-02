@@ -629,4 +629,216 @@ public sealed class ConnectionStringProtectorTests
 
         protectorA.GetKeyFingerprint().Should().Be(protectorB.GetKeyFingerprint());
     }
+
+    // ── Multi-key registry / ENC[v2:kid=...] envelope (W0.3) ─────────────────
+
+    private static IConfiguration BuildRegistryConfig(string activeKeyId, params (string Id, string Material, string Status)[] keys)
+    {
+        var keysJson = string.Join(",", keys.Select(k =>
+            $$"""{ "Id": "{{k.Id}}", "Material": "{{k.Material}}", "Status": "{{k.Status}}" }"""));
+        var registryJson = $$"""{ "ActiveKeyId": "{{activeKeyId}}", "Keys": [ {{keysJson}} ] }""";
+
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Security:EncryptionKeyRegistry"] = registryJson,
+                ["Security:EnableConnectionStringEncryption"] = "true",
+            })
+            .Build();
+    }
+
+    [Fact]
+    public void Protect_WithRegistryConfigured_ProducesV2EnvelopeWithActiveKid()
+    {
+        var config = BuildRegistryConfig("active-1", ("active-1", "key-material-one", "active"));
+        var protector = new ConnectionStringProtector(config, _environmentMock.Object, _loggerMock.Object);
+
+        var result = protector.Protect(ValidConnectionString);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().StartWith("ENC[v2:kid=active-1]:");
+    }
+
+    [Fact]
+    public void ProtectAndUnprotect_V2RoundTrip_PreservesValue()
+    {
+        var config = BuildRegistryConfig("active-1", ("active-1", "key-material-one", "active"));
+        var protector = new ConnectionStringProtector(config, _environmentMock.Object, _loggerMock.Object);
+
+        var encrypted = protector.Protect(ValidConnectionString);
+        var decrypted = protector.Unprotect(encrypted.Value);
+
+        decrypted.IsSuccess.Should().BeTrue();
+        decrypted.Value.Should().Be(ValidConnectionString);
+    }
+
+    [Fact]
+    public void Unprotect_V2WithMultipleKeys_DecryptsUsingKeyNamedInEnvelope_NotJustActive()
+    {
+        // Encrypt under "old-key" while it is active, then rotate active to "new-key" and
+        // confirm the ciphertext still decrypts — this is the entire point of rotation.
+        var oldActiveConfig = BuildRegistryConfig("old-key",
+            ("old-key", "old-key-material", "active"),
+            ("new-key", "new-key-material", "retired"));
+        var protectorBeforeRotation = new ConnectionStringProtector(oldActiveConfig, _environmentMock.Object, _loggerMock.Object);
+        var encryptedUnderOldKey = protectorBeforeRotation.Protect(ValidConnectionString).Value;
+        encryptedUnderOldKey.Should().StartWith("ENC[v2:kid=old-key]:");
+
+        var afterRotationConfig = BuildRegistryConfig("new-key",
+            ("old-key", "old-key-material", "retired"),
+            ("new-key", "new-key-material", "active"));
+        var protectorAfterRotation = new ConnectionStringProtector(afterRotationConfig, _environmentMock.Object, _loggerMock.Object);
+
+        var decrypted = protectorAfterRotation.Unprotect(encryptedUnderOldKey);
+
+        decrypted.IsSuccess.Should().BeTrue();
+        decrypted.Value.Should().Be(ValidConnectionString);
+    }
+
+    [Fact]
+    public void Unprotect_V2WithUnknownKid_ReturnsFailureNamingTheMissingKeyId()
+    {
+        var config = BuildRegistryConfig("active-1", ("active-1", "key-material-one", "active"));
+        var protector = new ConnectionStringProtector(config, _environmentMock.Object, _loggerMock.Object);
+        var tampered = "ENC[v2:kid=nonexistent-key]:c29tZWJhc2U2NHBheWxvYWQtdGhhdC1pcy1sb25nZW5vdWdo";
+
+        var result = protector.Unprotect(tampered);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Message.Should().Contain("nonexistent-key");
+    }
+
+    [Fact]
+    public void Unprotect_V2WithTamperedKidInEnvelope_FailsAadVerification()
+    {
+        // The kid is bound as AAD — swapping the visible kid without re-encrypting must fail
+        // decryption even when the swapped-to key ID *does* exist in the registry.
+        var config = BuildRegistryConfig("key-a",
+            ("key-a", "material-a", "active"),
+            ("key-b", "material-b", "retired"));
+        var protector = new ConnectionStringProtector(config, _environmentMock.Object, _loggerMock.Object);
+        var encrypted = protector.Protect(ValidConnectionString).Value;
+
+        var tampered = encrypted.Replace("kid=key-a", "kid=key-b");
+
+        var result = protector.Unprotect(tampered);
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Protect_V2AlreadyActiveKid_ReturnsUnchanged()
+    {
+        var config = BuildRegistryConfig("active-1", ("active-1", "key-material-one", "active"));
+        var protector = new ConnectionStringProtector(config, _environmentMock.Object, _loggerMock.Object);
+        var encrypted = protector.Protect(ValidConnectionString).Value;
+
+        var result = protector.Protect(encrypted);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(encrypted);
+    }
+
+    [Fact]
+    public void Protect_V2WithNonActiveKid_ReEncryptsToActiveKey()
+    {
+        var oldActiveConfig = BuildRegistryConfig("old-key",
+            ("old-key", "old-key-material", "active"),
+            ("new-key", "new-key-material", "retired"));
+        var protectorBeforeRotation = new ConnectionStringProtector(oldActiveConfig, _environmentMock.Object, _loggerMock.Object);
+        var encryptedUnderOldKey = protectorBeforeRotation.Protect(ValidConnectionString).Value;
+
+        var afterRotationConfig = BuildRegistryConfig("new-key",
+            ("old-key", "old-key-material", "retired"),
+            ("new-key", "new-key-material", "active"));
+        var protectorAfterRotation = new ConnectionStringProtector(afterRotationConfig, _environmentMock.Object, _loggerMock.Object);
+
+        var result = protectorAfterRotation.Protect(encryptedUnderOldKey);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().StartWith("ENC[v2:kid=new-key]:");
+        protectorAfterRotation.Unprotect(result.Value).Value.Should().Be(ValidConnectionString);
+    }
+
+    [Fact]
+    public void Unprotect_LegacyV1FormatUnderRegistryThatIncludesLegacyKid_StillDecrypts()
+    {
+        // Encrypt in single-key (v1) mode first — this is what "existing data before rotation
+        // was ever turned on" looks like.
+        var singleKeyConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Security:EncryptionKey"] = "the-original-single-key-material",
+                ["Security:EnableConnectionStringEncryption"] = "true",
+            })
+            .Build();
+        var singleKeyProtector = new ConnectionStringProtector(singleKeyConfig, _environmentMock.Object, _loggerMock.Object);
+        var v1Encrypted = singleKeyProtector.Protect(ValidConnectionString).Value;
+        v1Encrypted.Should().StartWith("ENC[v1]:");
+
+        // Now the operator turns on the registry, carrying the original key forward under the
+        // reserved "legacy-v1" ID — per docs/ENCRYPTION-KEY-ROTATION.md §2.
+        var registryConfig = BuildRegistryConfig("prod-active",
+            (EncryptionKeyRegistry.LegacyKeyId, "the-original-single-key-material", "retired"),
+            ("prod-active", "a-brand-new-key", "active"));
+        var registryProtector = new ConnectionStringProtector(registryConfig, _environmentMock.Object, _loggerMock.Object);
+
+        var decrypted = registryProtector.Unprotect(v1Encrypted);
+
+        decrypted.IsSuccess.Should().BeTrue();
+        decrypted.Value.Should().Be(ValidConnectionString);
+    }
+
+    [Fact]
+    public void Unprotect_LegacyV1FormatUnderRegistryMissingLegacyKid_FailsWithActionableError()
+    {
+        var registryConfig = BuildRegistryConfig("prod-active", ("prod-active", "a-brand-new-key", "active"));
+        var protector = new ConnectionStringProtector(registryConfig, _environmentMock.Object, _loggerMock.Object);
+        var v1Encrypted = "ENC[v1]:c29tZWJhc2U2NHBheWxvYWQtdGhhdC1pcy1sb25nZW5vdWdo";
+
+        var result = protector.Unprotect(v1Encrypted);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Message.Should().Contain(EncryptionKeyRegistry.LegacyKeyId);
+    }
+
+    [Fact]
+    public void Protect_V1FormatUnderRegistryWhereLegacyKidIsStillActive_ReturnsUnchanged()
+    {
+        var registryConfig = BuildRegistryConfig(EncryptionKeyRegistry.LegacyKeyId,
+            (EncryptionKeyRegistry.LegacyKeyId, "the-key", "active"));
+        var protector = new ConnectionStringProtector(registryConfig, _environmentMock.Object, _loggerMock.Object);
+        var v1Encrypted = "ENC[v1]:c29tZWJhc2U2NHBheWxvYWQtdGhhdC1pcy1sb25nZW5vdWdo";
+
+        // legacy-v1 is still active in this registry, so Protect() on an ENC[v1]: string is a
+        // pass-through — it must not attempt to decrypt/re-encrypt garbage ciphertext.
+        var result = protector.Protect(v1Encrypted);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(v1Encrypted);
+    }
+
+    [Fact]
+    public void Mask_V2Encrypted_ReturnsEncryptedIndicatorWithKid()
+    {
+        var config = BuildRegistryConfig("active-1", ("active-1", "key-material-one", "active"));
+        var protector = new ConnectionStringProtector(config, _environmentMock.Object, _loggerMock.Object);
+        var encrypted = protector.Protect(ValidConnectionString).Value;
+
+        var masked = protector.Mask(encrypted);
+
+        masked.Should().Be("[ENCRYPTED:v2:kid=active-1]");
+    }
+
+    [Fact]
+    public void GetKeyFingerprint_UnderRegistry_ReflectsActiveKeyOnly()
+    {
+        var configA = BuildRegistryConfig("k1", ("k1", "material-1", "active"), ("k2", "material-2", "retired"));
+        var protectorA = new ConnectionStringProtector(configA, _environmentMock.Object, _loggerMock.Object);
+
+        var configB = BuildRegistryConfig("k2", ("k1", "material-1", "retired"), ("k2", "material-2", "active"));
+        var protectorB = new ConnectionStringProtector(configB, _environmentMock.Object, _loggerMock.Object);
+
+        protectorA.GetKeyFingerprint().Should().NotBe(protectorB.GetKeyFingerprint());
+    }
 }

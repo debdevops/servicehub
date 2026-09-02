@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Hosting;
+using ServiceHub.Infrastructure.Security;
 
 namespace ServiceHub.Api.Configuration;
 
@@ -27,19 +28,36 @@ public static class ProductionConfigurationValidator
             errors.Add("AllowedHosts cannot be '*' in production — this disables host-header filtering and opens the app to cache poisoning attacks");
         }
 
-        // Validate EncryptionKey
-        var encryptionKey = configuration["Security:EncryptionKey"];
-        if (string.IsNullOrWhiteSpace(encryptionKey))
+        // Validate EncryptionKey / EncryptionKeyRegistry — a registry, when present, takes
+        // precedence over the single key (see EncryptionKeyRegistry.Load), so the single-key
+        // format checks below only apply when no registry is configured.
+        var encryptionKeyRegistry = configuration["Security:EncryptionKeyRegistry"];
+        if (!string.IsNullOrWhiteSpace(encryptionKeyRegistry))
         {
-            errors.Add("Security:EncryptionKey is required in production (set via SECURITY__ENCRYPTIONKEY environment variable)");
+            try
+            {
+                EncryptionKeyRegistry.Load(configuration);
+            }
+            catch (InvalidOperationException ex)
+            {
+                errors.Add($"Security:EncryptionKeyRegistry is invalid: {ex.Message}");
+            }
         }
-        else if (IsPlaceholderValue(encryptionKey))
+        else
         {
-            errors.Add("Security:EncryptionKey has placeholder value — generate a random 32-byte key via: openssl rand -hex 32");
-        }
-        else if (!IsValidHexString(encryptionKey, 64))
-        {
-            errors.Add("Security:EncryptionKey must be a 64-character hexadecimal string (32 bytes). Generate via: openssl rand -hex 32");
+            var encryptionKey = configuration["Security:EncryptionKey"];
+            if (string.IsNullOrWhiteSpace(encryptionKey))
+            {
+                errors.Add("Security:EncryptionKey is required in production (set via SECURITY__ENCRYPTIONKEY environment variable, or configure SECURITY__ENCRYPTIONKEYREGISTRY for multi-key rotation)");
+            }
+            else if (IsPlaceholderValue(encryptionKey))
+            {
+                errors.Add("Security:EncryptionKey has placeholder value — generate a random 32-byte key via: openssl rand -hex 32");
+            }
+            else if (!IsValidHexString(encryptionKey, 64))
+            {
+                errors.Add("Security:EncryptionKey must be a 64-character hexadecimal string (32 bytes). Generate via: openssl rand -hex 32");
+            }
         }
 
         // Validate SiteUrl
