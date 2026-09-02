@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import {
+  Home,
   LayoutDashboard,
   Layers,
   Database,
@@ -42,6 +43,7 @@ export function IconRail() {
   const navPrefix = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
 
   const items: RailItem[] = [
+    { to: `${navPrefix}/home`, label: 'Home', icon: Home },
     { to: `${navPrefix}/dashboard`, label: 'Namespace Overview', icon: LayoutDashboard },
     { to: `${navPrefix}/incidents`, label: 'Incident Center', icon: AlertTriangle },
     { to: `${navPrefix}/fleet`, label: 'Fleet Health', icon: Layers },

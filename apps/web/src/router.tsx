@@ -19,6 +19,7 @@ const DemoGcpLayoutLazy = lazy(() => import('./layouts/AppLayouts').then(m => ({
 
 // Lazy-load heavy pages to improve initial bundle size and cold-start performance
 const DashboardPageLazy = lazy(() => import('./pages/DashboardPage'));
+const HomePageLazy = lazy(() => import('./pages/HomePage').then(m => ({ default: m.HomePage })));
 const FleetPageLazy = lazy(() => import('./pages/FleetPage'));
 const DlqHistoryPageLazy = lazy(() => import('./pages/DlqHistoryPage'));
 const SignatureListPageLazy = lazy(() => import('./pages/SignatureListPage'));
@@ -175,6 +176,14 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <SecurityPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'home',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <HomePageLazy />
       </Suspense>
     ),
   },

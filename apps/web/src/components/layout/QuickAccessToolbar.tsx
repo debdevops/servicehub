@@ -7,6 +7,7 @@ const WORKSPACE_BASE_PATHS = new Set([
   'messages',
   'live-tail',
   'scheduled',
+  'home',
   'dashboard',
   'incidents',
   'fleet',
@@ -44,6 +45,8 @@ function getWorkspaceLabel(pathname: string, searchParams: URLSearchParams): str
       return 'Live Tail';
     case 'scheduled':
       return 'Scheduled Messages';
+    case 'home':
+      return 'Home';
     case 'dashboard':
       return 'Namespace Overview';
     case 'incidents':

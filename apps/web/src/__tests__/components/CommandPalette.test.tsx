@@ -124,7 +124,7 @@ describe('CommandPalette', () => {
   it('navigates down with ArrowDown key', async () => {
     renderOpen();
     const input = screen.getByPlaceholderText('Search pages, namespaces, actions…');
-    // First item (Namespace Overview) should be active initially — pressing ArrowDown moves to next
+    // First item (Home) should be active initially — pressing ArrowDown moves to next
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     // Second item should now be active (aria-selected="true")
     const options = screen.getAllByRole('option');
@@ -135,8 +135,8 @@ describe('CommandPalette', () => {
     const { onClose } = renderOpen();
     const input = screen.getByPlaceholderText('Search pages, namespaces, actions…');
     fireEvent.keyDown(input, { key: 'Enter' });
-    // First item is Namespace Overview → navigate to '/dashboard'
-    expect(mockNavigate).toHaveBeenCalledWith('/dashboard');
+    // First item is Home → navigate to '/home'
+    expect(mockNavigate).toHaveBeenCalledWith('/home');
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
