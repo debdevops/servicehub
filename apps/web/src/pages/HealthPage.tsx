@@ -221,6 +221,7 @@ export function HealthPage() {
                   {Object.entries(report.entries).map(([name, entry]) => {
                     const style = checkStatusStyle(entry.status);
                     const provider = CHECK_PROVIDER[name];
+                    const dataDirectory = entry.data?.['DataDirectory'];
                     return (
                       <div
                         key={name}
@@ -236,11 +237,19 @@ export function HealthPage() {
                           <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
                           {entry.status}
                         </span>
-                        {(entry.description || entry.exception) && (
+                        {(entry.description || entry.exception || dataDirectory) && (
                           <div className="min-w-0 flex flex-col gap-0.5">
                             {entry.description && (
                               <span className="text-gray-500 truncate">
                                 {entry.description}
+                              </span>
+                            )}
+                            {typeof dataDirectory === 'string' && (
+                              <span
+                                className="text-gray-400 text-xs truncate font-mono"
+                                title="Where the evidence ledger is stored on disk — confirm this is a mounted, durable volume"
+                              >
+                                data path: {dataDirectory}
                               </span>
                             )}
                             {entry.exception && (

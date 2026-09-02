@@ -8,11 +8,11 @@ using ServiceHub.Core.Models;
 namespace ServiceHub.Infrastructure.BackgroundServices;
 
 /// <summary>
-/// Periodically creates a backup bundle on the configured interval (<c>Backup:*</c>), roadmap F2.
+/// Periodically creates a backup bundle on the configured interval (<c>Backup:*</c>), roadmap F1/F2.
 /// <para>
-/// Disabled by default (<see cref="BackupOptions.ScheduledBackupIntervalHours"/> is 0) — an
-/// operator opts in explicitly by configuring a positive interval. An on-demand backup remains
-/// available via <c>POST /api/v1/admin/backup</c> regardless of this setting, mirroring
+/// Disabled in the base configuration (<see cref="BackupOptions.ScheduledBackupIntervalHours"/> is
+/// 0), but on by default in Production (every 24h). An on-demand backup remains available via
+/// <c>POST /api/v1/admin/backup</c> regardless of this setting, mirroring
 /// <see cref="AuditRetentionWorker"/>'s relationship to <c>POST /api/v1/audit/purge</c>.
 /// </para>
 /// </summary>

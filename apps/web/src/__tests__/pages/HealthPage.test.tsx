@@ -36,6 +36,12 @@ const mockReportData = {
       description: 'All 1 Azure Service Bus namespace(s) are healthy.',
       duration: 10.5,
     },
+    sqlite: {
+      status: 'Healthy',
+      description: 'SQLite database is healthy.',
+      duration: 2.1,
+      data: { DataDirectory: '/var/servicehub/data' },
+    },
   },
 };
 
@@ -183,6 +189,7 @@ describe('HealthPage', () => {
     expect(screen.getByText('self')).toBeInTheDocument();
     expect(screen.getByText('servicebus')).toBeInTheDocument();
     expect(screen.getByText('All 1 Azure Service Bus namespace(s) are healthy.')).toBeInTheDocument();
+    expect(screen.getByText('data path: /var/servicehub/data')).toBeInTheDocument();
   });
 
   it('renders degraded and unhealthy component statuses', () => {

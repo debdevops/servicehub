@@ -63,6 +63,8 @@ public sealed class SqliteDatabaseHealthCheckTests : IDisposable
         var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
 
         result.Status.Should().Be(HealthStatus.Healthy);
+        result.Data.Should().ContainKey("DataDirectory");
+        result.Data["DataDirectory"].Should().Be(_tempRoot);
         result.Data.Should().ContainKey("DatabaseSizeBytes");
         result.Data.Should().ContainKey("WalSizeBytes");
         result.Data.Should().ContainKey("TotalSizeBytes");
@@ -105,6 +107,8 @@ public sealed class SqliteDatabaseHealthCheckTests : IDisposable
 
         result.Status.Should().Be(HealthStatus.Unhealthy);
         result.Description.Should().Contain("not found");
+        result.Data.Should().ContainKey("DataDirectory");
+        result.Data["DataDirectory"].Should().Be(_tempRoot);
     }
 
     [Fact]
