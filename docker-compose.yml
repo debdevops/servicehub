@@ -72,9 +72,10 @@ services:
     volumes:
       - servicehub-data:/var/servicehub/data
 
-  # Skeleton only (no algorithm yet) — internal network only, never publish this
-  # port to the host. servicehub must start/serve normally if this is absent or
-  # unhealthy, hence no `condition: service_healthy` on the depends_on above.
+  # TF-IDF + DBSCAN error-signature clustering (services/ai/app/clustering.py) — internal
+  # network only, never publish this port to the host. servicehub must start/serve normally
+  # if this is absent or unhealthy, hence no `condition: service_healthy` on the depends_on
+  # above.
   servicehub-ai:
     build:
       context: ./services/ai
