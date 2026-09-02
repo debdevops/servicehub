@@ -76,7 +76,6 @@ public static class ProductionConfigurationValidator
         var authenticationEnabled = configuration.GetValue<bool>("Security:Authentication:Enabled");
         if (authenticationEnabled)
         {
-            var spaTokenEnabled = configuration.GetValue<bool>("Security:SpaToken:Enabled");
             var easyAuthEnabled = configuration.GetValue<bool>("Security:EasyAuth:Enabled");
             var oidcEnabled = configuration.GetValue<bool>("Security:Oidc:Enabled");
 
@@ -85,13 +84,18 @@ public static class ProductionConfigurationValidator
                 && !string.IsNullOrWhiteSpace(configuration["Security:Oidc:Authority"])
                 && !string.IsNullOrWhiteSpace(configuration["Security:Oidc:Audience"]);
 
-            if (!hasApiKeys && !spaTokenEnabled && !easyAuthEnabled && !hasOidcConfig)
+            // Security:SpaToken:Enabled is deliberately NOT treated as a satisfying condition here:
+            // per SpaTokenProvider's own doc comment, the SPA token confirms same-origin HTML
+            // delivery (CSRF mitigation) but does not identify or authenticate a user — anyone who
+            // can fetch the index page can read and replay it. Accepting it as production auth would
+            // let an unauthenticated caller pass validation and operate replay/purge against live data.
+            if (!hasApiKeys && !easyAuthEnabled && !hasOidcConfig)
             {
                 errors.Add(
                     "Security:Authentication:Enabled is true in production but no usable authentication method is configured. " +
-                    "Configure at least one of: " +
+                    "Security:SpaToken:Enabled does not count — it is CSRF mitigation, not authentication " +
+                    "(see SpaTokenProvider's doc comment). Configure at least one of: " +
                     "Security:Authentication:ApiKeys/ScopedApiKeys, " +
-                    "Security:SpaToken:Enabled=true, " +
                     "Security:EasyAuth:Enabled=true, " +
                     "or Security:Oidc:Enabled=true with Authority and Audience.");
             }
