@@ -95,8 +95,15 @@ public sealed class BacktestService : IBacktestService
                 continue;
             }
 
-            var subsequent = await _recoveryLedger.FindEntriesForEntitySinceAsync(
-                ownerId, entry.NamespaceId, entityName, entry.ProposedAt, RecoveryLookbackLimit, cancellationToken);
+            // W1.5: a signature-scoped proposal (today, only ReplayPlan) gets the precise join —
+            // "would auto-approving this signature have been vindicated" — instead of the
+            // (namespace, entity) join every other proposal kind still falls back to, since
+            // AnomalyFlag/DriftFinding/PreventionTrigger never carry a signature at all.
+            var subsequent = entry.SignatureHashSnapshot is not null
+                ? await _recoveryLedger.FindEntriesForSignatureSinceAsync(
+                    ownerId, entry.SignatureHashSnapshot, entry.ProposedAt, RecoveryLookbackLimit, cancellationToken)
+                : await _recoveryLedger.FindEntriesForEntitySinceAsync(
+                    ownerId, entry.NamespaceId, entityName, entry.ProposedAt, RecoveryLookbackLimit, cancellationToken);
 
             backtested.Add(new BacktestEntryResult(
                 PlaybookEntryId: entry.Id,
@@ -104,6 +111,7 @@ public sealed class BacktestService : IBacktestService
                 ProposalKind: entry.ProposalKind,
                 EntityName: entityName,
                 NamespaceId: entry.NamespaceId,
+                SignatureHash: entry.SignatureHashSnapshot,
                 ProposedAt: entry.ProposedAt,
                 Disposition: entry.Disposition?.ToString() ?? entry.State.ToString(),
                 SubsequentRecoveryAttempts: subsequent.Count,

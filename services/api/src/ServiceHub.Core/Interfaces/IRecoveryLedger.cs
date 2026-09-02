@@ -255,6 +255,26 @@ public interface IRecoveryLedger
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Every <see cref="RecoveryLedgerEntry"/> sharing (<paramref name="ownerId"/>,
+    /// <paramref name="signatureHash"/>) begun on or after <paramref name="since"/>, oldest first —
+    /// counterfactual backtesting's (roadmap §11 item 14, W1.5) signature-precise sibling of
+    /// <see cref="FindEntriesForEntitySinceAsync"/>. Unscoped by <c>namespaceId</c>/<c>entityName</c>
+    /// deliberately: a <c>SignatureHashSnapshot</c> is already provider- and identity-specific by
+    /// construction (<c>FailureFingerprintBuilder</c> hashes the message's namespace/provider into
+    /// the canonical string — see <see cref="GetSignatureProviderAsync"/>'s doc), so adding those
+    /// as extra filter columns here would only narrow a join that is already precise. Used only for
+    /// a <see cref="Entities.PlaybookEntry"/> whose own <c>SignatureHashSnapshot</c> is non-null
+    /// (today, only <c>ReplayPlan</c>); every other backtestable <c>ProposalKind</c> still falls
+    /// back to <see cref="FindEntriesForEntitySinceAsync"/>, since it never carries a signature.
+    /// </summary>
+    Task<IReadOnlyList<RecoveryLedgerEntry>> FindEntriesForSignatureSinceAsync(
+        string ownerId,
+        string signatureHash,
+        DateTimeOffset since,
+        int limit = 100,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Writes a new <see cref="RecoveryLedgerEntry"/> already in terminal
     /// <see cref="Enums.RecoveryEntryState.Declined"/> state, plus its
     /// <see cref="Enums.RecoveryEventType.EligibilityDeclined"/> event, atomically in one
