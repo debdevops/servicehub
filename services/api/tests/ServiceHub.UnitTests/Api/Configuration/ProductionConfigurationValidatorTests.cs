@@ -74,4 +74,43 @@ public class ProductionConfigurationValidatorTests
 
         act.Should().Throw<InvalidOperationException>();
     }
+
+    [Fact]
+    public void ValidateProduction_SpaTokenEnabledAlone_Throws()
+    {
+        // SpaTokenProvider's own doc comment says the SPA token confirms same-origin HTML delivery
+        // (CSRF mitigation) but does not identify or authenticate a user — anyone who can fetch the
+        // index page can read and replay it. It must never satisfy production auth validation on its
+        // own; regression guard for the F2 finding.
+        var act = () => Validate(new Dictionary<string, string?>
+        {
+            ["Security:SpaToken:Enabled"] = "true",
+        });
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void ValidateProduction_EasyAuthEnabled_DoesNotThrow()
+    {
+        var act = () => Validate(new Dictionary<string, string?>
+        {
+            ["Security:EasyAuth:Enabled"] = "true",
+        });
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateProduction_OidcConfigured_DoesNotThrow()
+    {
+        var act = () => Validate(new Dictionary<string, string?>
+        {
+            ["Security:Oidc:Enabled"] = "true",
+            ["Security:Oidc:Authority"] = "https://issuer.example.com",
+            ["Security:Oidc:Audience"] = "servicehub-api",
+        });
+
+        act.Should().NotThrow();
+    }
 }
