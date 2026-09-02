@@ -1,40 +1,123 @@
-import { NavLink, useSearchParams } from 'react-router-dom';
-import {
-  Home,
-  Layers,
-  LayoutDashboard,
-  AlertCircle,
-  Clock,
-  Database,
-  BarChart3,
-  Zap,
-  Activity,
-  HelpCircle,
-  Shield,
-  ShieldCheck,
-  Cloud,
-  Route,
-  Pin,
-  AlertTriangle,
-  Radio,
-  CheckCircle2,
-  Gauge,
-  Sparkles,
-  ClipboardList,
-  Users,
-  GraduationCap,
-} from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { Pin } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { getMockStats } from '@servicehub/ui-shared/lib/demo/mockProviders';
+import { NAV_ENTRIES, isNavEntryActive, type NavColor, type NavEntry, type NavGroup } from '@/nav/navigation';
 import { ResizablePanel } from './ResizablePanel';
 
+// Section order — every entry's `quickAccess.group` must be one of these, in this order.
+const GROUP_ORDER: NavGroup[] = [
+  'Overview',
+  'Browse across clouds',
+  'Diagnose & automate',
+  'Advanced ServiceHub',
+  'Platform',
+  'Learn ServiceHub',
+  'Support',
+];
+
+// Literal, fully-spelled Tailwind classes — Tailwind's JIT scanner only picks up class names
+// that appear verbatim in source, so these cannot be built by string interpolation.
+const COLOR_STYLES: Record<NavColor, { icon: string; active: string; inactive: string }> = {
+  primary: {
+    icon: 'text-primary-500',
+    active: 'bg-primary-50 text-primary-700 border-primary-300 font-medium',
+    inactive: 'bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border-gray-200 hover:border-primary-300',
+  },
+  indigo: {
+    icon: 'text-indigo-500',
+    active: 'bg-indigo-50 text-indigo-700 border-indigo-300 font-medium',
+    inactive: 'bg-white hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 border-gray-200 hover:border-indigo-300',
+  },
+  red: {
+    icon: 'text-red-500',
+    active: 'bg-red-50 text-red-700 border-red-300 font-medium',
+    inactive: 'bg-white hover:bg-red-50 text-gray-700 hover:text-red-700 border-gray-200 hover:border-red-300',
+  },
+  sky: {
+    icon: 'text-sky-500',
+    active: 'bg-sky-50 text-sky-700 border-sky-300 font-medium',
+    inactive: 'bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border-gray-200 hover:border-sky-300',
+  },
+  emerald: {
+    icon: 'text-emerald-500',
+    active: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-medium',
+    inactive: 'bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border-gray-200 hover:border-emerald-300',
+  },
+  blue: {
+    icon: 'text-blue-500',
+    active: 'bg-blue-50 text-blue-700 border-blue-300 font-medium',
+    inactive: 'bg-white hover:bg-blue-50 text-gray-700 hover:text-blue-700 border-gray-200 hover:border-blue-300',
+  },
+  purple: {
+    icon: 'text-purple-500',
+    active: 'bg-purple-50 text-purple-700 border-purple-300 font-medium',
+    inactive: 'bg-white hover:bg-purple-50 text-gray-700 hover:text-purple-700 border-gray-200 hover:border-purple-300',
+  },
+  amber: {
+    icon: 'text-amber-500',
+    active: 'bg-amber-50 text-amber-700 border-amber-300 font-medium',
+    inactive: 'bg-white hover:bg-amber-50 text-gray-700 hover:text-amber-700 border-gray-200 hover:border-amber-300',
+  },
+  violet: {
+    icon: 'text-violet-500',
+    active: 'bg-violet-50 text-violet-700 border-violet-300 font-medium',
+    inactive: 'bg-white hover:bg-violet-50 text-gray-700 hover:text-violet-700 border-gray-200 hover:border-violet-300',
+  },
+  teal: {
+    icon: 'text-teal-500',
+    active: 'bg-teal-50 text-teal-700 border-teal-300 font-medium',
+    inactive: 'bg-white hover:bg-teal-50 text-gray-700 hover:text-teal-700 border-gray-200 hover:border-teal-300',
+  },
+  green: {
+    icon: 'text-green-500',
+    active: 'bg-green-50 text-green-700 border-green-300 font-medium',
+    inactive: 'bg-white hover:bg-green-50 text-gray-700 hover:text-green-700 border-gray-200 hover:border-green-300',
+  },
+};
+
+// A handful of entries carry a small trailing badge that isn't part of the shared nav
+// definition (it's Quick Access's own visual chrome, not a route/label/icon every surface
+// needs). Static text lives here; the two that depend on live data (the DLQ count, and
+// "All Namespaces" vs "All Clouds") are computed by the component below and passed in.
+const STATIC_BADGES: Record<string, { text: string; className: string }> = {
+  incidents: { text: 'Ops', className: 'text-xs text-red-600 font-medium' },
+  fleet: { text: 'All NS', className: 'text-xs text-indigo-600 font-medium' },
+  'dlq-history': { text: 'History', className: 'text-xs text-purple-600 font-medium' },
+  health: { text: 'Status', className: 'text-xs text-emerald-600 font-medium' },
+  audit: { text: 'Logs', className: 'text-xs text-primary-600 font-medium' },
+  help: { text: '?', className: 'text-xs text-primary-600 font-medium' },
+};
+
+function renderBadge(entry: NavEntry, totalDlqCount: number, browseAllLabel: string): ReactNode {
+  if (entry.id === 'dashboard') {
+    return totalDlqCount > 0 ? (
+      <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium">{totalDlqCount}</span>
+    ) : null;
+  }
+  if (entry.id === 'messages-active') {
+    return <span className="text-xs text-sky-700 font-medium">{browseAllLabel}</span>;
+  }
+  if (entry.id === 'messages-deadletter') {
+    return <span className="text-xs text-red-600 font-medium">{browseAllLabel}</span>;
+  }
+  const staticBadge = STATIC_BADGES[entry.id];
+  return staticBadge ? <span className={staticBadge.className}>{staticBadge.text}</span> : null;
+}
+
+const QUICK_ACCESS_ENTRIES = NAV_ENTRIES.filter((entry) => entry.quickAccess);
+
 /**
- * Quick Access — shortcuts to the most-used pages, grouped by workflow stage.
- * Always the first panel: Overview → Browse across clouds → Diagnose & automate →
- * Advanced ServiceHub → Platform → Learn ServiceHub → Support. Collapsible, draggable, and
- * independently resizable.
+ * Quick Access — shortcuts to the most-used pages, grouped by workflow stage. Renders the same
+ * shared nav definition (`@/nav/navigation`) Icon Rail, the command palette, and the workspace
+ * toolbar all read from — no independently-maintained item list here (roadmap W2.4).
+ *
+ * Sections, in order: Overview → Browse across clouds → Diagnose & automate → Advanced
+ * ServiceHub → Platform → Learn ServiceHub → Support. Collapsible, draggable, and independently
+ * resizable.
  *
  * Advanced ServiceHub groups the pages that explain and govern ServiceHub's own autonomy —
  * Autonomy (the "how autonomous is this, and why" page), the Recovery and Playbook ledgers, and
@@ -51,6 +134,7 @@ import { ResizablePanel } from './ResizablePanel';
  * destination.
  */
 export function QuickAccessPanel() {
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { data: namespaces } = useNamespaces();
   const { isDemoMode, cloudProvider } = useDemoContext();
@@ -87,6 +171,7 @@ export function QuickAccessPanel() {
       }, 0);
 
   const navPrefix = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
+  const linkCtx = { navPrefix, currentNamespaceId: currentNamespace?.id };
 
   return (
     <ResizablePanel
@@ -100,341 +185,38 @@ export function QuickAccessPanel() {
       dataTour="quick-access"
     >
       <nav className="space-y-1 px-3 py-3">
-        {/* ── Overview ── */}
-        <div className="pt-1 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Overview</div>
-        <NavLink
-          to={`${navPrefix}/home`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-primary-50 text-primary-700 border-primary-300 font-medium'
-                : 'bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border-gray-200 hover:border-primary-300'
-            }`
-          }
-        >
-          <Home className="w-4 h-4 text-primary-500" />
-          <span className="flex-1 text-left">Home</span>
-        </NavLink>
-        <NavLink
-          to={`${navPrefix}/dashboard`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-indigo-50 text-indigo-700 border-indigo-300 font-medium'
-                : 'bg-white hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 border-gray-200 hover:border-indigo-300'
-            }`
-          }
-        >
-          <LayoutDashboard className="w-4 h-4 text-indigo-500" />
-          <span className="flex-1 text-left">Namespace Overview</span>
-          {totalDlqCount > 0 && (
-            <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium">
-              {totalDlqCount}
-            </span>
-          )}
-        </NavLink>
-        <NavLink
-          to={`${navPrefix}/incidents`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-red-50 text-red-700 border-red-300 font-medium'
-                : 'bg-white hover:bg-red-50 text-gray-700 hover:text-red-700 border-gray-200 hover:border-red-300'
-            }`
-          }
-        >
-          <AlertTriangle className="w-4 h-4 text-red-500" />
-          <span className="flex-1 text-left">Incident Center</span>
-          <span className="text-xs text-red-600 font-medium">Ops</span>
-        </NavLink>
-        <NavLink
-          to={`${navPrefix}/fleet`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-indigo-50 text-indigo-700 border-indigo-300 font-medium'
-                : 'bg-white hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 border-gray-200 hover:border-indigo-300'
-            }`
-          }
-        >
-          <Layers className="w-4 h-4 text-indigo-500" />
-          <span className="flex-1 text-left">Fleet Health</span>
-          <span className="text-xs text-indigo-600 font-medium">All NS</span>
-        </NavLink>
-
-        {/* ── Browse across clouds ── */}
-        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Browse across clouds</div>
-        <NavLink
-          to={`${navPrefix}/messages-overview?tab=active`}
-          className={({ isActive }) => {
-            const isExactMatch = isActive && new URLSearchParams(window.location.search).get('tab') === 'active';
-            return `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isExactMatch
-                ? 'bg-sky-50 text-sky-700 border-sky-300 font-medium'
-                : 'bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border-gray-200 hover:border-sky-300'
-            }`;
-          }}
-        >
-          <Database className="w-4 h-4 text-sky-500" />
-          <span className="flex-1 text-left">Active Messages</span>
-          <span className="text-xs text-sky-700 font-medium">{browseAllLabel}</span>
-        </NavLink>
-        <NavLink
-          to={currentNamespace ? `${navPrefix}/live-tail?namespace=${currentNamespace.id}` : `${navPrefix}/live-tail`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-medium'
-                : 'bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border-gray-200 hover:border-emerald-300'
-            }`
-          }
-        >
-          <Radio className="w-4 h-4 text-emerald-500" />
-          <span className="flex-1 text-left">Live Tail</span>
-        </NavLink>
-        <NavLink
-          to={`${navPrefix}/messages-overview?tab=deadletter`}
-          className={({ isActive }) => {
-            const isExactMatch = isActive && new URLSearchParams(window.location.search).get('tab') === 'deadletter';
-            return `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isExactMatch
-                ? 'bg-red-50 text-red-700 border-red-300 font-medium'
-                : 'bg-white hover:bg-red-50 text-gray-700 hover:text-red-700 border-gray-200 hover:border-red-300'
-            }`;
-          }}
-        >
-          <AlertCircle className="w-4 h-4 text-red-500" />
-          <span className="flex-1 text-left">Dead-Letter</span>
-          <span className="text-xs text-red-600 font-medium">{browseAllLabel}</span>
-        </NavLink>
-        <NavLink
-          to={`${navPrefix}/scheduled`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-sky-50 text-sky-700 border-sky-300 font-medium'
-                : 'bg-white hover:bg-sky-50 text-gray-700 hover:text-sky-700 border-gray-200 hover:border-sky-300'
-            }`
-          }
-        >
-          <Clock className="w-4 h-4 text-sky-500" />
-          <span className="flex-1 text-left">Scheduled Messages</span>
-        </NavLink>
-        <NavLink
-          to={`${navPrefix}/cloud-bridge`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-blue-50 text-blue-700 border-blue-300'
-                : 'bg-white hover:bg-blue-50 text-gray-700 hover:text-blue-700 border-gray-200 hover:border-blue-300'
-            }`
-          }
-        >
-          <Cloud className="w-4 h-4 text-blue-500" />
-          <span className="flex-1 text-left">Cloud Bridge</span>
-        </NavLink>
-
-        {/* ── Diagnose & automate ── */}
-        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Diagnose &amp; automate</div>
-        <NavLink
-          to={currentNamespace ? `${navPrefix}/dlq-history?namespace=${currentNamespace.id}` : `${navPrefix}/dlq-history`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-purple-50 text-purple-700 border-purple-300 font-medium'
-                : 'bg-white hover:bg-purple-50 text-gray-700 hover:text-purple-700 border-gray-200 hover:border-purple-300'
-            }`
-          }
-        >
-          <BarChart3 className="w-4 h-4 text-purple-500" />
-          <span className="flex-1 text-left">DLQ Intelligence</span>
-          <span className="text-xs text-purple-600 font-medium">History</span>
-        </NavLink>
-        <NavLink
-          to={`${navPrefix}/rules`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-amber-50 text-amber-700 border-amber-300 font-medium'
-                : 'bg-white hover:bg-amber-50 text-gray-700 hover:text-amber-700 border-gray-200 hover:border-amber-300'
-            }`
-          }
-        >
-          <Zap className="w-4 h-4 text-amber-500" />
-          <span className="flex-1 text-left">Auto-Replay Rules</span>
-        </NavLink>
-        <NavLink
-          to={`${navPrefix}/approval-queue`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-amber-50 text-amber-700 border-amber-300 font-medium'
-                : 'bg-white hover:bg-amber-50 text-gray-700 hover:text-amber-700 border-gray-200 hover:border-amber-300'
-            }`
-          }
-        >
-          <CheckCircle2 className="w-4 h-4 text-amber-500" />
-          <span className="flex-1 text-left">Approval Queue</span>
-        </NavLink>
-        <NavLink
-          to={`${navPrefix}/insights`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-blue-50 text-blue-700 border-blue-300 font-medium'
-                : 'bg-white hover:bg-blue-50 text-gray-700 hover:text-blue-700 border-gray-200 hover:border-blue-300'
-            }`
-          }
-        >
-          <Sparkles className="w-4 h-4 text-blue-500" />
-          <span className="flex-1 text-left">Proactive Insights</span>
-        </NavLink>
-        <NavLink
-          to={`${navPrefix}/cross-cloud-trace`}
-          title={isMultiCloud ? undefined : 'Needs at least two connected providers to trace a cross-cloud hop'}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-violet-50 text-violet-700 border-violet-300 font-medium'
-                : 'bg-white hover:bg-violet-50 text-gray-700 hover:text-violet-700 border-gray-200 hover:border-violet-300'
-            }`
-          }
-        >
-          <Route className="w-4 h-4 text-violet-500" />
-          <span className="flex-1 text-left">Multi-Cloud Trace</span>
-        </NavLink>
-
-        {/* ── Advanced ServiceHub ── */}
-        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Advanced ServiceHub</div>
-        <NavLink
-          to={`${navPrefix}/autonomy`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-blue-50 text-blue-700 border-blue-300 font-medium'
-                : 'bg-white hover:bg-blue-50 text-gray-700 hover:text-blue-700 border-gray-200 hover:border-blue-300'
-            }`
-          }
-        >
-          <Gauge className="w-4 h-4 text-blue-500" />
-          <span className="flex-1 text-left">Autonomy</span>
-        </NavLink>
-        <NavLink
-          to={`${navPrefix}/recovery`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-teal-50 text-teal-700 border-teal-300 font-medium'
-                : 'bg-white hover:bg-teal-50 text-gray-700 hover:text-teal-700 border-gray-200 hover:border-teal-300'
-            }`
-          }
-        >
-          <ShieldCheck className="w-4 h-4 text-teal-500" />
-          <span className="flex-1 text-left">Recovery Evidence</span>
-        </NavLink>
-        <NavLink
-          to={`${navPrefix}/playbook`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-indigo-50 text-indigo-700 border-indigo-300 font-medium'
-                : 'bg-white hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 border-gray-200 hover:border-indigo-300'
-            }`
-          }
-        >
-          <ClipboardList className="w-4 h-4 text-indigo-500" />
-          <span className="flex-1 text-left">Playbook Ledger</span>
-        </NavLink>
-        <NavLink
-          to={`${navPrefix}/governance`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-red-50 text-red-700 border-red-300 font-medium'
-                : 'bg-white hover:bg-red-50 text-gray-700 hover:text-red-700 border-gray-200 hover:border-red-300'
-            }`
-          }
-        >
-          <Users className="w-4 h-4 text-red-500" />
-          <span className="flex-1 text-left">Governance</span>
-        </NavLink>
-
-        {/* ── Platform ── */}
-        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Platform</div>
-        <NavLink
-          to={`${navPrefix}/health`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-medium'
-                : 'bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border-gray-200 hover:border-emerald-300'
-            }`
-          }
-        >
-          <Activity className="w-4 h-4 text-emerald-500" />
-          <span className="flex-1 text-left">System Health</span>
-          <span className="text-xs text-emerald-600 font-medium">Status</span>
-        </NavLink>
-        <NavLink
-          to={`${navPrefix}/audit`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-primary-50 text-primary-700 border-primary-300 font-medium'
-                : 'bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border-gray-200 hover:border-primary-300'
-            }`
-          }
-        >
-          <Shield className="w-4 h-4 text-primary-500" />
-          <span className="flex-1 text-left">Audit Trail</span>
-          <span className="text-xs text-primary-600 font-medium">Logs</span>
-        </NavLink>
-        <NavLink
-          to={`${navPrefix}/security`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-green-50 text-green-700 border-green-300'
-                : 'bg-white hover:bg-green-50 text-gray-700 hover:text-green-700 border-gray-200 hover:border-green-300'
-            }`
-          }
-        >
-          <Shield className="w-4 h-4 text-green-500" />
-          <span className="flex-1 text-left">Security &amp; Privacy</span>
-        </NavLink>
-
-        {/* ── Learn ServiceHub ── */}
-        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Learn ServiceHub</div>
-        <NavLink
-          to={`${navPrefix}/advanced-servicehub`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-indigo-50 text-indigo-700 border-indigo-300 font-medium'
-                : 'bg-white hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 border-gray-200 hover:border-indigo-300'
-            }`
-          }
-        >
-          <GraduationCap className="w-4 h-4 text-indigo-500" />
-          <span className="flex-1 text-left">Advanced ServiceHub</span>
-        </NavLink>
-
-        {/* ── Support ── */}
-        <div className="pt-2 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Support</div>
-        <NavLink
-          to={`${navPrefix}/help`}
-          className={({ isActive }) =>
-            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
-              isActive
-                ? 'bg-primary-50 text-primary-700 border-primary-300 font-medium'
-                : 'bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border-gray-200 hover:border-primary-300'
-            }`
-          }
-        >
-          <HelpCircle className="w-4 h-4 text-primary-500" />
-          <span className="flex-1 text-left">Help &amp; Guide</span>
-          <span className="text-xs text-primary-600 font-medium">?</span>
-        </NavLink>
+        {GROUP_ORDER.map((group) => {
+          const entries = QUICK_ACCESS_ENTRIES.filter((entry) => entry.quickAccess!.group === group);
+          if (entries.length === 0) return null;
+          return (
+            <div key={group}>
+              <div className="pt-1 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">{group}</div>
+              {entries.map((entry) => {
+                const Icon = entry.icon;
+                const { icon, active, inactive } = COLOR_STYLES[entry.quickAccess!.color];
+                const isActive = isNavEntryActive(entry, location.pathname, searchParams);
+                const title =
+                  entry.id === 'cross-cloud-trace' && !isMultiCloud
+                    ? 'Needs at least two connected providers to trace a cross-cloud hop'
+                    : undefined;
+                return (
+                  <Link
+                    key={entry.id}
+                    to={entry.to(linkCtx)}
+                    title={title}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+                      isActive ? active : inactive
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 ${icon}`} />
+                    <span className="flex-1 text-left">{entry.label}</span>
+                    {renderBadge(entry, totalDlqCount, browseAllLabel)}
+                  </Link>
+                );
+              })}
+            </div>
+          );
+        })}
       </nav>
     </ResizablePanel>
   );

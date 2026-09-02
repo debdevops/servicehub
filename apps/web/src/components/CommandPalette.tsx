@@ -1,13 +1,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Search, Home, LayoutDashboard, MessageSquare, Clock, GitMerge,
-  AlertCircle, RefreshCw, BarChart2, HelpCircle, Plug,
-  Database, ChevronRight, X, Layers, Cloud, Shield, CheckCircle2, Gauge, Sparkles,
-  ShieldCheck, ClipboardList, Users, GraduationCap
-} from 'lucide-react';
+import { Search, Clock, AlertCircle, Database, ChevronRight, X } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
+import { NAV_ENTRIES } from '@/nav/navigation';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -21,202 +18,12 @@ interface PaletteItem {
   keywords?: string;
 }
 
-// ── Static Page Items ─────────────────────────────────────────────────────────
-
-const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
-  {
-    id: 'page-home',
-    label: 'Home',
-    description: 'What needs your attention right now',
-    group: 'Pages',
-    icon: <Home className="w-4 h-4" />,
-    keywords: 'home attention queue',
-  },
-  {
-    id: 'page-dashboard',
-    label: 'Namespace Overview',
-    description: 'Multi-namespace overview',
-    group: 'Pages',
-    icon: <LayoutDashboard className="w-4 h-4" />,
-    keywords: 'overview dashboard',
-  },
-  {
-    id: 'page-fleet',
-    label: 'Fleet Health',
-    description: 'Dead-letter health across every namespace',
-    group: 'Pages',
-    icon: <Layers className="w-4 h-4" />,
-    keywords: 'fleet operations overnight',
-  },
-  {
-    id: 'page-messages',
-    label: 'Messages',
-    description: 'Browse and send messages',
-    group: 'Pages',
-    icon: <MessageSquare className="w-4 h-4" />,
-    keywords: 'queue browse send',
-  },
-  {
-    id: 'page-scheduled',
-    label: 'Scheduled Messages',
-    description: 'View and cancel scheduled deliveries',
-    group: 'Pages',
-    icon: <Clock className="w-4 h-4" />,
-    keywords: 'future timed deliver',
-  },
-  {
-    id: 'page-trace',
-    label: 'Multi-Cloud Trace',
-    description: 'Trace messages by correlation ID',
-    group: 'Pages',
-    icon: <GitMerge className="w-4 h-4" />,
-    keywords: 'trace journey timeline correlation cross cloud',
-  },
-  {
-    id: 'page-cloud-bridge',
-    label: 'Cloud Bridge',
-    description: 'Browse queues, topics and subscriptions across clouds',
-    group: 'Pages',
-    icon: <Cloud className="w-4 h-4" />,
-    keywords: 'provider status multi cloud',
-  },
-  {
-    id: 'page-dlq',
-    label: 'DLQ History',
-    description: 'Dead-letter queue audit trail',
-    group: 'Pages',
-    icon: <AlertCircle className="w-4 h-4" />,
-    keywords: 'dead letter poisoned failed',
-  },
-  {
-    id: 'page-rules',
-    label: 'Auto-Replay Rules',
-    description: 'Manage auto-replay configuration',
-    group: 'Pages',
-    icon: <RefreshCw className="w-4 h-4" />,
-    keywords: 'replay retry automation',
-  },
-  {
-    id: 'page-approval-queue',
-    label: 'Approval Queue',
-    description: 'Rule matches escalated for manual review',
-    group: 'Pages',
-    icon: <CheckCircle2 className="w-4 h-4" />,
-    keywords: 'approve escalate eligibility gate declined',
-  },
-  {
-    id: 'page-insights',
-    label: 'Proactive Insights',
-    description: 'Auto-narration, correlation findings, backlog forecasts, contract violations',
-    group: 'Pages',
-    icon: <Sparkles className="w-4 h-4" />,
-    keywords: 'narration narrate correlation forecast backlog contract violation drift push proactive',
-  },
-  {
-    id: 'page-autonomy',
-    label: 'Autonomy',
-    description: 'How autonomous ServiceHub is, per pillar, and what evidence and governance support it',
-    group: 'Pages',
-    icon: <Gauge className="w-4 h-4" />,
-    keywords: 'autonomy trust level standing unattended circuit breaker autonomous ai governance',
-  },
-  {
-    id: 'page-recovery',
-    label: 'Recovery Evidence',
-    description: 'Tamper-evident ledger of every replay and purge ServiceHub has executed',
-    group: 'Pages',
-    icon: <ShieldCheck className="w-4 h-4" />,
-    keywords: 'recovery ledger evidence replay purge chain',
-  },
-  {
-    id: 'page-playbook',
-    label: 'Playbook Ledger',
-    description: 'What ServiceHub proposed across all four pillars, and what a human decided',
-    group: 'Pages',
-    icon: <ClipboardList className="w-4 h-4" />,
-    keywords: 'playbook proposal prevention rule disposition review',
-  },
-  {
-    id: 'page-governance',
-    label: 'Governance',
-    description: 'Who holds which role, scoped to which namespace and pillar',
-    group: 'Pages',
-    icon: <Users className="w-4 h-4" />,
-    keywords: 'governance rbac role grant admin operator approver',
-  },
-  {
-    id: 'page-health',
-    label: 'System Health',
-    description: 'API and service health status',
-    group: 'Pages',
-    icon: <BarChart2 className="w-4 h-4" />,
-    keywords: 'status ping uptime',
-  },
-  {
-    id: 'page-audit',
-    label: 'Audit Trail',
-    description: 'Persistent record of critical operations and access events',
-    group: 'Pages',
-    icon: <Shield className="w-4 h-4" />,
-    keywords: 'logs history compliance',
-  },
-  {
-    id: 'page-security',
-    label: 'Security & Privacy',
-    description: 'Encryption and data-handling overview',
-    group: 'Pages',
-    icon: <Shield className="w-4 h-4" />,
-    keywords: 'encryption privacy compliance',
-  },
-  {
-    id: 'page-connect',
-    label: 'Connect',
-    description: 'Add or manage cloud namespaces',
-    group: 'Pages',
-    icon: <Plug className="w-4 h-4" />,
-    keywords: 'namespace add connection string',
-  },
-  {
-    id: 'page-advanced-servicehub',
-    label: 'Advanced ServiceHub',
-    description: 'What Advanced ServiceHub means: the autonomy model, evidence, and governance, explained',
-    group: 'Pages',
-    icon: <GraduationCap className="w-4 h-4" />,
-    keywords: 'learn advanced servicehub education architecture explain autonomy model ai agent',
-  },
-  {
-    id: 'page-help',
-    label: 'Help & Guide',
-    description: 'Quick reference and shortcuts',
-    group: 'Pages',
-    icon: <HelpCircle className="w-4 h-4" />,
-    keywords: 'docs guide keyboard',
-  },
-];
-
-const PAGE_ROUTES: Record<string, string> = {
-  'page-home': '/home',
-  'page-dashboard': '/dashboard',
-  'page-fleet': '/fleet',
-  'page-messages': '/messages',
-  'page-scheduled': '/scheduled',
-  'page-trace': '/cross-cloud-trace',
-  'page-cloud-bridge': '/cloud-bridge',
-  'page-dlq': '/dlq-history',
-  'page-rules': '/rules',
-  'page-approval-queue': '/approval-queue',
-  'page-insights': '/insights',
-  'page-autonomy': '/autonomy',
-  'page-recovery': '/recovery',
-  'page-playbook': '/playbook',
-  'page-governance': '/governance',
-  'page-health': '/health',
-  'page-audit': '/audit',
-  'page-security': '/security',
-  'page-connect': '/connect',
-  'page-advanced-servicehub': '/advanced-servicehub',
-  'page-help': '/help',
-};
+// Every command-palette-eligible page, sourced from the shared nav definition
+// (`@/nav/navigation`) rather than a second, independently-maintained list — the
+// pre-unification version of this file had drifted from Icon Rail/Quick Access on both
+// content (missing Incident Center and Live Tail entirely) and icon choice (four destinations
+// rendered a different icon here than everywhere else).
+const PAGE_COMMAND_ENTRIES = NAV_ENTRIES.filter((entry) => entry.commandPalette);
 
 // ── Fuzzy Match ───────────────────────────────────────────────────────────────
 
@@ -282,6 +89,8 @@ interface CommandPaletteProps {
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const navigate = useNavigate();
   const { data: namespaces = [] } = useNamespaces();
+  const { isDemoMode, cloudProvider } = useDemoContext();
+  const navPrefix = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
   const [query, setQuery] = useState('');
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -298,9 +107,14 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
   // Build full item list
   const allItems = useMemo<PaletteItem[]>(() => {
-    const pageItems: PaletteItem[] = PAGE_ITEMS.map(p => ({
-      ...p,
-      action: () => { navigate(PAGE_ROUTES[p.id]); onClose(); },
+    const pageItems: PaletteItem[] = PAGE_COMMAND_ENTRIES.map(entry => ({
+      id: `page-${entry.id}`,
+      label: entry.label,
+      description: entry.commandPalette!.description,
+      group: 'Pages' as const,
+      icon: <entry.icon className="w-4 h-4" />,
+      keywords: entry.commandPalette!.keywords,
+      action: () => { navigate(entry.to({ navPrefix })); onClose(); },
     }));
 
     const nsItems: PaletteItem[] = namespaces.map(ns => ({
@@ -347,7 +161,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     ]);
 
     return [...pageItems, ...nsItems, ...actionItems];
-  }, [namespaces, navigate, onClose]);
+  }, [namespaces, navigate, onClose, navPrefix]);
 
   // Filter + score
   const filtered = useMemo(() => {

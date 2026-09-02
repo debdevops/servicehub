@@ -1,104 +1,58 @@
-import { NavLink } from 'react-router-dom';
-import {
-  Home,
-  LayoutDashboard,
-  Layers,
-  Database,
-  AlertCircle,
-  Clock,
-  Cloud,
-  BarChart3,
-  Zap,
-  Route,
-  Activity,
-  Shield,
-  ShieldCheck,
-  ScrollText,
-  HelpCircle,
-  Settings,
-  AlertTriangle,
-  CheckCircle2,
-  Gauge,
-  Sparkles,
-  ClipboardList,
-  Users,
-  GraduationCap,
-} from 'lucide-react';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { Settings } from 'lucide-react';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
+import { NAV_ENTRIES, isNavEntryActive } from '@/nav/navigation';
 
-interface RailItem {
-  to: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-}
+const RAIL_ITEMS = NAV_ENTRIES.filter((entry) => entry.quickAccess);
+const CONNECT_ENTRY = NAV_ENTRIES.find((entry) => entry.id === 'connect')!;
 
 /**
  * Slim icon-only navigation rail — a compact, always-visible shortcut strip that mirrors
  * Quick Access's routes so the busiest destinations stay one click away even when the
- * Quick Access panel is collapsed. Purely a compact view over the same routes; no
- * navigation logic lives here beyond NavLink itself.
+ * Quick Access panel is collapsed. Renders the same shared nav definition
+ * (`@/nav/navigation`) Quick Access, the command palette, and the workspace toolbar all read
+ * from — no independently-maintained item list here.
  */
 export function IconRail() {
   const { isDemoMode, cloudProvider } = useDemoContext();
   const navPrefix = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
-
-  const items: RailItem[] = [
-    { to: `${navPrefix}/home`, label: 'Home', icon: Home },
-    { to: `${navPrefix}/dashboard`, label: 'Namespace Overview', icon: LayoutDashboard },
-    { to: `${navPrefix}/incidents`, label: 'Incident Center', icon: AlertTriangle },
-    { to: `${navPrefix}/fleet`, label: 'Fleet Health', icon: Layers },
-    { to: `${navPrefix}/messages-overview?tab=active`, label: 'Active Messages', icon: Database },
-    { to: `${navPrefix}/messages-overview?tab=deadletter`, label: 'Dead-Letter', icon: AlertCircle },
-    { to: `${navPrefix}/scheduled`, label: 'Scheduled Messages', icon: Clock },
-    { to: `${navPrefix}/cloud-bridge`, label: 'Cloud Bridge', icon: Cloud },
-    { to: `${navPrefix}/dlq-history`, label: 'DLQ Intelligence', icon: BarChart3 },
-    { to: `${navPrefix}/rules`, label: 'Auto-Replay Rules', icon: Zap },
-    { to: `${navPrefix}/approval-queue`, label: 'Approval Queue', icon: CheckCircle2 },
-    { to: `${navPrefix}/insights`, label: 'Proactive Insights', icon: Sparkles },
-    { to: `${navPrefix}/cross-cloud-trace`, label: 'Multi-Cloud Trace', icon: Route },
-    { to: `${navPrefix}/autonomy`, label: 'Autonomy', icon: Gauge },
-    { to: `${navPrefix}/recovery`, label: 'Recovery Evidence', icon: ShieldCheck },
-    { to: `${navPrefix}/playbook`, label: 'Playbook Ledger', icon: ClipboardList },
-    { to: `${navPrefix}/governance`, label: 'Governance', icon: Users },
-    { to: `${navPrefix}/health`, label: 'System Health', icon: Activity },
-    { to: `${navPrefix}/audit`, label: 'Audit Trail', icon: ScrollText },
-    { to: `${navPrefix}/security`, label: 'Security & Privacy', icon: Shield },
-    { to: `${navPrefix}/advanced-servicehub`, label: 'Advanced ServiceHub', icon: GraduationCap },
-    { to: `${navPrefix}/help`, label: 'Help & Guide', icon: HelpCircle },
-  ];
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
 
   return (
     <aside className="w-14 shrink-0 bg-white border-r border-gray-200 flex flex-col items-center py-3 gap-1 overflow-y-auto">
-      {items.map(({ to, label, icon: Icon }) => (
-        <NavLink
-          key={label}
-          to={to}
-          title={label}
-          aria-label={label}
-          className={({ isActive }) =>
-            `w-10 h-10 shrink-0 flex items-center justify-center rounded-lg transition-colors ${
-              isActive
+      {RAIL_ITEMS.map((entry) => {
+        const Icon = entry.icon;
+        const active = isNavEntryActive(entry, location.pathname, searchParams);
+        return (
+          <Link
+            key={entry.id}
+            to={entry.to({ navPrefix })}
+            title={entry.label}
+            aria-label={entry.label}
+            className={`w-10 h-10 shrink-0 flex items-center justify-center rounded-lg transition-colors ${
+              active
                 ? 'bg-primary-100 text-primary-600'
                 : 'text-gray-400 hover:bg-gray-100 hover:text-primary-600'
-            }`
-          }
-        >
-          <Icon className="w-5 h-5" />
-        </NavLink>
-      ))}
+            }`}
+          >
+            <Icon className="w-5 h-5" />
+          </Link>
+        );
+      })}
       <div className="flex-1" />
-      <NavLink
+      <Link
         to="/connect"
         title="Connect"
         aria-label="Connect"
-        className={({ isActive }) =>
-          `w-10 h-10 shrink-0 flex items-center justify-center rounded-lg transition-colors ${
-            isActive ? 'bg-primary-100 text-primary-600' : 'text-gray-400 hover:bg-gray-100 hover:text-primary-600'
-          }`
-        }
+        className={`w-10 h-10 shrink-0 flex items-center justify-center rounded-lg transition-colors ${
+          isNavEntryActive(CONNECT_ENTRY, location.pathname, searchParams)
+            ? 'bg-primary-100 text-primary-600'
+            : 'text-gray-400 hover:bg-gray-100 hover:text-primary-600'
+        }`}
       >
         <Settings className="w-5 h-5" />
-      </NavLink>
+      </Link>
     </aside>
   );
 }
