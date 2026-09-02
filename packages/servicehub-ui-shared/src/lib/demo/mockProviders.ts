@@ -46,6 +46,7 @@ import type {
   NewSignatureItem,
 } from '../../hooks/useInvestigationQueue';
 import type { AttentionQueueResponse, AttentionQueueItem } from '../api/attentionQueue';
+import type { IncidentDetailResponse } from '../api/incidents';
 
 // ─── Namespace IDs ──────────────────────────────────────────────────────────
 // Stable IDs used in URL query params and as namespace identifiers in demo mode
@@ -1110,6 +1111,49 @@ export function getMockAttentionQueue(provider: CloudProviderType): AttentionQue
     .slice(0, 3);
 
   return { items, isEmpty: items.length === 0 };
+}
+
+// ─── Incident read-model (W2.1/W2.3) ─────────────────────────────────────────
+// Same curated clusters as the Incident Center and the attention queue give identity and
+// lifecycle status. Recovery and playbook entries stay an honest empty list, same reasoning as
+// `usePlaybookEntries`/`useCorrelationAccountability` above: demo mode's curated recovery-ledger
+// fixture (`buildDemoRecoveryEntries`) never sets `signatureHashSnapshot`, and no playbook
+// fixture exists at all, so there is nothing signature-precise to join — fabricating one here
+// would present invented evidence as real (roadmap §13.4).
+
+/** Get the mock Incident workspace payload for one demo signature, or undefined if the hash
+ * doesn't match one of the curated demo signatures. */
+export function getMockIncidentDetail(
+  provider: CloudProviderType,
+  signatureHash: string,
+): IncidentDetailResponse | undefined {
+  const cluster = getDemoClusters().find((c) => c.signatureHash === signatureHash);
+  if (!cluster) return undefined;
+  const nsHealth = buildDemoFleetNamespaceHealth(provider);
+
+  return {
+    signatureHash: cluster.signatureHash,
+    namespaceId: DEMO_NAMESPACE_IDS[provider],
+    namespaceName: nsHealth.namespaceName,
+    lifecycleStatus: cluster.status,
+    firstSeenAt: cluster.firstSeenAt,
+    lastSeenAt: cluster.windowEnd,
+    occurrenceCount: cluster.occurrenceCount,
+    dominantDeadletterReason: cluster.dominantDeadletterReason,
+    topTerms: cluster.topTerms,
+    summary: {
+      recoveryEntryCount: 0,
+      openRecoveryEntryCount: 0,
+      pendingDecisionCount: 0,
+      anomalyFlagCount: 0,
+      driftFindingCount: 0,
+      correlationHypothesisCount: 0,
+      preventionTriggerCount: 0,
+      replayPlanCount: 0,
+    },
+    recoveryEntries: [],
+    playbookEntries: [],
+  };
 }
 
 // ─── Auto Replay Rules ───────────────────────────────────────────────────────
