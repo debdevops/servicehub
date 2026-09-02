@@ -104,6 +104,14 @@ ProductionConfigurationValidator.ValidateProduction(
     app.Environment,
     app.Logger);
 
+// Loud, non-fatal warning outside Development when the recovery observation window is
+// non-default (roadmap W1.1) — Staging included, not only Production, unlike the fail-fast
+// check above.
+ProductionConfigurationValidator.WarnIfObservationWindowNonDefault(
+    app.Configuration,
+    app.Environment,
+    app.Logger);
+
 // Eagerly resolve the connection-string protector so a broken or invalid encryption key
 // registry (Security:EncryptionKeyRegistry / Security:EncryptionKey) fails startup with a clear
 // error instead of surfacing lazily on the first namespace request — in every environment, not

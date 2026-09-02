@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
@@ -23,7 +24,29 @@ namespace ServiceHub.Infrastructure.RecoveryLedger;
 public sealed class RecoveryLedgerService : IRecoveryLedger
 {
     private const int SchemaVersion = 1;
-    private static readonly TimeSpan DefaultObservationWindow = TimeSpan.FromHours(24);
+
+    /// <summary>
+    /// The observation window applied when <c>RecoveryEvidence:ObservationWindowHours</c> is not
+    /// configured. Also the value <c>ProductionConfigurationValidator</c> compares against
+    /// to decide whether a configured value counts as non-default for the startup warning.
+    /// </summary>
+    public const double DefaultObservationWindowHours = 24.0;
+
+    /// <summary>
+    /// The floor <c>RecoveryEvidence:ObservationWindowHours</c> cannot be configured below in
+    /// Production (roadmap W1.1, fixes F4) — enforced at startup by
+    /// <c>ProductionConfigurationValidator</c>, not by this class, so the floor cannot be bypassed
+    /// by constructing this service directly. A shorter window is legitimate for staging,
+    /// rehearsal, or CI soak runs, where declaring "no recurrence" faster than 24h is the entire
+    /// point; in Production it would let auto-replay declare absence before a re-dead-lettered
+    /// message could plausibly reappear.
+    /// </summary>
+    public const double MinimumProductionObservationWindowHours = 1.0;
+
+    private const double MinObservationWindowHours = 0.1;
+    private const double MaxObservationWindowHours = 720.0;
+
+    private static readonly TimeSpan DefaultObservationWindow = TimeSpan.FromHours(DefaultObservationWindowHours);
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> OwnerLocks = new();
 
     // Concretely typed as HashSet<T>, not IReadOnlySet<T>: GetAgeingAsync's query below uses
@@ -38,11 +61,37 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     };
 
     private readonly DlqDbContext _dbContext;
+    private readonly double _observationWindowHours;
+    private readonly TimeSpan _observationWindow;
+    private readonly bool _isNonDefaultObservationWindow;
 
-    /// <summary>Initialises a new instance of <see cref="RecoveryLedgerService"/>.</summary>
-    public RecoveryLedgerService(DlqDbContext dbContext)
+    /// <summary>
+    /// Initialises a new instance of <see cref="RecoveryLedgerService"/>.
+    /// </summary>
+    /// <param name="dbContext">The DLQ database context.</param>
+    /// <param name="configuration">
+    /// Application configuration — reads <c>RecoveryEvidence:ObservationWindowHours</c> (default
+    /// <see cref="DefaultObservationWindowHours"/>, clamped to [0.1, 720]). Optional and defaults
+    /// to <see langword="null"/> so existing callers that construct this service directly (tests,
+    /// mainly) keep the exact hardcoded-24h behaviour this class always had; DI-resolved instances
+    /// always receive the real <see cref="IConfiguration"/>. The Production floor
+    /// (<see cref="MinimumProductionObservationWindowHours"/>) is enforced separately, at startup,
+    /// by <c>ProductionConfigurationValidator</c> — this constructor does not re-check it, so a
+    /// value below the floor still clamps to <see cref="MinObservationWindowHours"/>/<see cref="MaxObservationWindowHours"/>
+    /// here rather than failing, exactly like every other worker in this codebase that reads
+    /// <c>RecoveryEvidence:*</c>.
+    /// </param>
+    public RecoveryLedgerService(DlqDbContext dbContext, IConfiguration? configuration = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+
+        _observationWindowHours = configuration is null
+            ? DefaultObservationWindowHours
+            : Math.Clamp(
+                configuration.GetValue("RecoveryEvidence:ObservationWindowHours", DefaultObservationWindowHours),
+                MinObservationWindowHours, MaxObservationWindowHours);
+        _observationWindow = TimeSpan.FromHours(_observationWindowHours);
+        _isNonDefaultObservationWindow = _observationWindowHours != DefaultObservationWindowHours;
     }
 
     /// <inheritdoc />
@@ -186,7 +235,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
         {
             case RecoveryExecutionOutcome.Accepted when operation.Kind == RecoveryOperationKind.Replay:
                 entry.State = RecoveryEntryState.Observing;
-                entry.ObservationWindowEndsAt = now.Add(DefaultObservationWindow);
+                entry.ObservationWindowEndsAt = now.Add(_observationWindow);
                 eventType = RecoveryEventType.ProviderAccepted;
                 opensObservationWindow = true;
                 break;
@@ -224,10 +273,33 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
 
         if (opensObservationWindow)
         {
+            // Always carries the applied window, not only when non-default: this is the one
+            // event every Observing entry is guaranteed to have, so it is where an auditor looks
+            // first to answer "what window governed this entry's recurrence check" — the
+            // evidence export's per-entry summary has no dedicated column for it (roadmap W1.1).
+            var windowDetail = JsonSerializer.Serialize(new
+            {
+                appliedObservationWindowHours = _observationWindowHours,
+                defaultObservationWindowHours = DefaultObservationWindowHours,
+            });
+
             var windowEvt = await AppendEventAsync(
                 entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.ObservationWindowOpened,
-                request.Actor, detail: null, cancellationToken);
+                request.Actor, windowDetail, cancellationToken);
             entry.LastEventSeq = windowEvt.Seq;
+
+            if (_isNonDefaultObservationWindow)
+            {
+                // A second, distinct event on top of ObservationWindowOpened above — so a
+                // non-default window is individually queryable/countable across the ledger
+                // (roadmap W1.1's "an audit event on every non-default value"), not just
+                // recoverable by parsing every ObservationWindowOpened's DetailJson.
+                var nonDefaultEvt = await AppendEventAsync(
+                    entry.OwnerId, entry.Id, entry.OperationId,
+                    RecoveryEventType.NonDefaultObservationWindowApplied, request.Actor,
+                    windowDetail, cancellationToken);
+                entry.LastEventSeq = nonDefaultEvt.Seq;
+            }
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);

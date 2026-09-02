@@ -89,5 +89,13 @@ public enum RecoveryEventType
     /// "earned automation": a rule that successfully hands messages back to a queue that
     /// immediately re-dead-letters them looks 100% successful by execution acceptance alone, but
     /// turns itself off once its outcomes are actually verified.</summary>
-    AutoReplayRuleCircuitBreakerTripped = 19
+    AutoReplayRuleCircuitBreakerTripped = 19,
+
+    /// <summary>An observation window was opened using a configured value that differs from the
+    /// 24-hour default (roadmap W1.1, fixes F4) — e.g. a shortened window for a rehearsal,
+    /// staging soak run, or CI run. Appended alongside <see cref="ObservationWindowOpened"/>
+    /// (which always carries the applied value in its <c>DetailJson</c>) so a non-default window
+    /// is individually queryable and cannot be missed by only reading terminal-disposition
+    /// events.</summary>
+    NonDefaultObservationWindowApplied = 20
 }
