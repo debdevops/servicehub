@@ -25,6 +25,7 @@ const DlqHistoryPageLazy = lazy(() => import('./pages/DlqHistoryPage'));
 const SignatureListPageLazy = lazy(() => import('./pages/SignatureListPage'));
 const SignatureDetailsPageLazy = lazy(() => import('./pages/SignatureDetailsPage'));
 const FailureIntelligenceCenterPageLazy = lazy(() => import('./pages/FailureIntelligenceCenterPage').then(m => ({ default: m.FailureIntelligenceCenterPage })));
+const IncidentWorkspacePageLazy = lazy(() => import('./pages/IncidentWorkspacePage').then(m => ({ default: m.IncidentWorkspacePage })));
 const CloudBridgePageLazy = lazy(() => import('./pages/CloudBridgePage').then(m => ({ default: m.CloudBridgePage })));
 const CrossCloudTracePageLazy = lazy(() => import('./pages/CrossCloudTracePage').then(m => ({ default: m.CrossCloudTracePage })));
 const AuditPageLazy = lazy(() => import('./pages/AuditPage').then(m => ({ default: m.AuditPage })));
@@ -232,6 +233,14 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <FailureIntelligenceCenterPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'incidents/:signatureHash',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <IncidentWorkspacePageLazy />
       </Suspense>
     ),
   },

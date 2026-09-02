@@ -21,7 +21,7 @@ function AttentionCard({ item }: { item: AttentionQueueItem }) {
 
   return (
     <button
-      onClick={() => navigate(`${navPrefix}/signatures/${item.signatureHash}?namespace=${item.namespaceId}`)}
+      onClick={() => navigate(`${navPrefix}/incidents/${item.signatureHash}?namespace=${item.namespaceId}`)}
       className={`text-left w-full bg-white border-2 rounded-lg p-5 hover:shadow-md transition-shadow focus:outline-none focus:ring-2 focus:ring-primary-500 ${
         isBlocked ? 'border-primary-300' : severity.border
       }`}
