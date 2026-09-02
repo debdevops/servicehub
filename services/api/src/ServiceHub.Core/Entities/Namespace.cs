@@ -741,6 +741,7 @@ public sealed class Namespace
 
         // Check for encrypted connection string formats
         return connectionString.StartsWith("ENC[v1]:", StringComparison.Ordinal) ||
+               connectionString.StartsWith("ENC[v2:kid=", StringComparison.Ordinal) ||
                connectionString.StartsWith("ENC:V2:", StringComparison.Ordinal) ||
                connectionString.StartsWith("PROTECTED:", StringComparison.Ordinal);
     }
