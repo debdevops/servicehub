@@ -242,6 +242,13 @@ public static class DependencyInjection
             }
         });
 
+        // Single-instance invariant (roadmap W1.4) — Singleton so the OS-level file lock it
+        // acquires in its constructor is held for the process lifetime and released by the
+        // container on shutdown. Program.cs resolves this eagerly at startup so a second
+        // instance against the same data directory fails fast, before any database access.
+        services.TryAddSingleton(serviceProvider =>
+            new SqliteInstanceLock(serviceProvider.GetRequiredService<IConfiguration>()));
+
         // SaveChanges retry tunables (roadmap F1) — Singleton is fine: Scoped DlqDbContext
         // instances may depend on a Singleton, and the retry attempt count has no per-request
         // state of its own.

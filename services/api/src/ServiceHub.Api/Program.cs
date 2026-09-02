@@ -89,6 +89,12 @@ builder.Services.AddBackgroundWorkers();
 
 var app = builder.Build();
 
+// Enforce the single-instance invariant the recovery evidence ledger's hash chain depends on
+// (roadmap W1.4). Resolved first, before anything else touches the data directory: a second
+// instance already running against the same directory fails fast here with a clear message
+// instead of silently corrupting the ledger's hash chain later.
+app.Services.GetRequiredService<ServiceHub.Infrastructure.Persistence.SqliteInstanceLock>();
+
 // Emit a single, secret-free summary of the effective configuration for operability.
 app.LogStartupSummary();
 
