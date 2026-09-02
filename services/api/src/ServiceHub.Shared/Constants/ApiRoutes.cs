@@ -462,6 +462,20 @@ public static class ApiRoutes
     }
 
     /// <summary>
+    /// Routes for the Incident read-model (roadmap W2.1) — namespace-scoped, mirroring
+    /// <see cref="Dlq.SignatureById"/>: an incident's durable identity is the same
+    /// (namespace, signature hash) key the DLQ signature tables already use.
+    /// </summary>
+    public static class Incidents
+    {
+        /// <summary>Base route for a namespace's incidents.</summary>
+        public const string Base = $"{VersionedBase}/namespaces/{{namespaceId:guid}}/incidents";
+
+        /// <summary>Route for a single incident, by its signature's stable hash.</summary>
+        public const string ById = $"{Base}/{{signatureHash}}";
+    }
+
+    /// <summary>
     /// Routes for polling/cancelling an in-flight signature-replay job. Not namespace-scoped
     /// (like <see cref="Dlq.SignatureReplay"/>) — a job ID is already owner-scoped, matching the
     /// shape of the bulk-operations job routes.

@@ -333,6 +333,7 @@ public static class DependencyInjection
         services.TryAddScoped<IPlaybookLedger, PlaybookLedgerService>();
         services.TryAddScoped<ICorrelationAccountabilityService, CorrelationAccountabilityService>();
         services.TryAddScoped<IBacktestService, BacktestService>();
+        services.TryAddScoped<IIncidentReadModelService, Incidents.IncidentReadModelService>();
         services.TryAddScoped<IPreventionRuleEvaluationService, PreventionRuleEvaluationService>();
         services.TryAddScoped<IAnomalyDetectionService, Analytics.DeterministicAnomalyDetectionService>();
         services.TryAddSingleton<IAnomalyResultCache, Analytics.InMemoryAnomalyResultCache>();
