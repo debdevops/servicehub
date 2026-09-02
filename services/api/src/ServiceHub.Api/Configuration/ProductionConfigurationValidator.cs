@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Hosting;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.Security;
 
 namespace ServiceHub.Api.Configuration;
@@ -12,6 +13,23 @@ public static class ProductionConfigurationValidator
             return;
 
         var errors = new List<string>();
+
+        // Validate RecoveryEvidence:ObservationWindowHours — the post-replay recurrence-
+        // observation floor (roadmap W1.1, fixes F4). A near-zero window would let auto-replay
+        // declare "no recurrence" before a re-dead-lettered message could plausibly reappear,
+        // silently defeating the safety property the window exists to prove. This floor cannot
+        // be configured below in production, regardless of what value is present.
+        var observationWindowHours = configuration.GetValue(
+            "RecoveryEvidence:ObservationWindowHours", RecoveryLedgerService.DefaultObservationWindowHours);
+        if (observationWindowHours < RecoveryLedgerService.MinimumProductionObservationWindowHours)
+        {
+            errors.Add(
+                $"RecoveryEvidence:ObservationWindowHours is {observationWindowHours}h, below the " +
+                $"{RecoveryLedgerService.MinimumProductionObservationWindowHours}h production floor " +
+                "(set via RecoveryEvidence__ObservationWindowHours environment variable) — a shorter " +
+                "window in production would let auto-replay declare a message recovered before a " +
+                "re-dead-lettered duplicate could plausibly reappear.");
+        }
 
         // Validate AllowedHosts
         var allowedHosts = configuration["AllowedHosts"];
@@ -129,6 +147,36 @@ public static class ProductionConfigurationValidator
         }
 
         logger.LogInformation("✅ Production configuration validation passed");
+    }
+
+    /// <summary>
+    /// Logs a loud warning whenever <c>RecoveryEvidence:ObservationWindowHours</c> is configured
+    /// away from the default outside Development (roadmap W1.1, fixes F4) — Staging included, not
+    /// only Production, unlike <see cref="ValidateProduction"/> above. A shortened window is safe
+    /// and legitimate (a soak run, roadmap W1.3, cannot finish in any bounded time at 24h), but it
+    /// is also the single easiest way to make an autonomy promotion look real when it isn't, so an
+    /// operator reading startup logs outside Development must not be able to miss it. Never
+    /// throws: Production's own hard floor is enforced separately, by <see cref="ValidateProduction"/>.
+    /// </summary>
+    public static void WarnIfObservationWindowNonDefault(IConfiguration configuration, IHostEnvironment environment, ILogger logger)
+    {
+        if (environment.IsDevelopment())
+            return;
+
+        var observationWindowHours = configuration.GetValue(
+            "RecoveryEvidence:ObservationWindowHours", RecoveryLedgerService.DefaultObservationWindowHours);
+        if (observationWindowHours == RecoveryLedgerService.DefaultObservationWindowHours)
+            return;
+
+        logger.LogWarning(
+            "⚠️  RecoveryEvidence:ObservationWindowHours is {ConfiguredHours}h, overriding the " +
+            "{DefaultHours}h default outside Development ({EnvironmentName}). Every recovery entry " +
+            "opened under this value records the applied window in the evidence ledger " +
+            "(RecoveryEventType.NonDefaultObservationWindowApplied), so this is visible to any " +
+            "auditor regardless of this log line. In Production this can never go below " +
+            "{FloorHours}h — enforced at startup.",
+            observationWindowHours, RecoveryLedgerService.DefaultObservationWindowHours,
+            environment.EnvironmentName, RecoveryLedgerService.MinimumProductionObservationWindowHours);
     }
 
     private static bool IsValidHexString(string value, int expectedLength)

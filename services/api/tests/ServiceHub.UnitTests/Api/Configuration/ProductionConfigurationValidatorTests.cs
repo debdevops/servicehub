@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Moq;
 using ServiceHub.Api.Configuration;
+using ServiceHub.Infrastructure.RecoveryLedger;
 
 namespace ServiceHub.UnitTests.Api.Configuration;
 
@@ -112,5 +113,111 @@ public class ProductionConfigurationValidatorTests
         });
 
         act.Should().NotThrow();
+    }
+
+    // ── RecoveryEvidence:ObservationWindowHours floor (roadmap W1.1) ────────
+
+    [Fact]
+    public void ValidateProduction_ObservationWindowBelowFloor_Throws()
+    {
+        var act = () => Validate(new Dictionary<string, string?>
+        {
+            ["Security:EasyAuth:Enabled"] = "true",
+            ["RecoveryEvidence:ObservationWindowHours"] = "0.5",
+        });
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void ValidateProduction_ObservationWindowAtFloor_DoesNotThrow()
+    {
+        var act = () => Validate(new Dictionary<string, string?>
+        {
+            ["Security:EasyAuth:Enabled"] = "true",
+            ["RecoveryEvidence:ObservationWindowHours"] = "1",
+        });
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateProduction_ObservationWindowNotConfigured_DefaultsToTwentyFourHours_DoesNotThrow()
+    {
+        var act = () => Validate(new Dictionary<string, string?>
+        {
+            ["Security:EasyAuth:Enabled"] = "true",
+        });
+
+        act.Should().NotThrow();
+    }
+
+    // ── WarnIfObservationWindowNonDefault (roadmap W1.1) ─────────────────────
+
+    private static IConfiguration BuildConfiguration(Dictionary<string, string?> values) =>
+        new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+
+    [Fact]
+    public void WarnIfObservationWindowNonDefault_DevelopmentEnvironment_DoesNotWarn()
+    {
+        _environment.Setup(e => e.EnvironmentName).Returns("Development");
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["RecoveryEvidence:ObservationWindowHours"] = "1",
+        });
+
+        ProductionConfigurationValidator.WarnIfObservationWindowNonDefault(configuration, _environment.Object, _logger.Object);
+
+        _logger.Verify(
+            l => l.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.IsAny<It.IsAnyType>(),
+                It.IsAny<Exception?>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public void WarnIfObservationWindowNonDefault_NonDefaultOutsideDevelopment_LogsWarning()
+    {
+        // Staging, not just Production — the warning applies more broadly than the hard floor.
+        _environment.Setup(e => e.EnvironmentName).Returns("Staging");
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["RecoveryEvidence:ObservationWindowHours"] = "2",
+        });
+
+        ProductionConfigurationValidator.WarnIfObservationWindowNonDefault(configuration, _environment.Object, _logger.Object);
+
+        _logger.Verify(
+            l => l.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.IsAny<It.IsAnyType>(),
+                It.IsAny<Exception?>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public void WarnIfObservationWindowNonDefault_DefaultOutsideDevelopment_DoesNotWarn()
+    {
+        _environment.Setup(e => e.EnvironmentName).Returns("Production");
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["RecoveryEvidence:ObservationWindowHours"] = RecoveryLedgerService.DefaultObservationWindowHours.ToString(),
+        });
+
+        ProductionConfigurationValidator.WarnIfObservationWindowNonDefault(configuration, _environment.Object, _logger.Object);
+
+        _logger.Verify(
+            l => l.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.IsAny<It.IsAnyType>(),
+                It.IsAny<Exception?>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Never);
     }
 }

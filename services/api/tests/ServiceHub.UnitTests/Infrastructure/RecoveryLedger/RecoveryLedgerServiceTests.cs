@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Models;
@@ -37,11 +38,21 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
 
     private static RecoveryActor Actor(string identity = "test-actor") => new(identity, RecoveryActorKind.User);
 
+    private RecoveryLedgerService BuildService(double? observationWindowHours)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(observationWindowHours is { } hours
+                ? new Dictionary<string, string?> { ["RecoveryEvidence:ObservationWindowHours"] = hours.ToString(System.Globalization.CultureInfo.InvariantCulture) }
+                : new Dictionary<string, string?>())
+            .Build();
+        return new RecoveryLedgerService(_dbContext, configuration);
+    }
+
     private async Task<RecoveryOperation> OpenOperationAsync(
         string ownerId = OwnerA, RecoveryOperationKind kind = RecoveryOperationKind.Replay, string? reason = null,
-        long? sourceRuleId = null)
+        long? sourceRuleId = null, RecoveryLedgerService? service = null)
     {
-        var result = await _service.OpenOperationAsync(new OpenRecoveryOperationRequest
+        var result = await (service ?? _service).OpenOperationAsync(new OpenRecoveryOperationRequest
         {
             OwnerId = ownerId,
             Kind = kind,
@@ -57,9 +68,9 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
         return result.Value;
     }
 
-    private async Task<RecoveryLedgerEntry> BeginEntryAsync(RecoveryOperation operation)
+    private async Task<RecoveryLedgerEntry> BeginEntryAsync(RecoveryOperation operation, RecoveryLedgerService? service = null)
     {
-        var result = await _service.BeginEntryAsync(new BeginRecoveryEntryRequest
+        var result = await (service ?? _service).BeginEntryAsync(new BeginRecoveryEntryRequest
         {
             OperationId = operation.Id,
             OwnerId = operation.OwnerId,
@@ -147,6 +158,97 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
         events.Should().ContainSingle(e => e.EventType == RecoveryEventType.OperationOpened);
         events[0].Seq.Should().Be(1);
         events[0].PrevHash.Should().Be(RecoveryHashChain.GenesisHash);
+    }
+
+    // ── Configurable observation window (roadmap W1.1) ─────────────────────
+
+    [Fact]
+    public async Task RecordExecutionAsync_NoConfigurationSupplied_UsesTwentyFourHourDefault_NoAuditEvent()
+    {
+        var (_, entry) = await OpenAndBeginAsync();
+
+        var executed = await _service.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id,
+            OwnerId = OwnerA,
+            Actor = Actor(),
+            Outcome = RecoveryExecutionOutcome.Accepted,
+        });
+
+        executed.IsSuccess.Should().BeTrue();
+        executed.Value.ObservationWindowEndsAt.Should().BeCloseTo(
+            DateTimeOffset.UtcNow.AddHours(RecoveryLedgerService.DefaultObservationWindowHours), TimeSpan.FromMinutes(1));
+
+        var events = await _dbContext.RecoveryEvents.Where(e => e.EntryId == entry.Id).ToListAsync();
+        events.Should().ContainSingle(e => e.EventType == RecoveryEventType.ObservationWindowOpened);
+        events.Should().NotContain(e => e.EventType == RecoveryEventType.NonDefaultObservationWindowApplied);
+        events.Single(e => e.EventType == RecoveryEventType.ObservationWindowOpened).DetailJson
+            .Should().Contain("\"appliedObservationWindowHours\":24");
+    }
+
+    [Fact]
+    public async Task RecordExecutionAsync_NonDefaultConfiguredWindow_UsesConfiguredValue_AppendsAuditEvent()
+    {
+        var service = BuildService(observationWindowHours: 2);
+        var operation = await OpenOperationAsync(service: service);
+        var entry = await BeginEntryAsync(operation, service);
+
+        var executed = await service.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id,
+            OwnerId = OwnerA,
+            Actor = Actor(),
+            Outcome = RecoveryExecutionOutcome.Accepted,
+        });
+
+        executed.IsSuccess.Should().BeTrue();
+        executed.Value.ObservationWindowEndsAt.Should().BeCloseTo(
+            DateTimeOffset.UtcNow.AddHours(2), TimeSpan.FromMinutes(1));
+
+        var events = await _dbContext.RecoveryEvents.Where(e => e.EntryId == entry.Id).ToListAsync();
+        events.Should().ContainSingle(e => e.EventType == RecoveryEventType.ObservationWindowOpened);
+        var auditEvent = events.Should().ContainSingle(e => e.EventType == RecoveryEventType.NonDefaultObservationWindowApplied)
+            .Which;
+        auditEvent.DetailJson.Should().Contain("\"appliedObservationWindowHours\":2")
+            .And.Contain("\"defaultObservationWindowHours\":24");
+    }
+
+    [Fact]
+    public async Task RecordExecutionAsync_ConfiguredWindowBelowFloor_ClampsToMinimum()
+    {
+        var service = BuildService(observationWindowHours: 0);
+        var operation = await OpenOperationAsync(service: service);
+        var entry = await BeginEntryAsync(operation, service);
+
+        var executed = await service.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id,
+            OwnerId = OwnerA,
+            Actor = Actor(),
+            Outcome = RecoveryExecutionOutcome.Accepted,
+        });
+
+        executed.Value.ObservationWindowEndsAt.Should().BeCloseTo(
+            DateTimeOffset.UtcNow.AddHours(0.1), TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public async Task RecordExecutionAsync_ConfiguredWindowAboveCeiling_ClampsToMaximum()
+    {
+        var service = BuildService(observationWindowHours: 100_000);
+        var operation = await OpenOperationAsync(service: service);
+        var entry = await BeginEntryAsync(operation, service);
+
+        var executed = await service.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id,
+            OwnerId = OwnerA,
+            Actor = Actor(),
+            Outcome = RecoveryExecutionOutcome.Accepted,
+        });
+
+        executed.Value.ObservationWindowEndsAt.Should().BeCloseTo(
+            DateTimeOffset.UtcNow.AddHours(720), TimeSpan.FromMinutes(1));
     }
 
     // ── Full lifecycle happy paths ──────────────────────────────────────────
