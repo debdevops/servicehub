@@ -178,3 +178,23 @@ public sealed record ApprovalQueueEntryResponse(
     string? ReasonCode,
     int? MatchedCount,
     DateTimeOffset DeclinedAt);
+
+/// <summary>
+/// Response DTO for rehearsal mode (roadmap §7 W1.2, <c>POST /api/v1/recovery/entries/{id}/rehearse</c>) —
+/// what <see cref="Interfaces.IRecoveryEligibilityGate"/> would decide for this entry's recorded
+/// identity, evaluated as of now. A read: nothing was executed, and nothing was recorded to the
+/// ledger by this call.
+/// </summary>
+/// <param name="EntryId">The rehearsed <see cref="Entities.RecoveryLedgerEntry"/>.</param>
+/// <param name="ActorKindEvaluated">Which <see cref="Enums.RecoveryActorKind"/> the gate was evaluated as.</param>
+/// <param name="Verdict">The gate's verdict: <c>Allow</c>, <c>Escalate</c>, or <c>Deny</c>.</param>
+/// <param name="ReasonCode">Which predicate produced the verdict, or carried recurrence-cap context on an <c>Allow</c>; null when no predicate fired.</param>
+/// <param name="MatchedCount">Predicate 3 only: how many prior lineage-matched entries were found.</param>
+/// <param name="EvaluatedAt">When this rehearsal ran.</param>
+public sealed record RecoveryRehearsalResponse(
+    Guid EntryId,
+    string ActorKindEvaluated,
+    string Verdict,
+    string? ReasonCode,
+    int MatchedCount,
+    DateTimeOffset EvaluatedAt);

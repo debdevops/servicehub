@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Controllers.V1;
@@ -31,6 +32,7 @@ public sealed class RecoveryControllerTests : IDisposable
     private readonly IApprovalQueueService _approvalQueue;
     private readonly IAutonomyDashboardService _autonomyDashboard;
     private readonly Mock<IGovernanceAccessEvaluator> _governanceAccessEvaluator = new();
+    private readonly IRecoveryRehearsalService _rehearsalService;
     private readonly RecoveryController _controller;
 
     public RecoveryControllerTests()
@@ -47,6 +49,8 @@ public sealed class RecoveryControllerTests : IDisposable
         _trustScoring = new RecoveryTrustScoringService(_recoveryLedger);
         _approvalQueue = new ApprovalQueueService(_dbContext);
         _autonomyDashboard = new AutonomyDashboardService(_recoveryLedger, _dbContext);
+        var eligibilityGate = new RecoveryEligibilityGate(_recoveryLedger, NullLogger<RecoveryEligibilityGate>.Instance);
+        _rehearsalService = new RecoveryRehearsalService(_recoveryLedger, eligibilityGate);
 
         _governanceAccessEvaluator
             .Setup(e => e.EvaluateAsync(
@@ -58,7 +62,8 @@ public sealed class RecoveryControllerTests : IDisposable
     }
 
     private RecoveryController CreateController(string ownerId) => new(
-        _recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, _governanceAccessEvaluator.Object)
+        _recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard,
+        _governanceAccessEvaluator.Object, _rehearsalService)
     {
         ControllerContext = new ControllerContext
         {
@@ -99,43 +104,50 @@ public sealed class RecoveryControllerTests : IDisposable
     [Fact]
     public void Constructor_NullRecoveryLedger_Throws()
     {
-        var act = () => new RecoveryController(null!, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, _governanceAccessEvaluator.Object);
+        var act = () => new RecoveryController(null!, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, _governanceAccessEvaluator.Object, _rehearsalService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("recoveryLedger");
     }
 
     [Fact]
     public void Constructor_NullEvidenceExporter_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, null!, _trustScoring, _approvalQueue, _autonomyDashboard, _governanceAccessEvaluator.Object);
+        var act = () => new RecoveryController(_recoveryLedger, null!, _trustScoring, _approvalQueue, _autonomyDashboard, _governanceAccessEvaluator.Object, _rehearsalService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("evidenceExporter");
     }
 
     [Fact]
     public void Constructor_NullTrustScoring_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, null!, _approvalQueue, _autonomyDashboard, _governanceAccessEvaluator.Object);
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, null!, _approvalQueue, _autonomyDashboard, _governanceAccessEvaluator.Object, _rehearsalService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("trustScoring");
     }
 
     [Fact]
     public void Constructor_NullApprovalQueue_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, null!, _autonomyDashboard, _governanceAccessEvaluator.Object);
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, null!, _autonomyDashboard, _governanceAccessEvaluator.Object, _rehearsalService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("approvalQueue");
     }
 
     [Fact]
     public void Constructor_NullAutonomyDashboard_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, null!, _governanceAccessEvaluator.Object);
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, null!, _governanceAccessEvaluator.Object, _rehearsalService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("autonomyDashboard");
     }
 
     [Fact]
     public void Constructor_NullGovernanceAccessEvaluator_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, null!);
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, null!, _rehearsalService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("governanceAccessEvaluator");
+    }
+
+    [Fact]
+    public void Constructor_NullRehearsalService_Throws()
+    {
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, _governanceAccessEvaluator.Object, null!);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("rehearsalService");
     }
 
     [Fact]
@@ -528,6 +540,102 @@ public sealed class RecoveryControllerTests : IDisposable
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<GovernanceRole>(),
                 It.IsAny<Guid?>(), It.IsAny<PillarKind?>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    // ── Rehearsal mode (roadmap §7 W1.2) ──────────────────────────────────────
+
+    [Fact]
+    public async Task Rehearse_DefaultsToAutomationActorKind_EscalatesForUngrantedSignature()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-rehearse-1",
+            TargetEntity = "queue-rehearse-1",
+            SignatureHashSnapshot = "sig-rehearse-1",
+        });
+
+        var result = await _controller.Rehearse(entry.Value.Id);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RecoveryRehearsalResponse>().Subject;
+        response.EntryId.Should().Be(entry.Value.Id);
+        response.ActorKindEvaluated.Should().Be(nameof(RecoveryActorKind.Automation));
+        response.Verdict.Should().Be(nameof(EligibilityVerdict.Escalate));
+        response.ReasonCode.Should().Be("AUTONOMY_GRANT_INSUFFICIENT");
+    }
+
+    [Fact]
+    public async Task Rehearse_ExplicitUserActorKind_AllowsWithNoAutonomyLookup()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-rehearse-2",
+            TargetEntity = "queue-rehearse-2",
+        });
+
+        var result = await _controller.Rehearse(entry.Value.Id, RecoveryActorKind.User);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RecoveryRehearsalResponse>().Subject;
+        response.ActorKindEvaluated.Should().Be(nameof(RecoveryActorKind.User));
+        response.Verdict.Should().Be(nameof(EligibilityVerdict.Allow));
+    }
+
+    [Fact]
+    public async Task Rehearse_DifferentOwnersEntry_ReturnsNotFound()
+    {
+        var operationB = await OpenOperationAsync(OwnerB);
+        var entryB = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operationB.Id,
+            OwnerId = OwnerB,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-rehearse-cross-owner",
+            TargetEntity = "queue-rehearse-cross-owner",
+        });
+
+        // _controller is authenticated as OwnerA attempting to rehearse OwnerB's entry.
+        var result = await _controller.Rehearse(entryB.Value.Id);
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task Rehearse_EntryNotFound_ReturnsNotFound()
+    {
+        var result = await _controller.Rehearse(Guid.NewGuid());
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task Rehearse_NeverMutatesTheLedger()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-rehearse-no-mutate",
+            TargetEntity = "queue-rehearse-no-mutate",
+            SignatureHashSnapshot = "sig-rehearse-no-mutate",
+        });
+        var eventsBefore = await _recoveryLedger.GetEventsForOperationAsync(operation.Id, OwnerA);
+
+        await _controller.Rehearse(entry.Value.Id, RecoveryActorKind.Automation);
+        await _controller.Rehearse(entry.Value.Id, RecoveryActorKind.User);
+
+        var eventsAfter = await _recoveryLedger.GetEventsForOperationAsync(operation.Id, OwnerA);
+        eventsAfter.Count.Should().Be(eventsBefore.Count);
     }
 
     // ── Emergency Stop endpoints (§9.4.2, §15.2) ─────────────────────────────

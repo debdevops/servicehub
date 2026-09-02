@@ -559,6 +559,9 @@ public static class ApiRoutes
         /// <summary>Route for writing off a single recovery ledger entry.</summary>
         public const string EntryWriteOff = $"{Entries}/{{id:guid}}/write-off";
 
+        /// <summary>Route for rehearsing the Eligibility Gate against one recovery ledger entry (roadmap §7 W1.2).</summary>
+        public const string EntryRehearse = $"{Entries}/{{id:guid}}/rehearse";
+
         /// <summary>Route for the ageing report of open (non-terminal) entries.</summary>
         public const string Ageing = $"{Base}/ageing";
 

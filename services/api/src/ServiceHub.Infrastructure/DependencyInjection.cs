@@ -378,6 +378,11 @@ public static class DependencyInjection
         // service never writes.
         services.TryAddScoped<IApprovalQueueService, ApprovalQueueService>();
 
+        // Rehearsal mode (roadmap §7 W1.2) — runs the Eligibility Gate against a recorded entry's
+        // identity and reports the verdict; depends on nothing capable of executing a recovery
+        // action, so it can never reach a broker regardless of the verdict.
+        services.TryAddScoped<IRecoveryRehearsalService, RecoveryRehearsalService>();
+
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
 
         // Fleet-wide autonomy dashboard (roadmap §11 item 5, §15 item 9) — read-only aggregation
