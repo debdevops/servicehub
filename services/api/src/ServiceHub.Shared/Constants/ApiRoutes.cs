@@ -657,4 +657,15 @@ public static class ApiRoutes
         /// <summary>Route for the investigation center aggregated data.</summary>
         public const string InvestigationCenter = $"{Base}/investigation-center";
     }
+
+    /// <summary>
+    /// Route for the Home attention queue (roadmap W2.2) — owner-scoped, mirroring
+    /// <see cref="FailureIntelligence"/>: a ranked, capped view across every namespace the
+    /// caller owns, not one namespace's data.
+    /// </summary>
+    public static class AttentionQueue
+    {
+        /// <summary>Route for the ranked attention queue.</summary>
+        public const string Base = $"{VersionedBase}/attention-queue";
+    }
 }

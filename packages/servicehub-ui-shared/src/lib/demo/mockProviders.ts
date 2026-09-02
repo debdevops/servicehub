@@ -45,6 +45,7 @@ import type {
   KnowledgeReviewItem,
   NewSignatureItem,
 } from '../../hooks/useInvestigationQueue';
+import type { AttentionQueueResponse, AttentionQueueItem } from '../api/attentionQueue';
 
 // ─── Namespace IDs ──────────────────────────────────────────────────────────
 // Stable IDs used in URL query params and as namespace identifiers in demo mode
@@ -1071,6 +1072,44 @@ export function getMockInvestigationQueue(provider: CloudProviderType): Investig
       topUnhealthyNamespaces: nsHealth.severity === 'healthy' ? [] : [nsHealth],
     },
   };
+}
+
+// ─── Home Attention Queue (W2.2) ─────────────────────────────────────────────
+// Demo mode has no recovery/playbook ledger to draw pendingDecisionCount from, so every demo
+// item reports 0 — the real ranking axes still exercised here are severity, blast radius, and
+// recurrence, sourced from the same curated fixtures as the Incident Center.
+
+/** Get the mock Home attention queue payload — top 3 of the same curated clusters, by the same
+ * severity/blast-radius/recurrence axes the real endpoint ranks by. */
+export function getMockAttentionQueue(provider: CloudProviderType): AttentionQueueResponse {
+  const namespaceId = DEMO_NAMESPACE_IDS[provider];
+  const clusters = getDemoClusters();
+  const nsHealth = buildDemoFleetNamespaceHealth(provider);
+  const severity = (nsHealth.severity.charAt(0).toUpperCase() + nsHealth.severity.slice(1)) as AttentionQueueItem['severity'];
+
+  const items: AttentionQueueItem[] = clusters
+    .filter((c) => c.status === 'Active' || c.status === 'Reopened')
+    .map((c) => {
+      const isRecurring = c.trend === 'Escalating';
+      return {
+        signatureHash: c.signatureHash,
+        namespaceId,
+        namespaceName: nsHealth.namespaceName,
+        displayName: `${c.dominantDeadletterReason} · ${c.dominantEntity}`,
+        lifecycleStatus: c.status,
+        severity,
+        blastRadius: c.size,
+        isRecurring,
+        pendingDecisionCount: 0,
+        score: (isRecurring ? 40 : 0) + Math.min(c.size, 100),
+        recommendedAction: isRecurring ? 'Review escalation' : 'Investigate',
+        lastSeenAt: c.windowEnd,
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+
+  return { items, isEmpty: items.length === 0 };
 }
 
 // ─── Auto Replay Rules ───────────────────────────────────────────────────────

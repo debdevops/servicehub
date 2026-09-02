@@ -1,5 +1,6 @@
 import { NavLink, useSearchParams } from 'react-router-dom';
 import {
+  Home,
   Layers,
   LayoutDashboard,
   AlertCircle,
@@ -101,6 +102,19 @@ export function QuickAccessPanel() {
       <nav className="space-y-1 px-3 py-3">
         {/* ── Overview ── */}
         <div className="pt-1 pb-0.5 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Overview</div>
+        <NavLink
+          to={`${navPrefix}/home`}
+          className={({ isActive }) =>
+            `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all border shadow-sm ${
+              isActive
+                ? 'bg-primary-50 text-primary-700 border-primary-300 font-medium'
+                : 'bg-white hover:bg-primary-50 text-gray-700 hover:text-primary-700 border-gray-200 hover:border-primary-300'
+            }`
+          }
+        >
+          <Home className="w-4 h-4 text-primary-500" />
+          <span className="flex-1 text-left">Home</span>
+        </NavLink>
         <NavLink
           to={`${navPrefix}/dashboard`}
           className={({ isActive }) =>

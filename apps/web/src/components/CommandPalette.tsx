@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Search, LayoutDashboard, MessageSquare, Clock, GitMerge,
+  Search, Home, LayoutDashboard, MessageSquare, Clock, GitMerge,
   AlertCircle, RefreshCw, BarChart2, HelpCircle, Plug,
   Database, ChevronRight, X, Layers, Cloud, Shield, CheckCircle2, Gauge, Sparkles,
   ShieldCheck, ClipboardList, Users, GraduationCap
@@ -25,12 +25,20 @@ interface PaletteItem {
 
 const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
   {
+    id: 'page-home',
+    label: 'Home',
+    description: 'What needs your attention right now',
+    group: 'Pages',
+    icon: <Home className="w-4 h-4" />,
+    keywords: 'home attention queue',
+  },
+  {
     id: 'page-dashboard',
     label: 'Namespace Overview',
     description: 'Multi-namespace overview',
     group: 'Pages',
     icon: <LayoutDashboard className="w-4 h-4" />,
-    keywords: 'home overview dashboard',
+    keywords: 'overview dashboard',
   },
   {
     id: 'page-fleet',
@@ -187,6 +195,7 @@ const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
 ];
 
 const PAGE_ROUTES: Record<string, string> = {
+  'page-home': '/home',
   'page-dashboard': '/dashboard',
   'page-fleet': '/fleet',
   'page-messages': '/messages',
