@@ -38,6 +38,7 @@ public sealed class RecoveryController : ApiControllerBase
     private readonly IApprovalQueueService _approvalQueue;
     private readonly IAutonomyDashboardService _autonomyDashboard;
     private readonly IGovernanceAccessEvaluator _governanceAccessEvaluator;
+    private readonly IRecoveryRehearsalService _rehearsalService;
 
     /// <summary>Initializes a new instance of the <see cref="RecoveryController"/> class.</summary>
     public RecoveryController(
@@ -46,7 +47,8 @@ public sealed class RecoveryController : ApiControllerBase
         IRecoveryTrustScoringService trustScoring,
         IApprovalQueueService approvalQueue,
         IAutonomyDashboardService autonomyDashboard,
-        IGovernanceAccessEvaluator governanceAccessEvaluator)
+        IGovernanceAccessEvaluator governanceAccessEvaluator,
+        IRecoveryRehearsalService rehearsalService)
     {
         _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _evidenceExporter = evidenceExporter ?? throw new ArgumentNullException(nameof(evidenceExporter));
@@ -54,6 +56,7 @@ public sealed class RecoveryController : ApiControllerBase
         _approvalQueue = approvalQueue ?? throw new ArgumentNullException(nameof(approvalQueue));
         _autonomyDashboard = autonomyDashboard ?? throw new ArgumentNullException(nameof(autonomyDashboard));
         _governanceAccessEvaluator = governanceAccessEvaluator ?? throw new ArgumentNullException(nameof(governanceAccessEvaluator));
+        _rehearsalService = rehearsalService ?? throw new ArgumentNullException(nameof(rehearsalService));
     }
 
     /// <summary>
@@ -236,6 +239,43 @@ public sealed class RecoveryController : ApiControllerBase
             OwnerId, namespaceId, ClampLimit(limit), cancellationToken);
 
         return Ok(entries);
+    }
+
+    /// <summary>
+    /// Rehearsal mode (roadmap §7 W1.2): runs the Eligibility Gate against this entry's recorded
+    /// identity — namespace, entity, body hash, signature hash, provider, environment — and
+    /// reports what it would decide right now, evaluated as <paramref name="actorKind"/>. Purely
+    /// a read: <see cref="IRecoveryRehearsalService"/> depends on nothing capable of executing a
+    /// recovery action, so this can never reach a broker regardless of the verdict. Defaults to
+    /// <see cref="RecoveryActorKind.Automation"/> — the actor kind predicate 5 (autonomy lookup)
+    /// actually applies to, and so the most informative default for "would this ever auto-replay."
+    /// </summary>
+    /// <param name="id">The entry to rehearse.</param>
+    /// <param name="actorKind">Which actor kind to evaluate the gate as. Defaults to <see cref="RecoveryActorKind.Automation"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.RecoveryRead)]
+    [HttpPost("entries/{id:guid}/rehearse")]
+    [ProducesResponseType(typeof(RecoveryRehearsalResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<RecoveryRehearsalResponse>> Rehearse(
+        Guid id,
+        [FromQuery] RecoveryActorKind actorKind = RecoveryActorKind.Automation,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _rehearsalService.RehearseAsync(id, OwnerId, actorKind, cancellationToken);
+        if (result.IsFailure)
+        {
+            return ToActionResult<RecoveryRehearsalResponse>(result.Error);
+        }
+
+        var rehearsal = result.Value;
+        return Ok(new RecoveryRehearsalResponse(
+            EntryId: rehearsal.EntryId,
+            ActorKindEvaluated: rehearsal.ActorKindEvaluated.ToString(),
+            Verdict: rehearsal.Decision.Verdict.ToString(),
+            ReasonCode: rehearsal.Decision.ReasonCode,
+            MatchedCount: rehearsal.Decision.MatchedCount,
+            EvaluatedAt: rehearsal.EvaluatedAt));
     }
 
     /// <summary>
