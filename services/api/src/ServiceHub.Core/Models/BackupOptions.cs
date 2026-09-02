@@ -5,9 +5,12 @@ namespace ServiceHub.Core.Models;
 /// "Backup" section of appsettings.json.
 /// </summary>
 /// <remarks>
-/// Scheduled backups are disabled by default (<see cref="ScheduledBackupIntervalHours"/> is 0) —
-/// operators opt in explicitly, mirroring <see cref="AuditRetentionOptions"/>. An on-demand
-/// backup is always available via <c>POST /api/v1/admin/backup</c> regardless of this setting.
+/// <see cref="ScheduledBackupIntervalHours"/> is 0 (disabled) in the base configuration used by
+/// Development, mirroring <see cref="AuditRetentionOptions"/> — but appsettings.Production.json
+/// turns it on by default (every 24h, 14 bundles retained) so a production evidence ledger is
+/// backed up without an operator having to discover and opt in to the setting (roadmap F1). An
+/// on-demand backup is always available via <c>POST /api/v1/admin/backup</c> regardless of this
+/// setting.
 /// </remarks>
 public sealed class BackupOptions
 {

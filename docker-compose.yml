@@ -11,9 +11,13 @@
 # the generation command if either is missing, rather than starting a container that
 # crash-loops on the Production configuration validator.
 #
+# Evidence (the SQLite DLQ/audit/recovery-ledger database and the namespace store) persists to
+# the named `servicehub-data` volume by default — `docker compose down` keeps it; only
+# `docker compose down -v` discards it.
+#
 # For a zero-credential exploration of the UI without any backend, see Demo Mode
-# (apps/web — no container required). For a real deployment with persisted data see
-# the "production" service below and self-hosting/README.md.
+# (apps/web — no container required). For a LAN-exposed deployment connecting to real cloud
+# messaging, see the "production" example service below and self-hosting/README.md.
 services:
   servicehub:
     build:
@@ -52,6 +56,15 @@ services:
     restart: unless-stopped
     depends_on:
       - servicehub-ai
+    # Named, tracked volume for the SQLite DLQ/audit/evidence database and the namespace store —
+    # both already write here by default (DlqDatabase__DataDirectory / NamespaceRepository__DataDirectory
+    # in the Dockerfile). Without this mount, Docker still creates an anonymous volume for the
+    # Dockerfile's VOLUME declaration, but a fresh anonymous volume is allocated on every
+    # `docker compose down && up`, silently discarding the evidence ledger. Naming it here is what
+    # makes `docker compose down` (no `-v`) keep it, and `docker compose down -v` the explicit,
+    # deliberate way to discard it.
+    volumes:
+      - servicehub-data:/var/servicehub/data
 
   # Skeleton only (no algorithm yet) — internal network only, never publish this
   # port to the host. servicehub must start/serve normally if this is absent or
@@ -64,9 +77,9 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------------------
-  # Production example — connect to real cloud messaging. Uncomment, then supply a random key:
+  # LAN-exposed example — same persisted volume as the default `servicehub` service above;
+  # the only difference is the port binding. Uncomment, then supply a random key:
   #   SECURITY__ENCRYPTIONKEY=$(openssl rand -hex 32) docker compose up -d servicehub-prod
-  # Data (namespace store + SQLite DLQ/audit DB) is persisted to the named volume.
   # ---------------------------------------------------------------------------------------
   # servicehub-prod:
   #   build: { context: ., dockerfile: Dockerfile }

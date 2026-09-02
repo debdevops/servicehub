@@ -47,6 +47,11 @@ public sealed class SqliteDatabaseHealthCheck : IHealthCheck
         try
         {
             var dbPath = ResolveDatabasePath();
+            // Surfaced so an operator or auditor can see, without reading config, whether this
+            // instance is writing to a durable, operator-chosen path or the app-base fallback
+            // (roadmap F1 — the ledger's durability should be visible, not just configured).
+            data["DataDirectory"] = Path.GetDirectoryName(dbPath) ?? dbPath;
+
             if (!File.Exists(dbPath))
             {
                 return HealthCheckResult.Unhealthy("SQLite database file not found.", data: data);

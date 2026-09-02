@@ -120,9 +120,9 @@ curl -X POST https://your-servicehub-host/api/v1/admin/backup \
 Returns the manifest for the bundle just created (`200 OK`).
 
 **Scheduled**, via `Backup:ScheduledBackupIntervalHours` in configuration (or the
-`Backup__ScheduledBackupIntervalHours` environment variable). Off by default (`0`) — an operator
-opts in explicitly by setting a positive number of hours. An on-demand backup remains available
-regardless of this setting.
+`Backup__ScheduledBackupIntervalHours` environment variable). **On by default in Production**
+(every 24h, 14 bundles retained) — off (`0`) in the base configuration used by Development. Set it
+to `0` to opt back out. An on-demand backup remains available regardless of this setting.
 
 ```json
 "Backup": {
