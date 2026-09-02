@@ -827,6 +827,80 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
         matches.Should().HaveCount(2);
     }
 
+    [Fact]
+    public async Task FindEntriesForSignatureSinceAsync_ReturnsOwnerSignatureAndSinceScopedSetOldestFirst()
+    {
+        var operation = await OpenOperationAsync();
+        var now = DateTimeOffset.UtcNow;
+        const string signatureHash = "sig-abc123";
+
+        RecoveryLedgerEntry Seed(
+            DateTimeOffset begunAt, string ownerId = OwnerA, string? signature = signatureHash, string entityName = "orders-dlq")
+        {
+            var entry = new RecoveryLedgerEntry
+            {
+                OperationId = operation.Id,
+                OwnerId = ownerId,
+                NamespaceId = operation.NamespaceId,
+                EntityNameSnapshot = entityName,
+                SignatureHashSnapshot = signature,
+                BodyHash = "irrelevant-hash",
+                TargetEntity = entityName,
+                BegunAt = begunAt,
+                State = RecoveryEntryState.Observing,
+            };
+            _dbContext.RecoveryLedgerEntries.Add(entry);
+            return entry;
+        }
+
+        var earlier = Seed(now.AddMinutes(-5));
+        var later = Seed(now.AddMinutes(5));
+        var beforeSince = Seed(now.AddMinutes(-10));
+        var otherOwner = Seed(now, ownerId: OwnerB);
+        var otherSignature = Seed(now, signature: "sig-different");
+        // Different entity, same signature: still expected to match — the signature-scoped join
+        // is deliberately not narrowed by entity (see IRecoveryLedger's doc comment).
+        var differentEntitySameSignature = Seed(now, entityName: "other-entity");
+        var noSignature = Seed(now, signature: null);
+        await _dbContext.SaveChangesAsync();
+
+        var matches = await _service.FindEntriesForSignatureSinceAsync(
+            OwnerA, signatureHash, now.AddMinutes(-6));
+
+        matches.Select(m => m.Id).Should().Equal(earlier.Id, differentEntitySameSignature.Id, later.Id);
+        matches.Select(m => m.Id).Should().NotContain(new[] { beforeSince.Id, otherOwner.Id, otherSignature.Id, noSignature.Id });
+    }
+
+    [Fact]
+    public async Task FindEntriesForSignatureSinceAsync_RespectsLimit()
+    {
+        var operation = await OpenOperationAsync();
+        var now = DateTimeOffset.UtcNow;
+        const string signatureHash = "sig-abc123";
+
+        for (var i = 0; i < 3; i++)
+        {
+            _dbContext.RecoveryLedgerEntries.Add(new RecoveryLedgerEntry
+            {
+                OperationId = operation.Id,
+                OwnerId = OwnerA,
+                NamespaceId = operation.NamespaceId,
+                EntityNameSnapshot = "orders-dlq",
+                SignatureHashSnapshot = signatureHash,
+                BodyHash = "irrelevant-hash",
+                TargetEntity = "orders-dlq",
+                BegunAt = now.AddMinutes(i),
+                State = RecoveryEntryState.Observing,
+            });
+        }
+        await _dbContext.SaveChangesAsync();
+
+        var matches = await _service.FindEntriesForSignatureSinceAsync(
+            OwnerA, signatureHash, now.AddMinutes(-1), limit: 2);
+
+        matches.Should().HaveCount(2);
+    }
+
     // ── Illegal transitions ─────────────────────────────────────────────────
 
     [Fact]

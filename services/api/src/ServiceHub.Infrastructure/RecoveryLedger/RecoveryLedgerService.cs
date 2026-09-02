@@ -757,6 +757,21 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<RecoveryLedgerEntry>> FindEntriesForSignatureSinceAsync(
+        string ownerId, string signatureHash, DateTimeOffset since, int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.RecoveryLedgerEntries
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId
+                        && e.SignatureHashSnapshot == signatureHash
+                        && e.BegunAt >= since)
+            .OrderBy(e => e.BegunAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyDictionary<RecoveryDisposition, int>> GetDispositionCountsAsync(
         string ownerId, string signatureHash, RecoveryOperationKind actionKind,
         CancellationToken cancellationToken = default)

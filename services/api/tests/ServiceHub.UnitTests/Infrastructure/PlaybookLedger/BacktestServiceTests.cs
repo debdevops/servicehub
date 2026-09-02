@@ -28,7 +28,8 @@ public sealed class BacktestServiceTests
         Guid? namespaceId = null,
         bool fleetWide = false,
         string proposalJson = """{"EntityName":"orders-dlq"}""",
-        PlaybookDisposition? disposition = null) => new()
+        PlaybookDisposition? disposition = null,
+        string? signatureHash = null) => new()
     {
         OwnerId = OwnerId,
         PillarKind = pillarKind,
@@ -38,6 +39,7 @@ public sealed class BacktestServiceTests
         ProposedAt = DateTimeOffset.UtcNow,
         ProposerIdentity = "System:Test",
         ProposerKind = PlaybookActorKind.System,
+        SignatureHashSnapshot = signatureHash,
         NamespaceId = fleetWide ? null : namespaceId ?? Guid.NewGuid(),
         ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
         State = state,
@@ -54,6 +56,12 @@ public sealed class BacktestServiceTests
         _recoveryLedgerMock
             .Setup(r => r.FindEntriesForEntitySinceAsync(
                 OwnerId, namespaceId, entityName, It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<RecoveryLedgerEntry>)entries);
+
+    private void SetupRecoverySignatureLookup(string signatureHash, params RecoveryLedgerEntry[] entries) =>
+        _recoveryLedgerMock
+            .Setup(r => r.FindEntriesForSignatureSinceAsync(
+                OwnerId, signatureHash, It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<RecoveryLedgerEntry>)entries);
 
     private static RecoveryLedgerEntry BuildRecoveryEntry(RecoveryDisposition disposition) => new()
@@ -158,6 +166,51 @@ public sealed class BacktestServiceTests
         report.TotalBacktested.Should().Be(1);
         report.CorroboratedCount.Should().Be(1);
         report.Entries.Should().ContainSingle().Which.PillarKind.Should().Be(PillarKind.Recover);
+    }
+
+    [Fact]
+    public async Task GetReportAsync_ReplayPlanWithSignature_JoinsBySignatureNotEntity()
+    {
+        // W1.5: AutoReplayExecutor always stamps ReplayPlan's SignatureHashSnapshot, so this is
+        // the real-world shape — the join must be signature-precise, not the entity-scoped
+        // fallback GetReportAsync_ReplayPlanProposal_IsBacktestable exercises for a proposal that
+        // (hypothetically) lacks one.
+        var namespaceId = Guid.NewGuid();
+        const string signatureHash = "sig-abc123";
+        SetupPlaybookQuery(BuildEntry(
+            PlaybookEntryState.Approved, proposalKind: "ReplayPlan", pillarKind: PillarKind.Recover,
+            namespaceId: namespaceId, signatureHash: signatureHash));
+        SetupRecoverySignatureLookup(signatureHash, BuildRecoveryEntry(RecoveryDisposition.Recovered));
+
+        var report = await _service.GetReportAsync(OwnerId);
+
+        report.TotalBacktested.Should().Be(1);
+        report.CorroboratedCount.Should().Be(1);
+        report.Entries.Should().ContainSingle().Which.SignatureHash.Should().Be(signatureHash);
+        _recoveryLedgerMock.Verify(
+            r => r.FindEntriesForEntitySinceAsync(
+                It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<DateTimeOffset>(),
+                It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task GetReportAsync_EntityScopedProposal_NeverCallsSignatureLookup()
+    {
+        // Regression guard: AnomalyFlag/DriftFinding/PreventionTrigger never carry a signature, so
+        // the signature-scoped lookup must stay untouched for them.
+        var namespaceId = Guid.NewGuid();
+        SetupPlaybookQuery(BuildEntry(PlaybookEntryState.Approved, namespaceId: namespaceId));
+        SetupRecoveryLookup(namespaceId, "orders-dlq");
+
+        var report = await _service.GetReportAsync(OwnerId);
+
+        report.Entries.Should().ContainSingle().Which.SignatureHash.Should().BeNull();
+        _recoveryLedgerMock.Verify(
+            r => r.FindEntriesForSignatureSinceAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTimeOffset>(),
+                It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

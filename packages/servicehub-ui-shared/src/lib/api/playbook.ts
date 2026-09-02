@@ -107,6 +107,8 @@ export interface BacktestEntryResult {
   proposalKind: string;
   entityName: string;
   namespaceId: string | null;
+  /** Non-null when the join was signature-precise (W1.5) — today, only `ReplayPlan` proposals. */
+  signatureHash: string | null;
   proposedAt: string;
   disposition: string;
   subsequentRecoveryAttempts: number;
