@@ -123,6 +123,8 @@ export interface ApprovalQueueEntry {
   reasonCode: string | null;
   matchedCount: number | null;
   declinedAt: string;
+  /** The failure signature this entry belongs to, when one was computed (see W1.5). */
+  signatureHash: string | null;
 }
 
 /** Mirrors ServiceHub.Core.DTOs.Responses.SignatureAutonomyStatusResponse. */
@@ -158,6 +160,31 @@ export interface CircuitBreakerTrip {
   ruleId: number;
   ruleName: string;
   disabledReasonDetail: string | null;
+}
+
+/**
+ * Mirrors ServiceHub.Core.DTOs.Responses.SignatureTrustEvidenceResponse — the Evidence-Derived
+ * Trust Scoring report for one failure signature (`GET recovery/trust/{signatureHash}`).
+ * `reasons` are already-composed, deterministic sentences (no ML-scored text anywhere, roadmap
+ * §8.10) — e.g. "8 verified execution(s) counted (80% verified success rate)." and "L3→L4
+ * requires a sample of at least 10; only 8 verified execution(s) exist." — reused verbatim by the
+ * proposal screens instead of re-deriving the same numbers client-side (roadmap W2.5, §5.2).
+ */
+export interface SignatureTrustEvidence {
+  signatureHash: string;
+  actionKind: string;
+  recoveredCount: number;
+  returnedCount: number;
+  failedCount: number;
+  unverifiedCount: number;
+  declinedCount: number;
+  sampleSize: number;
+  verifiedSuccessRate: number | null;
+  meetsL4SampleAndRate: boolean;
+  meetsL5SampleAndRate: boolean;
+  unsafeOutcomePresent: boolean;
+  duplicateAssociationPresent: boolean;
+  reasons: string[];
 }
 
 /** Mirrors ServiceHub.Core.Interfaces.AutonomyTransitionSummary. */
@@ -347,6 +374,25 @@ export function describeApprovalQueueReason(reasonCode: string | null): string |
   return APPROVAL_QUEUE_REASON_LABELS[reasonCode] ?? reasonCode;
 }
 
+/**
+ * Composes the plain-language explanation for one Approval Queue entry, preferring the
+ * signature's actual trust evidence over the generic static label whenever both the reason code
+ * is `AUTONOMY_GRANT_INSUFFICIENT` and evidence was successfully fetched — same fact, same gate,
+ * but "8 of 10 verified recoveries succeeded" instead of "has not yet earned unattended trust"
+ * (roadmap §5.2). Falls back to {@link describeApprovalQueueReason} whenever evidence isn't
+ * available (still-loading, fetch failed, or a different reason code) rather than blocking on it.
+ */
+export function describeApprovalQueueReasonWithEvidence(
+  reasonCode: string | null,
+  evidence: SignatureTrustEvidence | undefined,
+): string {
+  const fallback = describeApprovalQueueReason(reasonCode) ?? 'No reason recorded.';
+  if (reasonCode !== 'AUTONOMY_GRANT_INSUFFICIENT' || !evidence || evidence.reasons.length === 0) {
+    return fallback;
+  }
+  return evidence.reasons.join(' ');
+}
+
 // ─── API Client ─────────────────────────────────────────────────────────────
 
 export const recoveryApi = {
@@ -386,6 +432,16 @@ export const recoveryApi = {
 
   getAutonomyDashboard: async (): Promise<AutonomyDashboardOverview> => {
     const response = await apiClient.get<AutonomyDashboardOverview>('/recovery/autonomy-dashboard');
+    return response.data;
+  },
+
+  getTrustEvidence: async (
+    signatureHash: string,
+    actionKind: 'Replay' | 'Purge' = 'Replay',
+  ): Promise<SignatureTrustEvidence> => {
+    const response = await apiClient.get<SignatureTrustEvidence>(`/recovery/trust/${signatureHash}`, {
+      params: { actionKind },
+    });
     return response.data;
   },
 

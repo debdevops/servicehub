@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { CheckCircle2, ChevronDown, ChevronUp, Loader2, StopCircle, X, XCircle } from 'lucide-react';
 import { useCancelSignatureReplayJob, useSignatureReplayJob } from '@servicehub/ui-shared/hooks/useSignatureReplay';
 import { isTerminalBulkOperationStatus } from '@servicehub/ui-shared/lib/api/bulkOperations';
+import { RECOVERY_LIMITATION_SENTENCE } from '@servicehub/ui-shared/lib/api/recovery';
 
 interface SignatureReplayProgressPanelProps {
   jobId: string;
@@ -145,6 +147,21 @@ export function SignatureReplayProgressPanel({
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {terminal && (job.status === 'Completed' || job.status === 'CompletedWithErrors') && (
+        <div className="mb-3 px-2.5 py-2 rounded-lg bg-sky-50 border border-sky-100 text-xs text-sky-800">
+          <p className="mb-1">
+            This is what the provider accepted, not confirmation the messages stayed off the
+            dead-letter queue. {RECOVERY_LIMITATION_SENTENCE}
+          </p>
+          <Link
+            to={`/incidents/${signatureHash}?namespace=${namespaceId}&tab=recovery`}
+            className="font-medium underline hover:no-underline"
+          >
+            Check verification status
+          </Link>
         </div>
       )}
 

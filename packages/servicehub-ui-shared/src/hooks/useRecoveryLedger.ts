@@ -1,4 +1,4 @@
-import { useQuery, UseQueryOptions } from '@tanstack/react-query';
+import { useQueries, useQuery, UseQueryOptions } from '@tanstack/react-query';
 import {
   recoveryApi,
   type RecoveryOperation,
@@ -7,6 +7,7 @@ import {
   type SignatureAutonomyStatus,
   type ApprovalQueueEntry,
   type AutonomyDashboardOverview,
+  type SignatureTrustEvidence,
 } from '../lib/api/recovery';
 import { useDemoContext } from '../lib/demo/DemoContext';
 import { getMockRecoveryOperations, getMockRecoveryOperationDetail } from '../lib/demo/mockProviders';
@@ -158,6 +159,36 @@ export function useAutonomyDashboard() {
       };
 
   return useQuery(options);
+}
+
+/**
+ * Batch-fetches Evidence-Derived Trust Scoring for however many distinct failure signatures the
+ * Approval Queue's current page holds — the proposal panel enriches each `AUTONOMY_GRANT_INSUFFICIENT`
+ * entry's static label with its signature's real evidence (roadmap W2.5, §5.2). `useQueries`
+ * instead of one call per row: entries with the same signature share one fetch, and demo mode
+ * (where there is never a real Declined ledger to evaluate) simply returns nothing rather than
+ * fabricate evidence.
+ */
+export function useSignatureTrustEvidenceBatch(signatureHashes: string[]) {
+  const { isDemoMode } = useDemoContext();
+  const unique = Array.from(new Set(signatureHashes));
+
+  const results = useQueries({
+    queries: unique.map((hash) => ({
+      queryKey: ['recovery-trust-evidence', hash],
+      queryFn: () => recoveryApi.getTrustEvidence(hash),
+      enabled: !isDemoMode,
+      staleTime: 30_000,
+      retry: false,
+    })),
+  });
+
+  const byHash = new Map<string, SignatureTrustEvidence>();
+  unique.forEach((hash, i) => {
+    const data = results[i]?.data;
+    if (data) byHash.set(hash, data);
+  });
+  return byHash;
 }
 
 /**
