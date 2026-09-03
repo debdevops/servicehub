@@ -36,6 +36,8 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
     private readonly IMessageOperationsService _messageOperationsService;
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly IRecoveryEligibilityGate _eligibilityGate;
+    private readonly IFailureFeatureExtractor _featureExtractor;
+    private readonly IFailureFingerprintBuilder _fingerprintBuilder;
     private readonly ILogger<SignatureReplayExecutor> _logger;
 
     /// <summary>Initialises a new instance of <see cref="SignatureReplayExecutor"/>.</summary>
@@ -45,6 +47,8 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         IMessageOperationsService messageOperationsService,
         IRecoveryLedger recoveryLedger,
         IRecoveryEligibilityGate eligibilityGate,
+        IFailureFeatureExtractor featureExtractor,
+        IFailureFingerprintBuilder fingerprintBuilder,
         ILogger<SignatureReplayExecutor> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
@@ -52,7 +56,32 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         _messageOperationsService = messageOperationsService ?? throw new ArgumentNullException(nameof(messageOperationsService));
         _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _eligibilityGate = eligibilityGate ?? throw new ArgumentNullException(nameof(eligibilityGate));
+        _featureExtractor = featureExtractor ?? throw new ArgumentNullException(nameof(featureExtractor));
+        _fingerprintBuilder = fingerprintBuilder ?? throw new ArgumentNullException(nameof(fingerprintBuilder));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Computes this message's stable trust-scoring identity — the same
+    /// <see cref="IFailureFeatureExtractor"/>/<see cref="IFailureFingerprintBuilder"/> pipeline
+    /// <c>AutoReplayExecutor</c> uses. <c>recovery.SignatureHash</c> (the DLQ Intelligence cluster
+    /// hash the caller selected this job by) identifies which messages belong to the job, but is a
+    /// different, display-oriented hash space — writing it onto <c>SignatureHashSnapshot</c> would
+    /// never match what <see cref="RecoveryEligibilityGate"/>/<c>AutonomyEvaluationWorker</c> look up
+    /// for the same message's automated replay, so no operator-driven signature replay could ever
+    /// count toward that signature's autonomy trust record. Falls back to the cluster hash (never
+    /// null, so the entry is still queryable) if fingerprinting fails for this message.
+    /// </summary>
+    private async Task<string> ResolveTrustSignatureHashAsync(DlqMessage message, RecoveryContext recovery, CancellationToken cancellationToken)
+    {
+        var featuresResult = await _featureExtractor.ExtractAsync(message, cancellationToken);
+        if (featuresResult.IsFailure)
+        {
+            return recovery.SignatureHash;
+        }
+
+        var fingerprintResult = await _fingerprintBuilder.ComputeAsync(featuresResult.Value, cancellationToken);
+        return fingerprintResult.IsSuccess ? fingerprintResult.Value.Hash : recovery.SignatureHash;
     }
 
     /// <summary>
@@ -268,17 +297,18 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         }
 
         var (entityName, subscriptionName) = BulkOperationExecutor.ResolveEntityAndSubscription(message);
+        var trustSignatureHash = await ResolveTrustSignatureHashAsync(message, recovery, cancellationToken);
 
         var decision = await _eligibilityGate.EvaluateAsync(
             new RecoveryEligibilityRequest(
                 recovery.OwnerId, RecoveryOperationKind.Replay, recovery.Actor.Kind, RecoveryTrigger.SignatureJob,
-                recovery.Namespace.Id, message.EntityName, message.BodyHash, recovery.SignatureHash,
+                recovery.Namespace.Id, message.EntityName, message.BodyHash, trustSignatureHash,
                 recovery.Namespace.Environment, Provider: recovery.Namespace.Provider),
             cancellationToken);
 
         if (decision.Verdict != EligibilityVerdict.Allow)
         {
-            await RecordDeclinedAsync(message, recovery, entityName, decision, cancellationToken);
+            await RecordDeclinedAsync(message, recovery, entityName, trustSignatureHash, decision, cancellationToken);
             return (MessageOutcome.Skipped,
                 $"Blocked by the Eligibility Gate ({decision.ReasonCode}) — escalate for manual review", null);
         }
@@ -305,7 +335,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         var beginResult = await _recoveryLedger.BeginEntryAsync(
             RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
                 message, recovery.Namespace, recovery.OperationId, recovery.OwnerId, recovery.Actor, entityName,
-                signatureHashSnapshot: recovery.SignatureHash),
+                signatureHashSnapshot: trustSignatureHash),
             CancellationToken.None);
 
         if (beginResult.IsFailure)
@@ -409,7 +439,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
     /// changes the underlying skip decision (roadmap §18).
     /// </summary>
     private async Task RecordDeclinedAsync(
-        DlqMessage message, RecoveryContext recovery, string entityName, EligibilityDecision decision,
+        DlqMessage message, RecoveryContext recovery, string entityName, string trustSignatureHash, EligibilityDecision decision,
         CancellationToken cancellationToken)
     {
         try
@@ -417,7 +447,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             await _recoveryLedger.RecordDeclinedAsync(
                 RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
                     message, recovery.Namespace, recovery.OperationId, recovery.OwnerId, recovery.Actor, entityName,
-                    signatureHashSnapshot: recovery.SignatureHash),
+                    signatureHashSnapshot: trustSignatureHash),
                 decision.ReasonCode ?? "ELIGIBILITY_GATE_DENIED",
                 JsonSerializer.Serialize(new { reasonCode = decision.ReasonCode, matchedCount = decision.MatchedCount }),
                 cancellationToken);
