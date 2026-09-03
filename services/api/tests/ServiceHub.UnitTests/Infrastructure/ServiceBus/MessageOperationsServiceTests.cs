@@ -1001,6 +1001,19 @@ public class MessageOperationsServiceTests
     }
 
     [Fact]
+    public async Task GetScheduledMessagesAsync_GcpDoesNotSupportScheduledMessages_ReturnsCapabilityUnsupported()
+    {
+        var (svc, providerMock, ns) = CreateServiceWithCapabilities(CloudProviderType.Gcp, ServiceHub.Core.Models.ProviderCapabilities.Gcp);
+
+        var res = await svc.GetScheduledMessagesAsync(ns.Id, "queue", null, 10);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Message.ScheduledUnsupported);
+        res.Error.Message.Should().Contain("Scheduled messages are not supported for Gcp");
+        res.Error.Type.Should().Be(ErrorType.Validation);
+    }
+
+    [Fact]
     public async Task DeadLetterMessagesAsync_GcpDoesNotSupportManualDeadLetter_ReturnsCapabilityUnsupported()
     {
         var (svc, providerMock, ns) = CreateServiceWithCapabilities(CloudProviderType.Gcp, ServiceHub.Core.Models.ProviderCapabilities.Gcp);
