@@ -170,6 +170,45 @@ public class FleetOverviewServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetOverviewAsync_UnmonitoredGcpNamespace_NoRows_IsUnknownNeverHealthy()
+    {
+        var ns = Namespace.Create("gcp-ns", "{\"type\":\"service_account\"}", ownerId: TestConstants.TestOwnerId, provider: CloudProviderType.Gcp).Value;
+        SetOwnedNamespaces(ns);
+
+        // GCP registered, but no DlqMonitor:AllowDestructivePeek:Gcp entry in appsettings.json
+        // at all — GetValue falls back to its `false` default, same effective behavior as AWS.
+        var service = CreateService(registeredProviders: CloudProviderType.Gcp);
+
+        var result = await service.GetOverviewAsync(TestConstants.TestOwnerId);
+
+        result.IsSuccess.Should().BeTrue();
+        var health = result.Value.Namespaces.Should().ContainSingle().Which;
+        health.Severity.Should().Be(FleetHealthSeverity.Unknown);
+        health.Severity.Should().NotBe(FleetHealthSeverity.Healthy);
+        health.Coverage.Should().Be(FleetMonitoringCoverage.NotMonitored);
+        health.CoverageNote.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_GcpNamespace_AllowDestructivePeekEnabled_IsScannedAndHealthy()
+    {
+        var ns = Namespace.Create("gcp-ns", "{\"type\":\"service_account\"}", ownerId: TestConstants.TestOwnerId, provider: CloudProviderType.Gcp).Value;
+        SetOwnedNamespaces(ns);
+
+        var service = CreateService(
+            configData: new Dictionary<string, string?> { ["DlqMonitor:AllowDestructivePeek:Gcp"] = "true" },
+            registeredProviders: CloudProviderType.Gcp);
+
+        var result = await service.GetOverviewAsync(TestConstants.TestOwnerId);
+
+        result.IsSuccess.Should().BeTrue();
+        var health = result.Value.Namespaces.Should().ContainSingle().Which;
+        health.Severity.Should().Be(FleetHealthSeverity.Healthy);
+        health.Coverage.Should().Be(FleetMonitoringCoverage.Scanned);
+        health.CoverageNote.Should().BeNull();
+    }
+
+    [Fact]
     public async Task GetOverviewAsync_UnmonitoredAwsNamespace_WithKnownActiveRows_KeepsRealSeverity()
     {
         // A confirmed backlog (from before monitoring was disabled, or a historical scan) must
