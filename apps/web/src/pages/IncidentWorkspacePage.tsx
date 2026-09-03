@@ -67,7 +67,39 @@ function PlaybookStateBadge({ state }: { state: PlaybookEntryState }) {
   );
 }
 
+/** Mirrors the JSON `AutoReplayExecutor.ProposeReplayPlanAsync` (services/api) builds for a
+ * `ReplayPlan` entry's `ProposalJson` — PascalCase, since it is a raw-serialized string, not an
+ * MVC response body. Absent for every other proposal kind. */
+interface ReplayPlanProposal {
+  EntityName: string;
+  MessageId: string;
+  TargetAction: string;
+  RuleId: number;
+  RuleName: string;
+}
+
+function parseReplayPlanProposal(json: string): ReplayPlanProposal | null {
+  try {
+    const parsed = JSON.parse(json) as Partial<ReplayPlanProposal>;
+    if (typeof parsed.EntityName !== 'string' || typeof parsed.MessageId !== 'string') return null;
+    return parsed as ReplayPlanProposal;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Roadmap W2.5 ("recovery proposal, then verification"): a `ReplayPlan` proposal states its scope
+ * in plain language — which message, on which rule, doing what — instead of a raw JSON dump.
+ * "Policy" and "stop condition" are static because this proposal kind carries neither field yet
+ * (`AutoReplayExecutor.ProposeReplayPlanAsync` only serializes entity/message/rule identity): what
+ * approving it actually means, since the ledger write is deliberately decoupled from execution.
+ * The raw JSON stays available in a disclosure for full transparency and for every other proposal
+ * kind, which this card does not attempt to interpret.
+ */
 function PlaybookEntryCard({ entry }: { entry: PlaybookEntry }) {
+  const replayPlan = entry.proposalKind === 'ReplayPlan' ? parseReplayPlanProposal(entry.proposalJson) : null;
+
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4">
       <div className="flex items-start justify-between gap-3 mb-2">
@@ -78,8 +110,31 @@ function PlaybookEntryCard({ entry }: { entry: PlaybookEntry }) {
         <PlaybookStateBadge state={entry.state} />
       </div>
       <p className="text-xs text-gray-400 mb-2">{formatDate(entry.proposedAt)}</p>
+
+      {replayPlan && (
+        <div className="mb-2 grid gap-2 text-xs text-gray-700 sm:grid-cols-2">
+          <div>
+            <p className="font-semibold text-gray-500 uppercase tracking-wide">Scope</p>
+            <p className="truncate">{replayPlan.TargetAction} &middot; {replayPlan.EntityName}</p>
+            <p className="text-gray-400 truncate">message {replayPlan.MessageId}</p>
+          </div>
+          <div>
+            <p className="font-semibold text-gray-500 uppercase tracking-wide">Source rule</p>
+            <p>{replayPlan.RuleName} (#{replayPlan.RuleId})</p>
+          </div>
+          <div className="sm:col-span-2">
+            <p className="font-semibold text-gray-500 uppercase tracking-wide">Policy &amp; stop condition</p>
+            <p>Approving this only records that a human agrees the plan is sound — it does not itself
+              replay anything. The actual replay, and its verification, happens separately in the
+              Approval Queue or Signature Details.</p>
+          </div>
+        </div>
+      )}
+
       <details className="text-xs">
-        <summary className="cursor-pointer text-primary-600 font-medium">View proposal detail</summary>
+        <summary className="cursor-pointer text-primary-600 font-medium">
+          View {replayPlan ? 'raw proposal JSON' : 'proposal detail'}
+        </summary>
         <pre className="mt-2 bg-gray-50 border border-gray-100 rounded-md p-2 overflow-x-auto text-gray-700">
           {(() => {
             try {

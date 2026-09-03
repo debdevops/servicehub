@@ -128,7 +128,8 @@ public sealed class ApprovalQueueService : IApprovalQueueService
                 RuleName: rules.GetValueOrDefault(ruleId) ?? $"Rule {ruleId}",
                 ReasonCode: reasonCode,
                 MatchedCount: matchedCount,
-                DeclinedAt: entry.BegunAt));
+                DeclinedAt: entry.BegunAt,
+                SignatureHash: entry.SignatureHashSnapshot));
         }
 
         return results;

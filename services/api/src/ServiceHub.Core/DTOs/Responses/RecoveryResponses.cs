@@ -163,6 +163,12 @@ public sealed record SignatureAutonomyStatusResponse(
 /// <param name="ReasonCode">The Eligibility Gate predicate that escalated this attempt (e.g. <c>AUTONOMY_GRANT_INSUFFICIENT</c>).</param>
 /// <param name="MatchedCount">Recurrence-lineage match count carried on the decline, when the reason relates to the recurrence cap; null otherwise.</param>
 /// <param name="DeclinedAt">When the Eligibility Gate escalated this attempt.</param>
+/// <param name="SignatureHash">
+/// The failure signature this entry belongs to, when one was computed (see W1.5). Lets the
+/// frontend enrich a static reason label (e.g. <c>AUTONOMY_GRANT_INSUFFICIENT</c>) with this
+/// signature's actual trust evidence — "8 of 10 verified recoveries" instead of a generic
+/// sentence — via <c>GET recovery/trust/{signatureHash}</c> (roadmap W2.5, §5.2).
+/// </param>
 public sealed record ApprovalQueueEntryResponse(
     Guid EntryId,
     Guid NamespaceId,
@@ -177,7 +183,8 @@ public sealed record ApprovalQueueEntryResponse(
     string RuleName,
     string? ReasonCode,
     int? MatchedCount,
-    DateTimeOffset DeclinedAt);
+    DateTimeOffset DeclinedAt,
+    string? SignatureHash);
 
 /// <summary>
 /// Response DTO for rehearsal mode (roadmap §7 W1.2, <c>POST /api/v1/recovery/entries/{id}/rehearse</c>) —
