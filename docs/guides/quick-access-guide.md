@@ -1,6 +1,8 @@
 # The Quick Access Guide — Every Destination, Explained
 
-This guide assumes no prior ServiceHub experience. It documents **every single item** in the
+**ServiceHub** is a self-hosted, open-source forensic debugger for cloud message queues (Azure
+Service Bus, AWS SQS/SNS, GCP Pub/Sub). This guide assumes no prior ServiceHub experience. It
+documents **every single item** in the
 **Quick Access** panel — the column of shortcuts pinned to the left of the screen, the first
 thing you see once a namespace is connected. If you've ever wondered "what does this button
 actually do?", this is the page that answers it.

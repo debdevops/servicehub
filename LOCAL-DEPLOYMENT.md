@@ -1,8 +1,11 @@
 # Running ServiceHub On Your Own Computer
 
-This guide assumes **no technical background**. If you've never used Docker, git, or a
-terminal before, you're in the right place — every step is spelled out, and there are
-screenshots so you know what "it worked" looks like.
+**ServiceHub** is a self-hosted, open-source forensic debugger for cloud message queues (Azure
+Service Bus, AWS SQS/SNS, GCP Pub/Sub) — full message bodies, search, AI-assisted dead-letter
+pattern detection, and one-click replay, all running on your own machine. This guide assumes **no
+technical background**. If you've never used Docker, git, or a terminal before, you're in the
+right place — every step is spelled out, and there are screenshots so you know what "it worked"
+looks like.
 
 If you're comfortable with Docker and the command line already, the condensed version is in
 the main [README.md](README.md#quick-start) — this document is the slow, no-assumptions

@@ -1,6 +1,8 @@
 # Self-Hosting ServiceHub
 
-Everything here applies once you move past `docker compose up --build` on `localhost` and
+**ServiceHub** is a self-hosted, open-source forensic debugger for cloud message queues (Azure
+Service Bus, AWS SQS/SNS, GCP Pub/Sub). Everything here applies once you move past
+`docker compose up --build` on `localhost` and
 start pointing ServiceHub at real cloud credentials, real users, or a network address other
 than loopback. See the root [README](../README.md#quick-start) for the basic Docker Quick
 Start — this doc covers the parts that only matter for a real deployment: persistent

@@ -3,7 +3,11 @@
 **Every page. Every button. Why it exists. Screenshots from a live, running instance connected
 to real Azure, AWS, and GCP infrastructure.**
 
-This is the single, definitive, end-to-end reference for ServiceHub — written so a complete
+**ServiceHub** is a self-hosted, open-source forensic debugger for cloud message queues — Azure
+Service Bus (GA), AWS SQS/SNS and GCP Pub/Sub (Supported) — giving full message bodies, real-time
+search, AI-assisted dead-letter pattern detection, one-click replay, and a tamper-evident record
+of every recovery decision, all running in a single process you control. This is the single,
+definitive, end-to-end reference for it — written so a complete
 novice can go from "what is this?" to confidently operating it, while still being useful as a
 lookup reference for an experienced operator who just wants to know what one specific button
 does. If you read nothing else, read [Why ServiceHub?](#why-servicehub) and
