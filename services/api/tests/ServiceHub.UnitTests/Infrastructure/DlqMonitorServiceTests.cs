@@ -393,6 +393,45 @@ public sealed class DlqMonitorServiceTests : IDisposable
             Times.Once);
     }
 
+    // ── SupportsMessageCounts skip-on-zero optimization (Azure/AWS) ─
+    // GCP's SupportsMessageCounts is false, so it must peek unconditionally even when
+    // DeadLetterCount reads 0 — already proven by ScanNamespaceAsync_Gcp_OptedIn_ProceedsNormally
+    // above, whose entity carries DeadLetterCount: 0 and still asserts the peek fires. What's
+    // untested is the other half: Azure/AWS (SupportsMessageCounts: true) must actually take the
+    // skip when the count genuinely is 0, not just tolerate it.
+
+    [Fact]
+    public async Task ScanNamespaceAsync_Azure_ZeroDeadLetterCount_SkipsPeek()
+    {
+        var sut = CreateSut(CloudProviderType.Azure);
+        SetupNamespace(CloudProviderType.Azure);
+        SetupEntities(MakeEntity("empty-queue", "Queue", 0, CloudProviderType.Azure));
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(0);
+        _receiverMock.Verify(
+            r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ScanNamespaceAsync_Aws_ZeroDeadLetterCount_SkipsPeek()
+    {
+        var sut = CreateSut(CloudProviderType.Aws, allowDestructivePeek: true);
+        SetupNamespace(CloudProviderType.Aws);
+        SetupEntities(MakeEntity("empty-queue", "Queue", 0, CloudProviderType.Aws));
+
+        var result = await sut.ScanNamespaceAsync(_namespaceId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(0);
+        _receiverMock.Verify(
+            r => r.PeekDeadLetterMessagesAsync(It.IsAny<GetMessagesRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // ScanNamespaceAsync — Azure
     // ═══════════════════════════════════════════════════════════════
