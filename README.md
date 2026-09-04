@@ -4,7 +4,7 @@
 
 ### The Forensic Debugger for Cloud Messaging — Azure Service Bus (GA) · AWS SQS/SNS & GCP Pub/Sub (Supported)
 
-![ServiceHub Banner](docs/screenshots/servicehub-cover-v3.7.0.png)
+![ServiceHub: Investigate, Recover, and Prove It Happened — self-hosted forensic debugger for Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub, shown with live dead-letter investigation, AI-generated auto-replay rules, and the Recovery Evidence Ledger](docs/screenshots/servicehub-cover-v3.7.0.png)
 
 [![CI](https://github.com/debdevops/servicehub/actions/workflows/servicehub.yml/badge.svg)](https://github.com/debdevops/servicehub/actions/workflows/servicehub.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -45,8 +45,8 @@ Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-
 > **No credentials?** The Welcome page's **"Try a live demo"** buttons open a fully client-side demo walkthrough per cloud — no backend, no cloud account needed.
 
 <p align="center">
-  <a href="docs/screenshots/showcase/01-dlq-populated.jpg"><img src="docs/screenshots/showcase/01-dlq-populated.jpg" width="85%"/></a>
-  <br/><sub>A real Dead-Letter Queue in ServiceHub — 168 AWS SQS failures, honest about what SQS does and doesn't tell you about them.</sub>
+  <a href="docs/screenshots/showcase/02-investigate-ai-insights.jpg"><img src="docs/screenshots/showcase/02-investigate-ai-insights.jpg" width="85%" alt="A dead-lettered AWS SQS message open in ServiceHub, showing the full message body and an AI Insights panel that clusters it into a named DLQ failure pattern with a confidence score and recommended action"/></a>
+  <br/><sub>A real dead-letter message in ServiceHub — full body, plus an AI-clustered failure pattern with a confidence score, not just a count.</sub>
 </p>
 
 | Capability | Standard Cloud Portals | ServiceHub |
@@ -73,20 +73,25 @@ Ledger, a permanent, append-only, hash-chained record of exactly what ServiceHub
 provider to do and what it subsequently observed — so replay isn't a black box you have to trust
 blindly.
 
-Every screenshot below is a real capture — live Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub
-namespaces connected to ServiceHub simultaneously, not mocked data. Click any image to open it
-full-size.
+Every screenshot below is a live capture from this build — real Azure Service Bus, AWS SQS/SNS,
+and GCP Pub/Sub dev namespaces connected to ServiceHub simultaneously, not mocked data or a
+staged demo. Click any image to open it full-size.
 
 <table>
 <tr>
-<td width="33%"><a href="docs/screenshots/showcase/01-dlq-populated.jpg"><img src="docs/screenshots/showcase/01-dlq-populated.jpg" width="100%"/></a><br/><sub><b>1. Investigate</b> — Dead-Letter Queue, 168 real AWS failures, AI-tagged</sub></td>
-<td width="33%"><a href="docs/screenshots/showcase/02-ai-findings.jpg"><img src="docs/screenshots/showcase/02-ai-findings.jpg" width="100%"/></a><br/><sub><b>2. Investigate</b> — AI Findings clusters the pattern, confidence scored, never hidden</sub></td>
-<td width="33%"><a href="docs/screenshots/showcase/03-multi-cloud-connected.jpg"><img src="docs/screenshots/showcase/03-multi-cloud-connected.jpg" width="100%"/></a><br/><sub><b>3. Investigate</b> — Azure, AWS, and GCP connected side by side, one UI</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/01-investigate-dashboard.jpg"><img src="docs/screenshots/showcase/01-investigate-dashboard.jpg" width="100%" alt="ServiceHub Namespace Overview dashboard showing Azure, AWS, and GCP namespaces side by side with live active-message, dead-letter, and health-grade counts, and a DLQ Hot Spots panel ranking the worst namespaces"/></a><br/><sub><b>1. Investigate</b> — Azure, AWS, and GCP namespaces side by side, sorted by DLQ severity</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/02-investigate-ai-insights.jpg"><img src="docs/screenshots/showcase/02-investigate-ai-insights.jpg" width="100%" alt="A dead-lettered AWS SQS message open in ServiceHub with its full body and an AI Insights tab showing a named DLQ failure pattern, confidence score, and recommended remediation"/></a><br/><sub><b>2. Investigate</b> — full message body plus AI Insights, confidence-scored and never hidden</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/03-investigate-fleet-operations.jpg"><img src="docs/screenshots/showcase/03-investigate-fleet-operations.jpg" width="100%" alt="ServiceHub Fleet Operations dashboard aggregating dead-letter health across every connected namespace, with a 7-day trend chart, top failure categories, and a worst-first namespace table"/></a><br/><sub><b>3. Investigate</b> — Fleet Operations: what died overnight, across every namespace at once</sub></td>
 </tr>
 <tr>
-<td width="33%"><a href="docs/screenshots/showcase/04-auto-replay-circuit-breaker.jpg"><img src="docs/screenshots/showcase/04-auto-replay-circuit-breaker.jpg" width="100%"/></a><br/><sub><b>4. Recover</b> — Auto-Replay Rules, with a real circuit breaker that self-disables on low success</sub></td>
-<td width="33%"><a href="docs/screenshots/showcase/05-recovery-evidence-ledger.jpg"><img src="docs/screenshots/showcase/05-recovery-evidence-ledger.jpg" width="100%"/></a><br/><sub><b>5. Prove it happened</b> — the Recovery Evidence Ledger, one row per recovery decision</sub></td>
-<td width="33%"><a href="docs/screenshots/showcase/06-recovery-evidence-detail.jpg"><img src="docs/screenshots/showcase/06-recovery-evidence-detail.jpg" width="100%"/></a><br/><sub><b>6. Prove it happened</b> — one operation's hash chain, verifiable and exportable as evidence</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/04-recover-attention-queue.jpg"><img src="docs/screenshots/showcase/04-recover-attention-queue.jpg" width="100%" alt="ServiceHub Home page attention queue showing three critical dead-letter findings ranked across namespaces, each with a pending-decision count and a recommended action"/></a><br/><sub><b>4. Recover</b> — Home ranks what needs a decision first, across every namespace you own</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/05-recover-auto-replay-rules.jpg"><img src="docs/screenshots/showcase/05-recover-auto-replay-rules.jpg" width="100%" alt="ServiceHub Auto-Replay Rules page showing AI-generated rules grouped by DLQ reason, each with live pending, replayed, and success-rate counts and a rate limit"/></a><br/><sub><b>5. Recover</b> — AI-generated Auto-Replay Rules, with a circuit breaker that self-disables on low success</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/06-recover-incident-center.jpg"><img src="docs/screenshots/showcase/06-recover-incident-center.jpg" width="100%" alt="ServiceHub Incident Center showing total, active, resolved, and suppressed Failure Signatures, and a Fleet Health list of critical namespaces with their top failure category"/></a><br/><sub><b>6. Recover</b> — Incident Center: the operational command center for failure remediation</sub></td>
+</tr>
+<tr>
+<td width="33%"><a href="docs/screenshots/showcase/07-prove-recovery-evidence-ledger.jpg"><img src="docs/screenshots/showcase/07-prove-recovery-evidence-ledger.jpg" width="100%" alt="ServiceHub Recovery Evidence Ledger listing replay operations with timestamp, actor, kind, scope, cloud/environment, and target count — one row per recovery decision"/></a><br/><sub><b>7. Prove it happened</b> — the Recovery Evidence Ledger, one row per recovery decision, hash-chained</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/08-prove-playbook-ledger.jpg"><img src="docs/screenshots/showcase/08-prove-playbook-ledger.jpg" width="100%" alt="ServiceHub Playbook Ledger listing proposed correlation and anomaly findings per namespace with their pillar, state, and disposition, none of them auto-executed"/></a><br/><sub><b>8. Prove it happened</b> — the Playbook Ledger: every AI proposal on record, nothing auto-executed</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/09-prove-autonomy.jpg"><img src="docs/screenshots/showcase/09-prove-autonomy.jpg" width="100%" alt="ServiceHub Autonomy page showing how autonomous the system currently is per pillar (Recover, Investigate, Correlate, Prevent), with counts of decisions awaiting a human versus earned unattended execution"/></a><br/><sub><b>9. Prove it happened</b> — Autonomy: exactly how much runs unattended today, read from the evidence itself</sub></td>
 </tr>
 </table>
 

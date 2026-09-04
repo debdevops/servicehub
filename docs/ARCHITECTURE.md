@@ -1,18 +1,19 @@
 # ServiceHub Architecture
 
 This document describes the system as it exists today, grounded in the source tree — not a
-5-year vision (see [`docs/architecture/ARCHITECTURE_VISION.md`](architecture/ARCHITECTURE_VISION.md)
-for that) and not a decision log (see [`docs/adr/`](adr/) for that). Read this to understand how
-the pieces fit together before making a change.
+long-range roadmap (see [Roadmap in README.md](../README.md#roadmap) for that) and not a decision
+log (see [`docs/adr/`](adr/) for that). Read this to understand how the pieces fit together before
+making a change.
 
 ---
 
 ## 1. What ServiceHub is
 
-ServiceHub is a self-hosted forensic debugger for cloud message queues — Azure Service Bus (GA),
-AWS SQS/SNS (preview), GCP Pub/Sub (preview). It answers the question a cloud portal can't: *what
-is actually inside these 5,000 dead-lettered messages, why did they fail, and what happens if I
-replay them?*
+ServiceHub is a self-hosted, open-source forensic debugger for cloud message queues — Azure
+Service Bus (GA), AWS SQS/SNS and GCP Pub/Sub (Supported, conformance-tested against live
+infrastructure — see [Provider Conformance](PROVIDER-CONFORMANCE.md)). It answers the question a
+cloud portal can't: *what is actually inside these 5,000 dead-lettered messages, why did they
+fail, and what happens if I replay them?*
 
 It is read-only by default. Every mutating operation (replay, purge, send) is explicit, capability-
 gated per provider, and disabled entirely against namespaces marked `Production`. It is a single
@@ -108,10 +109,11 @@ Azure, AWS, and GCP registration is independent and flag-gated: Azure is always 
 `CloudProviders:Aws:Enabled` / `CloudProviders:Gcp:Enabled` both default `false` in
 `appsettings.json`. Enabling a flag registers that provider's `ICloudMessagingProvider`, its
 client factory, and a connectivity health check; registration is inert until a namespace for that
-provider actually exists. This is why AWS/GCP are labeled **preview**, not GA: the flows are
-implemented and unit-tested end-to-end, but not exercised against live AWS/GCP infrastructure in
-this project's own CI, and are provably asymmetric in capability (below) — not because anything is
-half-built.
+provider actually exists. This is why AWS/GCP are labeled **Supported**, not GA: the flows are
+implemented, unit-tested end-to-end, and conformance-tested against live AWS/GCP infrastructure
+(see [Provider Conformance](PROVIDER-CONFORMANCE.md)), but remain provably asymmetric in
+capability relative to Azure (below) — a permanent difference in what each cloud API exposes, not
+a gap in test coverage.
 
 ### ProviderCapabilities: the mechanism for honest asymmetry
 
@@ -324,5 +326,3 @@ beyond `localhost`.
 - [`docs/RECOVERY-EVIDENCE.md`](RECOVERY-EVIDENCE.md) — the ledger's evidence model and export
   format, for auditors and integrators.
 - [`CONTRIBUTING.md`](../CONTRIBUTING.md) — development setup, tests, PR process.
-- [`CLAUDE.md`](../CLAUDE.md) — the file governing AI-assisted development in this repository;
-  useful as a dense summary of invariants even if you're not using an AI assistant.
