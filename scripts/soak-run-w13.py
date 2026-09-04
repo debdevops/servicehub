@@ -22,6 +22,7 @@ Commands:
   dashboard
   wait-demotion <signature-hash> [timeout-seconds=180] [poll-seconds=5]
   wait-circuit-breaker <rule-id> [timeout-seconds=300] [poll-seconds=15]
+  wait-promotion <signature-hash> <target-level> [timeout-seconds=300] [poll-seconds=15]
   ledger-entries <namespace-id> [limit]
   export <operation-id> <out-path.zip>
   consumer-pause <provider> <entity>
@@ -35,7 +36,8 @@ docs-private/w1.3-soak-run-2026-09-03/RESULTS.md for the mechanism these exploit
   wait for the hourly AutonomyEvaluationWorker sweep):
     1. Start from a signature already at Standing (L4) — reuse one from the promotion
        run, or build one first (create-rule, toggle-rule true, flood, replay-signature,
-       poll autonomy until currentLevel==4).
+       wait-promotion <signature-hash> 4). Use a signature you don't need for L4->L5
+       below — this drill permanently poisons that signature's trust rate (see below).
     2. consumer-pause <provider> <entity> — so replayed messages exhaust redelivery and
        land back in the DLQ instead of completing.
     3. Make sure at least 2 messages carrying that exact signature are in the DLQ
@@ -68,6 +70,34 @@ docs-private/w1.3-soak-run-2026-09-03/RESULTS.md for the mechanism these exploit
        so the wait is minutes, not an hour.
     6. dashboard — sanity-check circuitBreakerTrips/recentTransitions in one call.
        Re-enable the rule afterward (toggle-rule <rule-id> true) to clean up.
+
+  L4->L5 promotion (Standing->Unattended, RecoveryTrustScoringService.MeetsL5SampleAndRate:
+  SampleSize>=30 and VerifiedSuccessRate>=0.99, evaluated by the same hourly
+  AutonomyEvaluationWorker sweep as L3->L4 — not required for Gate W1, which only needs
+  promotion+demotion+circuit-breaker-trip, but completes the full ladder):
+    IMPORTANT — trust evidence is CUMULATIVE and ALL-TIME per signature
+    (RecoveryTrustScoringService.EvaluateAsync sums every Recovered/Returned/Failed
+    disposition this signature has ever had, no rolling window). Never run the demotion
+    recipe above against a signature you still want promoted to L5 — even one Returned
+    from that drill needs ~100+ subsequent Recovered outcomes just to dilute back under
+    the 99% floor. Use a namespace/entity/error-type combination you have NOT already
+    demoted, or promote to L5 before ever running the demotion recipe on it.
+    1. Reuse or build a signature already at Standing (L4) — see the demotion recipe's
+       step 1, or start fresh: create-rule, toggle-rule true, flood, replay-signature,
+       wait-promotion <signature-hash> 4.
+    2. consumer-resume (make sure it's NOT paused — every replay from here must
+       actually succeed, or it counts against the rate instead of for it).
+    3. Flood and replay enough additional messages under the same signature to reach
+       SampleSize>=30 with the accumulated history all Recovered: flood
+       <namespace-id> ~20 <same-error-type-as-before>, then replay-signature
+       <namespace-id> <signature-hash> (repeat if the flood produces more than one
+       signature — check with `signatures <namespace-id>` first).
+    4. wait-promotion <signature-hash> 5 — polls until currentLevel reaches 5
+       (Unattended). As with the circuit breaker, override
+       RecoveryEvidence:AutonomyEvaluationSweepIntervalSeconds to something short
+       (e.g. 60s) so this doesn't wait up to an hour for the sweep.
+    5. autonomy <signature-hash> — confirm canAutoReplay/canProveDlqAbsence and the
+       final currentLevel/levelLabel for the evidence record.
 """
 import json
 import sys
@@ -219,6 +249,22 @@ def cmd_wait_demotion(signature_hash, timeout_seconds="180", poll_seconds="5"):
         time.sleep(poll_seconds)
 
 
+def cmd_wait_promotion(signature_hash, target_level, timeout_seconds="300", poll_seconds="15"):
+    target_level, timeout_seconds, poll_seconds = int(target_level), int(timeout_seconds), int(poll_seconds)
+    deadline = time.time() + timeout_seconds
+    while True:
+        status, body = sh("GET", f"/api/v1/recovery/autonomy/{signature_hash}?actionKind=Replay")
+        level = body.get("currentLevel") if isinstance(body, dict) else None
+        print(f"HTTP {status} currentLevel={level} levelLabel={body.get('levelLabel') if isinstance(body, dict) else None}")
+        if isinstance(level, int) and level >= target_level:
+            print(f"Promoted to L{level} — done.")
+            return
+        if time.time() >= deadline:
+            print(f"Timed out after {timeout_seconds}s waiting for promotion to L{target_level}. Check `trust {signature_hash}` for sample size/rate.")
+            return
+        time.sleep(poll_seconds)
+
+
 def cmd_wait_circuit_breaker(rule_id, timeout_seconds="300", poll_seconds="15"):
     timeout_seconds, poll_seconds = int(timeout_seconds), int(poll_seconds)
     deadline = time.time() + timeout_seconds
@@ -271,6 +317,7 @@ COMMANDS = {
     "dashboard": cmd_dashboard,
     "wait-demotion": cmd_wait_demotion,
     "wait-circuit-breaker": cmd_wait_circuit_breaker,
+    "wait-promotion": cmd_wait_promotion,
     "ledger-entries": cmd_ledger_entries,
     "export": cmd_export,
     "consumer-pause": cmd_consumer_pause,
