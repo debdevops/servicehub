@@ -77,6 +77,57 @@ public class MessageOperationsServiceTests
         senderMock.Verify(s => s.SendAsync(It.Is<SendMessageRequest>(r => r.NamespaceId == ns.Id), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Theory]
+    [InlineData(CloudProviderType.Aws)]
+    [InlineData(CloudProviderType.Gcp)]
+    public async Task SendAsync_ScheduledEnqueueTimeSetOnUnsupportedProvider_RejectsWithoutDelegatingToSender(CloudProviderType providerType)
+    {
+        // Regression for a real gap found while building the W4.1 provider-conformance suite:
+        // ProviderCapabilities.SupportsScheduledMessages is false for AWS/GCP, but nothing
+        // enforced it on the send path — only GetScheduledMessagesAsync (listing) checked it.
+        // A caller setting ScheduledEnqueueTimeUtc on an AWS/GCP send had it silently ignored
+        // (delivered immediately) instead of rejected.
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(providerType);
+
+        var req = new SendMessageRequest(ns.Id, "queue", "body", ScheduledEnqueueTimeUtc: DateTimeOffset.UtcNow.AddMinutes(30));
+        var res = await svc.SendAsync(req);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Message.ScheduledUnsupported);
+        senderMock.Verify(s => s.SendAsync(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SendAsync_ScheduledEnqueueTimeSetOnAzure_StillDelegatesToSender()
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(CloudProviderType.Azure);
+
+        var req = new SendMessageRequest(ns.Id, "queue", "body", ScheduledEnqueueTimeUtc: DateTimeOffset.UtcNow.AddMinutes(30));
+        var res = await svc.SendAsync(req);
+
+        res.IsSuccess.Should().BeTrue();
+        senderMock.Verify(s => s.SendAsync(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(CloudProviderType.Aws)]
+    [InlineData(CloudProviderType.Gcp)]
+    public async Task SendBatchAsync_AnyEntryHasScheduledEnqueueTimeOnUnsupportedProvider_RejectsWholeBatch(CloudProviderType providerType)
+    {
+        var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(providerType);
+
+        var requests = new[]
+        {
+            new SendMessageRequest(ns.Id, "queue", "body-1"),
+            new SendMessageRequest(ns.Id, "queue", "body-2", ScheduledEnqueueTimeUtc: DateTimeOffset.UtcNow.AddMinutes(30)),
+        };
+        var res = await svc.SendBatchAsync(requests);
+
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be(ServiceHub.Shared.Constants.ErrorCodes.Message.ScheduledUnsupported);
+        senderMock.Verify(s => s.SendBatchAsync(It.IsAny<IEnumerable<SendMessageRequest>>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Fact]
     public async Task SendAsync_ProviderNotRegistered_ReturnsExternalServiceError()
     {

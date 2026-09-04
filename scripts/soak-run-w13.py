@@ -31,6 +31,20 @@ Commands:
 Recipes (2026-09-04, extending the 2026-09-03 promotion run — see
 docs-private/w1.3-soak-run-2026-09-03/RESULTS.md for the mechanism these exploit):
 
+  CORRECTED 2026-09-04 (live-verified against real Azure traffic): consumer-pause
+  does NOT make replayed messages bounce back to the DLQ — it stops the samples
+  consumer from receiving anything at all, so a paused replay just sits Active,
+  never re-fails, and once the observation window elapses RecoveryVerificationWorker
+  counts "never reappeared in the DLQ" as Recovered (a false-positive success — the
+  message was never actually delivered, let alone processed). dlq-flood messages
+  carry FailMode.Always in their envelope, so they keep failing on every delivery
+  attempt regardless of pause state; what actually produces a genuine Returned
+  disposition is the consumer RUNNING so the message is received, fails, and
+  exhausts redelivery again. Use consumer-resume (not consumer-pause) for both
+  recipes below — confirmed live: pausing during the circuit-breaker drill left
+  pendingMatchCount stuck at 0 until resume, at which point it jumped to 20 and the
+  breaker tripped minutes later.
+
   Demotion (fast path, DlqMonitorService.EvaluateFastDemotionAsync — near-immediate,
   fires on the live DLQ poll cycle, Dlq:PollIntervalSeconds, default 10s; does NOT
   wait for the hourly AutonomyEvaluationWorker sweep):
@@ -38,15 +52,16 @@ docs-private/w1.3-soak-run-2026-09-03/RESULTS.md for the mechanism these exploit
        run, or build one first (create-rule, toggle-rule true, flood, replay-signature,
        wait-promotion <signature-hash> 4). Use a signature you don't need for L4->L5
        below — this drill permanently poisons that signature's trust rate (see below).
-    2. consumer-pause <provider> <entity> — so replayed messages exhaust redelivery and
-       land back in the DLQ instead of completing.
+    2. consumer-resume <provider> <entity> — required so replayed FailMode.Always
+       messages actually get delivered, fail, and exhaust redelivery back into the
+       DLQ. (See the CORRECTED note above — pausing does the opposite of what an
+       earlier draft of this recipe claimed.)
     3. Make sure at least 2 messages carrying that exact signature are in the DLQ
        (flood a couple more with the same entity/error-type if needed), then
        replay-signature <namespace-id> <signature-hash>.
     4. wait-demotion <signature-hash> — polls until currentLevel drops to 3 (Approve).
        DlqMonitorService needs to observe 2 consecutive verified Returned dispositions
        for this exact signature; if it times out, replay-signature again once more.
-    5. consumer-resume when done, to stop generating further DLQ noise.
 
   Circuit-breaker trip (AutonomyEvaluationWorker.SweepAutoReplayCircuitBreakersAsync —
   rule-scoped, not signature-scoped, and does NOT require any AutonomyGrant: the
@@ -54,8 +69,9 @@ docs-private/w1.3-soak-run-2026-09-03/RESULTS.md for the mechanism these exploit
   so it bypasses the autonomy-grant check entirely (see RulesController.cs's own
   comment: "autoReplay flag is no longer required for manual Replay All")):
     1. create-rule <namespace-id> <entity-name> <dead-letter-reason> — created enabled.
-    2. consumer-pause <provider> <entity> first, so every replay this rule fires
-       bounces straight back to the DLQ (Returned), not Recovered.
+    2. consumer-resume <provider> <entity> first — required so every replay this rule
+       fires actually gets delivered, fails (FailMode.Always), and bounces back to
+       the DLQ as a verified Returned. (See the CORRECTED note above.)
     3. flood <namespace-id> <count>=~25 <error-type> — comfortably over
        RecoveryEvidence:CircuitBreakerSampleSize (default 20), so replay-all's
        verified-disposition sample is dominated by Returned once these resolve.
