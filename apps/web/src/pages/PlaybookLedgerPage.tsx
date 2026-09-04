@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ClipboardList, AlertCircle, RefreshCw, Info, ChevronDown, ChevronRight, CheckCircle2, XCircle, Eye, Gauge, Target } from 'lucide-react';
+import { ClipboardList, AlertCircle, RefreshCw, Info, ChevronDown, ChevronRight, CheckCircle2, XCircle, Eye, Gauge, Target, Sparkles } from 'lucide-react';
 import {
   usePlaybookEntries,
   usePlaybookEntry,
@@ -50,6 +50,39 @@ function StateBadge({ state }: { state: PlaybookEntryState }) {
       {state}
     </span>
   );
+}
+
+/** Marks a proposal authored by the optional reasoning companion (roadmap §7, W5) so a reviewer
+ * never mistakes an AI-generated observation for a deterministic detection worker's finding —
+ * this service has no access to any ledger and can only ever land here as a proposal a human
+ * disposes of like any other. */
+function AiSuggestionBadge() {
+  return (
+    <span
+      title="Proposed by the reasoning companion — an optional, self-hosted advisory service. It has no access to any ledger or broker and can only propose; a human decides."
+      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-violet-100 text-violet-700"
+    >
+      <Sparkles className="w-3 h-3" /> AI suggestion
+    </span>
+  );
+}
+
+/** Mirrors the JSON `ReasoningCompanionWorker.ProposePlaybookEntryAsync` (services/api) builds
+ * for a `ReasoningCompanionObservation` entry's `ProposalJson`. Absent for every other proposal
+ * kind. */
+interface ReasoningCompanionObservationProposal {
+  Summary: string;
+  Considerations: string[];
+}
+
+function parseReasoningCompanionObservation(json: string): ReasoningCompanionObservationProposal | null {
+  try {
+    const parsed = JSON.parse(json) as Partial<ReasoningCompanionObservationProposal>;
+    if (typeof parsed.Summary !== 'string') return null;
+    return { Summary: parsed.Summary, Considerations: Array.isArray(parsed.Considerations) ? parsed.Considerations : [] };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -136,10 +169,28 @@ function EntryDetailRow({ entry }: { entry: PlaybookEntry }) {
   const [rejectReason, setRejectReason] = useState('');
 
   const isActionable = entry.state === 'Proposed' || entry.state === 'UnderReview' || entry.state === 'Edited';
+  const reasoningObservation =
+    entry.proposalKind === 'ReasoningCompanionObservation' ? parseReasoningCompanionObservation(entry.proposalJson) : null;
 
   return (
     <tr>
       <td colSpan={7} className="px-4 py-4 bg-gray-50 border-t border-gray-100">
+        {reasoningObservation && (
+          <div className="mb-4 px-3 py-2 rounded-lg bg-violet-50 border border-violet-200 text-xs text-violet-900">
+            <div className="flex items-center gap-1.5 font-semibold mb-1">
+              <Sparkles className="w-3.5 h-3.5" /> AI-suggested observation
+            </div>
+            <p className="mb-2">{reasoningObservation.Summary}</p>
+            {reasoningObservation.Considerations.length > 0 && (
+              <ul className="list-disc list-inside space-y-0.5">
+                {reasoningObservation.Considerations.map((c, i) => (
+                  <li key={i}>{c}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <div className="text-xs font-semibold text-gray-500 mb-1">Evidence</div>
@@ -377,7 +428,12 @@ export default function PlaybookLedgerPage() {
                       })}
                     </td>
                     <td className="px-4 py-3 text-gray-700 text-xs font-medium">{entry.pillarKind}</td>
-                    <td className="px-4 py-3 text-gray-800 font-medium text-xs">{entry.proposalKind}</td>
+                    <td className="px-4 py-3 text-gray-800 font-medium text-xs">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {entry.proposalKind}
+                        {entry.proposerKind === 'ReasoningAgent' && <AiSuggestionBadge />}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       {entry.namespaceNameSnapshot ? (
                         <div className="flex items-center gap-1 flex-wrap">

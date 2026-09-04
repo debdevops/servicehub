@@ -7,6 +7,7 @@ import {
   ClipboardList,
   Lightbulb,
   Wrench,
+  Sparkles,
   Activity as ActivityIcon,
 } from 'lucide-react';
 import { useIncident } from '@servicehub/ui-shared/hooks/useIncident';
@@ -23,7 +24,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { StatusBadge } from '@/components/dlq';
 import { RecoveryStateBadge } from '@/components/recovery/RecoveryStateBadge';
 
-const EVIDENCE_PROPOSAL_KINDS = new Set(['AnomalyFlag', 'DriftFinding', 'CorrelationHypothesis']);
+const EVIDENCE_PROPOSAL_KINDS = new Set(['AnomalyFlag', 'DriftFinding', 'CorrelationHypothesis', 'ReasoningCompanionObservation']);
 const RECOVERY_PROPOSAL_KINDS = new Set(['ReplayPlan', 'PreventionTrigger']);
 
 const PLAYBOOK_STATE_COLORS: Record<PlaybookEntryState, string> = {
@@ -67,6 +68,39 @@ function PlaybookStateBadge({ state }: { state: PlaybookEntryState }) {
   );
 }
 
+/** Marks a proposal authored by the optional reasoning companion (roadmap §7, W5) so a reviewer
+ * never mistakes an AI-generated observation for a deterministic detection worker's finding —
+ * this service has no access to any ledger and can only ever land here as a proposal a human
+ * disposes of like any other. */
+function AiSuggestionBadge() {
+  return (
+    <span
+      title="Proposed by the reasoning companion — an optional, self-hosted advisory service. It has no access to any ledger or broker and can only propose; a human decides."
+      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-violet-100 text-violet-700"
+    >
+      <Sparkles className="w-3 h-3" /> AI suggestion
+    </span>
+  );
+}
+
+/** Mirrors the JSON `ReasoningCompanionWorker.ProposePlaybookEntryAsync` (services/api) builds for
+ * a `ReasoningCompanionObservation` entry's `ProposalJson` — PascalCase, since it is a raw-
+ * serialized string, not an MVC response body. Absent for every other proposal kind. */
+interface ReasoningCompanionObservationProposal {
+  Summary: string;
+  Considerations: string[];
+}
+
+function parseReasoningCompanionObservation(json: string): ReasoningCompanionObservationProposal | null {
+  try {
+    const parsed = JSON.parse(json) as Partial<ReasoningCompanionObservationProposal>;
+    if (typeof parsed.Summary !== 'string') return null;
+    return { Summary: parsed.Summary, Considerations: Array.isArray(parsed.Considerations) ? parsed.Considerations : [] };
+  } catch {
+    return null;
+  }
+}
+
 /** Mirrors the JSON `AutoReplayExecutor.ProposeReplayPlanAsync` (services/api) builds for a
  * `ReplayPlan` entry's `ProposalJson` — PascalCase, since it is a raw-serialized string, not an
  * MVC response body. Absent for every other proposal kind. */
@@ -99,6 +133,8 @@ function parseReplayPlanProposal(json: string): ReplayPlanProposal | null {
  */
 function PlaybookEntryCard({ entry }: { entry: PlaybookEntry }) {
   const replayPlan = entry.proposalKind === 'ReplayPlan' ? parseReplayPlanProposal(entry.proposalJson) : null;
+  const reasoningObservation =
+    entry.proposalKind === 'ReasoningCompanionObservation' ? parseReasoningCompanionObservation(entry.proposalJson) : null;
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4">
@@ -107,9 +143,29 @@ function PlaybookEntryCard({ entry }: { entry: PlaybookEntry }) {
           <p className="text-sm font-semibold text-gray-900">{entry.proposalKind}</p>
           <p className="text-xs text-gray-500">{entry.pillarKind} &middot; proposed by {entry.proposerIdentity}</p>
         </div>
-        <PlaybookStateBadge state={entry.state} />
+        <div className="flex items-center gap-2 shrink-0">
+          {entry.proposerKind === 'ReasoningAgent' && <AiSuggestionBadge />}
+          <PlaybookStateBadge state={entry.state} />
+        </div>
       </div>
       <p className="text-xs text-gray-400 mb-2">{formatDate(entry.proposedAt)}</p>
+
+      {reasoningObservation && (
+        <div className="mb-2 text-xs text-gray-700">
+          <p className="font-semibold text-gray-500 uppercase tracking-wide mb-1">Observation</p>
+          <p className="mb-2">{reasoningObservation.Summary}</p>
+          {reasoningObservation.Considerations.length > 0 && (
+            <>
+              <p className="font-semibold text-gray-500 uppercase tracking-wide mb-1">Considerations</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                {reasoningObservation.Considerations.map((c, i) => (
+                  <li key={i}>{c}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
 
       {replayPlan && (
         <div className="mb-2 grid gap-2 text-xs text-gray-700 sm:grid-cols-2">
@@ -133,7 +189,7 @@ function PlaybookEntryCard({ entry }: { entry: PlaybookEntry }) {
 
       <details className="text-xs">
         <summary className="cursor-pointer text-primary-600 font-medium">
-          View {replayPlan ? 'raw proposal JSON' : 'proposal detail'}
+          View {replayPlan || reasoningObservation ? 'raw proposal JSON' : 'proposal detail'}
         </summary>
         <pre className="mt-2 bg-gray-50 border border-gray-100 rounded-md p-2 overflow-x-auto text-gray-700">
           {(() => {
@@ -396,7 +452,7 @@ export function IncidentWorkspacePage() {
                   <EmptyState
                     icon={ClipboardList}
                     heading="No evidence recorded"
-                    subtext="No anomaly flags, drift findings, or correlation hypotheses have been proposed for this signature."
+                    subtext="No anomaly flags, drift findings, correlation hypotheses, or AI-suggested observations have been proposed for this signature."
                     fillHeight={false}
                   />
                 ) : (
@@ -489,7 +545,10 @@ export function IncidentWorkspacePage() {
                             <p className="text-sm text-gray-900">{row.entry.proposalKind} proposed</p>
                             <p className="text-xs text-gray-500">{formatDate(row.at)}</p>
                           </div>
-                          <PlaybookStateBadge state={row.entry.state} />
+                          <div className="flex items-center gap-2 shrink-0">
+                            {row.entry.proposerKind === 'ReasoningAgent' && <AiSuggestionBadge />}
+                            <PlaybookStateBadge state={row.entry.state} />
+                          </div>
                         </div>
                       ),
                     )}
