@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
@@ -382,11 +383,7 @@ public sealed class MessageOperationsService : IMessageOperationsService
 
             if (!provider.Capabilities.SupportsScheduledMessages)
             {
-                return Result<IReadOnlyList<Message>>.Failure(Error.Validation(
-                    ErrorCodes.Message.ScheduledUnsupported,
-                    $"Scheduled messages are not supported for {ns.Provider}. " +
-                    $"Supported providers: Azure. Current provider: {ns.Provider}. " +
-                    $"See provider capabilities: {provider.Capabilities.Notes}"));
+                return Result<IReadOnlyList<Message>>.Failure(BuildScheduledUnsupportedError(ns.Provider, provider.Capabilities));
             }
 
             _logger.LogDebug("NamespaceId: {NamespaceId}, Provider: {Provider}, Operation: GetScheduledMessages", ns.Id, ns.Provider);
@@ -399,6 +396,21 @@ public sealed class MessageOperationsService : IMessageOperationsService
         }
     }
 
+    /// <summary>
+    /// Builds the validation error for a scheduled-delivery request (single send, batch send, or
+    /// listing) against a provider whose <see cref="ServiceHub.Core.Models.ProviderCapabilities.SupportsScheduledMessages"/>
+    /// is false. Centralised so <c>SendInternalAsync</c>/<c>SendBatchInternalAsync</c> reject an
+    /// unsupported <c>ScheduledEnqueueTimeUtc</c> the same way listing already did — previously
+    /// only listing enforced this, so a caller could set <c>ScheduledEnqueueTimeUtc</c> on an
+    /// AWS/GCP send and it was silently ignored (delivered immediately) instead of rejected.
+    /// </summary>
+    private static Error BuildScheduledUnsupportedError(ServiceHub.Core.Enums.CloudProviderType providerType, ServiceHub.Core.Models.ProviderCapabilities capabilities) =>
+        Error.Validation(
+            ErrorCodes.Message.ScheduledUnsupported,
+            $"Scheduled messages are not supported for {providerType}. " +
+            $"Supported providers: Azure. Current provider: {providerType}. " +
+            $"See provider capabilities: {capabilities.Notes}");
+
     private async Task<Result> SendInternalAsync(SendMessageRequest request, CancellationToken cancellationToken)
     {
         try
@@ -409,6 +421,12 @@ public sealed class MessageOperationsService : IMessageOperationsService
             }
 
             var (ns, provider) = await ResolveProviderAsync(request.NamespaceId.Value, cancellationToken).ConfigureAwait(false);
+
+            if (request.ScheduledEnqueueTimeUtc.HasValue && !provider.Capabilities.SupportsScheduledMessages)
+            {
+                return Result.Failure(BuildScheduledUnsupportedError(ns.Provider, provider.Capabilities));
+            }
+
             _logger.LogDebug("NamespaceId: {NamespaceId}, Provider: {Provider}, Operation: Send", ns.Id, ns.Provider);
             var sender = GetSender(provider);
             return await sender.SendAsync(request, cancellationToken).ConfigureAwait(false);
@@ -443,6 +461,12 @@ public sealed class MessageOperationsService : IMessageOperationsService
             }
 
             var (ns, provider) = await ResolveProviderAsync(first.NamespaceId.Value, cancellationToken).ConfigureAwait(false);
+
+            if (!provider.Capabilities.SupportsScheduledMessages && requestList.Any(r => r.ScheduledEnqueueTimeUtc.HasValue))
+            {
+                return Result.Failure(BuildScheduledUnsupportedError(ns.Provider, provider.Capabilities));
+            }
+
             _logger.LogDebug("NamespaceId: {NamespaceId}, Provider: {Provider}, Operation: SendBatch", ns.Id, ns.Provider);
             var sender = GetSender(provider);
             return await sender.SendBatchAsync(requestList, cancellationToken).ConfigureAwait(false);
