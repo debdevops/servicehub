@@ -261,10 +261,16 @@ configures real identity.
 
 Connection strings are AES-GCM-256 encrypted at rest (`ENC[v1]:` prefix; legacy `ENC:V2:` values
 are transparently decrypted and re-encrypted on read), with the encryption key derived via
-HKDF/PBKDF2 from an operator-supplied master key — never generated or stored by ServiceHub itself,
-and **not rotatable**: losing it, or changing it after namespaces are saved, makes every stored
-connection string permanently undecryptable. There is no default; a placeholder value is rejected
-outright outside `Development`. Any user-controlled value written to a log line is routed through
+HKDF/PBKDF2 from an operator-supplied master key — never generated or stored by ServiceHub itself.
+Single-key deployments use the `ENC[v1]:` envelope, unrotatable, exactly as before. Configuring
+`Security:EncryptionKeyRegistry` opts a deployment into the `ENC[v2:kid=<id>]:` envelope instead —
+a multi-key registry with an AAD-bound key ID, so old and new keys coexist and the key protecting
+new writes can be rotated without losing access to connection strings encrypted under a retired one.
+See [`docs/ENCRYPTION-KEY-ROTATION.md`](ENCRYPTION-KEY-ROTATION.md) for the full procedure and its
+current scope (lazy re-encryption on write; no proactive bulk re-encryption yet). There is no
+default key; a placeholder value is rejected outright outside `Development`.
+
+Any user-controlled value written to a log line is routed through
 `LogRedactor.SanitiseForLog()`, enforced in CI by CodeQL (`cs/log-forging`). Message *bodies* are
 never persisted in full — only a SHA-256 hash plus a capped preview — so investigation never
 requires retaining the sensitive payload itself.
