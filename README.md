@@ -2,7 +2,7 @@
 
 # ServiceHub
 
-### The Forensic Debugger for Cloud Messaging — Azure Service Bus (Supported) · AWS SQS/SNS & GCP Pub/Sub (Preview)
+### The Forensic Debugger for Cloud Messaging — Azure Service Bus (GA) · AWS SQS/SNS & GCP Pub/Sub (Supported)
 
 ![ServiceHub Banner](docs/screenshots/servicehub-cover-v3.7.0.png)
 
@@ -27,7 +27,8 @@ it at Azure Service Bus, AWS SQS/SNS, or GCP Pub/Sub and it gives you what the c
 won't: full message bodies, real-time search, AI-assisted dead-letter pattern detection, one-click
 replay, and a permanent, tamper-evident record of every recovery decision it makes — all running
 in a single process you control, with no message data ever leaving your network. Azure Service Bus
-is fully supported (GA); AWS and GCP are in preview.
+is fully supported (GA); AWS and GCP are Supported, conformance-tested against live infrastructure
+but capability-gated relative to Azure (see [Provider Conformance](docs/PROVIDER-CONFORMANCE.md)).
 
 ---
 
@@ -103,14 +104,18 @@ ServiceHub extends beyond Azure Service Bus to support **AWS SQS/SNS** and **GCP
 | Provider | Status | Browse & Search | Dead-Letter | Replay | Purge | Send & Test Tools³ | Cross-Cloud Trace |
 |----------|--------|-----------------|-------------|--------|-------|--------------------|-------------------|
 | **Azure Service Bus** | ✅ GA | ✅ | ✅ | ✅ | — (SDK limitation) | ✅ | ✅ |
-| **AWS SQS / SNS** | 🔶 Preview | ✅ | ✅ (redrive DLQ) | ✅ | ✅ | ✅ | ✅¹ |
-| **GCP Pub/Sub** | 🔶 Preview | ✅ | ✅ peek (nack/ack deadline)² | ✅ | ✅ | ✅ | ✅¹ |
+| **AWS SQS / SNS** | 🟦 Supported | ✅ | ✅ (redrive DLQ) | ✅ | ✅ | ✅ | ✅¹ |
+| **GCP Pub/Sub** | 🟦 Supported | ✅ | ✅ peek (nack/ack deadline)² | ✅ | ✅ | ✅ | ✅¹ |
 
 ¹ Cross-Cloud Trace searches any namespace whose provider is registered in the API's dependency-injection container. Azure is always registered; AWS/GCP registration is disabled by default in this build — register the provider to exercise AWS/GCP trace search.
 ² GCP Pub/Sub dead-lettering is policy-driven via `MaxDeliveryAttempts`; ServiceHub reads the DLQ through the subscription's configured dead-letter topic, and its test tooling moves messages there by republishing through the subscription's dead-letter policy. Message counts are unavailable via the Pub/Sub API and are reported as `0`.
 ³ Test tools (send a message, generate realistic test data, push messages to the DLQ) are available only on **DEV** namespaces with a Manage-level connection — never in UAT or production.
 
-**Preview** means: implemented and unit-tested, not validated against live AWS/GCP services in this project's own CI, capability-gated, no parity guarantee with Azure.
+**Supported** means: conformance-tested against live AWS/GCP services, including the negative
+capability assertions (an unsupported operation is rejected with the documented error, not
+silently ignored) — see [Provider Conformance](docs/PROVIDER-CONFORMANCE.md) for the reproducible
+evidence. Still capability-gated, still no parity guarantee with Azure — those are real, permanent
+differences in what each cloud API exposes, not evidence gaps.
 
 ### 🌐 Cross-Cloud Trace
 Connect namespaces from two or more cloud providers and use **Multi-Cloud Trace** to trace a single Correlation ID or message GUID as it routes from Azure $\rightarrow$ AWS $\rightarrow$ GCP (or any combination). The result is a visual routing path diagram, a chronological hop timeline, and a namespace search-coverage panel.
@@ -219,8 +224,8 @@ an honest, explicit list of what's supported and what isn't for that cloud:
 
 - **[🧭 Quick Access Guide](docs/guides/quick-access-guide.md)** — every navigation shortcut explained, with a full navigation map
 - **[☁️ Azure Service Bus Guide](docs/guides/azure-guide.md)** — the fully supported (GA) provider
-- **[🟧 AWS SQS/SNS Guide](docs/guides/aws-guide.md)** — Preview, with SQS's own limitations explained
-- **[🟩 GCP Pub/Sub Guide](docs/guides/gcp-guide.md)** — Preview, with Pub/Sub's own limitations explained
+- **[🟧 AWS SQS/SNS Guide](docs/guides/aws-guide.md)** — Supported, with SQS's own limitations explained
+- **[🟩 GCP Pub/Sub Guide](docs/guides/gcp-guide.md)** — Supported, with Pub/Sub's own limitations explained
 
 New to ServiceHub and haven't connected a cloud account yet? Start with
 [LOCAL-DEPLOYMENT.md](LOCAL-DEPLOYMENT.md) instead — it covers installing ServiceHub and
@@ -520,8 +525,8 @@ graph TB
 
     subgraph Providers["☁️ CLOUD PROVIDERS — same ICloudMessagingProvider contract"]
         AZ["Azure Service Bus<br/>GA"]
-        AWS["AWS SQS / SNS<br/>Preview"]
-        GCP["GCP Pub/Sub<br/>Preview"]
+        AWS["AWS SQS / SNS<br/>Supported"]
+        GCP["GCP Pub/Sub<br/>Supported"]
     end
 
     subgraph Storage["💾 PERSISTENCE — two stores, by design"]
@@ -597,7 +602,7 @@ The primary AI Findings surface is client-side heuristic pattern detection — p
 On AWS (delete by receipt handle) and GCP (acknowledge), yes — the Purge action, guarded by explicit-intent headers and blocked on production namespaces. Azure Service Bus has no reliable single-message delete in the SDK, so ServiceHub disables the action there instead of faking it.
 
 **How is this different from Service Bus Explorer?**
-Service Bus Explorer is a well-established, Azure-only desktop tool for browsing and managing Service Bus entities. ServiceHub also covers Azure Service Bus, but adds full-text message search, batch DLQ analysis with client-side AI pattern detection, auto-replay rules, a persistent multi-namespace fleet dashboard, cross-cloud correlation tracing, and the hash-chained Recovery Evidence Ledger — plus preview support for AWS SQS/SNS and GCP Pub/Sub in the same tool. Both are free and self-hosted; the difference is investigation/recovery depth and multi-cloud scope.
+Service Bus Explorer is a well-established, Azure-only desktop tool for browsing and managing Service Bus entities. ServiceHub also covers Azure Service Bus, but adds full-text message search, batch DLQ analysis with client-side AI pattern detection, auto-replay rules, a persistent multi-namespace fleet dashboard, cross-cloud correlation tracing, and the hash-chained Recovery Evidence Ledger — plus conformance-tested support for AWS SQS/SNS and GCP Pub/Sub in the same tool. Both are free and self-hosted; the difference is investigation/recovery depth and multi-cloud scope.
 
 ---
 
@@ -633,7 +638,7 @@ where it stands and where it's headed.
 | 🟣 | **Later** | AI-Guided → Bounded Autonomous Operations | Strategic direction |
 
 **🟢 Now — Investigate → Recover → Prove.** The forensic core, live today across Azure Service Bus
-(GA) and AWS SQS/SNS + GCP Pub/Sub (preview): full message inspection, real-time search, client-side
+(GA) and AWS SQS/SNS + GCP Pub/Sub (Supported): full message inspection, real-time search, client-side
 AI pattern detection, one-click and rule-based replay, purge, bulk operations with dry-run preview,
 a fleet dashboard, DLQ triage, Live Tail (Azure/GCP), Failure Signature Intelligence, and the
 Recovery Evidence Ledger — a hash-chained, tamper-evident record of every recovery. Also shipped:
