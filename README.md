@@ -44,10 +44,12 @@ Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-
 > [!TIP]
 > **No credentials?** The Welcome page's **"Try a live demo"** buttons open a fully client-side demo walkthrough per cloud — no backend, no cloud account needed.
 
-<p align="center">
-  <a href="docs/screenshots/showcase/02-investigate-ai-insights.jpg"><img src="docs/screenshots/showcase/02-investigate-ai-insights.jpg" width="85%" alt="A dead-lettered AWS SQS message open in ServiceHub, showing the full message body and an AI Insights panel that clusters it into a named DLQ failure pattern with a confidence score and recommended action"/></a>
-  <br/><sub>A real dead-letter message in ServiceHub — full body, plus an AI-clustered failure pattern with a confidence score, not just a count.</sub>
-</p>
+<table>
+<tr>
+<td width="50%"><a href="docs/screenshots/showcase/10-investigate-message-forensics.jpg"><img src="docs/screenshots/showcase/10-investigate-message-forensics.jpg" width="100%" alt="ServiceHub message browser showing a dead-lettered Azure Service Bus order message with a Critical assessment badge, MaxDeliveryCountExceeded reason, and an AI-detected DLQ pattern with 88% confidence across 15 affected messages"/></a><br/><sub>Live capture — the Dead-Letter tab: full message list on the left, AI-clustered failure pattern (confidence + affected-message count) on the right.</sub></td>
+<td width="50%"><a href="docs/screenshots/showcase/11-investigate-message-body.jpg"><img src="docs/screenshots/showcase/11-investigate-message-body.jpg" width="100%" alt="ServiceHub message body view showing full syntax-highlighted JSON for a dead-lettered order message, with copy-to-clipboard and content-type detection"/></a><br/><sub>Live capture — the Body tab: full JSON with syntax highlighting, not the truncated preview a cloud console gives you.</sub></td>
+</tr>
+</table>
 
 | Capability | Standard Cloud Portals | ServiceHub |
 |---|---|---|
