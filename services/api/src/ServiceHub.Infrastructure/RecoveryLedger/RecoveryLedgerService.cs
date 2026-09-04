@@ -61,6 +61,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     };
 
     private readonly DlqDbContext _dbContext;
+    private readonly INamespaceRepository? _namespaceRepository;
     private readonly double _observationWindowHours;
     private readonly TimeSpan _observationWindow;
     private readonly bool _isNonDefaultObservationWindow;
@@ -81,9 +82,18 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     /// here rather than failing, exactly like every other worker in this codebase that reads
     /// <c>RecoveryEvidence:*</c>.
     /// </param>
-    public RecoveryLedgerService(DlqDbContext dbContext, IConfiguration? configuration = null)
+    /// <param name="namespaceRepository">
+    /// Used only as a fallback in <see cref="GetSignatureProviderAsync"/> when a signature has
+    /// never had a recovery ledger entry written for it yet (so no <c>ProviderSnapshot</c> exists)
+    /// — resolves the provider from the namespace the signature was last observed in instead.
+    /// Optional and defaults to <see langword="null"/> so existing direct-construction callers
+    /// (tests, mainly) are unaffected; DI-resolved instances always receive the real repository.
+    /// </param>
+    public RecoveryLedgerService(
+        DlqDbContext dbContext, IConfiguration? configuration = null, INamespaceRepository? namespaceRepository = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _namespaceRepository = namespaceRepository;
 
         _observationWindowHours = configuration is null
             ? DefaultObservationWindowHours
@@ -816,13 +826,39 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     public async Task<CloudProviderType?> GetSignatureProviderAsync(
         string ownerId, string signatureHash, CancellationToken cancellationToken = default)
     {
-        return await _dbContext.RecoveryLedgerEntries
+        var fromLedger = await _dbContext.RecoveryLedgerEntries
             .AsNoTracking()
             .Where(e => e.OwnerId == ownerId
                         && e.SignatureHashSnapshot == signatureHash
                         && e.ProviderSnapshot != null)
             .Select(e => e.ProviderSnapshot)
             .FirstOrDefaultAsync(cancellationToken);
+
+        if (fromLedger is not null || _namespaceRepository is null)
+        {
+            return fromLedger;
+        }
+
+        // A signature that has never had a replay/purge recorded against it has no
+        // ProviderSnapshot in the ledger yet — falling back to null here (and letting callers
+        // fail closed to AWS's stricter capabilities) wrongly tells an operator a
+        // never-yet-replayed Azure signature can't do something Azure actually can. Resolve the
+        // provider from the namespace the signature was last (or most recently) observed in
+        // instead — NamespaceSignature rows exist independently of the recovery ledger.
+        var namespaceId = await _dbContext.NamespaceSignatures
+            .AsNoTracking()
+            .Where(s => s.OwnerId == ownerId && s.SignatureHash == signatureHash)
+            .OrderByDescending(s => s.LastSeenAt)
+            .Select(s => (Guid?)s.NamespaceId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (namespaceId is null)
+        {
+            return null;
+        }
+
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId.Value, cancellationToken);
+        return namespaceResult.IsSuccess ? namespaceResult.Value.Provider : null;
     }
 
     /// <inheritdoc />
