@@ -50,6 +50,9 @@ public static class DependencyInjection
         // AI
         services.AddAI(configuration);
 
+        // Reasoning companion (roadmap §7, W5)
+        services.AddReasoningAgent(configuration);
+
         // Webhooks
         services.AddWebhooks(configuration);
 
@@ -195,6 +198,44 @@ public static class DependencyInjection
     }
 
     /// <summary>
+    /// Adds the reasoning-companion HTTP client (roadmap §7, W5).
+    /// <para>
+    /// <see cref="IReasoningAgentClient"/> — singleton client wrapping the optional, self-hosted,
+    /// disabled-by-default <c>services/agent</c> container. Structurally mirrors
+    /// <see cref="AddAI"/>. Consumed only by <c>ReasoningCompanionWorker</c> — no controller or
+    /// other request-path code depends on this client, since the companion's only legal effect on
+    /// the system is a Playbook Ledger proposal written from a background sweep.
+    /// </para>
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration (optional).</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddReasoningAgent(this IServiceCollection services, IConfiguration? configuration = null)
+    {
+        services.Configure<ReasoningAgentOptions>(opts =>
+            configuration?.GetSection(ReasoningAgentOptions.SectionName).Bind(opts));
+
+        services.AddHttpClient(Agent.ReasoningAgentClient.HttpClientName, (sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptions<ReasoningAgentOptions>>().Value;
+            if (Uri.TryCreate(options.ServiceUrl, UriKind.Absolute, out var baseUri))
+            {
+                client.BaseAddress = baseUri;
+            }
+
+            client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+        });
+
+        services.TryAddSingleton<IReasoningAgentClient, Agent.ReasoningAgentClient>();
+
+        // Degraded, never Unhealthy — same reasoning as the "ai" check above.
+        services.AddHealthChecks()
+            .AddCheck<Agent.ReasoningAgentHealthCheck>("reasoning-agent", tags: ["dependencies", "reasoning-agent"]);
+
+        return services;
+    }
+
+    /// <summary>
     /// Adds background services for anomaly detection, DLQ monitoring, bulk operations,
     /// signature replay, and audit-log retention.
     /// </summary>
@@ -218,6 +259,7 @@ public static class DependencyInjection
         services.AddHostedService<PreventionRuleExpiryWorker>();
         services.AddHostedService<AutonomyEvaluationWorker>();
         services.AddHostedService<BackupWorker>();
+        services.AddHostedService<ReasoningCompanionWorker>();
 
         // Self-observability of the autonomy machinery itself (roadmap §6, cross-cutting
         // foundation item 4) — registered alongside the workers above as a matched unit, so an

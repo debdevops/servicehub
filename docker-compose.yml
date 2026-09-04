@@ -62,6 +62,7 @@ services:
     restart: unless-stopped
     depends_on:
       - servicehub-ai
+      - servicehub-agent
     # Named, tracked volume for the SQLite DLQ/audit/evidence database and the namespace store —
     # both already write here by default (DlqDatabase__DataDirectory / NamespaceRepository__DataDirectory
     # in the Dockerfile). Without this mount, Docker still creates an anonymous volume for the
@@ -81,6 +82,21 @@ services:
       context: ./services/ai
       dockerfile: Dockerfile
     image: servicehub-ai:local
+    restart: unless-stopped
+
+  # Reasoning companion (services/agent, roadmap §7, W5) — internal network only, same rule as
+  # servicehub-ai above. Disabled by default at the .NET side (ReasoningAgent:Enabled=false); this
+  # container itself also does nothing without its own OLLAMA_HOST pointed at a local Ollama
+  # instance the operator runs (never a cloud LLM API — see services/agent/README.md). Leave
+  # OLLAMA_HOST unset to run with this container present but fully inert.
+  servicehub-agent:
+    build:
+      context: ./services/agent
+      dockerfile: Dockerfile
+    image: servicehub-agent:local
+    environment:
+      OLLAMA_HOST: ${OLLAMA_HOST:-}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1}
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------------------
