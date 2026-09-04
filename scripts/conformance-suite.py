@@ -14,22 +14,29 @@ table here, so this suite can't drift from the source of truth it's checking.
 Never fabricates data: every assertion is a real HTTP call against a running ServiceHub API
 (:5153 by default), which talks to whatever real namespaces are registered on it. Prerequisites:
 ServiceHub API running and at least one namespace already registered per provider you want
-exercised (`register-aws` below can add one for AWS given AKID:secret; Azure/GCP need their
-own connection-string/service-account setup first — this script does not provision cloud infra).
+exercised (`register-aws` below can add one for AWS given AKID:secret; Azure needs its own
+connection-string setup first; GCP can register with AuthType `gcpWorkloadIdentity`, which uses
+the host's already-authenticated `gcloud auth application-default login` credential — no service
+account key needs to be minted — this script does not provision cloud infra either way).
 
-Usage: python3 scripts/conformance-suite.py run [--namespace Provider=<namespace-id>=<entityName> ...]
+Usage: python3 scripts/conformance-suite.py run
+           [--namespace Provider=<namespace-id>=<entityName>[=<subscriptionName>] ...]
        python3 scripts/conformance-suite.py preflight
        python3 scripts/conformance-suite.py register-aws <namespace-name> <region> <akid> <secret>
+
+A trailing `=<subscriptionName>` is only needed for a topic-backed entity whose DLQ lives on a
+subscription rather than the topic itself (GCP Pub/Sub) — the queue-shaped DLQ peek/purge routes
+otherwise used (Azure/AWS) 404 on a topic name.
 
 Example (this run's actual namespaces):
   python3 scripts/conformance-suite.py run \\
       --namespace Azure=5f815da0-931b-4ed6-a9e2-af124bcb6200=orders \\
-      --namespace Aws=ed21bf7a-c595-468d-992d-fc495803d21e=servicehub-dev-orders
+      --namespace Aws=ed21bf7a-c595-468d-992d-fc495803d21e=servicehub-dev-orders \\
+      --namespace Gcp=b1425746-b363-4d3c-aad6-ea1edc22f8c1=servicehub-dev-orders-topic=servicehub-dev-orders-subscription
 
 Exit code is 0 iff every assertion that actually ran passed. Providers with no --namespace given
-are reported SKIPPED (not FAILED) — this is "Azure first," not "Azure only, and everything else is
-broken"; GCP in particular needs a minted service-account key this script deliberately does not
-create on its own (see docs-private/w4-1-conformance-suite-2026-09-04/RESULTS.md).
+are reported SKIPPED (not FAILED) — this lets the suite run against whichever providers happen to
+be connected on a given machine rather than failing outright when one isn't.
 """
 import argparse
 import json
@@ -116,20 +123,31 @@ def cmd_register_aws(args):
 
 
 def parse_namespace_args(pairs):
-    """--namespace Provider=<id>=<entityName> repeated -> {"Azure": (id, entity), ...}"""
+    """--namespace Provider=<id>=<entityName>[=<subscriptionName>] repeated ->
+    {"Azure": (id, entity, subscription_or_None), ...}. A subscription is only needed for a
+    topic-backed entity (e.g. GCP, whose DLQ lives on the subscription, not the topic itself)."""
     out = {}
     for p in pairs:
-        provider, ns_id, entity = p.split("=", 2)
-        out[provider] = (ns_id, entity)
+        parts = p.split("=", 3)
+        provider, ns_id, entity = parts[0], parts[1], parts[2]
+        subscription = parts[3] if len(parts) > 3 else None
+        out[provider] = (ns_id, entity, subscription)
     return out
 
 
-def peek_dead_letter(ns_id, entity, max_messages=5):
-    code, body = sh("GET", f"/api/v1/messages/queue/{entity}/deadletter?namespaceId={ns_id}&maxMessages={max_messages}")
+def peek_dead_letter(ns_id, entity, subscription, max_messages=5):
+    if subscription:
+        code, body = sh(
+            "GET",
+            f"/api/v1/messages/topic/{entity}/subscription/{subscription}/deadletter"
+            f"?namespaceId={ns_id}&maxMessages={max_messages}",
+        )
+    else:
+        code, body = sh("GET", f"/api/v1/messages/queue/{entity}/deadletter?namespaceId={ns_id}&maxMessages={max_messages}")
     return code, body
 
 
-def run_provider(report, provider, ns_id, entity, caps):
+def run_provider(report, provider, ns_id, entity, subscription, caps):
     print(f"\n=== {provider} (namespace {ns_id}, entity {entity}) ===")
     print(f"Declared capabilities: {json.dumps(caps, indent=2)}")
 
@@ -143,17 +161,17 @@ def run_provider(report, provider, ns_id, entity, caps):
     report.check(provider, "send (baseline)", code == 202, f"HTTP {code}: {body if code != 202 else 'accepted'}")
 
     # --- manual dead-letter: SupportsManualDeadLetter ---
+    time.sleep(2)  # let the send settle before we ask to dead-letter it
+    code, body = sh(
+        "POST", f"/api/v1/namespaces/{ns_id}/queues/{entity}/deadletter?messageCount=1&reason=ConformanceSuite",
+        extra_headers=intent_headers("messages:deadletter"),
+    )
     if caps["supportsManualDeadLetter"]:
-        time.sleep(2)  # let the send settle before we ask to dead-letter it
-        code, body = sh(
-            "POST", f"/api/v1/namespaces/{ns_id}/queues/{entity}/deadletter?messageCount=1&reason=ConformanceSuite",
-            extra_headers=intent_headers("messages:deadletter"),
-        )
         report.check(provider, "manual dead-letter (positive)", code == 200,
                      f"HTTP {code}: {body if code != 200 else body}")
     else:
-        report.skip(provider, "manual dead-letter (negative)",
-                    f"{provider} not registered/exercisable here for the negative case — see RESULTS.md")
+        report.check(provider, "manual dead-letter (negative — must be REJECTED, not silently accepted or 500)",
+                     code == 400, f"HTTP {code}: {body}")
 
     # --- scheduled messages: SupportsScheduledMessages ---
     sched_time = datetime.now(timezone.utc) + timedelta(minutes=5)
@@ -176,16 +194,18 @@ def run_provider(report, provider, ns_id, entity, caps):
                      code != 202, f"HTTP {code}: {body}")
 
     # --- purge: SupportsPurge ---
-    code, dlq = peek_dead_letter(ns_id, entity)
+    code, dlq = peek_dead_letter(ns_id, entity, subscription)
     target_seq = None
     if code == 200 and isinstance(dlq, list) and len(dlq) > 0:
         target_seq = dlq[0].get("sequenceNumber")
     if target_seq is None:
         report.skip(provider, "purge", "no dead-letter message available to target (DLQ peek returned none)")
     else:
+        sub_param = f"&subscriptionName={subscription}" if subscription else ""
         code, body = sh(
             "DELETE",
-            f"/api/v1/messages/purge?namespaceId={ns_id}&sequenceNumber={target_seq}&entityName={entity}&fromDeadLetter=true&reason=ConformanceSuite",
+            f"/api/v1/messages/purge?namespaceId={ns_id}&sequenceNumber={target_seq}&entityName={entity}"
+            f"{sub_param}&fromDeadLetter=true&reason=ConformanceSuite",
             extra_headers=intent_headers("messages:purge"),
         )
         if caps["supportsPurge"]:
@@ -212,6 +232,26 @@ def run_provider(report, provider, ns_id, entity, caps):
         report.check(provider, "Live Tail (positive — session opened and stayed open)",
                       caps["supportsRepeatablePeek"], "connection opened, held open past the read timeout (expected for SSE)")
 
+    # --- DLQ background scan: SupportsRepeatablePeek + DlqMonitor:AllowDestructivePeek default-off ---
+    # Providers with no non-destructive peek (AWS, GCP) must have their DLQ background scan refuse
+    # to run (Dlq.NotMonitored) *unless* this server's own config has explicitly opted the provider
+    # in via DlqMonitor:AllowDestructivePeek:{Provider} — see DlqMonitorService.ScanNamespaceAsync.
+    # Both outcomes are a PASS here (the gate is honoured either way); only a shape that matches
+    # neither — e.g. a 500, or a 400 with some other code — is a real capability-enforcement defect.
+    code, body = sh("POST", f"/api/v1/dlq/scan/{ns_id}")
+    if caps["supportsRepeatablePeek"]:
+        report.check(provider, "DLQ background scan (positive — non-destructive peek allowed)",
+                     code == 200, f"HTTP {code}: {body}")
+    elif code == 200:
+        report.check(provider,
+                     "DLQ background scan (this server opted {} in via DlqMonitor:AllowDestructivePeek)".format(provider),
+                     True, f"HTTP {code}: {body} — not the default; an operator enabled this explicitly")
+    else:
+        report.check(provider,
+                     "DLQ background scan (negative — refused by default, DlqMonitor:AllowDestructivePeek off)",
+                     code == 400 and isinstance(body, dict) and body.get("code") == "Dlq.NotMonitored",
+                     f"HTTP {code}: {body}")
+
 
 def cmd_run(args):
     ns_map = parse_namespace_args(args.namespace or [])
@@ -228,8 +268,8 @@ def cmd_run(args):
         if provider not in ns_map:
             report.skip(provider, "all live assertions", "no --namespace given for this provider")
             continue
-        ns_id, entity = ns_map[provider]
-        run_provider(report, provider, ns_id, entity, caps)
+        ns_id, entity, subscription = ns_map[provider]
+        run_provider(report, provider, ns_id, entity, subscription, caps)
 
     passed, failed, skipped = report.summary()
     print(f"\n=== SUMMARY: {passed} passed, {failed} failed, {skipped} skipped ===")
@@ -245,7 +285,8 @@ def main():
     sub.add_parser("preflight")
 
     p_run = sub.add_parser("run")
-    p_run.add_argument("--namespace", action="append", help="Provider=<namespace-id>=<entityName>, repeatable")
+    p_run.add_argument("--namespace", action="append",
+                        help="Provider=<namespace-id>=<entityName>[=<subscriptionName>], repeatable")
     p_run.add_argument("--report-path", default="conformance-report.json")
 
     p_reg = sub.add_parser("register-aws")

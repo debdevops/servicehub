@@ -269,6 +269,9 @@ How-To-Use.md
 # symlink into .claude/skills/ exists only so Claude Code can discover it by name)
 .claude/skills/aws-e2e-specialist
 
+# Claude Code full-app E2E verification skill (same pattern as aws-e2e-specialist above)
+.claude/skills/e2e-verify
+
 docs/linkedin
 # Playwright test artifacts
 apps/web/test-results/

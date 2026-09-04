@@ -3,10 +3,11 @@
 This guide assumes no prior ServiceHub experience. It was tested live against a real GCP
 Pub/Sub topic and subscription, not a mockup.
 
-GCP Pub/Sub is a **Preview** provider in ServiceHub: validated against live GCP infrastructure
-and safe to use, but with real limitations imposed by the Pub/Sub API itself (explained below)
-— not full feature parity with Azure. Live browsing requires an operator to enable it on the
-server first (off by default).
+GCP Pub/Sub is a **Supported** provider in ServiceHub: conformance-tested against live GCP
+infrastructure (see [Provider Conformance](../PROVIDER-CONFORMANCE.md) for the reproducible
+evidence) and safe to use, but with real limitations imposed by the Pub/Sub API itself (explained
+below) — not full feature parity with Azure. Live browsing requires an operator to enable it on
+the server first (off by default).
 
 ---
 
