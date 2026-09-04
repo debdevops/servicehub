@@ -104,6 +104,49 @@ describe('PlaybookLedgerPage', () => {
     expect(screen.getByText('Fleet-wide')).toBeInTheDocument();
   });
 
+  it('shows an "AI suggestion" badge for a reasoning-companion-authored proposal, and not for a system one', () => {
+    mockUsePlaybookEntries.mockReturnValue({
+      data: [
+        sampleEntry,
+        {
+          ...sampleEntry,
+          id: 'entry-2',
+          proposalKind: 'ReasoningCompanionObservation',
+          proposerIdentity: 'ReasoningAgent:services/agent',
+          proposerKind: 'ReasoningAgent' as const,
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      isFetching: false,
+    });
+    renderPage();
+    expect(screen.getAllByText('AI suggestion')).toHaveLength(1);
+  });
+
+  it('renders the reasoning-companion summary and considerations as text, not raw JSON, when expanded', () => {
+    const reasoningEntry = {
+      ...sampleEntry,
+      id: 'entry-3',
+      proposalKind: 'ReasoningCompanionObservation',
+      proposalJson: JSON.stringify({
+        Summary: 'Failures cluster around a single downstream dependency timeout.',
+        Considerations: ['Recurred 3 times in the last 24h', 'No recent recovery attempt'],
+      }),
+      proposerIdentity: 'ReasoningAgent:services/agent',
+      proposerKind: 'ReasoningAgent' as const,
+    };
+    mockUsePlaybookEntries.mockReturnValue({ data: [reasoningEntry], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    mockUsePlaybookEntry.mockReturnValue({ data: { entry: reasoningEntry, events: [] }, isLoading: false });
+
+    renderPage();
+    fireEvent.click(screen.getByText('ReasoningCompanionObservation'));
+
+    expect(screen.getByText('Failures cluster around a single downstream dependency timeout.')).toBeInTheDocument();
+    expect(screen.getByText('Recurred 3 times in the last 24h')).toBeInTheDocument();
+  });
+
   it('shows an error state with a retry option', () => {
     mockUsePlaybookEntries.mockReturnValue({ data: undefined, isLoading: false, isError: true, refetch: vi.fn(), isFetching: false });
     renderPage();

@@ -222,6 +222,49 @@ describe('IncidentWorkspacePage', () => {
     expect(screen.getByText('No evidence recorded')).toBeInTheDocument();
   });
 
+  it('shows a reasoning-companion observation on the Evidence tab with an AI-suggestion badge and readable text', () => {
+    mockUseIncident.mockReturnValue({
+      data: {
+        ...mockIncident,
+        playbookEntries: [
+          ...mockIncident.playbookEntries,
+          {
+            id: 'pb-3',
+            pillarKind: 'Investigate',
+            proposalKind: 'ReasoningCompanionObservation',
+            evidenceRefJson: '{}',
+            proposalJson: JSON.stringify({
+              Summary: 'Failures cluster around a single downstream dependency timeout.',
+              Considerations: ['Recurred 3 times in the last 24h'],
+            }),
+            proposedAt: '2026-01-01T14:00:00Z',
+            proposerIdentity: 'ReasoningAgent:services/agent',
+            proposerKind: 'ReasoningAgent',
+            signatureHashSnapshot: 'hash-1',
+            namespaceId: 'ns1',
+            namespaceNameSnapshot: 'contoso-prod',
+            providerSnapshot: 'azure',
+            environmentSnapshot: 'prod',
+            relatedRecoveryOperationId: null,
+            expiresAt: '2026-01-08T14:00:00Z',
+            state: 'Proposed',
+            disposition: null,
+            closedAt: null,
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    });
+    const Wrapper = createWrapper();
+    render(<Wrapper><IncidentWorkspacePage /></Wrapper>);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Evidence' }));
+    expect(screen.getByText('AI suggestion')).toBeInTheDocument();
+    expect(screen.getByText('Failures cluster around a single downstream dependency timeout.')).toBeInTheDocument();
+    expect(screen.getByText('Recurred 3 times in the last 24h')).toBeInTheDocument();
+  });
+
   it('links out to the full signature investigation', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><IncidentWorkspacePage /></Wrapper>);
