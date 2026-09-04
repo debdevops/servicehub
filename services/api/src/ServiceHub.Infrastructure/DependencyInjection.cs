@@ -307,13 +307,24 @@ public static class DependencyInjection
             Directory.CreateDirectory(dataDir);
 
             var dbPath = Path.Combine(dataDir, "servicehub-dlq.db");
-            options.UseSqlite($"Data Source={dbPath}");
 
             // WAL journaling + busy_timeout (roadmap F1) — eight independent background
             // workers write to this single file with no such configuration otherwise.
             var busyTimeoutMilliseconds = resolvedConfiguration.GetValue(
                 "DlqDatabase:BusyTimeoutMilliseconds",
                 SqlitePragmaConnectionInterceptor.DefaultBusyTimeoutMilliseconds);
+
+            // Microsoft.Data.Sqlite retries SQLITE_BUSY/SQLITE_LOCKED internally on its own
+            // schedule, bounded by SqliteCommand.CommandTimeout — NOT by the busy_timeout PRAGMA
+            // SqlitePragmaConnectionInterceptor sets. Left at EF Core's default (30s), a command
+            // would keep retrying for up to 30 seconds regardless of BusyTimeoutMilliseconds,
+            // making that setting purely cosmetic. CommandTimeout must be set to match so the
+            // configured value actually bounds how long a write blocks before Polly's outer
+            // SaveChanges retry (DlqDbContext) ever gets a chance to run.
+            var commandTimeoutSeconds = (int)Math.Ceiling(busyTimeoutMilliseconds / 1000.0);
+            options.UseSqlite(
+                $"Data Source={dbPath}",
+                sqliteOptions => sqliteOptions.CommandTimeout(commandTimeoutSeconds));
             options.AddInterceptors(new SqlitePragmaConnectionInterceptor(busyTimeoutMilliseconds));
 
             // EnableDetailedErrors surfaces EF Core internals (SQL, schema) in error messages.

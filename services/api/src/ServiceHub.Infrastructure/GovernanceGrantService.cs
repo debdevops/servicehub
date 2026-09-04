@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Constants;
 using ServiceHub.Shared.Results;
@@ -30,26 +32,40 @@ public sealed class GovernanceGrantService : IGovernanceGrantService
     /// <inheritdoc/>
     public async Task<Result<GovernanceGrant>> GrantAsync(GrantRoleRequest request, CancellationToken cancellationToken = default)
     {
+        // GovernanceAuthorizationFilter/ActorIdentityResolver always resolve an API-key-authenticated
+        // caller's identity as "ApiKey:{key description}" — never the bare description. Storing a
+        // GranteeIdentity that omits this prefix (an easy mistake: the Governance Grants UI's free-text
+        // field only tells the admin to type it, nothing enforces it) means the grant silently never
+        // matches that caller at evaluation time. That caller then falls through to the owner-level
+        // grant instead of being denied — inverting the intent from "restricted to this role" to
+        // "unrestricted," rather than failing loudly. Normalizing here, from the GranteeKind the admin
+        // already selected, makes the stored identity always match what evaluation actually looks for,
+        // regardless of whether the admin typed the prefix.
+        var granteeIdentity = request.GranteeKind == GranteeKind.ApiKey
+            && !request.GranteeIdentity.StartsWith(ActorIdentityResolver.ApiKeyIdentityPrefix, StringComparison.Ordinal)
+            ? $"{ActorIdentityResolver.ApiKeyIdentityPrefix}{request.GranteeIdentity}"
+            : request.GranteeIdentity;
+
         // The database's own filtered unique index catches most duplicate-scope cases, but SQLite
         // (like standard SQL) treats NULL as distinct from NULL for uniqueness purposes, so a
         // fleet-wide/all-pillar (NamespaceId=null, PillarKind=null) duplicate would slip past it.
         // Checking in code, where null == null compares correctly, closes that gap.
         var activeForGrantee = await _dbContext.GovernanceGrants
             .AsNoTracking()
-            .Where(g => g.OwnerId == request.OwnerId && g.GranteeIdentity == request.GranteeIdentity && g.RevokedAt == null)
+            .Where(g => g.OwnerId == request.OwnerId && g.GranteeIdentity == granteeIdentity && g.RevokedAt == null)
             .ToListAsync(cancellationToken);
 
         if (activeForGrantee.Any(g => g.NamespaceId == request.NamespaceId && g.PillarKind == request.PillarKind))
         {
             return Result.Failure<GovernanceGrant>(Error.Conflict(
                 ErrorCodes.Governance.AlreadyExists,
-                $"An active grant already exists for grantee '{request.GranteeIdentity}' at this namespace/pillar scope."));
+                $"An active grant already exists for grantee '{granteeIdentity}' at this namespace/pillar scope."));
         }
 
         var grant = new GovernanceGrant
         {
             OwnerId = request.OwnerId,
-            GranteeIdentity = request.GranteeIdentity,
+            GranteeIdentity = granteeIdentity,
             GranteeKind = request.GranteeKind,
             Role = request.Role,
             NamespaceId = request.NamespaceId,
@@ -70,7 +86,7 @@ public sealed class GovernanceGrantService : IGovernanceGrantService
             Action = "Governance.Grant",
             Outcome = "Success",
             NamespaceId = request.NamespaceId,
-            ResourceName = request.GranteeIdentity,
+            ResourceName = granteeIdentity,
             DetailsJson = System.Text.Json.JsonSerializer.Serialize(new
             {
                 role = request.Role.ToString(),

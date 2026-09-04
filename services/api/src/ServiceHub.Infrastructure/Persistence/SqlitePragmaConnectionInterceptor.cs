@@ -11,6 +11,14 @@ namespace ServiceHub.Infrastructure.Persistence;
 /// failing immediately with SQLITE_BUSY. Roadmap F1 — eight independent background workers
 /// write to a single SQLite file with neither of these configured today.
 /// </summary>
+/// <remarks>
+/// <c>busy_timeout</c> alone does not bound how long a caller actually waits: Microsoft.Data.Sqlite
+/// retries SQLITE_BUSY/SQLITE_LOCKED internally on its own schedule, gated by
+/// <see cref="Microsoft.Data.Sqlite.SqliteCommand.CommandTimeout"/> (30s by default), not by this
+/// PRAGMA. Callers that configure <see cref="_busyTimeoutMilliseconds"/> must also set
+/// <c>CommandTimeout</c> to match (see <c>DependencyInjection.AddDlqDatabase</c>) or the
+/// configured value has no real effect on contention wait time.
+/// </remarks>
 public sealed class SqlitePragmaConnectionInterceptor : DbConnectionInterceptor
 {
     /// <summary>Default busy_timeout applied when <c>DlqDatabase:BusyTimeoutMilliseconds</c> is

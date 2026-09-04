@@ -388,53 +388,161 @@ public class DlqDbContextTests : IDisposable
     [Fact]
     public async Task SaveChangesAsync_RetriesOnSqliteBusy_AndEventuallySucceeds()
     {
-        // A tiny busy_timeout so the blocking writer below reliably outlasts the SQLite
-        // driver's own internal wait and forces a genuine SQLITE_BUSY exception back to EF
-        // Core — proving it's the Polly wrapper in DlqDbContext, not just busy_timeout, that
-        // makes this call eventually succeed.
-        var connectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
-        using var keeperConnection = new SqliteConnection(connectionString);
-        keeperConnection.Open();
-
-        var options = new DbContextOptionsBuilder<DlqDbContext>()
-            .UseSqlite(connectionString)
-            .AddInterceptors(new SqlitePragmaConnectionInterceptor(busyTimeoutMilliseconds: 50))
-            .Options;
-
-        using var setupContext = new DlqDbContext(options);
-        setupContext.Database.EnsureCreated();
-
-        using var blockerConnection = new SqliteConnection(connectionString);
-        blockerConnection.Open();
-        using (var beginCommand = blockerConnection.CreateCommand())
+        // A real file-backed database, not "mode=memory&cache=shared": shared-cache connections
+        // contending for the same table raise SQLITE_LOCKED, which Microsoft.Data.Sqlite retries
+        // internally on its own schedule regardless of CommandTimeout being lowered here — so a
+        // shared-cache version of this test would silently pass without ever reaching the Polly
+        // wrapper it claims to test, no matter how the blocker's hold time is tuned. A real file
+        // produces genuine SQLITE_BUSY, which respects CommandTimeout.
+        //
+        // CommandTimeout is set to 1s (matching DependencyInjection.AddDlqDatabase's busy_timeout
+        // -> CommandTimeout wiring) specifically so the blocker's 1200ms hold outlasts it: the
+        // first SaveChangesAsync attempt is thus guaranteed to fail with a genuine SQLITE_BUSY,
+        // forcing Polly to catch it and retry — proving it's the Polly wrapper in DlqDbContext,
+        // not Microsoft.Data.Sqlite's own internal busy retry, that makes this call eventually
+        // succeed.
+        var dbPath = Path.Combine(Path.GetTempPath(), $"servicehub-busy-retry-test-{Guid.NewGuid():N}.db");
+        try
         {
-            beginCommand.CommandText = "BEGIN IMMEDIATE;";
-            beginCommand.ExecuteNonQuery();
+            var options = new DbContextOptionsBuilder<DlqDbContext>()
+                .UseSqlite($"Data Source={dbPath}", sqliteOptions => sqliteOptions.CommandTimeout(1))
+                .AddInterceptors(new SqlitePragmaConnectionInterceptor(busyTimeoutMilliseconds: 50))
+                .Options;
+
+            using (var setupContext = new DlqDbContext(options))
+            {
+                setupContext.Database.EnsureCreated();
+            }
+
+            using var blockerConnection = new SqliteConnection($"Data Source={dbPath}");
+            blockerConnection.Open();
+            using (var beginCommand = blockerConnection.CreateCommand())
+            {
+                beginCommand.CommandText = "BEGIN IMMEDIATE;";
+                beginCommand.ExecuteNonQuery();
+            }
+
+            var releaseBlockerAfterDelay = Task.Run(async () =>
+            {
+                await Task.Delay(1200);
+                using var commitCommand = blockerConnection.CreateCommand();
+                commitCommand.CommandText = "COMMIT;";
+                commitCommand.ExecuteNonQuery();
+            });
+
+            using var contextUnderTest = new DlqDbContext(options, new SqliteBusyRetryOptions { MaxRetryAttempts = 5 });
+            contextUnderTest.DlqMessages.Add(new DlqMessage
+            {
+                MessageId = "msg-busy", SequenceNumber = 1, BodyHash = "hash-busy",
+                NamespaceId = Guid.NewGuid(), OwnerId = TestConstants.TestOwnerId, EntityName = "q1",
+                EntityType = ServiceBusEntityType.Queue,
+                EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+                DetectedAtUtc = DateTimeOffset.UtcNow,
+                DeliveryCount = 1, MessageSize = 50
+            });
+
+            var saved = await contextUnderTest.SaveChangesAsync();
+
+            saved.Should().Be(1);
+            await releaseBlockerAfterDelay;
         }
-
-        var releaseBlockerAfterDelay = Task.Run(async () =>
+        finally
         {
-            await Task.Delay(400);
-            using var commitCommand = blockerConnection.CreateCommand();
-            commitCommand.CommandText = "COMMIT;";
-            commitCommand.ExecuteNonQuery();
-        });
+            SqliteConnection.ClearAllPools();
+            foreach (var suffix in new[] { string.Empty, "-wal", "-shm" })
+            {
+                var path = dbPath + suffix;
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+        }
+    }
 
-        using var contextUnderTest = new DlqDbContext(options, new SqliteBusyRetryOptions { MaxRetryAttempts = 5 });
-        contextUnderTest.DlqMessages.Add(new DlqMessage
+    [Fact]
+    public async Task SaveChangesAsync_RetriesExhausted_SurfacesSqliteBusyException()
+    {
+        // Mirrors SaveChangesAsync_RetriesOnSqliteBusy_AndEventuallySucceeds, but the blocking
+        // writer here outlasts the entire retry budget (busy_timeout plus every Polly retry
+        // delay), not just the driver's internal wait. Proves contention that outlasts
+        // MaxRetryAttempts propagates as a SqliteException/DbUpdateException instead of being
+        // retried forever or swallowed.
+        //
+        // This must use a real file-backed database, not the "mode=memory&cache=shared" pattern
+        // the sibling success test uses. Shared-cache connections contending for the same table
+        // raise SQLITE_LOCKED, not SQLITE_BUSY. Separate file handles to a real file produce
+        // genuine SQLITE_BUSY on contention, matching how separate processes/connections
+        // actually contend against the on-disk database in production.
+        //
+        // CommandTimeout must also be set to match busy_timeout here, mirroring
+        // DependencyInjection.AddDlqDatabase: Microsoft.Data.Sqlite retries SQLITE_BUSY/LOCKED
+        // internally on its own schedule bounded by CommandTimeout, not by the busy_timeout
+        // PRAGMA — left at EF Core's 30s default, this test would take ~60s (two exhausted 30s
+        // internal retries either side of one Polly retry) despite busy_timeout being 50ms.
+        var dbPath = Path.Combine(Path.GetTempPath(), $"servicehub-busy-exhausted-test-{Guid.NewGuid():N}.db");
+        try
         {
-            MessageId = "msg-busy", SequenceNumber = 1, BodyHash = "hash-busy",
-            NamespaceId = Guid.NewGuid(), OwnerId = TestConstants.TestOwnerId, EntityName = "q1",
-            EntityType = ServiceBusEntityType.Queue,
-            EnqueuedTimeUtc = DateTimeOffset.UtcNow,
-            DetectedAtUtc = DateTimeOffset.UtcNow,
-            DeliveryCount = 1, MessageSize = 50
-        });
+            var options = new DbContextOptionsBuilder<DlqDbContext>()
+                .UseSqlite($"Data Source={dbPath}", sqliteOptions => sqliteOptions.CommandTimeout(1))
+                .AddInterceptors(new SqlitePragmaConnectionInterceptor(busyTimeoutMilliseconds: 50))
+                .Options;
 
-        var saved = await contextUnderTest.SaveChangesAsync();
+            using (var setupContext = new DlqDbContext(options))
+            {
+                setupContext.Database.EnsureCreated();
+            }
 
-        saved.Should().Be(1);
-        await releaseBlockerAfterDelay;
+            using var blockerConnection = new SqliteConnection($"Data Source={dbPath}");
+            blockerConnection.Open();
+            using (var beginCommand = blockerConnection.CreateCommand())
+            {
+                beginCommand.CommandText = "BEGIN IMMEDIATE;";
+                beginCommand.ExecuteNonQuery();
+            }
+
+            // The blocker's lock is never released on a timer — it stays held for however long
+            // the retry pipeline actually takes, so the test can't pass by accident from a lucky
+            // race between a fixed delay and Polly's jittered backoff. With MaxRetryAttempts=1,
+            // the pipeline must give up and surface the exception on its own; only after that do
+            // we release the blocker to clean up.
+            using var contextUnderTest = new DlqDbContext(options, new SqliteBusyRetryOptions { MaxRetryAttempts = 1 });
+            contextUnderTest.DlqMessages.Add(new DlqMessage
+            {
+                MessageId = "msg-busy-exhausted", SequenceNumber = 1, BodyHash = "hash-busy-exhausted",
+                NamespaceId = Guid.NewGuid(), OwnerId = TestConstants.TestOwnerId, EntityName = "q1",
+                EntityType = ServiceBusEntityType.Queue,
+                EnqueuedTimeUtc = DateTimeOffset.UtcNow,
+                DetectedAtUtc = DateTimeOffset.UtcNow,
+                DeliveryCount = 1, MessageSize = 50
+            });
+
+            try
+            {
+                var act = () => contextUnderTest.SaveChangesAsync();
+                var exception = await act.Should().ThrowAsync<Exception>();
+                (exception.Which is SqliteException or DbUpdateException).Should().BeTrue(
+                    $"expected a SqliteException or DbUpdateException wrapping SQLITE_BUSY, got {exception.Which.GetType()}");
+            }
+            finally
+            {
+                using var commitCommand = blockerConnection.CreateCommand();
+                commitCommand.CommandText = "COMMIT;";
+                commitCommand.ExecuteNonQuery();
+            }
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            foreach (var suffix in new[] { string.Empty, "-wal", "-shm" })
+            {
+                var path = dbPath + suffix;
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+        }
     }
 
     // ── Hostile review: prove DbUpdateConcurrencyException / constraint-violation

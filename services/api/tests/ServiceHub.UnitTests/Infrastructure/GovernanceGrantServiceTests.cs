@@ -56,6 +56,50 @@ public sealed class GovernanceGrantServiceTests : IDisposable
         _auditService.Verify(a => a.Enqueue(It.Is<AuditLog>(l => l.Action == "Governance.Grant")), Times.Once);
     }
 
+    // ── Hostile review: an ApiKey-kind grant must be stored with the "ApiKey:" prefix the
+    // runtime actor resolver always produces, or it silently never matches its intended grantee
+    // and that caller falls through to whatever owner-level grant exists instead of being denied
+    // — inverting a restriction into unrestricted access. Live-verified 2026-09-04: the
+    // Governance Grants UI's free-text "Grantee identity" field only tells the admin to type the
+    // prefix, nothing enforces it; typing just the bare key name for GranteeKind=ApiKey created a
+    // grant that looked correctly scoped but never applied. ─────────────────────────────────────
+
+    [Fact]
+    public async Task GrantAsync_ApiKeyGranteeMissingPrefix_IsNormalizedToMatchRuntimeResolution()
+    {
+        var result = await _service.GrantAsync(new GrantRoleRequest(
+            "owner-1", "My Test Key", GranteeKind.ApiKey, GovernanceRole.Viewer,
+            NamespaceId: null, PillarKind: null, GrantedByIdentity: "admin@contoso.com"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.GranteeIdentity.Should().Be("ApiKey:My Test Key",
+            "the stored identity must match what ActorIdentityResolver.ResolveHttpActor produces " +
+            "for this same key at evaluation time, or the grant silently never applies");
+    }
+
+    [Fact]
+    public async Task GrantAsync_ApiKeyGranteeAlreadyPrefixed_IsNotDoublePrefixed()
+    {
+        var result = await _service.GrantAsync(new GrantRoleRequest(
+            "owner-1", "ApiKey:My Test Key", GranteeKind.ApiKey, GovernanceRole.Viewer,
+            NamespaceId: null, PillarKind: null, GrantedByIdentity: "admin@contoso.com"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.GranteeIdentity.Should().Be("ApiKey:My Test Key");
+    }
+
+    [Fact]
+    public async Task GrantAsync_UserGrantee_IsNeverPrefixed()
+    {
+        // A User-kind grantee (claims identity name, e.g. an Entra OID) never carries the
+        // "ApiKey:" prefix at evaluation time — normalization must be conditioned on GranteeKind,
+        // not applied unconditionally.
+        var result = await _service.GrantAsync(BuildRequest(granteeIdentity: "alex@contoso.com"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.GranteeIdentity.Should().Be("alex@contoso.com");
+    }
+
     [Fact]
     public async Task GrantAsync_DuplicateFleetWideAllPillarScope_ReturnsConflict()
     {

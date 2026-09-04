@@ -125,6 +125,42 @@ public sealed class GovernanceRbacTests : IDisposable
             because: "a Governance role differentiates write actions, not visibility into data the credential's owner scope already covers");
     }
 
+    [Fact]
+    public async Task Viewer_IsStillDenied_WhenAdminGrantsTheApiKeyGranteeWithoutTheApiKeyPrefix()
+    {
+        // Reproduces the live-verified 2026-09-04 defect: the Governance Grants UI's free-text
+        // "Grantee identity" field tells the admin to type "ApiKey:name" but enforces nothing —
+        // typing just the bare key Description (exactly what an admin reading the key list would
+        // naturally type) created a grant that looked correctly scoped in the UI but never matched
+        // ActorIdentityResolver's "ApiKey:{name}"-prefixed identity at evaluation time. Critically,
+        // this must also seed the real production shape — a fleet-wide Admin grant whose
+        // GranteeIdentity equals OwnerId itself (GovernanceGrantSeeder's convention, reproduced by
+        // the sibling test above) — because without it, the malformed grant's non-match falls
+        // through to "no applicable grant" and is denied by accident, not by the fix. With the
+        // seed present, a non-matching viewer grant instead falls through to the owner-level Admin
+        // grant and replays a real message, exactly as it did live: the danger isn't "no grant
+        // found," it's "the wrong, much more permissive grant found." GovernanceGrantService.GrantAsync
+        // now normalizes an ApiKey-kind grantee to always carry the prefix regardless of what the
+        // caller typed, so this must still deny even with that seed present.
+        using var adminClient = _factory.CreateAdminClient();
+        using var viewerClient = _factory.CreateViewerClient();
+
+        var namespaceId = await CreateNamespaceAsync(adminClient);
+
+        await GrantAsync(adminClient, ServiceHub.Core.Entities.Namespace.SpaOwnerId, GranteeKind.User, GovernanceRole.Admin, namespaceId: null, pillarKind: null);
+        // Deliberately the bare Description, not GovernanceRbacWebApplicationFactory.ViewerGranteeIdentity
+        // (which is already correctly prefixed) — this is the exact malformed input a human admin
+        // produces, not a pre-corrected test fixture.
+        await GrantAsync(adminClient, "Governance RBAC test - viewer", GranteeKind.ApiKey, GovernanceRole.Viewer, namespaceId, PillarKind.Recover);
+
+        var viewerResponse = await SendReplayRequestAsync(viewerClient, namespaceId);
+        viewerResponse.StatusCode.Should().Be(
+            HttpStatusCode.Forbidden,
+            because: "an ApiKey-kind grant submitted without the 'ApiKey:' prefix must be normalized " +
+                     "server-side to still match and restrict this credential — falling through to the " +
+                     "seeded owner-level Admin grant instead would silently escalate, not merely fail open");
+    }
+
     private static async Task<HttpResponseMessage> SendReplayRequestAsync(HttpClient client, Guid namespaceId)
     {
         var request = new HttpRequestMessage(
