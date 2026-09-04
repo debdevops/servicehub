@@ -76,6 +76,27 @@ public sealed class GovernanceAccessEvaluatorTests
     }
 
     [Fact]
+    public async Task EvaluateAsync_OwnerLevelFallbackGrant_DoesNotOverridePerIdentityGrant_OnceIdentityIsDifferentiated()
+    {
+        // Live-verified 2026-09-04 against a real deployment: GovernanceGrantSeeder always seeds
+        // a fleet-wide Admin grant with GranteeIdentity == OwnerId ("__spa__") at first boot. Once
+        // an admin has *also* granted this specific identity a narrower role (Viewer, here), that
+        // narrower grant must be authoritative — the caller must not still inherit Admin via the
+        // owner-level grandfather grant, or per-identity restriction (W3.1/W3.2) is a no-op for
+        // every real deployment's primary owner.
+        SeedActiveGrants(
+            MakeGrant(OwnerId, GovernanceRole.Admin),
+            MakeGrant(GranteeIdentity, GovernanceRole.Viewer, namespaceId: null, pillarKind: PillarKind.Recover));
+
+        var result = await _evaluator.EvaluateAsync(
+            OwnerId, GranteeIdentity, GovernanceRole.Operator, namespaceId: null, pillarKind: PillarKind.Recover);
+
+        result.IsFailure.Should().BeTrue(
+            "a Viewer-only grant for this specific identity must not be topped up by the owner-level Admin grant");
+        result.Error.Code.Should().Be("Governance.InsufficientRole");
+    }
+
+    [Fact]
     public async Task EvaluateAsync_ExactIdentityGrantMeetsRequiredRole_Allows()
     {
         SeedActiveGrants(MakeGrant(GranteeIdentity, GovernanceRole.Operator));

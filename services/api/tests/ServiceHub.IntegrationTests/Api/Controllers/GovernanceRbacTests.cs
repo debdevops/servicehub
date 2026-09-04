@@ -81,6 +81,31 @@ public sealed class GovernanceRbacTests : IDisposable
     }
 
     [Fact]
+    public async Task Viewer_IsDeniedAnOperatorAction_EvenWhenOwnerHasASeededFleetWideAdminGrant()
+    {
+        // Reproduces the real shape GovernanceGrantSeeder creates on every deployment's first
+        // boot: a fleet-wide Admin grant whose GranteeIdentity equals the shared OwnerId itself
+        // ("__spa__" in production; Namespace.SpaOwnerId here too, since it's a hardcoded
+        // constant, not per-test-instance data). The two tests above never seed this shape — their
+        // "admin" grant names the admin credential's own resolved identity, not OwnerId — so they
+        // could not have caught the live-verified 2026-09-04 defect where this fleet-wide grant
+        // silently topped up a Viewer-only credential to Admin, making per-identity restriction a
+        // no-op for every real deployment's primary owner.
+        using var adminClient = _factory.CreateAdminClient();
+        using var viewerClient = _factory.CreateViewerClient();
+
+        var namespaceId = await CreateNamespaceAsync(adminClient);
+
+        await GrantAsync(adminClient, ServiceHub.Core.Entities.Namespace.SpaOwnerId, GranteeKind.User, GovernanceRole.Admin, namespaceId: null, pillarKind: null);
+        await GrantAsync(adminClient, GovernanceRbacWebApplicationFactory.ViewerGranteeIdentity, GranteeKind.ApiKey, GovernanceRole.Viewer, namespaceId, PillarKind.Recover);
+
+        var viewerResponse = await SendReplayRequestAsync(viewerClient, namespaceId);
+        viewerResponse.StatusCode.Should().Be(
+            HttpStatusCode.Forbidden,
+            because: "a Viewer-only grant for this specific identity must not be topped up by the seeded owner-level Admin grant");
+    }
+
+    [Fact]
     public async Task Viewer_CanStillReadTheSameNamespace_OperatorGrantOnlyRestrictsWrites()
     {
         using var adminClient = _factory.CreateAdminClient();

@@ -108,14 +108,27 @@ public sealed class GovernanceAccessEvaluator : IGovernanceAccessEvaluator
 
         // A grant's GranteeIdentity may name this exact resolved actor, or may equal OwnerId
         // itself — GovernanceGrantSeeder's grandfathering convention for "this whole tenant,
-        // undifferentiated," used because the HTTP actor-identity precedence
-        // (ApiKey:{name}/claims name) that differentiates individual callers within one owner
-        // partition does not, and should not, match the coarse grant the seeder created before
-        // any per-identity grant existed. Both count as applicable to this caller; per the
-        // "additive-permissive, never restrictive" convention already documented on
-        // GovernanceGrant's EF configuration, the caller gets the highest role either grants.
-        var applicable = activeGrants
-            .Where(g => IsSameIdentity(g.GranteeIdentity, granteeIdentity) || IsSameIdentity(g.GranteeIdentity, ownerId))
+        // undifferentiated," created before any per-identity grant existed. That grant must stop
+        // applying to a caller the moment an admin has granted *that specific identity* anything
+        // at all: once differentiated, a caller's access is determined solely by their own
+        // grants, never topped up by the coarse owner-level grant — otherwise a Viewer-only grant
+        // for one credential is silently satisfied by the fleet-wide Admin grant every real
+        // deployment seeds for its primary owner (`__spa__`), and per-identity restriction never
+        // actually restricts anything for that owner. (Live-verified 2026-09-04: a legacy API key
+        // holding only a namespace-scoped Viewer grant successfully replayed a message, because
+        // the seed's GranteeIdentity=="__spa__"==ownerId matched via the fallback below and its
+        // Admin role beat Viewer under the old "highest of either" rule.) Multiple grants that
+        // both name this exact identity remain additive-permissive, per GovernanceGrant's EF
+        // configuration — the caller gets the highest role among *those*.
+        var ownGrants = activeGrants
+            .Where(g => IsSameIdentity(g.GranteeIdentity, granteeIdentity))
+            .ToList();
+
+        var candidates = ownGrants.Count > 0
+            ? ownGrants
+            : activeGrants.Where(g => IsSameIdentity(g.GranteeIdentity, ownerId)).ToList();
+
+        var applicable = candidates
             .Where(g => g.NamespaceId is null || g.NamespaceId == namespaceId)
             .Where(g => g.PillarKind is null || g.PillarKind == pillarKind)
             .ToList();
