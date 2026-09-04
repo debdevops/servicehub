@@ -14,7 +14,7 @@
 [![Version](https://img.shields.io/badge/version-3.7.0-brightgreen.svg)](.version)
 [![Self-Hosted](https://img.shields.io/badge/Deployment-Self--Hosted-0078D4.svg)](#quick-start)
 
-[⚡ Quick Start](#quick-start) · [🖥️ Run It Locally (Plain-Language Guide)](LOCAL-DEPLOYMENT.md) · [📚 User Guides](#user-guides) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security) · [🚀 Self-Hosting](self-hosting/README.md) · [📋 Changelog](CHANGELOG.md)
+[📖 **The Complete Guide**](docs/SERVICEHUB-COMPLETE-GUIDE.md) · [⚡ Quick Start](#quick-start) · [🖥️ Run It Locally (Plain-Language Guide)](LOCAL-DEPLOYMENT.md) · [📚 User Guides](#user-guides) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security) · [🚀 Self-Hosting](self-hosting/README.md) · [📋 Changelog](CHANGELOG.md)
 
 </div>
 
@@ -216,11 +216,17 @@ An in-app page that answers the trust question before anyone has to ask it: a di
 
 ## User Guides
 
-Already connected and want to know what to actually *do* with ServiceHub? This is the official
-ServiceHub user handbook — plain language, screenshot-illustrated, no code or scripting required.
-Each guide below walks the full message-debugging journey — browsing, DLQ investigation, AI
-Insights, replay, and the Recovery Evidence Ledger — verified live against a real namespace, with
-an honest, explicit list of what's supported and what isn't for that cloud:
+**Start here: [📖 The Complete ServiceHub Guide](docs/SERVICEHUB-COMPLETE-GUIDE.md)** — the single,
+definitive, end-to-end reference. Why ServiceHub exists, the vocabulary you need, and every page
+in the product explained — what it's for, what every button does, and how it behaves differently
+per cloud — illustrated with real screenshots captured live against real, connected Azure, AWS,
+and GCP infrastructure. If you only read one document, read this one.
+
+Prefer a narrower, provider-specific walkthrough instead? These are the official per-cloud
+handbooks — plain language, screenshot-illustrated, no code or scripting required. Each walks the
+full message-debugging journey — browsing, DLQ investigation, AI Insights, replay, and the
+Recovery Evidence Ledger — verified live against a real namespace, with an honest, explicit list
+of what's supported and what isn't for that cloud:
 
 - **[🧭 Quick Access Guide](docs/guides/quick-access-guide.md)** — every navigation shortcut explained, with a full navigation map
 - **[☁️ Azure Service Bus Guide](docs/guides/azure-guide.md)** — the fully supported (GA) provider

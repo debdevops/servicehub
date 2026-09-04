@@ -1,8 +1,10 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Moq;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.RecoveryLedger;
@@ -2423,5 +2425,71 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
             AutonomyLevel.Approve, AutonomyLevel.Standing, "first promotion", null);
 
         result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetSignatureProviderAsync_NoLedgerEntry_FallsBackToNamespaceSignatureProvider()
+    {
+        // A signature that has never been replayed/purged has no RecoveryLedgerEntries row at
+        // all, so ProviderSnapshot can't be read from the ledger — this is the everyday case for
+        // a brand-new signature. Without the fallback, callers (RecoveryController's
+        // GetAutonomyStatus, AutonomyEvaluationWorker) treat the unresolved provider as AWS's
+        // stricter capabilities, wrongly telling an operator that a never-yet-replayed Azure
+        // signature "cannot currently provide the deterministic recovery evidence" it actually can.
+        var namespaceId = Guid.NewGuid();
+        _dbContext.NamespaceSignatures.Add(new NamespaceSignature
+        {
+            NamespaceId = namespaceId,
+            OwnerId = OwnerA,
+            SignatureHash = "sig-never-replayed",
+            FirstSeenAt = DateTimeOffset.UtcNow.AddHours(-1),
+            LastSeenAt = DateTimeOffset.UtcNow,
+            OccurrenceCount = 1,
+            DominantDeadletterReason = "MaxDeliveryCountExceeded",
+            TopTermsJson = "[]",
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var azureNamespace = Namespace.Create(
+            "azure-ns", "PROTECTED:encrypted-data", provider: CloudProviderType.Azure).Value;
+        typeof(Namespace).GetProperty(nameof(Namespace.Id))!.SetValue(azureNamespace, namespaceId);
+
+        var namespaceRepository = new Mock<INamespaceRepository>();
+        namespaceRepository.Setup(r => r.GetByIdAsync(namespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(azureNamespace));
+
+        var service = new RecoveryLedgerService(_dbContext, configuration: null, namespaceRepository.Object);
+
+        var provider = await service.GetSignatureProviderAsync(OwnerA, "sig-never-replayed");
+
+        provider.Should().Be(CloudProviderType.Azure);
+    }
+
+    [Fact]
+    public async Task GetSignatureProviderAsync_LedgerEntryExists_PrefersLedgerOverNamespaceFallback()
+    {
+        // Once a real recovery has happened, the ledger's own ProviderSnapshot is the ground
+        // truth and must win — proven here by never wiring a namespace repository into _service
+        // at all, so a wrong answer could only come from the (untouched) fallback path.
+        var operation = await OpenOperationAsync();
+        const string signatureHash = "sig-already-replayed";
+        _dbContext.RecoveryLedgerEntries.Add(new RecoveryLedgerEntry
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            NamespaceId = operation.NamespaceId,
+            EntityNameSnapshot = "orders-dlq",
+            SignatureHashSnapshot = signatureHash,
+            ProviderSnapshot = CloudProviderType.Gcp,
+            BodyHash = "irrelevant-hash",
+            TargetEntity = "orders-dlq",
+            BegunAt = DateTimeOffset.UtcNow,
+            State = RecoveryEntryState.Observing,
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var provider = await _service.GetSignatureProviderAsync(OwnerA, signatureHash);
+
+        provider.Should().Be(CloudProviderType.Gcp);
     }
 }
