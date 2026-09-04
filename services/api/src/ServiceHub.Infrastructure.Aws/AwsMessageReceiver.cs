@@ -65,8 +65,28 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
 
     private const string RecoveryMarkerAttribute = "x-servicehub-recovery-id";
 
-    /// <summary>Upper bound of receive batches when scanning for a target message.</summary>
+    /// <summary>Default/floor upper bound of receive batches when scanning for a target message.</summary>
     private const int MaxScanBatches = 20;
+
+    /// <summary>
+    /// Hard ceiling on scan rounds regardless of queue depth, so an unusually large or
+    /// still-growing queue fails fast with a clear "not found" instead of scanning indefinitely.
+    /// </summary>
+    private const int MaxScanBatchesHardCeiling = 200;
+
+    /// <summary>
+    /// Multiplier applied to a queue's approximate depth before converting it to the scan-round
+    /// budget for <see cref="FindAndLockMessageAsync"/>. SQS's ReceiveMessage samples a
+    /// randomized subset of the queue's distributed backend hosts per call, so a single pass
+    /// sized exactly to the queue depth does not reliably surface a specific target message —
+    /// observed live as an intermittent "MessageNotFound" on a real ~317-message backlog well
+    /// past the prior fixed 20-round (200-message) ceiling. This multiplier trades extra API
+    /// calls for coverage confidence.
+    /// </summary>
+    private const int ScanDepthSafetyMultiplier = 3;
+
+    /// <summary>Consecutive scan rounds with no newly-seen message before giving up early.</summary>
+    private const int MaxQuietScanRounds = 5;
 
     /// <summary>
     /// Initialises a new instance of <see cref="AwsMessageReceiver"/>.
@@ -928,6 +948,37 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
     }
 
     /// <summary>
+    /// Sizes the scan-round budget for <see cref="FindAndLockMessageAsync"/> to the queue's
+    /// current approximate depth, so a deep backlog gets enough rounds to reliably surface a
+    /// specific target message instead of being capped at the shallow-queue default. This is a
+    /// best-effort sizing hint only: if the depth cannot be determined for any reason, scanning
+    /// must still proceed, so every failure falls back to <see cref="MaxScanBatches"/> rather
+    /// than propagating.
+    /// </summary>
+    private async Task<int> ResolveScanBatchLimitAsync(IAmazonSQS sqs, string queueUrl, CancellationToken ct)
+    {
+        try
+        {
+            var attrs = await sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
+            {
+                QueueUrl = queueUrl,
+                AttributeNames = new List<string> { "ApproximateNumberOfMessages", "ApproximateNumberOfMessagesNotVisible" }
+            }, ct).ConfigureAwait(false);
+
+            var depth = (long)attrs.ApproximateNumberOfMessages + attrs.ApproximateNumberOfMessagesNotVisible;
+            var neededBatches = (long)Math.Ceiling(depth * ScanDepthSafetyMultiplier / (double)SqsMaxBatchSize);
+            return (int)Math.Clamp(neededBatches, MaxScanBatches, MaxScanBatchesHardCeiling);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+        {
+            _logger.LogWarning(ex,
+                "Could not resolve queue depth for {QueueUrl} before scanning; using the default {Default}-batch budget",
+                queueUrl, MaxScanBatches);
+            return MaxScanBatches;
+        }
+    }
+
+    /// <summary>
     /// Scans a queue for the message whose MessageId hashes to <paramref name="sequenceNumber"/>,
     /// locking received messages behind a visibility window during the scan. The target (if found)
     /// stays locked and is returned with a fresh receipt handle; all other messages are released.
@@ -939,11 +990,14 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         var nonTargets = new List<SqsMessage>();
         var seenIds = new HashSet<string>(StringComparer.Ordinal);
 
+        var maxBatches = await ResolveScanBatchLimitAsync(sqs, queueUrl, ct).ConfigureAwait(false);
+
         var gate = GetScanGate(queueUrl);
         await gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            for (var i = 0; i < MaxScanBatches && target is null; i++)
+            var quietRounds = 0;
+            for (var i = 0; i < maxBatches && target is null; i++)
             {
                 var response = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
                 {
@@ -954,9 +1008,6 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                     MessageSystemAttributeNames = new List<string> { "All" },
                     MessageAttributeNames = new List<string> { "All" }
                 }, ct).ConfigureAwait(false);
-
-                if (response.Messages.Count == 0)
-                    break;
 
                 var progressed = false;
                 foreach (var message in response.Messages)
@@ -971,8 +1022,20 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                         nonTargets.Add(message);
                 }
 
+                // A quiet round (nothing new) does not mean the queue is exhausted — SQS
+                // samples a randomized subset of distributed hosts per call, so the target can
+                // simply be behind a host this round didn't touch. Tolerate a run of quiet
+                // rounds the same way PeekFromUrlAsync/DeadLetterMessagesAsync do, instead of
+                // giving up on the very first one.
                 if (!progressed)
-                    break;
+                {
+                    if (++quietRounds >= MaxQuietScanRounds)
+                        break;
+                }
+                else
+                {
+                    quietRounds = 0;
+                }
             }
         }
         finally

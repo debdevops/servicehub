@@ -558,6 +558,116 @@ public sealed class AwsMessageReceiverRegressionTests
             .Should().Contain("rh-keep").And.NotContain("rh-purge");
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // FindAndLockMessageAsync — deep-backlog scan coverage (replay/purge)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task PurgeMessageAsync_TargetFoundAfterSeveralQuietRounds_StillSucceeds()
+    {
+        // SQS's ReceiveMessage samples a randomized subset of the queue's distributed hosts
+        // per call, so a round returning nothing new does not mean the target is gone — only
+        // that this round's sample missed it. The scan must tolerate a run of quiet rounds
+        // (mirroring PeekFromUrlAsync/DeadLetterMessagesAsync's 5-round tolerance) instead of
+        // giving up on the very first one, which is what this scan did before this fix — and
+        // which produced a real, live, intermittent "MessageNotFound" on a deep AWS backlog.
+        var target = BuildSqsMessage("m-quiet-target", "rh-quiet-target");
+        var (sut, sqs, _) = BuildSut(
+            new ReceiveMessageResponse { Messages = [BuildSqsMessage("m-decoy", "rh-decoy")] },
+            new ReceiveMessageResponse { Messages = [] },
+            new ReceiveMessageResponse { Messages = [] },
+            new ReceiveMessageResponse { Messages = [] },
+            new ReceiveMessageResponse { Messages = [] },
+            new ReceiveMessageResponse { Messages = [target] });
+        sqs.Setup(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteMessageResponse());
+
+        var seq = ComputeSequenceNumber("m-quiet-target");
+        var result = await sut.PurgeMessageAsync(TestNamespaceId, QueueName, null, seq, fromDeadLetter: false);
+
+        result.IsSuccess.Should().BeTrue();
+        sqs.Verify(s => s.DeleteMessageAsync(
+            It.Is<DeleteMessageRequest>(r => r.ReceiptHandle == "rh-quiet-target"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task PurgeMessageAsync_ScalesScanBudget_WhenQueueDepthIsLarge()
+    {
+        // A queue with hundreds of messages must get more than the fixed 20-round default,
+        // or a specific target can be missed purely because it never surfaced within the
+        // first ~200 messages sampled — the exact shape of a live intermittent purge failure
+        // observed against a real ~317-message AWS backlog.
+        var (sut, sqs, _) = BuildSut();
+        sqs.Setup(s => s.GetQueueAttributesAsync(
+                It.Is<GetQueueAttributesRequest>(r => r.AttributeNames.Contains("ApproximateNumberOfMessages")),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GetQueueAttributesResponse
+            {
+                Attributes = new Dictionary<string, string>
+                {
+                    ["ApproximateNumberOfMessages"] = "300",
+                    ["ApproximateNumberOfMessagesNotVisible"] = "0",
+                },
+            });
+
+        var receiveCount = 0;
+        sqs.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                receiveCount++;
+                // Every round returns a fresh, never-matching message, so the scan never
+                // hits a quiet round — the loop only stops once its round budget is
+                // exhausted, which is exactly what this test measures.
+                return new ReceiveMessageResponse
+                {
+                    Messages = [BuildSqsMessage($"m-noise-{receiveCount}", $"rh-noise-{receiveCount}")],
+                };
+            });
+
+        var seq = ComputeSequenceNumber("m-never-appears");
+        var result = await sut.PurgeMessageAsync(TestNamespaceId, QueueName, null, seq, fromDeadLetter: false);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().Be("AWS.SQS.MessageNotFound");
+        // depth 300 * safety multiplier 3 / batch size 10 = 90 rounds — far past the old
+        // fixed 20-round ceiling, and proof the budget actually scaled rather than merely
+        // being configurable.
+        receiveCount.Should().Be(90);
+    }
+
+    [Fact]
+    public async Task PurgeMessageAsync_WhenQueueDepthLookupFails_FallsBackToDefaultScanBudget()
+    {
+        // Sizing the scan budget is a best-effort hint, not a precondition — if the queue's
+        // depth can't be determined (throttled, transient SDK error, anything), the scan must
+        // still proceed at the safe default rather than fail the whole purge over a sizing
+        // lookup that was never the caller's actual request.
+        var (sut, sqs, _) = BuildSut();
+        sqs.Setup(s => s.GetQueueAttributesAsync(
+                It.Is<GetQueueAttributesRequest>(r => r.AttributeNames.Contains("ApproximateNumberOfMessages")),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new AmazonSQSException("throttled"));
+
+        var receiveCount = 0;
+        sqs.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                receiveCount++;
+                return new ReceiveMessageResponse
+                {
+                    Messages = [BuildSqsMessage($"m-noise-{receiveCount}", $"rh-noise-{receiveCount}")],
+                };
+            });
+
+        var seq = ComputeSequenceNumber("m-never-appears");
+        var result = await sut.PurgeMessageAsync(TestNamespaceId, QueueName, null, seq, fromDeadLetter: false);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().Be("AWS.SQS.MessageNotFound");
+        receiveCount.Should().Be(20);
+    }
+
     [Fact]
     public async Task GetMessageCountAsync_SumsVisibleAndInFlight()
     {
