@@ -227,6 +227,28 @@ forbidden-member set automatically, so a future write method added to `IRecovery
 without anyone remembering to update an exclusion list. AI touches nouns (classification,
 explanation), never verbs (execution) — see [ADR-0005](adr/0005-ai-capability-boundary.md).
 
+## 6b. The reasoning companion (roadmap §7, W5)
+
+A second, independent AI-adjacent surface: `services/agent/` — local-only,
+self-hosted, disabled-by-default, and gated separately from `services/ai/` (its
+own `ReasoningAgent:Enabled` switch, its own container, its own `OLLAMA_HOST`).
+`ReasoningCompanionWorker` (`ServiceHub.Infrastructure.BackgroundServices`)
+periodically takes the same ranked candidates `IAttentionQueueService` already
+surfaces on Home (W2.2), builds payload-free evidence via
+`IIncidentReadModelService`/`ReasoningEvidenceMapper` — counts, lifecycle
+status, already-normalised terms, never a message body — and sends it to
+`IReasoningAgentClient`. Every proposal that comes back becomes one
+`IPlaybookLedger.ProposeAsync` call with actor kind `PlaybookActorKind.ReasoningAgent`
+and nothing else: no `IRecoveryLedger`/`IMessageOperationsService` mutation,
+and no other `IPlaybookLedger` member (never `DispositionAsync`, `RevokeAsync`,
+etc. — a human decides those). `AIBoundaryArchitectureTests` enforces both
+restrictions by the same dependency-based IL-scan technique §6a describes,
+extended with a second forbidden set scoped to reasoning-agent-adjacent code
+only. See [`services/agent/README.md`](../services/agent/README.md) and the
+master roadmap's §7 for the full non-negotiable list (no autonomy transition
+ever driven by a model's stated confidence, no external LLM API call without a
+real ADR-0004 amendment, IL-boundary-enforced from day one).
+
 ## 7. Persistence and single-instance architecture
 
 ServiceHub is one process per deployment: one SQLite database, one in-process event bus, both

@@ -30,6 +30,11 @@ namespace ServiceHub.UnitTests.Architecture;
 /// explicit read-only allowlist, not hand-copied — a future write method added to either
 /// interface without updating this test is caught automatically (fail-closed), where the reverse
 /// (a hand-maintained forbidden list) would silently miss it (fail-open).
+/// <see cref="NoReasoningAgentAdjacentTypeReachesAMutatingLedgerOrProviderMemberOrADisallowedPlaybookLedgerMember"/>
+/// extends this same technique to the reasoning companion (roadmap §7, W5): "AIBoundaryArchitectureTests,
+/// extended to cover it." A second, narrower forbidden set applies to reasoning-agent-adjacent code
+/// only — every <see cref="IPlaybookLedger"/> member except <c>ProposeAsync</c> and its read-only
+/// queries, since <c>ProposeAsync</c> is the companion's one legal write anywhere in the system.
 /// </remarks>
 public sealed class AIBoundaryArchitectureTests
 {
@@ -199,5 +204,134 @@ public sealed class AIBoundaryArchitectureTests
         }
 
         return aiAdjacent;
+    }
+
+    /// <summary>
+    /// Same technique as <see cref="DiscoverAiAdjacentTypes"/>, applied to the reasoning
+    /// companion (roadmap §7, W5): a type is reasoning-agent-adjacent if it is declared in
+    /// <c>ServiceHub.Infrastructure.Agent</c> (route a — the HTTP client, its health check, and
+    /// its evidence mapper), or any method it declares directly calls a member of
+    /// <see cref="IReasoningAgentClient"/> (route b — catches <c>ReasoningCompanionWorker</c>,
+    /// which lives in <c>ServiceHub.Infrastructure.BackgroundServices</c>, not under
+    /// <c>.Agent</c>).
+    /// </summary>
+    private static HashSet<Type> DiscoverReasoningAgentAdjacentTypes(IEnumerable<Type> candidateTypes)
+    {
+        var reasoningAgentAdjacent = new HashSet<Type>();
+
+        foreach (var type in candidateTypes)
+        {
+            if (type.Namespace == "ServiceHub.Infrastructure.Agent")
+            {
+                reasoningAgentAdjacent.Add(type);
+                continue;
+            }
+
+            foreach (var method in type.GetMethods(
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+                | BindingFlags.Static | BindingFlags.DeclaredOnly))
+            {
+                var realBody = RecoveryPathIlScanner.ResolveRealMethodBody(method);
+                var callsReasoningAgentClient = RecoveryPathIlScanner.GetDirectlyCalledMethods(realBody)
+                    .Any(m => m.DeclaringType == typeof(IReasoningAgentClient));
+
+                if (callsReasoningAgentClient)
+                {
+                    reasoningAgentAdjacent.Add(type);
+                    break;
+                }
+            }
+        }
+
+        return reasoningAgentAdjacent;
+    }
+
+    /// <summary>
+    /// Every <see cref="IPlaybookLedger"/> member the reasoning companion is permitted to call —
+    /// <c>ProposeAsync</c> (its only legal write) plus every read-only query member. Everything
+    /// else (<c>MarkUnderReviewAsync</c>, <c>ReviseAsync</c>, <c>DispositionAsync</c>,
+    /// <c>ExpireAsync</c>, <c>SupersedeAsync</c>, <c>RevokeAsync</c>) records a human decision or
+    /// a system-authored lifecycle transition and is forbidden to reasoning-agent-adjacent code —
+    /// roadmap §7: "Nothing it produces executes, promotes, or confirms anything by itself."
+    /// </summary>
+    private static readonly HashSet<string> PlaybookLedgerAllowedForReasoningAgentMethodNames = new()
+    {
+        nameof(IPlaybookLedger.ProposeAsync),
+        nameof(IPlaybookLedger.QueryEntriesAsync),
+        nameof(IPlaybookLedger.GetEntryAsync),
+        nameof(IPlaybookLedger.GetDueForExpiryAsync),
+        nameof(IPlaybookLedger.GetEventsForEntryAsync),
+        nameof(IPlaybookLedger.VerifyChainAsync),
+    };
+
+    private static readonly HashSet<MethodInfo> ForbiddenPlaybookLedgerMembersForReasoningAgent = BuildForbiddenPlaybookLedgerMemberSet();
+
+    private static HashSet<MethodInfo> BuildForbiddenPlaybookLedgerMemberSet()
+    {
+        var forbidden = new HashSet<MethodInfo>();
+
+        foreach (var method in typeof(IPlaybookLedger).GetMethods())
+        {
+            if (!PlaybookLedgerAllowedForReasoningAgentMethodNames.Contains(method.Name))
+            {
+                forbidden.Add(method);
+            }
+        }
+
+        return forbidden;
+    }
+
+    [Fact]
+    public void NoReasoningAgentAdjacentTypeReachesAMutatingLedgerOrProviderMemberOrADisallowedPlaybookLedgerMember()
+    {
+        var assemblies = ScanAssemblyMarkers.Select(t => t.Assembly).Distinct().ToList();
+        var allTypes = assemblies.SelectMany(a => a.GetTypes()).ToList();
+
+        var reasoningAgentAdjacentTypes = DiscoverReasoningAgentAdjacentTypes(allTypes);
+
+        // Canary: verified this session against current source (roadmap §7, W5) —
+        // ReasoningCompanionWorker is the only type outside ServiceHub.Infrastructure.Agent that
+        // calls an IReasoningAgentClient member; a scanner that finds nothing would pass
+        // vacuously forever.
+        reasoningAgentAdjacentTypes.Should().Contain(
+            typeof(ServiceHub.Infrastructure.Agent.ReasoningAgentClient),
+            "namespace-based discovery (route a) should find ServiceHub.Infrastructure.Agent types");
+        reasoningAgentAdjacentTypes.Should().Contain(
+            typeof(ServiceHub.Infrastructure.BackgroundServices.ReasoningCompanionWorker),
+            "ReasoningCompanionWorker calls IReasoningAgentClient.ProposeAsync (route b) despite " +
+            "living outside the ServiceHub.Infrastructure.Agent namespace");
+
+        var forbidden = ForbiddenMembers.Concat(ForbiddenPlaybookLedgerMembersForReasoningAgent).ToHashSet();
+        var violations = new List<string>();
+
+        foreach (var type in reasoningAgentAdjacentTypes)
+        {
+            foreach (var method in type.GetMethods(
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+                | BindingFlags.Static | BindingFlags.DeclaredOnly))
+            {
+                var realBody = RecoveryPathIlScanner.ResolveRealMethodBody(method);
+                var calledMethods = RecoveryPathIlScanner.GetDirectlyCalledMethods(realBody);
+
+                foreach (var called in calledMethods)
+                {
+                    if (called is MethodInfo calledMethodInfo && forbidden.Contains(calledMethodInfo))
+                    {
+                        var (owningType, owningMethodName) = RecoveryPathIlScanner.ResolveOwningMethod(method);
+                        violations.Add(
+                            $"{owningType.Name}.{owningMethodName} -> " +
+                            $"{calledMethodInfo.DeclaringType!.Name}.{calledMethodInfo.Name}");
+                    }
+                }
+            }
+        }
+
+        violations.Distinct().Should().BeEmpty(
+            "no reasoning-agent-adjacent type (roadmap §7: namespace ServiceHub.Infrastructure.Agent, " +
+            "or any method directly calling an IReasoningAgentClient member) may directly call any " +
+            "mutating member of IRecoveryLedger or IMessageOperationsService, or any IPlaybookLedger " +
+            "member other than ProposeAsync or a read-only query — the reasoning companion proposes, " +
+            "it never executes, promotes, or confirms anything itself. Offender(s): {0}",
+            string.Join(", ", violations.Distinct()));
     }
 }
