@@ -151,8 +151,14 @@ with independently verifiable evidence exports.
   standard library, never imports ServiceHub code and never contacts a running server. A deliberate
   single-field tamper was confirmed to fail verification.
 - `docs/PROVIDER-CONFORMANCE.md` — the live provider conformance run behind the Supported label.
-- **Not yet observed:** an L4→L5 promotion, and a live drift-detection finding (the detector needs
-  four rolling baseline windows, which no campaign has yet run long enough to produce).
+- `docs-private/prevent-drift-observation-2026-09-05/` — the Prevent pillar's first live findings:
+  two real `DriftFinding`s (schema-shape and payload-format, both severity 100) produced by the
+  running service over real accumulated campaign traffic, plus the producer-facing
+  contract-violation export built from the same window. Read-only: no broker contacted, no message
+  sent, no ledger row written.
+- **Not yet observed:** an L4→L5 promotion, and the drift worker's automatic Playbook proposal
+  (drift *detection* is observed above; the worker hop that turns a finding into a
+  human-dispositionable `DriftFinding` proposal has not yet been witnessed live).
 
 ## [3.7.0] — 2026-08-19
 
