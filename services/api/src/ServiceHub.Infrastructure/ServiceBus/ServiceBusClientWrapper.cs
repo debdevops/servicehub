@@ -1053,6 +1053,16 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         return MessageState.Active;
     }
 
+    /// <remarks>
+    /// <paramref name="props"/> is null on the list path: <c>GetQueuesRuntimePropertiesAsync</c>
+    /// returns counts only, never the entity's static configuration. Everything sourced from
+    /// <paramref name="props"/> therefore falls back to a deliberately <b>neutral</b> value
+    /// (0 / <see cref="TimeSpan.Zero"/> / <c>false</c> / "Unknown"), never to the Service Bus
+    /// SDK's own defaults — a caller must be able to tell "not fetched" from "fetched and
+    /// genuinely 1 minute". This mirrors what <c>QueuesController.GetAllViaProviderAsync</c>
+    /// already does for AWS/GCP. Callers that need the real static configuration must use the
+    /// single-entity endpoint, which passes <paramref name="props"/> and returns live values.
+    /// </remarks>
     private static QueueRuntimePropertiesDto MapToQueueDto(QueueRuntimeProperties runtime, QueueProperties? props = null)
     {
         return new QueueRuntimePropertiesDto(
@@ -1070,14 +1080,24 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             RequiresSession: props?.RequiresSession ?? false,
             RequiresDuplicateDetection: props?.RequiresDuplicateDetection ?? false,
             EnablePartitioning: props?.EnablePartitioning ?? false,
-            EnableBatchedOperations: props?.EnableBatchedOperations ?? true,
+            EnableBatchedOperations: props?.EnableBatchedOperations ?? false,
             MaxSizeInMegabytes: props?.MaxSizeInMegabytes ?? 0,
-            MaxDeliveryCount: props?.MaxDeliveryCount ?? 10,
-            DefaultMessageTimeToLive: props?.DefaultMessageTimeToLive ?? TimeSpan.MaxValue,
-            LockDuration: props?.LockDuration ?? TimeSpan.FromMinutes(1),
-            AutoDeleteOnIdle: props?.AutoDeleteOnIdle ?? TimeSpan.MaxValue);
+            MaxDeliveryCount: props?.MaxDeliveryCount ?? 0,
+            DefaultMessageTimeToLive: props?.DefaultMessageTimeToLive ?? TimeSpan.Zero,
+            LockDuration: props?.LockDuration ?? TimeSpan.Zero,
+            AutoDeleteOnIdle: props?.AutoDeleteOnIdle ?? TimeSpan.Zero);
     }
 
+    /// <remarks>
+    /// <paramref name="props"/> is null on the list path: <c>GetQueuesRuntimePropertiesAsync</c>
+    /// returns counts only, never the entity's static configuration. Everything sourced from
+    /// <paramref name="props"/> therefore falls back to a deliberately <b>neutral</b> value
+    /// (0 / <see cref="TimeSpan.Zero"/> / <c>false</c> / "Unknown"), never to the Service Bus
+    /// SDK's own defaults — a caller must be able to tell "not fetched" from "fetched and
+    /// genuinely 1 minute". This mirrors what <c>QueuesController.GetAllViaProviderAsync</c>
+    /// already does for AWS/GCP. Callers that need the real static configuration must use the
+    /// single-entity endpoint, which passes <paramref name="props"/> and returns live values.
+    /// </remarks>
     private static TopicRuntimePropertiesDto MapToTopicDto(TopicRuntimeProperties runtime, TopicProperties? props = null)
     {
         return new TopicRuntimePropertiesDto(
@@ -1090,14 +1110,24 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             AccessedAt: runtime.AccessedAt,
             RequiresDuplicateDetection: props?.RequiresDuplicateDetection ?? false,
             EnablePartitioning: props?.EnablePartitioning ?? false,
-            EnableBatchedOperations: props?.EnableBatchedOperations ?? true,
+            EnableBatchedOperations: props?.EnableBatchedOperations ?? false,
             SupportOrdering: props?.SupportOrdering ?? false,
             MaxSizeInMegabytes: props?.MaxSizeInMegabytes ?? 0,
-            DefaultMessageTimeToLive: props?.DefaultMessageTimeToLive ?? TimeSpan.MaxValue,
-            AutoDeleteOnIdle: props?.AutoDeleteOnIdle ?? TimeSpan.MaxValue,
-            DuplicateDetectionHistoryTimeWindow: props?.DuplicateDetectionHistoryTimeWindow ?? TimeSpan.FromMinutes(10));
+            DefaultMessageTimeToLive: props?.DefaultMessageTimeToLive ?? TimeSpan.Zero,
+            AutoDeleteOnIdle: props?.AutoDeleteOnIdle ?? TimeSpan.Zero,
+            DuplicateDetectionHistoryTimeWindow: props?.DuplicateDetectionHistoryTimeWindow ?? TimeSpan.Zero);
     }
 
+    /// <remarks>
+    /// <paramref name="props"/> is null on the list path: <c>GetQueuesRuntimePropertiesAsync</c>
+    /// returns counts only, never the entity's static configuration. Everything sourced from
+    /// <paramref name="props"/> therefore falls back to a deliberately <b>neutral</b> value
+    /// (0 / <see cref="TimeSpan.Zero"/> / <c>false</c> / "Unknown"), never to the Service Bus
+    /// SDK's own defaults — a caller must be able to tell "not fetched" from "fetched and
+    /// genuinely 1 minute". This mirrors what <c>QueuesController.GetAllViaProviderAsync</c>
+    /// already does for AWS/GCP. Callers that need the real static configuration must use the
+    /// single-entity endpoint, which passes <paramref name="props"/> and returns live values.
+    /// </remarks>
     private static SubscriptionRuntimePropertiesDto MapToSubscriptionDto(SubscriptionRuntimeProperties runtime, SubscriptionProperties? props = null)
     {
         return new SubscriptionRuntimePropertiesDto(
@@ -1112,13 +1142,13 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             UpdatedAt: runtime.UpdatedAt,
             AccessedAt: runtime.AccessedAt,
             RequiresSession: props?.RequiresSession ?? false,
-            EnableBatchedOperations: props?.EnableBatchedOperations ?? true,
+            EnableBatchedOperations: props?.EnableBatchedOperations ?? false,
             EnableDeadLetteringOnMessageExpiration: props?.DeadLetteringOnMessageExpiration ?? false,
             EnableDeadLetteringOnFilterEvaluationExceptions: props?.EnableDeadLetteringOnFilterEvaluationExceptions ?? false,
-            MaxDeliveryCount: props?.MaxDeliveryCount ?? 10,
-            DefaultMessageTimeToLive: props?.DefaultMessageTimeToLive ?? TimeSpan.MaxValue,
-            LockDuration: props?.LockDuration ?? TimeSpan.FromMinutes(1),
-            AutoDeleteOnIdle: props?.AutoDeleteOnIdle ?? TimeSpan.MaxValue,
+            MaxDeliveryCount: props?.MaxDeliveryCount ?? 0,
+            DefaultMessageTimeToLive: props?.DefaultMessageTimeToLive ?? TimeSpan.Zero,
+            LockDuration: props?.LockDuration ?? TimeSpan.Zero,
+            AutoDeleteOnIdle: props?.AutoDeleteOnIdle ?? TimeSpan.Zero,
             ForwardTo: props?.ForwardTo,
             ForwardDeadLetteredMessagesTo: props?.ForwardDeadLetteredMessagesTo);
     }

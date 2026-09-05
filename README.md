@@ -492,6 +492,14 @@ all. Attach Azure Files storage the same way as App Service, mounted at both
 | `/health/live` fails after deploy | Container isn't listening on the platform's expected port, or hasn't finished startup config validation | Confirm `WEBSITES_PORT`/`--target-port` is `8080`; check container logs for the startup config validator's specific missing-variable error |
 | `docker pull ghcr.io/debdevops/servicehub` fails with "denied" | GHCR package visibility is private, or the tag doesn't exist yet | Confirm the tag (`:latest` or a released `:X.Y.Z`) exists under the repo's Packages tab |
 | Namespace credentials are gone after a restart, but DLQ history is intact | Only `DlqDatabase__DataDirectory` was persisted, not `NamespaceRepository__DataDirectory` | Mount **both** `DataDirectory` paths to the same persistent volume — see [Self-Hosting → Persistent storage](self-hosting/README.md#persistent-storage-two-stores-two-config-keys) |
+| A namespace that worked yesterday now returns `502` / `Queue.List.Failed` | The provider rotated the access key behind the stored connection string — the API log shows the real cause, e.g. Azure `401 InvalidSignature` | Re-register the namespace on the Connect page with a current connection string |
+| Every request suddenly returns `429 "Too many failed authentication attempts"` | `AuthFailureThrottle` trips at 10 credential-less/invalid requests in 5 minutes and is keyed on **client IP**, so one unauthenticated script locks out your browser too | Wait out the 5-minute window; find the offender via `Authentication failed: No valid credential for …` in the API log |
+| A second instance exits with "Another ServiceHub instance already holds the data directory" | Working as designed — the evidence ledger's hash chain assumes a single writer | Stop the other instance, or give this one its own `DlqDatabase:DataDirectory`. Don't delete `.instance.lock` |
+
+For operational (rather than deployment) errors — permission denials, replay verification, circuit
+breakers, evidence-chain failures — see
+[Troubleshooting: real errors and what they mean](docs/SERVICEHUB-COMPLETE-GUIDE.md#troubleshooting-real-errors-and-what-they-mean)
+in the Complete Guide.
 
 ---
 

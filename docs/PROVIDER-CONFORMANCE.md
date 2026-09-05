@@ -7,7 +7,7 @@ claim anyone can reproduce, not a claim you have to take on trust.
 ## What's being proven
 
 Every provider declares what it can and can't do in `ProviderCapabilities.{Azure,Aws,Gcp}`
-(`services/api/src/ServiceHub.Domain/Capabilities/ProviderCapabilities.cs`) — things like whether
+(`services/api/src/ServiceHub.Core/Models/ProviderCapabilities.cs`) — things like whether
 manual dead-lettering is possible, whether scheduled sends exist, whether a non-destructive DLQ
 peek is available. Per-provider unit tests already prove the *code* behaves correctly against a
 mocked SDK for each of those. What they can't prove is that the mock matches the real service.
@@ -35,6 +35,13 @@ The two bolded rows are the two facts the roadmap named explicitly as the ones m
 live: that GCP's manual dead-lettering genuinely fails rather than being silently accepted, and
 that GCP's DLQ background scan stays off by default rather than falling back to a destructive peek.
 
+**Spot re-confirmed 2026-09-05** against the same three live namespaces, by hand rather than
+through the suite: Azure purge → `400 Message.Operation.PurgeUnsupported`, AWS scheduled send →
+`400 Message.Operation.ScheduledUnsupported`, GCP manual dead-letter →
+`400 Message.Operation.DeadLetterUnsupported`, AWS Live Tail → `409`, Azure Live Tail → `200`
+with a real SSE session opening. `GET /api/v1/cloud-bridge/capabilities` also matched
+`ProviderCapabilities` field-for-field for all three providers.
+
 ## What this evidence does and doesn't cover
 
 - **Covers:** every capability `ProviderCapabilities` declares for the entity types exercised
@@ -44,10 +51,17 @@ that GCP's DLQ background scan stays off by default rather than falling back to 
   command"), but it isn't yet wired into CI as a scheduled or gating check. Making it
   CI-runnable from a clean checkout is separate infrastructure work, tracked independently of
   whether the evidence itself is valid.
-- **Known open item:** AWS purge has an intermittent, probabilistic failure mode on a namespace
-  with a very deep pre-existing dead-letter backlog (`AwsMessageReceiver.FindAndLockMessageAsync`'s
-  bounded scan has no guarantee of covering a specific message once the backlog exceeds its scan
-  window). Not fixed by this run — a real product decision about scan depth, not a conformance gap.
+- **Known open item at the time of this run — since fixed.** AWS purge/replay had an
+  intermittent, probabilistic failure on a namespace with a deep pre-existing dead-letter
+  backlog: `AwsMessageReceiver.FindAndLockMessageAsync` used a fixed 20-round (≈200-message)
+  scan ceiling, and because SQS `ReceiveMessage` samples a randomised subset of the queue's
+  backend hosts on every call, a single pass sized to the queue depth does not reliably surface
+  one specific message. It showed up live as `MessageNotFound` against a real ~317-message
+  backlog. The scan budget is now derived from the queue's approximate depth (×3, floored at the
+  old 20 rounds and hard-capped at 200) with an early exit after five consecutive rounds that
+  surface nothing new — so a deep queue gets the rounds it needs while an unbounded or still-
+  growing one still fails fast with a clear "not found" rather than scanning forever. Re-verified
+  live on 2026-09-05 by replaying real messages out of that same AWS backlog.
 
 ## How to reproduce
 

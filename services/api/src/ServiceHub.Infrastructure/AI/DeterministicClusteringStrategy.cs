@@ -280,11 +280,14 @@ public sealed class DeterministicClusteringStrategy : ISignatureAnalysisStrategy
             terms.Add($"cause:{clusterMessages[0].ForensicRootCause}");
         }
 
-        // Add delivery count bucket (useful for aggregation).
-        var avgDeliveryCount = (int)clusterMessages.Average(m => m.DeliveryCount);
-        if (avgDeliveryCount > 0)
+        // Add delivery count band. This term is hashed into the cluster's signature identity
+        // (ClusterSignatureHasher), so it must not carry the raw mean: that drifts every scan as
+        // messages enter and leave the DLQ, and re-identifies the same failure each time it
+        // crosses an integer boundary. See DeliveryCountBucket's remarks for the live evidence.
+        var deliveryBand = DeliveryCountBucket.Classify((int)clusterMessages.Average(m => m.DeliveryCount));
+        if (deliveryBand is not null)
         {
-            terms.Add($"deliveryAttempts:{avgDeliveryCount}");
+            terms.Add($"deliveryAttempts:{deliveryBand}");
         }
 
         return terms.Take(5).ToList(); // Limit to top 5 terms.

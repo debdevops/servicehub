@@ -11,7 +11,7 @@ definitive, end-to-end reference for it — written so a complete
 novice can go from "what is this?" to confidently operating it, while still being useful as a
 lookup reference for an experienced operator who just wants to know what one specific button
 does. If you read nothing else, read [Why ServiceHub?](#why-servicehub) and
-[Core Concepts](#core-concepts-the-vocabulary-you-need) — everything after that will make more
+[Core Concepts](#core-concepts--the-vocabulary-you-need) — everything after that will make more
 sense.
 
 > [!NOTE]
@@ -21,6 +21,12 @@ sense.
 > and failure patterns you see are genuine, not staged. Numbers will differ by the time you read
 > this (dead-letter counts change by the minute); what won't differ is what each screen, button,
 > and badge *means*.
+>
+> A handful of screenshots carry small red numbered callouts. Those numbers run **1, 2, 3 … in
+> the order the surrounding text discusses them**, which is not always top-to-bottom on the
+> screen — on the Connect form, for instance, callout 5 marks the encryption notice attached to
+> the Connection String field (3) rather than the next thing down the page. Every callout drawn
+> on an image is referred to in the text, and every number the text mentions exists on the image.
 
 **In this article:** why ServiceHub exists and who it's for; the vocabulary every other section
 assumes you know; connecting your first namespace; the shared page layout; a complete,
@@ -37,7 +43,7 @@ history; and a troubleshooting FAQ.
   Pub/Sub) — or none at all: every Connect page has a one-click **Demo Mode** per cloud that needs
   no credentials (see [Getting Started](#getting-started-connecting-your-first-namespace)).
 - No prior ServiceHub knowledge assumed. Cloud-messaging vocabulary (queue, topic, dead-letter)
-  is covered from first principles in [Core Concepts](#core-concepts-the-vocabulary-you-need).
+  is covered from first principles in [Core Concepts](#core-concepts--the-vocabulary-you-need).
 
 ---
 
@@ -75,6 +81,7 @@ history; and a troubleshooting FAQ.
     - [Advanced ServiceHub](#advanced-servicehub)
       - [Autonomy](#autonomy)
       - [Recovery Evidence](#recovery-evidence)
+      - [Recovery Ageing Report](#recovery-ageing-report)
       - [Playbook Ledger](#playbook-ledger)
       - [Governance](#governance)
     - [Platform](#platform)
@@ -90,6 +97,13 @@ history; and a troubleshooting FAQ.
   - [Security \& Privacy Model](#security--privacy-model)
   - [From The Beginning: How ServiceHub Got Here](#from-the-beginning-how-servicehub-got-here)
   - [FAQ \& Troubleshooting](#faq--troubleshooting)
+  - [Troubleshooting: real errors and what they mean](#troubleshooting-real-errors-and-what-they-mean)
+    - [Connecting](#connecting)
+    - [Authentication and permissions](#authentication-and-permissions)
+    - [Startup](#startup)
+    - [Messages and counts](#messages-and-counts)
+    - [Recovery](#recovery)
+    - [Evidence](#evidence)
   - [Where To Go Next](#where-to-go-next)
 
 ---
@@ -271,7 +285,7 @@ real screenshot, captured fresh for this guide.
 
 #### Home
 
-![Home page showing three real ranked attention cards — Critical severity, pending-decision counts, and a Recommended action — with Refresh marked 1 and the top card's Recommended text marked 5](screenshots/complete-guide/home/home-overview.jpg)
+![Home page showing three real ranked attention cards — Critical severity, pending-decision counts, and a Recommended action — with Refresh marked 1 and the highest-ranked attention card marked 2](screenshots/complete-guide/home/home-overview.jpg)
 
 - **What is it?** The landing page. A ranked "what needs you right now" queue — at most three
   cards, across *every* namespace you own, ordered by severity, blast radius, recurrence, and
@@ -282,11 +296,12 @@ real screenshot, captured fresh for this guide.
 - **The buttons:**
   - **Refresh** (marked **1**) — re-pulls the attention queue on demand; it also spins while
     fetching.
-  - Each **card** is itself a button — clicking one takes you straight to that failure's
-    [Incident Center](#incident-center) detail view, with the right namespace pre-selected.
-  - The **severity badge** (Critical/Warning/Healthy) and the **pending-decisions badge**
-    (marked **5** in the screenshot above, "Recommended: Review pending decision") tell you at a
-    glance whether this needs a human right now or is just informational.
+  - Each **card** is itself a button (the highest-ranked one is marked **2**) — clicking it
+    takes you straight to that failure's [Incident Center](#incident-center) detail view, with
+    the right namespace pre-selected.
+  - Within a card, the **severity badge** (Critical/Warning/Healthy), the **pending-decisions
+    badge**, and the **Recommended** line tell you at a glance whether this needs a human right
+    now or is just informational.
 - **When it's empty:** a calm "Everything looks healthy" state — Home never invents urgency that
   isn't there.
 
@@ -421,7 +436,7 @@ currently active" and "what's currently failing" are the same question asked fro
   - AWS topics show a **Fan-out →** link into the SNS fan-out dashboard (see
     [Cloud Bridge](#cloud-bridge)); AWS's paired redrive-policy DLQ queue is deliberately hidden
     here — it's represented by the source queue's own DLQ tab instead of a second, confusing row.
-  - GCP has no "queue" concept at all (see [Core Concepts](#core-concepts-the-vocabulary-you-need))
+  - GCP has no "queue" concept at all (see [Core Concepts](#core-concepts--the-vocabulary-you-need))
     — its section only ever shows topics and their subscriptions, including the DLQ topic/
     subscription pair Pub/Sub creates for you.
 
@@ -815,6 +830,45 @@ Approve (L3) · GCP ⚠️ Permanently capped at Approve (L3)
   model, written for someone verifying a chain from an export alone, independent of ServiceHub
   itself.
 
+#### Recovery Ageing Report
+
+**Applies to:** Azure ✅ · AWS ✅ · GCP ✅ (open entries are listed regardless of provider; what
+differs is how they eventually close — see [Multi-Cloud Support](#multi-cloud-support-at-a-glance))
+
+![Recovery Ageing Report on a live instance with every recovery entry already settled: the header explains that nothing here disappears, and the body shows the healthy empty state — "No open recovery entries. Every entry has reached a terminal outcome."](screenshots/complete-guide/recovery-ageing/recovery-ageing-report.jpg)
+
+- **What is it?** A single list of every recovery entry that is still *open* — replayed, but not
+  yet confirmed one way or the other. Oldest first. Reached from the Recovery Evidence page, or
+  directly at `/recovery/ageing`.
+- **Why does it exist?** Because "we replayed it" is not the same as "it worked," and the gap
+  between those two is where messages quietly go missing in most tooling. When ServiceHub replays
+  a message it opens a ledger entry and does **not** close it until something is actually
+  observed. This page is the falsifiable version of the claim "nothing is silently lost": if a
+  recovery were being dropped on the floor, it would sit here accumulating age, in plain sight.
+- **What you're looking at:** each row is one message's in-flight recovery — its namespace,
+  entity, failure category, when the attempt began, and how long it has been waiting. An entry
+  leaves this list in exactly three ways: it is verified **Recovered**, it is verified
+  **Returned** (it came back to the DLQ, so the replay didn't fix anything), or the ageing worker
+  eventually **expires** it and says so. It is never simply deleted.
+- **The empty state is the good one.** "Every entry has reached a terminal outcome" means every
+  replay ServiceHub has performed has since been accounted for — which is what the screenshot
+  above shows on a live instance. Rows appearing here is normal too, briefly, right after a
+  replay; rows that are *hours* old are the signal worth acting on.
+- **How long is normal?** Entries stay open for the observation window
+  (`RecoveryEvidence:ObservationWindowHours`, 24 hours by default) unless the message reappears
+  in the DLQ sooner, which closes them immediately as `Returned`. If you replay into a consumer
+  that is still broken, expect entries to appear and close quickly as `Returned` — that is the
+  system telling you the underlying fault is not fixed yet.
+- **The buttons:** **Refresh** re-pulls the list on demand; it also refreshes itself in the
+  background about once a minute.
+- **What to do next:** an entry that has been open far longer than your observation window
+  usually means the verification worker cannot see the entity any more — the namespace
+  credential expired, the queue was deleted, or the provider cannot prove absence
+  (AWS and GCP, see [Autonomy](#the-autonomy-model-in-plain-language)). Start at
+  [System Health](#system-health) to confirm the workers are running, then at
+  [Connections](#getting-started-connecting-your-first-namespace) to confirm the namespace is
+  still reachable.
+
 #### Playbook Ledger
 
 ![Playbook Ledger: real entries across Correlate and Investigate pillars from Azure, AWS, and GCP namespaces, including one AI-suggested observation from the optional reasoning companion, expanded to show its summary and considerations, plus Correlation accountability and Backtesting accountability strips at top](screenshots/complete-guide/playbook/playbook-ledger.jpg)
@@ -1132,6 +1186,146 @@ without requiring you to read any source code.
 
 For deployment-specific troubleshooting (Docker, ports, environment variables), see
 `LOCAL-DEPLOYMENT.md` and the **Troubleshooting** section of the main `README.md`.
+
+---
+
+## Troubleshooting: real errors and what they mean
+
+Every message below is quoted from a real running instance. They are grouped by what you actually
+see, not by which subsystem produced them.
+
+### Connecting
+
+**A namespace that worked yesterday now shows an error, and queue lists fail with
+`Queue.List.Failed` / HTTP 502.**
+Check the API log for the underlying provider error before assuming ServiceHub is at fault. The
+common one is Azure returning `401 InvalidSignature: The token has an invalid signature` — that
+means the SAS key inside the stored connection string no longer matches the namespace, almost
+always because the access key was rotated (a Terraform re-apply will do it) after you registered
+the namespace. ServiceHub cannot detect this in advance; the credential was valid when stored.
+Re-register the namespace on [Connect](#connect) with a current connection string. Nothing else
+needs to change — the DLQ history, ledger entries and signatures for that namespace are keyed by
+namespace ID, so re-registering under a new ID starts a fresh history.
+
+**"Connection test failed" immediately after pasting a connection string.**
+Work through it in this order: the namespace host is reachable from the *server* running
+ServiceHub (not your laptop); the SAS policy has Manage (ServiceHub lists entities via the
+management API, which Listen/Send alone cannot do); and the string was pasted whole — a truncated
+`SharedAccessKey=` is the single most common cause.
+
+**The provider is enabled in `ProviderCapabilities` but the API returns HTTP 503
+"Provider not enabled".**
+That is a server configuration answer, not a capability one: `CloudProviders:Aws:Enabled` or
+`CloudProviders:Gcp:Enabled` is false in `appsettings`. Set it and restart.
+
+### Authentication and permissions
+
+**Everything suddenly returns `429 Too Many Requests — "Too many failed authentication
+attempts. Try again later."`**
+This is `AuthFailureThrottle`, and it is keyed on **client IP**, not on the credential. Ten
+requests with a missing or invalid credential inside five minutes trip it, and then *every*
+caller from that IP — including your browser session, which was authenticating perfectly well —
+is locked out until the window rolls off. It clears itself in five minutes. The usual culprit is
+a script or tool looping against the API without a credential; check the API log for
+`Authentication failed: No valid credential for ...` to see which path.
+
+**HTTP 403 with a message naming a role.**
+For example:
+
+> `'ApiKey:reporting-readonly' has Governance role 'Viewer', which does not meet the required
+> role 'Operator'.`
+
+That is Governance working, not a bug. Grant the identity the required role on
+[Governance](#governance), scoped to the namespace and pillar you actually want to widen — and
+note the identity string must match exactly what ServiceHub resolves at runtime. For an API key
+that is `ApiKey:<the key's Description>`; the server normalises a missing `ApiKey:` prefix for
+you, but a typo in the description itself will silently never match.
+
+**HTTP 428 "Explicit Intent Required" even though I sent the headers.**
+`X-ServiceHub-Confirm: true` is only half of it — `X-ServiceHub-Intent` must carry the *exact*
+intent string for the operation, and the error deliberately does not echo it back. The values are
+`messages:replay`, `messages:purge`, `messages:send`, `messages:deadletter`,
+`messages:cancel-scheduled`, `bulk:replay`, `bulk:purge`, `signature:replay`,
+`rules:replay-all`, `namespaces:delete`, `namespaces:share`, `recovery:write-off`, and
+`audit:purge`. Sending `replay` instead of `messages:replay` fails exactly like sending nothing.
+Governance is evaluated *before* this gate, so a 403 means the role is wrong and a 428 means the
+role was fine and only the headers were not.
+
+### Startup
+
+**The API exits immediately with "Another ServiceHub instance already holds the data
+directory".**
+The full message is deliberately explicit:
+
+> Another ServiceHub instance already holds the data directory '…/data'. The recovery evidence
+> ledger's hash chain assumes a single writer process; a second instance against the same SQLite
+> file would corrupt it silently. Stop the other instance, or point this one at a different
+> `DlqDatabase:DataDirectory`.
+
+This is a safety control, not a startup race — do not delete `.instance.lock` to get past it. If
+you genuinely need two instances, give each its own data directory; they will then have entirely
+separate ledgers, which is the honest consequence.
+
+### Messages and counts
+
+**A queue shows 0 dead-lettered but I know there are messages.**
+Check which entity you are looking at. On Azure a topic *subscription* has its own dead-letter
+queue separate from any queue's, and the two are counted separately — Fleet Health adds them up,
+a single queue view does not. On GCP there is no queue concept at all and no count API, so a
+namespace can legitimately show no live count; see [Multi-Cloud Support](#multi-cloud-support-at-a-glance).
+
+**The static properties on the queue *list* look wrong (lock duration, TTL, max delivery count).**
+The list endpoint reports message counts, which are real, and neutral placeholders (`0`,
+`Unknown`, zero durations) for the entity's static configuration, which it does not fetch. Open
+the individual queue for the real values. This is deliberate: a plausible-looking guess is worse
+than an obvious blank.
+
+### Recovery
+
+**A replay returned 202 but the message is still in the DLQ.**
+202 means ServiceHub asked the broker to move it, and the broker accepted. Whether the *fix*
+worked is a separate question that ServiceHub refuses to answer until it has observed the
+outcome. Watch the [Recovery Ageing Report](#recovery-ageing-report): the entry stays open until
+it is verified `Recovered`, verified `Returned` (it came back — your consumer is still failing),
+or expired. If your consumer is still broken, `Returned` is the correct and useful answer.
+
+**An entry sits in the ageing report far longer than expected.**
+Entries stay open for `RecoveryEvidence:ObservationWindowHours` (24 hours by default). Beyond
+that, check [System Health](#system-health) — specifically that `RecoveryVerificationWorker` is
+heartbeating — and that the namespace is still reachable. A namespace whose credential expired
+mid-window cannot be re-scanned, so its entries cannot close on evidence.
+
+**"Automatic recovery blocked" on an AWS or GCP signature, and Replay Signature is disabled.**
+Two different causes, and the wording distinguishes them. *"has not yet earned Standing (L4) or
+Unattended (L5) trust"* is temporary — it is a track-record problem and will change. *"Aws cannot
+currently provide the deterministic recovery evidence required for unattended replay"* is
+permanent for that provider: AWS and GCP cannot prove a replayed message never came back, so they
+are capped at human-approved recovery no matter how good the track record gets. Manual recovery
+is unaffected in both cases.
+
+**An Auto-Replay rule disabled itself with `disabledReason=CircuitBreaker`.**
+The rule replayed repeatedly and the verified outcomes came back bad — for example *"Verified
+success rate 0% over the last 20 outcomes fell below the 50% circuit-breaker floor."* The rule is
+doing its job: replaying into a still-broken consumer is how you turn one incident into thousands
+of redeliveries. Fix the consumer first, then re-enable the rule on
+[Auto-Replay Rules](#auto-replay-rules). Re-enabling without changing anything will simply trip
+it again.
+
+### Evidence
+
+**`verify-recovery-chain.py` reports FAIL on an export.**
+The output names the exact event and both hashes, e.g.
+`Seq 12459: EntryHash mismatch — stored=… recomputed=… This event's fields were altered after
+being appended.` That is the tool working. Before assuming tampering, rule out the boring cause:
+the export files are UTF-8 **with a BOM**, so anything that rewrote them with a different encoding
+(or pretty-printed the JSON) will fail the hash check for entirely innocent reasons. Verify the
+original downloaded archive, unmodified.
+
+**A per-operation export passes but I need to prove more than that.**
+The verifier says so itself: a per-operation export proves no event in *that* export was altered,
+reordered, duplicated or dropped. It cannot prove continuity with the owner's global chain,
+because the neighbouring events are not in the file. `docs/RECOVERY-EVIDENCE.md` sets out what
+each level of verification does and does not establish.
 
 ---
 
