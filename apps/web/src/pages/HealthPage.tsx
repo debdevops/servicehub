@@ -237,7 +237,7 @@ export function HealthPage() {
                           <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
                           {entry.status}
                         </span>
-                        {(entry.description || entry.exception || dataDirectory) && (
+                        {(entry.description || entry.exception || typeof dataDirectory === 'string') && (
                           <div className="min-w-0 flex flex-col gap-0.5">
                             {entry.description && (
                               <span className="text-gray-500 truncate">
