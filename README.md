@@ -650,33 +650,51 @@ npm run -w apps/web test:e2e
 ## Roadmap
 
 ServiceHub is built depth-first: make one workflow excellent before adding the next surface. Here's
-where it stands and where it's headed.
+where it stands.
 
 | | Stage | Focus | Status |
 |---|---|---|---|
-| 🟢 | **Now** | Investigate → Recover → Prove | Shipped |
-| 🔵 | **Next** | Team & Governance | Planned |
-| 🟣 | **Later** | AI-Guided → Bounded Autonomous Operations | Strategic direction |
+| 🟢 | **Investigate → Recover → Prove** | The forensic core | Shipped |
+| 🟢 | **Team & Governance** | Approval queue, per-identity roles | Shipped |
+| 🟢 | **Bounded autonomous recovery** | Earned, per-signature, evidence-gated | Shipped — Azure only, by provider capability |
+| 🔵 | **Reasoning companion** | Local, opt-in, proposes only | Shipped, off by default |
 
-**🟢 Now — Investigate → Recover → Prove.** The forensic core, live today across Azure Service Bus
-(GA) and AWS SQS/SNS + GCP Pub/Sub (Supported): full message inspection, real-time search, client-side
-AI pattern detection, one-click and rule-based replay, purge, bulk operations with dry-run preview,
-a fleet dashboard, DLQ triage, Live Tail (Azure/GCP), Failure Signature Intelligence, and the
-Recovery Evidence Ledger — a hash-chained, tamper-evident record of every recovery. Also shipped:
-Slack/Teams alerts, OIDC SSO, role-based scopes (Viewer/Operator/Auditor), an exportable audit
-trail, and namespace sharing for live operations (Preview).
+**🟢 Investigate → Recover → Prove.** The forensic core, live across Azure Service Bus (GA) and
+AWS SQS/SNS + GCP Pub/Sub (Supported — see
+[provider conformance evidence](docs/PROVIDER-CONFORMANCE.md)): full message inspection, real-time
+search, client-side AI pattern detection, one-click and rule-based replay, purge, bulk operations
+with dry-run preview, a fleet dashboard, DLQ triage, Live Tail (Azure/GCP), Failure Signature
+Intelligence, an incident workspace, and the Recovery Evidence Ledger — a hash-chained,
+tamper-evident record of every recovery that a third party can verify from an export alone, with no
+server access. Also shipped: Slack/Teams alerts, OIDC SSO, an exportable audit trail, and namespace
+sharing for live operations (Preview).
 
-**🔵 Next — Team & Governance.** Approval workflows for destructive operations, and extending
-namespace sharing so a collaborator also sees shared DLQ history and audit visibility — not just
-live namespace access.
+**🟢 Team & Governance.** An approval queue for escalated recovery decisions, and per-identity
+governance grants (Viewer / Operator / Approver / Admin, optionally scoped per namespace and per
+pillar) enforced ahead of every mutating operation. Two credentials on one deployment can hold two
+different roles over the same data, and the denial path is covered by a CI test.
 
-**🟣 Later — AI-Guided → Bounded Autonomous Operations** *(strategic direction, not a committed
-feature or date)*. Today's building blocks — named Failure Signatures, rule-based Auto-Replay under
-a circuit breaker, and the Recovery Evidence Ledger's proof of what was done — are the foundation
-for closing the loop: AI-guided recovery recommendations with reasoning attached, and, only where an
-operator opts in, bounded automation for known, high-confidence cases. Every safeguard in place
-today — operator control, production write-protection, rate limits, circuit breakers, permanent
-provable evidence — carries forward unchanged; no autonomous or agentic behavior ships without it.
+**🟢 Bounded autonomous recovery.** Trust is earned per `(owner, failure signature, action)` from
+verified outcomes an independent worker observed *after the fact* — never from a confidence score,
+and there is deliberately no "turn autonomy on" switch anywhere in the product. A signature reaches
+unattended replay only after ≥10 verified recoveries at ≥95% success (L4) or ≥30 at ≥99% (L5), and
+drops back on two consecutive verified failures. A per-rule circuit breaker disables a rule whose
+recent verified success rate falls through the floor, and an owner-scoped emergency stop halts all
+automation. Promotion, unattended execution, demotion and a circuit-breaker trip have each been
+observed end to end against real Azure traffic, with independently verified evidence exports.
+
+Two real limits, stated rather than buried: **AWS and GCP are permanently capped at human-approved
+replay (L3)**, because neither API can prove a message stayed out of the dead-letter queue without
+risking dead-lettering it — a provider fact, not a maturity gap. And **all recovery, manual or
+autonomous, runs against namespaces marked Dev or UAT**; ServiceHub refuses to connect to a
+namespace marked Production at all.
+
+**🔵 Reasoning companion** *(optional, off by default)*. `services/agent` is a local, self-hosted
+container that reads payload-free evidence — counts, lifecycle state, normalised error terms, never
+a message body — and writes plain-language observations into the Playbook Ledger for a human to
+approve or reject. It cannot execute, approve or promote anything: the boundary is enforced by an
+IL scan over the compiled assemblies, not by review. It never calls an external or cloud LLM; a
+local Ollama instance is the only backend it knows.
 
 Have a use-case that should shape this? [Open a feature request](https://github.com/debdevops/servicehub/issues/new) — describe the problem, not just the solution.
 

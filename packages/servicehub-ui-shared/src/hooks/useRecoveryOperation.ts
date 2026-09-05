@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
-import { recoveryApi, type RecoveryOperationDetail } from '../lib/api/recovery';
+import { recoveryApi, type RecoveryOperationDetail, type RecoveryRehearsal } from '../lib/api/recovery';
 import { useDemoContext, rejectDemoModeMutation } from '../lib/demo/DemoContext';
 import { getMockRecoveryOperationDetail, buildDemoRecoveryExportBundle } from '../lib/demo/mockProviders';
 import toast from 'react-hot-toast';
@@ -61,6 +61,30 @@ export function useWriteOffRecoveryEntry() {
     onError: (error: unknown) => {
       const err = error as { response?: { data?: { detail?: string; message?: string } }; message?: string };
       const msg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Failed to write off entry';
+      toast.error(msg);
+    },
+  });
+}
+
+/**
+ * Hook for rehearsing the Eligibility Gate against one ledger entry (roadmap W1.2) — "what would
+ * the gate decide about this right now, and why."
+ *
+ * A mutation rather than a query only because the endpoint is a POST: nothing is written by it,
+ * and the service behind it is architecturally incapable of reaching a broker. Deliberately
+ * *not* blocked in Demo Mode's usual way — Demo Mode makes no backend calls at all, so it returns
+ * a clearly-labelled decline instead of a fabricated verdict, since inventing a gate decision is
+ * exactly the kind of fake evidence the whole product exists not to produce.
+ */
+export function useRehearseRecoveryEntry() {
+  const { isDemoMode } = useDemoContext();
+
+  return useMutation<RecoveryRehearsal, unknown, { entryId: string; actorKind?: 'Automation' | 'User' }>({
+    mutationFn: ({ entryId, actorKind }) =>
+      isDemoMode ? rejectDemoModeMutation() : recoveryApi.rehearse(entryId, actorKind),
+    onError: (error: unknown) => {
+      const err = error as { response?: { data?: { detail?: string; message?: string } }; message?: string };
+      const msg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Rehearsal failed';
       toast.error(msg);
     },
   });

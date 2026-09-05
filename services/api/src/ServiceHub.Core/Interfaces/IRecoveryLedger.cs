@@ -383,6 +383,15 @@ public interface IRecoveryLedger
     /// operation level, atomically, mirroring <see cref="RecordEmergencyControlEventAsync"/>'s
     /// pattern. Does not itself flip <see cref="Entities.AutoReplayRule.Enabled"/> — the caller
     /// is expected to have already done so in the same save, or immediately after.
+    /// <para>
+    /// <c>appliedSuccessRateFloor</c> is the floor that was actually in force when this trip fired.
+    /// It is written into the event's detail so an auditor reading the ledger sees the threshold
+    /// rather than having to trust that the default applied — the same reason
+    /// <c>ObservationWindowOpened</c> records its applied window (roadmap W1.1). A deployment may
+    /// legitimately run a non-default floor outside Production; inside Production it cannot go
+    /// below <c>AutonomyEvaluationWorker.MinimumProductionCircuitBreakerSuccessRateFloor</c>,
+    /// enforced at startup.
+    /// </para>
     /// </summary>
     Task<Result<RecoveryOperation>> RecordAutoReplayCircuitBreakerTripAsync(
         string ownerId,
@@ -391,6 +400,7 @@ public interface IRecoveryLedger
         RecoveryActor actor,
         int sampleSize,
         double verifiedSuccessRate,
+        double appliedSuccessRateFloor,
         CancellationToken cancellationToken = default);
 
     /// <summary>

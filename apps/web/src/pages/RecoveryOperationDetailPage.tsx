@@ -1,11 +1,16 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, ShieldCheck, Download, ShieldQuestion, AlertCircle, Info, X, Hash } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Download, ShieldQuestion, AlertCircle, Info, X, Hash, FlaskConical } from 'lucide-react';
 import { useRecoveryOperation } from '@servicehub/ui-shared/hooks/useRecoveryOperation';
-import { useDownloadRecoveryExport, useWriteOffRecoveryEntry } from '@servicehub/ui-shared/hooks/useRecoveryOperation';
+import { useDownloadRecoveryExport, useWriteOffRecoveryEntry, useRehearseRecoveryEntry } from '@servicehub/ui-shared/hooks/useRecoveryOperation';
 import { useVerifyChain } from '@servicehub/ui-shared/hooks/useChainVerification';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
-import { describeRecoveryDetailReason, type RecoveryLedgerEntry } from '@servicehub/ui-shared/lib/api/recovery';
+import {
+  describeRecoveryDetailReason,
+  describeApprovalQueueReason,
+  type RecoveryLedgerEntry,
+  type RecoveryRehearsal,
+} from '@servicehub/ui-shared/lib/api/recovery';
 import { VerificationResultNote } from '@/components/recovery/VerificationResultNote';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 
@@ -60,6 +65,42 @@ function WriteOffModal({ entry, onClose }: { entry: RecoveryLedgerEntry; onClose
   );
 }
 
+const VERDICT_STYLES: Record<RecoveryRehearsal['verdict'], { label: string; className: string }> = {
+  Allow: { label: 'Would allow', className: 'bg-green-50 text-green-800 border-green-200' },
+  Escalate: { label: 'Would escalate to a human', className: 'bg-amber-50 text-amber-800 border-amber-200' },
+  Deny: { label: 'Would deny', className: 'bg-red-50 text-red-800 border-red-200' },
+};
+
+/**
+ * The result of one rehearsal (roadmap W1.2), rendered inline under the entry it was run against.
+ * States plainly that nothing happened — a rehearsal that looked like an execution receipt would
+ * be worse than no rehearsal at all.
+ */
+function RehearsalResult({ rehearsal }: { rehearsal: RecoveryRehearsal }) {
+  const style = VERDICT_STYLES[rehearsal.verdict];
+  const reason = describeApprovalQueueReason(rehearsal.reasonCode);
+
+  return (
+    <div className={`mt-2 rounded-lg border px-3 py-2 text-xs ${style.className}`}>
+      <div className="font-semibold">
+        {style.label} — evaluated as {rehearsal.actorKindEvaluated}
+      </div>
+      {reason && <p className="mt-1">{reason}</p>}
+      {rehearsal.matchedCount > 0 && (
+        <p className="mt-1">
+          {rehearsal.matchedCount} prior attempt{rehearsal.matchedCount === 1 ? '' : 's'} on this
+          message's lineage were matched by the recurrence cap.
+        </p>
+      )}
+      <p className="mt-1.5 opacity-80">
+        Nothing was executed and nothing was written to either ledger — rehearsal runs the gate
+        against this entry's recorded identity and reports the verdict.{' '}
+        <span className="whitespace-nowrap">Evaluated {new Date(rehearsal.evaluatedAt).toLocaleString()}.</span>
+      </p>
+    </div>
+  );
+}
+
 /**
  * `/recovery/:operationId` — one operation's full evidence: header, per-entry table with
  * verification results, the complete hash-chained event log, chain verification, evidence export,
@@ -74,6 +115,8 @@ export default function RecoveryOperationDetailPage() {
   const downloadExport = useDownloadRecoveryExport();
   const [writeOffEntry, setWriteOffEntry] = useState<RecoveryLedgerEntry | null>(null);
   const [showEvents, setShowEvents] = useState(false);
+  const rehearse = useRehearseRecoveryEntry();
+  const [rehearsals, setRehearsals] = useState<Record<string, RecoveryRehearsal>>({});
 
   if (isLoading) {
     return (
@@ -180,7 +223,7 @@ export default function RecoveryOperationDetailPage() {
                   <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Target</th>
                   <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Body Hash</th>
                   <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Result</th>
-                  <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-24">Action</th>
+                  <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-28">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -190,16 +233,31 @@ export default function RecoveryOperationDetailPage() {
                     <td className="px-3 py-2 text-gray-400 font-mono text-xs truncate max-w-[160px]">{entry.bodyHash}</td>
                     <td className="px-3 py-2">
                       <VerificationResultNote entry={entry} reasonText={reasonByEntryId.get(entry.id) ?? null} />
+                      {rehearsals[entry.id] && <RehearsalResult rehearsal={rehearsals[entry.id]} />}
                     </td>
-                    <td className="px-3 py-2">
-                      {NON_TERMINAL.includes(entry.state) && (
+                    <td className="px-3 py-2 align-top">
+                      <div className="flex flex-col items-start gap-1">
                         <button
-                          onClick={() => setWriteOffEntry(entry)}
-                          className="text-xs text-gray-500 hover:text-red-600 underline"
+                          onClick={() => rehearse.mutate(
+                            { entryId: entry.id },
+                            { onSuccess: r => setRehearsals(prev => ({ ...prev, [entry.id]: r })) },
+                          )}
+                          disabled={rehearse.isPending}
+                          className="text-xs text-gray-500 hover:text-teal-700 underline inline-flex items-center gap-1 disabled:opacity-50"
+                          title="Ask the Eligibility Gate what it would decide about this entry right now. Reads only — it cannot reach a broker."
                         >
-                          Write off
+                          <FlaskConical className="w-3 h-3" />
+                          Rehearse
                         </button>
-                      )}
+                        {NON_TERMINAL.includes(entry.state) && (
+                          <button
+                            onClick={() => setWriteOffEntry(entry)}
+                            className="text-xs text-gray-500 hover:text-red-600 underline"
+                          >
+                            Write off
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

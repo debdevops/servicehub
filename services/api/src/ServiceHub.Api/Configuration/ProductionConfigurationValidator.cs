@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Hosting;
+using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.Security;
 
@@ -29,6 +30,25 @@ public static class ProductionConfigurationValidator
                 "(set via RecoveryEvidence__ObservationWindowHours environment variable) — a shorter " +
                 "window in production would let auto-replay declare a message recovered before a " +
                 "re-dead-lettered duplicate could plausibly reappear.");
+        }
+
+        // Validate RecoveryEvidence:CircuitBreakerSuccessRateFloor — the per-rule success-rate
+        // circuit breaker (master roadmap §4, which states it is non-configurable-off). Without
+        // this floor it was configurable-off in practice: a verified success rate is always >= 0,
+        // so a configured 0.0 disabled the breaker outright while every log line and dashboard
+        // still described it as active. A lower floor stays legitimate outside Production, where a
+        // soak run deliberately driving a rule to 0% needs the breaker to fire.
+        var circuitBreakerFloor = configuration.GetValue(
+            "RecoveryEvidence:CircuitBreakerSuccessRateFloor",
+            AutonomyEvaluationWorker.DefaultCircuitBreakerSuccessRateFloor);
+        if (circuitBreakerFloor < AutonomyEvaluationWorker.MinimumProductionCircuitBreakerSuccessRateFloor)
+        {
+            errors.Add(
+                $"RecoveryEvidence:CircuitBreakerSuccessRateFloor is {circuitBreakerFloor}, below the " +
+                $"{AutonomyEvaluationWorker.MinimumProductionCircuitBreakerSuccessRateFloor} production floor " +
+                "(set via RecoveryEvidence__CircuitBreakerSuccessRateFloor environment variable) — a lower " +
+                "floor in production would let an auto-replay rule keep running while most of its replays " +
+                "verifiably fail, and 0 disables the circuit breaker entirely.");
         }
 
         // Validate AllowedHosts
@@ -177,6 +197,35 @@ public static class ProductionConfigurationValidator
             "{FloorHours}h — enforced at startup.",
             observationWindowHours, RecoveryLedgerService.DefaultObservationWindowHours,
             environment.EnvironmentName, RecoveryLedgerService.MinimumProductionObservationWindowHours);
+    }
+
+    /// <summary>
+    /// Logs a loud warning outside Development when
+    /// <c>RecoveryEvidence:CircuitBreakerSuccessRateFloor</c> is not the default — the sibling of
+    /// <see cref="WarnIfObservationWindowNonDefault"/>, for the same reason. A lowered floor is
+    /// legitimate in a soak run, and is also the easiest way to leave a rule running while its
+    /// replays verifiably fail. Never throws: Production's hard floor is enforced separately, by
+    /// <see cref="ValidateProduction"/>.
+    /// </summary>
+    public static void WarnIfCircuitBreakerFloorNonDefault(IConfiguration configuration, IHostEnvironment environment, ILogger logger)
+    {
+        if (environment.IsDevelopment())
+            return;
+
+        var floor = configuration.GetValue(
+            "RecoveryEvidence:CircuitBreakerSuccessRateFloor",
+            AutonomyEvaluationWorker.DefaultCircuitBreakerSuccessRateFloor);
+        if (floor == AutonomyEvaluationWorker.DefaultCircuitBreakerSuccessRateFloor)
+            return;
+
+        logger.LogWarning(
+            "⚠️  RecoveryEvidence:CircuitBreakerSuccessRateFloor is {ConfiguredFloor}, overriding the " +
+            "{DefaultFloor} default outside Development ({EnvironmentName}). Every circuit-breaker trip " +
+            "records the applied floor in the evidence ledger, so this is visible to any auditor " +
+            "regardless of this log line. In Production this can never go below {MinimumFloor} — " +
+            "enforced at startup. A floor of 0 would disable the circuit breaker entirely.",
+            floor, AutonomyEvaluationWorker.DefaultCircuitBreakerSuccessRateFloor,
+            environment.EnvironmentName, AutonomyEvaluationWorker.MinimumProductionCircuitBreakerSuccessRateFloor);
     }
 
     private static bool IsValidHexString(string value, int expectedLength)

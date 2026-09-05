@@ -48,9 +48,15 @@ describe('AdvancedServiceHubPage', () => {
     expect(screen.getAllByRole('link', { name: 'Autonomy' })[0]).toHaveAttribute('href', '/demo/azure/autonomy');
   });
 
-  it('never claims the reasoning companion is available', () => {
+  it('describes the reasoning companion as shipped-but-opt-in, and bounded', () => {
+    // This test used to assert the page said the companion was "not started". W5 shipped it —
+    // disabled by default, IL-boundary-enforced, proposals only — so that sentence became false.
+    // What must stay true is the pair of claims underneath it: it is off unless an operator turns
+    // it on, and it can never execute.
     mockUseDemoContext.mockReturnValue({ isDemoMode: false, cloudProvider: undefined });
     renderPage();
-    expect(screen.getByText(/not started/i)).toBeInTheDocument();
+    expect(screen.getByText(/disabled by default/i)).toBeInTheDocument();
+    expect(screen.getByText(/never touches the\s+Recovery Evidence Ledger/i)).toBeInTheDocument();
+    expect(screen.queryByText(/not started/i)).not.toBeInTheDocument();
   });
 });

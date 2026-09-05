@@ -42,8 +42,35 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
 
     private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(45);
     private const int DefaultSweepIntervalSeconds = 3600;
-    private const int DefaultCircuitBreakerSampleSize = 20;
-    private const double DefaultCircuitBreakerSuccessRateFloor = 0.50;
+
+    /// <summary>
+    /// The number of most recent verified dispositions the success-rate circuit breaker scores
+    /// when <c>RecoveryEvidence:CircuitBreakerSampleSize</c> is not configured (roadmap §4).
+    /// </summary>
+    public const int DefaultCircuitBreakerSampleSize = 20;
+
+    /// <summary>
+    /// The verified-success-rate floor an auto-replay rule must hold when
+    /// <c>RecoveryEvidence:CircuitBreakerSuccessRateFloor</c> is not configured (roadmap §4).
+    /// </summary>
+    public const double DefaultCircuitBreakerSuccessRateFloor = 0.50;
+
+    /// <summary>
+    /// The floor <c>RecoveryEvidence:CircuitBreakerSuccessRateFloor</c> cannot be configured below
+    /// in Production — enforced at startup by <c>ProductionConfigurationValidator</c>, the same way
+    /// <see cref="RecoveryLedgerService.MinimumProductionObservationWindowHours"/> is, so it cannot
+    /// be bypassed by constructing this worker directly.
+    /// <para>
+    /// The master roadmap's §4 states the success-rate circuit breaker is non-configurable-off, and
+    /// without this floor it was not: a verified success rate is always <c>&gt;= 0</c>, so a
+    /// configured <c>0.0</c> silently disabled the breaker entirely while every log line and
+    /// dashboard continued to describe it as active. A lower floor remains legitimate outside
+    /// Production — a soak run deliberately driving a rule to 0% needs the breaker to fire, not to
+    /// be tuned away — which is why this is a startup policy rather than a clamp bound.
+    /// </para>
+    /// </summary>
+    public const double MinimumProductionCircuitBreakerSuccessRateFloor = 0.25;
+
     private const int DefaultMaxSignatureSweepBatchSize = 1000;
 
     private readonly TimeSpan _sweepInterval;
@@ -367,7 +394,8 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
 
             var actor = ActorIdentityResolver.ResolveSystemActor("AutonomyEvaluationWorker:CircuitBreaker");
             var ledgerResult = await recoveryLedger.RecordAutoReplayCircuitBreakerTripAsync(
-                ownerId, rule.Id, rule.Name, actor, dispositions.Count, verifiedSuccessRate, cancellationToken);
+                ownerId, rule.Id, rule.Name, actor, dispositions.Count, verifiedSuccessRate,
+                _circuitBreakerSuccessRateFloor, cancellationToken);
 
             if (ledgerResult.IsFailure)
             {
@@ -400,6 +428,7 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
                     RuleName = rule.Name,
                     SampleSize = dispositions.Count,
                     VerifiedSuccessRate = verifiedSuccessRate,
+                    AppliedSuccessRateFloor = _circuitBreakerSuccessRateFloor,
                     TrippedAtUtc = DateTimeOffset.UtcNow,
                 },
             };

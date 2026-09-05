@@ -2307,7 +2307,8 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
     public async Task RecordAutoReplayCircuitBreakerTripAsync_WritesAutoReplayRuleControlOperationAndEvent()
     {
         var result = await _service.RecordAutoReplayCircuitBreakerTripAsync(
-            OwnerA, ruleId: 42, ruleName: "Poison Message Rule", Actor("system"), sampleSize: 20, verifiedSuccessRate: 0.30);
+            OwnerA, ruleId: 42, ruleName: "Poison Message Rule", Actor("system"), sampleSize: 20,
+            verifiedSuccessRate: 0.30, appliedSuccessRateFloor: 0.50);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Kind.Should().Be(RecoveryOperationKind.AutoReplayRuleControl);
@@ -2320,6 +2321,13 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
         evt.EntryId.Should().BeNull();
         evt.OperationId.Should().Be(result.Value.Id);
         evt.DetailJson.Should().Contain("Poison Message Rule");
+
+        // The floor that was actually in force is recorded alongside the rate, so an auditor
+        // reading the ledger can tell a genuine trip apart from one under a relaxed threshold —
+        // the same reason ObservationWindowOpened records its applied window (roadmap W1.1).
+        evt.DetailJson.Should().Contain("appliedSuccessRateFloor");
+        evt.DetailJson.Should().Contain("defaultSuccessRateFloor");
+        result.Value.Reason.Should().Contain("50%");
     }
 
     // ── GetAgeingAsync / GetDistinctSignatureHashesAsync: per-sweep batch limit ─────────────────

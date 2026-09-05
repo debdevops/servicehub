@@ -14,13 +14,16 @@ import {
 } from 'lucide-react';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 
-type BadgeKind = 'current' | 'bounded' | 'human' | 'future';
+type BadgeKind = 'current' | 'bounded' | 'human' | 'future' | 'optional';
 
 const BADGE_STYLES: Record<BadgeKind, { label: string; className: string }> = {
   current: { label: 'CURRENT', className: 'bg-emerald-100 text-emerald-700 border-emerald-300' },
   bounded: { label: 'BOUNDED', className: 'bg-blue-100 text-blue-700 border-blue-300' },
   human: { label: 'HUMAN REQUIRED', className: 'bg-amber-100 text-amber-800 border-amber-300' },
   future: { label: 'FUTURE', className: 'bg-gray-100 text-gray-600 border-gray-300' },
+  // Shipped, but off unless an operator turns it on — distinct from both CURRENT (running now)
+  // and FUTURE (not built). The reasoning companion is the only section that is genuinely this.
+  optional: { label: 'OPT-IN', className: 'bg-purple-100 text-purple-700 border-purple-300' },
 };
 
 function Badge({ kind }: { kind: BadgeKind }) {
@@ -450,29 +453,38 @@ export function AdvancedServiceHubPage() {
           <p>The level itself only ever moves because <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">AutonomyEvaluationWorker</code> observed enough verified evidence to justify it (§14).</p>
         </Section>
 
-        {/* 20-21: Reasoning Companion / future */}
-        <Section id="reasoning-companion" title="20–21. The future Reasoning Companion, and what's available today vs. later" badges={['future']}>
+        {/* 20-21: Reasoning Companion */}
+        <Section id="reasoning-companion" title="20–21. The Reasoning Companion, and what it can and cannot do" badges={['optional']}>
           <p>
-            The one item left on the entire roadmap is a bounded reasoning layer
+            ServiceHub ships an optional bounded reasoning layer
             (<code className="text-xs bg-gray-100 px-1 py-0.5 rounded">services/agent</code>, a
-            sibling to today's <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">services/ai</code>) —
-            <strong> not started</strong>. When it is built, its only interface to the rest of
-            ServiceHub is: read evidence from any pillar, write a proposal into the Playbook Ledger.
-            It will never execute, promote, or confirm anything itself, and it will never touch the
-            Recovery Evidence Ledger. Off by default; local-only (for example, a self-hosted model)
-            is the default posture even once enabled. An external-LLM opt-in is a real amendment to
-            ADR-0004's no-external-calls security model, requiring the same disclosure rigor as any
-            other security-boundary change — never a config flag slipped in alongside a feature.
+            sibling to <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">services/ai</code>) —
+            <strong> disabled by default</strong>, and inert even when enabled unless you also point
+            it at a local model of your own. Its only interface to the rest of ServiceHub is: read
+            evidence from any pillar, write a proposal into the Playbook Ledger for a human to
+            approve or reject. It never executes, promotes, or confirms anything itself, and it
+            never touches the Recovery Evidence Ledger — that boundary is enforced by an IL scan
+            over the compiled assemblies, so a future change that tried to cross it fails the build
+            rather than a review. It only ever sees counts, lifecycle state and already-normalised
+            error terms, never a message body.
+          </p>
+          <p>
+            Local-only is the permanent default posture: a self-hosted model on your own network is
+            the only backend it knows how to talk to. An external-LLM opt-in would be a real
+            amendment to ADR-0004's no-external-calls security model, requiring the same disclosure
+            rigor as any other security-boundary change — never a config flag slipped in alongside a
+            feature — and is deliberately not built.
           </p>
           <p>
             Everything else this page describes — the four-pillar loop, the Recovery and Playbook
-            ledgers, Governance/RBAC, provider limits, and the earned-trust ladder — is real,
-            deterministic, and already running. There is no AI anywhere in ServiceHub's autonomy
-            today; the word deliberately does not appear on the Autonomy page for that reason.
+            ledgers, Governance/RBAC, provider limits, and the earned-trust ladder — is
+            deterministic, with no model anywhere in it. No autonomy level has ever moved because
+            something inferred it: promotion and demotion are arithmetic over verified outcomes, and
+            a reasoning proposal is a suggestion in a queue, not an input to that arithmetic.
           </p>
           <div className="flex items-center gap-2 text-xs text-gray-500 pt-1">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>The Autonomy page's own "future AI reasoning" card carries the same "Not available yet" label as this section.</span>
+            <span>The Autonomy page shows how many proposals the companion has actually recorded — and says "Not enabled" when there are none, rather than implying it doesn't exist.</span>
           </div>
         </Section>
 

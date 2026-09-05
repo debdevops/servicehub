@@ -12,6 +12,13 @@ public enum EnvironmentType
     /// <summary>User Acceptance Testing — test message generation disabled.</summary>
     Uat = 1,
 
-    /// <summary>Production — send/dead-letter disabled, replay requires confirmation.</summary>
+    /// <summary>
+    /// Production — connectivity is refused outright: <c>CreateNamespaceRequest.Validate</c>
+    /// rejects registering a namespace at this level, and every mutating path denies it
+    /// independently (<c>MessagesController</c>, <c>BulkOperationExecutor</c>,
+    /// <c>SignatureReplayExecutor</c>, <c>DlqMonitorWorker</c>'s auto-replay rule scan, and
+    /// predicate 2 of <c>RecoveryEligibilityGate</c>, which is unconditional because no
+    /// elevation-recording mechanism exists). Replay is blocked, not merely confirmed.
+    /// </summary>
     Prod = 2
 }

@@ -206,9 +206,15 @@ current provider reality.
 
 `RecoveryEligibilityGate` is the single ordered-predicate authority for every replay/purge
 attempt, automated or manual: emergency stop first, purge-by-automation unconditionally denied,
-production namespaces require explicit elevation, a fleet-wide replay-velocity cap, a per-rule
+production namespaces denied unconditionally, a fleet-wide replay-velocity cap, a per-rule
 success-rate circuit breaker (last 20 verified dispositions, floor configurable, default 50%), and
-the provider-capability re-check above. Every query in the chain fails closed. Demotion — dropping
+the provider-capability re-check above. Every query in the chain fails closed.
+
+The production predicate deserves saying plainly, because everything else here inherits it:
+ServiceHub refuses to register a namespace marked `Prod` at all (`CreateNamespaceRequest.Validate`),
+and every mutating path denies `EnvironmentType.Prod` independently of the gate. There is no
+elevation mechanism, so predicate 2 is a flat deny rather than a check. **All recovery — manual and
+autonomous alike — therefore operates on namespaces an operator has labelled Dev or UAT.** Demotion — dropping
 a signature back down the ladder after a verified `Returned` — fires synchronously on the 2nd
 consecutive verified recurrence and cannot be disabled by configuration.
 

@@ -352,6 +352,21 @@ export const RECOVERY_STATE_EXPLANATIONS: Record<RecoveryEntryState, RecoverySta
 // Humanized sentences for the Eligibility Gate's Escalate-verdict reason codes
 // (services/api ...RecoveryEligibilityGate.cs) — the only reason codes an Approval Queue entry
 // can carry (Deny-verdict codes are excluded server-side; see ApprovalQueueService).
+/**
+ * What the Eligibility Gate *would* decide for one ledger entry, right now, evaluated as a given
+ * actor kind (roadmap W1.2 rehearsal mode). Purely a read — `IRecoveryRehearsalService` depends on
+ * nothing capable of executing a recovery action, so a rehearsal can never reach a broker
+ * regardless of the verdict, and nothing is written to either ledger by asking.
+ */
+export interface RecoveryRehearsal {
+  entryId: string;
+  actorKindEvaluated: string;
+  verdict: 'Allow' | 'Escalate' | 'Deny';
+  reasonCode: string | null;
+  matchedCount: number;
+  evaluatedAt: string;
+}
+
 export const APPROVAL_QUEUE_REASON_LABELS: Record<string, string> = {
   EMERGENCY_STOP_ACTIVE: 'Blocked by an active emergency stop for this owner.',
   EMERGENCY_STOP_QUERY_ERROR: 'The emergency-stop check itself failed, so the attempt was blocked to fail closed.',
@@ -363,6 +378,12 @@ export const APPROVAL_QUEUE_REASON_LABELS: Record<string, string> = {
   AUTONOMY_GRANT_QUERY_ERROR: 'The autonomy-grant check itself failed, so the attempt was blocked to fail closed.',
   AUTONOMY_GRANT_INSUFFICIENT: 'This failure signature has not yet earned unattended (Standing/Unattended) trust.',
   PROVIDER_CANNOT_VERIFY_ABSENCE: "This message's cloud provider cannot independently verify DLQ absence, so unattended replay was refused.",
+  // Reachable in a rehearsal but never in the Approval Queue, which only ever holds entries the
+  // gate escalated on the autonomy or recurrence predicates.
+  PURGE_AUTOMATION_PROHIBITED: 'Purge can never be automated — the gate denies it unconditionally for any non-human actor.',
+  PRODUCTION_ELEVATION_REQUIRED: 'This namespace is marked Production, where every mutating recovery path is blocked.',
+  RATE_LIMITED: "This rule's own replay rate limit was already exhausted for the hour.",
+  FLEET_RATE_LIMITED: "This owner's combined automated-replay rate across every rule was already exhausted for the hour.",
 };
 
 /**
@@ -448,6 +469,24 @@ export const recoveryApi = {
   verifyChain: async (operationId: string): Promise<ChainVerificationResult> => {
     const response = await apiClient.post<ChainVerificationResult>(
       `/recovery/operations/${operationId}/verify`,
+    );
+    return response.data;
+  },
+
+  /**
+   * Rehearses the Eligibility Gate against one entry (roadmap W1.2). POST because the gate is
+   * evaluated on demand, not because anything is mutated — the endpoint requires only
+   * `RecoveryRead` scope, and carries no intent/confirm headers precisely because there is no
+   * action to confirm.
+   */
+  rehearse: async (
+    entryId: string,
+    actorKind: 'Automation' | 'User' = 'Automation',
+  ): Promise<RecoveryRehearsal> => {
+    const response = await apiClient.post<RecoveryRehearsal>(
+      `/recovery/entries/${entryId}/rehearse`,
+      undefined,
+      { params: { actorKind } },
     );
     return response.data;
   },

@@ -112,6 +112,13 @@ ProductionConfigurationValidator.WarnIfObservationWindowNonDefault(
     app.Environment,
     app.Logger);
 
+// Same treatment for the per-rule success-rate circuit-breaker floor: a lowered floor is
+// legitimate in a soak run and invisible in normal operation, so say so at startup.
+ProductionConfigurationValidator.WarnIfCircuitBreakerFloorNonDefault(
+    app.Configuration,
+    app.Environment,
+    app.Logger);
+
 // Eagerly resolve the connection-string protector so a broken or invalid encryption key
 // registry (Security:EncryptionKeyRegistry / Security:EncryptionKey) fails startup with a clear
 // error instead of surfacing lazily on the first namespace request — in every environment, not

@@ -98,16 +98,32 @@ docs-private/w1.3-soak-run-2026-09-03/RESULTS.md for the mechanism these exploit
     from that drill needs ~100+ subsequent Recovered outcomes just to dilute back under
     the 99% floor. Use a namespace/entity/error-type combination you have NOT already
     demoted, or promote to L5 before ever running the demotion recipe on it.
-    1. Reuse or build a signature already at Standing (L4) — see the demotion recipe's
-       step 1, or start fresh: create-rule, toggle-rule true, flood, replay-signature,
-       wait-promotion <signature-hash> 4.
+    CORRECTED 2026-09-05 (docs only, no behaviour change): steps 1 and 3 below used to
+    say `flood` + `replay-signature`, which CANNOT produce a Recovered outcome. This
+    script's `flood` command starts the samples repo's dlq-flood scenario, whose
+    messages carry FailMode.Always — replaying one with the consumer running makes it
+    fail and return to the DLQ (a Returned, counting AGAINST the rate), and replaying
+    one with the consumer paused produces a false-positive Recovered for a message that
+    was never delivered (see the CORRECTED 2026-09-04 note above). Building genuine
+    Recovered outcomes needs the `replay-cure` scenario (FailMode.Until a simulated
+    outage clears), which is what the 2026-09-04 run actually used for its 15/15
+    promotion and which this script has no wrapper for — start it directly against the
+    samples control API:
+       POST {SAMPLES_BASE}/api/scenarios/replay-cure/start
+    then replay after the simulated outage clears, so each replayed message genuinely
+    succeeds downstream and the verification worker closes it Recovered.
+
+    1. Reuse or build a signature already at Standing (L4) on a queue that has NEVER been
+       used for the demotion or circuit-breaker drills: create-rule, toggle-rule true,
+       replay-cure (see above), replay-signature, wait-promotion <signature-hash> 4.
     2. consumer-resume (make sure it's NOT paused — every replay from here must
        actually succeed, or it counts against the rate instead of for it).
-    3. Flood and replay enough additional messages under the same signature to reach
-       SampleSize>=30 with the accumulated history all Recovered: flood
-       <namespace-id> ~20 <same-error-type-as-before>, then replay-signature
-       <namespace-id> <signature-hash> (repeat if the flood produces more than one
-       signature — check with `signatures <namespace-id>` first).
+    3. Run enough further replay-cure cycles under the same signature to reach
+       SampleSize>=30 with the accumulated history all Recovered, replaying each batch
+       with replay-signature <namespace-id> <signature-hash>. Check with
+       `signatures <namespace-id>` first if a batch might produce more than one
+       signature, and with `trust <signature-hash>` between batches to watch the sample
+       size climb.
     4. wait-promotion <signature-hash> 5 — polls until currentLevel reaches 5
        (Unattended). As with the circuit breaker, override
        RecoveryEvidence:AutonomyEvaluationSweepIntervalSeconds to something short

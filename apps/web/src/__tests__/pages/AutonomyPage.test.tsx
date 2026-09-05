@@ -115,9 +115,10 @@ describe('AutonomyPage', () => {
     expect(screen.getByText('GCP')).toBeInTheDocument();
     expect(screen.getAllByText('Permanently capped at Approve (L3) — a provider fact, not a maturity gap. Human approval is always required.')).toHaveLength(2);
 
-    // The one honestly-unavailable card is present and marked as such
-    expect(screen.getByText('Future AI reasoning')).toBeInTheDocument();
-    expect(screen.getByText('Not available yet')).toBeInTheDocument();
+    // The reasoning-companion card is evidence-driven: with no ReasoningAgent-authored entries
+    // in any pillar it says the companion is not enabled, rather than claiming it doesn't exist.
+    expect(screen.getByText('AI-suggested observation')).toBeInTheDocument();
+    expect(screen.getByText('Not enabled — no proposals recorded')).toBeInTheDocument();
 
     // Governance role surfaced from /me
     expect(screen.getByText('Admin')).toBeInTheDocument();
@@ -132,6 +133,33 @@ describe('AutonomyPage', () => {
     expect(screen.getByText("Couldn't load this pillar's proposals.")).toBeInTheDocument();
     // Investigate/Prevent, which didn't error, still show the honest empty state
     expect(screen.getAllByText('No proposals recorded yet for this pillar.')).toHaveLength(2);
+  });
+
+  it('reports the real count once the reasoning companion has actually proposed something', () => {
+    // Regression: before W5 shipped this card was a hardcoded "Future AI reasoning — Not available
+    // yet", and it stayed that way after the companion started writing real, badged proposals into
+    // the Playbook Ledger — on the one page whose entire job is telling the truth about how
+    // autonomous ServiceHub is. The count is read from the ledger entries, never from a flag.
+    mockUseAutonomyDashboard.mockReturnValue({ data: emptyOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    mockUsePlaybookEntries.mockImplementation((params: { pillarKind?: string }) =>
+      params.pillarKind === 'Investigate'
+        ? {
+            data: [
+              { id: 'p1', state: 'Proposed', proposerKind: 'ReasoningAgent' },
+              { id: 'p2', state: 'Approved', proposerKind: 'ReasoningAgent' },
+              { id: 'p3', state: 'Proposed', proposerKind: 'System' },
+            ],
+            isError: false,
+          }
+        : { data: [], isError: false },
+    );
+
+    renderPage();
+
+    expect(screen.getByText('AI-suggested observation')).toBeInTheDocument();
+    // Two ReasoningAgent entries, not three — the System-authored finding is not an AI suggestion.
+    expect(screen.getByText('2 proposals recorded')).toBeInTheDocument();
+    expect(screen.queryByText('Not enabled — no proposals recorded')).not.toBeInTheDocument();
   });
 
   it('shows the demo-mode banner and never claims a live ledger', () => {

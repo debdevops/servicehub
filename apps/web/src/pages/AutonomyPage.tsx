@@ -59,6 +59,23 @@ interface PillarBucket {
   closed: number; // Rejected | Expired | Superseded — decided against, or no decision was ever made
 }
 
+/**
+ * How many Playbook Ledger entries the reasoning companion (W5, `services/agent`) actually
+ * authored, across every pillar this page already fetches. Evidence, not configuration: this page
+ * reads the ledgers rather than a feature flag, so the reasoning card says "no proposals recorded"
+ * when there are none and shows the real count when there are — instead of the constant
+ * "Not available yet" it carried before W5 shipped, which stayed false once an operator enabled it.
+ */
+function countReasoningProposals(...groups: (PlaybookEntry[] | undefined)[]): number {
+  let count = 0;
+  for (const entries of groups) {
+    for (const entry of entries ?? []) {
+      if (entry.proposerKind === 'ReasoningAgent') count++;
+    }
+  }
+  return count;
+}
+
 function bucketPillarEntries(entries: PlaybookEntry[] | undefined): PillarBucket {
   const bucket: PillarBucket = { total: entries?.length ?? 0, awaiting: 0, approved: 0, revoked: 0, closed: 0 };
   for (const entry of entries ?? []) {
@@ -178,6 +195,8 @@ export default function AutonomyPage() {
   const correlateBucket = bucketPillarEntries(correlate.data);
   const preventBucket = bucketPillarEntries(prevent.data);
   const recoverBucket = bucketPillarEntries(recoverProposals.data);
+  const reasoningProposalCount = countReasoningProposals(
+    investigate.data, correlate.data, prevent.data, recoverProposals.data);
 
   const totalAwaitingReview =
     investigateBucket.awaiting + correlateBucket.awaiting + preventBucket.awaiting + recoverBucket.awaiting;
@@ -319,10 +338,13 @@ export default function AutonomyPage() {
                 />
                 <VerbCard
                   icon={ShieldQuestion}
-                  iconClass="text-gray-500"
-                  title="Future AI reasoning"
-                  description="A bounded reasoning layer over this evidence, writing only to the Playbook Ledger — never executing. Architecturally barred from mutation (ADR-0005)."
-                  unavailable
+                  iconClass={reasoningProposalCount > 0 ? 'text-purple-500' : 'text-gray-500'}
+                  title="AI-suggested observation"
+                  description="An optional, self-hosted reasoning companion reads this evidence and writes proposals into the Playbook Ledger for you to approve or reject. It can never execute, approve, or promote anything — the boundary is enforced by an IL scan, not by review (ADR-0005). Off by default."
+                  metric={reasoningProposalCount > 0
+                    ? `${reasoningProposalCount} proposal${reasoningProposalCount === 1 ? '' : 's'} recorded`
+                    : 'Not enabled — no proposals recorded'}
+                  href={reasoningProposalCount > 0 ? `${prefix}/playbook` : undefined}
                 />
               </div>
             </section>

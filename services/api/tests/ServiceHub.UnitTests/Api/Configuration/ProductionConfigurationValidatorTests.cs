@@ -1,9 +1,11 @@
+using System.Globalization;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Moq;
 using ServiceHub.Api.Configuration;
+using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.RecoveryLedger;
 
 namespace ServiceHub.UnitTests.Api.Configuration;
@@ -150,6 +152,125 @@ public class ProductionConfigurationValidatorTests
         });
 
         act.Should().NotThrow();
+    }
+
+    // ── CircuitBreakerSuccessRateFloor production floor ─────────────────────
+    //
+    // The master roadmap §4 calls the success-rate circuit breaker non-configurable-off. It was
+    // not: a verified success rate is always >= 0, so a configured 0.0 disabled the breaker
+    // outright while every log line and dashboard still described it as active. These four pin
+    // the startup policy that closes that.
+
+    [Fact]
+    public void ValidateProduction_CircuitBreakerFloorOfZero_Throws()
+    {
+        // The exact configuration that silently disabled the breaker before this floor existed.
+        var act = () => Validate(new Dictionary<string, string?>
+        {
+            ["Security:EasyAuth:Enabled"] = "true",
+            ["RecoveryEvidence:CircuitBreakerSuccessRateFloor"] = "0",
+        });
+
+        act.Should().Throw<InvalidOperationException>();
+
+        // The thrown message is deliberately generic ("see logs above"), so assert on the log —
+        // an operator who hits this needs to be told which key is wrong, not just that one is.
+        _logger.Verify(
+            l => l.Log(
+                LogLevel.Error,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("CircuitBreakerSuccessRateFloor")),
+                It.IsAny<Exception?>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public void ValidateProduction_CircuitBreakerFloorBelowMinimum_Throws()
+    {
+        var act = () => Validate(new Dictionary<string, string?>
+        {
+            ["Security:EasyAuth:Enabled"] = "true",
+            ["RecoveryEvidence:CircuitBreakerSuccessRateFloor"] = "0.1",
+        });
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void ValidateProduction_CircuitBreakerFloorAtMinimum_DoesNotThrow()
+    {
+        var act = () => Validate(new Dictionary<string, string?>
+        {
+            ["Security:EasyAuth:Enabled"] = "true",
+            ["RecoveryEvidence:CircuitBreakerSuccessRateFloor"] =
+                AutonomyEvaluationWorker.MinimumProductionCircuitBreakerSuccessRateFloor
+                    .ToString(CultureInfo.InvariantCulture),
+        });
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateProduction_CircuitBreakerFloorNotConfigured_DefaultsAboveTheMinimum_DoesNotThrow()
+    {
+        // Guards the floor and the default against drifting past each other: a default below the
+        // minimum would make every unconfigured production deployment fail to start.
+        AutonomyEvaluationWorker.DefaultCircuitBreakerSuccessRateFloor
+            .Should().BeGreaterThanOrEqualTo(AutonomyEvaluationWorker.MinimumProductionCircuitBreakerSuccessRateFloor);
+
+        var act = () => Validate(new Dictionary<string, string?>
+        {
+            ["Security:EasyAuth:Enabled"] = "true",
+        });
+
+        act.Should().NotThrow();
+    }
+
+    // ── WarnIfCircuitBreakerFloorNonDefault ──────────────────────────────────
+
+    [Fact]
+    public void WarnIfCircuitBreakerFloorNonDefault_NonDefaultOutsideDevelopment_LogsWarning()
+    {
+        _environment.Setup(e => e.EnvironmentName).Returns("Staging");
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["RecoveryEvidence:CircuitBreakerSuccessRateFloor"] = "0.1",
+        });
+
+        ProductionConfigurationValidator.WarnIfCircuitBreakerFloorNonDefault(configuration, _environment.Object, _logger.Object);
+
+        _logger.Verify(
+            l => l.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.IsAny<It.IsAnyType>(),
+                It.IsAny<Exception?>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public void WarnIfCircuitBreakerFloorNonDefault_DefaultOutsideDevelopment_DoesNotWarn()
+    {
+        _environment.Setup(e => e.EnvironmentName).Returns("Production");
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["RecoveryEvidence:CircuitBreakerSuccessRateFloor"] =
+                AutonomyEvaluationWorker.DefaultCircuitBreakerSuccessRateFloor
+                    .ToString(CultureInfo.InvariantCulture),
+        });
+
+        ProductionConfigurationValidator.WarnIfCircuitBreakerFloorNonDefault(configuration, _environment.Object, _logger.Object);
+
+        _logger.Verify(
+            l => l.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.IsAny<It.IsAnyType>(),
+                It.IsAny<Exception?>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Never);
     }
 
     // ── WarnIfObservationWindowNonDefault (roadmap W1.1) ─────────────────────

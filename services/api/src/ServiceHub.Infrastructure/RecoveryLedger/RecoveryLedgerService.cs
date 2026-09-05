@@ -906,7 +906,8 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     /// <inheritdoc />
     public async Task<Result<RecoveryOperation>> RecordAutoReplayCircuitBreakerTripAsync(
         string ownerId, long ruleId, string ruleName, RecoveryActor actor, int sampleSize,
-        double verifiedSuccessRate, CancellationToken cancellationToken = default)
+        double verifiedSuccessRate, double appliedSuccessRateFloor,
+        CancellationToken cancellationToken = default)
     {
         using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
 
@@ -919,7 +920,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
             ActorIdentity = actor.Identity,
             ActorKind = actor.Kind,
             ActorScopes = actor.Scopes,
-            Reason = $"Verified success rate {verifiedSuccessRate:P0} over last {sampleSize} outcomes fell below the circuit-breaker floor",
+            Reason = $"Verified success rate {verifiedSuccessRate:P0} over last {sampleSize} outcomes fell below the {appliedSuccessRateFloor:P0} circuit-breaker floor",
             NamespaceId = null,
             SourceRuleId = ruleId,
             ScopeDescription = $"auto-replay rule {ruleId} ({ruleName}) circuit breaker",
@@ -929,7 +930,15 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
         };
         _dbContext.RecoveryOperations.Add(operation);
 
-        var detail = JsonSerializer.Serialize(new { ruleId, ruleName, sampleSize, verifiedSuccessRate });
+        var detail = JsonSerializer.Serialize(new
+        {
+            ruleId,
+            ruleName,
+            sampleSize,
+            verifiedSuccessRate,
+            appliedSuccessRateFloor,
+            defaultSuccessRateFloor = BackgroundServices.AutonomyEvaluationWorker.DefaultCircuitBreakerSuccessRateFloor,
+        });
 
         await AppendEventAsync(
             ownerId, entryId: null, operation.Id, RecoveryEventType.AutoReplayRuleCircuitBreakerTripped,

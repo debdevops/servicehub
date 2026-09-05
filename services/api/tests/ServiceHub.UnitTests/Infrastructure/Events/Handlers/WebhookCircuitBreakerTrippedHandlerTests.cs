@@ -31,6 +31,7 @@ public sealed class WebhookCircuitBreakerTrippedHandlerTests
                 RuleName = "orders-dlq-autoreplay",
                 SampleSize = sampleSize,
                 VerifiedSuccessRate = verifiedSuccessRate,
+                AppliedSuccessRateFloor = 0.50,
                 TrippedAtUtc = DateTimeOffset.UtcNow,
             },
         };
