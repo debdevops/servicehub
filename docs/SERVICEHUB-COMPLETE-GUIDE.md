@@ -92,6 +92,11 @@ history; and a troubleshooting FAQ.
       - [Advanced ServiceHub (education page)](#advanced-servicehub-education-page)
     - [Support](#support)
       - [Help \& Guide](#help--guide)
+  - [v4.0.0 Capabilities With No Dedicated Screen Yet](#v400-capabilities-with-no-dedicated-screen-yet)
+    - [Production Namespaces and Elevation](#production-namespaces-and-elevation)
+    - [Configuration as Code](#configuration-as-code)
+    - [Evidence Archive and Epoch Sealing](#evidence-archive-and-epoch-sealing)
+    - [Multi-Cloud DLQ Observer Attestation](#multi-cloud-dlq-observer-attestation)
   - [Multi-Cloud Support At A Glance](#multi-cloud-support-at-a-glance)
   - [The Autonomy Model, In Plain Language](#the-autonomy-model-in-plain-language)
   - [Security \& Privacy Model](#security--privacy-model)
@@ -253,24 +258,35 @@ against a non-production namespace first.
 
 ## The ServiceHub Layout
 
-Every page in ServiceHub shares the same three-part chrome, visible in nearly every screenshot
+Every page in ServiceHub shares the same four-part chrome, visible in nearly every screenshot
 in this guide:
 
-1. **Quick Access** (far left) — the fastest way to any destination in the product, grouped by
-   workflow stage: *Overview → Browse across clouds → Diagnose & automate → Advanced ServiceHub →
-   Platform → Learn ServiceHub → Support*. This is the same grouping this guide's
-   [Page Reference](#complete-page-reference) follows, on purpose.
-2. **Namespaces / Connections** (next to Quick Access) — a live tree of every connected
+1. **Icon Rail** (the thin strip at the far left edge) — five always-visible, icon-only shortcuts
+   to the busiest destinations: **Home, Incident Center, Namespace Overview, Approval Queue,
+   Recovery Evidence** — chosen to cover the loop "something broke → look → approve → verified."
+   Below the five icons sits a **More** (`···`) button that opens the same command palette
+   described below, so every other destination stays one click away even though it doesn't have a
+   permanent icon. As of v4.0.0 this rail deliberately shows *fewer* destinations than it used to
+   — nothing was removed from the product, only from what earns a permanent pixel in a 56px-wide
+   strip. Quick Access and the command palette both still reach everything.
+2. **Quick Access** (next to the Icon Rail) — the fastest way to any destination in the product,
+   grouped by workflow stage: *Overview → Browse across clouds → Diagnose & automate → Advanced
+   ServiceHub → Platform → Learn ServiceHub → Support*. This is the same grouping this guide's
+   [Page Reference](#complete-page-reference) follows, on purpose. Collapsible (the **«** icon).
+3. **Namespaces / Connections** (next to Quick Access) — a live tree of every connected
    namespace, its queues, topics, and subscriptions, with real-time active/dead-letter counts.
    Click any entity here to jump straight into its messages. This panel is collapsible (the
    **«** icon) and resizable (drag its right edge) — collapsing it frees up significant width for
    message detail views.
-3. **Workspace** (everything to the right) — the actual page content, with a Back/Forward
+4. **Workspace** (everything to the right) — the actual page content, with a Back/Forward
    navigation strip at the top that works like a browser's, but scoped to ServiceHub's own
    destinations.
 
-A command palette (**⌘K** / **Ctrl+K**) is reachable from anywhere and can jump to any
-destination in the product by typing a few letters of what you're looking for.
+A command palette (**⌘K** / **Ctrl+K**, or the Icon Rail's **More** button) is reachable from
+anywhere and can jump to any destination in the product by typing a few letters of what you're
+looking for — it lists every page, not just the Icon Rail's five.
+
+![The command palette opened from the Icon Rail's More button, listing every destination in the product — Home, Namespace Overview, Incident Center, Fleet Health, Live Tail, Scheduled Messages, Cloud Bridge and more, with a search box and keyboard navigation hints](screenshots/complete-guide/nav/command-palette-more.jpg)
 
 ---
 
@@ -285,20 +301,28 @@ real screenshot, captured fresh for this guide.
 
 #### Home
 
-![Home page showing three real ranked attention cards — Critical severity, pending-decision counts, and a Recommended action — with Refresh marked 1 and the highest-ranked attention card marked 2](screenshots/complete-guide/home/home-overview.jpg)
+![Home page showing the "This week" outcomes strip (94 recovered, 0 written off, median time to recovered, 0 needing no human approval, bad replays refused) above three real ranked attention cards, each with a severity badge, a pending-decision count, and a Recommended action](screenshots/complete-guide/home/home-overview.jpg)
 
 - **What is it?** The landing page. A ranked "what needs you right now" queue — at most three
   cards, across *every* namespace you own, ordered by severity, blast radius, recurrence, and
-  whether a human decision is actively blocking progress.
+  whether a human decision is actively blocking progress — with a "This week" outcomes strip
+  above it (new in v4.0.0) reporting what the fleet actually achieved.
 - **Why does it exist?** Because "check every namespace one by one" doesn't scale past two or
   three connections. Home answers "where should I look first?" in one glance, without you having
-  to know which namespace is on fire.
+  to know which namespace is on fire — and, since v4.0.0, "did any of this actually help?" without
+  a separate report.
+- **"This week" strip** (new in v4.0.0, sits directly under the page title) — five tiles read
+  straight from the Recovery Evidence Ledger over a trailing 7-day window: **Recovered** (messages
+  verified back to work), **Written off** (messages explicitly abandoned), **Median time to
+  recovered** (dead-letter → verified recovery), **No human approval needed** (recoveries an
+  earned autonomy grant executed unattended), and **Bad replays refused** (Eligibility Gate
+  denials that stopped a replay before it reached a provider). Every number traces to a ledger
+  row — the strip renders nothing at all, not even a zero row, until the fleet has actually
+  recovered or refused something, so a brand-new install doesn't read as broken.
 - **The buttons:**
-  - **Refresh** (marked **1**) — re-pulls the attention queue on demand; it also spins while
-    fetching.
-  - Each **card** is itself a button (the highest-ranked one is marked **2**) — clicking it
-    takes you straight to that failure's [Incident Center](#incident-center) detail view, with
-    the right namespace pre-selected.
+  - **Refresh** — re-pulls the attention queue on demand; it also spins while fetching.
+  - Each **card** is itself a button — clicking it takes you straight to that failure's
+    [Incident Center](#incident-center) detail view, with the right namespace pre-selected.
   - Within a card, the **severity badge** (Critical/Warning/Healthy), the **pending-decisions
     badge**, and the **Recommended** line tell you at a glance whether this needs a human right
     now or is just informational.
@@ -640,7 +664,7 @@ three; only the underlying message counts each provider can supply differ (see
 
 #### Approval Queue
 
-![Approval Queue: a real proposal screen — "Proposal — replay 2 messages" with Scope & Sample, Stop Condition, and "Why the gate escalated this" sections, plus Cancel and Confirm & Replay buttons — shown before either message is actually replayed](screenshots/complete-guide/approval-queue/approval-queue-proposal.jpg)
+![Approval Queue: a real proposal screen — "Proposal — replay 1 message" with Scope & Sample, Stop Condition, and "Why the gate escalated this" sections, plus Cancel and Confirm & Replay buttons — shown before the message is actually replayed](screenshots/complete-guide/approval-queue/approval-queue-proposal.jpg)
 
 ![Approval Queue after confirming: a "Just approved" panel showing the real, honest outcome — both replays Failed (message not found in dead-letter queue, since the background monitor had already reconciled them) — with a link to the Recovery Ledger for the eventual verified outcome](screenshots/complete-guide/approval-queue/approval-queue-just-approved.jpg)
 
@@ -775,7 +799,7 @@ first — it's the plain-language explanation of everything below it.)*
 **Applies to:** Azure ✅ Can reach Standing (L4) / Unattended (L5) · AWS ⚠️ Permanently capped at
 Approve (L3) · GCP ⚠️ Permanently capped at Approve (L3)
 
-![Autonomy page: real per-pillar counts across Recover/Investigate/Correlate/Prevent, a "What's automatic vs. what waits for you" grid (Automatic detection, Recommendation/proposal, Human-approved action, Earned unattended execution, ObserveOnly prevention, Future AI reasoning marked "Not available yet")](screenshots/complete-guide/autonomy/autonomy-overview.jpg)
+![Autonomy page: real per-pillar counts across Recover/Investigate/Correlate/Prevent, a "What's automatic vs. what waits for you" grid (Automatic detection, Recommendation/proposal, Human-approved action, Earned unattended execution, ObserveOnly prevention, and AI-suggested observation)](screenshots/complete-guide/autonomy/autonomy-overview.jpg)
 
 ![Autonomy page, scrolled down: a real per-provider "Provider constraints" table — Azure can prove DLQ absence and can reach Standing/Unattended, AWS and GCP are permanently capped at Approve — plus the Evidence & safety floors explanation](screenshots/complete-guide/autonomy/autonomy-provider-constraints.jpg)
 
@@ -791,7 +815,10 @@ Approve (L3) · GCP ⚠️ Permanently capped at Approve (L3)
   - **What's automatic vs. what waits for you** — a six-step verb taxonomy from *automatic
     detection* (always on, no approval needed) through *recommendation*, *human-approved
     action*, *earned unattended execution* (Recover pillar only, today), *ObserveOnly
-    prevention*, up to a deliberately-marked-unavailable *future AI reasoning* card.
+    prevention*, up to *AI-suggested observation* — the optional, self-hosted reasoning companion
+    (disabled by default) that reads payload-free evidence and writes proposals into the Playbook
+    Ledger for a human to approve or reject. It cannot execute, approve, or promote anything; see
+    [Playbook Ledger](#playbook-ledger) for the badge that marks its output distinctly.
   - **Provider constraints table** — the single most important table in this guide for
     understanding multi-cloud limits: Azure can prove DLQ absence and can therefore earn Standing
     (L4) / Unattended (L5) trust; **AWS and GCP are permanently capped at Approve (L3)** — a real
@@ -809,7 +836,7 @@ Approve (L3) · GCP ⚠️ Permanently capped at Approve (L3)
 
 #### Recovery Evidence
 
-![Recovery Evidence Ledger: a real list of recovery operations — manual replays and AutoRule-triggered replays — each showing Actor, Kind, Scope, Cloud/Env, and Target count, with an All Kinds filter](screenshots/complete-guide/recovery/recovery-evidence-ledger.jpg)
+![Recovery Evidence Ledger: a real list of recovery operations, each showing Opened time, Actor (here a named AutoRule), Kind, Scope, Cloud/Env, and Target count, with an All Kinds filter — a manual (human-triggered) replay looks identical except its Actor reads `__spa__`](screenshots/complete-guide/recovery/recovery-evidence-ledger.jpg)
 
 - **What is it?** Every recovery decision ServiceHub has ever made — who (or what) acted, what it
   asked the provider to do, and what was subsequently, independently observed to happen.
@@ -871,7 +898,7 @@ differs is how they eventually close — see [Multi-Cloud Support](#multi-cloud-
 
 #### Playbook Ledger
 
-![Playbook Ledger: real entries across Correlate and Investigate pillars from Azure, AWS, and GCP namespaces, including one AI-suggested observation from the optional reasoning companion, expanded to show its summary and considerations, plus Correlation accountability and Backtesting accountability strips at top](screenshots/complete-guide/playbook/playbook-ledger.jpg)
+![Playbook Ledger: real entries across Correlate and Investigate pillars from Azure namespaces, each row showing Proposed At, Pillar, Proposal type, Namespace, State, and Disposition, with the Correlation accountability and Backtesting accountability strips at top and Pillar/State filters above the table](screenshots/complete-guide/playbook/playbook-ledger.jpg)
 
 - **What is it?** What ServiceHub's detection workers (anomaly, drift, correlation) believed was
   worth a human's attention, and what a human decided about it. **Nothing here ever authorizes a
@@ -1029,6 +1056,70 @@ differs is how they eventually close — see [Multi-Cloud Support](#multi-cloud-
 
 ---
 
+## v4.0.0 Capabilities With No Dedicated Screen Yet
+
+Four capabilities shipped in v4.0.0 that this guide's screen-by-screen reference above doesn't
+cover, because none of them has a page yet — each is API-only today, by product decision (ADR-0010
+says the production ceiling is "enforced in the eligibility gate and in the grant issuance path,
+not in the UI") rather than an oversight. Listed here so a walkthrough doesn't wrongly conclude
+they don't exist just because Quick Access doesn't link to them.
+
+#### Production Namespaces and Elevation
+
+- **What it is:** A namespace can be registered with `environment: prod`. Investigate, Correlate,
+  and Prevent then run against it exactly as they do against Dev/UAT — full scanning, peeking,
+  clustering, forecasting. Every recovery verb (replay, purge, bulk operations, auto-replay rules)
+  stays denied unless a `ProductionElevation` is live.
+- **Requesting and approving one:** `POST /api/v1/recovery/production-elevations` (Operator role,
+  a namespace ID and a reason), then a *different* identity holding Approver or Admin calls
+  `POST .../production-elevations/{id}/approve`. The same identity attempting both steps is
+  refused outright — `ProductionElevationSelfApprovalForbidden` — independent of any role check.
+  `POST .../{id}/revoke` ends it early; `GET /api/v1/recovery/production-elevations` lists live
+  and past elevations for a namespace.
+- **What you'd see today without a UI:** every step lands in the [Recovery Evidence](#recovery-evidence)
+  ledger as an ordinary event (`ProductionElevationRequested/Approved/Expired/Revoked`), so it's
+  auditable from the export even with no screen for it.
+- **The ceiling:** no `AutonomyGrant` is ever issued against a `Prod` namespace, under any
+  configuration — enforced in `RecoveryEligibilityGate`, not by a UI restriction. See
+  [ADR-0010](adr/0010-production-namespace-elevation.md) for the full safety model.
+
+#### Configuration as Code
+
+- **What it is:** `GET /api/v1/governance/configuration/export` returns a deployment's Auto-Replay
+  Rules and active Governance grants as one JSON document — namespaces appear only as a read-only
+  id/name/environment/provider reference, never a connection string. `POST .../configuration/import`
+  applies a (possibly hand-edited, git-reviewed) copy of that document back: additive/upsert only,
+  nothing live but absent from the import is ever deleted.
+  `PreventionRule` is deliberately excluded — it's a hash-chained Playbook Ledger claim, not
+  mutable configuration.
+- **Admin-scoped**, same role requirement as the rest of `GovernanceController`.
+
+#### Evidence Archive and Epoch Sealing
+
+- **What it is:** `POST /api/v1/recovery/epochs/seal` closes the current Recovery Evidence Ledger
+  epoch for an owner — every event before the seal is independently re-verified, archived to
+  `<DataDirectory>/recovery-archive/<ownerId>/epoch-<N>.json`, re-verified again from that file, and
+  only then pruned from the live table. The seal marker becomes the next epoch's anchor, so the
+  hash chain never breaks across the seam.
+- **Why it matters for long-running deployments:** an append-only ledger with no legal way to prune
+  eventually becomes an operational problem on its own; epoch sealing bounds growth without
+  weakening tamper-evidence, because every pruned row survives byte-for-byte in the archive first.
+- **Verifying a sealed epoch:** `scripts/verify-recovery-chain.py --archive-dir <path>` follows the
+  anchor from an archived epoch into the live export — a sealed epoch verifies from its archive
+  file alone, no server access needed.
+
+#### Multi-Cloud DLQ Observer Attestation
+
+- **What it is:** the operator-provisioned trust root described in
+  [Multi-Cloud Support At A Glance](#multi-cloud-support-at-a-glance) below — configured per
+  namespace via `PUT /api/v1/namespaces/{id}/dlq-observer-attestation`, read via `GET` on the same
+  route. Requires the AWS/GCP Terraform observer module actually deployed first (see the module's
+  own README under `terraform/modules/{aws,gcp}/dlq-observer` in `cloud-platform-infra`).
+- **Status:** code-complete and unit-tested; not yet exercised in this build against a real
+  deployed observer, so nothing here has been driven live end to end.
+
+---
+
 ## Multi-Cloud Support At A Glance
 
 ServiceHub treats honesty about provider differences as a design principle, not an afterthought
@@ -1042,8 +1133,15 @@ Autonomy's provider-constraints table). Here's the same information in one table
 | Single-message Purge | ❌ (SDK has no single-delete) | ✅ | ✅ |
 | Live Tail (continuous watch) | ✅ | ❌ (no non-destructive peek) | ❌ (repeated pull-then-release still counts as a delivery attempt) |
 | Scheduled messages | ✅ | ❌ (15-min delay only, not listable) | ❌ (no concept) |
-| Can prove DLQ absence (unattended replay ceiling) | ✅ — can reach Standing (L4) / Unattended (L5) | ❌ — permanently capped at Approve (L3) | ❌ — permanently capped at Approve (L3) |
+| Can prove DLQ absence (unattended replay ceiling) | ✅ — can reach Standing (L4) / Unattended (L5) | ⚠️ Provider-native: capped at Approve (L3). With an operator-provisioned DLQ observer attested¹: can reach Standing (L4) | ⚠️ Same as AWS¹ |
 | Auto-refresh default | On | **Off** (protects delivery-attempt budget) | Off |
+
+¹ New in v4.0.0, code-complete but not yet exercised against a real deployed observer in this
+build: a self-provisioned, push-based DLQ observer (Terraform for AWS Lambda+DynamoDB / GCP Cloud
+Function+Firestore) can attest DLQ absence as a *different* trust root from the provider's own
+API — named explicitly, never blended with provider-native proof, and it fails closed the moment
+the observer goes stale or silent. There is no UI for configuring it yet; see
+`PUT /api/v1/namespaces/{id}/dlq-observer-attestation` and `docs/PROVIDER-CONFORMANCE.md`.
 
 For the full conformance methodology and live test results, see `docs/PROVIDER-CONFORMANCE.md`
 in the repository.
@@ -1119,23 +1217,32 @@ into one. A brief history, for context:
   Messages, and more).
 - **v3.6.0 — Stabilization.** A dedicated bug-bash release: no new features, purely defects found
   during a deep review and a live multi-cloud validation pass.
-- **v3.7.0 — Recovery Evidence Ledger (the current released version as of this writing).** The
-  headline addition: a durable, append-only, hash-chained ledger that every provider-mutating
-  recovery path writes to, plus a verification worker that closes entries as Recovered/Returned/
-  Unverified based on what's actually, provably observed per provider — never approximated. This
-  release also added the fleet-wide replay velocity cap, per-rule circuit breaker, the dedicated
-  Live Tail workspace, and cross-Quick-Access Back/Forward navigation. A same-cycle deep
-  multi-cloud E2E pass against real infrastructure found and fixed five further defects, including
-  a cross-tenant namespace-name disclosure in the unauthenticated health endpoints.
-- **The autonomy and governance layer (built on top of v3.7.0, documented in this guide as
-  currently running).** Home's ranked attention queue, the Incident Center and per-signature
-  Incident Workspace, the Approval Queue's propose-then-verify flow, Proactive Insights
-  (narration, correlation, backlog forecasting, contract-violation export), the Autonomy page,
-  the Playbook Ledger, Governance/RBAC, and an optional, disabled-by-default reasoning-companion
-  scaffold that can only ever propose, never execute. This work reflects ServiceHub's stated
-  position that a system that silently replays messages without evidence a human can check is a
-  liability, not automation — every one of these pages exists to make unattended action
-  defensible, evidence-first.
+- **v3.7.0 — Recovery Evidence Ledger.** The headline addition: a durable, append-only,
+  hash-chained ledger that every provider-mutating recovery path writes to, plus a verification
+  worker that closes entries as Recovered/Returned/Unverified based on what's actually, provably
+  observed per provider — never approximated. This release also added the fleet-wide replay
+  velocity cap, per-rule circuit breaker, the dedicated Live Tail workspace, and cross-Quick-Access
+  Back/Forward navigation. A same-cycle deep multi-cloud E2E pass against real infrastructure found
+  and fixed five further defects, including a cross-tenant namespace-name disclosure in the
+  unauthenticated health endpoints.
+- **The autonomy and governance layer (built on top of v3.7.0).** Home's ranked attention queue,
+  the Incident Center and per-signature Incident Workspace, the Approval Queue's
+  propose-then-verify flow, Proactive Insights (narration, correlation, backlog forecasting,
+  contract-violation export), the Autonomy page, the Playbook Ledger, Governance/RBAC, and an
+  optional, disabled-by-default reasoning-companion scaffold that can only ever propose, never
+  execute. This work reflects ServiceHub's stated position that a system that silently replays
+  messages without evidence a human can check is a liability, not automation — every one of these
+  pages exists to make unattended action defensible, evidence-first.
+- **v4.0.0 — the next chapter (the current released version as of this writing, documented in
+  this guide as currently running).** Closed the three qualifiers the autonomy chapter's own
+  claim still carried: durable evidence for all four pillars instead of just Recover, Production
+  namespaces observable end-to-end with recovery gated behind a two-person elevation, and a named
+  (operator-attested) trust root for the AWS/GCP DLQ-absence gap. Alongside that: outcome
+  measurement ("This week" on Home), a five-destination top nav with a More button reaching
+  everything else, epoch sealing to bound the ledger's growth, configuration export/import, and a
+  CI-proven upgrade path from v3.7. See
+  [v4.0.0 Capabilities With No Dedicated Screen Yet](#v400-capabilities-with-no-dedicated-screen-yet)
+  for the parts of this chapter that are API-only today.
 
 For the exhaustive, dated, entry-by-entry history — including every bug fixed and why — see
 `CHANGELOG.md` in the repository root. For the architectural decisions behind major features

@@ -11,10 +11,10 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10-purple.svg)](https://dotnet.microsoft.com/)
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6.svg)](https://www.typescriptlang.org/)
-[![Version](https://img.shields.io/badge/version-3.7.0-brightgreen.svg)](.version)
+[![Version](https://img.shields.io/badge/version-4.0.0-brightgreen.svg)](.version)
 [![Self-Hosted](https://img.shields.io/badge/Deployment-Self--Hosted-0078D4.svg)](#quick-start)
 
-[📖 **The Complete Guide**](docs/SERVICEHUB-COMPLETE-GUIDE.md) · [⚡ Quick Start](#quick-start) · [🖥️ Run It Locally (Plain-Language Guide)](LOCAL-DEPLOYMENT.md) · [📚 User Guides](#user-guides) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security) · [🚀 Self-Hosting](self-hosting/README.md) · [📋 Changelog](CHANGELOG.md)
+[📖 **The Complete Guide**](docs/SERVICEHUB-COMPLETE-GUIDE.md) · [🆕 What's New](#whats-new-in-v400) · [⚡ Quick Start](#quick-start) · [🖥️ Run It Locally (Plain-Language Guide)](LOCAL-DEPLOYMENT.md) · [📚 User Guides](#user-guides) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security) · [🚀 Self-Hosting](self-hosting/README.md) · [📋 Changelog](CHANGELOG.md)
 
 </div>
 
@@ -29,6 +29,14 @@ replay, and a permanent, tamper-evident record of every recovery decision it mak
 in a single process you control, with no message data ever leaving your network. Azure Service Bus
 is fully supported (GA); AWS and GCP are Supported, conformance-tested against live infrastructure
 but capability-gated relative to Azure (see [Provider Conformance](docs/PROVIDER-CONFORMANCE.md)).
+
+> [!NOTE]
+> **v4.0.0** closes out the autonomy chapter and opens the next one: durable evidence for all
+> four pillars (not just Recover), Production namespaces observable end-to-end with recovery
+> gated behind a two-person elevation, an operator-attested route to the top of the autonomy
+> ladder on AWS/GCP, outcome metrics that trace to ledger rows, a five-destination top nav, and
+> a tested in-place upgrade path from v3.7. See [What's new in v4.0.0](#whats-new-in-v400) and
+> the [Changelog](CHANGELOG.md) for the full list.
 
 ---
 
@@ -63,6 +71,48 @@ Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-
 | Correlation ID tracing | ❌ Not available | ✅ Trace journeys across all queues |
 | Scheduled message management | ❌ Not available | ✅ View, reschedule, and cancel (Azure only — see the provider table below) |
 | Cross-cloud message trace | ❌ Not available | ✅ Trace across Azure + AWS + GCP (AWS/GCP require an operator to enable them on the server) |
+
+---
+
+## What's new in v4.0.0
+
+Everything since v3.7.0 — full detail in [CHANGELOG.md](CHANGELOG.md). The headline: the top of
+the autonomy ladder stopped being a design claim (an L3→L4 promotion, an unattended autonomous
+replay, an L4→L3 demotion, and a circuit-breaker trip have each been observed end to end against
+real Azure Service Bus traffic, with independently verifiable evidence exports), and this release
+closes the three qualifiers that claim still carried:
+
+- **Durable evidence for all four pillars, not just Recover.** Anomaly, drift, correlation,
+  narration, backlog-forecast and external-signal findings — previously six process-local,
+  24-hour caches that lost everything on restart — now persist to SQLite with a retention sweep
+  that never prunes a finding a Playbook Ledger proposal still cites. A new owner-wide
+  `GET /api/v1/playbook/export` plus `scripts/verify-playbook-chain.py` let an auditor resolve
+  every cited finding from an export alone.
+- **Production, earned the same way autonomy was.** A namespace can now be registered as `Prod` —
+  Investigate/Correlate/Prevent run against it fully. Every recovery verb still denies it unless a
+  time-boxed [production elevation](#production-namespaces-and-elevation) is live, with dual control
+  and a hard L0/L1 autonomy ceiling that no configuration raises. See
+  [ADR-0010](docs/adr/0010-production-namespace-elevation.md).
+- **A named trust root for AWS/GCP's DLQ-absence gap.** An operator-provisioned, push-based DLQ
+  observer (Terraform for AWS Lambda+DynamoDB / GCP Cloud Function+Firestore) can attest DLQ
+  absence where the provider API can't prove it — a different trust root, not a relaxed one, named
+  explicitly in [Provider Conformance](docs/PROVIDER-CONFORMANCE.md). Fails closed on a stale or
+  missing observer. **Code-complete; not yet exercised against real cloud infrastructure** — the
+  Terraform modules haven't been applied in this build. See [Multi-Cloud Bridge](#multi-cloud-bridge).
+- **Outcome measurement.** A "This week" strip on Home and `GET /api/v1/recovery/outcomes` report
+  what the fleet actually achieved — messages recovered, written off, median time to a verified
+  recovery, recoveries no human had to approve, and gate refusals that stopped a bad replay. Every
+  figure traces to a `RecoveryLedgerEntry`/`RecoveryEvent` row — never modelled or estimated.
+- **A smaller top-level nav.** The Icon Rail now shows five destinations (Home, Incident Center,
+  Namespace Overview, Approval Queue, Recovery Evidence) plus a **More** button that opens the
+  command palette. Nothing was removed — Quick Access and the command palette still reach every
+  page.
+- **Configuration as code and epoch sealing** — see
+  [Configuration Export/Import](#configuration-as-code) and
+  [Evidence Archive and Epoch Sealing](#evidence-archive-and-epoch-sealing) below.
+- **A CI-proven upgrade path from v3.7.** `UpgradeInPlaceTests` stands up a real v3.7-era SQLite
+  file, seeds a hash-chained ledger against it, migrates to HEAD, and asserts no data loss and an
+  intact chain — see [Release & Upgrade Model](#release--upgrade-model).
 
 ---
 
@@ -123,6 +173,16 @@ capability assertions (an unsupported operation is rejected with the documented 
 silently ignored) — see [Provider Conformance](docs/PROVIDER-CONFORMANCE.md) for the reproducible
 evidence. Still capability-gated, still no parity guarantee with Azure — those are real, permanent
 differences in what each cloud API exposes, not evidence gaps.
+
+**Why autonomous replay stops at L3 on AWS/GCP:** neither provider's API can prove a message
+stayed out of the dead-letter queue without risking dead-lettering it, so `CanProveDlqAbsence` is
+`false` by default there — a provider fact, never relaxed into a confidence score. An operator can
+close that gap with a *different* trust root instead: a self-provisioned, push-based DLQ observer
+(Terraform modules for AWS Lambda+DynamoDB and GCP Cloud Function+Firestore) that attests DLQ
+absence from infrastructure the operator controls, fails closed the moment it goes stale or
+missing, and is named explicitly — never blended with provider-native proof — in
+[Provider Conformance](docs/PROVIDER-CONFORMANCE.md). This is implemented and unit-tested as of
+v4.0.0; it has not yet been run against a real deployed observer in this build.
 
 ### 🌐 Cross-Cloud Trace
 Connect namespaces from two or more cloud providers and use **Multi-Cloud Trace** to trace a single Correlation ID or message GUID as it routes from Azure $\rightarrow$ AWS $\rightarrow$ GCP (or any combination). The result is a visual routing path diagram, a chronological hop timeline, and a namespace search-coverage panel.
@@ -191,6 +251,52 @@ Every critical operation — send, replay, purge, dead-letter, rule changes — 
 ### 🛡️ Security & Privacy Page
 An in-app page that answers the trust question before anyone has to ask it: a diagram of exactly how data moves from browser → ServiceHub server → cloud SDK, what's encrypted (connection strings, AES-256-GCM), what's redacted from logs, and what's never stored (message bodies, plaintext secrets) — with links to verify each claim directly in the open-source code.
 
+### 📈 Outcome Measurement — "This week"
+Home shows a five-tile strip of what the fleet actually achieved in the trailing window (default
+7 days, `?days=` up to 90): messages recovered, messages written off, median time from
+dead-letter to verified recovery, recoveries that needed no human approval, and gate refusals
+that stopped a bad replay before any provider was contacted. Every figure is a count, average, or
+duration read directly from a `RecoveryLedgerEntry`/`RecoveryEvent` row — never modelled,
+estimated, or extrapolated. The strip renders nothing at all (not a zero-state) until the fleet
+has actually recovered or abandoned something, so a fresh install doesn't read as broken.
+`GET /api/v1/recovery/outcomes`.
+
+### 🔓 Production Namespaces and Elevation
+A namespace can be registered as `Prod`. Investigate, Correlate, and Prevent run against it
+without restriction — full scanning, peeking, clustering, and forecasting. Every recovery verb
+(replay, purge, bulk operations, auto-replay rules) stays denied unconditionally unless a
+`ProductionElevation` is live: a stated reason, an absolute expiry, and **dual control** — the
+identity that requests it and the identity that approves it must be different people, and
+self-approval is refused even for Admin. Every step (`ProductionElevationRequested/Approved/
+Expired/Revoked`) is a Recovery Evidence Ledger event, so an auditor can reconstruct who elevated
+which namespace, on whose approval, for how long — from the export alone, no server access
+needed. Autonomy is hard-ceilinged at L0/L1 in production under every configuration; no
+`AutonomyGrant` is ever issued against a `Prod` namespace. API only today — no dedicated UI for
+requesting or approving an elevation yet, by product decision, not a gap in the safety model. See
+[ADR-0010](docs/adr/0010-production-namespace-elevation.md).
+`POST/GET /api/v1/recovery/production-elevations{,/{id}/approve,/{id}/revoke}`.
+
+### 📦 Configuration as Code
+`GET`/`POST /api/v1/governance/configuration/{export,import}` round-trip a deployment's
+Auto-Replay Rules and active governance grants as one JSON file meant for git and a pull request.
+Import is additive/upsert only — a rule already present (matched by name) is updated in place, an
+already-active grant is left alone, and nothing live but absent from the import is ever deleted
+or revoked. Deliberately excludes a namespace's connection string (a credential, never
+configuration — namespaces appear only as a read-only id/name/environment/provider reference so
+an exported rule's target is human-readable) and `PreventionRule` (a hash-chained Playbook Ledger
+claim, not mutable configuration). API only today; no export/import UI.
+
+### 🗄️ Evidence Archive and Epoch Sealing
+`POST /api/v1/recovery/epochs/seal` closes an owner's current Recovery Evidence Ledger epoch:
+every prior event is independently re-verified, written to an archive file on disk
+(`<DataDirectory>/recovery-archive/<ownerId>/epoch-<N>.json`), read back and re-verified from
+disk again, and only then pruned from the live table — bounding growth for multi-year operation
+without weakening tamper-evidence, since the pruned rows survive byte-for-byte in the archive
+first. The seal marker itself becomes the next epoch's anchor, so the chain never breaks across
+the seam. `scripts/verify-recovery-chain.py --archive-dir` follows an anchor from a sealed
+history into the live export, and a sealed epoch verifies from its archive file alone, with no
+server access. Admin-scoped.
+
 ---
 
 ## Real-World Scenarios
@@ -252,7 +358,7 @@ Follow this path before connecting to a production namespace. This protects your
 
 1. **DEV**: Connect your development namespace. Explore message browsing, DLQ inspection, and auto-replay rules in a safe environment.
 2. **UAT**: Validate replay targets, confirm rule logic, and review AI findings with realistic data.
-3. **PROD**: Connect only after DEV and UAT validation. Production namespaces enforce read-only browsing by default — Quick Actions (replay, send, generate) are disabled to prevent accidental data modification.
+3. **PROD**: Connect only after DEV and UAT validation. Production namespaces are fully observable (Investigate, Correlate, Prevent all run normally), but every recovery action — replay, purge, bulk operations, auto-replay rules — stays denied unless a time-boxed, dual-control [production elevation](#production-namespaces-and-elevation) is live. There is no autonomy in production at any trust level.
 
 > [!WARNING]
 > While ServiceHub is read-only by default, replay and send operations are destructive. Validate your replay rules and message targets in lower environments first.
@@ -340,7 +446,7 @@ Official images are published to GitHub Container Registry on every tagged relea
 
 ```bash
 docker pull ghcr.io/debdevops/servicehub:latest
-# or pin a version: ghcr.io/debdevops/servicehub:3.7.0
+# or pin a version: ghcr.io/debdevops/servicehub:4.0.0
 ```
 
 Run it the same way as the locally built image — same required secrets, same volume, same
@@ -402,6 +508,31 @@ This is a **deliberate choice for this release, not an omission**. It keeps the 
 simple, the data local, and the operational surface small — the trade-off is no horizontal
 scaling and no built-in multi-tenant isolation beyond the per-owner scoping OIDC/API keys already
 provide.
+
+---
+
+## Release & Upgrade Model
+
+ServiceHub is versioned (`.version`, currently `4.0.0`) and released as a single tagged container
+image (`ghcr.io/debdevops/servicehub:X.Y.Z`) — see [Container Image](#container-image). Upgrading
+in place means pulling a newer tag against the same persistent volume; EF Core migrations run
+automatically at startup against the mounted SQLite data directory.
+
+Upgrading from v3.7.0 (or any earlier tagged release) to v4.0.0 is covered by an automated test,
+not just a claim: `UpgradeInPlaceTests` stands up a database at the exact migration that shipped
+in v3.7.0, seeds a real hash-chained Recovery Evidence Ledger against that schema, migrates it all
+the way to the current `HEAD`, and asserts zero data loss, an intact hash chain, and that every
+table this release added is genuinely queryable — not just present in the migrations history.
+
+The Recovery Evidence Ledger's hash chain is designed to survive a version boundary by
+construction: every event carries its own `SchemaVersion` as a canonical hashed field, and
+`RecoveryChainVerifier` is proven (via a dedicated fixture test) to validate a chain that spans two
+schema versions in one continuous run. **Evidence you cannot verify after upgrading is not
+evidence** — this is why that guarantee is tested rather than assumed.
+
+**Before upgrading a real deployment:** back up the data directory (or use the built-in
+`POST /api/v1/admin/backup`, see [`docs/BACKUP-RESTORE.md`](docs/BACKUP-RESTORE.md)) first. A
+downgrade path is not supported — migrations are forward-only.
 
 ---
 
@@ -616,6 +747,12 @@ No. ServiceHub only uses `PeekMessagesAsync`. Your consumers continue processing
 **Is it safe to point at production?**
 Yes. Listen-only mode is fully read-only. Deploy ServiceHub inside your private network for extra safety.
 
+**Can ServiceHub replay or purge messages on a namespace labelled `Prod`?**
+Only under a live, time-boxed [production elevation](#production-namespaces-and-elevation) approved
+by a second identity — never by the requester alone, and never automatically. Investigate,
+Correlate, and Prevent run against a `Prod` namespace unrestricted; every recovery verb stays
+denied without a live elevation, and autonomy never runs there at all.
+
 **How does AI analysis work without an API key?**
 The primary AI Findings surface is client-side heuristic pattern detection — pure JavaScript in your browser, no API key needed. A deeper, optional backend path (Failure Signature clustering) can call a self-hosted companion container you run yourself, disabled by default — never GPT or any other third-party/cloud service, and no data exfiltration either way.
 
@@ -658,6 +795,7 @@ where it stands.
 | 🟢 | **Team & Governance** | Approval queue, per-identity roles | Shipped |
 | 🟢 | **Bounded autonomous recovery** | Earned, per-signature, evidence-gated | Shipped — Azure only, by provider capability |
 | 🔵 | **Reasoning companion** | Local, opt-in, proposes only | Shipped, off by default |
+| 🟢 | **Evidence parity, production, multi-cloud trust root, outcomes, longevity** | v4.0.0 — closes the three qualifiers the autonomy chapter carried | Shipped; see status by unit below |
 
 **🟢 Investigate → Recover → Prove.** The forensic core, live across Azure Service Bus (GA) and
 AWS SQS/SNS + GCP Pub/Sub (Supported — see
@@ -695,6 +833,21 @@ a message body — and writes plain-language observations into the Playbook Ledg
 approve or reject. It cannot execute, approve or promote anything: the boundary is enforced by an
 IL scan over the compiled assemblies, not by review. It never calls an external or cloud LLM; a
 local Ollama instance is the only backend it knows.
+
+**🟢 v4.0.0 — evidence parity, production, multi-cloud trust root, outcomes, longevity.** Named
+"Shipped" and "Observed" deliberately as two separate claims, because a shipped feature this
+session hasn't been driven live yet is a real, different thing from one that has:
+
+| Unit | Shipped | Observed live |
+|---|---|---|
+| Durable evidence, all 4 pillars | ✅ | ✅ Full test suite green; `verify-playbook-chain.py` run against a real generated export, including a deliberately tampered event and a dangling citation, both caught |
+| Production namespaces + elevation | ✅ | ✅ Registering a `Prod` namespace, a denied replay, a pending elevation, a refused self-approval, and a revoke were all driven against the running app. **Not yet observed:** an approval by two distinct identities (local dev has one authenticated identity), and a real production recovery execution |
+| Multi-cloud DLQ observer attestation | ✅ (code) | ⏳ Terraform modules `validate`-clean, never `apply`-ed — the attestation path has only ever run against a test double, never a real DynamoDB/Firestore observer |
+| Outcome metrics ("This week" on Home) | ✅ | ✅ Rendered against real, currently-connected namespaces |
+| Five-destination nav + More | ✅ | ✅ Verified live — five icons plus a More button that opens the full command palette |
+| Epoch sealing, config export/import, upgrade-in-place | ✅ | ⏳ Unit/integration-tested only; not yet run against a real production-sized ledger or an actual git-reviewed configuration bundle |
+
+Full detail, including exactly which files changed and why, in [CHANGELOG.md](CHANGELOG.md).
 
 Have a use-case that should shape this? [Open a feature request](https://github.com/debdevops/servicehub/issues/new) — describe the problem, not just the solution.
 
