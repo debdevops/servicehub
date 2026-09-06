@@ -3,27 +3,29 @@ using ServiceHub.Core.Entities;
 namespace ServiceHub.Core.Interfaces;
 
 /// <summary>
-/// Short-lived, in-process store of recently detected <see cref="CorrelationFinding"/> instances.
+/// Durable store of detected <see cref="CorrelationFinding"/> instances (roadmap next-chapter M1,
+/// ADR-0009).
 /// </summary>
 /// <remarks>
-/// Deliberately not backed by the database: <c>CorrelationFinding</c> has never had an EF Core
-/// migration, and the RC1 migration freeze (ADR-0006) forbids adding one — regardless of how
-/// additive — while it is in effect. This cache lets <c>GET /v1/correlation-findings/{id}</c>
-/// retrieve a result a recent detection cycle already computed without introducing schema.
-/// Entries do not survive a process restart and are not shared across instances; this is an
-/// accepted, documented limitation, not an oversight.
+/// Backed by <c>DlqDbContext.CorrelationFindings</c> as of M1 — before this, findings lived in a
+/// process-local, 24-hour TTL cache and were lost on every restart. See
+/// <c>SqliteCorrelationResultCache</c> and <c>PillarFindingRetentionWorker</c>.
 /// </remarks>
 public interface ICorrelationResultCache
 {
     /// <summary>
     /// Stores (or refreshes) a batch of freshly detected correlation findings, keyed by their
-    /// <see cref="CorrelationFinding.Id"/>.
+    /// <see cref="CorrelationFinding.Id"/>. <see cref="CorrelationFinding.OwnerId"/> is already
+    /// carried on the entity, so no separate owner parameter is needed here.
     /// </summary>
-    void Store(IEnumerable<CorrelationFinding> findings);
+    /// <param name="findings">The findings to store.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task StoreAsync(IEnumerable<CorrelationFinding> findings, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Attempts to retrieve a previously stored correlation finding by ID.
     /// </summary>
-    /// <returns>The finding, or <c>null</c> if it was never stored or has expired.</returns>
-    CorrelationFinding? TryGet(Guid id);
+    /// <returns>The finding, or <c>null</c> if it was never stored or has since been pruned by
+    /// retention.</returns>
+    Task<CorrelationFinding?> TryGetAsync(Guid id, CancellationToken cancellationToken = default);
 }

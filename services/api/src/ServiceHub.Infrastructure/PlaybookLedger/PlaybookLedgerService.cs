@@ -399,11 +399,16 @@ public sealed class PlaybookLedgerService : IPlaybookLedger
     /// <inheritdoc/>
     public async Task<ChainVerificationResult> VerifyChainAsync(string ownerId, CancellationToken cancellationToken = default)
     {
-        var events = await _dbContext.PlaybookEvents.AsNoTracking()
+        var events = await GetAllEventsAsync(ownerId, cancellationToken);
+        return PlaybookChainVerifier.Verify(ownerId, events);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<PlaybookEvent>> GetAllEventsAsync(string ownerId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.PlaybookEvents.AsNoTracking()
             .Where(e => e.OwnerId == ownerId)
             .OrderBy(e => e.Seq)
             .ToListAsync(cancellationToken);
-
-        return PlaybookChainVerifier.Verify(ownerId, events);
     }
 }

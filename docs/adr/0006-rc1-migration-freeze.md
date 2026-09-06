@@ -1,10 +1,14 @@
 # ADR-0006: RC1 migration freeze — active, and confirmed by explicit sign-off only
 
 **Status:** Superseded for the M1–M4 persistence wave by
-[ADR-0007](0007-persistence-wave-m1-m4-authorized.md) (2026-08-29), and for M5
-(`ExternalSignalEvents`) by [ADR-0008](0008-m5-external-signal-events-authorized.md) (2026-08-29).
-This ADR remains the operative freeze for any migration not explicitly named in ADR-0007 or
-ADR-0008 — i.e. any future schema change not yet designed.
+[ADR-0007](0007-persistence-wave-m1-m4-authorized.md) (2026-08-29), for M5
+(`ExternalSignalEvents`) by [ADR-0008](0008-m5-external-signal-events-authorized.md) (2026-08-29),
+for the next chapter's M1 pillar-evidence tables plus M2's production elevation record by
+[ADR-0009](0009-next-chapter-migrations-authorized.md) (2026-09-06), and for M3.2's
+`DlqObserverAttestations` table by [ADR-0011](0011-dlq-observer-attestation-table-authorized.md)
+(2026-09-06).
+This ADR remains the operative freeze for any migration not explicitly named in ADR-0007, ADR-0008,
+ADR-0009 or ADR-0011 — i.e. any future schema change not yet designed.
 
 ## Context
 

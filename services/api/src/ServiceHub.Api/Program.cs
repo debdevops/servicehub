@@ -164,6 +164,12 @@ using (var scope = app.Services.CreateScope())
         // behaviour as a failed MigrateAsync() below.
         await NamespaceStoreImporter.ImportIfPresentAsync(dlqDbContext, app.Configuration, app.Logger);
 
+        // Classifies NamespaceSignatures.HashKind for rows the M1.4 migration defaulted to
+        // Fingerprint (ADR-0009 §Decision unit 2). Never throws — see
+        // NamespaceSignatureHashKindBackfiller's own remarks for why this is safe to leave
+        // non-fatal, unlike the import above.
+        await NamespaceSignatureHashKindBackfiller.BackfillAsync(dlqDbContext, app.Logger);
+
         // Grandfathers every existing account into a fleet-wide Admin grant, plus one
         // namespace-scoped Operator grant per existing namespace share (M3 of the persistence
         // wave). Must run after the M2 import above (reads Namespaces/NamespaceSharedOwners).

@@ -832,4 +832,166 @@ public sealed class AutonomyEvaluationWorkerTests : IDisposable
         (await _dbContext.AutoReplayRules.SingleAsync(r => r.Id == ruleB.Id)).Enabled.Should().BeTrue(
             "sweeping OwnerA must never evaluate, let alone disable, OwnerB's rules");
     }
+
+    // ── ADR-0010 §Decision phase 2, M2.4: the production ceiling ────────────
+
+    [Fact]
+    public async Task SweepOwnerAsync_ProdSignature_NoPromotionEvaluationRuns()
+    {
+        // L5-quality evidence, but every entry carries EnvironmentSnapshot=Prod.
+        for (var i = 0; i < 30; i++)
+        {
+            var operation = await OpenOperationAsync(OwnerA);
+            var entryResult = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+            {
+                OperationId = operation.Id,
+                OwnerId = OwnerA,
+                Actor = Actor(),
+                BodyHash = $"prod-body-{i}",
+                SignatureHashSnapshot = "sig-prod",
+                TargetEntity = "orders-dlq",
+                ProviderSnapshot = CloudProviderType.Azure,
+                EnvironmentSnapshot = EnvironmentType.Prod,
+            });
+            var accepted = await _recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
+            {
+                EntryId = entryResult.Value.Id,
+                OwnerId = OwnerA,
+                Actor = Actor(),
+                Outcome = RecoveryExecutionOutcome.Accepted,
+            });
+            await _recoveryLedger.RecordObservationAsync(new RecordObservationRequest
+            {
+                EntryId = accepted.Value.Id,
+                OwnerId = OwnerA,
+                Actor = new RecoveryActor("verification-worker", RecoveryActorKind.System),
+                Outcome = RecoveryObservationOutcome.NoRecurrenceObserved,
+            });
+        }
+
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        var grant = await _recoveryLedger.GetAutonomyGrantAsync(OwnerA, "sig-prod", RecoveryOperationKind.Replay);
+        grant.Should().BeNull("no AutonomyGrant may ever be issued against a Prod namespace, elevation or not");
+    }
+
+    [Fact]
+    public async Task SweepOwnerAsync_ExistingGrantOnNowProdSignature_DemotedToFloor()
+    {
+        // Simulates a namespace relabelled to Prod after a signature already earned Standing.
+        await SeedRecoveredEntriesAsync(OwnerA, "sig-relabelled", count: 10, "body");
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+        var grantBefore = await _recoveryLedger.GetAutonomyGrantAsync(OwnerA, "sig-relabelled", RecoveryOperationKind.Replay);
+        grantBefore.Should().NotBeNull();
+        grantBefore!.CurrentLevel.Should().Be(AutonomyLevel.Standing);
+
+        // Re-derive the same signature's entries as Prod-environment for the next sweep.
+        await _dbContext.RecoveryLedgerEntries
+            .Where(e => e.OwnerId == OwnerA && e.SignatureHashSnapshot == "sig-relabelled")
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.EnvironmentSnapshot, EnvironmentType.Prod));
+
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        var grantAfter = await _recoveryLedger.GetAutonomyGrantAsync(OwnerA, "sig-relabelled", RecoveryOperationKind.Replay);
+        grantAfter!.CurrentLevel.Should().Be(AutonomyLevel.Approve,
+            "the ceiling demotes a pre-existing grant on a now-Prod signature back to the L3 floor");
+    }
+
+    // ── ADR-004; ADR-0011: DLQ observer attestation unlocks AWS/GCP promotion ────
+
+    [Fact]
+    public async Task SweepOwnerAsync_AwsSignatureWithLiveAttestation_Promotes()
+    {
+        var namespaceId = Guid.NewGuid();
+        for (var i = 0; i < 10; i++)
+        {
+            var operation = await OpenOperationAsync(OwnerA);
+            var entryResult = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+            {
+                OperationId = operation.Id,
+                OwnerId = OwnerA,
+                Actor = Actor(),
+                BodyHash = $"aws-body-{i}",
+                SignatureHashSnapshot = "sig-aws-attested",
+                TargetEntity = "orders-dlq",
+                ProviderSnapshot = CloudProviderType.Aws,
+                NamespaceId = namespaceId,
+            });
+            var accepted = await _recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
+            {
+                EntryId = entryResult.Value.Id,
+                OwnerId = OwnerA,
+                Actor = Actor(),
+                Outcome = RecoveryExecutionOutcome.Accepted,
+            });
+            await _recoveryLedger.RecordObservationAsync(new RecordObservationRequest
+            {
+                EntryId = accepted.Value.Id,
+                OwnerId = OwnerA,
+                Actor = new RecoveryActor("verification-worker", RecoveryActorKind.System),
+                Outcome = RecoveryObservationOutcome.NoRecurrenceObserved,
+            });
+        }
+
+        var attestationService = new Mock<IDlqObserverAttestationService>();
+        attestationService
+            .Setup(s => s.IsLiveAsync(OwnerA, namespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IRecoveryLedger>(_recoveryLedger);
+        services.AddSingleton<IRecoveryTrustScoringService>(_trustScoring);
+        services.AddSingleton(_dbContext);
+        services.AddSingleton(attestationService.Object);
+        var scope = services.BuildServiceProvider();
+
+        await CreateWorker().SweepOwnerAsync(scope, OwnerA, CancellationToken.None);
+
+        var grant = await _recoveryLedger.GetAutonomyGrantAsync(OwnerA, "sig-aws-attested", RecoveryOperationKind.Replay);
+        grant.Should().NotBeNull();
+        grant!.CurrentLevel.Should().Be(AutonomyLevel.Standing,
+            "a live DLQ observer attestation for the signature's namespace unlocks AWS L4 the same way Azure's native peek does");
+    }
+
+    [Fact]
+    public async Task SweepOwnerAsync_AwsSignatureWithoutAttestation_StaysCappedAtApprove()
+    {
+        var namespaceId = Guid.NewGuid();
+        for (var i = 0; i < 10; i++)
+        {
+            var operation = await OpenOperationAsync(OwnerA);
+            var entryResult = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+            {
+                OperationId = operation.Id,
+                OwnerId = OwnerA,
+                Actor = Actor(),
+                BodyHash = $"aws-unattested-body-{i}",
+                SignatureHashSnapshot = "sig-aws-unattested",
+                TargetEntity = "orders-dlq",
+                ProviderSnapshot = CloudProviderType.Aws,
+                NamespaceId = namespaceId,
+            });
+            var accepted = await _recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
+            {
+                EntryId = entryResult.Value.Id,
+                OwnerId = OwnerA,
+                Actor = Actor(),
+                Outcome = RecoveryExecutionOutcome.Accepted,
+            });
+            await _recoveryLedger.RecordObservationAsync(new RecordObservationRequest
+            {
+                EntryId = accepted.Value.Id,
+                OwnerId = OwnerA,
+                Actor = new RecoveryActor("verification-worker", RecoveryActorKind.System),
+                Outcome = RecoveryObservationOutcome.NoRecurrenceObserved,
+            });
+        }
+
+        // No IDlqObserverAttestationService registered — GetService returns null, matching
+        // production behavior before this feature is opted into for a namespace.
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        var grant = await _recoveryLedger.GetAutonomyGrantAsync(OwnerA, "sig-aws-unattested", RecoveryOperationKind.Replay);
+        grant.Should().BeNull("AWS stays capped at the L3 floor without either Azure-native absence proof or a live attestation");
+    }
 }

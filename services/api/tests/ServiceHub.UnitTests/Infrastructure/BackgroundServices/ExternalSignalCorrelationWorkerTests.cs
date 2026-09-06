@@ -247,7 +247,7 @@ public sealed class ExternalSignalCorrelationWorkerTests
 
         await worker.RunDetectionCycleAsync(CancellationToken.None);
 
-        _cacheMock.Verify(c => c.Store(It.Is<IEnumerable<ExternalSignalCorrelation>>(f => f.Contains(correlation))), Times.Once);
+        _cacheMock.Verify(c => c.StoreAsync(It.Is<IEnumerable<ExternalSignalCorrelation>>(f => f.Contains(correlation)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ── Roadmap §5, I5 — Push ────────────────────────────────────────

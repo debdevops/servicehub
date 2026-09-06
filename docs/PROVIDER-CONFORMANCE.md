@@ -42,6 +42,35 @@ through the suite: Azure purge → `400 Message.Operation.PurgeUnsupported`, AWS
 with a real SSE session opening. `GET /api/v1/cloud-bridge/capabilities` also matched
 `ProviderCapabilities` field-for-field for all three providers.
 
+## The `CanProveDlqAbsence` trust root (M3.3)
+
+`CanProveDlqAbsence` gates whether a replayed message can ever reach L4 (Standing) or L5
+(Unattended) autonomy — see `cloud-platform-infra`'s `docs/decisions/ADR-004-InfrastructureAttestedDlqObserver.md`
+and this repo's own [ADR-0011](adr/0011-dlq-observer-attestation-table-authorized.md). It is `true`
+for exactly one of two reasons, and this suite now reports **which one**, rather than a single
+flattened PASS/FAIL:
+
+| Trust root | Meaning | Who to trust |
+|---|---|---|
+| `provider-native` | The cloud provider's own API can prove absence directly — an uncapped, non-destructive peek. | Azure only, today. |
+| `operator-attested` | An infrastructure-attested DLQ observer (a Lambda/DynamoDB or Cloud Function/Firestore pipeline the operator deployed via `cloud-platform-infra`'s Terraform modules) has independently confirmed, via a live liveness canary, that it is actually attached to this exact namespace's DLQ. | Whoever provisioned and is running that observer — not Amazon or Google, and not ServiceHub's own code. |
+| `none` | Neither holds. The signature is capped at L3 (human-approved replay only). | — |
+
+`operator-attested` is never a config flag an operator can just set — see
+`DlqObserverAttestationController`/`IDlqObserverAttestationService` (`servicehub` repo): it
+requires a canary message ServiceHub itself dispatches into the DLQ and the observer's own log
+confirming its arrival within a bounded staleness window, re-checked on every sweep. A stale or
+never-confirmed attestation reads `false`, the same as never having configured one at all — never
+"assume fine" (ADR-004 item 4).
+
+**No live run of this assertion has been recorded yet.** It requires an AWS or GCP namespace with
+the `cloud-platform-infra` observer actually deployed (`terraform/modules/aws/dlq-observer` or
+`terraform/modules/gcp/dlq-observer`) and its attestation configured
+(`PUT /api/v1/namespaces/{id}/dlq-observer-attestation`) — infrastructure this session built and
+validated (`terraform validate`) but did not deploy, per this repository's own workflow of the
+operator running `terraform apply`. Until that exists, every AWS/GCP row here reads
+`trustRoot: none` — an honest, correctly-negative result, not evidence of a defect.
+
 ## What this evidence does and doesn't cover
 
 - **Covers:** every capability `ProviderCapabilities` declares for the entity types exercised

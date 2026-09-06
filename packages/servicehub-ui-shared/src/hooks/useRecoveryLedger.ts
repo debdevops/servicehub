@@ -7,6 +7,7 @@ import {
   type SignatureAutonomyStatus,
   type ApprovalQueueEntry,
   type AutonomyDashboardOverview,
+  type OutcomeMetricsOverview,
   type SignatureTrustEvidence,
 } from '../lib/api/recovery';
 import { useDemoContext } from '../lib/demo/DemoContext';
@@ -149,6 +150,50 @@ export function useAutonomyDashboard() {
         enabled: !isDemoMode,
         staleTime: 30_000,
         refetchInterval: 60_000,
+        refetchIntervalInBackground: false,
+        retry: (failureCount, error: unknown) => {
+          const err = error as { response?: { status?: number } };
+          if (err?.response?.status === 404) return false;
+          if (err?.response?.status === 403) return false;
+          return failureCount < 2;
+        },
+      };
+
+  return useQuery(options);
+}
+
+/**
+ * What the fleet actually achieved over a trailing window (roadmap next-chapter M4.1) — messages
+ * recovered, messages written off, median time to a verified recovery, autonomous recoveries, and
+ * gate refusals. Every figure traces to a ledger row; none is modelled or estimated.
+ */
+export function useOutcomeMetrics(days = 7) {
+  const { isDemoMode } = useDemoContext();
+
+  const options: UseQueryOptions<OutcomeMetricsOverview> = isDemoMode
+    ? {
+        queryKey: ['recovery-outcomes', 'demo', days],
+        queryFn: (): Promise<OutcomeMetricsOverview> => {
+          const now = new Date();
+          const windowStart = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+          return Promise.resolve({
+            generatedAt: now.toISOString(),
+            windowStartUtc: windowStart.toISOString(),
+            windowEndUtc: now.toISOString(),
+            messagesRecovered: 0,
+            messagesAbandoned: 0,
+            medianSecondsToVerifiedRecovery: null,
+            autonomousRecoveries: 0,
+            gateRefusals: 0,
+          });
+        },
+      }
+    : {
+        queryKey: ['recovery-outcomes', days],
+        queryFn: () => recoveryApi.getOutcomes(days),
+        enabled: !isDemoMode,
+        staleTime: 60_000,
+        refetchInterval: 120_000,
         refetchIntervalInBackground: false,
         retry: (failureCount, error: unknown) => {
           const err = error as { response?: { status?: number } };

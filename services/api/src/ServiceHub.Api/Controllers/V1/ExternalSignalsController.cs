@@ -206,7 +206,7 @@ public sealed class ExternalSignalsController : ApiControllerBase
 
         var correlations = _correlationService.DetectCorrelations(observations, signals, window);
 
-        _correlationCache.Store(correlations);
+        await _correlationCache.StoreAsync(correlations, cancellationToken);
 
         _logger.LogInformation(
             "Detected {CorrelationCount} external-signal correlation(s) for owner {OwnerId} across {NamespaceCount} namespace(s)",
@@ -235,7 +235,7 @@ public sealed class ExternalSignalsController : ApiControllerBase
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
-        var correlation = _correlationCache.TryGet(id);
+        var correlation = await _correlationCache.TryGetAsync(id, cancellationToken);
         if (correlation is null)
         {
             return NotFoundResult(id);

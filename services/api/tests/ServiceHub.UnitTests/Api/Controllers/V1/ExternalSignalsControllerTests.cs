@@ -230,7 +230,7 @@ public sealed class ExternalSignalsControllerTests
         var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var response = ok.Value.Should().BeOfType<ExternalSignalCorrelationDetectionResponse>().Subject;
         response.Correlations.Should().ContainSingle(c => c.Id == correlation.Id);
-        _correlationCache.Verify(c => c.Store(It.Is<IEnumerable<ExternalSignalCorrelation>>(list => list.Contains(correlation))), Times.Once);
+        _correlationCache.Verify(c => c.StoreAsync(It.Is<IEnumerable<ExternalSignalCorrelation>>(list => list.Contains(correlation)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -266,7 +266,7 @@ public sealed class ExternalSignalsControllerTests
         var signal = CreateSignal(Namespace.SpaOwnerId, ns.Id);
         var correlation = CreateCorrelation(Namespace.SpaOwnerId, ns.Id, signal);
 
-        _correlationCache.Setup(c => c.TryGet(correlation.Id)).Returns(correlation);
+        _correlationCache.Setup(c => c.TryGetAsync(correlation.Id, It.IsAny<CancellationToken>())).ReturnsAsync(correlation);
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
@@ -281,7 +281,7 @@ public sealed class ExternalSignalsControllerTests
     public async Task GetCorrelationById_NotFound_ReturnsNotFound()
     {
         var id = Guid.NewGuid();
-        _correlationCache.Setup(c => c.TryGet(id)).Returns((ExternalSignalCorrelation?)null);
+        _correlationCache.Setup(c => c.TryGetAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync((ExternalSignalCorrelation?)null);
 
         var result = await _controller.GetCorrelationById(id);
 
@@ -295,7 +295,7 @@ public sealed class ExternalSignalsControllerTests
         var signal = CreateSignal("key_trueowner", namespaceId);
         var correlation = CreateCorrelation("key_trueowner", namespaceId, signal);
 
-        _correlationCache.Setup(c => c.TryGet(correlation.Id)).Returns(correlation);
+        _correlationCache.Setup(c => c.TryGetAsync(correlation.Id, It.IsAny<CancellationToken>())).ReturnsAsync(correlation);
         _namespaceRepository.Setup(r => r.GetByIdAsync(namespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(CreateTestNamespace(ownerId: "key_someoneelse")));
 

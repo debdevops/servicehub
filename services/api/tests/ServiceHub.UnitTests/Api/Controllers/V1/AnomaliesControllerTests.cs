@@ -101,7 +101,7 @@ public class AnomaliesControllerTests
         var response = okResult.Value.Should().BeOfType<AnomalyDetectionResponse>().Subject;
         response.Anomalies.Should().HaveCount(1);
         response.NamespaceId.Should().Be(ns.Id);
-        _resultCache.Verify(c => c.Store(It.Is<IEnumerable<Anomaly>>(a => a.Contains(anomaly))), Times.Once);
+        _resultCache.Verify(c => c.StoreAsync(It.IsAny<string>(), It.Is<IEnumerable<Anomaly>>(a => a.Contains(anomaly)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -152,7 +152,7 @@ public class AnomaliesControllerTests
         var result = await _controller.DetectAnomalies(ns.Id);
 
         result.Result.Should().NotBeOfType<OkObjectResult>();
-        _resultCache.Verify(c => c.Store(It.IsAny<IEnumerable<Anomaly>>()), Times.Never);
+        _resultCache.Verify(c => c.StoreAsync(It.IsAny<string>(), It.IsAny<IEnumerable<Anomaly>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion
@@ -169,7 +169,7 @@ public class AnomaliesControllerTests
             50,
             "Message volume anomaly");
 
-        _resultCache.Setup(c => c.TryGet(anomaly.Id)).Returns(anomaly);
+        _resultCache.Setup(c => c.TryGetAsync(anomaly.Id, It.IsAny<CancellationToken>())).ReturnsAsync(anomaly);
         _namespaceRepository.Setup(r => r.GetByIdAsync(anomaly.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(CreateTestNamespace()));
 
@@ -195,7 +195,7 @@ public class AnomaliesControllerTests
             "Endpoint=sb://other.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
             ownerId: "key_othertenant").Value;
 
-        _resultCache.Setup(c => c.TryGet(anomaly.Id)).Returns(anomaly);
+        _resultCache.Setup(c => c.TryGetAsync(anomaly.Id, It.IsAny<CancellationToken>())).ReturnsAsync(anomaly);
         _namespaceRepository.Setup(r => r.GetByIdAsync(anomaly.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(foreignNamespace));
 
@@ -214,7 +214,7 @@ public class AnomaliesControllerTests
             50,
             "Message volume anomaly");
 
-        _resultCache.Setup(c => c.TryGet(anomaly.Id)).Returns(anomaly);
+        _resultCache.Setup(c => c.TryGetAsync(anomaly.Id, It.IsAny<CancellationToken>())).ReturnsAsync(anomaly);
         _namespaceRepository.Setup(r => r.GetByIdAsync(anomaly.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("NOT_FOUND", "Namespace not found")));
 
@@ -233,7 +233,7 @@ public class AnomaliesControllerTests
             50,
             "Message volume anomaly");
 
-        _resultCache.Setup(c => c.TryGet(anomaly.Id)).Returns(anomaly);
+        _resultCache.Setup(c => c.TryGetAsync(anomaly.Id, It.IsAny<CancellationToken>())).ReturnsAsync(anomaly);
         _namespaceRepository.Setup(r => r.GetByIdAsync(anomaly.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Failure(Error.Internal("DB_ERR", "Database unavailable")));
 
@@ -247,7 +247,7 @@ public class AnomaliesControllerTests
     public async Task GetById_NotFound_ShouldReturnNotFound()
     {
         var id = Guid.NewGuid();
-        _resultCache.Setup(c => c.TryGet(id)).Returns((Anomaly?)null);
+        _resultCache.Setup(c => c.TryGetAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync((Anomaly?)null);
 
         var result = await _controller.GetById(id);
 

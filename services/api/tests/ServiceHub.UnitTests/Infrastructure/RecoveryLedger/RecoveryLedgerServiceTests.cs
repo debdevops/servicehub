@@ -2450,6 +2450,7 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
             NamespaceId = namespaceId,
             OwnerId = OwnerA,
             SignatureHash = "sig-never-replayed",
+            HashKind = SignatureHashKind.Fingerprint,
             FirstSeenAt = DateTimeOffset.UtcNow.AddHours(-1),
             LastSeenAt = DateTimeOffset.UtcNow,
             OccurrenceCount = 1,
@@ -2499,5 +2500,160 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
         var provider = await _service.GetSignatureProviderAsync(OwnerA, signatureHash);
 
         provider.Should().Be(CloudProviderType.Gcp);
+    }
+
+    // ── Production elevations (ADR-0010 §Decision phase 2) ──────────────────
+
+    [Fact]
+    public async Task RequestProductionElevationAsync_EmptyReason_Fails()
+    {
+        var result = await _service.RequestProductionElevationAsync(
+            OwnerA, Guid.NewGuid(), "ns", Actor("requester@example.com"), "  ", TimeSpan.FromHours(1));
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RequestProductionElevationAsync_NonPositiveDuration_Fails()
+    {
+        var result = await _service.RequestProductionElevationAsync(
+            OwnerA, Guid.NewGuid(), "ns", Actor("requester@example.com"), "incident 123", TimeSpan.Zero);
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RequestProductionElevationAsync_Valid_IsPendingNotLive()
+    {
+        var namespaceId = Guid.NewGuid();
+        var result = await _service.RequestProductionElevationAsync(
+            OwnerA, namespaceId, "prod-orders", Actor("requester@example.com"), "incident 123", TimeSpan.FromHours(1));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ApprovedAt.Should().BeNull();
+        result.Value.IsLiveAt(DateTimeOffset.UtcNow).Should().BeFalse();
+
+        var live = await _service.GetLiveProductionElevationAsync(OwnerA, namespaceId);
+        live.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ApproveProductionElevationAsync_SelfApproval_IsForbidden()
+    {
+        var requester = Actor("requester@example.com");
+        var requestResult = await _service.RequestProductionElevationAsync(
+            OwnerA, Guid.NewGuid(), "ns", requester, "incident 123", TimeSpan.FromHours(1));
+
+        var approveResult = await _service.ApproveProductionElevationAsync(
+            requestResult.Value.Id, OwnerA, requester, CancellationToken.None);
+
+        approveResult.IsFailure.Should().BeTrue();
+        approveResult.Error.Type.Should().Be(ErrorType.Forbidden);
+    }
+
+    [Fact]
+    public async Task ApproveProductionElevationAsync_DistinctApprover_GoesLive()
+    {
+        var namespaceId = Guid.NewGuid();
+        var requestResult = await _service.RequestProductionElevationAsync(
+            OwnerA, namespaceId, "ns", Actor("requester@example.com"), "incident 123", TimeSpan.FromHours(1));
+
+        var approveResult = await _service.ApproveProductionElevationAsync(
+            requestResult.Value.Id, OwnerA, Actor("approver@example.com"), CancellationToken.None);
+
+        approveResult.IsSuccess.Should().BeTrue();
+        approveResult.Value.ApprovedByIdentity.Should().Be("approver@example.com");
+        approveResult.Value.ExpiresAt.Should().BeCloseTo(DateTimeOffset.UtcNow + TimeSpan.FromHours(1), TimeSpan.FromSeconds(5));
+
+        var live = await _service.GetLiveProductionElevationAsync(OwnerA, namespaceId);
+        live.Should().NotBeNull();
+        live!.Id.Should().Be(requestResult.Value.Id);
+    }
+
+    [Fact]
+    public async Task ApproveProductionElevationAsync_AlreadyApproved_Fails()
+    {
+        var requestResult = await _service.RequestProductionElevationAsync(
+            OwnerA, Guid.NewGuid(), "ns", Actor("requester@example.com"), "incident 123", TimeSpan.FromHours(1));
+        await _service.ApproveProductionElevationAsync(requestResult.Value.Id, OwnerA, Actor("approver@example.com"), CancellationToken.None);
+
+        var secondApprove = await _service.ApproveProductionElevationAsync(
+            requestResult.Value.Id, OwnerA, Actor("second-approver@example.com"), CancellationToken.None);
+
+        secondApprove.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RevokeProductionElevationAsync_LiveElevation_NoLongerLive()
+    {
+        var namespaceId = Guid.NewGuid();
+        var requestResult = await _service.RequestProductionElevationAsync(
+            OwnerA, namespaceId, "ns", Actor("requester@example.com"), "incident 123", TimeSpan.FromHours(1));
+        await _service.ApproveProductionElevationAsync(requestResult.Value.Id, OwnerA, Actor("approver@example.com"), CancellationToken.None);
+
+        var revokeResult = await _service.RevokeProductionElevationAsync(
+            requestResult.Value.Id, OwnerA, Actor("approver@example.com"), "no longer needed", CancellationToken.None);
+
+        revokeResult.IsSuccess.Should().BeTrue();
+        var live = await _service.GetLiveProductionElevationAsync(OwnerA, namespaceId);
+        live.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RevokeProductionElevationAsync_AlreadyRevoked_Fails()
+    {
+        var requestResult = await _service.RequestProductionElevationAsync(
+            OwnerA, Guid.NewGuid(), "ns", Actor("requester@example.com"), "incident 123", TimeSpan.FromHours(1));
+        await _service.RevokeProductionElevationAsync(requestResult.Value.Id, OwnerA, Actor("admin@example.com"), null, CancellationToken.None);
+
+        var secondRevoke = await _service.RevokeProductionElevationAsync(
+            requestResult.Value.Id, OwnerA, Actor("admin@example.com"), null, CancellationToken.None);
+
+        secondRevoke.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ProductionElevation_IsLiveAt_FalseOncePastExpiry()
+    {
+        var elevation = new ProductionElevation
+        {
+            OwnerId = OwnerA,
+            NamespaceId = Guid.NewGuid(),
+            Reason = "incident 123",
+            RequestedByIdentity = "requester@example.com",
+            RequestedAt = DateTimeOffset.UtcNow.AddHours(-2),
+            RequestedDuration = TimeSpan.FromHours(1),
+            ApprovedByIdentity = "approver@example.com",
+            ApprovedAt = DateTimeOffset.UtcNow.AddHours(-2),
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1),
+        };
+
+        elevation.IsLiveAt(DateTimeOffset.UtcNow).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetUnrecordedExpiredElevationsAsync_ThenRecordExpiry_IsIdempotent()
+    {
+        var namespaceId = Guid.NewGuid();
+        var requestResult = await _service.RequestProductionElevationAsync(
+            OwnerA, namespaceId, "ns", Actor("requester@example.com"), "incident 123", TimeSpan.FromMilliseconds(1));
+        var approveResult = await _service.ApproveProductionElevationAsync(
+            requestResult.Value.Id, OwnerA, Actor("approver@example.com"), CancellationToken.None);
+        approveResult.IsSuccess.Should().BeTrue();
+
+        // The 1ms duration has already lapsed by the time this runs.
+        var due = await _service.GetUnrecordedExpiredElevationsAsync(OwnerA);
+        due.Should().ContainSingle(e => e.Id == requestResult.Value.Id);
+
+        var firstRecord = await _service.RecordProductionElevationExpiryAsync(requestResult.Value.Id, OwnerA);
+        firstRecord.IsSuccess.Should().BeTrue();
+        firstRecord.Value.ExpiredEventRecorded.Should().BeTrue();
+
+        var dueAfter = await _service.GetUnrecordedExpiredElevationsAsync(OwnerA);
+        dueAfter.Should().BeEmpty();
+
+        // Idempotent: recording again is a no-op, not a duplicate event.
+        var secondRecord = await _service.RecordProductionElevationExpiryAsync(requestResult.Value.Id, OwnerA);
+        secondRecord.IsSuccess.Should().BeTrue();
     }
 }

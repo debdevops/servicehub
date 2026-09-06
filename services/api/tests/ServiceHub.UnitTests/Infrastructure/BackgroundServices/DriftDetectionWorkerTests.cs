@@ -143,7 +143,7 @@ public sealed class DriftDetectionWorkerTests
 
         await worker.RunDetectionCycleAsync(CancellationToken.None);
 
-        _cacheMock.Verify(c => c.Store(It.Is<IEnumerable<DriftFinding>>(f => f.Contains(finding))), Times.Once);
+        _cacheMock.Verify(c => c.StoreAsync(It.IsAny<string>(), It.Is<IEnumerable<DriftFinding>>(f => f.Contains(finding)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -160,7 +160,7 @@ public sealed class DriftDetectionWorkerTests
 
         await worker.RunDetectionCycleAsync(CancellationToken.None);
 
-        _cacheMock.Verify(c => c.Store(It.IsAny<IEnumerable<DriftFinding>>()), Times.Never);
+        _cacheMock.Verify(c => c.StoreAsync(It.IsAny<string>(), It.IsAny<IEnumerable<DriftFinding>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -186,7 +186,7 @@ public sealed class DriftDetectionWorkerTests
 
         await worker.RunDetectionCycleAsync(CancellationToken.None);
 
-        _cacheMock.Verify(c => c.Store(It.Is<IEnumerable<DriftFinding>>(f => f.Contains(finding))), Times.Once);
+        _cacheMock.Verify(c => c.StoreAsync(It.IsAny<string>(), It.Is<IEnumerable<DriftFinding>>(f => f.Contains(finding)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ── Roadmap §5, I5 — Push ────────────────────────────────────────

@@ -226,6 +226,29 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            // ADR-0010 §Decision's M2.4 hard ceiling: no promotion evaluation runs for a Prod
+            // signature, ever, under any configuration. A pre-existing grant above the L3 floor
+            // (only reachable if a namespace was relabelled to Prod after already earning one) is
+            // demoted back to the floor rather than left standing, since a grant above L3 for a
+            // Prod signature would misrepresent the ceiling this ADR fixes.
+            var signatureEnvironment = await recoveryLedger.GetSignatureEnvironmentAsync(
+                ownerId, signatureHash, cancellationToken);
+            if (signatureEnvironment == EnvironmentType.Prod)
+            {
+                var prodGrant = await recoveryLedger.GetAutonomyGrantAsync(
+                    ownerId, signatureHash, RecoveryOperationKind.Replay, cancellationToken);
+                if (prodGrant is { CurrentLevel: > AutonomyLevel.Approve })
+                {
+                    await recoveryLedger.RecordAutonomyGrantTransitionAsync(
+                        ownerId, signatureHash, RecoveryOperationKind.Replay,
+                        prodGrant.CurrentLevel, AutonomyLevel.Approve,
+                        "Production ceiling (ADR-0010): no autonomy above L3 in Prod, under any configuration.",
+                        evidenceJson: null, cancellationToken);
+                }
+
+                continue;
+            }
+
             var result = await trustScoring.EvaluateAsync(
                 ownerId, signatureHash, RecoveryOperationKind.Replay, cancellationToken);
 
@@ -254,7 +277,9 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
             var currentLevel = currentGrant?.CurrentLevel ?? AutonomyLevel.Approve;
 
             var provider = await recoveryLedger.GetSignatureProviderAsync(ownerId, signatureHash, cancellationToken);
-            var canProveDlqAbsence = GetCapabilities(provider).CanProveDlqAbsence;
+            var attestationService = services.GetService<IDlqObserverAttestationService>();
+            var canProveDlqAbsence = (await GetCapabilitiesAsync(
+                recoveryLedger, attestationService, ownerId, signatureHash, provider, cancellationToken)).CanProveDlqAbsence;
 
             var transition = DetermineTransition(currentLevel, evidence, canProveDlqAbsence);
             if (transition is null)
@@ -500,13 +525,33 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
     }
 
     /// <summary>
-    /// Maps a signature's provider (roadmap §14) to its <see cref="ProviderCapabilities"/>.
-    /// <see langword="null"/> (no ledger entry has a <c>ProviderSnapshot</c> yet, e.g. a very old
-    /// record predating that column) fails closed to AWS's/GCP's non-verifying capabilities —
-    /// never Azure's — so an unresolvable provider can never itself justify an L4/L5 promotion.
+    /// Maps a signature's provider (roadmap §14) to its <see cref="ProviderCapabilities"/>, then —
+    /// ADR-004/ADR-0011 — overrides <c>CanProveDlqAbsence</c> to <see langword="true"/> when the
+    /// signature's namespace has a live DLQ observer attestation and the static default was
+    /// otherwise false. <see langword="null"/> provider (no ledger entry has a
+    /// <c>ProviderSnapshot</c> yet) fails closed to AWS's/GCP's non-verifying capabilities — never
+    /// Azure's — so an unresolvable provider can never itself justify an L4/L5 promotion, and a
+    /// signature with no resolvable namespace gets no attestation override either.
     /// </summary>
-    private static ProviderCapabilities GetCapabilities(CloudProviderType? provider) =>
-        ProviderCapabilities.For(provider ?? CloudProviderType.Aws);
+    private static async Task<ProviderCapabilities> GetCapabilitiesAsync(
+        IRecoveryLedger recoveryLedger, IDlqObserverAttestationService? attestationService,
+        string ownerId, string signatureHash, CloudProviderType? provider, CancellationToken cancellationToken)
+    {
+        var baseCapabilities = ProviderCapabilities.For(provider ?? CloudProviderType.Aws);
+        if (baseCapabilities.CanProveDlqAbsence || attestationService is null)
+        {
+            return baseCapabilities;
+        }
+
+        var namespaceId = await recoveryLedger.GetSignatureNamespaceIdAsync(ownerId, signatureHash, cancellationToken);
+        if (namespaceId is not { } nsId)
+        {
+            return baseCapabilities;
+        }
+
+        var attested = await attestationService.IsLiveAsync(ownerId, nsId, cancellationToken);
+        return attested ? baseCapabilities with { CanProveDlqAbsence = true } : baseCapabilities;
+    }
 
     private static string FormatPromotionReason(AutonomyLevel from, AutonomyLevel to, SignatureTrustEvidence evidence) =>
         $"Promoted {from}→{to}: n={evidence.SampleSize}, verified_success_rate={evidence.VerifiedSuccessRate:P0}, " +

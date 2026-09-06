@@ -173,7 +173,7 @@ public sealed class CorrelationDetectionWorker : BackgroundService
             return;
         }
 
-        resultCache.Store(findings);
+        await resultCache.StoreAsync(findings, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation(
             "Correlation detection cycle complete: {NamespaceCount} namespace(s) scanned, {FindingCount} correlation(s) found",

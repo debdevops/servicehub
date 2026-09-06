@@ -73,9 +73,13 @@ public sealed class AttentionQueueService : IAttentionQueueService
     {
         ArgumentException.ThrowIfNullOrEmpty(ownerId);
 
+        // Fingerprint-space only (M1.4, ADR-0009): the attention queue ranks incidents by trust
+        // fingerprint, the same identity AutonomyGrants key on. Without this filter, a cluster-
+        // space row for the same real failure (written by the DLQ Intelligence clustering path)
+        // would surface here as if it were an unrelated second incident.
         var signatures = await _dbContext.NamespaceSignatures
             .AsNoTracking()
-            .Where(s => s.OwnerId == ownerId)
+            .Where(s => s.OwnerId == ownerId && s.HashKind == SignatureHashKind.Fingerprint)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 

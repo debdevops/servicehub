@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Amazon;
+using Amazon.DynamoDBv2;
 using Amazon.Runtime;
 using Amazon.SQS;
 using Amazon.SimpleNotificationService;
@@ -29,6 +30,7 @@ public sealed class AwsClientFactory : IAwsClientFactory
     // Keyed by namespace ID for O(1) lookup without re-creating SDK clients per request.
     private readonly ConcurrentDictionary<Guid, IAmazonSQS> _sqsCache = new();
     private readonly ConcurrentDictionary<Guid, IAmazonSimpleNotificationService> _snsCache = new();
+    private readonly ConcurrentDictionary<Guid, IAmazonDynamoDB> _dynamoDbCache = new();
 
     /// <summary>
     /// Initialises a new instance of <see cref="AwsClientFactory"/>.
@@ -58,6 +60,13 @@ public sealed class AwsClientFactory : IAwsClientFactory
     }
 
     /// <inheritdoc/>
+    public IAmazonDynamoDB GetDynamoDbClient(Namespace ns)
+    {
+        ArgumentNullException.ThrowIfNull(ns);
+        return _dynamoDbCache.GetOrAdd(ns.Id, _ => CreateDynamoDbClient(ns));
+    }
+
+    /// <inheritdoc/>
     public void RemoveClient(Guid namespaceId)
     {
         if (_sqsCache.TryRemove(namespaceId, out var sqsClient))
@@ -70,6 +79,12 @@ public sealed class AwsClientFactory : IAwsClientFactory
         {
             _logger.LogInformation("Removing and disposing SNS client for namespace {NamespaceId}", namespaceId);
             snsClient.Dispose();
+        }
+
+        if (_dynamoDbCache.TryRemove(namespaceId, out var dynamoDbClient))
+        {
+            _logger.LogInformation("Removing and disposing DynamoDB client for namespace {NamespaceId}", namespaceId);
+            dynamoDbClient.Dispose();
         }
     }
 
@@ -89,6 +104,14 @@ public sealed class AwsClientFactory : IAwsClientFactory
         var credentials = ResolveCredentials(ns);
         _logger.LogDebug("Creating SNS client for namespace {NamespaceId} in region {Region}", ns.Id, region.SystemName);
         return new AmazonSimpleNotificationServiceClient(credentials, region);
+    }
+
+    private IAmazonDynamoDB CreateDynamoDbClient(Namespace ns)
+    {
+        var region = ResolveRegion(ns);
+        var credentials = ResolveCredentials(ns);
+        _logger.LogDebug("Creating DynamoDB client for namespace {NamespaceId} in region {Region}", ns.Id, region.SystemName);
+        return new AmazonDynamoDBClient(credentials, region);
     }
 
     private RegionEndpoint ResolveRegion(Namespace ns)

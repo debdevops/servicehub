@@ -194,7 +194,7 @@ public sealed class NarrationWorker : BackgroundService
             return;
         }
 
-        resultCache.Store(narrations);
+        await resultCache.StoreAsync(narrations, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation(
             "Narration cycle complete: {NamespaceCount} namespace(s) scanned, {NarrationCount} narration(s) generated",

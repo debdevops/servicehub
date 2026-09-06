@@ -112,7 +112,7 @@ public class DriftFindingsControllerTests
         var response = okResult.Value.Should().BeOfType<DriftDetectionResponse>().Subject;
         response.Findings.Should().HaveCount(1);
         response.NamespaceId.Should().Be(ns.Id);
-        _resultCache.Verify(c => c.Store(It.Is<IEnumerable<DriftFinding>>(f => f.Contains(finding))), Times.Once);
+        _resultCache.Verify(c => c.StoreAsync(It.IsAny<string>(), It.Is<IEnumerable<DriftFinding>>(f => f.Contains(finding)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -163,7 +163,7 @@ public class DriftFindingsControllerTests
         var result = await _controller.DetectDrift(ns.Id);
 
         result.Result.Should().NotBeOfType<OkObjectResult>();
-        _resultCache.Verify(c => c.Store(It.IsAny<IEnumerable<DriftFinding>>()), Times.Never);
+        _resultCache.Verify(c => c.StoreAsync(It.IsAny<string>(), It.IsAny<IEnumerable<DriftFinding>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion
@@ -278,7 +278,7 @@ public class DriftFindingsControllerTests
             50,
             "Payload format drift");
 
-        _resultCache.Setup(c => c.TryGet(finding.Id)).Returns(finding);
+        _resultCache.Setup(c => c.TryGetAsync(finding.Id, It.IsAny<CancellationToken>())).ReturnsAsync(finding);
         _namespaceRepository.Setup(r => r.GetByIdAsync(finding.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(CreateTestNamespace()));
 
@@ -307,7 +307,7 @@ public class DriftFindingsControllerTests
             ownerId: "key_trueowner").Value;
         sharedNamespace.ShareWith(ServiceHub.Core.Entities.Namespace.SpaOwnerId);
 
-        _resultCache.Setup(c => c.TryGet(finding.Id)).Returns(finding);
+        _resultCache.Setup(c => c.TryGetAsync(finding.Id, It.IsAny<CancellationToken>())).ReturnsAsync(finding);
         _namespaceRepository.Setup(r => r.GetByIdAsync(finding.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(sharedNamespace));
 
@@ -333,7 +333,7 @@ public class DriftFindingsControllerTests
             "Endpoint=sb://other.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
             ownerId: "key_othertenant").Value;
 
-        _resultCache.Setup(c => c.TryGet(finding.Id)).Returns(finding);
+        _resultCache.Setup(c => c.TryGetAsync(finding.Id, It.IsAny<CancellationToken>())).ReturnsAsync(finding);
         _namespaceRepository.Setup(r => r.GetByIdAsync(finding.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(foreignNamespace));
 
@@ -352,7 +352,7 @@ public class DriftFindingsControllerTests
             50,
             "Payload format drift");
 
-        _resultCache.Setup(c => c.TryGet(finding.Id)).Returns(finding);
+        _resultCache.Setup(c => c.TryGetAsync(finding.Id, It.IsAny<CancellationToken>())).ReturnsAsync(finding);
         _namespaceRepository.Setup(r => r.GetByIdAsync(finding.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("NOT_FOUND", "Namespace not found")));
 
@@ -371,7 +371,7 @@ public class DriftFindingsControllerTests
             50,
             "Payload format drift");
 
-        _resultCache.Setup(c => c.TryGet(finding.Id)).Returns(finding);
+        _resultCache.Setup(c => c.TryGetAsync(finding.Id, It.IsAny<CancellationToken>())).ReturnsAsync(finding);
         _namespaceRepository.Setup(r => r.GetByIdAsync(finding.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Failure(Error.Internal("DB_ERR", "Database unavailable")));
 
@@ -385,7 +385,7 @@ public class DriftFindingsControllerTests
     public async Task GetById_NotFound_ShouldReturnNotFound()
     {
         var id = Guid.NewGuid();
-        _resultCache.Setup(c => c.TryGet(id)).Returns((DriftFinding?)null);
+        _resultCache.Setup(c => c.TryGetAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync((DriftFinding?)null);
 
         var result = await _controller.GetById(id);
 

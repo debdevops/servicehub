@@ -184,6 +184,77 @@ FAIL — 1 finding(s):
 The script exits `0` on PASS, `1` on FAIL (naming every divergent `Seq`), and `2` if the input
 couldn't be parsed at all.
 
+### 3.3b The Playbook Ledger's independent chain and verifier
+
+The Recovery Evidence Ledger only ever covers the Recover pillar. `scripts/verify-playbook-chain.py`
+is the sibling verifier for the Playbook Ledger (roadmap next-chapter M1.3, ADR-0009) —
+Investigate, Correlate and Prevent's proposal-and-disposition record, a fully independent
+hash chain from the one this document describes (own `Seq` space, own genesis, own
+`PlaybookHashChain.ComputeEntryHash` algorithm — structurally identical to §3.2's, computed over a
+different field set). It is a separate script rather than a mode of this one deliberately: the two
+chains stay cryptographically and structurally separate on the server side, and a shared verifier
+would blur that.
+
+It performs every check §3.3a's tool does, against `GET /api/v1/playbook/export`'s bundle, **plus
+one this ledger's own evidence model requires and the Recovery ledger does not**: every
+`EvidenceRefJson` citation into a pillar finding (`AnomalyId`, `DriftFindingId`,
+`CorrelationFindingId`, `ExternalSignalCorrelationId` — the four fields the Investigate/Correlate
+detection workers and `PreventionRuleEvaluationService` write) must resolve inside the export's own
+`citedEvidence` section. A citation that doesn't is reported as **dangling** — the specific defect
+`PillarFindingRetentionWorker`'s citation exception exists to prevent, and this is how an auditor
+holding only the export would independently catch it if that exception were ever removed or broken.
+
+```
+python3 scripts/verify-playbook-chain.py playbook-evidence-<timestamp>.json
+```
+
+A healthy export reads:
+
+```
+PASS — 3 event(s) verified, 1 entrie(s), 1 cited finding(s) resolved, owner='acme-owner'.
+Seq 1-3 intact; no citation into a pillar finding dangles.
+```
+
+### 3.3c Epoch sealing and archival
+
+Append-only, hash-chained, one SQLite file, multi-year operation: unbounded growth with no legal
+way to prune — this is the specific problem epoch sealing (roadmap next-chapter M5.2) solves,
+**without adding a table and without weakening tamper-evidence.**
+
+**Sealing.** `POST /api/v1/recovery/epochs/seal` (admin scope + Admin Governance role) appends one
+`EpochSealed` event to the caller's chain — an ordinary event, hashed and chained exactly like any
+other (§3.2), with `DetailJson` carrying `{"epochNumber": N, "sealedThroughSeq": <Seq>}`.
+
+**Archiving.** Immediately after sealing, every event **strictly before** the new marker — which
+naturally includes any earlier seal marker too, now superseded — is:
+
+1. Verified in memory (§3.3), anchored at that range's own first event's actual `Seq`/`PrevHash`
+   rather than assuming genesis.
+2. Written to `<DlqDatabase:DataDirectory>/recovery-archive/<ownerId>/epoch-<N>.json` (configurable
+   via `RecoveryEpochArchive:ArchiveDirectory`) — a JSON document carrying `ownerId`, `epochNumber`,
+   `startSeq`, `startPrevHash`, `endSeq`, `terminalHash`, and the full `events` array in the same
+   shape `GET /api/v1/recovery/operations/{id}/export` uses.
+3. **Read back from disk and re-verified independently** before anything live is touched — a
+   written-but-corrupt archive aborts the whole operation with nothing deleted.
+4. Only then pruned from the live `RecoveryEvents` table via a raw parameterized `DELETE` — the one
+   deliberate, narrow exception to the append-only guard described in §8, safe specifically because
+   step 3 already proved the content survives, byte for byte, on disk first.
+
+**The seal marker itself is never archived** — it stays the sole live row for that owner until the
+*next* seal, so the live table's `GetNextSeqAndPrevHashAsync` continuation logic needs no special
+case: the next real event simply continues from the marker's own `Seq`/`EntryHash`, exactly as it
+would from any other event. Seal marker N+1's own `PrevHash` is therefore always the terminal hash
+of whatever was archived to make room for it — the anchor the roadmap calls "sealing, publishing
+the terminal hash, and anchoring the next epoch's genesis to it."
+
+**Verifying a sealed history.** `scripts/verify-recovery-chain.py --archive-dir <owner-dir>
+<current-export>` verifies every `epoch-*.json` archive in the directory (in epoch order), confirms
+each declares the correct `startSeq`/`startPrevHash`/`terminalHash` for its own first/last event, confirms
+consecutive archives chain `terminalHash` → `startPrevHash` with no `Seq` gap, and finally confirms
+the live export's own first event continues from the last archive's `terminalHash`. A single archive
+file also verifies standalone (it is a valid input to the plain, no-flag form of the script) — "a
+sealed epoch verifies from its archive alone."
+
 ## 4. What ServiceHub can and cannot prove
 
 Recovery verification depends on ServiceHub actually being able to observe the dead-letter queue
@@ -261,3 +332,12 @@ throws if it would delete or modify a `RecoveryOperation` or `RecoveryEvent` row
 `RecoveryLedgerEntry` field outside a small, explicitly-declared mutable set (state, verification
 result/confidence, observation window, marker, closed-at). There is no code path — controller,
 executor, or worker — that can construct a `RecoveryEvent` update or delete and have it commit.
+
+**The one deliberate exception:** `RecoveryEpochArchiveService` (§3.3c) prunes archived
+`RecoveryEvent` rows via a raw, parameterized SQL `DELETE` issued directly against the connection
+(`Database.ExecuteSqlInterpolatedAsync`), which never populates the EF `ChangeTracker` this guard
+inspects — the same mechanism `BackupRestoreVerificationTests`' own tamper test uses to simulate a
+raw on-disk edit, used here deliberately instead of adversarially. This is safe specifically because
+every pruned row's full content already survives, byte for byte, in an independently re-verified
+archive file on disk *before* the delete runs — never the reverse, and never for a row that hasn't
+been archived and re-verified first.

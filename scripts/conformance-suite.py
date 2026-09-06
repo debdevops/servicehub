@@ -73,10 +73,22 @@ class Report:
     def __init__(self):
         self.results = []
 
-    def check(self, provider, name, ok, detail):
+    def check(self, provider, name, ok, detail, trust_root=None):
+        """trust_root (ADR-004; ADR-0011; M3.3): which fact CanProveDlqAbsence actually rests on
+        for this provider right now — "provider-native" (a real, uncapped peek; Azure only),
+        "operator-attested" (a live, independently-verified DLQ observer; AWS/GCP once one is
+        deployed and its liveness canary has confirmed), or "none" (AWS/GCP with neither). Kept as
+        its own field, not folded into detail, so a reader — or a future automated check — can
+        tell "supported" apart from "supported, and here is whose infrastructure that rests on"
+        without parsing prose.
+        """
         status = "PASS" if ok else "FAIL"
-        self.results.append({"provider": provider, "assertion": name, "status": status, "detail": detail})
-        print(f"[{status}] {provider}: {name} — {detail}")
+        entry = {"provider": provider, "assertion": name, "status": status, "detail": detail}
+        if trust_root is not None:
+            entry["trustRoot"] = trust_root
+        self.results.append(entry)
+        suffix = f" [trustRoot={trust_root}]" if trust_root is not None else ""
+        print(f"[{status}] {provider}: {name} — {detail}{suffix}")
         return ok
 
     def skip(self, provider, name, detail):
@@ -251,6 +263,34 @@ def run_provider(report, provider, ns_id, entity, subscription, caps):
                      "DLQ background scan (negative — refused by default, DlqMonitor:AllowDestructivePeek off)",
                      code == 400 and isinstance(body, dict) and body.get("code") == "Dlq.NotMonitored",
                      f"HTTP {code}: {body}")
+
+    # --- CanProveDlqAbsence trust root (ADR-004; ADR-0011; M3.3) ---
+    # Azure's is a provider fact (uncapped peek) and always true. AWS/GCP's static default is
+    # false; it can only ever become true via a live, independently-verified DLQ observer
+    # attestation for THIS namespace — never a config flag. This assertion resolves and names
+    # which of the two is actually in force, rather than reporting one flattened PASS/FAIL column
+    # that can't distinguish "Amazon's own guarantee" from "infrastructure this operator stood up
+    # and this suite is trusting."
+    if caps["canProveDlqAbsence"]:
+        report.check(provider, "CanProveDlqAbsence", True,
+                     "true via the provider's own native capability (uncapped, non-destructive peek)",
+                     trust_root="provider-native")
+    else:
+        att_code, attestation = sh("GET", f"/api/v1/namespaces/{ns_id}/dlq-observer-attestation")
+        if att_code == 200 and isinstance(attestation, dict) and attestation.get("isLive"):
+            report.check(provider, "CanProveDlqAbsence", True,
+                         f"true via a live DLQ observer attestation confirmed {attestation.get('lastConfirmedAt')} "
+                         f"(observerReference={attestation.get('observerReference')})",
+                         trust_root="operator-attested")
+        elif att_code == 200 and isinstance(attestation, dict):
+            report.check(provider, "CanProveDlqAbsence (negative — attestation configured but not live)", True,
+                         f"false — attestation row exists but IsLive is false (stale, revoked, or never confirmed): {attestation}",
+                         trust_root="none")
+        else:
+            report.check(provider, "CanProveDlqAbsence (negative — no attestation configured)", True,
+                         f"false — no DLQ observer attestation configured for this namespace (HTTP {att_code}); "
+                         "capped at L3 (human-approved replay only)",
+                         trust_root="none")
 
 
 def cmd_run(args):

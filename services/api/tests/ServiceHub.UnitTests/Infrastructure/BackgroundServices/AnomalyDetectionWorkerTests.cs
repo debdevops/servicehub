@@ -137,7 +137,7 @@ public sealed class AnomalyDetectionWorkerTests
 
         await worker.RunDetectionCycleAsync(CancellationToken.None);
 
-        _cacheMock.Verify(c => c.Store(It.Is<IEnumerable<Anomaly>>(a => a.Contains(anomaly))), Times.Once);
+        _cacheMock.Verify(c => c.StoreAsync(It.IsAny<string>(), It.Is<IEnumerable<Anomaly>>(a => a.Contains(anomaly)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -154,7 +154,7 @@ public sealed class AnomalyDetectionWorkerTests
 
         await worker.RunDetectionCycleAsync(CancellationToken.None);
 
-        _cacheMock.Verify(c => c.Store(It.IsAny<IEnumerable<Anomaly>>()), Times.Never);
+        _cacheMock.Verify(c => c.StoreAsync(It.IsAny<string>(), It.IsAny<IEnumerable<Anomaly>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -180,7 +180,7 @@ public sealed class AnomalyDetectionWorkerTests
 
         await worker.RunDetectionCycleAsync(CancellationToken.None);
 
-        _cacheMock.Verify(c => c.Store(It.Is<IEnumerable<Anomaly>>(a => a.Contains(anomaly))), Times.Once);
+        _cacheMock.Verify(c => c.StoreAsync(It.IsAny<string>(), It.Is<IEnumerable<Anomaly>>(a => a.Contains(anomaly)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ── Roadmap §5, I5 — Push ────────────────────────────────────────

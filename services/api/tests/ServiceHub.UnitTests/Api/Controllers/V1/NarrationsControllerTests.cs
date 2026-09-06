@@ -119,7 +119,7 @@ public sealed class NarrationsControllerTests
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var response = okResult.Value.Should().BeOfType<NarrationGenerationResponse>().Subject;
         response.Narrations.Should().ContainSingle().Which.Id.Should().Be(narration.Id);
-        _resultCache.Verify(c => c.Store(It.Is<IEnumerable<Narration>>(n => n.Contains(narration))), Times.Once);
+        _resultCache.Verify(c => c.StoreAsync(It.Is<IEnumerable<Narration>>(n => n.Contains(narration)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -141,7 +141,7 @@ public sealed class NarrationsControllerTests
     public async Task GetById_NotFound_ReturnsNotFound()
     {
         var id = Guid.NewGuid();
-        _resultCache.Setup(c => c.TryGet(id)).Returns((Narration?)null);
+        _resultCache.Setup(c => c.TryGetAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync((Narration?)null);
 
         var result = await _controller.GetById(id);
 
@@ -154,7 +154,7 @@ public sealed class NarrationsControllerTests
         var ns = CreateTestNamespace();
         var narration = Narration.Create(NarrationKind.NamespaceActivity, ns.Id, [ns.Id], "headline", "summary", 70);
 
-        _resultCache.Setup(c => c.TryGet(narration.Id)).Returns(narration);
+        _resultCache.Setup(c => c.TryGetAsync(narration.Id, It.IsAny<CancellationToken>())).ReturnsAsync(narration);
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
@@ -182,7 +182,7 @@ public sealed class NarrationsControllerTests
             summary: "summary",
             severity: 80);
 
-        _resultCache.Setup(c => c.TryGet(narration.Id)).Returns(narration);
+        _resultCache.Setup(c => c.TryGetAsync(narration.Id, It.IsAny<CancellationToken>())).ReturnsAsync(narration);
         _namespaceRepository.Setup(r => r.GetByIdAsync(accessibleNs.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(accessibleNs));
         _namespaceRepository.Setup(r => r.GetByIdAsync(foreignNs.Id, It.IsAny<CancellationToken>()))

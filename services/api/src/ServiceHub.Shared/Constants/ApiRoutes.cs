@@ -668,4 +668,11 @@ public static class ApiRoutes
         /// <summary>Route for the ranked attention queue.</summary>
         public const string Base = $"{VersionedBase}/attention-queue";
     }
+
+    /// <summary>Routes for the DLQ observer attestation config (ADR-004; ADR-0011).</summary>
+    public static class DlqObserverAttestation
+    {
+        /// <summary>Base route for one namespace's attestation configuration/status.</summary>
+        public const string Base = $"{VersionedBase}/namespaces/{{namespaceId:guid}}/dlq-observer-attestation";
+    }
 }

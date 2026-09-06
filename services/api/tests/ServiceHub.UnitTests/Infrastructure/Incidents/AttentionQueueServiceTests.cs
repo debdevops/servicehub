@@ -124,6 +124,7 @@ public sealed class AttentionQueueServiceTests : IDisposable
             NamespaceId = namespaceId,
             OwnerId = OwnerId,
             SignatureHash = hash,
+            HashKind = SignatureHashKind.Fingerprint,
             FirstSeenAt = DateTimeOffset.UtcNow.AddDays(-10),
             LastSeenAt = lastSeenAt ?? DateTimeOffset.UtcNow,
             OccurrenceCount = occurrenceCount,

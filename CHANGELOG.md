@@ -2,13 +2,71 @@
 
 ## [Unreleased]
 
+## [4.0.0] — 2026-09-06
+
 Everything since v3.7.0: the four-pillar autonomy loop (Observe → Investigate → Correlate →
 Recover → Prove → Learn → Prevent), the persistence and security work that made its evidence
-durable, incident-centric navigation, per-identity governance, and an optional local reasoning
-companion. The headline is not a feature — it is that the top of the autonomy ladder stopped being
-a design claim: an L3→L4 promotion, an unattended autonomous replay, an L4→L3 demotion and a
-circuit-breaker trip have each now been observed end to end against real Azure Service Bus traffic,
-with independently verifiable evidence exports.
+durable, incident-centric navigation, per-identity governance, an optional local reasoning
+companion, and the next chapter that closed the autonomy target's three remaining qualifiers —
+evidence parity across all four pillars, production access earned the same way autonomy was, and
+the multi-cloud trust-root asymmetry — plus the operator-facing value and longevity work (outcome
+measurement, a smaller top-level nav, epoch sealing, and configuration as code). The headline is
+not a feature — it is that the top of the autonomy ladder stopped being a design claim: an L3→L4
+promotion, an unattended autonomous replay, an L4→L3 demotion and a circuit-breaker trip have each
+now been observed end to end against real Azure Service Bus traffic, with independently verifiable
+evidence exports — and that a v3.7 deployment can now upgrade in place into all of it with its
+hash chain intact, proven in CI rather than asserted.
+
+### Added — the next chapter (evidence parity, production, multi-cloud, value, longevity)
+
+- **Durable evidence for all four pillars, not just Recover.** `Anomaly`, `DriftFinding`,
+  `CorrelationFinding`, `Narration`, `BacklogForecast` and `ExternalSignalCorrelation` — previously
+  six process-local, 24-hour-TTL caches that lost every finding on restart — now persist to SQLite,
+  owner-partitioned, with a configurable retention sweep that never prunes a finding a Playbook
+  Ledger proposal still cites. A new owner-wide `GET /api/v1/playbook/export` and
+  `scripts/verify-playbook-chain.py` let an auditor resolve every cited finding from the export
+  alone, and fail loudly on a dangling citation. `NamespaceSignatures` also gained a `HashKind`
+  discriminator, splitting the trust-fingerprint and cluster-hash vocabularies that previously
+  shared one column with occurrence counts split between them — the pinned fingerprint-identity
+  regression every `AutonomyGrant` depends on stays unmodified and still passes.
+- **Production, earned the same way autonomy was.** A namespace can now be registered as `Prod` —
+  Investigate/Correlate/Prevent run against it fully. Every recovery verb still denies it unless a
+  time-boxed `ProductionElevation` is live: a stated reason, an absolute expiry, and dual control
+  (the requester and approver must be distinct identities; self-approval is refused outright,
+  independent of any role check). Autonomy stays hard-ceilinged at L0/L1 in production under every
+  configuration — no `AutonomyGrant` is ever issued against a Prod namespace, and a pre-existing
+  grant is demoted back to the floor the moment a signature resolves to one.
+- **The multi-cloud trust-root asymmetry, closed honestly.** An operator-provisioned, push-based DLQ
+  observer (Terraform modules for AWS Lambda+DynamoDB and GCP Cloud Function+Firestore) attests DLQ
+  absence for providers that cannot offer repeatable peek — a *different* trust root, not a relaxed
+  one. The attestation is its own capability with its own failure mode: a stale or missing observer
+  drives it false, never "assume fine." `docs/PROVIDER-CONFORMANCE.md` and
+  `scripts/conformance-suite.py` now name which trust root — provider-native or operator-attested —
+  each capability assertion actually rests on.
+- **Outcome measurement.** `GET /api/v1/recovery/outcomes` and a "This week" strip on Home report
+  what the fleet actually achieved — messages recovered, messages written off, median time to a
+  verified recovery, recoveries that needed no human approval, and gate refusals that stopped a bad
+  replay before any provider was contacted. Every figure is a count or duration traced directly to a
+  `RecoveryLedgerEntry`/`RecoveryEvent` row — never modelled, estimated, or extrapolated.
+- **A smaller top-level nav.** The Icon Rail — previously 23 always-visible icons — now shows the
+  five busiest destinations (Home, Incident Center, Namespace Overview, Approval Queue, Recovery
+  Evidence) plus a More button that opens the command palette. Nothing was removed: Quick Access
+  keeps its full grouped list and the command palette still reaches every destination.
+- **Epoch sealing.** `POST /api/v1/recovery/epochs/seal` closes an owner's current Recovery Evidence
+  Ledger epoch, archives every prior event to an independently-reverified file on disk, and prunes
+  those rows from the live table — bounding its growth for multi-year operation without weakening
+  tamper-evidence, since every pruned row's content survives, byte for byte, in the archive first.
+  `scripts/verify-recovery-chain.py --archive-dir` follows the anchor from a sealed history into the
+  live export, and a sealed epoch verifies from its archive file alone.
+- **Configuration as code.** `GET`/`POST /api/v1/governance/configuration/{export,import}`
+  round-trip `AutoReplayRule`s and active `GovernanceGrant`s as a JSON file meant for git and a pull
+  request — additive/upsert only, nothing is ever deleted by an import. Deliberately excludes a
+  namespace's connection string (a credential, never configuration) and `PreventionRule` (a
+  hash-chained Playbook Ledger claim, not configuration — importing one would fabricate evidence).
+- **A CI-proven upgrade path.** A new test stands up a database at the exact migration that shipped
+  in v3.7.0, seeds a real hash-chained ledger against that old schema, migrates it all the way to
+  HEAD, and asserts no data was lost and the chain still verifies — the gap between the released
+  product and the real one no longer includes an untested upgrade.
 
 ### Added
 

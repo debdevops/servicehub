@@ -264,6 +264,70 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
         decision.Verdict.Should().Be(EligibilityVerdict.Allow);
     }
 
+    [Fact]
+    public async Task ProductionEnvironment_UserWithLiveElevation_Allowed()
+    {
+        var requester = new RecoveryActor("requester@example.com", RecoveryActorKind.User);
+        var approver = new RecoveryActor("approver@example.com", RecoveryActorKind.User);
+        var requestResult = await _ledger.RequestProductionElevationAsync(
+            OwnerId, NamespaceId, "prod-ns", requester, "incident 123", TimeSpan.FromHours(1));
+        await _ledger.ApproveProductionElevationAsync(requestResult.Value.Id, OwnerId, approver, CancellationToken.None);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(environment: EnvironmentType.Prod));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Allow);
+    }
+
+    [Theory]
+    [InlineData(RecoveryActorKind.Automation)]
+    [InlineData(RecoveryActorKind.System)]
+    public async Task ProductionEnvironment_AutomationOrSystem_AlwaysDenied_EvenWithLiveElevation(RecoveryActorKind actorKind)
+    {
+        // ADR-0010 §Decision phase 2, M2.4 hard ceiling: no AutoReplayRule ever matches in
+        // production, elevation or not.
+        var requester = new RecoveryActor("requester@example.com", RecoveryActorKind.User);
+        var approver = new RecoveryActor("approver@example.com", RecoveryActorKind.User);
+        var requestResult = await _ledger.RequestProductionElevationAsync(
+            OwnerId, NamespaceId, "prod-ns", requester, "incident 123", TimeSpan.FromHours(1));
+        await _ledger.ApproveProductionElevationAsync(requestResult.Value.Id, OwnerId, approver, CancellationToken.None);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(environment: EnvironmentType.Prod, actorKind: actorKind));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Deny);
+        decision.ReasonCode.Should().Be("PRODUCTION_ELEVATION_REQUIRED");
+    }
+
+    [Fact]
+    public async Task ProductionEnvironment_UserWithRevokedElevation_Denied()
+    {
+        var requester = new RecoveryActor("requester@example.com", RecoveryActorKind.User);
+        var approver = new RecoveryActor("approver@example.com", RecoveryActorKind.User);
+        var requestResult = await _ledger.RequestProductionElevationAsync(
+            OwnerId, NamespaceId, "prod-ns", requester, "incident 123", TimeSpan.FromHours(1));
+        await _ledger.ApproveProductionElevationAsync(requestResult.Value.Id, OwnerId, approver, CancellationToken.None);
+        await _ledger.RevokeProductionElevationAsync(requestResult.Value.Id, OwnerId, approver, "mistake", CancellationToken.None);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(environment: EnvironmentType.Prod));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Deny);
+        decision.ReasonCode.Should().Be("PRODUCTION_ELEVATION_REQUIRED");
+    }
+
+    [Fact]
+    public async Task ProductionEnvironment_UserWithElevationForDifferentNamespace_Denied()
+    {
+        var requester = new RecoveryActor("requester@example.com", RecoveryActorKind.User);
+        var approver = new RecoveryActor("approver@example.com", RecoveryActorKind.User);
+        var requestResult = await _ledger.RequestProductionElevationAsync(
+            OwnerId, Guid.NewGuid(), "other-ns", requester, "incident 123", TimeSpan.FromHours(1));
+        await _ledger.ApproveProductionElevationAsync(requestResult.Value.Id, OwnerId, approver, CancellationToken.None);
+
+        var decision = await _gate.EvaluateAsync(BuildRequest(environment: EnvironmentType.Prod));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Deny);
+        decision.ReasonCode.Should().Be("PRODUCTION_ELEVATION_REQUIRED");
+    }
+
     // ── Predicate 3: recurrence cap (§7.5), actor-conditional per accepted Option B ─────────────
 
     [Theory]
@@ -517,6 +581,64 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
 
         var decision = await _gate.EvaluateAsync(BuildRequest(
             actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1", provider: null));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be(RecoveryEligibilityGate.ReasonProviderCannotVerifyAbsence);
+    }
+
+    // ── Predicate 5 + DLQ observer attestation override (ADR-004; ADR-0011) ─────
+
+    [Fact]
+    public async Task AutomationActor_GrantAtL4Standing_AwsWithLiveAttestation_Allowed()
+    {
+        await SeedGrantAsync("sig-1", AutonomyLevel.Standing);
+
+        var attestationService = new Mock<IDlqObserverAttestationService>();
+        attestationService
+            .Setup(s => s.IsLiveAsync(OwnerId, NamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var gateWithAttestation = new RecoveryEligibilityGate(
+            _ledger, NullLogger<RecoveryEligibilityGate>.Instance, metrics: null, attestationService.Object);
+
+        var decision = await gateWithAttestation.EvaluateAsync(BuildRequest(
+            actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1", provider: CloudProviderType.Aws));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Allow);
+    }
+
+    [Fact]
+    public async Task AutomationActor_GrantAtL4Standing_AwsWithNoLiveAttestation_StillEscalates()
+    {
+        await SeedGrantAsync("sig-1", AutonomyLevel.Standing);
+
+        var attestationService = new Mock<IDlqObserverAttestationService>();
+        attestationService
+            .Setup(s => s.IsLiveAsync(OwnerId, NamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        var gateWithAttestation = new RecoveryEligibilityGate(
+            _ledger, NullLogger<RecoveryEligibilityGate>.Instance, metrics: null, attestationService.Object);
+
+        var decision = await gateWithAttestation.EvaluateAsync(BuildRequest(
+            actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1", provider: CloudProviderType.Aws));
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
+        decision.ReasonCode.Should().Be(RecoveryEligibilityGate.ReasonProviderCannotVerifyAbsence);
+    }
+
+    [Fact]
+    public async Task AutomationActor_GrantAtL4Standing_AttestationQueryThrows_FailsClosedToEscalate()
+    {
+        await SeedGrantAsync("sig-1", AutonomyLevel.Standing);
+
+        var attestationService = new Mock<IDlqObserverAttestationService>();
+        attestationService
+            .Setup(s => s.IsLiveAsync(OwnerId, NamespaceId, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+        var gateWithAttestation = new RecoveryEligibilityGate(
+            _ledger, NullLogger<RecoveryEligibilityGate>.Instance, metrics: null, attestationService.Object);
+
+        var decision = await gateWithAttestation.EvaluateAsync(BuildRequest(
+            actorKind: RecoveryActorKind.Automation, signatureHash: "sig-1", provider: CloudProviderType.Aws));
 
         decision.Verdict.Should().Be(EligibilityVerdict.Escalate);
         decision.ReasonCode.Should().Be(RecoveryEligibilityGate.ReasonProviderCannotVerifyAbsence);

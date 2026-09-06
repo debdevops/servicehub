@@ -3,7 +3,9 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Controllers.V1;
@@ -31,8 +33,10 @@ public sealed class RecoveryControllerTests : IDisposable
     private readonly IRecoveryTrustScoringService _trustScoring;
     private readonly IApprovalQueueService _approvalQueue;
     private readonly IAutonomyDashboardService _autonomyDashboard;
+    private readonly IOutcomeMetricsService _outcomeMetrics;
     private readonly Mock<IGovernanceAccessEvaluator> _governanceAccessEvaluator = new();
     private readonly IRecoveryRehearsalService _rehearsalService;
+    private readonly IRecoveryEpochArchiveService _epochArchiveService;
     private readonly RecoveryController _controller;
 
     public RecoveryControllerTests()
@@ -49,8 +53,13 @@ public sealed class RecoveryControllerTests : IDisposable
         _trustScoring = new RecoveryTrustScoringService(_recoveryLedger);
         _approvalQueue = new ApprovalQueueService(_dbContext);
         _autonomyDashboard = new AutonomyDashboardService(_recoveryLedger, _dbContext);
+        _outcomeMetrics = new OutcomeMetricsService(_dbContext);
         var eligibilityGate = new RecoveryEligibilityGate(_recoveryLedger, NullLogger<RecoveryEligibilityGate>.Instance);
         _rehearsalService = new RecoveryRehearsalService(_recoveryLedger, eligibilityGate);
+        _epochArchiveService = new RecoveryEpochArchiveService(
+            _recoveryLedger, _dbContext, new ConfigurationBuilder().Build(),
+            Options.Create(new RecoveryEpochArchiveOptions { ArchiveDirectory = Path.Combine(Path.GetTempPath(), $"servicehub-epoch-archive-tests-{Guid.NewGuid():N}") }),
+            NullLogger<RecoveryEpochArchiveService>.Instance);
 
         _governanceAccessEvaluator
             .Setup(e => e.EvaluateAsync(
@@ -63,7 +72,7 @@ public sealed class RecoveryControllerTests : IDisposable
 
     private RecoveryController CreateController(string ownerId) => new(
         _recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard,
-        _governanceAccessEvaluator.Object, _rehearsalService)
+        _outcomeMetrics, _governanceAccessEvaluator.Object, _rehearsalService, _epochArchiveService)
     {
         ControllerContext = new ControllerContext
         {
@@ -104,50 +113,64 @@ public sealed class RecoveryControllerTests : IDisposable
     [Fact]
     public void Constructor_NullRecoveryLedger_Throws()
     {
-        var act = () => new RecoveryController(null!, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, _governanceAccessEvaluator.Object, _rehearsalService);
+        var act = () => new RecoveryController(null!, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, _outcomeMetrics, _governanceAccessEvaluator.Object, _rehearsalService, _epochArchiveService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("recoveryLedger");
     }
 
     [Fact]
     public void Constructor_NullEvidenceExporter_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, null!, _trustScoring, _approvalQueue, _autonomyDashboard, _governanceAccessEvaluator.Object, _rehearsalService);
+        var act = () => new RecoveryController(_recoveryLedger, null!, _trustScoring, _approvalQueue, _autonomyDashboard, _outcomeMetrics, _governanceAccessEvaluator.Object, _rehearsalService, _epochArchiveService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("evidenceExporter");
     }
 
     [Fact]
     public void Constructor_NullTrustScoring_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, null!, _approvalQueue, _autonomyDashboard, _governanceAccessEvaluator.Object, _rehearsalService);
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, null!, _approvalQueue, _autonomyDashboard, _outcomeMetrics, _governanceAccessEvaluator.Object, _rehearsalService, _epochArchiveService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("trustScoring");
     }
 
     [Fact]
     public void Constructor_NullApprovalQueue_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, null!, _autonomyDashboard, _governanceAccessEvaluator.Object, _rehearsalService);
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, null!, _autonomyDashboard, _outcomeMetrics, _governanceAccessEvaluator.Object, _rehearsalService, _epochArchiveService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("approvalQueue");
     }
 
     [Fact]
     public void Constructor_NullAutonomyDashboard_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, null!, _governanceAccessEvaluator.Object, _rehearsalService);
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, null!, _outcomeMetrics, _governanceAccessEvaluator.Object, _rehearsalService, _epochArchiveService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("autonomyDashboard");
+    }
+
+    [Fact]
+    public void Constructor_NullOutcomeMetrics_Throws()
+    {
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, null!, _governanceAccessEvaluator.Object, _rehearsalService, _epochArchiveService);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("outcomeMetrics");
     }
 
     [Fact]
     public void Constructor_NullGovernanceAccessEvaluator_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, null!, _rehearsalService);
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, _outcomeMetrics, null!, _rehearsalService, _epochArchiveService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("governanceAccessEvaluator");
     }
 
     [Fact]
     public void Constructor_NullRehearsalService_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, _governanceAccessEvaluator.Object, null!);
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, _outcomeMetrics, _governanceAccessEvaluator.Object, null!, _epochArchiveService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("rehearsalService");
+    }
+
+    [Fact]
+    public void Constructor_NullEpochArchiveService_Throws()
+    {
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, _outcomeMetrics, _governanceAccessEvaluator.Object, _rehearsalService, null!);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("epochArchiveService");
     }
 
     [Fact]
@@ -939,5 +962,63 @@ public sealed class RecoveryControllerTests : IDisposable
         var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var overview = ok.Value.Should().BeOfType<AutonomyDashboardOverview>().Subject;
         overview.Grants.Should().ContainSingle().Which.SignatureHash.Should().Be("sig-dashboard-a");
+    }
+
+    [Fact]
+    public async Task GetOutcomes_NoDataForOwner_ReturnsZeroedSnapshot()
+    {
+        var result = await _controller.GetOutcomes();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var overview = ok.Value.Should().BeOfType<OutcomeMetricsOverview>().Subject;
+        overview.MessagesRecovered.Should().Be(0);
+        overview.MessagesAbandoned.Should().Be(0);
+        overview.GateRefusals.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(365, 90)]
+    public async Task GetOutcomes_ClampsDaysToOneThroughNinety(int requestedDays, int expectedClampedDays)
+    {
+        var result = await _controller.GetOutcomes(requestedDays);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var overview = ok.Value.Should().BeOfType<OutcomeMetricsOverview>().Subject;
+        (overview.WindowEndUtc - overview.WindowStartUtc).TotalDays.Should().BeApproximately(expectedClampedDays, 0.01);
+    }
+
+    // ── Epoch sealing (roadmap next-chapter M5.2) ────────────────────────────
+
+    [Fact]
+    public void SealEpoch_RequiresAdminScope()
+    {
+        typeof(RecoveryController)
+            .GetMethod(nameof(RecoveryController.SealEpoch))!
+            .GetCustomAttributes(typeof(RequireScopeAttribute), inherit: true)
+            .Cast<RequireScopeAttribute>()
+            .Single().Scope.Should().Be(ApiKeyScopes.Admin);
+    }
+
+    [Fact]
+    public async Task SealEpoch_NothingToSeal_ReturnsConflict()
+    {
+        var result = await _controller.SealEpoch();
+
+        result.Result.Should().BeOfType<ConflictObjectResult>();
+    }
+
+    [Fact]
+    public async Task SealEpoch_ArchivesPriorEventsAndReturnsSummary()
+    {
+        await OpenOperationAsync(OwnerA);
+
+        var result = await _controller.SealEpoch();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var summary = ok.Value.Should().BeOfType<RecoveryEpochSealSummary>().Subject;
+        summary.EpochNumber.Should().Be(1);
+        summary.ArchivedEventCount.Should().BeGreaterThan(0);
+        File.Exists(summary.ArchiveFilePath).Should().BeTrue();
     }
 }

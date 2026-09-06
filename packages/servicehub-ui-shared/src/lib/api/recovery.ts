@@ -213,6 +213,22 @@ export interface AutonomyDashboardOverview {
   recentTransitions: AutonomyTransitionSummary[];
 }
 
+/**
+ * Mirrors ServiceHub.Core.Interfaces.OutcomeMetricsOverview — what the fleet actually achieved
+ * over a trailing window (roadmap next-chapter M4.1), never how autonomous it is. Every field
+ * traces to a specific RecoveryLedgerEntry/RecoveryEvent row; none is modelled or estimated.
+ */
+export interface OutcomeMetricsOverview {
+  generatedAt: string;
+  windowStartUtc: string;
+  windowEndUtc: string;
+  messagesRecovered: number;
+  messagesAbandoned: number;
+  medianSecondsToVerifiedRecovery: number | null;
+  autonomousRecoveries: number;
+  gateRefusals: number;
+}
+
 // The verification-limitation sentence every surface rendering a verification result must show
 // verbatim (roadmap §13.4) — ServiceHub observes the queue, never the consumer.
 export const RECOVERY_LIMITATION_SENTENCE =
@@ -453,6 +469,13 @@ export const recoveryApi = {
 
   getAutonomyDashboard: async (): Promise<AutonomyDashboardOverview> => {
     const response = await apiClient.get<AutonomyDashboardOverview>('/recovery/autonomy-dashboard');
+    return response.data;
+  },
+
+  getOutcomes: async (days = 7): Promise<OutcomeMetricsOverview> => {
+    const response = await apiClient.get<OutcomeMetricsOverview>('/recovery/outcomes', {
+      params: { days },
+    });
     return response.data;
   },
 

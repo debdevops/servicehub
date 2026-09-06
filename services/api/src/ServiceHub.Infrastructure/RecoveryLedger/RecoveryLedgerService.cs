@@ -862,6 +862,64 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     }
 
     /// <inheritdoc />
+    public async Task<EnvironmentType?> GetSignatureEnvironmentAsync(
+        string ownerId, string signatureHash, CancellationToken cancellationToken = default)
+    {
+        var fromLedger = await _dbContext.RecoveryLedgerEntries
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId
+                        && e.SignatureHashSnapshot == signatureHash
+                        && e.EnvironmentSnapshot != null)
+            .Select(e => e.EnvironmentSnapshot)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (fromLedger is not null || _namespaceRepository is null)
+        {
+            return fromLedger;
+        }
+
+        var namespaceId = await _dbContext.NamespaceSignatures
+            .AsNoTracking()
+            .Where(s => s.OwnerId == ownerId && s.SignatureHash == signatureHash)
+            .OrderByDescending(s => s.LastSeenAt)
+            .Select(s => (Guid?)s.NamespaceId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (namespaceId is null)
+        {
+            return null;
+        }
+
+        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId.Value, cancellationToken);
+        return namespaceResult.IsSuccess ? namespaceResult.Value.Environment : null;
+    }
+
+    /// <inheritdoc />
+    public async Task<Guid?> GetSignatureNamespaceIdAsync(
+        string ownerId, string signatureHash, CancellationToken cancellationToken = default)
+    {
+        var fromLedger = await _dbContext.RecoveryLedgerEntries
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId
+                        && e.SignatureHashSnapshot == signatureHash
+                        && e.NamespaceId != null)
+            .Select(e => e.NamespaceId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (fromLedger is not null)
+        {
+            return fromLedger;
+        }
+
+        return await _dbContext.NamespaceSignatures
+            .AsNoTracking()
+            .Where(s => s.OwnerId == ownerId && s.SignatureHash == signatureHash)
+            .OrderByDescending(s => s.LastSeenAt)
+            .Select(s => (Guid?)s.NamespaceId)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<RecoveryDisposition>> GetRecentVerifiedDispositionsAsync(
         string ownerId, string signatureHash, RecoveryOperationKind actionKind, int count,
         CancellationToken cancellationToken = default)
@@ -1160,6 +1218,381 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         return Result<RecoveryOperation>.Success(operation);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<ProductionElevation>> RequestProductionElevationAsync(
+        string ownerId, Guid namespaceId, string? namespaceNameSnapshot, RecoveryActor actor,
+        string reason, TimeSpan duration, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return Result<ProductionElevation>.Failure(Error.Validation(
+                "RecoveryLedger.ProductionElevationReasonRequired",
+                "A reason is required to request production access."));
+        }
+
+        if (duration <= TimeSpan.Zero)
+        {
+            return Result<ProductionElevation>.Failure(Error.Validation(
+                "RecoveryLedger.ProductionElevationDurationInvalid",
+                "Requested duration must be positive."));
+        }
+
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+
+        var now = DateTimeOffset.UtcNow;
+        var elevation = new ProductionElevation
+        {
+            OwnerId = ownerId,
+            NamespaceId = namespaceId,
+            NamespaceNameSnapshot = namespaceNameSnapshot,
+            Reason = reason,
+            RequestedByIdentity = actor.Identity,
+            RequestedAt = now,
+            RequestedDuration = duration,
+        };
+        _dbContext.ProductionElevations.Add(elevation);
+
+        var operation = new RecoveryOperation
+        {
+            OwnerId = ownerId,
+            Kind = RecoveryOperationKind.ProductionElevationControl,
+            Trigger = RecoveryTrigger.ProductionElevationControl,
+            ActorIdentity = actor.Identity,
+            ActorKind = actor.Kind,
+            ActorScopes = actor.Scopes,
+            Reason = reason,
+            NamespaceId = namespaceId,
+            NamespaceNameSnapshot = namespaceNameSnapshot,
+            ScopeDescription = $"production-elevation=request; namespace={namespaceId}; duration={duration}",
+            ServiceVersion = GetServiceVersion(),
+            OpenedAt = now,
+            TargetCount = 0,
+        };
+        _dbContext.RecoveryOperations.Add(operation);
+
+        var detail = JsonSerializer.Serialize(new
+        {
+            namespaceId,
+            reason,
+            requestedDuration = duration.ToString(),
+        });
+
+        await AppendEventAsync(
+            ownerId, entryId: null, operation.Id, RecoveryEventType.ProductionElevationRequested,
+            actor, detail, cancellationToken);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return Result<ProductionElevation>.Success(elevation);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<ProductionElevation>> ApproveProductionElevationAsync(
+        Guid elevationId, string ownerId, RecoveryActor actor, CancellationToken cancellationToken = default)
+    {
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+
+        var elevation = await _dbContext.ProductionElevations
+            .FirstOrDefaultAsync(e => e.Id == elevationId, cancellationToken);
+
+        if (elevation is null || elevation.OwnerId != ownerId)
+        {
+            return Result<ProductionElevation>.Failure(Error.NotFound(
+                "RecoveryLedger.ProductionElevationNotFound", "Production elevation not found."));
+        }
+
+        if (elevation.RevokedAt is not null)
+        {
+            return Result<ProductionElevation>.Failure(Error.Conflict(
+                "RecoveryLedger.ProductionElevationRevoked", "This elevation has already been revoked."));
+        }
+
+        if (elevation.ApprovedAt is not null)
+        {
+            return Result<ProductionElevation>.Failure(Error.Conflict(
+                "RecoveryLedger.ProductionElevationAlreadyApproved", "This elevation has already been approved."));
+        }
+
+        // Dual control admits no self-approval, including for Admin — enforced here regardless of
+        // what the caller's own governance check already found (ADR-0010 §Decision).
+        if (string.Equals(actor.Identity, elevation.RequestedByIdentity, StringComparison.Ordinal))
+        {
+            return Result<ProductionElevation>.Failure(Error.Forbidden(
+                "RecoveryLedger.ProductionElevationSelfApprovalForbidden",
+                "The identity that requested a production elevation cannot approve it."));
+        }
+
+        var now = DateTimeOffset.UtcNow;
+
+        elevation.ApprovedByIdentity = actor.Identity;
+        elevation.ApprovedAt = now;
+        elevation.ExpiresAt = now + elevation.RequestedDuration;
+
+        var operation = new RecoveryOperation
+        {
+            OwnerId = ownerId,
+            Kind = RecoveryOperationKind.ProductionElevationControl,
+            Trigger = RecoveryTrigger.ProductionElevationControl,
+            ActorIdentity = actor.Identity,
+            ActorKind = actor.Kind,
+            ActorScopes = actor.Scopes,
+            NamespaceId = elevation.NamespaceId,
+            NamespaceNameSnapshot = elevation.NamespaceNameSnapshot,
+            ScopeDescription = $"production-elevation=approve; namespace={elevation.NamespaceId}; expiresAt={elevation.ExpiresAt:O}",
+            ServiceVersion = GetServiceVersion(),
+            OpenedAt = now,
+            TargetCount = 0,
+        };
+        _dbContext.RecoveryOperations.Add(operation);
+
+        var detail = JsonSerializer.Serialize(new
+        {
+            elevationId = elevation.Id,
+            namespaceId = elevation.NamespaceId,
+            requestedByIdentity = elevation.RequestedByIdentity,
+            approvedByIdentity = actor.Identity,
+            expiresAt = elevation.ExpiresAt,
+        });
+
+        await AppendEventAsync(
+            ownerId, entryId: null, operation.Id, RecoveryEventType.ProductionElevationApproved,
+            actor, detail, cancellationToken);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return Result<ProductionElevation>.Success(elevation);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<ProductionElevation>> RevokeProductionElevationAsync(
+        Guid elevationId, string ownerId, RecoveryActor actor, string? reason,
+        CancellationToken cancellationToken = default)
+    {
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+
+        var elevation = await _dbContext.ProductionElevations
+            .FirstOrDefaultAsync(e => e.Id == elevationId, cancellationToken);
+
+        if (elevation is null || elevation.OwnerId != ownerId)
+        {
+            return Result<ProductionElevation>.Failure(Error.NotFound(
+                "RecoveryLedger.ProductionElevationNotFound", "Production elevation not found."));
+        }
+
+        if (elevation.RevokedAt is not null)
+        {
+            return Result<ProductionElevation>.Failure(Error.Conflict(
+                "RecoveryLedger.ProductionElevationRevoked", "This elevation has already been revoked."));
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        elevation.RevokedAt = now;
+        elevation.RevokedByIdentity = actor.Identity;
+
+        var operation = new RecoveryOperation
+        {
+            OwnerId = ownerId,
+            Kind = RecoveryOperationKind.ProductionElevationControl,
+            Trigger = RecoveryTrigger.ProductionElevationControl,
+            ActorIdentity = actor.Identity,
+            ActorKind = actor.Kind,
+            ActorScopes = actor.Scopes,
+            Reason = reason,
+            NamespaceId = elevation.NamespaceId,
+            NamespaceNameSnapshot = elevation.NamespaceNameSnapshot,
+            ScopeDescription = $"production-elevation=revoke; namespace={elevation.NamespaceId}",
+            ServiceVersion = GetServiceVersion(),
+            OpenedAt = now,
+            TargetCount = 0,
+        };
+        _dbContext.RecoveryOperations.Add(operation);
+
+        var detail = JsonSerializer.Serialize(new
+        {
+            elevationId = elevation.Id,
+            namespaceId = elevation.NamespaceId,
+            revokedByIdentity = actor.Identity,
+            reason,
+        });
+
+        await AppendEventAsync(
+            ownerId, entryId: null, operation.Id, RecoveryEventType.ProductionElevationRevoked,
+            actor, detail, cancellationToken);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return Result<ProductionElevation>.Success(elevation);
+    }
+
+    /// <inheritdoc />
+    public Task<ProductionElevation?> GetLiveProductionElevationAsync(
+        string ownerId, Guid namespaceId, CancellationToken cancellationToken = default) =>
+        ProductionElevationQueries.GetLiveAsync(_dbContext, ownerId, namespaceId, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<ProductionElevation>> GetUnrecordedExpiredElevationsAsync(
+        string ownerId, CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return await _dbContext.ProductionElevations
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId
+                && e.ApprovedAt != null
+                && e.RevokedAt == null
+                && !e.ExpiredEventRecorded
+                && e.ExpiresAt != null && e.ExpiresAt <= now)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<ProductionElevation>> RecordProductionElevationExpiryAsync(
+        Guid elevationId, string ownerId, CancellationToken cancellationToken = default)
+    {
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+
+        var elevation = await _dbContext.ProductionElevations
+            .FirstOrDefaultAsync(e => e.Id == elevationId, cancellationToken);
+
+        if (elevation is null || elevation.OwnerId != ownerId)
+        {
+            return Result<ProductionElevation>.Failure(Error.NotFound(
+                "RecoveryLedger.ProductionElevationNotFound", "Production elevation not found."));
+        }
+
+        if (elevation.ExpiredEventRecorded)
+        {
+            return Result<ProductionElevation>.Success(elevation);
+        }
+
+        elevation.ExpiredEventRecorded = true;
+
+        var actor = ActorIdentityResolver.ResolveSystemActor("ProductionElevationExpiryWorker");
+        var now = DateTimeOffset.UtcNow;
+        var operation = new RecoveryOperation
+        {
+            OwnerId = ownerId,
+            Kind = RecoveryOperationKind.ProductionElevationControl,
+            Trigger = RecoveryTrigger.ProductionElevationControl,
+            ActorIdentity = actor.Identity,
+            ActorKind = actor.Kind,
+            ActorScopes = actor.Scopes,
+            NamespaceId = elevation.NamespaceId,
+            NamespaceNameSnapshot = elevation.NamespaceNameSnapshot,
+            ScopeDescription = $"production-elevation=expire; namespace={elevation.NamespaceId}",
+            ServiceVersion = GetServiceVersion(),
+            OpenedAt = now,
+            TargetCount = 0,
+        };
+        _dbContext.RecoveryOperations.Add(operation);
+
+        var detail = JsonSerializer.Serialize(new
+        {
+            elevationId = elevation.Id,
+            namespaceId = elevation.NamespaceId,
+            expiresAt = elevation.ExpiresAt,
+        });
+
+        await AppendEventAsync(
+            ownerId, entryId: null, operation.Id, RecoveryEventType.ProductionElevationExpired,
+            actor, detail, cancellationToken);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return Result<ProductionElevation>.Success(elevation);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<ProductionElevation>> QueryProductionElevationsAsync(
+        string ownerId, Guid? namespaceId, int limit, CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.ProductionElevations
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId);
+
+        if (namespaceId is { } nsId)
+        {
+            query = query.Where(e => e.NamespaceId == nsId);
+        }
+
+        return await query
+            .OrderByDescending(e => e.RequestedAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<RecoveryEvent>> SealEpochAsync(
+        string ownerId, RecoveryActor actor, CancellationToken cancellationToken = default)
+    {
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+
+        var lastEvent = await _dbContext.RecoveryEvents
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId)
+            .OrderByDescending(e => e.Seq)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (lastEvent is null)
+        {
+            return Result<RecoveryEvent>.Failure(Error.Conflict(
+                "RecoveryLedger.EpochSealNothingToSeal",
+                "There is no recovery event for this owner to seal."));
+        }
+
+        var previousEpochNumber = 0;
+        if (lastEvent.EventType == RecoveryEventType.EpochSealed)
+        {
+            if (lastEvent.DetailJson is not null)
+            {
+                using var previousDetail = JsonDocument.Parse(lastEvent.DetailJson);
+                if (previousDetail.RootElement.TryGetProperty("epochNumber", out var previousEpochProp))
+                {
+                    previousEpochNumber = previousEpochProp.GetInt32();
+                }
+            }
+
+            return Result<RecoveryEvent>.Failure(Error.Conflict(
+                "RecoveryLedger.EpochSealNothingSinceLastSeal",
+                $"Epoch {previousEpochNumber} was already sealed through Seq {lastEvent.Seq}, and no event has been recorded since — there is nothing new to seal."));
+        }
+
+        var lastMarker = await _dbContext.RecoveryEvents
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.EventType == RecoveryEventType.EpochSealed)
+            .OrderByDescending(e => e.Seq)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (lastMarker?.DetailJson is not null)
+        {
+            using var lastMarkerDetail = JsonDocument.Parse(lastMarker.DetailJson);
+            if (lastMarkerDetail.RootElement.TryGetProperty("epochNumber", out var lastMarkerEpochProp))
+            {
+                previousEpochNumber = lastMarkerEpochProp.GetInt32();
+            }
+        }
+
+        var epochNumber = previousEpochNumber + 1;
+        var detail = JsonSerializer.Serialize(new { epochNumber, sealedThroughSeq = lastEvent.Seq });
+
+        var operation = new RecoveryOperation
+        {
+            OwnerId = ownerId,
+            Kind = RecoveryOperationKind.EpochControl,
+            Trigger = RecoveryTrigger.EpochControl,
+            ActorIdentity = actor.Identity,
+            ActorKind = actor.Kind,
+            ActorScopes = actor.Scopes,
+            Reason = $"Seal epoch {epochNumber}",
+            NamespaceId = null,
+            ScopeDescription = $"epoch-seal={epochNumber}",
+            ServiceVersion = GetServiceVersion(),
+            OpenedAt = DateTimeOffset.UtcNow,
+            TargetCount = 0,
+        };
+        _dbContext.RecoveryOperations.Add(operation);
+
+        var evt = await AppendEventAsync(
+            ownerId, entryId: null, operation.Id, RecoveryEventType.EpochSealed, actor, detail, cancellationToken);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return Result<RecoveryEvent>.Success(evt);
     }
 
     /// <inheritdoc />

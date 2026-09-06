@@ -680,8 +680,12 @@ public sealed class MessagesController : ApiControllerBase
                 type: "https://docs.microsoft.com/azure/service-bus-messaging/service-bus-sas");
         }
 
-        // Safety-by-default guard: destructive replay is blocked in production.
-        if (ns.Environment == EnvironmentType.Prod)
+        // Safety-by-default guard (ADR-0010 §Decision phase 2): destructive replay in production
+        // requires a live, two-person-approved ProductionElevation covering this exact namespace.
+        // The Recovery Eligibility Gate's predicate 2 re-checks this independently — this is the
+        // fast front-door denial, not the sole enforcement point.
+        if (ns.Environment == EnvironmentType.Prod
+            && await _recoveryLedger.GetLiveProductionElevationAsync(OwnerId, namespaceId, cancellationToken) is null)
         {
             _auditLogger.LogCriticalAction(
                 HttpContext,
@@ -692,12 +696,13 @@ public sealed class MessagesController : ApiControllerBase
                 environment: ns.Environment,
                 resourceName: entityName,
                 sequenceNumber: sequenceNumber,
-                detail: "Replay blocked in production environment");
+                detail: "Replay blocked in production environment — no live elevation");
 
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Production Restriction",
-                detail: "Replay is blocked for production namespaces. Validate in DEV and UAT first.");
+                detail: "Replay in production requires a live, approved production elevation covering this namespace. " +
+                       "Request one via the Production Elevations endpoint, or validate in DEV/UAT first.");
         }
 
         var recoveryAttempt = await TryBeginRecoveryAsync(
@@ -851,8 +856,10 @@ public sealed class MessagesController : ApiControllerBase
             return NotFound();
         }
 
-        // Safety-by-default guard: destructive purge is blocked in production.
-        if (ns.Environment == EnvironmentType.Prod)
+        // Safety-by-default guard (ADR-0010 §Decision phase 2): destructive purge in production
+        // requires a live, two-person-approved ProductionElevation covering this exact namespace.
+        if (ns.Environment == EnvironmentType.Prod
+            && await _recoveryLedger.GetLiveProductionElevationAsync(OwnerId, namespaceId, cancellationToken) is null)
         {
             _auditLogger.LogCriticalAction(
                 HttpContext,
@@ -863,7 +870,7 @@ public sealed class MessagesController : ApiControllerBase
                 environment: ns.Environment,
                 resourceName: entityName,
                 sequenceNumber: sequenceNumber,
-                detail: "Purge blocked in production environment");
+                detail: "Purge blocked in production environment — no live elevation");
 
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,

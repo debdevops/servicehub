@@ -32,18 +32,21 @@ public sealed class PlaybookController : ApiControllerBase
     private readonly ICorrelationAccountabilityService _correlationAccountability;
     private readonly IBacktestService _backtestService;
     private readonly IGovernanceAccessEvaluator _governanceAccessEvaluator;
+    private readonly IPlaybookEvidenceExporter _evidenceExporter;
 
     /// <summary>Initializes a new instance of the <see cref="PlaybookController"/> class.</summary>
     public PlaybookController(
         IPlaybookLedger playbookLedger,
         ICorrelationAccountabilityService correlationAccountability,
         IBacktestService backtestService,
-        IGovernanceAccessEvaluator governanceAccessEvaluator)
+        IGovernanceAccessEvaluator governanceAccessEvaluator,
+        IPlaybookEvidenceExporter evidenceExporter)
     {
         _playbookLedger = playbookLedger ?? throw new ArgumentNullException(nameof(playbookLedger));
         _correlationAccountability = correlationAccountability ?? throw new ArgumentNullException(nameof(correlationAccountability));
         _backtestService = backtestService ?? throw new ArgumentNullException(nameof(backtestService));
         _governanceAccessEvaluator = governanceAccessEvaluator ?? throw new ArgumentNullException(nameof(governanceAccessEvaluator));
+        _evidenceExporter = evidenceExporter ?? throw new ArgumentNullException(nameof(evidenceExporter));
     }
 
     /// <summary>
@@ -205,6 +208,29 @@ public sealed class PlaybookController : ApiControllerBase
     {
         var result = await _playbookLedger.VerifyChainAsync(OwnerId, cancellationToken);
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Exports the caller's entire Playbook Ledger — every entry, its full hash-chained event
+    /// log, and every pillar finding any entry's evidence cites, resolved and inlined by value
+    /// (roadmap next-chapter M1.3, ADR-0009). This is what an auditor holding only the export
+    /// needs to resolve an <c>EvidenceRefJson</c> citation without server access, even after
+    /// retention has since pruned the live finding row.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.PlaybookRead)]
+    [HttpGet("export")]
+    [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Export(CancellationToken cancellationToken = default)
+    {
+        var actor = ResolvePlaybookActor();
+        var export = await _evidenceExporter.ExportAsync(OwnerId, actor.Identity, cancellationToken);
+
+        var timestamp = DateTimeOffset.UtcNow.ToString("yyyyMMddTHHmmssZ");
+        return File(
+            System.Text.Encoding.UTF8.GetBytes(export.BundleJson),
+            "application/json",
+            $"playbook-evidence-{timestamp}.json");
     }
 
     /// <summary>

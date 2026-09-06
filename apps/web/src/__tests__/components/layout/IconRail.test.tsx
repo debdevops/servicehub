@@ -20,18 +20,38 @@ function renderAt(initialPath = '/dashboard') {
 }
 
 describe('IconRail', () => {
-  it('renders every Quick Access destination, including Live Tail', () => {
+  it('renders exactly the five primary destinations plus More (roadmap next-chapter M4.2)', () => {
     renderAt();
-    // F5 regression: Live Tail was previously missing from this list entirely.
-    expect(screen.getByLabelText('Live Tail')).toBeInTheDocument();
     expect(screen.getByLabelText('Home')).toBeInTheDocument();
     expect(screen.getByLabelText('Incident Center')).toBeInTheDocument();
+    expect(screen.getByLabelText('Namespace Overview')).toBeInTheDocument();
+    expect(screen.getByLabelText('Approval Queue')).toBeInTheDocument();
+    expect(screen.getByLabelText('Recovery Evidence')).toBeInTheDocument();
+    expect(screen.getByLabelText('More destinations')).toBeInTheDocument();
+  });
+
+  it('relocates every other destination rather than removing it — not rendered directly in the rail', () => {
+    renderAt();
+    // F5's old regression target, Live Tail, and a handful of others: still reachable via Quick
+    // Access and the command palette, just no longer a permanent icon in this 56px rail.
+    expect(screen.queryByLabelText('Live Tail')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Fleet Health')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Auto-Replay Rules')).not.toBeInTheDocument();
+  });
+
+  it('the More button opens the command palette via the shared open-palette event', () => {
+    const listener = vi.fn();
+    window.addEventListener('servicehub:open-palette', listener);
+    renderAt();
+    screen.getByLabelText('More destinations').click();
+    expect(listener).toHaveBeenCalledTimes(1);
+    window.removeEventListener('servicehub:open-palette', listener);
   });
 
   it('highlights only the entry matching the current route', () => {
     renderAt('/dashboard');
     expect(screen.getByLabelText('Namespace Overview')).toHaveClass('bg-primary-100');
-    expect(screen.getByLabelText('Fleet Health')).not.toHaveClass('bg-primary-100');
+    expect(screen.getByLabelText('Home')).not.toHaveClass('bg-primary-100');
   });
 
   it('links to the demo-prefixed route when in Demo Mode', () => {

@@ -28,6 +28,7 @@ public sealed class PlaybookControllerTests : IDisposable
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly IBacktestService _backtestService;
     private readonly IGovernanceAccessEvaluator _governanceAccessEvaluator;
+    private readonly IPlaybookEvidenceExporter _evidenceExporter;
     private readonly PlaybookController _controller;
 
     public PlaybookControllerTests()
@@ -52,11 +53,18 @@ public sealed class PlaybookControllerTests : IDisposable
             .ReturnsAsync(Result.Success());
         _governanceAccessEvaluator = governanceAccessEvaluatorMock.Object;
 
+        _evidenceExporter = new PlaybookEvidenceExporter(
+            _playbookLedger,
+            new ServiceHub.Infrastructure.Analytics.SqliteAnomalyResultCache(_dbContext),
+            new ServiceHub.Infrastructure.Analytics.SqliteDriftResultCache(_dbContext),
+            new ServiceHub.Infrastructure.Analytics.SqliteCorrelationResultCache(_dbContext),
+            new ServiceHub.Infrastructure.Analytics.SqliteExternalSignalCorrelationCache(_dbContext));
+
         _controller = CreateController(OwnerA);
     }
 
     private PlaybookController CreateController(string ownerId) =>
-        new(_playbookLedger, _correlationAccountability, _backtestService, _governanceAccessEvaluator)
+        new(_playbookLedger, _correlationAccountability, _backtestService, _governanceAccessEvaluator, _evidenceExporter)
     {
         ControllerContext = new ControllerContext
         {
@@ -97,29 +105,36 @@ public sealed class PlaybookControllerTests : IDisposable
     [Fact]
     public void Constructor_NullPlaybookLedger_Throws()
     {
-        var act = () => new PlaybookController(null!, _correlationAccountability, _backtestService, _governanceAccessEvaluator);
+        var act = () => new PlaybookController(null!, _correlationAccountability, _backtestService, _governanceAccessEvaluator, _evidenceExporter);
         act.Should().Throw<ArgumentNullException>().WithParameterName("playbookLedger");
     }
 
     [Fact]
     public void Constructor_NullCorrelationAccountability_Throws()
     {
-        var act = () => new PlaybookController(_playbookLedger, null!, _backtestService, _governanceAccessEvaluator);
+        var act = () => new PlaybookController(_playbookLedger, null!, _backtestService, _governanceAccessEvaluator, _evidenceExporter);
         act.Should().Throw<ArgumentNullException>().WithParameterName("correlationAccountability");
     }
 
     [Fact]
     public void Constructor_NullBacktestService_Throws()
     {
-        var act = () => new PlaybookController(_playbookLedger, _correlationAccountability, null!, _governanceAccessEvaluator);
+        var act = () => new PlaybookController(_playbookLedger, _correlationAccountability, null!, _governanceAccessEvaluator, _evidenceExporter);
         act.Should().Throw<ArgumentNullException>().WithParameterName("backtestService");
     }
 
     [Fact]
     public void Constructor_NullGovernanceAccessEvaluator_Throws()
     {
-        var act = () => new PlaybookController(_playbookLedger, _correlationAccountability, _backtestService, null!);
+        var act = () => new PlaybookController(_playbookLedger, _correlationAccountability, _backtestService, null!, _evidenceExporter);
         act.Should().Throw<ArgumentNullException>().WithParameterName("governanceAccessEvaluator");
+    }
+
+    [Fact]
+    public void Constructor_NullEvidenceExporter_Throws()
+    {
+        var act = () => new PlaybookController(_playbookLedger, _correlationAccountability, _backtestService, _governanceAccessEvaluator, null!);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("evidenceExporter");
     }
 
     // ── GetEntries ──────────────────────────────────────────────────

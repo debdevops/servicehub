@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { NAV_ENTRIES, isNavEntryActive, resolveWorkspaceLabel } from '@/nav/navigation';
+import { NAV_ENTRIES, isNavEntryActive, resolveWorkspaceLabel, ICON_RAIL_PRIMARY_IDS } from '@/nav/navigation';
 
 function sp(query = ''): URLSearchParams {
   return new URLSearchParams(query);
@@ -32,6 +32,24 @@ describe('navigation registry (W2.4 — one nav definition)', () => {
     expect(incidents.commandPalette).toBeDefined();
     expect(liveTail.quickAccess).toBeDefined();
     expect(liveTail.commandPalette).toBeDefined();
+  });
+
+  describe('ICON_RAIL_PRIMARY_IDS (roadmap next-chapter M4.2 — five destinations plus More)', () => {
+    it('has exactly five entries', () => {
+      expect(ICON_RAIL_PRIMARY_IDS).toHaveLength(5);
+    });
+
+    it('has no duplicates', () => {
+      expect(new Set(ICON_RAIL_PRIMARY_IDS).size).toBe(ICON_RAIL_PRIMARY_IDS.length);
+    });
+
+    it('every id resolves to a real, Quick-Access-eligible NAV_ENTRIES entry', () => {
+      for (const id of ICON_RAIL_PRIMARY_IDS) {
+        const entry = NAV_ENTRIES.find((e) => e.id === id);
+        expect(entry, `expected a NAV_ENTRIES entry for "${id}"`).toBeDefined();
+        expect(entry!.quickAccess, `expected "${id}" to be Quick-Access-eligible`).toBeDefined();
+      }
+    });
   });
 
   describe('to()', () => {

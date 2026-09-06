@@ -24,6 +24,7 @@
     <PackageReference Include="AWSSDK.SQS" Version="3.7.400.35" />
     <PackageReference Include="AWSSDK.SimpleNotificationService" Version="3.7.400.35" />
     <PackageReference Include="AWSSDK.SecurityToken" Version="3.7.400.35" />
+    <PackageReference Include="AWSSDK.DynamoDBv2" Version="3.7.401" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
     <PackageReference Include="Polly.Core" Version="8.5.0" />

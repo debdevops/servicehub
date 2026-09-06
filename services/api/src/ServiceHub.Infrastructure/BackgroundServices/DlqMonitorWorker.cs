@@ -316,8 +316,10 @@ public sealed class DlqMonitorWorker : BackgroundService
             .Where(r => r.Enabled && r.OwnerId == ns.OwnerId && (r.NamespaceId == null || r.NamespaceId == ns.Id))
             .ToListAsync(cancellationToken);
 
-        // Safety-by-default guard: auto-replay is blocked in production,
-        // mirroring the human-initiated replay guard in MessagesController.
+        // Hard ceiling (ADR-0010 §Decision phase 2, M2.4): no AutoReplayRule ever matches in
+        // production, elevation or not — unlike the human-initiated replay guards elsewhere, this
+        // one is unconditional. Production recovery is a human proposing and a second human
+        // approving inside a live elevation window; automation never gets one.
         if (enabledRules.Count == 0 || ns.Environment == Core.Enums.EnvironmentType.Prod)
             return;
 

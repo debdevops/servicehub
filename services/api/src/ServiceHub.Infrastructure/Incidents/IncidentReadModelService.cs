@@ -70,10 +70,15 @@ public sealed class IncidentReadModelService : IIncidentReadModelService
                 "Incidents.SignatureNotFound", $"Incident '{signatureHash}' was not found."));
         }
 
+        // Fingerprint-space only (M1.4, ADR-0009): an incident's signatureHash is always a trust
+        // fingerprint — the same identity AutonomyGrants and the attention queue key on. A bare
+        // hash-string match without this filter would (in the cryptographically near-impossible
+        // case of a cross-space collision) resolve to the wrong row.
         var signature = await _dbContext.NamespaceSignatures
             .AsNoTracking()
             .FirstOrDefaultAsync(
-                s => s.OwnerId == ownerId && s.NamespaceId == namespaceId && s.SignatureHash == signatureHash,
+                s => s.OwnerId == ownerId && s.NamespaceId == namespaceId
+                    && s.SignatureHash == signatureHash && s.HashKind == SignatureHashKind.Fingerprint,
                 cancellationToken)
             .ConfigureAwait(false);
 

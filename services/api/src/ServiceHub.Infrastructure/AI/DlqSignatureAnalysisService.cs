@@ -169,7 +169,7 @@ public sealed class DlqSignatureAnalysisService : IDlqSignatureAnalysisService
             .ToList();
 
         var lookupResults = await _signatureLookupService.LookupAndRecordAsync(
-            ownerId, namespaceId, observations, cancellationToken).ConfigureAwait(false);
+            ownerId, namespaceId, observations, SignatureHashKind.Cluster, cancellationToken).ConfigureAwait(false);
 
         var now = DateTimeOffset.UtcNow;
         var clusters = new List<DlqClusterSignature>(analysis.Clusters.Count);

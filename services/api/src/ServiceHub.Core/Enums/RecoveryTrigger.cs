@@ -34,5 +34,13 @@ public enum RecoveryTrigger
 
     /// <summary>The success-rate circuit breaker automatically disabled an
     /// <see cref="Entities.AutoReplayRule"/> — never a grant change, never a replay/purge.</summary>
-    AutoReplayCircuitBreaker = 8
+    AutoReplayCircuitBreaker = 8,
+
+    /// <summary>An operator requested, approved, or revoked a
+    /// <see cref="Entities.ProductionElevation"/> (ADR-0010 §Decision phase 2).</summary>
+    ProductionElevationControl = 9,
+
+    /// <summary>An administrator sealed a Recovery Evidence Ledger epoch (roadmap next-chapter
+    /// M5.2).</summary>
+    EpochControl = 10
 }

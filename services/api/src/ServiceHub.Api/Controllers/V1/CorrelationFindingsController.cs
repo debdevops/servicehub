@@ -112,7 +112,7 @@ public sealed class CorrelationFindingsController : ApiControllerBase
 
         // Cache the results so a subsequent GET /{id} can retrieve one of them (see
         // ICorrelationResultCache for why this isn't backed by the database).
-        _correlationResultCache.Store(findings);
+        await _correlationResultCache.StoreAsync(findings, cancellationToken);
 
         var findingInfos = findings.Select(MapToCorrelationFindingInfo).ToList();
 
@@ -147,7 +147,7 @@ public sealed class CorrelationFindingsController : ApiControllerBase
     {
         _logger.LogInformation("Getting correlation finding {CorrelationFindingId}", id);
 
-        var finding = _correlationResultCache.TryGet(id);
+        var finding = await _correlationResultCache.TryGetAsync(id, cancellationToken);
         if (finding is null)
         {
             return NotFoundResult(id);

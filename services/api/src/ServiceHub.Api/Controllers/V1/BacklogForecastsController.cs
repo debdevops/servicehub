@@ -91,7 +91,7 @@ public sealed class BacklogForecastsController : ApiControllerBase
 
         // Cache the results so a subsequent GET /{id} can retrieve one of them (see
         // IBacklogForecastResultCache for why this isn't backed by the database).
-        _backlogForecastResultCache.Store(result.Value);
+        await _backlogForecastResultCache.StoreAsync(OwnerId, result.Value, cancellationToken);
 
         var forecasts = result.Value
             .Select(MapToBacklogForecastInfo)
@@ -128,7 +128,7 @@ public sealed class BacklogForecastsController : ApiControllerBase
     {
         _logger.LogInformation("Getting backlog forecast {ForecastId}", id);
 
-        var forecast = _backlogForecastResultCache.TryGet(id);
+        var forecast = await _backlogForecastResultCache.TryGetAsync(id, cancellationToken);
         if (forecast is null)
         {
             return ToActionResult<BacklogForecastInfo>(ServiceHub.Shared.Results.Error.NotFound(

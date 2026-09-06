@@ -77,6 +77,7 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
         NamespaceId = namespaceId,
         OwnerId = OwnerId,
         SignatureHash = hash,
+        HashKind = SignatureHashKind.Fingerprint,
         FirstSeenAt = DateTimeOffset.UtcNow.AddDays(-10),
         LastSeenAt = DateTimeOffset.UtcNow.AddDays(-1),
         OccurrenceCount = 4,

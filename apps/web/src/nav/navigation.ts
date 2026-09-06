@@ -397,6 +397,24 @@ export const NAV_ENTRIES: NavEntry[] = [
   },
 ];
 
+/**
+ * The Icon Rail's always-visible set (roadmap next-chapter M4.2) — the product decision W2.4
+ * deliberately deferred: "how many destinations to show", not "which pages exist". Five, chosen
+ * to cover the loop the roadmap itself names — something broke (`home`'s ranked attention queue),
+ * look (`incidents`, `dashboard` for a fleet-wide view), approve (`approval-queue`, the one
+ * time-sensitive human decision point), verified (`recovery`, the tamper-evident proof). Every
+ * other destination is unchanged and still one click away — QuickAccessPanel keeps its full
+ * grouped list, and the command palette (`Cmd/Ctrl+K`) already reaches everything. Nothing here
+ * removes a capability; it only decides what earns a permanent pixel in a 56px-wide rail.
+ */
+export const ICON_RAIL_PRIMARY_IDS: readonly string[] = [
+  'home',
+  'incidents',
+  'dashboard',
+  'approval-queue',
+  'recovery',
+];
+
 /** First path segment after an optional `/demo/{provider}` prefix. */
 function stripDemoPrefix(pathname: string): string[] {
   const segments = pathname.split('/').filter(Boolean);

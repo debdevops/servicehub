@@ -1,17 +1,26 @@
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
-import { Settings } from 'lucide-react';
+import { Settings, MoreHorizontal } from 'lucide-react';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
-import { NAV_ENTRIES, isNavEntryActive } from '@/nav/navigation';
+import { NAV_ENTRIES, isNavEntryActive, ICON_RAIL_PRIMARY_IDS } from '@/nav/navigation';
 
-const RAIL_ITEMS = NAV_ENTRIES.filter((entry) => entry.quickAccess);
+const RAIL_ITEMS = ICON_RAIL_PRIMARY_IDS
+  .map((id) => NAV_ENTRIES.find((entry) => entry.id === id))
+  .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
 const CONNECT_ENTRY = NAV_ENTRIES.find((entry) => entry.id === 'connect')!;
 
+/** Opens the command palette — the same global handler the Header's search button uses
+ * (`MainLayout`'s `servicehub:open-palette` listener). Every destination this rail no longer
+ * shows directly is still reachable there, unabridged. */
+function openCommandPalette() {
+  window.dispatchEvent(new Event('servicehub:open-palette'));
+}
+
 /**
- * Slim icon-only navigation rail — a compact, always-visible shortcut strip that mirrors
- * Quick Access's routes so the busiest destinations stay one click away even when the
- * Quick Access panel is collapsed. Renders the same shared nav definition
- * (`@/nav/navigation`) Quick Access, the command palette, and the workspace toolbar all read
- * from — no independently-maintained item list here.
+ * Slim icon-only navigation rail — a compact, always-visible shortcut strip for the five
+ * busiest destinations (roadmap next-chapter M4.2 — the "top-level nav" reduction W2.4
+ * deliberately deferred), plus a More button opening the command palette for everything else.
+ * Renders the same shared nav definition (`@/nav/navigation`) Quick Access, the command palette,
+ * and the workspace toolbar all read from — no independently-maintained item list here.
  */
 export function IconRail() {
   const { isDemoMode, cloudProvider } = useDemoContext();
@@ -40,6 +49,15 @@ export function IconRail() {
           </Link>
         );
       })}
+      <button
+        type="button"
+        onClick={openCommandPalette}
+        title="More (Cmd/Ctrl+K)"
+        aria-label="More destinations"
+        className="w-10 h-10 shrink-0 flex items-center justify-center rounded-lg transition-colors text-gray-400 hover:bg-gray-100 hover:text-primary-600"
+      >
+        <MoreHorizontal className="w-5 h-5" />
+      </button>
       <div className="flex-1" />
       <Link
         to="/connect"

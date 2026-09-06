@@ -3,16 +3,13 @@ using ServiceHub.Core.Entities;
 namespace ServiceHub.Core.Interfaces;
 
 /// <summary>
-/// Short-lived, in-process store of recently generated <see cref="Narration"/> instances.
+/// Durable store of generated <see cref="Narration"/> instances (roadmap next-chapter M1,
+/// ADR-0009).
 /// </summary>
 /// <remarks>
-/// Deliberately not backed by the database, for the same reason as
-/// <see cref="IAnomalyResultCache"/>/<see cref="IDriftResultCache"/>/<see cref="ICorrelationResultCache"/>:
-/// <c>Narration</c> has never had an EF Core migration, and the RC1 migration freeze (ADR-0006)
-/// forbids adding one while it is in effect. This cache lets <c>GET /v1/narrations/{id}</c>
-/// retrieve a result a recent cycle already computed without introducing schema. Entries do not
-/// survive a process restart and are not shared across instances; this is an accepted, documented
-/// limitation, not an oversight.
+/// Backed by <c>DlqDbContext.Narrations</c> as of M1 — before this, narrations lived in a
+/// process-local, 24-hour TTL cache and were lost on every restart. See
+/// <c>SqliteNarrationResultCache</c> and <c>PillarFindingRetentionWorker</c>.
 /// </remarks>
 public interface INarrationResultCache
 {
@@ -20,11 +17,14 @@ public interface INarrationResultCache
     /// Stores (or refreshes) a batch of freshly generated narrations, keyed by their
     /// <see cref="Narration.Id"/>.
     /// </summary>
-    void Store(IEnumerable<Narration> narrations);
+    /// <param name="narrations">The narrations to store.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task StoreAsync(IEnumerable<Narration> narrations, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Attempts to retrieve a previously stored narration by ID.
     /// </summary>
-    /// <returns>The narration, or <c>null</c> if it was never stored or has expired.</returns>
-    Narration? TryGet(Guid id);
+    /// <returns>The narration, or <c>null</c> if it was never stored or has since been pruned by
+    /// retention.</returns>
+    Task<Narration?> TryGetAsync(Guid id, CancellationToken cancellationToken = default);
 }

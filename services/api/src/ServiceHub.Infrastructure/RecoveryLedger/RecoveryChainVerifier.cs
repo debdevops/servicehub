@@ -22,10 +22,24 @@ public static class RecoveryChainVerifier
     /// ordered by <see cref="RecoveryEvent.Seq"/> ascending. Returns the first <c>Seq</c> at
     /// which the chain diverges, if any.
     /// </summary>
-    public static ChainVerificationResult Verify(string ownerId, IReadOnlyList<RecoveryEvent> events)
+    /// <param name="ownerId">The owner whose chain is being verified.</param>
+    /// <param name="events">The events to verify, Seq-ascending.</param>
+    /// <param name="startingSeq">The <c>Seq</c> the first element of <paramref name="events"/> is
+    /// expected to carry. Defaults to 1 (a chain's true genesis). A sealed epoch's archive
+    /// (roadmap next-chapter M5.2) passes its own first archived event's actual <c>Seq</c> here,
+    /// since an archive after the first epoch never starts at 1.</param>
+    /// <param name="startingPrevHash">The <c>PrevHash</c> the first element of
+    /// <paramref name="events"/> is expected to carry. Defaults to
+    /// <see cref="RecoveryHashChain.GenesisHash"/>. An archive after the first epoch passes the
+    /// previous epoch's terminal hash instead — the anchor this range chains from.</param>
+    public static ChainVerificationResult Verify(
+        string ownerId,
+        IReadOnlyList<RecoveryEvent> events,
+        long startingSeq = 1,
+        string? startingPrevHash = null)
     {
-        var expectedPrevHash = RecoveryHashChain.GenesisHash;
-        long expectedSeq = 1;
+        var expectedPrevHash = startingPrevHash ?? RecoveryHashChain.GenesisHash;
+        var expectedSeq = startingSeq;
         var checkedCount = 0;
 
         foreach (var evt in events)

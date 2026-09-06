@@ -9,6 +9,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Helpers;
@@ -58,7 +59,7 @@ public sealed class SignatureReplayService : ISignatureReplayService
         if (nsResult.IsFailure)
             return Result.Failure<BulkOperationPreviewResponse>(nsResult.Error);
 
-        var (warnings, canExecute) = EvaluateGuards(nsResult.Value);
+        var (warnings, canExecute) = await EvaluateGuardsAsync(ownerId, nsResult.Value, cancellationToken);
 
         var messagesResult = await ResolveSignatureMessagesAsync(
             ownerId, request.Filter, cancellationToken);
@@ -98,7 +99,7 @@ public sealed class SignatureReplayService : ISignatureReplayService
             return Result.Failure<BulkOperationJobResponse>(nsResult.Error);
 
         var ns = nsResult.Value;
-        var (warnings, canExecute) = EvaluateGuards(ns);
+        var (warnings, canExecute) = await EvaluateGuardsAsync(ownerId, ns, cancellationToken);
         if (!canExecute)
         {
             return Result.Failure<BulkOperationJobResponse>(Error.Validation(
@@ -261,17 +262,20 @@ public sealed class SignatureReplayService : ISignatureReplayService
 
     /// <summary>
     /// Same safety-by-default guards single-message replay and bulk replay already enforce
-    /// (<c>MessagesController.ReplayMessage</c>, <c>BulkOperationService.EvaluateGuards</c>) —
-    /// production block and Send permission.
+    /// (<c>MessagesController.ReplayMessage</c>, <c>BulkOperationService.EvaluateGuardsAsync</c>) —
+    /// production elevation and Send permission.
     /// </summary>
-    private (List<string> Warnings, bool CanExecute) EvaluateGuards(Namespace ns)
+    private async Task<(List<string> Warnings, bool CanExecute)> EvaluateGuardsAsync(
+        string ownerId, Namespace ns, CancellationToken cancellationToken)
     {
         var warnings = new List<string>();
         var canExecute = true;
 
-        if (ns.Environment == EnvironmentType.Prod)
+        if (ns.Environment == EnvironmentType.Prod
+            && await ProductionElevationQueries.GetLiveAsync(_dbContext, ownerId, ns.Id, cancellationToken) is null)
         {
-            warnings.Add("This namespace is Production — signature replay is blocked. Validate in DEV or UAT first.");
+            warnings.Add("This namespace is Production and has no live elevation — signature replay is blocked. " +
+                "Request a production elevation, or validate in DEV/UAT first.");
             canExecute = false;
         }
 

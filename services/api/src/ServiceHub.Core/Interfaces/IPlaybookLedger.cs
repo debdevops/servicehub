@@ -93,6 +93,15 @@ public interface IPlaybookLedger
     /// <summary>Every event for one entry, ordered by <see cref="PlaybookEvent.Seq"/> ascending.</summary>
     Task<Result<IReadOnlyList<PlaybookEvent>>> GetEventsForEntryAsync(Guid entryId, string ownerId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Every event across an owner's entire chain, ordered by <see cref="PlaybookEvent.Seq"/>
+    /// ascending — the same query <see cref="VerifyChainAsync"/> runs internally, exposed so an
+    /// exporter (roadmap M1.3, ADR-0009) can read the full chain without a direct
+    /// <c>DlqDbContext</c> dependency of its own, mirroring how <c>IRecoveryLedger</c> already
+    /// exposes <c>GetEventsForOperationAsync</c> for <c>RecoveryEvidenceExporter</c>.
+    /// </summary>
+    Task<IReadOnlyList<PlaybookEvent>> GetAllEventsAsync(string ownerId, CancellationToken cancellationToken = default);
+
     /// <summary>Recomputes and verifies one owner's entire Playbook hash chain.</summary>
     Task<Models.ChainVerificationResult> VerifyChainAsync(string ownerId, CancellationToken cancellationToken = default);
 }

@@ -132,7 +132,7 @@ public sealed class NarrationsController : ApiControllerBase
 
         // Cache the results so a subsequent GET /{id} can retrieve one of them (see
         // INarrationResultCache for why this isn't backed by the database).
-        _narrationResultCache.Store(narrations);
+        await _narrationResultCache.StoreAsync(narrations, cancellationToken);
 
         var narrationInfos = narrations.Select(MapToNarrationInfo).ToList();
 
@@ -167,7 +167,7 @@ public sealed class NarrationsController : ApiControllerBase
     {
         _logger.LogInformation("Getting narration {NarrationId}", id);
 
-        var narration = _narrationResultCache.TryGet(id);
+        var narration = await _narrationResultCache.TryGetAsync(id, cancellationToken);
         if (narration is null)
         {
             return NotFoundResult(id);

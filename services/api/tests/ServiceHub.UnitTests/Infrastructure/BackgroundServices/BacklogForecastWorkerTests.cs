@@ -120,7 +120,7 @@ public sealed class BacklogForecastWorkerTests
 
         await worker.RunForecastCycleAsync(CancellationToken.None);
 
-        _cacheMock.Verify(c => c.Store(It.Is<IEnumerable<BacklogForecast>>(f => f.Contains(forecast))), Times.Once);
+        _cacheMock.Verify(c => c.StoreAsync(It.IsAny<string>(), It.Is<IEnumerable<BacklogForecast>>(f => f.Contains(forecast)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -137,7 +137,7 @@ public sealed class BacklogForecastWorkerTests
 
         await worker.RunForecastCycleAsync(CancellationToken.None);
 
-        _cacheMock.Verify(c => c.Store(It.IsAny<IEnumerable<BacklogForecast>>()), Times.Never);
+        _cacheMock.Verify(c => c.StoreAsync(It.IsAny<string>(), It.IsAny<IEnumerable<BacklogForecast>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -163,7 +163,7 @@ public sealed class BacklogForecastWorkerTests
 
         await worker.RunForecastCycleAsync(CancellationToken.None);
 
-        _cacheMock.Verify(c => c.Store(It.Is<IEnumerable<BacklogForecast>>(f => f.Contains(forecast))), Times.Once);
+        _cacheMock.Verify(c => c.StoreAsync(It.IsAny<string>(), It.Is<IEnumerable<BacklogForecast>>(f => f.Contains(forecast)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ── Roadmap §5, I5 — Push ────────────────────────────────────────

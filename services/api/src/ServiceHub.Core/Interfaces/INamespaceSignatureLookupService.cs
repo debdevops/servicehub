@@ -1,4 +1,5 @@
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
 
 namespace ServiceHub.Core.Interfaces;
 
@@ -9,17 +10,28 @@ namespace ServiceHub.Core.Interfaces;
 public interface INamespaceSignatureLookupService
 {
     /// <summary>
-    /// Given a namespace and the cluster signatures observed in a scan, upserts each one —
+    /// Given a namespace and the signatures observed in a scan, upserts each one —
     /// incrementing <see cref="SignatureLookupResult.OccurrenceCount"/> and refreshing
     /// last-seen for known hashes, inserting a new record for unseen ones — and returns the
     /// new-vs-recurring result for every distinct hash in <paramref name="observations"/>.
     /// Scoped to <paramref name="ownerId"/>: a signature observed by one owner never affects
     /// another owner's result.
     /// </summary>
+    /// <param name="ownerId">The owner whose signatures are being recorded.</param>
+    /// <param name="namespaceId">The namespace the observations were made in.</param>
+    /// <param name="observations">The signatures observed in this scan.</param>
+    /// <param name="hashKind">
+    /// Which identity vocabulary every hash in <paramref name="observations"/> belongs to (M1.4,
+    /// ADR-0009 §Decision unit 2) — a single call is always all-Fingerprint or all-Cluster, never
+    /// mixed, because each caller computes its hashes with exactly one builder
+    /// (<c>FailureFingerprintBuilder</c> or <c>ClusterSignatureHasher</c>).
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task<IReadOnlyDictionary<string, SignatureLookupResult>> LookupAndRecordAsync(
         string ownerId,
         Guid namespaceId,
         IReadOnlyList<ClusterSignatureObservation> observations,
+        SignatureHashKind hashKind,
         CancellationToken cancellationToken = default);
 
     /// <summary>

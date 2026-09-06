@@ -206,7 +206,7 @@ public sealed class ExternalSignalCorrelationWorker : BackgroundService
                 continue;
             }
 
-            resultCache.Store(correlations);
+            await resultCache.StoreAsync(correlations, cancellationToken).ConfigureAwait(false);
             totalCorrelated += correlations.Count;
 
             _logger.LogInformation(

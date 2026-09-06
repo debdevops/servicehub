@@ -1,9 +1,97 @@
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, AlertTriangle, TrendingUp, Clock, RefreshCw } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, TrendingUp, Clock, RefreshCw, ShieldCheck, ShieldOff, Bot, Ban } from 'lucide-react';
 import { useAttentionQueue, type AttentionQueueItem } from '@servicehub/ui-shared/hooks/useAttentionQueue';
+import { useOutcomeMetrics } from '@servicehub/ui-shared/hooks/useRecoveryLedger';
 import { formatRelativeTime } from '@servicehub/ui-shared/lib/utils';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { EmptyState } from '@/components/EmptyState';
+
+/** "1h 24m", "3d 2h", "42s" — coarsest two units, never more precise than seconds. */
+function formatDuration(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.round(totalSeconds));
+  const units: [string, number][] = [
+    ['d', 86400],
+    ['h', 3600],
+    ['m', 60],
+  ];
+  for (let i = 0; i < units.length; i++) {
+    const [label, size] = units[i];
+    if (seconds >= size) {
+      const whole = Math.floor(seconds / size);
+      const remainder = seconds % size;
+      const [nextLabel, nextSize] = units[i + 1] ?? ['s', 1];
+      const nextWhole = Math.floor(remainder / nextSize);
+      return nextWhole > 0 ? `${whole}${label} ${nextWhole}${nextLabel}` : `${whole}${label}`;
+    }
+  }
+  return `${seconds}s`;
+}
+
+/**
+ * What ServiceHub achieved this week (roadmap next-chapter M4.1) — never how autonomous it is.
+ * Every figure comes straight from the outcome-metrics endpoint, which itself traces every number
+ * to a RecoveryLedgerEntry/RecoveryEvent row. Renders nothing (not even a zero-state) until the
+ * fleet has actually recovered or abandoned something in the window, since an all-zero row reads
+ * as "broken" rather than "quiet" on a brand-new install.
+ */
+function OutcomesThisWeek() {
+  const { data, isLoading, isError } = useOutcomeMetrics(7);
+
+  if (isLoading || isError || !data) return null;
+  if (data.messagesRecovered === 0 && data.messagesAbandoned === 0 && data.gateRefusals === 0) return null;
+
+  const tiles = [
+    {
+      icon: ShieldCheck,
+      color: 'text-emerald-600 bg-emerald-50',
+      label: 'Recovered',
+      value: data.messagesRecovered.toLocaleString(),
+    },
+    {
+      icon: ShieldOff,
+      color: 'text-gray-600 bg-gray-100',
+      label: 'Written off',
+      value: data.messagesAbandoned.toLocaleString(),
+    },
+    {
+      icon: Clock,
+      color: 'text-sky-600 bg-sky-50',
+      label: 'Median time to recovered',
+      value: data.medianSecondsToVerifiedRecovery != null ? formatDuration(data.medianSecondsToVerifiedRecovery) : '—',
+    },
+    {
+      icon: Bot,
+      color: 'text-indigo-600 bg-indigo-50',
+      label: 'No human approval needed',
+      value: data.autonomousRecoveries.toLocaleString(),
+    },
+    {
+      icon: Ban,
+      color: 'text-red-600 bg-red-50',
+      label: 'Bad replays refused',
+      value: data.gateRefusals.toLocaleString(),
+    },
+  ];
+
+  return (
+    <div className="mb-6 bg-white border border-gray-200 rounded-lg p-4">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">This week</p>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+        {tiles.map((tile) => (
+          <div key={tile.label} className="flex items-start gap-2.5">
+            <span className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${tile.color}`}>
+              <tile.icon className="w-4 h-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-lg font-semibold text-gray-900 leading-tight">{tile.value}</p>
+              <p className="text-xs text-gray-500 leading-tight">{tile.label}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const SEVERITY_STYLES: Record<AttentionQueueItem['severity'], { bg: string; text: string; border: string; dot: string }> = {
   Critical: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', dot: 'bg-red-500' },
@@ -90,6 +178,8 @@ export function HomePage() {
           Refresh
         </button>
       </div>
+
+      <OutcomesThisWeek />
 
       {isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

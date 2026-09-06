@@ -200,12 +200,14 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         var ns = nsResult.Value;
 
         // Re-check the same guard StartAsync validated — defensive against the namespace's
-        // environment changing between job creation and the worker picking it up. Mirrors
+        // environment changing (or an elevation expiring/being revoked) between job creation and
+        // the worker picking it up (ADR-0010 §Decision phase 2). Mirrors
         // BulkOperationExecutor.RunAsync's execution-time re-check.
-        if (ns.Environment == EnvironmentType.Prod)
+        if (ns.Environment == EnvironmentType.Prod
+            && await _recoveryLedger.GetLiveProductionElevationAsync(job.OwnerId, ns.Id, cancellationToken) is null)
         {
             job.Status = BulkOperationStatus.Failed;
-            job.ErrorSummary = "Namespace is now Production — signature replay blocked at execution time.";
+            job.ErrorSummary = "Namespace is Production and has no live elevation — signature replay blocked at execution time.";
             return;
         }
 

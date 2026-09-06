@@ -210,13 +210,21 @@ production namespaces denied unconditionally, a fleet-wide replay-velocity cap, 
 success-rate circuit breaker (last 20 verified dispositions, floor configurable, default 50%), and
 the provider-capability re-check above. Every query in the chain fails closed.
 
-The production predicate deserves saying plainly, because everything else here inherits it:
-ServiceHub refuses to register a namespace marked `Prod` at all (`CreateNamespaceRequest.Validate`),
-and every mutating path denies `EnvironmentType.Prod` independently of the gate. There is no
-elevation mechanism, so predicate 2 is a flat deny rather than a check. **All recovery — manual and
-autonomous alike — therefore operates on namespaces an operator has labelled Dev or UAT.** Demotion — dropping
-a signature back down the ladder after a verified `Returned` — fires synchronously on the 2nd
-consecutive verified recurrence and cannot be disabled by configuration.
+The production predicate deserves saying plainly, because everything else here inherits it.
+`CreateNamespaceRequest.Validate` no longer refuses a namespace marked `Prod` at registration
+(roadmap next-chapter M2, [ADR-0010](adr/0010-production-namespace-elevation.md)): Investigate,
+Correlate and Prevent run against a Prod namespace exactly as they do against Dev/UAT. Every
+recovery verb still denies it — now *conditionally*, on a live, time-boxed `ProductionElevation`
+rather than unconditionally. An elevation requires a stated reason, an absolute expiry, and dual
+control (the identity that requests it and the identity that approves it must be distinct —
+self-approval is refused outright, independent of any role check). Autonomy stays hard-ceilinged at
+L0/L1 in production under every configuration — `AutonomyEvaluationWorker` skips promotion
+evaluation entirely for a Prod-resolved signature, and `RecoveryEligibilityGate` predicate 2 denies
+`Automation`/`System` actors unconditionally regardless of any elevation. **All *autonomous*
+recovery still operates only on namespaces labelled Dev or UAT; a Prod recovery is always a human
+act, twice.** Demotion — dropping a signature back down the ladder after a verified `Returned` —
+fires synchronously on the 2nd consecutive verified recurrence and cannot be disabled by
+configuration.
 
 ## 6a. The AI capability boundary
 
@@ -268,15 +276,37 @@ Two stores, for historical reasons:
 
 | Store | Backing | Contents |
 |---|---|---|
-| SQLite (`DlqDbContext`, EF Core) | `DlqDatabase:DataDirectory` | DLQ history, replay history, auto-replay rules, audit log, bulk-operation jobs, failure signatures, the Recovery Evidence Ledger |
-| Namespace credential store | `NamespaceRepository:DataDirectory` (JSON file, crash-safe temp-file-then-atomic-rename) | Encrypted connection strings / auth config per namespace |
+| SQLite (`DlqDbContext`, EF Core) | `DlqDatabase:DataDirectory` | DLQ history, replay history, auto-replay rules, audit log, bulk-operation jobs, failure signatures, namespaces and their encrypted connection strings, governance grants, the Recovery Evidence Ledger, the Playbook Ledger, the four pillars' findings (`Anomaly`/`DriftFinding`/`CorrelationFinding`/`Narration`/`BacklogForecast`/`ExternalSignalCorrelation`, roadmap next-chapter M1), `ProductionElevation`s, `DlqObserverAttestation`s |
+| Legacy namespace JSON file | `NamespaceRepository:DataDirectory` | **Import source only.** Superseded by the `Namespaces` / `NamespaceSharedOwners` tables. |
+| Recovery epoch archive files | `RecoveryEpochArchive:ArchiveDirectory` (default: `<DataDirectory>/recovery-archive/<ownerId>/epoch-<N>.json`) | **Write-once, read-only after creation.** Sealed-off Recovery Evidence Ledger history pruned from the live SQLite table (roadmap next-chapter M5.2, §3.3c of [`docs/RECOVERY-EVIDENCE.md`](RECOVERY-EVIDENCE.md)) — never mutated once verified and written; the live table is the only writable copy of anything. |
 
-Schema changes to the SQLite store ship as real EF Core migrations under
-`Infrastructure/Persistence/Migrations/` — currently frozen for the RC1 release cycle; no migration
-may be authored or applied without explicit, dated user sign-off (see
-[ADR-0006](adr/0006-rc1-migration-freeze.md)). The namespace store predates the SQLite database and
-was never migrated into it — unifying them is a known, deliberately deferred simplification, not an
-active defect.
+There is **one** live store. `SqliteNamespaceRepository` is the namespace repository;
+`NamespaceStoreImporter` performs a one-shot, forward-only cutover from the legacy
+`servicehub-namespaces.json` at startup immediately after `Database.MigrateAsync()`, behind a hard
+row-count parity gate, then renames the file to `.migrated` (never deletes it). There is no
+dual-write and no read-through fallback. A fresh install skips the importer entirely.
+
+Schema changes ship as real EF Core migrations under `Infrastructure/Persistence/Migrations/`.
+Migrations are **frozen** — no migration may be authored or applied without explicit, dated user
+sign-off ([ADR-0006](adr/0006-rc1-migration-freeze.md)). Four scoped lifts have been granted:
+[ADR-0007](adr/0007-persistence-wave-m1-m4-authorized.md) (persistence wave M1–M4),
+[ADR-0008](adr/0008-m5-external-signal-events-authorized.md) (`ExternalSignalEvents`), and
+[ADR-0009](adr/0009-next-chapter-migrations-authorized.md) (the pillar-evidence tables, the
+`NamespaceSignatures.HashKind` discriminator, and the production elevation record whose shape
+[ADR-0010](adr/0010-production-namespace-elevation.md) fixes), and
+[ADR-0011](adr/0011-dlq-observer-attestation-table-authorized.md) (`DlqObserverAttestations`).
+Everything outside those named units is still frozen — epoch sealing (§3.3c above) and
+configuration-as-code (below) both needed no schema change and so needed no ADR of their own.
+
+**Configuration as code** (roadmap next-chapter M5.4): `GET /api/v1/governance/configuration/export`
+and `POST /api/v1/governance/configuration/import` round-trip `AutoReplayRule`s and active
+`GovernanceGrant`s only — genuinely mutable configuration, the same tier as a rule's `Enabled` flag
+or a role assignment. Deliberately excludes two things that look like configuration but aren't:
+a namespace's connection string (a credential — exporting it into a file meant for git review would
+be a real secret leak, so namespaces appear only as a read-only reference list) and a
+`PreventionRule` (structurally a hash-chained `PlaybookEntry`, not configuration — importing one
+would fabricate ledger evidence that was never actually disposed). Import is additive/upsert only:
+nothing present live but absent from the imported file is ever deleted or revoked.
 
 ## 8. Authentication and security boundaries
 

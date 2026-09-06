@@ -103,7 +103,7 @@ public class BacklogForecastsControllerTests
         var response = okResult.Value.Should().BeOfType<BacklogForecastResponse>().Subject;
         response.Forecasts.Should().HaveCount(1);
         response.NamespaceId.Should().Be(ns.Id);
-        _resultCache.Verify(c => c.Store(It.Is<IEnumerable<BacklogForecast>>(f => f.Contains(forecast))), Times.Once);
+        _resultCache.Verify(c => c.StoreAsync(It.IsAny<string>(), It.Is<IEnumerable<BacklogForecast>>(f => f.Contains(forecast)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -154,7 +154,7 @@ public class BacklogForecastsControllerTests
         var result = await _controller.Forecast(ns.Id);
 
         result.Result.Should().NotBeOfType<OkObjectResult>();
-        _resultCache.Verify(c => c.Store(It.IsAny<IEnumerable<BacklogForecast>>()), Times.Never);
+        _resultCache.Verify(c => c.StoreAsync(It.IsAny<string>(), It.IsAny<IEnumerable<BacklogForecast>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion
@@ -166,7 +166,7 @@ public class BacklogForecastsControllerTests
     {
         var forecast = CreateTestForecast(Guid.NewGuid());
 
-        _resultCache.Setup(c => c.TryGet(forecast.Id)).Returns(forecast);
+        _resultCache.Setup(c => c.TryGetAsync(forecast.Id, It.IsAny<CancellationToken>())).ReturnsAsync(forecast);
         _namespaceRepository.Setup(r => r.GetByIdAsync(forecast.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(CreateTestNamespace()));
 
@@ -187,7 +187,7 @@ public class BacklogForecastsControllerTests
             "Endpoint=sb://other.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
             ownerId: "key_othertenant").Value;
 
-        _resultCache.Setup(c => c.TryGet(forecast.Id)).Returns(forecast);
+        _resultCache.Setup(c => c.TryGetAsync(forecast.Id, It.IsAny<CancellationToken>())).ReturnsAsync(forecast);
         _namespaceRepository.Setup(r => r.GetByIdAsync(forecast.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(foreignNamespace));
 
@@ -201,7 +201,7 @@ public class BacklogForecastsControllerTests
     {
         var forecast = CreateTestForecast(Guid.NewGuid());
 
-        _resultCache.Setup(c => c.TryGet(forecast.Id)).Returns(forecast);
+        _resultCache.Setup(c => c.TryGetAsync(forecast.Id, It.IsAny<CancellationToken>())).ReturnsAsync(forecast);
         _namespaceRepository.Setup(r => r.GetByIdAsync(forecast.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("NOT_FOUND", "Namespace not found")));
 
@@ -215,7 +215,7 @@ public class BacklogForecastsControllerTests
     {
         var forecast = CreateTestForecast(Guid.NewGuid());
 
-        _resultCache.Setup(c => c.TryGet(forecast.Id)).Returns(forecast);
+        _resultCache.Setup(c => c.TryGetAsync(forecast.Id, It.IsAny<CancellationToken>())).ReturnsAsync(forecast);
         _namespaceRepository.Setup(r => r.GetByIdAsync(forecast.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Failure(Error.Internal("DB_ERR", "Database unavailable")));
 
@@ -229,7 +229,7 @@ public class BacklogForecastsControllerTests
     public async Task GetById_NotFound_ShouldReturnNotFound()
     {
         var id = Guid.NewGuid();
-        _resultCache.Setup(c => c.TryGet(id)).Returns((BacklogForecast?)null);
+        _resultCache.Setup(c => c.TryGetAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync((BacklogForecast?)null);
 
         var result = await _controller.GetById(id);
 

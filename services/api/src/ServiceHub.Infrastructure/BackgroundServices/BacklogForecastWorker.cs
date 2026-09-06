@@ -154,7 +154,7 @@ public sealed class BacklogForecastWorker : BackgroundService
                 continue;
             }
 
-            resultCache.Store(forecastResult.Value);
+            await resultCache.StoreAsync(ns.OwnerId, forecastResult.Value, cancellationToken).ConfigureAwait(false);
             totalForecast += forecastResult.Value.Count;
 
             _logger.LogInformation(

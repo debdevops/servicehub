@@ -114,7 +114,7 @@ public class CorrelationFindingsControllerTests
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var response = okResult.Value.Should().BeOfType<CorrelationDetectionResponse>().Subject;
         response.Findings.Should().HaveCount(1);
-        _resultCache.Verify(c => c.Store(It.Is<IEnumerable<CorrelationFinding>>(f => f.Contains(finding))), Times.Once);
+        _resultCache.Verify(c => c.StoreAsync(It.Is<IEnumerable<CorrelationFinding>>(f => f.Contains(finding)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -204,7 +204,7 @@ public class CorrelationFindingsControllerTests
         var ns = CreateTestNamespace();
         var finding = CreateTestFinding(Namespace.SpaOwnerId, ns.Id);
 
-        _resultCache.Setup(c => c.TryGet(finding.Id)).Returns(finding);
+        _resultCache.Setup(c => c.TryGetAsync(finding.Id, It.IsAny<CancellationToken>())).ReturnsAsync(finding);
         foreach (var member in finding.Members)
         {
             _namespaceRepository.Setup(r => r.GetByIdAsync(member.NamespaceId, It.IsAny<CancellationToken>()))
@@ -222,7 +222,7 @@ public class CorrelationFindingsControllerTests
     public async Task GetById_NotFound_ShouldReturnNotFound()
     {
         var id = Guid.NewGuid();
-        _resultCache.Setup(c => c.TryGet(id)).Returns((CorrelationFinding?)null);
+        _resultCache.Setup(c => c.TryGetAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync((CorrelationFinding?)null);
 
         var result = await _controller.GetById(id);
 
@@ -245,7 +245,7 @@ public class CorrelationFindingsControllerTests
             80,
             "correlated spike");
 
-        _resultCache.Setup(c => c.TryGet(finding.Id)).Returns(finding);
+        _resultCache.Setup(c => c.TryGetAsync(finding.Id, It.IsAny<CancellationToken>())).ReturnsAsync(finding);
 
         // The caller (default SpaOwnerId) can see one member's namespace...
         _namespaceRepository.Setup(r => r.GetByIdAsync(accessibleNamespaceId, It.IsAny<CancellationToken>()))

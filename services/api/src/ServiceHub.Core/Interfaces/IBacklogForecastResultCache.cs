@@ -3,26 +3,29 @@ using ServiceHub.Core.Entities;
 namespace ServiceHub.Core.Interfaces;
 
 /// <summary>
-/// Short-lived, in-process store of recently computed <see cref="BacklogForecast"/> instances.
+/// Durable store of computed <see cref="BacklogForecast"/> instances (roadmap next-chapter M1,
+/// ADR-0009).
 /// </summary>
 /// <remarks>
-/// Deliberately not backed by the database, for the same reason as <see cref="IAnomalyResultCache"/>:
-/// <c>BacklogForecast</c> has never had an EF Core migration, and the RC1 migration freeze
-/// (ADR-0006) forbids adding one — regardless of how additive — while it is in effect. This cache
-/// lets <c>GET /v1/backlog-forecasts/{id}</c> retrieve a result a recent forecast cycle already
-/// computed without introducing schema. Entries do not survive a process restart and are not
-/// shared across instances; this is an accepted, documented limitation, not an oversight.
+/// Backed by <c>DlqDbContext.BacklogForecasts</c> as of M1 — before this, forecasts lived in a
+/// process-local, 24-hour TTL cache and were lost on every restart. See
+/// <c>SqliteBacklogForecastResultCache</c> and <c>PillarFindingRetentionWorker</c>.
 /// </remarks>
 public interface IBacklogForecastResultCache
 {
     /// <summary>
-    /// Stores (or refreshes) a batch of freshly computed forecasts, keyed by their <see cref="BacklogForecast.Id"/>.
+    /// Stores (or refreshes) a batch of freshly computed forecasts, keyed by their
+    /// <see cref="BacklogForecast.Id"/>.
     /// </summary>
-    void Store(IEnumerable<BacklogForecast> forecasts);
+    /// <param name="ownerId">The owner the forecasts were computed for.</param>
+    /// <param name="forecasts">The forecasts to store.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task StoreAsync(string ownerId, IEnumerable<BacklogForecast> forecasts, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Attempts to retrieve a previously stored forecast by ID.
     /// </summary>
-    /// <returns>The forecast, or <c>null</c> if it was never stored or has expired.</returns>
-    BacklogForecast? TryGet(Guid id);
+    /// <returns>The forecast, or <c>null</c> if it was never stored or has since been pruned by
+    /// retention.</returns>
+    Task<BacklogForecast?> TryGetAsync(Guid id, CancellationToken cancellationToken = default);
 }

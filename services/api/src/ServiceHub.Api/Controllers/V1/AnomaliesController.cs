@@ -87,7 +87,7 @@ public sealed class AnomaliesController : ApiControllerBase
 
         // Cache the results so a subsequent GET /{id} can retrieve one of them (see
         // IAnomalyResultCache for why this isn't backed by the database).
-        _anomalyResultCache.Store(result.Value);
+        await _anomalyResultCache.StoreAsync(OwnerId, result.Value, cancellationToken);
 
         var anomalies = result.Value
             .Select(MapToAnomalyInfo)
@@ -124,7 +124,7 @@ public sealed class AnomaliesController : ApiControllerBase
     {
         _logger.LogInformation("Getting anomaly {AnomalyId}", id);
 
-        var anomaly = _anomalyResultCache.TryGet(id);
+        var anomaly = await _anomalyResultCache.TryGetAsync(id, cancellationToken);
         if (anomaly is null)
         {
             return ToActionResult<AnomalyInfo>(ServiceHub.Shared.Results.Error.NotFound(

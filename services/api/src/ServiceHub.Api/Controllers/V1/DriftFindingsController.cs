@@ -92,7 +92,7 @@ public sealed class DriftFindingsController : ApiControllerBase
 
         // Cache the results so a subsequent GET /{id} can retrieve one of them (see
         // IDriftResultCache for why this isn't backed by the database).
-        _driftResultCache.Store(result.Value);
+        await _driftResultCache.StoreAsync(OwnerId, result.Value, cancellationToken);
 
         var findings = result.Value
             .Select(MapToDriftFindingInfo)
@@ -129,7 +129,7 @@ public sealed class DriftFindingsController : ApiControllerBase
     {
         _logger.LogInformation("Getting drift finding {DriftFindingId}", id);
 
-        var finding = _driftResultCache.TryGet(id);
+        var finding = await _driftResultCache.TryGetAsync(id, cancellationToken);
         if (finding is null)
         {
             return ToActionResult<DriftFindingInfo>(ServiceHub.Shared.Results.Error.NotFound(

@@ -8,6 +8,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Results;
 
@@ -51,7 +52,7 @@ public sealed class BulkOperationService : IBulkOperationService
             return Result.Failure<BulkOperationPreviewResponse>(nsResult.Error);
 
         var ns = nsResult.Value;
-        var (warnings, canExecute) = EvaluateGuards(ns, request.OperationType);
+        var (warnings, canExecute) = await EvaluateGuardsAsync(ownerId, ns, request.OperationType, cancellationToken);
 
         var query = BuildMatchQuery(ownerId, request.Filter);
         var totalMatched = await query.CountAsync(cancellationToken);
@@ -94,7 +95,7 @@ public sealed class BulkOperationService : IBulkOperationService
             return Result.Failure<BulkOperationJobResponse>(nsResult.Error);
 
         var ns = nsResult.Value;
-        var (warnings, canExecute) = EvaluateGuards(ns, request.OperationType);
+        var (warnings, canExecute) = await EvaluateGuardsAsync(ownerId, ns, request.OperationType, cancellationToken);
         if (!canExecute)
         {
             return Result.Failure<BulkOperationJobResponse>(Error.Validation(
@@ -246,17 +247,20 @@ public sealed class BulkOperationService : IBulkOperationService
     /// <summary>
     /// Same safety-by-default guards single-message replay/purge already enforce
     /// (<c>MessagesController.ReplayMessage</c>/<c>PurgeMessage</c>), evaluated once for the
-    /// whole job rather than per message — production block, Send permission for replay, and
+    /// whole job rather than per message — production elevation, Send permission for replay, and
     /// provider capability for purge.
     /// </summary>
-    private (List<string> Warnings, bool CanExecute) EvaluateGuards(Namespace ns, BulkOperationType operationType)
+    private async Task<(List<string> Warnings, bool CanExecute)> EvaluateGuardsAsync(
+        string ownerId, Namespace ns, BulkOperationType operationType, CancellationToken cancellationToken)
     {
         var warnings = new List<string>();
         var canExecute = true;
 
-        if (ns.Environment == Core.Enums.EnvironmentType.Prod)
+        if (ns.Environment == Core.Enums.EnvironmentType.Prod
+            && await ProductionElevationQueries.GetLiveAsync(_dbContext, ownerId, ns.Id, cancellationToken) is null)
         {
-            warnings.Add("This namespace is Production — bulk operations are blocked. Validate in DEV or UAT first.");
+            warnings.Add("This namespace is Production and has no live elevation — bulk operations are blocked. " +
+                "Request a production elevation, or validate in DEV/UAT first.");
             canExecute = false;
         }
 

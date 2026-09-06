@@ -24,11 +24,15 @@ namespace ServiceHub.Api.Controllers.V1;
 public sealed class GovernanceController : ApiControllerBase
 {
     private readonly IGovernanceGrantService _governanceGrantService;
+    private readonly IConfigurationExportService _configurationExportService;
 
     /// <summary>Initializes a new instance of the <see cref="GovernanceController"/> class.</summary>
-    public GovernanceController(IGovernanceGrantService governanceGrantService)
+    public GovernanceController(
+        IGovernanceGrantService governanceGrantService,
+        IConfigurationExportService configurationExportService)
     {
         _governanceGrantService = governanceGrantService ?? throw new ArgumentNullException(nameof(governanceGrantService));
+        _configurationExportService = configurationExportService ?? throw new ArgumentNullException(nameof(configurationExportService));
     }
 
     /// <summary>
@@ -100,6 +104,40 @@ public sealed class GovernanceController : ApiControllerBase
         var revokedByIdentity = ResolveGovernanceGranteeIdentity();
         var result = await _governanceGrantService.RevokeAsync(id, OwnerId, revokedByIdentity, cancellationToken);
         return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// Exports every <c>AutoReplayRule</c> and active Governance grant for the caller's owner as
+    /// configuration-as-code (roadmap next-chapter M5.4) — meant to be committed to git and
+    /// reviewed via pull request. Never includes a namespace connection string or any ledger
+    /// event/finding — see <see cref="IConfigurationExportService"/>'s own remarks.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpGet("configuration/export")]
+    [ProducesResponseType(typeof(ConfigurationBundle), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ConfigurationBundle>> ExportConfiguration(CancellationToken cancellationToken = default)
+    {
+        var bundle = await _configurationExportService.ExportAsync(OwnerId, cancellationToken);
+        return Ok(bundle);
+    }
+
+    /// <summary>
+    /// Applies a previously-exported (and possibly hand-edited) configuration bundle back to the
+    /// caller's owner. Additive/upsert only — a rule already present (matched by name) is updated
+    /// in place, an already-active grant is left alone, and nothing present live but absent from
+    /// the bundle is ever deleted or revoked.
+    /// </summary>
+    /// <param name="bundle">The bundle to import, typically a previously exported one.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpPost("configuration/import")]
+    [ProducesResponseType(typeof(ConfigurationImportResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ConfigurationImportResult>> ImportConfiguration(
+        [FromBody] ConfigurationBundle bundle, CancellationToken cancellationToken = default)
+    {
+        var actor = ResolveRecoveryActor();
+        var result = await _configurationExportService.ImportAsync(OwnerId, bundle, actor, cancellationToken);
+        return ToActionResult<ConfigurationImportResult>(result);
     }
 
     private static GovernanceGrantResponse MapToResponse(GovernanceGrant grant) => new(

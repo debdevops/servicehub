@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure;
 using ServiceHub.Infrastructure.Persistence;
@@ -40,7 +41,7 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
         var observation = MakeObservation();
 
         var results = await _service.LookupAndRecordAsync(
-            TestConstants.TestOwnerId, namespaceId, new[] { observation });
+            TestConstants.TestOwnerId, namespaceId, new[] { observation }, SignatureHashKind.Fingerprint);
 
         results.Should().ContainKey(observation.SignatureHash);
         var result = results[observation.SignatureHash];
@@ -54,8 +55,8 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
         var namespaceId = Guid.NewGuid();
         var observation = MakeObservation();
 
-        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation });
-        var results = await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation });
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation }, SignatureHashKind.Fingerprint);
+        var results = await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation }, SignatureHashKind.Fingerprint);
 
         var result = results[observation.SignatureHash];
         result.IsNew.Should().BeFalse();
@@ -68,10 +69,10 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
         var namespaceId = Guid.NewGuid();
         var observation = MakeObservation();
 
-        var firstResults = await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation });
+        var firstResults = await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation }, SignatureHashKind.Fingerprint);
         var firstSeenAt = firstResults[observation.SignatureHash].FirstSeenAt;
 
-        var secondResults = await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation });
+        var secondResults = await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation }, SignatureHashKind.Fingerprint);
 
         secondResults[observation.SignatureHash].FirstSeenAt.Should().Be(firstSeenAt);
     }
@@ -83,11 +84,11 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
         var observation = MakeObservation();
 
         // Owner A observes this signature twice.
-        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation });
-        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation });
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation }, SignatureHashKind.Fingerprint);
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation }, SignatureHashKind.Fingerprint);
 
         // Owner B observes the same hash in the same namespace for the first time.
-        var ownerBResults = await _service.LookupAndRecordAsync(TestConstants.AltOwnerId, namespaceId, new[] { observation });
+        var ownerBResults = await _service.LookupAndRecordAsync(TestConstants.AltOwnerId, namespaceId, new[] { observation }, SignatureHashKind.Fingerprint);
 
         var ownerBResult = ownerBResults[observation.SignatureHash];
         ownerBResult.IsNew.Should().BeTrue();
@@ -101,7 +102,7 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
         var observation = MakeObservation();
 
         var results = await _service.LookupAndRecordAsync(
-            TestConstants.TestOwnerId, namespaceId, new[] { observation, observation, observation });
+            TestConstants.TestOwnerId, namespaceId, new[] { observation, observation, observation }, SignatureHashKind.Fingerprint);
 
         results[observation.SignatureHash].OccurrenceCount.Should().Be(1);
 
@@ -116,9 +117,9 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
     {
         var observation = MakeObservation();
 
-        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, Guid.NewGuid(), new[] { observation });
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, Guid.NewGuid(), new[] { observation }, SignatureHashKind.Fingerprint);
         var resultsInOtherNamespace = await _service.LookupAndRecordAsync(
-            TestConstants.TestOwnerId, Guid.NewGuid(), new[] { observation });
+            TestConstants.TestOwnerId, Guid.NewGuid(), new[] { observation }, SignatureHashKind.Fingerprint);
 
         resultsInOtherNamespace[observation.SignatureHash].IsNew.Should().BeTrue();
     }
@@ -129,7 +130,7 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
         var namespaceId = Guid.NewGuid();
         var observation = MakeObservation();
 
-        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation });
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation }, SignatureHashKind.Fingerprint);
 
         var stored = await _dbContext.NamespaceSignatures.SingleAsync(
             s => s.OwnerId == TestConstants.TestOwnerId && s.NamespaceId == namespaceId
@@ -153,7 +154,7 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
     {
         var namespaceId = Guid.NewGuid();
         var observation = MakeObservation();
-        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation });
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation }, SignatureHashKind.Fingerprint);
 
         var result = await _service.GetByHashAsync(TestConstants.TestOwnerId, namespaceId, observation.SignatureHash);
 
@@ -174,7 +175,7 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
     {
         var namespaceId = Guid.NewGuid();
         var observation = MakeObservation();
-        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation });
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceId, new[] { observation }, SignatureHashKind.Fingerprint);
 
         var before = await _service.GetByHashAsync(TestConstants.TestOwnerId, namespaceId, observation.SignatureHash);
         await _service.GetByHashAsync(TestConstants.TestOwnerId, namespaceId, observation.SignatureHash);
@@ -194,8 +195,8 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
         var namespaceB = Guid.NewGuid();
         var observation = MakeObservation();
 
-        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceA, new[] { observation });
-        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceB, new[] { observation });
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceA, new[] { observation }, SignatureHashKind.Fingerprint);
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceB, new[] { observation }, SignatureHashKind.Fingerprint);
 
         var matches = await _service.FindAcrossNamespacesAsync(
             TestConstants.TestOwnerId, observation.SignatureHash, excludeNamespaceId: namespaceA);
@@ -208,7 +209,7 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
     {
         var namespaceA = Guid.NewGuid();
         var observation = MakeObservation();
-        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceA, new[] { observation });
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceA, new[] { observation }, SignatureHashKind.Fingerprint);
 
         var matches = await _service.FindAcrossNamespacesAsync(
             TestConstants.TestOwnerId, observation.SignatureHash, excludeNamespaceId: namespaceA);
@@ -221,7 +222,7 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
     {
         var namespaceA = Guid.NewGuid();
         var observation = MakeObservation();
-        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceA, new[] { observation });
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceA, new[] { observation }, SignatureHashKind.Fingerprint);
 
         var matches = await _service.FindAcrossNamespacesAsync(
             TestConstants.TestOwnerId, "never-seen-hash", excludeNamespaceId: Guid.NewGuid());
@@ -236,8 +237,8 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
         var namespaceB = Guid.NewGuid();
         var observation = MakeObservation();
 
-        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceA, new[] { observation });
-        await _service.LookupAndRecordAsync(TestConstants.AltOwnerId, namespaceB, new[] { observation });
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceA, new[] { observation }, SignatureHashKind.Fingerprint);
+        await _service.LookupAndRecordAsync(TestConstants.AltOwnerId, namespaceB, new[] { observation }, SignatureHashKind.Fingerprint);
 
         var matches = await _service.FindAcrossNamespacesAsync(
             TestConstants.TestOwnerId, observation.SignatureHash, excludeNamespaceId: namespaceA);
@@ -253,9 +254,9 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
         var namespaceC = Guid.NewGuid();
         var observation = MakeObservation();
 
-        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceA, new[] { observation });
-        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceB, new[] { observation });
-        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceC, new[] { observation });
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceA, new[] { observation }, SignatureHashKind.Fingerprint);
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceB, new[] { observation }, SignatureHashKind.Fingerprint);
+        await _service.LookupAndRecordAsync(TestConstants.TestOwnerId, namespaceC, new[] { observation }, SignatureHashKind.Fingerprint);
 
         var matches = await _service.FindAcrossNamespacesAsync(
             TestConstants.TestOwnerId, observation.SignatureHash, excludeNamespaceId: namespaceA);

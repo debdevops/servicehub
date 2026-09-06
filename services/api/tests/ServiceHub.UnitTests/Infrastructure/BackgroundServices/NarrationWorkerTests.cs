@@ -124,7 +124,7 @@ public sealed class NarrationWorkerTests
 
         await worker.RunNarrationCycleAsync(CancellationToken.None);
 
-        _cacheMock.Verify(c => c.Store(It.IsAny<IEnumerable<Narration>>()), Times.Never);
+        _cacheMock.Verify(c => c.StoreAsync(It.IsAny<IEnumerable<Narration>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -154,7 +154,7 @@ public sealed class NarrationWorkerTests
 
         await worker.RunNarrationCycleAsync(CancellationToken.None);
 
-        _cacheMock.Verify(c => c.Store(It.Is<IEnumerable<Narration>>(n => n.Contains(narration))), Times.Once);
+        _cacheMock.Verify(c => c.StoreAsync(It.Is<IEnumerable<Narration>>(n => n.Contains(narration)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

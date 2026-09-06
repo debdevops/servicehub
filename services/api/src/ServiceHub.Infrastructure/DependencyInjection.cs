@@ -11,6 +11,7 @@ using ServiceHub.Infrastructure.AI;
 using ServiceHub.Infrastructure.Backup;
 using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.BulkOperations;
+using ServiceHub.Infrastructure.DlqObserver;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.PlaybookLedger;
 using ServiceHub.Infrastructure.RecoveryLedger;
@@ -253,11 +254,14 @@ public static class DependencyInjection
         services.AddHostedService<BulkOperationWorker>();
         services.AddHostedService<SignatureReplayWorker>();
         services.AddHostedService<AuditRetentionWorker>();
+        services.AddHostedService<PillarFindingRetentionWorker>();
         services.AddHostedService<RecoveryVerificationWorker>();
         services.AddHostedService<RecoveryAgeingWorker>();
         services.AddHostedService<PlaybookExpiryWorker>();
         services.AddHostedService<PreventionRuleExpiryWorker>();
         services.AddHostedService<AutonomyEvaluationWorker>();
+        services.AddHostedService<ProductionElevationExpiryWorker>();
+        services.AddHostedService<DlqObserverAttestationWorker>();
         services.AddHostedService<BackupWorker>();
         services.AddHostedService<ReasoningCompanionWorker>();
 
@@ -383,6 +387,11 @@ public static class DependencyInjection
         services.TryAddScoped<INamespaceSignatureLookupService, NamespaceSignatureLookupService>();
         services.TryAddScoped<IGovernanceGrantService, GovernanceGrantService>();
         services.TryAddScoped<IGovernanceAccessEvaluator, Governance.GovernanceAccessEvaluator>();
+
+        // Configuration as code (roadmap next-chapter M5.4) — round-trip export/import of
+        // AutoReplayRules and GovernanceGrants only; never namespace credentials, never ledger
+        // events or pillar findings. See IConfigurationExportService's own remarks.
+        services.TryAddScoped<IConfigurationExportService, ConfigurationExportService>();
         services.TryAddScoped<IPlaybookLedger, PlaybookLedgerService>();
         services.TryAddScoped<ICorrelationAccountabilityService, CorrelationAccountabilityService>();
         services.TryAddScoped<IBacktestService, BacktestService>();
@@ -390,19 +399,22 @@ public static class DependencyInjection
         services.TryAddScoped<IAttentionQueueService, Incidents.AttentionQueueService>();
         services.TryAddScoped<IPreventionRuleEvaluationService, PreventionRuleEvaluationService>();
         services.TryAddScoped<IAnomalyDetectionService, Analytics.DeterministicAnomalyDetectionService>();
-        services.TryAddSingleton<IAnomalyResultCache, Analytics.InMemoryAnomalyResultCache>();
+        // Durable as of next-chapter M1 (ADR-0009) — Scoped, not Singleton, since each now
+        // depends on the per-request/per-scope DlqDbContext rather than holding process-local
+        // state itself.
+        services.TryAddScoped<IAnomalyResultCache, Analytics.SqliteAnomalyResultCache>();
         services.TryAddScoped<IDriftDetectionService, Analytics.DeterministicDriftDetectionService>();
-        services.TryAddSingleton<IDriftResultCache, Analytics.InMemoryDriftResultCache>();
+        services.TryAddScoped<IDriftResultCache, Analytics.SqliteDriftResultCache>();
         services.TryAddScoped<IContractViolationExportService, Analytics.DeterministicContractViolationExportService>();
         services.TryAddScoped<ICorrelationDetectionService, Analytics.DeterministicCorrelationDetectionService>();
-        services.TryAddSingleton<ICorrelationResultCache, Analytics.InMemoryCorrelationResultCache>();
+        services.TryAddScoped<ICorrelationResultCache, Analytics.SqliteCorrelationResultCache>();
         services.TryAddScoped<IExternalSignalRepository, ExternalSignalRepository>();
         services.TryAddScoped<IExternalSignalCorrelationService, Analytics.DeterministicExternalSignalCorrelationService>();
-        services.TryAddSingleton<IExternalSignalCorrelationCache, Analytics.InMemoryExternalSignalCorrelationCache>();
+        services.TryAddScoped<IExternalSignalCorrelationCache, Analytics.SqliteExternalSignalCorrelationCache>();
         services.TryAddScoped<INarrationService, Analytics.DeterministicNarrationService>();
-        services.TryAddSingleton<INarrationResultCache, Analytics.InMemoryNarrationResultCache>();
+        services.TryAddScoped<INarrationResultCache, Analytics.SqliteNarrationResultCache>();
         services.TryAddScoped<IBacklogForecastService, Analytics.DeterministicBacklogForecastService>();
-        services.TryAddSingleton<IBacklogForecastResultCache, Analytics.InMemoryBacklogForecastResultCache>();
+        services.TryAddScoped<IBacklogForecastResultCache, Analytics.SqliteBacklogForecastResultCache>();
 
         // Register signature analysis strategies.
         // AIClusteringStrategy wraps the AI service client and provides rich clustering.
@@ -426,10 +438,15 @@ public static class DependencyInjection
         // DlqDbContext-backed service. No callers yet; wired to the recovery paths in a later phase.
         services.TryAddScoped<IRecoveryLedger, RecoveryLedgerService>();
         services.TryAddScoped<IRecoveryEvidenceExporter, RecoveryEvidenceExporter>();
+        services.TryAddScoped<IPlaybookEvidenceExporter, PlaybookEvidenceExporter>();
 
         // Deterministic Eligibility Gate (roadmap §9/Phase B) — the single safety-decision point
         // every recovery attempt passes through before a provider call.
         services.TryAddScoped<IRecoveryEligibilityGate, RecoveryEligibilityGate>();
+
+        // DLQ observer attestation (ADR-004; ADR-0011) — EF Core (DlqDbContext)-backed, so Scoped
+        // like every other DlqDbContext-backed service.
+        services.TryAddScoped<IDlqObserverAttestationService, DlqObserverAttestationService>();
 
         // Evidence-Derived Trust Scoring (roadmap §8.10/Phase C) — read-only aggregation over
         // the ledger; never writes, never grants autonomy.
@@ -450,6 +467,11 @@ public static class DependencyInjection
         // Fleet-wide autonomy dashboard (roadmap §11 item 5, §15 item 9) — read-only aggregation
         // over AutonomyGrants/AutoReplayRules/RecoveryEvents; never writes, never grants autonomy.
         services.TryAddScoped<IAutonomyDashboardService, AutonomyDashboardService>();
+
+        // Outcome metrics (roadmap next-chapter M4.1) — what the fleet achieved, not how
+        // autonomous it is. Read-only aggregation over RecoveryLedgerEntries/RecoveryOperations/
+        // RecoveryEvents; never writes, never a modelled or estimated figure.
+        services.TryAddScoped<IOutcomeMetricsService, OutcomeMetricsService>();
 
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();
@@ -495,6 +517,11 @@ public static class DependencyInjection
         // ConfigurationValidationExtensions.AddServiceHubConfigurationValidation (mirrors
         // AuditRetentionOptions), not here.
         services.TryAddScoped<IBackupService, BackupService>();
+
+        // Recovery Evidence Ledger epoch sealing/archival (roadmap next-chapter M5.2) —
+        // RecoveryEpochArchiveOptions itself is bound + validated by
+        // ConfigurationValidationExtensions.AddServiceHubConfigurationValidation, not here.
+        services.TryAddScoped<IRecoveryEpochArchiveService, RecoveryEpochArchiveService>();
 
         return services;
     }

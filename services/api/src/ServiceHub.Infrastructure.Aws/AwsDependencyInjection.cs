@@ -39,6 +39,10 @@ public static class AwsDependencyInjection
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<ICloudMessagingProvider, AwsMessagingProvider>());
 
+        // DLQ observer attestation reader (ADR-004; ADR-0011) — reads the observer's DynamoDB log.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<IDlqObserverLogReader, DlqObserver.DynamoDbObserverLogReader>());
+
         // Register the AWS health check so the /health/dependencies endpoint validates SQS
         // connectivity. Tagged "dependencies", not "ready" — an unreachable AWS namespace is an
         // external broker outage and must never flip /health/ready to Unhealthy.

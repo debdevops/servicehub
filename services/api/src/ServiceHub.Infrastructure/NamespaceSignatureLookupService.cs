@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Persistence;
 
@@ -23,6 +24,7 @@ public sealed class NamespaceSignatureLookupService : INamespaceSignatureLookupS
         string ownerId,
         Guid namespaceId,
         IReadOnlyList<ClusterSignatureObservation> observations,
+        SignatureHashKind hashKind,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(ownerId);
@@ -40,8 +42,12 @@ public sealed class NamespaceSignatureLookupService : INamespaceSignatureLookupS
 
         var hashes = distinctObservations.Select(o => o.SignatureHash).ToList();
 
+        // Scoped to hashKind (M1.4) — the upsert key is (owner, namespace, hash, kind), so a
+        // fingerprint-space call can never match (and silently increment) a cluster-space row
+        // that happens to share the same hash string, and vice versa.
         var existing = await _dbContext.NamespaceSignatures
-            .Where(s => s.OwnerId == ownerId && s.NamespaceId == namespaceId && hashes.Contains(s.SignatureHash))
+            .Where(s => s.OwnerId == ownerId && s.NamespaceId == namespaceId
+                && s.HashKind == hashKind && hashes.Contains(s.SignatureHash))
             .ToDictionaryAsync(s => s.SignatureHash, cancellationToken)
             .ConfigureAwait(false);
 
@@ -66,6 +72,7 @@ public sealed class NamespaceSignatureLookupService : INamespaceSignatureLookupS
                     NamespaceId = namespaceId,
                     OwnerId = ownerId,
                     SignatureHash = observation.SignatureHash,
+                    HashKind = hashKind,
                     FirstSeenAt = now,
                     LastSeenAt = now,
                     OccurrenceCount = 1,

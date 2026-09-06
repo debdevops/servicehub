@@ -81,6 +81,7 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly ILogger<RecoveryEligibilityGate> _logger;
     private readonly Telemetry.ServiceHubMetrics? _metrics;
+    private readonly IDlqObserverAttestationService? _attestationService;
 
     /// <summary>Initialises a new instance of <see cref="RecoveryEligibilityGate"/>.</summary>
     /// <param name="recoveryLedger">The recovery ledger used to read/write eligibility-relevant state.</param>
@@ -89,14 +90,21 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
     /// Optional — <see langword="null"/> in tests that construct this gate directly without a DI
     /// container. Resolved automatically in production, where it is registered as a singleton.
     /// </param>
+    /// <param name="attestationService">
+    /// Optional (ADR-004; ADR-0011) — <see langword="null"/> in tests that construct this gate
+    /// directly, and treated the same as "no attested namespace" (fail-closed to the provider's
+    /// static default). Resolved automatically in production.
+    /// </param>
     public RecoveryEligibilityGate(
         IRecoveryLedger recoveryLedger,
         ILogger<RecoveryEligibilityGate> logger,
-        Telemetry.ServiceHubMetrics? metrics = null)
+        Telemetry.ServiceHubMetrics? metrics = null,
+        IDlqObserverAttestationService? attestationService = null)
     {
         _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _metrics = metrics;
+        _attestationService = attestationService;
     }
 
     /// <inheritdoc />
@@ -147,14 +155,46 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
             return new EligibilityDecision(EligibilityVerdict.Deny, ReasonPurgeAutomationProhibited);
         }
 
-        // Predicate 2 — production elevation (§9): no elevation-recording mechanism exists yet in
-        // v3.7.0, so this is unconditional. Every existing call site already blocks Prod ahead of
-        // this point (MessagesController, BulkOperationExecutor, SignatureReplayExecutor,
-        // DlqMonitorWorker's AutoReplayRule scan) — this predicate is defense-in-depth here, not a
-        // live behavior change for any current caller.
+        // Predicate 2 — production elevation (ADR-0010 §Decision): a hard, non-overridable ceiling
+        // for Automation/System — no AutonomyGrant, no promotion, no AutoReplayRule match may ever
+        // touch a Prod namespace, elevation or not. For User/ApiKey, production recovery requires
+        // a live (approved, unrevoked, unexpired) ProductionElevation covering this exact
+        // namespace; every existing front-door call site (MessagesController,
+        // BulkOperationExecutor, SignatureReplayExecutor, RulesController's Replay All) performs
+        // the same check ahead of this point, so this predicate is defense-in-depth for them and
+        // the sole enforcement point for any caller that reaches the gate directly.
         if (request.Environment == EnvironmentType.Prod)
         {
-            return new EligibilityDecision(EligibilityVerdict.Deny, ReasonProductionElevationRequired);
+            if (request.ActorKind is RecoveryActorKind.Automation or RecoveryActorKind.System)
+            {
+                return new EligibilityDecision(EligibilityVerdict.Deny, ReasonProductionElevationRequired);
+            }
+
+            if (request.NamespaceId is not { } prodNamespaceId)
+            {
+                return new EligibilityDecision(EligibilityVerdict.Deny, ReasonProductionElevationRequired);
+            }
+
+            ProductionElevation? liveElevation;
+            try
+            {
+                liveElevation = await _recoveryLedger.GetLiveProductionElevationAsync(
+                    request.OwnerId, prodNamespaceId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                // Fail closed on a query error (roadmap §18): an unrunnable safety check must
+                // block, never silently allow production recovery through.
+                _logger.LogError(ex,
+                    "Production elevation query failed for owner {OwnerId} namespace {NamespaceId}; failing closed",
+                    request.OwnerId, prodNamespaceId);
+                return new EligibilityDecision(EligibilityVerdict.Deny, ReasonProductionElevationRequired);
+            }
+
+            if (liveElevation is null)
+            {
+                return new EligibilityDecision(EligibilityVerdict.Deny, ReasonProductionElevationRequired);
+            }
         }
 
         // Predicate 3 — recurrence cap (§7.5): only evaluable when the caller supplied a real
@@ -252,7 +292,7 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
             // practice — it exists so a future change (e.g. a fingerprint-algorithm version that
             // stops encoding provider identity into SignatureHash) can't silently reopen a
             // cross-provider execution path with nothing here to catch it.
-            var capabilities = GetCapabilities(request.Provider);
+            var capabilities = await GetCapabilitiesAsync(request, cancellationToken);
             if (!capabilities.CanProveDlqAbsence)
             {
                 _logger.LogWarning(
@@ -275,8 +315,36 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
 
     // A null/unresolved provider fails closed to AWS's capabilities (CanProveDlqAbsence=false),
     // matching AutonomyEvaluationWorker's existing fail-closed behavior on the promotion side.
-    private static ProviderCapabilities GetCapabilities(CloudProviderType? provider) =>
-        ProviderCapabilities.For(provider ?? CloudProviderType.Aws);
+    //
+    // ADR-004/ADR-0011: when the provider's own static default is false, a live DLQ observer
+    // attestation for this exact namespace overrides CanProveDlqAbsence to true — never the other
+    // direction (an attested namespace can't turn Azure's already-true default false). No
+    // attestation service, no NamespaceId, or a query failure all fail closed to the static
+    // default, exactly as ADR-004 item 4 requires ("never assume fine").
+    private async Task<ProviderCapabilities> GetCapabilitiesAsync(
+        RecoveryEligibilityRequest request, CancellationToken cancellationToken)
+    {
+        var baseCapabilities = ProviderCapabilities.For(request.Provider ?? CloudProviderType.Aws);
+        if (baseCapabilities.CanProveDlqAbsence || _attestationService is null || request.NamespaceId is not { } namespaceId)
+        {
+            return baseCapabilities;
+        }
+
+        bool attested;
+        try
+        {
+            attested = await _attestationService.IsLiveAsync(request.OwnerId, namespaceId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "DLQ observer attestation query failed for owner {OwnerId} namespace {NamespaceId}; failing closed to the provider's static default",
+                request.OwnerId, namespaceId);
+            return baseCapabilities;
+        }
+
+        return attested ? baseCapabilities with { CanProveDlqAbsence = true } : baseCapabilities;
+    }
 
     private async Task<EligibilityDecision?> EvaluateRecurrenceLineageAsync(
         string ownerId, Guid namespaceId, string entityName, string bodyHash,

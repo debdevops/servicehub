@@ -186,11 +186,13 @@ public sealed class BulkOperationExecutor : IBulkOperationExecutor
         var ns = nsResult.Value;
 
         // Re-check the same guard CreateJobAsync validated — defensive against the namespace's
-        // environment changing between job creation and the worker picking it up.
-        if (ns.Environment == EnvironmentType.Prod)
+        // environment changing (or an elevation expiring/being revoked) between job creation and
+        // the worker picking it up (ADR-0010 §Decision phase 2).
+        if (ns.Environment == EnvironmentType.Prod
+            && await _recoveryLedger.GetLiveProductionElevationAsync(job.OwnerId, ns.Id, cancellationToken) is null)
         {
             job.Status = BulkOperationStatus.Failed;
-            job.ErrorSummary = "Namespace is now Production — bulk operation blocked at execution time.";
+            job.ErrorSummary = "Namespace is Production and has no live elevation — bulk operation blocked at execution time.";
             return;
         }
 

@@ -97,5 +97,31 @@ public enum RecoveryEventType
     /// (which always carries the applied value in its <c>DetailJson</c>) so a non-default window
     /// is individually queryable and cannot be missed by only reading terminal-disposition
     /// events.</summary>
-    NonDefaultObservationWindowApplied = 20
+    NonDefaultObservationWindowApplied = 20,
+
+    /// <summary>An operator requested a <see cref="Entities.ProductionElevation"/> (ADR-0010
+    /// §Decision phase 2) — carries the namespace, stated reason and requested duration. Grants
+    /// nothing by itself; the elevation is not live until a distinct approver acts.</summary>
+    ProductionElevationRequested = 21,
+
+    /// <summary>A distinct approver granted a requested <see cref="Entities.ProductionElevation"/>,
+    /// opening its live window. Self-approval is refused even for
+    /// <see cref="Enums.GovernanceRole.Admin"/> — the requester and approver identities recorded
+    /// here are always different.</summary>
+    ProductionElevationApproved = 22,
+
+    /// <summary>A live <see cref="Entities.ProductionElevation"/> naturally lapsed past its
+    /// absolute expiry. Recorded idempotently, once, by <c>ProductionElevationExpiryWorker</c> —
+    /// never by the eligibility gate's read path, which stays side-effect free.</summary>
+    ProductionElevationExpired = 23,
+
+    /// <summary>An elevation was revoked early, before its natural expiry.</summary>
+    ProductionElevationRevoked = 24,
+
+    /// <summary>Closes an owner's current epoch (roadmap next-chapter M5.2) — the durable,
+    /// hash-chained marker a subsequent archival prune anchors to. Carries the sealed epoch
+    /// number and the last archived <c>Seq</c> in <c>DetailJson</c>. Deliberately kept live (not
+    /// itself ever archived out from under a chain that still needs it) until superseded by the
+    /// next seal — see <c>RecoveryEpochArchiveService</c>.</summary>
+    EpochSealed = 25
 }

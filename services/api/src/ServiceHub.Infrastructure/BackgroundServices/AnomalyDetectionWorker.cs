@@ -160,7 +160,7 @@ public sealed class AnomalyDetectionWorker : BackgroundService
                 continue;
             }
 
-            resultCache.Store(detectionResult.Value);
+            await resultCache.StoreAsync(ns.OwnerId, detectionResult.Value, cancellationToken).ConfigureAwait(false);
             totalDetected += detectionResult.Value.Count;
 
             _logger.LogInformation(

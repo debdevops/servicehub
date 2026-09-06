@@ -137,7 +137,7 @@ public sealed class CorrelationDetectionWorkerTests
         await worker.RunDetectionCycleAsync(CancellationToken.None);
 
         _correlationDetectionMock.Verify(c => c.DetectCorrelations(It.IsAny<IReadOnlyList<AnomalyObservation>>()), Times.Never);
-        _cacheMock.Verify(c => c.Store(It.IsAny<IEnumerable<CorrelationFinding>>()), Times.Never);
+        _cacheMock.Verify(c => c.StoreAsync(It.IsAny<IEnumerable<CorrelationFinding>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -178,7 +178,7 @@ public sealed class CorrelationDetectionWorkerTests
         capturedObservations.Should().Contain(o => o.Anomaly == anomalyA && o.OwnerId == "key_owner1" && o.Provider == nsA.Provider);
         capturedObservations.Should().Contain(o => o.Anomaly == anomalyB && o.OwnerId == "key_owner1" && o.Provider == nsB.Provider);
 
-        _cacheMock.Verify(c => c.Store(It.Is<IEnumerable<CorrelationFinding>>(f => f.Contains(correlationFinding))), Times.Once);
+        _cacheMock.Verify(c => c.StoreAsync(It.Is<IEnumerable<CorrelationFinding>>(f => f.Contains(correlationFinding)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -199,7 +199,7 @@ public sealed class CorrelationDetectionWorkerTests
 
         await worker.RunDetectionCycleAsync(CancellationToken.None);
 
-        _cacheMock.Verify(c => c.Store(It.IsAny<IEnumerable<CorrelationFinding>>()), Times.Never);
+        _cacheMock.Verify(c => c.StoreAsync(It.IsAny<IEnumerable<CorrelationFinding>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

@@ -53,12 +53,10 @@ public sealed record CreateNamespaceRequest(
     /// <inheritdoc/>
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        if (Environment == EnvironmentType.Prod)
-        {
-            yield return new ValidationResult(
-                "Production namespace connectivity is disabled. Connect in Dev or UAT instead.",
-                [nameof(Environment)]);
-        }
+        // ADR-0010 §Decision, phase 1 (M2.1): Prod is now registrable — observed by Investigate,
+        // Correlate and Prevent without restriction. Every recovery verb (replay, purge, direct
+        // send/dead-letter) still denies EnvironmentType.Prod independently, unconditionally
+        // unless a live ProductionElevation covers the namespace (phase 2), exactly as before.
 
         if (Provider == CloudProviderType.Aws)
         {

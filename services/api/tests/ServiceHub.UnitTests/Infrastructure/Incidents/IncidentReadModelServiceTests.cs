@@ -88,6 +88,7 @@ public sealed class IncidentReadModelServiceTests : IDisposable
             NamespaceId = NamespaceId,
             OwnerId = OwnerId,
             SignatureHash = SignatureHash,
+            HashKind = SignatureHashKind.Fingerprint,
             FirstSeenAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
             LastSeenAt = new DateTimeOffset(2026, 1, 5, 0, 0, 0, TimeSpan.Zero),
             OccurrenceCount = 4,

@@ -773,15 +773,17 @@ public sealed class RulesController : ApiControllerBase
                     continue;
                 }
 
-                // Safety-by-default guard: never replay in production.
-                if (ns.Environment == EnvironmentType.Prod)
+                // Safety-by-default guard (ADR-0010 §Decision phase 2): replay-all in production
+                // requires a live, two-person-approved ProductionElevation for this namespace.
+                if (ns.Environment == EnvironmentType.Prod
+                    && await recoveryLedger.GetLiveProductionElevationAsync(OwnerId, ns.Id, ct) is null)
                 {
                     foreach (var msg in group)
                     {
                         skipped++;
                         results.Add(new ReplayAllItemResponse(
                             DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
-                            Outcome: "Skipped", Error: "Replay-all is blocked for production namespaces"));
+                            Outcome: "Skipped", Error: "Replay-all is blocked for production namespaces without a live elevation"));
                     }
                     continue;
                 }
