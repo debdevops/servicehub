@@ -156,9 +156,18 @@ with independently verifiable evidence exports.
   running service over real accumulated campaign traffic, plus the producer-facing
   contract-violation export built from the same window. Read-only: no broker contacted, no message
   sent, no ledger row written.
-- **Not yet observed:** an L4→L5 promotion, and the drift worker's automatic Playbook proposal
-  (drift *detection* is observed above; the worker hop that turns a finding into a
-  human-dispositionable `DriftFinding` proposal has not yet been witnessed live).
+- `docs-private/w1.3-soak-run-2026-09-05-l5/` — the first-ever **L4→L5 promotion**, observed against
+  a fresh Azure queue: 30 verified `Recovered` outcomes at a 100% success rate, `Unattended (L5)`
+  reached at 2026-09-05T17:33:52Z. Three per-operation exports, each independently re-verified
+  `PASS` by `scripts/verify-recovery-chain.py`.
+- **Still not observed:** the drift worker's automatic Playbook proposal (drift *detection* is
+  observed above; the worker hop that turns a finding into a human-dispositionable `DriftFinding`
+  proposal has not been witnessed live). Root-caused 2026-09-05:
+  `DlqMonitor:AllowDestructivePeek` defaults to `false` for AWS/GCP, so the background scan that is
+  the sole writer of the `MessageFeatureRecords` this worker reads never runs for those providers
+  without it — no volume of fresh traffic can close this without that override, and a live attempt
+  to set it was correctly refused by the session's own safety sandbox. See
+  `docs-private/prevent-drift-worker-proposal-2026-09-05/RESULTS.md`.
 
 ## [3.7.0] — 2026-08-19
 
