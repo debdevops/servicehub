@@ -272,7 +272,6 @@ How-To-Use.md
 # Claude Code full-app E2E verification skill (same pattern as aws-e2e-specialist above)
 .claude/skills/e2e-verify
 
-docs/linkedin
 # Playwright test artifacts
 apps/web/test-results/
 apps/web/playwright-report/

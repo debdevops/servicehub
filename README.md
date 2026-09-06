@@ -568,11 +568,19 @@ az webapp config appsettings set --name <app-name> --resource-group rg-servicehu
 az webapp restart --name <app-name> --resource-group rg-servicehub
 ```
 
-Then mount **persistent** storage — App Service's local container disk is not guaranteed to
-survive a restart or scale event. Attach an Azure Files share via `az webapp config storage-account add`
-and point both `DlqDatabase__DataDirectory` and `NamespaceRepository__DataDirectory` at the
-same mounted path (see [Self-Hosting → Persistent storage](self-hosting/README.md#persistent-storage-two-stores-two-config-keys) —
-this is the single most common misconfiguration).
+Then decide where the data directory lives, and read
+[Self-Hosting → Storage requirement](self-hosting/README.md#storage-requirement-local-block-storage-not-a-network-share)
+**before** you do. App Service's local container disk is not guaranteed to survive a restart,
+but its documented alternative — an Azure Files share — is SMB, and **SQLite is not supported
+on a network filesystem**: WAL mode silently degrades and the advisory locks that stop a second
+writer stop being reliable. The two workable options are to accept the container's local disk
+and back up off-box ([docs/BACKUP-RESTORE.md](docs/BACKUP-RESTORE.md)), or to host ServiceHub
+somewhere with real block storage instead. Whichever you choose, point both
+`DlqDatabase__DataDirectory` and `NamespaceRepository__DataDirectory` at the same path (see
+[Self-Hosting → Persistent storage](self-hosting/README.md#persistent-storage-two-stores-two-config-keys) —
+this is the single most common misconfiguration). Confirm the result with
+`curl https://<app-name>.azurewebsites.net/health/ready` and check that the `sqlite` entry
+reports `"JournalMode": "wal"`.
 
 Verify: `curl https://<app-name>.azurewebsites.net/health/live`, then open the URL in a
 browser. **Pin the App Service Plan to a single instance** — do not enable auto-scale-out;
@@ -608,8 +616,10 @@ az containerapp create --name servicehub --resource-group rg-servicehub \
 ```
 
 `--min-replicas 1 --max-replicas 1` is not optional — it's what makes this safe to run at
-all. Attach Azure Files storage the same way as App Service, mounted at both
-`DataDirectory` paths, then verify against `/health/live` as above.
+all. Storage carries the same constraint as App Service above: **no network file share for the
+data directory**, for the reasons in
+[Self-Hosting → Storage requirement](self-hosting/README.md#storage-requirement-local-block-storage-not-a-network-share).
+Verify against `/health/ready` and confirm the `sqlite` entry reports journal mode `wal`.
 
 ---
 

@@ -55,11 +55,15 @@ default, so the documented Docker Quick Start already gets this right with a sin
 volume — nothing extra to do there.
 
 The trap is when you deviate from that default: if you deploy behind a platform where the
-two directories end up on *different* mounts (for example, two separate Azure Files shares,
-or one EFS mount and one ephemeral local path), you must persist **both** independently. A
-setup that only persists the SQLite path will silently lose all namespace credentials on the
-next restart while looking otherwise healthy — DLQ history survives, but every namespace has
-to be re-entered.
+two directories end up on *different* mounts (for example, one attached volume and one
+ephemeral local path), you must persist **both** independently. A setup that only persists
+the SQLite path will silently lose all namespace credentials on the next restart while
+looking otherwise healthy — DLQ history survives, but every namespace has to be re-entered.
+
+The SQLite path additionally has a filesystem requirement — see
+[Storage requirement: local block storage, not a network share](#storage-requirement-local-block-storage-not-a-network-share)
+below. The JSON credential store has no such constraint; if your platform forces a split,
+that store is the one that can live on a file share.
 
 ---
 
@@ -327,9 +331,67 @@ Attach Azure Files storage mounted at both `DataDirectory` paths (see
 
 ## Single-instance by design
 
-ServiceHub runs 8 in-process background workers (DLQ monitoring, auto-replay, bulk
-operations, signature replay, audit retention, recovery verification/ageing, autonomy
-evaluation) and an in-process SSE event bus, backed by SQLite. Running more than one replica
+ServiceHub runs 20 in-process background workers — DLQ monitoring, auto-replay, bulk
+operations, signature replay, audit and pillar-finding retention, backup, recovery
+verification and ageing, autonomy evaluation, the four detection pillars (anomaly, drift,
+correlation, narration), backlog forecasting, external-signal correlation, playbook and
+prevention-rule and production-elevation expiry, DLQ observer attestation, and the reasoning
+companion (disabled by default) — plus an in-process SSE event bus, backed by SQLite.
+Running more than one replica
 against the same data directory is unsupported and unsafe: two replicas would each run their
 own copy of every background worker against the same database, risking duplicate
 replay/purge actions. Pin any hosting platform's instance/replica count to exactly 1.
+
+This is enforced in code as well as documented. At startup ServiceHub takes an exclusive
+OS-level lock on `.instance.lock` inside `DlqDatabase:DataDirectory`; a second process
+pointed at the same directory fails immediately with an actionable error rather than
+starting and silently corrupting the Recovery Evidence Ledger's hash chain. The lock is
+released by the OS when the process exits, including on a crash, so there is no stale lock
+file to clean up.
+
+Two deployment shapes defeat that protection and must be avoided:
+
+- **Rolling updates.** If the new instance starts before the old one has fully exited, the
+  new one hits the lock and fails to start. Use a stop-then-start (recreate) strategy, not a
+  rolling one — on Azure App Service and Container Apps this is the default once the
+  instance/replica count is pinned to 1; on Docker Compose, `docker compose up` already
+  recreates rather than overlaps.
+- **Autoscale.** Never enable scale-out or scale-to-zero. See the Azure Container Apps note
+  under [Where deployment recipes live today](#where-deployment-recipes-live-today).
+
+## Storage requirement: local block storage, not a network share
+
+**The data directory must be local block storage** — a Docker named volume, an
+`emptyDir`/host path, an Azure Managed Disk, or an AWS EBS volume. **Network filesystems
+(SMB/CIFS, including Azure Files; NFS, including AWS EFS) are not supported for the SQLite
+data directory.**
+
+This is a SQLite constraint, not a ServiceHub one, and it has two independent causes:
+
+1. **WAL needs shared memory.** ServiceHub runs SQLite in WAL journal mode, which uses a
+   memory-mapped `-shm` file. SMB and most NFS mounts cannot provide it, so SQLite silently
+   falls back to a rollback journal — losing the concurrency behaviour the background workers
+   are designed around.
+2. **Advisory locks are unreliable over the network.** Both SQLite's own locking and
+   ServiceHub's `.instance.lock` guard rely on POSIX advisory locks. Over SMB/NFS these can
+   be dropped, leased, or delayed, which turns "a second writer cannot start" back into an
+   assumption rather than a guarantee, and makes `SQLITE_BUSY` stalls and database corruption
+   real possibilities.
+
+**How to check a running deployment.** `GET /health/ready` reports the live journal mode. A
+correctly-mounted deployment reports `"JournalMode": "wal"`; anything else degrades the
+health check with `SQLite journal mode is '<mode>', expected 'wal'.` — on a cloud host, the
+most likely cause is that the data directory landed on a file share.
+
+**If your platform only offers a file share** (this is the common case on Azure App Service
+for Linux, where Azure Files is the documented persistence mechanism), then either:
+
+- run ServiceHub somewhere with real block storage — a VM with Docker, AKS/EKS with a
+  single-replica StatefulSet on a managed disk, or ECS with an EBS-backed volume; or
+- accept the container's own local disk for the data directory and treat the deployment as
+  disposable, taking regular backups off-box with the procedure in
+  [docs/BACKUP-RESTORE.md](../docs/BACKUP-RESTORE.md) — you keep verifiable evidence exports
+  across restarts, but you lose live history whenever the platform recycles the instance.
+
+There is no configuration that makes SQLite safe on a network share, so ServiceHub does not
+offer one.

@@ -130,6 +130,19 @@ hash chain intact, proven in CI rather than asserted.
 
 ### Changed
 
+- **The SQLite storage requirement is now documented, not implied.** The data directory must be
+  local block storage; SMB (Azure Files) and NFS (AWS EFS) are unsupported, because WAL mode needs
+  a memory-mapped `-shm` file and both SQLite's locking and the `.instance.lock` single-writer guard
+  rely on POSIX advisory locks that network mounts do not reliably honour. The Azure App Service and
+  Container Apps recipes previously pointed at an Azure Files share without saying so; they now name
+  the constraint, give the two workable alternatives, and say how to confirm the result
+  (`/health/ready` must report `"JournalMode": "wal"`). Recorded as a consequence in
+  [ADR-0003](docs/adr/0003-single-instance-sqlite.md); no code change — the health check already
+  degraded on a non-WAL journal mode, and the instance lock already existed.
+- **`llms.txt` no longer describes AWS and GCP as Preview** — it had not been updated when the
+  labels changed, so the file AI search assistants read was contradicting the README. It now also
+  indexes the Complete Service Guide, provider conformance, self-hosting, backup/restore and the
+  ADR catalogue, which had accumulated since it was written.
 - **AWS SQS and GCP Pub/Sub moved from Preview to Supported.** The label follows published evidence,
   not the other way round: 20 passed / 0 failed / 0 skipped across all three providers, recorded in
   `docs/PROVIDER-CONFORMANCE.md`. Capability differences remain real and remain enforced.
