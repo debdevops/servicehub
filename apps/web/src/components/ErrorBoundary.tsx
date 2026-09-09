@@ -23,18 +23,18 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 function getErrorMessage(error: Error): string {
   const message = error.message.toLowerCase();
-  
+
   for (const [pattern, friendlyMessage] of Object.entries(ERROR_MESSAGES)) {
     if (message.includes(pattern)) {
       return friendlyMessage;
     }
   }
-  
+
   // Don't expose raw error messages in production
   if (import.meta.env.PROD) {
     return 'An unexpected error occurred. Please try refreshing the page.';
   }
-  
+
   return error.message || 'An unexpected error occurred.';
 }
 
@@ -61,7 +61,7 @@ export class ErrorBoundary extends Component<Props, State> {
       // In production, log minimal info without stack traces
       console.error('Application error:', error.name);
     }
-    
+
     this.setState({ errorInfo });
   }
 
@@ -83,7 +83,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <p className="text-gray-600 mb-6">
               {this.state.error ? getErrorMessage(this.state.error) : 'An unexpected error occurred.'}
             </p>
-            
+
             {/* Show technical details only in development */}
             {import.meta.env.DEV && this.state.error && (
               <details className="mb-6 text-left">
@@ -98,15 +98,15 @@ export class ErrorBoundary extends Component<Props, State> {
                 </pre>
               </details>
             )}
-            
+
             <div className="flex gap-3 justify-center">
-              <button 
+              <button
                 onClick={this.handleReset}
                 className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
               >
                 Try Again
               </button>
-              <button 
+              <button
                 onClick={() => window.location.reload()}
                 className="px-6 py-3 bg-sky-500 text-white rounded-lg hover:bg-sky-600 transition-colors"
               >

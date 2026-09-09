@@ -134,7 +134,7 @@ const MAX_ERROR_ENTRIES = 50; // Limit map size to prevent memory leak
 
 function shouldShowError(errorKey: string): boolean {
   const now = Date.now();
-  
+
   // Clean up old entries periodically to prevent memory leak
   if (recentErrors.size > MAX_ERROR_ENTRIES) {
     for (const [key, timestamp] of recentErrors) {
@@ -143,14 +143,14 @@ function shouldShowError(errorKey: string): boolean {
       }
     }
   }
-  
+
   const lastShown = recentErrors.get(errorKey);
-  
+
   if (!lastShown || now - lastShown > ERROR_DEBOUNCE_MS) {
     recentErrors.set(errorKey, now);
     return true;
   }
-  
+
   return false;
 }
 
@@ -164,7 +164,7 @@ function isSilent404(url: string): boolean {
     '/$deadletterqueue',   // Malformed DLQ URL (should use queueType param instead)
     '/%24deadletterqueue', // URL-encoded version
   ];
-  
+
   return silentPatterns.some(pattern => url.includes(pattern));
 }
 
@@ -210,12 +210,12 @@ apiClient.interceptors.response.use(
       const errorKey = error.code === 'ECONNABORTED' || error.message?.includes('timeout')
         ? 'timeout-error'
         : 'network-error';
-      
+
       if (!ownsErrorToast && shouldShowError(errorKey)) {
         const message = errorKey === 'timeout-error'
           ? 'Request timed out (30s). The API server may be busy or unresponsive. Try again in a moment.'
           : 'Cannot reach the API. If running on a remote server, ensure port 5153 is accessible.';
-        
+
         toast.error(message, {
           duration: 6000,
         });

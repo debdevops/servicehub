@@ -20,7 +20,7 @@ public sealed class ConnectionStringProtectorTests
         _loggerMock = new Mock<ILogger<ConnectionStringProtector>>();
         _environmentMock = new Mock<IHostEnvironment>();
         _environmentMock.Setup(e => e.EnvironmentName).Returns("Development");
-        
+
         var configurationBuilder = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {

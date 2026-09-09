@@ -162,7 +162,7 @@ public sealed class ServiceBusClientFactoryTests
         // Actually, Namespace.Create requires a connection string. We need a namespace with AuthType=ConnectionString but null ConnectionString.
         // This is tricky because the factory method won't allow it. But the code handles it defensively.
         // We'll test this path through the factory by using a protected connection string that passes entity validation
-        // but is actually empty after construction... 
+        // but is actually empty after construction...
         // The simplest approach: the code checks @namespace.ConnectionString for null/whitespace AFTER auth type
         // Since Namespace.Create always sets it, we can't easily get null. Let's just verify the validation path works.
         // Skip - covered by ValidateConnectionString tests

@@ -130,7 +130,7 @@ export interface Topic {
 }
 
 // AI Insights DTOs
-export type InsightType = 
+export type InsightType =
   | 'dlq-pattern'
   | 'retry-loop'
   | 'error-cluster'

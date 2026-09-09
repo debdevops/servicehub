@@ -136,12 +136,12 @@ describe('AuditPage', () => {
   it('toggles filters panel when Filters button is clicked', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><AuditPage /></Wrapper>);
-    
+
     expect(screen.queryByRole('combobox')).toBeNull();
-    
+
     const filterBtn = screen.getByRole('button', { name: /Filters/i });
     fireEvent.click(filterBtn);
-    
+
     // Filter controls should be visible
     expect(screen.getByText('All Outcomes')).toBeInTheDocument();
   });
@@ -149,13 +149,13 @@ describe('AuditPage', () => {
   it('calls export API when download is clicked', async () => {
     const Wrapper = createWrapper();
     render(<Wrapper><AuditPage /></Wrapper>);
-    
+
     const exportBtn = screen.getByRole('button', { name: /^Export$/ });
     fireEvent.click(exportBtn); // click to open menu
 
     const csvBtn = screen.getByText('Export as CSV');
     fireEvent.click(csvBtn);
-    
+
     expect(auditApi.downloadExport).toHaveBeenCalledWith('csv', expect.any(Object));
   });
 

@@ -2,17 +2,17 @@
  * ============================================================================
  * AI Message Analyzer - Client-Side Pattern Detection
  * ============================================================================
- * 
+ *
  * This module provides client-side AI analysis for Service Bus messages.
  * It detects patterns in message data without requiring a backend AI service.
- * 
+ *
  * IMPORTANT TRUST GUARANTEES:
  * - All insights are labeled as "ServiceHub Interpretation"
  * - AI never presents inference as fact
  * - Uncertainty is explicitly stated
  * - Evidence (counts, IDs, time windows) always cited
  * - No destructive actions - read-only analysis
- * 
+ *
  * Pattern Types Detected:
  * 1. dlq-pattern: Dead-letter accumulation patterns
  * 2. retry-loop: Messages stuck in retry cycles
@@ -35,19 +35,19 @@ import type { AIInsight, InsightType, ConfidenceLevel } from '../api/types';
 const CONFIG = {
   // Minimum messages required to detect a pattern
   MIN_MESSAGES_FOR_PATTERN: 3,
-  
+
   // High delivery count threshold (indicates retry issues)
   HIGH_DELIVERY_COUNT: 5,
-  
+
   // Poison message delivery count threshold
   POISON_MESSAGE_THRESHOLD: 10,
-  
+
   // Minimum percentage of messages needed to form a cluster
   MIN_CLUSTER_PERCENTAGE: 0.1, // 10%
-  
+
   // Time window for pattern detection (ms)
   ANALYSIS_WINDOW_MS: 60 * 60 * 1000, // 1 hour
-  
+
   // Confidence thresholds
   HIGH_CONFIDENCE_THRESHOLD: 80,
   MEDIUM_CONFIDENCE_THRESHOLD: 50,
@@ -81,11 +81,11 @@ interface PatternMatch {
  */
 function detectDLQPatterns(messages: APIMessage[]): PatternMatch[] {
   const dlqMessages = messages.filter(m => m.isFromDeadLetter || m.deadLetterReason);
-  
+
   if (dlqMessages.length < CONFIG.MIN_MESSAGES_FOR_PATTERN) {
     return [];
   }
-  
+
   // Group by dead-letter reason
   const reasonGroups = new Map<string, APIMessage[]>();
 
@@ -100,13 +100,13 @@ function detectDLQPatterns(messages: APIMessage[]): PatternMatch[] {
     existing.push(msg);
     reasonGroups.set(reason, existing);
   }
-  
+
   const patterns: PatternMatch[] = [];
-  
+
   for (const [reason, msgs] of reasonGroups) {
     if (msgs.length >= CONFIG.MIN_MESSAGES_FOR_PATTERN) {
       const percentage = Math.round((msgs.length / dlqMessages.length) * 100);
-      
+
       patterns.push({
         type: 'dlq-pattern',
         messages: msgs,
@@ -119,7 +119,7 @@ function detectDLQPatterns(messages: APIMessage[]): PatternMatch[] {
       });
     }
   }
-  
+
   return patterns;
 }
 
@@ -128,18 +128,18 @@ function detectDLQPatterns(messages: APIMessage[]): PatternMatch[] {
  * Identifies messages with abnormally high delivery counts
  */
 function detectRetryLoops(messages: APIMessage[]): PatternMatch[] {
-  const retryMessages = messages.filter(m => 
+  const retryMessages = messages.filter(m =>
     m.deliveryCount >= CONFIG.HIGH_DELIVERY_COUNT && !m.isFromDeadLetter
   );
-  
+
   if (retryMessages.length < CONFIG.MIN_MESSAGES_FOR_PATTERN) {
     return [];
   }
-  
+
   const avgDeliveryCount = Math.round(
     retryMessages.reduce((sum, m) => sum + m.deliveryCount, 0) / retryMessages.length
   );
-  
+
   return [{
     type: 'retry-loop',
     messages: retryMessages,
@@ -192,22 +192,22 @@ function detectErrorClusters(messages: APIMessage[]): PatternMatch[] {
   const errorMessages = messages.filter(m => {
     // Check for error indicators in body or properties
     const body = m.body?.toLowerCase() || '';
-    const hasErrorIndicator = 
-      body.includes('error') || 
-      body.includes('exception') || 
+    const hasErrorIndicator =
+      body.includes('error') ||
+      body.includes('exception') ||
       body.includes('failed') ||
       body.includes('timeout');
-    
+
     return hasErrorIndicator || m.isFromDeadLetter;
   });
-  
+
   if (errorMessages.length < CONFIG.MIN_MESSAGES_FOR_PATTERN) {
     return [];
   }
-  
+
   // Try to extract error types from message bodies
   const errorTypeGroups = new Map<string, APIMessage[]>();
-  
+
   for (const msg of errorMessages) {
     const errorType = extractErrorType(msg);
     if (errorType) {
@@ -216,9 +216,9 @@ function detectErrorClusters(messages: APIMessage[]): PatternMatch[] {
       errorTypeGroups.set(errorType, existing);
     }
   }
-  
+
   const patterns: PatternMatch[] = [];
-  
+
   for (const [errorType, msgs] of errorTypeGroups) {
     if (msgs.length >= CONFIG.MIN_MESSAGES_FOR_PATTERN) {
       patterns.push({
@@ -232,7 +232,7 @@ function detectErrorClusters(messages: APIMessage[]): PatternMatch[] {
       });
     }
   }
-  
+
   return patterns;
 }
 
@@ -329,16 +329,16 @@ const NO_ERROR_SENTINEL_VALUES = new Set(['none', 'null', 'n/a', 'na', 'unset', 
  * Calculate confidence level based on evidence strength
  */
 function calculateConfidence(
-  matchCount: number, 
-  totalCount: number, 
+  matchCount: number,
+  totalCount: number,
   patternStrength: number
 ): { level: ConfidenceLevel; score: number; reasoning: string } {
   const percentage = totalCount > 0 ? (matchCount / totalCount) * 100 : 0;
   const score = Math.min(99, Math.round((percentage * 0.6) + (patternStrength * 0.4)));
-  
+
   let level: ConfidenceLevel;
   let reasoning: string;
-  
+
   if (score >= CONFIG.HIGH_CONFIDENCE_THRESHOLD) {
     level = 'high';
     reasoning = `Strong pattern match: ${matchCount} messages (${percentage.toFixed(0)}%) share this characteristic`;
@@ -349,7 +349,7 @@ function calculateConfidence(
     level = 'low';
     reasoning = `Weak pattern: Only ${matchCount} messages detected. More data needed for confident assessment`;
   }
-  
+
   return { level, score, reasoning };
 }
 
@@ -358,7 +358,7 @@ function calculateConfidence(
  */
 function generateRecommendations(pattern: PatternMatch): AIInsight['recommendations'] {
   const recommendations: AIInsight['recommendations'] = [];
-  
+
   switch (pattern.type) {
     case 'dlq-pattern':
       recommendations.push({
@@ -377,7 +377,7 @@ function generateRecommendations(pattern: PatternMatch): AIInsight['recommendati
         priority: 'investigative',
       });
       break;
-      
+
     case 'retry-loop':
       recommendations.push({
         title: 'Investigate consumer processing failures',
@@ -390,7 +390,7 @@ function generateRecommendations(pattern: PatternMatch): AIInsight['recommendati
         priority: 'short-term',
       });
       break;
-      
+
     case 'poison-message':
       recommendations.push({
         title: 'Move poison messages to DLQ',
@@ -403,7 +403,7 @@ function generateRecommendations(pattern: PatternMatch): AIInsight['recommendati
         priority: 'short-term',
       });
       break;
-      
+
     case 'error-cluster':
       recommendations.push({
         title: 'Analyze error cluster root cause',
@@ -417,7 +417,7 @@ function generateRecommendations(pattern: PatternMatch): AIInsight['recommendati
       });
       break;
   }
-  
+
   return recommendations;
 }
 
@@ -450,7 +450,7 @@ function getPatternTitle(pattern: PatternMatch): string {
  */
 function getPatternDescription(pattern: PatternMatch): string {
   const count = pattern.messages.length;
-  
+
   switch (pattern.type) {
     case 'dlq-pattern':
       // Grouped only by shared *absence* of a reason — do not imply they share a cause.
@@ -484,7 +484,7 @@ function getPatternDescription(pattern: PatternMatch): string {
 
 /**
  * Analyze messages and generate AI insights
- * 
+ *
  * @param messages - Array of messages to analyze
  * @param context - Analysis context (namespace, entity info)
  * @returns Array of AI insights
@@ -496,11 +496,11 @@ export function analyzeMessages(
   if (!messages || messages.length === 0) {
     return [];
   }
-  
+
   const insights: AIInsight[] = [];
   const now = new Date();
   const analysisStart = new Date(now.getTime() - CONFIG.ANALYSIS_WINDOW_MS);
-  
+
   // Collect all patterns
   const allPatterns: PatternMatch[] = [
     ...detectDLQPatterns(messages),
@@ -508,7 +508,7 @@ export function analyzeMessages(
     ...detectPoisonMessages(messages),
     ...detectErrorClusters(messages),
   ];
-  
+
   // Convert patterns to insights
   for (let i = 0; i < allPatterns.length; i++) {
     const pattern = allPatterns[i];
@@ -517,14 +517,14 @@ export function analyzeMessages(
       messages.length,
       pattern.type === 'poison-message' ? 90 : 70 // Poison messages have higher base confidence
     );
-    
+
     // Skip low-confidence patterns
     if (confidence.score < 30) {
       continue;
     }
-    
+
     const messageIds = pattern.messages.map(m => m.messageId || `seq-${m.sequenceNumber}`);
-    
+
     insights.push({
       id: `insight-${context.entityName}-${pattern.type}-${i}`,
       type: pattern.type,
@@ -536,20 +536,20 @@ export function analyzeMessages(
         affectedMessageIds: messageIds,
         exampleMessageIds: messageIds.slice(0, 3),
         metrics: [
-          { 
-            label: 'Affected Messages', 
-            value: pattern.messages.length, 
-            isAnomaly: pattern.messages.length > 5 
+          {
+            label: 'Affected Messages',
+            value: pattern.messages.length,
+            isAnomaly: pattern.messages.length > 5
           },
-          { 
-            label: 'Pattern Match', 
-            value: `${confidence.score}%`, 
-            isAnomaly: confidence.level === 'high' 
+          {
+            label: 'Pattern Match',
+            value: `${confidence.score}%`,
+            isAnomaly: confidence.level === 'high'
           },
-          { 
-            label: 'Analysis Window', 
-            value: '1 hour', 
-            isAnomaly: false 
+          {
+            label: 'Analysis Window',
+            value: '1 hour',
+            isAnomaly: false
           },
         ],
         patternSignature: pattern.signature,
@@ -568,7 +568,7 @@ export function analyzeMessages(
       status: 'active',
     });
   }
-  
+
   return insights;
 }
 

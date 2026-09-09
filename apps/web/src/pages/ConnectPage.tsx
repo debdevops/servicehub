@@ -80,7 +80,7 @@ export function ConnectPage() {
     setGcpKeyFileName('');
     if (gcpKeyFileInputRef.current) gcpKeyFileInputRef.current.value = '';
   };
-  
+
   // v3.1.0 HKDF upgrade notice
   const [showHkdfNotice, setShowHkdfNotice] = useState(
     () => localStorage.getItem('servicehub_v310_hkdf_notice_dismissed') !== 'true'

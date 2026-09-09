@@ -49,7 +49,7 @@ export function AIFindingsDropdown({ insights, onClose, onViewEvidence }: AIFind
         onClose();
       }
     };
-    
+
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [onClose]);
@@ -60,11 +60,11 @@ export function AIFindingsDropdown({ insights, onClose, onViewEvidence }: AIFind
   return (
     <>
       {/* Backdrop */}
-      <div 
-        className="fixed inset-0 z-40" 
+      <div
+        className="fixed inset-0 z-40"
         onClick={onClose}
       />
-      
+
       {/* Anchor — marks the trigger's on-screen position for the fixed panel below */}
       <div ref={anchorRef} className="absolute top-full right-0" />
 

@@ -296,7 +296,7 @@ function ScheduleNewMessageModal({ namespaceId, queueName, onClose }: ScheduleNe
       const schedTime = new Date(scheduledTime).toISOString();
       const validationTime = new Date(schedTime).getTime();
       const now = Date.now();
-      
+
       if (validationTime <= now) {
         toast.error('Scheduled time must be at least 30 seconds in the future');
         setBusy(false);

@@ -32,14 +32,14 @@ const PROVIDER_SERVICE_LABELS: Record<CloudProviderType, string> = {
 
 // Transform API message to UI message format
 function transformMessage(
-  apiMessage: APIMessage, 
+  apiMessage: APIMessage,
   insightMessageIds: string[] = [],
   queueType: 'active' | 'deadletter' = 'active'
 ): Message {
   // Use messageId as the primary identifier
   const id = apiMessage.messageId || `seq-${apiMessage.sequenceNumber}`;
   const body = apiMessage.body;
-  
+
   // Extract event type from message body (if JSON)
   let eventType: string | undefined;
   let displayTitle: string | undefined;
@@ -57,7 +57,7 @@ function transformMessage(
   } catch {
     // Body is not JSON or parsing failed - use as-is for preview
   }
-  
+
   // Derive status from state
   let status: 'success' | 'warning' | 'error' = 'success';
   if (apiMessage.isFromDeadLetter || apiMessage.deadLetterReason) {
@@ -65,7 +65,7 @@ function transformMessage(
   } else if ((apiMessage.deliveryCount || 0) > 1) {
     status = 'warning';
   }
-  
+
   return {
     id,
     enqueuedTime: new Date(apiMessage.enqueuedTime),
@@ -96,7 +96,7 @@ function transformMessage(
 
 /**
  * Message Inspector Page - Split View Layout
- * 
+ *
  * Features:
  * - Left: Virtualized message card list (420px)
  * - Right: Detail panel with persistent tabs
@@ -142,12 +142,12 @@ export function MessagesPage() {
         // Namespace ID in URL is invalid (likely from previous API session with in-memory storage)
         const firstNamespace = namespaces[0];
         if (import.meta.env.DEV) console.warn(`[MessagesPage] Invalid namespace ID "${namespaceId}" - redirecting to "${firstNamespace.id}"`);
-        
+
         // Update URL with valid namespace ID while preserving other parameters
         const newParams = new URLSearchParams(searchParams);
         newParams.set('namespace', firstNamespace.id);
         setSearchParams(newParams, { replace: true });
-        
+
         toast.success(`Reconnected to ${firstNamespace.displayName || firstNamespace.name}`, {
           duration: 3000,
         });
@@ -349,7 +349,7 @@ export function MessagesPage() {
     },
     !!namespaceId && !!entityName && !isLoading
   );
-  
+
   // Memoize displayInsights to provide stable reference for dependents
   const displayInsights = useMemo(
     () => insights || [],
@@ -401,28 +401,28 @@ export function MessagesPage() {
   // Filter messages by evidence filter, search query, and status
   const filteredMessages = useMemo(() => {
     let result = messages;
-    
+
     // Apply evidence filter first
     if (evidenceFilter) {
       result = result.filter(m => evidenceFilter.includes(m.id));
     }
-    
+
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      result = result.filter(m => 
+      result = result.filter(m =>
         m.id.toLowerCase().includes(query) ||
         m.preview.toLowerCase().includes(query) ||
         (typeof m.body === 'string' && m.body.toLowerCase().includes(query)) ||
         JSON.stringify(m.properties).toLowerCase().includes(query)
       );
     }
-    
+
     // Apply status filter
     if (statusFilter !== 'all') {
       result = result.filter(m => m.status === statusFilter);
     }
-    
+
     return result;
   }, [messages, evidenceFilter, searchQuery, statusFilter]);
 
@@ -459,7 +459,7 @@ export function MessagesPage() {
     newParams.set('queueType', tab);
     newParams.delete('message');
     setSearchParams(newParams, { replace: true });
-    
+
     // Refresh counts when switching between active/dlq tabs
     // This ensures the counts stay synchronized with actual queue state
     if (entityType === 'queue') {
@@ -649,7 +649,7 @@ export function MessagesPage() {
               <span className="w-2 h-2 bg-sky-500 rounded-full" />
             )}
           </button>
-          
+
           {/* Filter Dropdown */}
           {showFilterPanel && (
             <div className="absolute top-full right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
@@ -706,7 +706,7 @@ export function MessagesPage() {
         </div>
 
         {/* Auto-refresh Toggle */}
-        <button 
+        <button
           onClick={handleToggleAutoRefresh}
           className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm font-medium transition-colors ${
             autoRefreshEnabled
@@ -796,7 +796,7 @@ export function MessagesPage() {
               <span className="text-primary-500 ml-1">(AI pattern filter active)</span>
             </span>
           </div>
-          <button 
+          <button
             onClick={clearEvidenceFilter}
             className="flex items-center gap-1 text-sm text-primary-600 hover:text-primary-700 font-medium"
           >

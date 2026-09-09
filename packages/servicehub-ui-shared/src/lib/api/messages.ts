@@ -17,10 +17,10 @@ export const messagesApi = {
   // OR /api/v1/namespaces/{namespaceId}/topics/{topicName}/messages
   list: async (params: GetMessagesParams): Promise<PaginatedResponse<Message>> => {
     const { namespaceId, entityType = 'queue', ...queryParams } = params;
-    
+
     // Sanitize entity name to remove any $deadletterqueue suffix
     const queueOrTopicName = sanitizeEntityName(params.queueOrTopicName);
-    
+
     if (entityType === 'topic' && queueOrTopicName.includes('/subscriptions/')) {
       const [topicName, subscriptionName] = queueOrTopicName.split('/subscriptions/');
       const response = await apiClient.get<PaginatedResponse<Message>>(
@@ -35,7 +35,7 @@ export const messagesApi = {
       `/namespaces/${namespaceId}/${entityPath}/${queueOrTopicName}/messages`,
       { params: queryParams }
     );
-    
+
     return response.data;
   },
 
@@ -64,7 +64,7 @@ export const messagesApi = {
     entityType: 'queue' | 'topic' = 'queue'
   ): Promise<void> => {
     const entityPath = entityType === 'topic' ? 'topics' : 'queues';
-    
+
     // Map 'properties' to 'applicationProperties' to match API contract
     const payload = {
       body: message.body,
@@ -75,7 +75,7 @@ export const messagesApi = {
       timeToLiveSeconds: message.timeToLive,
       scheduledEnqueueTimeUtc: message.scheduledEnqueueTime,
     };
-    
+
     await apiClient.post(
       `/namespaces/${namespaceId}/${entityPath}/${queueOrTopicName}/messages`,
       payload,
@@ -89,7 +89,7 @@ export const messagesApi = {
 
   // POST /api/v1/messages/replay
   replay: async (
-    namespaceId: string, 
+    namespaceId: string,
     sequenceNumber: number,
     entityName: string,
     subscriptionName?: string
@@ -147,14 +147,14 @@ export const messagesApi = {
       reason,
       ...(errorDescription && { errorDescription }),
     });
-    
+
     let url: string;
     if (entityType === 'topic' && subscriptionName) {
       url = `/namespaces/${namespaceId}/topics/${queueOrTopicName}/subscriptions/${subscriptionName}/deadletter`;
     } else {
       url = `/namespaces/${namespaceId}/queues/${queueOrTopicName}/deadletter`;
     }
-    
+
     const response = await apiClient.post<{ deadLetteredCount: number; reason: string }>(
       `${url}?${params.toString()}`,
       null,

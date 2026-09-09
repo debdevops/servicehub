@@ -7,9 +7,10 @@
 Everything since v3.7.0: the four-pillar autonomy loop (Observe → Investigate → Correlate →
 Recover → Prove → Learn → Prevent), the persistence and security work that made its evidence
 durable, incident-centric navigation, per-identity governance, an optional local reasoning
-companion, and the next chapter that closed the autonomy target's three remaining qualifiers —
+companion, and the next chapter that addressed the autonomy target's three remaining qualifiers —
 evidence parity across all four pillars, production access earned the same way autonomy was, and
-the multi-cloud trust-root asymmetry — plus the operator-facing value and longevity work (outcome
+the multi-cloud trust-root asymmetry (design and code complete; not yet exercised against a real
+deployed AWS/GCP observer — see below) — plus the operator-facing value and longevity work (outcome
 measurement, a smaller top-level nav, epoch sealing, and configuration as code). The headline is
 not a feature — it is that the top of the autonomy ladder stopped being a design claim: an L3→L4
 promotion, an unattended autonomous replay, an L4→L3 demotion and a circuit-breaker trip have each
@@ -36,11 +37,16 @@ hash chain intact, proven in CI rather than asserted.
   independent of any role check). Autonomy stays hard-ceilinged at L0/L1 in production under every
   configuration — no `AutonomyGrant` is ever issued against a Prod namespace, and a pre-existing
   grant is demoted back to the floor the moment a signature resolves to one.
-- **The multi-cloud trust-root asymmetry, closed honestly.** An operator-provisioned, push-based DLQ
-  observer (Terraform modules for AWS Lambda+DynamoDB and GCP Cloud Function+Firestore) attests DLQ
-  absence for providers that cannot offer repeatable peek — a *different* trust root, not a relaxed
-  one. The attestation is its own capability with its own failure mode: a stale or missing observer
-  drives it false, never "assume fine." `docs/PROVIDER-CONFORMANCE.md` and
+- **The multi-cloud trust-root asymmetry, addressed — not yet proven live.** An operator-provisioned,
+  push-based DLQ observer (Terraform modules for AWS Lambda+DynamoDB and GCP Cloud Function+Firestore)
+  is designed to attest DLQ absence for providers that cannot offer repeatable peek — a *different*
+  trust root, not a relaxed one — letting a signature reach Standing (L4) there the same way
+  Azure's provider-native peek does. The attestation path, its failure mode (a stale or missing
+  observer reads `false`, never "assume fine"), and the Terraform modules are code-complete and
+  `terraform validate`-clean, but **no observer has been deployed against a real AWS/GCP account and
+  no signature has actually reached L4/L5 through this path** — see
+  `docs/PROVIDER-CONFORMANCE.md#the-canprovedlqabsence-trust-root-m33`. AWS and GCP remain capped at
+  Approve (L3) in every build run to date. `docs/PROVIDER-CONFORMANCE.md` and
   `scripts/conformance-suite.py` now name which trust root — provider-native or operator-attested —
   each capability assertion actually rests on.
 - **Outcome measurement.** `GET /api/v1/recovery/outcomes` and a "This week" strip on Home report

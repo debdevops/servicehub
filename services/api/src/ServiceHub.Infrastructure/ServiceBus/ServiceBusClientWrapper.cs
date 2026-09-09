@@ -1197,11 +1197,11 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             const int maxAttempts = 100;
             const int batchSize = 50;
             const int maxScanDepth = maxAttempts * batchSize;
-            
+
             for (int attempt = 0; attempt < maxAttempts && targetMessage == null; attempt++)
             {
                 var messages = await dlqReceiver.ReceiveMessagesAsync(
-                    maxMessages: batchSize, 
+                    maxMessages: batchSize,
                     maxWaitTime: TimeSpan.FromSeconds(3),
                     cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -1592,7 +1592,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             for (int attempt = 0; attempt < maxAttempts && targetMessage == null; attempt++)
             {
                 var messages = await receiver.ReceiveMessagesAsync(
-                    maxMessages: batchSize, 
+                    maxMessages: batchSize,
                     maxWaitTime: TimeSpan.FromSeconds(2),
                     cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -1621,7 +1621,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             if (targetMessage == null)
             {
                 _logger.LogWarning(
-                    "Message with sequence {SequenceNumber} not found after scanning {MaxAttempts} batches", 
+                    "Message with sequence {SequenceNumber} not found after scanning {MaxAttempts} batches",
                     sequenceNumber,
                     maxAttempts);
                 return Result.Failure(Error.NotFound(

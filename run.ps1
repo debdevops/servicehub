@@ -32,7 +32,7 @@ function Test-ToolExists {
 # Helper function to install via winget
 function Install-WithWinget {
     param([string]$packageId, [string]$displayName)
-    
+
     # Check if winget is available
     try {
         $wingetVersion = & winget --version 2>$null
@@ -43,7 +43,7 @@ function Install-WithWinget {
     catch {
         return $false
     }
-    
+
     Write-Host "  Installing $displayName via winget..." -ForegroundColor Yellow
     try {
         & winget install --accept-source-agreements --accept-package-agreements $packageId 2>&1 | Out-Null
@@ -76,7 +76,7 @@ try {
 
 if (-not $dotnetOk) {
     $installed = $false
-    
+
     # Try to install via winget
     if (Install-WithWinget "Microsoft.DotNet.SDK.10" ".NET 10 SDK") {
         # Verify installation
@@ -90,7 +90,7 @@ if (-not $dotnetOk) {
         }
         catch { }
     }
-    
+
     if (-not $installed) {
         Write-Host ""
         Write-Host "  [ERROR] .NET 10 SDK is required but could not be auto-installed." -ForegroundColor Red
@@ -125,7 +125,7 @@ try {
 
 if (-not $nodeOk) {
     $installed = $false
-    
+
     # Try to install via winget
     if (Install-WithWinget "OpenJS.NodeJS.LTS" "Node.js LTS") {
         # Verify installation
@@ -142,7 +142,7 @@ if (-not $nodeOk) {
         }
         catch { }
     }
-    
+
     if (-not $installed) {
         Write-Host ""
         Write-Host "  [ERROR] Node.js 20+ is required but could not be auto-installed." -ForegroundColor Red
@@ -225,14 +225,14 @@ if (-not (Test-Path $nodeModules)) {
     Write-Host "  Installing npm packages (this may take 2-3 minutes)..." -ForegroundColor Yellow
     $webDir = Join-Path $ScriptDir "apps\web"
     Push-Location $webDir
-    
+
     if (Test-Path "package-lock.json") {
         npm ci --legacy-peer-deps 2>&1 | Out-Null
     }
     else {
         npm install --legacy-peer-deps 2>&1 | Out-Null
     }
-    
+
     if ($LASTEXITCODE -eq 0) {
         Write-Host "  ✓ npm packages installed" -ForegroundColor Green
     }
@@ -298,7 +298,7 @@ Start-Sleep -Seconds 3
 
 Write-Host ""
 Write-Host "╔════════════════════════════════════════╗" -ForegroundColor Green
-Write-Host "║  ✓ Services Started in New Windows     ║" -ForegroundColor Green  
+Write-Host "║  ✓ Services Started in New Windows     ║" -ForegroundColor Green
 Write-Host "╚════════════════════════════════════════╝" -ForegroundColor Green
 Write-Host ""
 Write-Host "  📍 API Server:" -ForegroundColor Cyan
@@ -328,16 +328,16 @@ Write-Host "  Press Ctrl+C or close this window to stop monitoring..." -Foregrou
 try {
     # Wait for either process to exit
     while ($true) {
-        if (-not (Test-Path "\\.\pipe\$apiPID" -ErrorAction SilentlyContinue) -or 
+        if (-not (Test-Path "\\.\pipe\$apiPID" -ErrorAction SilentlyContinue) -or
             -not (Test-Path "\\.\pipe\$webPID" -ErrorAction SilentlyContinue)) {
             Start-Sleep -Seconds 1
         }
-        
+
         # Check if processes are still running
         try {
             $apiRunning = Get-Process -Id $apiPID -ErrorAction SilentlyContinue
             $webRunning = Get-Process -Id $webPID -ErrorAction SilentlyContinue
-            
+
             if (-not $apiRunning -and -not $webRunning) {
                 Write-Host ""
                 Write-Host "  ℹ Both services have stopped." -ForegroundColor Yellow
@@ -345,7 +345,7 @@ try {
             }
         }
         catch { }
-        
+
         Start-Sleep -Seconds 5
     }
 }

@@ -56,7 +56,7 @@ public sealed class NamespacesControllerTests : IClassFixture<TestWebApplication
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         response.Headers.Location.Should().NotBeNull();
-        
+
         var created = await response.Content.ReadFromJsonAsync<NamespaceResponse>(JsonOptions);
         created.Should().NotBeNull();
         created!.Name.Should().Be(request.Name.ToLowerInvariant());

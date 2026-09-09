@@ -15,7 +15,7 @@ function generateUUID(): string {
 // Types
 // ============================================================================
 
-export type MessageScenario = 
+export type MessageScenario =
   | 'order-processing'
   | 'payment-gateway'
   | 'notification-service'
@@ -23,7 +23,7 @@ export type MessageScenario =
   | 'user-activity'
   | 'error-handling';
 
-export type AnomalyType = 
+export type AnomalyType =
   | 'none'
   | 'dlq-candidate'
   | 'retry-loop'
@@ -60,7 +60,7 @@ const GENERATOR_VERSION = '1.0.0';
 
 // Realistic company/service names
 const COMPANIES = [
-  'Contoso', 'Fabrikam', 'Northwind', 'AdventureWorks', 'TailSpin', 
+  'Contoso', 'Fabrikam', 'Northwind', 'AdventureWorks', 'TailSpin',
   'WideWorld', 'GraphicDesign', 'LitWare', 'Proseware', 'VanArsdel'
 ];
 
@@ -76,7 +76,7 @@ function generateOrderProcessingMessage(isAnomaly: boolean, anomalyType: Anomaly
   const customerId = `CUST-${secureRandom().toString(36).substring(2, 10).toUpperCase()}`;
   const company = COMPANIES[Math.floor(secureRandom() * COMPANIES.length)];
   const correlationId = generateUUID();
-  
+
   const items = Array.from({ length: Math.floor(secureRandom() * 5) + 1 }, () => ({
     sku: `SKU-${secureRandom().toString(36).substring(2, 8).toUpperCase()}`,
     name: ['Wireless Mouse', 'USB-C Hub', 'Mechanical Keyboard', 'Monitor Stand', '4K Webcam', 'Desk Lamp', 'Ergonomic Chair'][Math.floor(secureRandom() * 7)],
@@ -201,10 +201,10 @@ function generatePaymentMessage(isAnomaly: boolean, anomalyType: AnomalyType): G
   const orderId = `ORD-${secureRandom().toString(36).substring(2, 10).toUpperCase()}`;
   const correlationId = generateUUID();
   const company = COMPANIES[Math.floor(secureRandom() * COMPANIES.length)];
-  
+
   const amount = parseFloat((secureRandom() * 2000 + 10).toFixed(2));
   const paymentMethod = ['credit_card', 'debit_card', 'paypal', 'bank_transfer', 'apple_pay'][Math.floor(secureRandom() * 5)];
-  
+
   let status = 'completed';
   let errorDetails = null;
 
@@ -305,10 +305,10 @@ function generateNotificationMessage(isAnomaly: boolean, anomalyType: AnomalyTyp
   const notificationId = `NOTIF-${Date.now().toString(36).toUpperCase()}-${secureRandom().toString(36).substring(2, 6).toUpperCase()}`;
   const correlationId = generateUUID();
   const company = COMPANIES[Math.floor(secureRandom() * COMPANIES.length)];
-  
+
   const notificationTypes = ['email', 'sms', 'push', 'webhook'];
   const notificationType = notificationTypes[Math.floor(secureRandom() * notificationTypes.length)];
-  
+
   const templates = {
     email: ['order-confirmation', 'shipping-update', 'password-reset', 'welcome', 'invoice'],
     sms: ['otp-verification', 'delivery-alert', 'payment-confirmation', 'appointment-reminder'],
@@ -379,7 +379,7 @@ function generateNotificationMessage(isAnomaly: boolean, anomalyType: AnomalyTyp
       template,
       status,
       recipients,
-      subject: notificationType === 'email' 
+      subject: notificationType === 'email'
         ? `[${company}] Your ${template.replace('-', ' ')} notification`
         : undefined,
       content: {
@@ -427,7 +427,7 @@ function generateInventoryMessage(isAnomaly: boolean, anomalyType: AnomalyType):
   const eventId = `INV-${Date.now().toString(36).toUpperCase()}-${secureRandom().toString(36).substring(2, 6).toUpperCase()}`;
   const correlationId = generateUUID();
   const company = COMPANIES[Math.floor(secureRandom() * COMPANIES.length)];
-  
+
   const skus = Array.from({ length: Math.floor(secureRandom() * 3) + 1 }, () => ({
     sku: `SKU-${secureRandom().toString(36).substring(2, 8).toUpperCase()}`,
     productName: ['Laptop', 'Tablet', 'Headphones', 'Smartwatch', 'Camera', 'Speaker'][Math.floor(secureRandom() * 6)],
@@ -532,7 +532,7 @@ function generateUserActivityMessage(isAnomaly: boolean, anomalyType: AnomalyTyp
   const userId = `USER-${secureRandom().toString(36).substring(2, 10).toUpperCase()}`;
   const correlationId = generateUUID();
   const company = COMPANIES[Math.floor(secureRandom() * COMPANIES.length)];
-  
+
   const activityTypes = ['login', 'logout', 'page_view', 'button_click', 'form_submit', 'search', 'purchase'];
   const activityType = activityTypes[Math.floor(secureRandom() * activityTypes.length)];
 
@@ -638,7 +638,7 @@ function generateErrorHandlingMessage(isAnomaly: boolean, anomalyType: AnomalyTy
   const errorId = `ERR-${Date.now().toString(36).toUpperCase()}-${secureRandom().toString(36).substring(2, 6).toUpperCase()}`;
   const correlationId = generateUUID();
   const company = COMPANIES[Math.floor(secureRandom() * COMPANIES.length)];
-  
+
   const errorTypes = [
     { code: 'DATABASE_CONNECTION_FAILED', severity: 'critical', service: 'database-proxy' },
     { code: 'EXTERNAL_API_TIMEOUT', severity: 'warning', service: 'integration-gateway' },
@@ -770,7 +770,7 @@ export function generateMessages(config: GenerationConfig): GeneratedMessage[] {
 
     // Determine if this message should be an anomaly
     const isAnomaly = secureRandom() * 100 < anomalyRate;
-    const anomalyType: AnomalyType = isAnomaly 
+    const anomalyType: AnomalyType = isAnomaly
       ? anomalyTypes[Math.floor(secureRandom() * anomalyTypes.length)]
       : 'none';
 

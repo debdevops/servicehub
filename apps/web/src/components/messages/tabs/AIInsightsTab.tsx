@@ -8,7 +8,7 @@ import type { AIInsight, CloudProviderType } from '@servicehub/ui-shared/lib/api
 
 // ============================================================================
 // AIInsightsTab - Shows AI pattern membership for selected message
-// 
+//
 // TRUST GUARANTEES:
 // - All insights labeled as "ServiceHub Interpretation"
 // - AI never presents inference as fact
@@ -29,12 +29,12 @@ const PRIORITY_COLORS: Record<string, string> = {
   investigative: 'bg-primary-100 text-primary-700',
 };
 
-function PatternCard({ 
-  pattern, 
-  messageId, 
-  onViewPattern 
-}: { 
-  pattern: AIInsight; 
+function PatternCard({
+  pattern,
+  messageId,
+  onViewPattern
+}: {
+  pattern: AIInsight;
   messageId: string;
   onViewPattern?: (messageIds: string[]) => void;
 }) {
@@ -108,7 +108,7 @@ export function AIInsightsTab({ message, onViewPattern, insights: providedInsigh
   const queueName = searchParams.get('queue');
   const topicName = searchParams.get('topic');
   const subscriptionName = searchParams.get('subscription');
-  
+
   // Determine entity name
   const entityName = queueName || (topicName && subscriptionName ? `${topicName}/subscriptions/${subscriptionName}` : topicName) || '';
   const entityType: 'queue' | 'topic' = topicName ? 'topic' : 'queue';

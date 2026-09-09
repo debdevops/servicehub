@@ -86,7 +86,7 @@ public sealed class MessageReceiver : IMessageReceiver
         try
         {
             var peekRequest = request with { FromDeadLetter = false };
-            
+
             var result = await _resiliencePipeline.ExecuteAsync(async ct =>
                 await clientResult.Value.PeekMessagesAsync(peekRequest, ct).ConfigureAwait(false),
                 cancellationToken).ConfigureAwait(false);
@@ -144,7 +144,7 @@ public sealed class MessageReceiver : IMessageReceiver
         try
         {
             var dlqRequest = request with { FromDeadLetter = true };
-            
+
             var result = await _resiliencePipeline.ExecuteAsync(async ct =>
                 await clientResult.Value.PeekMessagesAsync(dlqRequest, ct).ConfigureAwait(false),
                 cancellationToken).ConfigureAwait(false);

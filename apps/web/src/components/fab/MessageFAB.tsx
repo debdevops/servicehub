@@ -30,9 +30,9 @@ interface MessageFABProps {
 
 type ModalType = 'send' | 'generate' | null;
 
-export function MessageFAB({ 
-  namespaceId, 
-  queueName, 
+export function MessageFAB({
+  namespaceId,
+  queueName,
   entityType = 'queue',
   topicName,
   subscriptionName,
@@ -90,16 +90,16 @@ export function MessageFAB({
   const handleSend = (payload: MessagePayload) => {
     const count = payload.messageCount;
     const entityDisplay = `${payload.entityType === 'topic' ? '📢' : '📥'} ${payload.entity}`;
-    
+
     toast.success(
-      count > 1 
+      count > 1
         ? `Sent ${count} messages to ${entityDisplay}`
         : `Message sent to ${entityDisplay}`
     );
 
     onMessageSent?.(payload);
     setActiveModal(null);
-    
+
     // Cache invalidation now happens in useSendMessage hook - no delay needed
   };
 
@@ -137,7 +137,7 @@ export function MessageFAB({
 
     try {
       let result;
-      
+
       if (entityType === 'topic' && topicName && subscriptionName) {
         // Dead-letter from topic subscription
         result = await messagesApi.deadLetter(

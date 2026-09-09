@@ -17,15 +17,15 @@ public sealed record CreateNamespaceRequest(
     [StringLength(256, MinimumLength = 6, ErrorMessage = "Namespace name must be between 6 and 256 characters")]
     [RegularExpression(@"^[a-zA-Z][a-zA-Z0-9-]*(\.[a-zA-Z][a-zA-Z0-9-]*)*$", ErrorMessage = "Namespace name must start with a letter and contain only letters, numbers, hyphens, and dots")]
     string Name,
-    
+
     [StringLength(4096, ErrorMessage = "Connection string cannot exceed 4096 characters")]
     string? ConnectionString,
-    
+
     ConnectionAuthType AuthType,
-    
+
     [StringLength(100, ErrorMessage = "Display name cannot exceed 100 characters")]
     string? DisplayName = null,
-    
+
     [StringLength(500, ErrorMessage = "Description cannot exceed 500 characters")]
     string? Description = null,
 

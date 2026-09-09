@@ -119,7 +119,7 @@ describe('DlqHistoryTable', () => {
 
   it('renders pagination info', () => {
     render(<DlqHistoryTable {...defaultProps} />);
-    // Pagination area shows "Showing X to Y of Z messages"  
+    // Pagination area shows "Showing X to Y of Z messages"
     expect(screen.getByText(/Showing/)).toBeInTheDocument();
     expect(screen.getByText(/messages/)).toBeInTheDocument();
   });

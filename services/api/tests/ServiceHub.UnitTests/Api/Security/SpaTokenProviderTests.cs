@@ -79,7 +79,7 @@ public class SpaTokenProviderTests
         // Tamper with the signature part
         var parts = token.Split('.');
         var tamperedToken = parts[0] + ".AAAA" + parts[1][4..];
-        
+
         provider.ValidateToken(tamperedToken).Should().BeFalse();
     }
 
