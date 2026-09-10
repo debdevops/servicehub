@@ -18,6 +18,14 @@ vi.mock('@servicehub/ui-shared/hooks/useCloudBridge', () => ({
   useProviderCapabilities: vi.fn(),
 }));
 
+vi.mock('@servicehub/ui-shared/hooks/useFleet', () => ({
+  useFleetOverview: vi.fn(),
+}));
+
+vi.mock('@servicehub/ui-shared/hooks/useAudit', () => ({
+  useAuditLogs: vi.fn(),
+}));
+
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -27,12 +35,16 @@ vi.mock('react-router-dom', async () => {
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useQueues, useAllNamespacesQueues, useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
 import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { useFleetOverview } from '@servicehub/ui-shared/hooks/useFleet';
+import { useAuditLogs } from '@servicehub/ui-shared/hooks/useAudit';
 
 const mockUseProviderCapabilities = useProviderCapabilities as ReturnType<typeof vi.fn>;
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;
 const mockUseAllNamespacesQueues = useAllNamespacesQueues as ReturnType<typeof vi.fn>;
 const mockUseNamespaceStats = useNamespaceStats as ReturnType<typeof vi.fn>;
+const mockUseFleetOverview = useFleetOverview as ReturnType<typeof vi.fn>;
+const mockUseAuditLogs = useAuditLogs as ReturnType<typeof vi.fn>;
 
 const mockNamespace = {
   id: 'ns1',
@@ -99,6 +111,8 @@ describe('DashboardPage', () => {
         isError: false,
       },
     ]);
+    mockUseFleetOverview.mockReturnValue({ data: undefined, isLoading: false });
+    mockUseAuditLogs.mockReturnValue({ data: undefined, isLoading: false });
   });
 
   it('renders page title', () => {
@@ -403,6 +417,134 @@ describe('DashboardPage', () => {
 
       expect(await screen.findByText('Healthy')).toBeInTheDocument();
       expect(screen.getAllByText('0').length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('fleet-level panels', () => {
+    it('header exposes Fleet Health and Add Namespace actions', () => {
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      // "Fleet Health" appears twice: once in the header, once in Quick Actions.
+      expect(screen.getAllByRole('button', { name: /fleet health/i }).length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByRole('button', { name: /add namespace/i })).toBeInTheDocument();
+    });
+
+    it('Add Namespace navigates to /connect', () => {
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      fireEvent.click(screen.getByRole('button', { name: /add namespace/i }));
+      expect(mockNavigate).toHaveBeenCalledWith('/connect');
+    });
+
+    it('Fleet Health header button navigates to /fleet', () => {
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      const [headerButton] = screen.getAllByRole('button', { name: /fleet health/i });
+      fireEvent.click(headerButton);
+      expect(mockNavigate).toHaveBeenCalledWith('/fleet');
+    });
+
+    it('shows an empty state for Recent Namespace Events when the audit trail has no entries', async () => {
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      expect(await screen.findByText('Recent Namespace Events')).toBeInTheDocument();
+      expect(await screen.findByText('No recent activity recorded yet.')).toBeInTheDocument();
+    });
+
+    it('renders recent audit entries when present', async () => {
+      mockUseAuditLogs.mockReturnValue({
+        data: {
+          items: [
+            {
+              id: 'a1',
+              timestamp: new Date().toISOString(),
+              userIdentity: 'alex@contoso.com',
+              action: 'Namespace.Create',
+              outcome: 'Success',
+              namespaceId: 'ns1',
+              namespaceName: 'My Namespace',
+              entityName: null,
+              cloudProvider: 'azure',
+              environment: 'dev',
+              resourceName: null,
+              sequenceNumber: null,
+              detailsJson: null,
+              errorDetails: null,
+              clientIp: null,
+              userAgent: null,
+              correlationId: null,
+              httpMethod: null,
+              httpPath: null,
+            },
+          ],
+          totalCount: 1,
+          page: 1,
+          pageSize: 8,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+        isLoading: false,
+      });
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      expect(await screen.findByText(/Namespace Create/i)).toBeInTheDocument();
+    });
+
+    it('shows Top Failure Categories from the fleet overview rollup', async () => {
+      mockUseFleetOverview.mockReturnValue({
+        data: {
+          generatedAt: new Date().toISOString(),
+          windowHours: 24,
+          namespaceCount: 1,
+          totalActive: 5,
+          totalNewInWindow: 0,
+          totalResolvedInWindow: 0,
+          namespaces: [],
+          topCategories: { ProcessingError: 12, Transient: 4 },
+          dailyTrend: [],
+        },
+        isLoading: false,
+      });
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      expect(await screen.findByText('Top Failure Categories')).toBeInTheDocument();
+      expect(await screen.findByText('ProcessingError')).toBeInTheDocument();
+    });
+
+    it('renders a Provider Distribution panel summarizing the fleet by cloud', async () => {
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      expect(await screen.findByText('Provider Distribution')).toBeInTheDocument();
+    });
+
+    it('surfaces a namespace as "Needs Attention" when Fleet Health marks it critical, even with no local DLQ spike', async () => {
+      mockUseFleetOverview.mockReturnValue({
+        data: {
+          generatedAt: new Date().toISOString(),
+          windowHours: 24,
+          namespaceCount: 1,
+          totalActive: 0,
+          totalNewInWindow: 0,
+          totalResolvedInWindow: 0,
+          namespaces: [
+            {
+              namespaceId: 'ns1',
+              namespaceName: 'My Namespace',
+              provider: 'Azure',
+              environment: 'Dev',
+              activeCount: 60,
+              newInWindow: 12,
+              resolvedInWindow: 0,
+              totalCount: 60,
+              topEntity: null,
+              topEntityCount: 0,
+              topCategory: 'ProcessingError',
+              oldestActiveDetectedAt: null,
+              severity: 'critical',
+              coverage: 'scanned',
+              coverageNote: null,
+            },
+          ],
+          topCategories: {},
+          dailyTrend: [],
+        },
+        isLoading: false,
+      });
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      expect(await screen.findByText(/Needs Attention/i)).toBeInTheDocument();
     });
   });
 });
