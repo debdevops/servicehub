@@ -30,7 +30,22 @@ type OverviewTab = 'active' | 'deadletter';
 
 // unsupported = the provider has no message-count API (e.g. GCP Pub/Sub) — the raw value is
 // always 0 regardless of real backlog, so a dash is shown instead of a misleading "0".
-function CountBadge({ value, tab, unsupported }: { value: number; tab: OverviewTab; unsupported?: boolean }) {
+//
+// approximate = AWS SQS's own count API (ApproximateNumberOfMessages) is eventually
+// consistent — AWS documents it can take up to a minute to reflect a burst of sends or a
+// replay. A "~" prefix and tooltip make that AWS-side delay visible instead of the count
+// looking like a ServiceHub bug when it briefly reads 0 right after sending messages.
+function CountBadge({
+  value,
+  tab,
+  unsupported,
+  approximate,
+}: {
+  value: number;
+  tab: OverviewTab;
+  unsupported?: boolean;
+  approximate?: boolean;
+}) {
   if (unsupported) {
     return (
       <span
@@ -41,14 +56,18 @@ function CountBadge({ value, tab, unsupported }: { value: number; tab: OverviewT
       </span>
     );
   }
+  const approximateTitle =
+    'AWS reports this count with a short delay (eventually consistent) — it can take up to a minute to catch up after sending or replaying messages.';
+  const display = `${approximate ? '~' : ''}${value.toLocaleString()}`;
   if (tab === 'deadletter') {
     return (
       <span
         className={`px-2 py-0.5 rounded-full text-xs font-bold ${
           value > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-400'
         }`}
+        title={approximate ? approximateTitle : undefined}
       >
-        {value.toLocaleString()}
+        {display}
       </span>
     );
   }
@@ -57,8 +76,9 @@ function CountBadge({ value, tab, unsupported }: { value: number; tab: OverviewT
       className={`px-2 py-0.5 rounded-full text-xs font-bold ${
         value > 0 ? 'bg-sky-100 text-sky-700' : 'bg-gray-100 text-gray-400'
       }`}
+      title={approximate ? approximateTitle : undefined}
     >
-      {value.toLocaleString()}
+      {display}
     </span>
   );
 }
@@ -232,7 +252,7 @@ function NamespaceEntitiesSection({
                           }
                         >
                           <span className="text-sm font-medium text-gray-800 truncate">{queue.name}</span>
-                          <CountBadge value={countOf(queue)} tab={tab} />
+                          <CountBadge value={countOf(queue)} tab={tab} approximate={isAws} />
                         </button>
                       ))}
                     </div>

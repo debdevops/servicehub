@@ -855,6 +855,7 @@ export function MessagesPage() {
           isSyncing={isTabSyncing}
           isFiltered={hasActiveFilter}
           countsUnsupported={!supportsMessageCounts}
+          approximateCounts={isAwsNamespace}
           tabLabels={isAwsNamespace ? {
             active: 'Queue',
             deadletter: 'DLQ',
