@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Core.DTOs.Responses;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Shared.Constants;
 
@@ -23,14 +24,17 @@ public sealed class AttentionQueueController : ApiControllerBase
     }
 
     /// <summary>Gets the ranked, capped attention queue for the caller across every namespace they own.</summary>
+    /// <param name="provider">When set (a cloud-specific Home), scores and caps the queue within
+    /// that provider's namespaces only, instead of the caller's whole fleet.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     [HttpGet]
     [RequireScope(ApiKeyScopes.DlqRead)]
     [ProducesResponseType(typeof(AttentionQueueResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<AttentionQueueResponse>> GetAttentionQueueAsync(
+        [FromQuery] CloudProviderType? provider = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await _attentionQueueService.GetAttentionQueueAsync(OwnerId, cancellationToken);
+        var result = await _attentionQueueService.GetAttentionQueueAsync(OwnerId, provider, cancellationToken);
         return ToActionResult(result);
     }
 }

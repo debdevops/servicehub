@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import type { CloudProviderType } from './types';
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -30,9 +31,11 @@ export interface AttentionQueueResponse {
 export const attentionQueueApi = {
   /** Home as a ranked attention queue (roadmap W2.2) — up to three signatures across every
    * namespace the caller owns, ranked by severity, blast radius, recurrence, and whether a
-   * human decision is blocking. */
-  get: async (): Promise<AttentionQueueResponse> => {
-    const response = await apiClient.get<AttentionQueueResponse>('/attention-queue');
+   * human decision is blocking. `provider`, when set, scores and caps the queue within that
+   * provider's namespaces only (a cloud-specific Home), not a client-side filter of the
+   * cross-cloud top-3 — see the backend's AttentionQueueController doc comment. */
+  get: async (provider?: CloudProviderType): Promise<AttentionQueueResponse> => {
+    const response = await apiClient.get<AttentionQueueResponse>('/attention-queue', { params: { provider } });
     return response.data;
   },
 };

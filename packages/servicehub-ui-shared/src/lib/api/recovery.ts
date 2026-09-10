@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import type { CloudProviderType } from './types';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 //
@@ -472,9 +473,9 @@ export const recoveryApi = {
     return response.data;
   },
 
-  getOutcomes: async (days = 7): Promise<OutcomeMetricsOverview> => {
+  getOutcomes: async (days = 7, provider?: CloudProviderType): Promise<OutcomeMetricsOverview> => {
     const response = await apiClient.get<OutcomeMetricsOverview>('/recovery/outcomes', {
-      params: { days },
+      params: { days, provider },
     });
     return response.data;
   },

@@ -1,3 +1,5 @@
+using ServiceHub.Core.Enums;
+
 namespace ServiceHub.Core.Interfaces;
 
 /// <summary>
@@ -17,10 +19,15 @@ public interface IOutcomeMetricsService
     /// </summary>
     /// <param name="ownerId">Tenant/owner identifier for isolation.</param>
     /// <param name="window">The trailing window to summarise. Defaults to 7 days.</param>
+    /// <param name="provider">When set (a cloud-specific Home), scopes every figure to ledger
+    /// rows whose <see cref="Entities.RecoveryLedgerEntry.ProviderSnapshot"/> matches — already
+    /// denormalised onto the row, so this needs no join or schema change. Null preserves the
+    /// original fleet-wide behaviour.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<OutcomeMetricsOverview> GetOverviewAsync(
         string ownerId,
         TimeSpan? window = null,
+        CloudProviderType? provider = null,
         CancellationToken cancellationToken = default);
 }
 

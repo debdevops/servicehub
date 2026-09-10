@@ -46,7 +46,7 @@ public sealed class OutcomeMetricsServiceTests : IDisposable
     private static RecoveryActor UserActor() => new("operator", RecoveryActorKind.User);
     private static RecoveryActor AutomationActor() => new("auto-replay-rule", RecoveryActorKind.Automation);
 
-    private async Task<RecoveryLedgerEntry> RecoverAsync(string ownerId, RecoveryActor actor)
+    private async Task<RecoveryLedgerEntry> RecoverAsync(string ownerId, RecoveryActor actor, CloudProviderType? provider = null)
     {
         var operation = await _ledger.OpenOperationAsync(new OpenRecoveryOperationRequest
         {
@@ -66,6 +66,7 @@ public sealed class OutcomeMetricsServiceTests : IDisposable
             Actor = actor,
             BodyHash = $"body-{Guid.NewGuid():N}",
             TargetEntity = "orders-dlq",
+            ProviderSnapshot = provider,
         });
         entry.IsSuccess.Should().BeTrue();
 
@@ -89,7 +90,7 @@ public sealed class OutcomeMetricsServiceTests : IDisposable
         return observation.Value;
     }
 
-    private async Task<RecoveryLedgerEntry> WriteOffAsync(string ownerId)
+    private async Task<RecoveryLedgerEntry> WriteOffAsync(string ownerId, CloudProviderType? provider = null)
     {
         var operation = await _ledger.OpenOperationAsync(new OpenRecoveryOperationRequest
         {
@@ -108,6 +109,7 @@ public sealed class OutcomeMetricsServiceTests : IDisposable
             Actor = UserActor(),
             BodyHash = $"body-{Guid.NewGuid():N}",
             TargetEntity = "orders-dlq",
+            ProviderSnapshot = provider,
         });
 
         var disposed = await _ledger.SetDispositionAsync(
@@ -116,7 +118,7 @@ public sealed class OutcomeMetricsServiceTests : IDisposable
         return disposed.Value;
     }
 
-    private async Task DeclineAsync(string ownerId)
+    private async Task DeclineAsync(string ownerId, CloudProviderType? provider = null)
     {
         var operation = await _ledger.OpenOperationAsync(new OpenRecoveryOperationRequest
         {
@@ -136,6 +138,7 @@ public sealed class OutcomeMetricsServiceTests : IDisposable
                 Actor = AutomationActor(),
                 BodyHash = $"body-{Guid.NewGuid():N}",
                 TargetEntity = "orders-dlq",
+                ProviderSnapshot = provider,
             },
             reasonCode: "recurrence-lineage-cap",
             detailJson: null,
@@ -247,5 +250,43 @@ public sealed class OutcomeMetricsServiceTests : IDisposable
         var overview = await _sut.GetOverviewAsync(OwnerA, TimeSpan.FromDays(7));
 
         overview.MessagesRecovered.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_ProviderFilter_ScopesRecoveredAndAbandonedToThatProvider()
+    {
+        await RecoverAsync(OwnerA, UserActor(), CloudProviderType.Aws);
+        await RecoverAsync(OwnerA, UserActor(), CloudProviderType.Azure);
+        await WriteOffAsync(OwnerA, CloudProviderType.Aws);
+        await WriteOffAsync(OwnerA, CloudProviderType.Azure);
+
+        var overview = await _sut.GetOverviewAsync(OwnerA, provider: CloudProviderType.Aws);
+
+        overview.MessagesRecovered.Should().Be(1);
+        overview.MessagesAbandoned.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_ProviderFilter_ScopesGateRefusalsThroughTheEntryTheyWereDeclinedAlongside()
+    {
+        await DeclineAsync(OwnerA, CloudProviderType.Aws);
+        await DeclineAsync(OwnerA, CloudProviderType.Azure);
+        await DeclineAsync(OwnerA, CloudProviderType.Azure);
+
+        var overview = await _sut.GetOverviewAsync(OwnerA, provider: CloudProviderType.Aws);
+
+        overview.GateRefusals.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_ProviderFilter_NoMatchingEntries_ReturnsZeroedSnapshot()
+    {
+        await RecoverAsync(OwnerA, UserActor(), CloudProviderType.Azure);
+
+        var overview = await _sut.GetOverviewAsync(OwnerA, provider: CloudProviderType.Gcp);
+
+        overview.MessagesRecovered.Should().Be(0);
+        overview.MessagesAbandoned.Should().Be(0);
+        overview.GateRefusals.Should().Be(0);
     }
 }

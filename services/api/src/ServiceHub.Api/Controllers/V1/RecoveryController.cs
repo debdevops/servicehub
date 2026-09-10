@@ -314,17 +314,20 @@ public sealed class RecoveryController : ApiControllerBase
     /// estimated, or extrapolated.
     /// </summary>
     /// <param name="days">Trailing window size in days. Defaults to 7, clamped to [1, 90].</param>
+    /// <param name="provider">When set (a cloud-specific Home), scopes every figure to that
+    /// provider's own ledger rows instead of the caller's whole fleet.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     [RequireScope(ApiKeyScopes.RecoveryRead)]
     [HttpGet("outcomes")]
     [ProducesResponseType(typeof(OutcomeMetricsOverview), StatusCodes.Status200OK)]
     public async Task<ActionResult<OutcomeMetricsOverview>> GetOutcomes(
         [FromQuery] int? days = null,
+        [FromQuery] CloudProviderType? provider = null,
         CancellationToken cancellationToken = default)
     {
         var clampedDays = Math.Clamp(days ?? 7, 1, 90);
         var overview = await _outcomeMetrics.GetOverviewAsync(
-            OwnerId, TimeSpan.FromDays(clampedDays), cancellationToken);
+            OwnerId, TimeSpan.FromDays(clampedDays), provider, cancellationToken);
         return Ok(overview);
     }
 

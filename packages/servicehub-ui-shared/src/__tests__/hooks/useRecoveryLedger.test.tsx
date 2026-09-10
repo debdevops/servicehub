@@ -42,7 +42,7 @@ describe('useRecoveryOperations', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toHaveLength(1);
-    expect(mockGetOperations).toHaveBeenCalledWith(undefined);
+    expect(mockGetOperations).toHaveBeenCalledWith(undefined, 100);
   });
 
   it('passes the namespace filter through', async () => {
@@ -50,7 +50,7 @@ describe('useRecoveryOperations', () => {
 
     renderHook(() => useRecoveryOperations('ns-1'), { wrapper: createWrapper() });
 
-    await waitFor(() => expect(mockGetOperations).toHaveBeenCalledWith('ns-1'));
+    await waitFor(() => expect(mockGetOperations).toHaveBeenCalledWith('ns-1', 100));
   });
 });
 

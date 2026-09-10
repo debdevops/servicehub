@@ -26,7 +26,7 @@ describe('IconRail', () => {
     expect(screen.getByLabelText('Incident Center')).toBeInTheDocument();
     expect(screen.getByLabelText('Namespace Overview')).toBeInTheDocument();
     expect(screen.getByLabelText('Approval Queue')).toBeInTheDocument();
-    expect(screen.getByLabelText('Recovery Evidence')).toBeInTheDocument();
+    expect(screen.getByLabelText('Autonomy Control Center')).toBeInTheDocument();
     expect(screen.getByLabelText('More destinations')).toBeInTheDocument();
   });
 

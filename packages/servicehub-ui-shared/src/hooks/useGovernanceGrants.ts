@@ -8,7 +8,7 @@ import { useDemoContext, rejectDemoModeMutation } from '../lib/demo/DemoContext'
  * roadmap item 10's enforcement layer). Demo Mode has no synthetic grant fixture — rather than
  * fabricate one, it honestly reports an empty list, same reasoning as `usePlaybookEntries`.
  */
-export function useGovernanceGrants(granteeIdentity?: string) {
+export function useGovernanceGrants(granteeIdentity?: string, enabled = true) {
   const { isDemoMode } = useDemoContext();
 
   const options: UseQueryOptions<GovernanceGrant[]> = isDemoMode
@@ -19,7 +19,9 @@ export function useGovernanceGrants(granteeIdentity?: string) {
     : {
         queryKey: ['governance-grants', granteeIdentity],
         queryFn: () => governanceApi.getGrants(granteeIdentity),
-        enabled: !isDemoMode,
+        // Callers that only want a summary pass `enabled: false` for a caller who isn't a
+        // Governance Admin — the endpoint would 403 anyway, and each refusal is logged server-side.
+        enabled: !isDemoMode && enabled,
         staleTime: 15_000,
         retry: (failureCount, error: unknown) => {
           const err = error as { response?: { status?: number } };

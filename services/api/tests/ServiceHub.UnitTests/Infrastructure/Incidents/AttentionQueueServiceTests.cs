@@ -48,7 +48,7 @@ public sealed class AttentionQueueServiceTests : IDisposable
                 _dbContext.NamespaceSignatures
                     .Select(s => s.NamespaceId)
                     .Distinct()
-                    .Select(MakeNamespace)
+                    .Select(id => MakeNamespace(id, _namespaceProviders.GetValueOrDefault(id, CloudProviderType.Azure)))
                     .ToList()));
     }
 
@@ -58,9 +58,16 @@ public sealed class AttentionQueueServiceTests : IDisposable
         _dbContext.Dispose();
     }
 
-    private static Namespace MakeNamespace(Guid id)
+    // Per-namespace provider override for provider-filter tests — defaults to Azure (matching
+    // every prior test's assumption) when a namespace isn't registered here.
+    private readonly Dictionary<Guid, CloudProviderType> _namespaceProviders = new();
+
+    private void SetNamespaceProvider(Guid namespaceId, CloudProviderType provider) =>
+        _namespaceProviders[namespaceId] = provider;
+
+    private static Namespace MakeNamespace(Guid id, CloudProviderType provider = CloudProviderType.Azure)
     {
-        var ns = Namespace.Create("test-ns", "PROTECTED:encrypted-data").Value;
+        var ns = Namespace.Create("test-ns", "PROTECTED:encrypted-data", provider: provider).Value;
         typeof(Namespace).GetProperty("Id")!.SetValue(ns, id);
         return ns;
     }
@@ -223,6 +230,43 @@ public sealed class AttentionQueueServiceTests : IDisposable
 
         result.Value.Items.Should().HaveCount(3);
         result.Value.IsEmpty.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetAttentionQueueAsync_ProviderFilter_ScoresAndCapsWithinThatProviderOnly()
+    {
+        // Three Azure signatures would fill the global top-3 on their own — without scoring the
+        // AWS namespace's own candidate as its own provider-scoped top-N, an AWS-scoped Home
+        // could go empty even though AWS genuinely has something that needs attention.
+        var azureNamespaceId = Guid.NewGuid();
+        SetNamespaceProvider(azureNamespaceId, CloudProviderType.Azure);
+        for (var i = 0; i < 3; i++)
+        {
+            await SeedSignatureAsync(azureNamespaceId, $"sig-azure-{i}", occurrenceCount: 50);
+        }
+
+        var awsNamespaceId = Guid.NewGuid();
+        SetNamespaceProvider(awsNamespaceId, CloudProviderType.Aws);
+        var awsSig = await SeedSignatureAsync(awsNamespaceId, "sig-aws-0", occurrenceCount: 1);
+
+        var result = await _service.GetAttentionQueueAsync(OwnerId, CloudProviderType.Aws);
+
+        result.Value.IsEmpty.Should().BeFalse();
+        result.Value.Items.Should().ContainSingle(i => i.SignatureHash == awsSig.SignatureHash);
+        result.Value.Items.Should().OnlyContain(i => i.NamespaceId == awsNamespaceId);
+    }
+
+    [Fact]
+    public async Task GetAttentionQueueAsync_ProviderFilter_NoMatchingNamespaces_ReturnsEmptyQueue()
+    {
+        var azureNamespaceId = Guid.NewGuid();
+        SetNamespaceProvider(azureNamespaceId, CloudProviderType.Azure);
+        await SeedSignatureAsync(azureNamespaceId, "sig-azure-only");
+
+        var result = await _service.GetAttentionQueueAsync(OwnerId, CloudProviderType.Gcp);
+
+        result.Value.IsEmpty.Should().BeTrue();
+        result.Value.Items.Should().BeEmpty();
     }
 
     [Fact]

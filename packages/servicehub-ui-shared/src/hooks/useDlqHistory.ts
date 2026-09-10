@@ -4,6 +4,7 @@ import {
   type DlqHistoryItem,
   type DlqHistoryParams,
   type DlqTriageStatus,
+  type DlqSparklinePoint,
   type PaginatedResponse,
 } from '../lib/api/dlqHistory';
 import { useDemoContext, rejectDemoModeMutation } from '../lib/demo/DemoContext';
@@ -87,6 +88,21 @@ export function useDlqSummary(namespaceId?: string) {
       if (err?.response?.status === 429) return false;
       return failureCount < 2;
     },
+  });
+}
+
+/**
+ * Hook for fetching a namespace's DLQ trend — daily new-vs-resolved counts over `days` (7 by
+ * default). Not available in Demo Mode (no real history to trend over).
+ */
+export function useDlqTrend(namespaceId?: string, days = 7) {
+  const { isDemoMode } = useDemoContext();
+
+  return useQuery<DlqSparklinePoint[]>({
+    queryKey: ['dlq-trend', namespaceId, days],
+    queryFn: () => dlqHistoryApi.getTrend(namespaceId!, days),
+    enabled: !isDemoMode && !!namespaceId,
+    staleTime: 60_000,
   });
 }
 

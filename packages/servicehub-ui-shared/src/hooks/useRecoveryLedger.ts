@@ -12,12 +12,13 @@ import {
 } from '../lib/api/recovery';
 import { useDemoContext } from '../lib/demo/DemoContext';
 import { getMockRecoveryOperations, getMockRecoveryOperationDetail } from '../lib/demo/mockProviders';
+import type { CloudProviderType } from '../lib/api/types';
 
 /**
  * Hook for fetching recovery operations, most recently opened first. The Recovery Ledger page's
  * primary list.
  */
-export function useRecoveryOperations(namespaceId?: string, enabled = true) {
+export function useRecoveryOperations(namespaceId?: string, enabled = true, limit = 100) {
   const { isDemoMode, cloudProvider } = useDemoContext();
 
   const options: UseQueryOptions<RecoveryOperation[]> =
@@ -27,8 +28,8 @@ export function useRecoveryOperations(namespaceId?: string, enabled = true) {
           queryFn: (): Promise<RecoveryOperation[]> => Promise.resolve(getMockRecoveryOperations()),
         }
       : {
-          queryKey: ['recovery-operations', namespaceId],
-          queryFn: () => recoveryApi.getOperations(namespaceId),
+          queryKey: ['recovery-operations', namespaceId, limit],
+          queryFn: () => recoveryApi.getOperations(namespaceId, limit),
           enabled: !isDemoMode && enabled,
           staleTime: 30_000,
           refetchInterval: 60_000,
@@ -165,9 +166,11 @@ export function useAutonomyDashboard() {
 /**
  * What the fleet actually achieved over a trailing window (roadmap next-chapter M4.1) — messages
  * recovered, messages written off, median time to a verified recovery, autonomous recoveries, and
- * gate refusals. Every figure traces to a ledger row; none is modelled or estimated.
+ * gate refusals. Every figure traces to a ledger row; none is modelled or estimated. `provider`,
+ * when passed, scopes every figure to that cloud's own ledger rows (a cloud-specific Home) — has
+ * no effect in Demo Mode, which has no real ledger rows to scope in the first place.
  */
-export function useOutcomeMetrics(days = 7) {
+export function useOutcomeMetrics(days = 7, provider?: CloudProviderType) {
   const { isDemoMode } = useDemoContext();
 
   const options: UseQueryOptions<OutcomeMetricsOverview> = isDemoMode
@@ -189,8 +192,8 @@ export function useOutcomeMetrics(days = 7) {
         },
       }
     : {
-        queryKey: ['recovery-outcomes', days],
-        queryFn: () => recoveryApi.getOutcomes(days),
+        queryKey: ['recovery-outcomes', days, provider ?? 'all'],
+        queryFn: () => recoveryApi.getOutcomes(days, provider),
         enabled: !isDemoMode,
         staleTime: 60_000,
         refetchInterval: 120_000,

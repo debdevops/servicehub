@@ -29,7 +29,10 @@ public sealed class OutcomeMetricsService : IOutcomeMetricsService
 
     /// <inheritdoc />
     public async Task<OutcomeMetricsOverview> GetOverviewAsync(
-        string ownerId, TimeSpan? window = null, CancellationToken cancellationToken = default)
+        string ownerId,
+        TimeSpan? window = null,
+        CloudProviderType? provider = null,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(ownerId))
         {
@@ -44,7 +47,8 @@ public sealed class OutcomeMetricsService : IOutcomeMetricsService
             .Where(e => e.OwnerId == ownerId
                 && e.Disposition == RecoveryDisposition.Recovered
                 && e.ClosedAt != null
-                && e.ClosedAt >= windowStart && e.ClosedAt <= windowEnd)
+                && e.ClosedAt >= windowStart && e.ClosedAt <= windowEnd
+                && (provider == null || e.ProviderSnapshot == provider))
             .Select(e => new { e.BegunAt, e.ClosedAt, e.OperationId })
             .ToListAsync(cancellationToken);
 
@@ -53,13 +57,27 @@ public sealed class OutcomeMetricsService : IOutcomeMetricsService
             .CountAsync(e => e.OwnerId == ownerId
                 && e.Disposition == RecoveryDisposition.WrittenOff
                 && e.ClosedAt != null
-                && e.ClosedAt >= windowStart && e.ClosedAt <= windowEnd, cancellationToken);
+                && e.ClosedAt >= windowStart && e.ClosedAt <= windowEnd
+                && (provider == null || e.ProviderSnapshot == provider), cancellationToken);
 
-        var gateRefusals = await _dbContext.RecoveryEvents
-            .AsNoTracking()
-            .CountAsync(e => e.OwnerId == ownerId
-                && e.EventType == RecoveryEventType.EligibilityDeclined
-                && e.OccurredAt >= windowStart && e.OccurredAt <= windowEnd, cancellationToken);
+        // EligibilityDeclined events are written with EntryId set to the entry created alongside
+        // them (see RecoveryLedgerService), so a provider filter joins through it rather than
+        // needing its own denormalised provider column.
+        var gateRefusals = provider == null
+            ? await _dbContext.RecoveryEvents
+                .AsNoTracking()
+                .CountAsync(e => e.OwnerId == ownerId
+                    && e.EventType == RecoveryEventType.EligibilityDeclined
+                    && e.OccurredAt >= windowStart && e.OccurredAt <= windowEnd, cancellationToken)
+            : await _dbContext.RecoveryEvents
+                .AsNoTracking()
+                .Where(e => e.OwnerId == ownerId
+                    && e.EventType == RecoveryEventType.EligibilityDeclined
+                    && e.OccurredAt >= windowStart && e.OccurredAt <= windowEnd
+                    && e.EntryId != null)
+                .Join(_dbContext.RecoveryLedgerEntries.AsNoTracking(),
+                    e => e.EntryId, entry => entry.Id, (e, entry) => entry.ProviderSnapshot)
+                .CountAsync(providerSnapshot => providerSnapshot == provider, cancellationToken);
 
         double? medianSeconds = null;
         var autonomousRecoveries = 0;

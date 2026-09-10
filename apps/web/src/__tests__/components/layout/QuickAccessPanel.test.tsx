@@ -84,8 +84,9 @@ describe('QuickAccessPanel', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><QuickAccessPanel /></Wrapper>);
     expect(screen.getByText('Overview')).toBeInTheDocument();
-    expect(screen.getByText('Browse across clouds')).toBeInTheDocument();
-    expect(screen.getByText('Diagnose & automate')).toBeInTheDocument();
+    expect(screen.getByText('Observe')).toBeInTheDocument();
+    expect(screen.getByText('Recover')).toBeInTheDocument();
+    expect(screen.getByText('Autonomous ServiceHub')).toBeInTheDocument();
     expect(screen.getByText('Platform')).toBeInTheDocument();
     expect(screen.getByText('Support')).toBeInTheDocument();
   });
@@ -102,7 +103,7 @@ describe('QuickAccessPanel', () => {
     expect(screen.getByText('Active Messages')).toBeInTheDocument();
   });
 
-  it('labels "browse across clouds" shortcuts "All Namespaces" (not "All Clouds") on a single-provider installation', () => {
+  it('labels the Observe section\'s shortcuts "All Namespaces" (not "All Clouds") on a single-provider installation', () => {
     mockUseNamespaces.mockReturnValue({
       data: [{ id: 'ns1', name: 'my-namespace', isActive: true, cloudProvider: 'aws' }],
       isLoading: false,
@@ -118,7 +119,7 @@ describe('QuickAccessPanel', () => {
     );
   });
 
-  it('labels "browse across clouds" shortcuts "All Clouds" once ≥2 providers are configured', () => {
+  it('labels the Observe section\'s shortcuts "All Clouds" once ≥2 providers are configured', () => {
     mockUseNamespaces.mockReturnValue({
       data: [
         { id: 'ns1', name: 'azure-ns', isActive: true, cloudProvider: 'azure' },

@@ -69,6 +69,7 @@ public sealed class AttentionQueueService : IAttentionQueueService
     /// <inheritdoc/>
     public async Task<Result<AttentionQueueResponse>> GetAttentionQueueAsync(
         string ownerId,
+        CloudProviderType? provider = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(ownerId);
@@ -93,6 +94,15 @@ public sealed class AttentionQueueService : IAttentionQueueService
         if (registeredNamespacesResult.IsSuccess)
         {
             signatures = signatures.Where(s => namespacesById.ContainsKey(s.NamespaceId)).ToList();
+        }
+
+        // Scored and capped within the provider's own namespaces (not a post-hoc filter of the
+        // cross-cloud top-3) — see the doc comment on IAttentionQueueService.GetAttentionQueueAsync.
+        if (provider is not null)
+        {
+            signatures = signatures
+                .Where(s => namespacesById.TryGetValue(s.NamespaceId, out var ns) && ns.Provider == provider)
+                .ToList();
         }
 
         if (signatures.Count == 0)

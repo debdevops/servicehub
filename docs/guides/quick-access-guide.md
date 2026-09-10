@@ -27,18 +27,24 @@ namespaces — not a mockup.
 
 ## What is Quick Access?
 
-Quick Access is the panel of shortcuts on the left side of every screen, grouped into five
-sections by workflow stage: **Overview → Browse across clouds → Diagnose & automate →
-Platform → Support**. It's always the first thing in the sidebar, and it's the fastest way to
+Quick Access is the panel of shortcuts on the left side of every screen, grouped into six
+sections by the operator's actual loop — **Overview → Observe → Recover → Autonomous ServiceHub
+→ Platform → Support**. It's always the first thing in the sidebar, and it's the fastest way to
 get anywhere in ServiceHub without knowing a URL or clicking through a namespace tree first.
 
-![Quick Access panel with all five groups visible, marked 1 — Quick Access](../screenshots/guides/quick-access/00-quick-access-panel-overview.png)
+![Quick Access panel, top half — Overview and Observe](../screenshots/guides/quick-access/00-quick-access-panel-overview.png)
+![Quick Access panel, bottom half — Recover, Autonomous ServiceHub, Platform, Support](../screenshots/guides/quick-access/00b-quick-access-panel-overview-bottom.png)
 
-The green **1 — Quick Access panel** marker above shows the whole panel and all five groups at
-once: **Overview**, **Browse across clouds**, **Diagnose & automate**, **Platform**, and
-**Support**. Every section below shows one destination at a time the same way: a green **1**
-marks the exact item to click in this panel, and a blue **2** marks the resulting screen it
-opens.
+The two screenshots above, stitched at the scroll point, show the whole panel and all six
+groups: **Overview**, **Observe**, **Recover**, **Autonomous ServiceHub**, **Platform**, and
+**Support**. Overview shows what needs attention, Observe explains it, Recover acts on it, and
+Autonomous ServiceHub answers what ServiceHub may do on its own and proves what it did — led by
+the **Autonomy Control Center** (marked *Start here*), then Recovery Evidence, Playbook Ledger
+and Governance. Platform is the ServiceHub server itself — its health, the **Audit Trail**
+(the accountability record for every action, deliberately separate from the autonomy pillars)
+and its security posture — and Support is Help and the Advanced ServiceHub explainer. Every section below shows one destination at a
+time the same way: a green **1** marks the exact item to click in this panel, and a blue **2**
+marks the resulting screen it opens.
 
 The panel is collapsible (click the pin icon's row header), draggable to reorder, and
 resizable — drag its right edge if you want more or less room for it.
@@ -121,7 +127,7 @@ the right is the resulting screen (blue marker 2).
 
 ---
 
-## Browse across clouds
+## Observe
 
 ### Active Messages
 
@@ -233,10 +239,6 @@ the right is the resulting screen (blue marker 2).
 - **Limitations:** this is a status and browsing view, not an investigation tool — click into
   a namespace to actually read messages.
 
----
-
-## Diagnose & automate
-
 ### DLQ Intelligence
 
 ![DLQ Intelligence page with Bulk Replay/Purge and 30-day trend, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/09-dlq-intelligence-annotated.png)
@@ -267,6 +269,32 @@ monitoring hub shown on the right is the resulting screen (blue marker 2).
 - **Limitations:** Bulk Replay/Purge are **disabled entirely on production namespaces** — not
   just hidden, genuinely blocked server-side.
 
+### Multi-Cloud Trace
+
+![Multi-Cloud Trace search screen, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/11-multi-cloud-trace-annotated.png)
+
+Select **Multi-Cloud Trace** in Quick Access (green marker 1). The trace search screen shown on
+the right is the resulting screen (blue marker 2).
+
+- **What is it?** A tool to trace a single message's journey by Correlation ID or Trace ID as
+  it hops between providers (e.g. Azure → AWS via an integration).
+- **Why would you use it?** To answer "where did this specific message go after it left my
+  first cloud?" — useful when one provider's queue feeds another's via your own integration
+  code.
+- **When should you use it?** When investigating a cross-cloud workflow, and you have a
+  correlation/trace ID to search on.
+- **What screen opens?** A single search box and a **"What is a Trace ID?"** expandable
+  explainer on how to find one per cloud.
+- **What should you expect?** With only one provider connected, the sidebar link is still
+  clickable but its tooltip says *"Needs at least two connected providers to trace a
+  cross-cloud hop"* — an honest prerequisite, not a silent no-op.
+- **Limitations:** requires your own application to already be propagating a shared
+  correlation ID across clouds — ServiceHub can't trace a hop it has no shared identifier for.
+
+---
+
+## Recover
+
 ### Auto-Replay Rules
 
 ![Auto-Replay Rules page, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/10-auto-replay-rules-annotated.png)
@@ -292,31 +320,84 @@ right are the resulting screen (blue marker 2).
 - **Limitations:** rules only ever touch DLQ messages already matching their conditions —
   they never create new messages or affect active traffic.
 
-### Multi-Cloud Trace
+Auto-Replay Rules sits alongside **Approval Queue** (escalated rule matches awaiting a human
+decision) in this group — not yet documented here as its own annotated walkthrough.
 
-![Multi-Cloud Trace search screen, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/11-multi-cloud-trace-annotated.png)
+---
 
-Select **Multi-Cloud Trace** in Quick Access (green marker 1). The trace search screen shown on
-the right is the resulting screen (blue marker 2).
+## Autonomous ServiceHub
 
-- **What is it?** A tool to trace a single message's journey by Correlation ID or Trace ID as
-  it hops between providers (e.g. Azure → AWS via an integration).
-- **Why would you use it?** To answer "where did this specific message go after it left my
-  first cloud?" — useful when one provider's queue feeds another's via your own integration
-  code.
-- **When should you use it?** When investigating a cross-cloud workflow, and you have a
-  correlation/trace ID to search on.
-- **What screen opens?** A single search box and a **"What is a Trace ID?"** expandable
-  explainer on how to find one per cloud.
-- **What should you expect?** With only one provider connected, the sidebar link is still
-  clickable but its tooltip says *"Needs at least two connected providers to trace a
-  cross-cloud hop"* — an honest prerequisite, not a silent no-op.
-- **Limitations:** requires your own application to already be propagating a shared
-  correlation ID across clouds — ServiceHub can't trace a hop it has no shared identifier for.
+Four pages, one mental model: the **Autonomy Control Center** (what can ServiceHub safely do on
+its own, and why?), **Recovery Evidence** (what actually happened, and can we prove it?),
+**Playbook Ledger** (what has ServiceHub noticed and proposed?), and **Governance** (who may
+approve and manage decisions?). The Autonomy Control Center, Playbook Ledger and Governance are
+described in the [Complete Guide](../SERVICEHUB-COMPLETE-GUIDE.md#autonomous-servicehub) — not yet
+documented here as their own annotated walkthroughs.
+
+### Recovery Evidence
+
+![Recovery Evidence Ledger, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/14-recovery-evidence-ledger-annotated.png)
+
+Select **Recovery Evidence** in Quick Access (green marker 1). The ledger shown on the right is
+the resulting screen (blue marker 2).
+
+- **What is it?** The permanent, append-only record of every recovery decision ServiceHub has
+  made — every replay, whether triggered by a human or an Auto-Replay Rule — including what it
+  asked the provider to do and what it subsequently observed.
+- **Why would you use it?** It's proof, not a claim. Instead of trusting a "replay succeeded"
+  toast, you can open the actual ledger entry and its hash-chained event history.
+- **When should you use it?** After any replay, to confirm it actually happened the way you
+  expect — or during a compliance/audit review of automated recovery actions.
+- **What screen opens?** Headline outcome tiles (recoveries, recovered with the verified
+  recovery rate, failed or returned, in progress, unverified) and an **Evidence integrity** check,
+  then search and filters (outcome, kind, provider, actor, namespace) above the recovery ledger.
+  Each row shows its outcome — Recovered, Partial, Failed, In progress, Unverified, Blocked by
+  gate, or Purged — derived from what the ledger recorded. Select a row and its story opens in a
+  side panel: Detect → Diagnose → Propose → Approve → Execute → Verify, the messages, and the
+  evidence (verify, export). *(The annotated screenshot above predates this layout.)*
+- **What should you expect?** **Open full evidence record** from the side panel leads to the
+  operation detail page: an entry table per target, a **Verify
+  chain** button that independently confirms the hash chain hasn't been tampered with, and
+  **Export evidence** for a downloadable record.
+
+  Click **Verify chain** and ServiceHub re-walks the entire hash chain server-side, not just
+  this operation's own entries — the result appears as a toast:
+
+  ![Chain verified toast — real result from clicking Verify chain](../screenshots/guides/quick-access/26-verify-chain-toast-closeup.png)
+
+  **What to expect:** a green **"Chain verified — N events intact"** confirmation naming the
+  actual number of events checked (tens of thousands in an active ledger) — this is a live
+  cryptographic check against the database, not a cached or precomputed answer.
+
+  Click **Export evidence** and ServiceHub downloads the full operation record as JSON
+  immediately — no dialog, no extra step:
+
+  ![Evidence export downloaded toast — real result from clicking Export evidence](../screenshots/guides/quick-access/27-export-evidence-toast.png)
+
+  **What to expect:** the download starts the moment you click; the confirmation toast is your
+  only feedback that it happened. The exported file contains the operation's metadata, every
+  target entry, and its event chain — suitable for attaching to an incident report or audit
+  request without needing ServiceHub itself open.
+
+  ![Recovery operation detail, including an honest "Declined" outcome](../screenshots/guides/quick-access/23-recovery-operation-detail-declined.png)
+
+  Not every entry means "replayed successfully" — a **Declined** result means an eligibility
+  check blocked the attempt *before* any provider was contacted, and the ledger says so
+  explicitly rather than hiding the attempt.
+- **Important actions:** **Recovery Ageing Report** (linked from this page) shows every
+  recovery entry that hasn't yet reached a terminal outcome, with its current age.
+
+  ![Recovery Ageing Report](../screenshots/guides/quick-access/22-recovery-ageing-report.png)
+
+- **Limitations:** entries are append-only by design — nothing here can be edited or deleted
+  after the fact, even by an administrator. That's the point.
 
 ---
 
 ## Platform
+
+Everything about ServiceHub itself, rather than any one namespace or recovery decision: the
+server's own health, the accountability record, and its security/data-handling posture.
 
 ### System Health
 
@@ -361,58 +442,6 @@ the resulting screen (blue marker 2).
 - **Limitations:** this is a read-only historical log — it doesn't let you undo anything from
   here.
 
-### Recovery Evidence
-
-![Recovery Evidence Ledger, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/14-recovery-evidence-ledger-annotated.png)
-
-Select **Recovery Evidence** in Quick Access (green marker 1). The ledger shown on the right is
-the resulting screen (blue marker 2).
-
-- **What is it?** The permanent, append-only record of every recovery decision ServiceHub has
-  made — every replay, whether triggered by a human or an Auto-Replay Rule — including what it
-  asked the provider to do and what it subsequently observed.
-- **Why would you use it?** It's proof, not a claim. Instead of trusting a "replay succeeded"
-  toast, you can open the actual ledger entry and its hash-chained event history.
-- **When should you use it?** After any replay, to confirm it actually happened the way you
-  expect — or during a compliance/audit review of automated recovery actions.
-- **What screen opens?** A table of operations (Opened / Actor / Kind / Scope / Cloud-Env /
-  Targets), filterable by Kind. Click any row to open its full detail.
-- **What should you expect?** On the detail page: an entry table per target, a **Verify
-  chain** button that independently confirms the hash chain hasn't been tampered with, and
-  **Export evidence** for a downloadable record.
-
-  Click **Verify chain** and ServiceHub re-walks the entire hash chain server-side, not just
-  this operation's own entries — the result appears as a toast:
-
-  ![Chain verified toast — real result from clicking Verify chain](../screenshots/guides/quick-access/26-verify-chain-toast-closeup.png)
-
-  **What to expect:** a green **"Chain verified — N events intact"** confirmation naming the
-  actual number of events checked (tens of thousands in an active ledger) — this is a live
-  cryptographic check against the database, not a cached or precomputed answer.
-
-  Click **Export evidence** and ServiceHub downloads the full operation record as JSON
-  immediately — no dialog, no extra step:
-
-  ![Evidence export downloaded toast — real result from clicking Export evidence](../screenshots/guides/quick-access/27-export-evidence-toast.png)
-
-  **What to expect:** the download starts the moment you click; the confirmation toast is your
-  only feedback that it happened. The exported file contains the operation's metadata, every
-  target entry, and its event chain — suitable for attaching to an incident report or audit
-  request without needing ServiceHub itself open.
-
-  ![Recovery operation detail, including an honest "Declined" outcome](../screenshots/guides/quick-access/23-recovery-operation-detail-declined.png)
-
-  Not every entry means "replayed successfully" — a **Declined** result means an eligibility
-  check blocked the attempt *before* any provider was contacted, and the ledger says so
-  explicitly rather than hiding the attempt.
-- **Important actions:** **Recovery Ageing Report** (linked from this page) shows every
-  recovery entry that hasn't yet reached a terminal outcome, with its current age.
-
-  ![Recovery Ageing Report](../screenshots/guides/quick-access/22-recovery-ageing-report.png)
-
-- **Limitations:** entries are append-only by design — nothing here can be edited or deleted
-  after the fact, even by an administrator. That's the point.
-
 ### Security & Privacy
 
 ![Security & Privacy page, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/15-security-privacy-annotated.png)
@@ -437,6 +466,9 @@ shown on the right is the resulting screen (blue marker 2).
 ---
 
 ## Support
+
+Help, and the plain-language explanation of the autonomy model (Advanced ServiceHub — not yet
+documented here as its own walkthrough).
 
 ### Help & Guide
 
@@ -474,7 +506,7 @@ per provider.
 ## Failure Signatures
 
 Reached from **Incident Center**'s signature list, or a namespace's own Failure Signatures
-page — not a Quick Access panel entry itself, but central enough to the "Diagnose & automate"
+page — not a Quick Access panel entry itself, but central enough to the "Observe"
 workflow to document here.
 
 ![Failure Signatures list, filterable by status/trend/review state](../screenshots/guides/quick-access/20-failure-signatures-list.png)
@@ -527,42 +559,54 @@ flowchart TB
     QA["Quick Access panel<br/>always visible, left sidebar"]
 
     subgraph OV["Overview"]
+        HM["Home<br/>/home"]
         NSO["Namespace Overview<br/>/dashboard"]
         IC["Incident Center<br/>/incidents"]
         FH["Fleet Health<br/>/fleet"]
     end
 
-    subgraph BR["Browse across clouds"]
+    subgraph IV["Observe"]
         AM["Active Messages<br/>/messages-overview"]
         LT["Live Tail<br/>/live-tail"]
         DL["Dead-Letter<br/>/messages-overview"]
         SM["Scheduled Messages<br/>/scheduled"]
         CB["Cloud Bridge<br/>/cloud-bridge"]
-    end
-
-    subgraph DA["Diagnose & automate"]
         DI["DLQ Intelligence<br/>/dlq-history"]
-        AR["Auto-Replay Rules<br/>/rules"]
+        PI["Proactive Insights<br/>/insights"]
         MCT["Multi-Cloud Trace<br/>/cross-cloud-trace"]
     end
 
-    subgraph PL["Platform"]
+    subgraph RC["Recover"]
+        AR["Auto-Replay Rules<br/>/rules"]
+        AQ["Approval Queue<br/>/approval-queue"]
+    end
+
+    subgraph GE["Autonomous ServiceHub"]
+        AU["Autonomy Control Center<br/>/autonomy"]
+        RE["Recovery Evidence<br/>/recovery"]
+        PB["Playbook Ledger<br/>/playbook"]
+        GV["Governance<br/>/governance"]
+    end
+
+    subgraph PS["Platform"]
         SH["System Health<br/>/health"]
         AT["Audit Trail<br/>/audit"]
-        RE["Recovery Evidence<br/>/recovery"]
         SEC["Security & Privacy<br/>/security"]
     end
 
     subgraph SP["Support"]
+        ASH["Advanced ServiceHub<br/>/advanced-servicehub"]
         HG["Help & Guide<br/>/help"]
     end
 
     QA --> OV
-    QA --> BR
-    QA --> DA
-    QA --> PL
+    QA --> IV
+    QA --> RC
+    QA --> GE
+    QA --> PS
     QA --> SP
 
+    HM -.opens per cloud.-> CH["Cloud Home<br/>then a namespace's own Namespace Home"]
     AM -.opens.-> MSG["Message list → Message detail<br/>Properties / Body / AI Insights / Headers"]
     DL -.opens.-> MSG
     DI -.opens.-> SIG["Failure Signatures<br/>list → detail"]
@@ -571,11 +615,17 @@ flowchart TB
 
     style QA fill:#1565c0,stroke:#0d47a1,stroke-width:2px,color:#fff
     style OV fill:#2e7d32,stroke:#1b5e20,stroke-width:2px,color:#fff
-    style BR fill:#1565c0,stroke:#0d47a1,stroke-width:2px,color:#fff
-    style DA fill:#6a1b9a,stroke:#4a148c,stroke-width:2px,color:#fff
-    style PL fill:#004d40,stroke:#00695c,stroke-width:2px,color:#fff
-    style SP fill:#e65100,stroke:#bf360c,stroke-width:2px,color:#fff
+    style IV fill:#1565c0,stroke:#0d47a1,stroke-width:2px,color:#fff
+    style RC fill:#e65100,stroke:#bf360c,stroke-width:2px,color:#fff
+    style GE fill:#6a1b9a,stroke:#4a148c,stroke-width:2px,color:#fff
+    style PS fill:#004d40,stroke:#00695c,stroke-width:2px,color:#fff
+    style SP fill:#37474f,stroke:#263238,stroke-width:2px,color:#fff
 ```
+
+The Overview group's **Home** is the operational front door and has its own three-level model —
+see [the Complete Guide's Home section](../SERVICEHUB-COMPLETE-GUIDE.md#home) for the full
+Cloud Home / Namespace Home walkthrough. Everything else on this page documents the rest of
+Quick Access as flat, single-purpose destinations.
 
 ---
 

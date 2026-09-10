@@ -161,7 +161,7 @@ public sealed class ReasoningCompanionWorker : BackgroundService
         IPlaybookLedger playbookLedger,
         CancellationToken cancellationToken)
     {
-        var queueResult = await attentionQueueService.GetAttentionQueueAsync(ownerId, cancellationToken).ConfigureAwait(false);
+        var queueResult = await attentionQueueService.GetAttentionQueueAsync(ownerId, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (queueResult.IsFailure || queueResult.Value.IsEmpty)
         {
             return 0;

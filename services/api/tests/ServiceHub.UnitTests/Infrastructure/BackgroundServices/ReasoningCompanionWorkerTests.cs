@@ -113,7 +113,7 @@ public sealed class ReasoningCompanionWorkerTests
 
         await worker.RunSweepCycleAsync(CancellationToken.None);
 
-        _attentionQueueMock.Verify(a => a.GetAttentionQueueAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _attentionQueueMock.Verify(a => a.GetAttentionQueueAsync(It.IsAny<string>(), It.IsAny<CloudProviderType?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -135,7 +135,7 @@ public sealed class ReasoningCompanionWorkerTests
         var ns = CreateTestNamespace();
         _namespaceRepoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success([ns]));
-        _attentionQueueMock.Setup(a => a.GetAttentionQueueAsync(ns.OwnerId, It.IsAny<CancellationToken>()))
+        _attentionQueueMock.Setup(a => a.GetAttentionQueueAsync(ns.OwnerId, It.IsAny<CloudProviderType?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(new AttentionQueueResponse([], IsEmpty: true)));
 
         var worker = CreateWorker(EnabledOptions(), BuildServiceProvider());
@@ -153,7 +153,7 @@ public sealed class ReasoningCompanionWorkerTests
         var ns = CreateTestNamespace();
         _namespaceRepoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success([ns]));
-        _attentionQueueMock.Setup(a => a.GetAttentionQueueAsync(ns.OwnerId, It.IsAny<CancellationToken>()))
+        _attentionQueueMock.Setup(a => a.GetAttentionQueueAsync(ns.OwnerId, It.IsAny<CloudProviderType?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Failure<AttentionQueueResponse>(Error.Internal("test.error", "boom")));
 
         var worker = CreateWorker(EnabledOptions(), BuildServiceProvider());
@@ -172,7 +172,7 @@ public sealed class ReasoningCompanionWorkerTests
             .ToList();
         _namespaceRepoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success([ns]));
-        _attentionQueueMock.Setup(a => a.GetAttentionQueueAsync(ns.OwnerId, It.IsAny<CancellationToken>()))
+        _attentionQueueMock.Setup(a => a.GetAttentionQueueAsync(ns.OwnerId, It.IsAny<CloudProviderType?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(new AttentionQueueResponse(items, IsEmpty: false)));
         _incidentReadModelMock
             .Setup(i => i.GetIncidentAsync(ns.OwnerId, ns.Id, It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -199,7 +199,7 @@ public sealed class ReasoningCompanionWorkerTests
         var items = new[] { CreateAttentionItem(ns.Id, "sig-bad"), CreateAttentionItem(ns.Id, "sig-good") };
         _namespaceRepoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success([ns]));
-        _attentionQueueMock.Setup(a => a.GetAttentionQueueAsync(ns.OwnerId, It.IsAny<CancellationToken>()))
+        _attentionQueueMock.Setup(a => a.GetAttentionQueueAsync(ns.OwnerId, It.IsAny<CloudProviderType?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(new AttentionQueueResponse(items, IsEmpty: false)));
         _incidentReadModelMock
             .Setup(i => i.GetIncidentAsync(ns.OwnerId, ns.Id, "sig-bad", It.IsAny<CancellationToken>()))
@@ -229,7 +229,7 @@ public sealed class ReasoningCompanionWorkerTests
         var items = new[] { CreateAttentionItem(ns.Id, "sig-1") };
         _namespaceRepoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success([ns]));
-        _attentionQueueMock.Setup(a => a.GetAttentionQueueAsync(ns.OwnerId, It.IsAny<CancellationToken>()))
+        _attentionQueueMock.Setup(a => a.GetAttentionQueueAsync(ns.OwnerId, It.IsAny<CloudProviderType?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(new AttentionQueueResponse(items, IsEmpty: false)));
         _incidentReadModelMock
             .Setup(i => i.GetIncidentAsync(ns.OwnerId, ns.Id, "sig-1", It.IsAny<CancellationToken>()))
@@ -254,7 +254,7 @@ public sealed class ReasoningCompanionWorkerTests
         var items = new[] { CreateAttentionItem(ns.Id, "sig-1") };
         _namespaceRepoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success([ns]));
-        _attentionQueueMock.Setup(a => a.GetAttentionQueueAsync(ns.OwnerId, It.IsAny<CancellationToken>()))
+        _attentionQueueMock.Setup(a => a.GetAttentionQueueAsync(ns.OwnerId, It.IsAny<CloudProviderType?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(new AttentionQueueResponse(items, IsEmpty: false)));
         _incidentReadModelMock
             .Setup(i => i.GetIncidentAsync(ns.OwnerId, ns.Id, "sig-1", It.IsAny<CancellationToken>()))
@@ -304,7 +304,7 @@ public sealed class ReasoningCompanionWorkerTests
         var items = new[] { CreateAttentionItem(ns.Id, "sig-1") };
         _namespaceRepoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success([ns]));
-        _attentionQueueMock.Setup(a => a.GetAttentionQueueAsync(ns.OwnerId, It.IsAny<CancellationToken>()))
+        _attentionQueueMock.Setup(a => a.GetAttentionQueueAsync(ns.OwnerId, It.IsAny<CloudProviderType?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(new AttentionQueueResponse(items, IsEmpty: false)));
         _incidentReadModelMock
             .Setup(i => i.GetIncidentAsync(ns.OwnerId, ns.Id, "sig-1", It.IsAny<CancellationToken>()))
@@ -330,7 +330,7 @@ public sealed class ReasoningCompanionWorkerTests
         var items = new[] { CreateAttentionItem(ns.Id, "sig-1") };
         _namespaceRepoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success([ns]));
-        _attentionQueueMock.Setup(a => a.GetAttentionQueueAsync(ns.OwnerId, It.IsAny<CancellationToken>()))
+        _attentionQueueMock.Setup(a => a.GetAttentionQueueAsync(ns.OwnerId, It.IsAny<CloudProviderType?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(new AttentionQueueResponse(items, IsEmpty: false)));
         _incidentReadModelMock
             .Setup(i => i.GetIncidentAsync(ns.OwnerId, ns.Id, "sig-1", It.IsAny<CancellationToken>()))

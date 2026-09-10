@@ -39,13 +39,20 @@ import {
  * jump. This is the fix: one array, consumed by all four.
  */
 
+// Six groups, ordered to match the operator's actual loop — Overview shows what needs attention,
+// Observe explains it, Recover acts on it, Autonomous ServiceHub answers what ServiceHub may do on
+// its own and proves what it did (Autonomy Control Center → Recovery Evidence → Playbook Ledger →
+// Governance), Platform is ServiceHub's own health, accountability and security, Support is help.
+// Audit Trail deliberately lives under Platform, not beside the autonomy pillars: it's the
+// complete security/accountability record for every action, not a piece of the autonomy model.
+// Nothing was removed in this pass, only regrouped: every entry below is still reachable here, in
+// the icon rail (for the five busiest), and in the command palette.
 export type NavGroup =
   | 'Overview'
-  | 'Browse across clouds'
-  | 'Diagnose & automate'
-  | 'Advanced ServiceHub'
+  | 'Observe'
+  | 'Recover'
+  | 'Autonomous ServiceHub'
   | 'Platform'
-  | 'Learn ServiceHub'
   | 'Support';
 
 export type NavColor =
@@ -96,13 +103,25 @@ export interface NavEntry {
   };
   /** The workspace toolbar's Back/Forward strip label. A function only where the label varies
    * by a query param on a basePath shared with another entry, or read from an in-page tab
-   * toggle (messages-overview, messages). Omit entirely for a page the toolbar should stay
-   * silent on (`connect`). */
-  toolbarLabel?: string | ((searchParams: URLSearchParams) => string);
+   * toggle (messages-overview, messages). The second argument is the Demo Mode route's own
+   * provider (null outside Demo Mode) — only Home's label reads it, to say "AWS Home" under
+   * `/demo/aws/home` where there's no `?cloud=` param to fall back on. Omit entirely for a page
+   * the toolbar should stay silent on (`connect`). */
+  toolbarLabel?: string | ((searchParams: URLSearchParams, demoProvider?: string | null) => string);
 }
 
 const messagesOverviewToolbarLabel = (searchParams: URLSearchParams): string =>
   searchParams.get('tab') === 'deadletter' ? 'Dead-Letter' : 'Active Messages';
+
+// Home reads `?cloud=azure|aws|gcp` in the real (non-demo) app to show a cloud-specific Home —
+// Demo Mode already fixes the provider via the route prefix, so this only matters there.
+const HOME_CLOUD_LABELS: Record<string, string> = { azure: 'Azure', aws: 'AWS', gcp: 'GCP' };
+
+const homeToolbarLabel = (searchParams: URLSearchParams, demoProvider?: string | null): string => {
+  const cloud = searchParams.get('cloud') ?? demoProvider;
+  const cloudLabel = cloud ? HOME_CLOUD_LABELS[cloud] : undefined;
+  return cloudLabel ? `${cloudLabel} Home` : 'Home';
+};
 
 const messagesToolbarLabel = (searchParams: URLSearchParams): string =>
   searchParams.get('queueType') === 'deadletter' ? 'Dead-Letter' : 'Active Messages';
@@ -121,7 +140,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     to: withPrefix('/home'),
     quickAccess: { group: 'Overview', color: 'primary' },
     commandPalette: { description: 'What needs your attention right now', keywords: 'home attention queue' },
-    toolbarLabel: 'Home',
+    toolbarLabel: homeToolbarLabel,
   },
   {
     id: 'dashboard',
@@ -163,7 +182,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     icon: Database,
     to: withPrefix('/messages-overview?tab=active'),
     isActive: (searchParams) => searchParams.get('tab') === 'active',
-    quickAccess: { group: 'Browse across clouds', color: 'sky' },
+    quickAccess: { group: 'Observe', color: 'sky' },
     toolbarLabel: messagesOverviewToolbarLabel,
   },
   {
@@ -172,7 +191,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Live Tail',
     icon: Radio,
     to: withNamespace('/live-tail'),
-    quickAccess: { group: 'Browse across clouds', color: 'emerald' },
+    quickAccess: { group: 'Observe', color: 'emerald' },
     commandPalette: {
       description: 'Tail messages in real time as they flow through a queue or topic',
       keywords: 'tail stream realtime live watch',
@@ -186,7 +205,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     icon: AlertCircle,
     to: withPrefix('/messages-overview?tab=deadletter'),
     isActive: (searchParams) => searchParams.get('tab') === 'deadletter',
-    quickAccess: { group: 'Browse across clouds', color: 'red' },
+    quickAccess: { group: 'Observe', color: 'red' },
     toolbarLabel: messagesOverviewToolbarLabel,
   },
   {
@@ -195,7 +214,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Scheduled Messages',
     icon: Clock,
     to: withPrefix('/scheduled'),
-    quickAccess: { group: 'Browse across clouds', color: 'sky' },
+    quickAccess: { group: 'Observe', color: 'sky' },
     commandPalette: { description: 'View and cancel scheduled deliveries', keywords: 'future timed deliver' },
     toolbarLabel: 'Scheduled Messages',
   },
@@ -205,7 +224,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Cloud Bridge',
     icon: Cloud,
     to: withPrefix('/cloud-bridge'),
-    quickAccess: { group: 'Browse across clouds', color: 'blue' },
+    quickAccess: { group: 'Observe', color: 'blue' },
     commandPalette: { description: 'Browse queues, topics and subscriptions across clouds', keywords: 'provider status multi cloud' },
     toolbarLabel: 'Cloud Bridge',
   },
@@ -215,7 +234,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'DLQ Intelligence',
     icon: BarChart3,
     to: withNamespace('/dlq-history'),
-    quickAccess: { group: 'Diagnose & automate', color: 'purple' },
+    quickAccess: { group: 'Observe', color: 'purple' },
     commandPalette: { description: 'Dead-letter queue audit trail', keywords: 'dead letter poisoned failed' },
     toolbarLabel: 'DLQ Intelligence',
   },
@@ -225,7 +244,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Auto-Replay Rules',
     icon: Zap,
     to: withPrefix('/rules'),
-    quickAccess: { group: 'Diagnose & automate', color: 'amber' },
+    quickAccess: { group: 'Recover', color: 'amber' },
     commandPalette: { description: 'Manage auto-replay configuration', keywords: 'replay retry automation' },
     toolbarLabel: 'Auto-Replay Rules',
   },
@@ -235,7 +254,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Approval Queue',
     icon: CheckCircle2,
     to: withPrefix('/approval-queue'),
-    quickAccess: { group: 'Diagnose & automate', color: 'amber' },
+    quickAccess: { group: 'Recover', color: 'amber' },
     commandPalette: { description: 'Rule matches escalated for manual review', keywords: 'approve escalate eligibility gate declined' },
     toolbarLabel: 'Approval Queue',
   },
@@ -245,7 +264,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Proactive Insights',
     icon: Sparkles,
     to: withPrefix('/insights'),
-    quickAccess: { group: 'Diagnose & automate', color: 'blue' },
+    quickAccess: { group: 'Observe', color: 'blue' },
     commandPalette: {
       description: 'Auto-narration, correlation findings, backlog forecasts, contract violations',
       keywords: 'narration narrate correlation forecast backlog contract violation drift push proactive',
@@ -258,22 +277,22 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Multi-Cloud Trace',
     icon: Route,
     to: withPrefix('/cross-cloud-trace'),
-    quickAccess: { group: 'Diagnose & automate', color: 'violet' },
+    quickAccess: { group: 'Observe', color: 'violet' },
     commandPalette: { description: 'Trace messages by correlation ID', keywords: 'trace journey timeline correlation cross cloud' },
     toolbarLabel: 'Multi-Cloud Trace',
   },
   {
     id: 'autonomy',
     basePath: 'autonomy',
-    label: 'Autonomy',
+    label: 'Autonomy Control Center',
     icon: Gauge,
     to: withPrefix('/autonomy'),
-    quickAccess: { group: 'Advanced ServiceHub', color: 'blue' },
+    quickAccess: { group: 'Autonomous ServiceHub', color: 'blue' },
     commandPalette: {
-      description: 'How autonomous ServiceHub is, per pillar, and what evidence and governance support it',
-      keywords: 'autonomy trust level standing unattended circuit breaker autonomous ai governance',
+      description: 'What ServiceHub can safely do on its own, why, and what still needs a person',
+      keywords: 'autonomy control center trust level standing unattended circuit breaker autonomous ai guardrails safety',
     },
-    toolbarLabel: 'Autonomy',
+    toolbarLabel: 'Autonomy Control Center',
   },
   {
     id: 'recovery',
@@ -281,7 +300,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Recovery Evidence',
     icon: ShieldCheck,
     to: withPrefix('/recovery'),
-    quickAccess: { group: 'Advanced ServiceHub', color: 'teal' },
+    quickAccess: { group: 'Autonomous ServiceHub', color: 'teal' },
     commandPalette: {
       description: 'Tamper-evident ledger of every replay and purge ServiceHub has executed',
       keywords: 'recovery ledger evidence replay purge chain',
@@ -294,7 +313,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Playbook Ledger',
     icon: ClipboardList,
     to: withPrefix('/playbook'),
-    quickAccess: { group: 'Advanced ServiceHub', color: 'indigo' },
+    quickAccess: { group: 'Autonomous ServiceHub', color: 'indigo' },
     commandPalette: {
       description: 'What ServiceHub proposed across all four pillars, and what a human decided',
       keywords: 'playbook proposal prevention rule disposition review',
@@ -307,7 +326,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Governance',
     icon: Users,
     to: withPrefix('/governance'),
-    quickAccess: { group: 'Advanced ServiceHub', color: 'red' },
+    quickAccess: { group: 'Autonomous ServiceHub', color: 'red' },
     commandPalette: { description: 'Who holds which role, scoped to which namespace and pillar', keywords: 'governance rbac role grant admin operator approver' },
     toolbarLabel: 'Governance',
   },
@@ -347,7 +366,7 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Advanced ServiceHub',
     icon: GraduationCap,
     to: withPrefix('/advanced-servicehub'),
-    quickAccess: { group: 'Learn ServiceHub', color: 'indigo' },
+    quickAccess: { group: 'Support', color: 'indigo' },
     commandPalette: {
       description: 'What Advanced ServiceHub means: the autonomy model, evidence, and governance, explained',
       keywords: 'learn advanced servicehub education architecture explain autonomy model ai agent',
@@ -402,30 +421,37 @@ export const NAV_ENTRIES: NavEntry[] = [
  * deliberately deferred: "how many destinations to show", not "which pages exist". Five, chosen
  * to cover the loop the roadmap itself names — something broke (`home`'s ranked attention queue),
  * look (`incidents`, `dashboard` for a fleet-wide view), approve (`approval-queue`, the one
- * time-sensitive human decision point), verified (`recovery`, the tamper-evident proof). Every
- * other destination is unchanged and still one click away — QuickAccessPanel keeps its full
- * grouped list, and the command palette (`Cmd/Ctrl+K`) already reaches everything. Nothing here
- * removes a capability; it only decides what earns a permanent pixel in a 56px-wide rail.
+ * time-sensitive human decision point), and what ServiceHub may do on its own (`autonomy`, the
+ * Autonomy Control Center — the front door of Autonomous ServiceHub, which links straight to the
+ * Recovery Evidence proof, the Playbook Ledger and Governance). Every other destination is
+ * unchanged and still one click away — QuickAccessPanel keeps its full grouped list, and the
+ * command palette (`Cmd/Ctrl+K`) already reaches everything. Nothing here removes a capability;
+ * it only decides what earns a permanent pixel in a 56px-wide rail.
  */
 export const ICON_RAIL_PRIMARY_IDS: readonly string[] = [
   'home',
   'incidents',
   'dashboard',
   'approval-queue',
-  'recovery',
+  'autonomy',
 ];
 
-/** First path segment after an optional `/demo/{provider}` prefix. */
-function stripDemoPrefix(pathname: string): string[] {
+/** First path segment after an optional `/demo/{provider}` prefix, plus that provider itself
+ * (null outside Demo Mode) — the provider segment is what lets Home's toolbar label say
+ * "AWS Home" under `/demo/aws/home`, where there's no `?cloud=` query param to read since the
+ * route itself already fixes the provider. */
+function stripDemoPrefix(pathname: string): { segments: string[]; demoProvider: string | null } {
   const segments = pathname.split('/').filter(Boolean);
-  return segments[0] === 'demo' ? segments.slice(2) : segments;
+  return segments[0] === 'demo'
+    ? { segments: segments.slice(2), demoProvider: segments[1] ?? null }
+    : { segments, demoProvider: null };
 }
 
 /** Whether `entry` is the one the given location represents — used by IconRail and
  * QuickAccessPanel to decide which link to highlight. */
 export function isNavEntryActive(entry: NavEntry, pathname: string, searchParams: URLSearchParams): boolean {
-  const [basePath] = stripDemoPrefix(pathname);
-  if (basePath !== entry.basePath) return false;
+  const { segments } = stripDemoPrefix(pathname);
+  if (segments[0] !== entry.basePath) return false;
   return entry.isActive ? entry.isActive(searchParams) : true;
 }
 
@@ -433,9 +459,10 @@ export function isNavEntryActive(entry: NavEntry, pathname: string, searchParams
  * every workspace route (e.g. `/connect`) — replaces the old hand-maintained
  * `WORKSPACE_BASE_PATHS` set + label switch. */
 export function resolveWorkspaceLabel(pathname: string, searchParams: URLSearchParams): string | null {
-  const [basePath] = stripDemoPrefix(pathname);
+  const { segments, demoProvider } = stripDemoPrefix(pathname);
+  const [basePath] = segments;
   if (!basePath) return null;
   const entry = NAV_ENTRIES.find((e) => e.basePath === basePath && e.toolbarLabel !== undefined);
   if (!entry?.toolbarLabel) return null;
-  return typeof entry.toolbarLabel === 'function' ? entry.toolbarLabel(searchParams) : entry.toolbarLabel;
+  return typeof entry.toolbarLabel === 'function' ? entry.toolbarLabel(searchParams, demoProvider) : entry.toolbarLabel;
 }

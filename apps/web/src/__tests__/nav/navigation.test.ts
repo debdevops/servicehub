@@ -106,6 +106,10 @@ describe('navigation registry (W2.4 — one nav definition)', () => {
     // Mirrors QuickAccessToolbar.test.tsx's WORKSPACE_ROUTES table — same source of truth now
     // drives both the toolbar and this registry, so this is a direct regression guard.
     const cases: Array<[string, string, string]> = [
+      ['/home', '', 'Home'],
+      ['/home', 'cloud=aws', 'AWS Home'],
+      ['/home', 'cloud=azure', 'Azure Home'],
+      ['/home', 'cloud=gcp', 'GCP Home'],
       ['/messages-overview', 'tab=active', 'Active Messages'],
       ['/messages-overview', 'tab=deadletter', 'Dead-Letter'],
       ['/messages', 'queueType=deadletter', 'Dead-Letter'],
@@ -120,7 +124,7 @@ describe('navigation registry (W2.4 — one nav definition)', () => {
       ['/signatures', '', 'Failure Signatures'],
       ['/rules', '', 'Auto-Replay Rules'],
       ['/approval-queue', '', 'Approval Queue'],
-      ['/autonomy', '', 'Autonomy'],
+      ['/autonomy', '', 'Autonomy Control Center'],
       ['/insights', '', 'Proactive Insights'],
       ['/cross-cloud-trace', '', 'Multi-Cloud Trace'],
       ['/health', '', 'System Health'],
@@ -144,6 +148,16 @@ describe('navigation registry (W2.4 — one nav definition)', () => {
 
     it('strips an optional /demo/{provider} prefix before resolving', () => {
       expect(resolveWorkspaceLabel('/demo/aws/incidents', sp())).toBe('Incident Center');
+    });
+
+    it('reads Home\'s cloud from the Demo Mode route when there is no ?cloud= param to fall back on', () => {
+      expect(resolveWorkspaceLabel('/demo/aws/home', sp())).toBe('AWS Home');
+      expect(resolveWorkspaceLabel('/demo/azure/home', sp())).toBe('Azure Home');
+      expect(resolveWorkspaceLabel('/demo/gcp/home', sp())).toBe('GCP Home');
+    });
+
+    it('prefers an explicit ?cloud= param over the Demo Mode route provider', () => {
+      expect(resolveWorkspaceLabel('/demo/aws/home', sp('cloud=azure'))).toBe('Azure Home');
     });
   });
 });

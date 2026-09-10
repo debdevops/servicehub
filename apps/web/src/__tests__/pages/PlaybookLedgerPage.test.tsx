@@ -1,47 +1,36 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import PlaybookLedgerPage from '@/pages/PlaybookLedgerPage';
 import {
-  usePlaybookEntries,
-  usePlaybookEntry,
-  useMarkPlaybookEntryUnderReview,
-  useDispositionPlaybookEntry,
-  useCorrelationAccountability,
-  useBacktestReport,
+  usePlaybookEntries, usePlaybookEntry, useMarkPlaybookEntryUnderReview, useDispositionPlaybookEntry,
+  useCorrelationAccountability, useBacktestReport,
 } from '@servicehub/ui-shared/hooks/usePlaybookLedger';
+import { useMe } from '@servicehub/ui-shared/hooks/useMe';
+import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 
 vi.mock('@servicehub/ui-shared/hooks/usePlaybookLedger', () => ({
   usePlaybookEntries: vi.fn(),
-  usePlaybookEntry: vi.fn(() => ({ data: undefined, isLoading: false })),
-  useMarkPlaybookEntryUnderReview: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
-  useDispositionPlaybookEntry: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
-  useCorrelationAccountability: vi.fn(() => ({ data: undefined, isLoading: false })),
-  useBacktestReport: vi.fn(() => ({ data: undefined, isLoading: false })),
+  usePlaybookEntry: vi.fn(),
+  useMarkPlaybookEntryUnderReview: vi.fn(),
+  useDispositionPlaybookEntry: vi.fn(),
+  useCorrelationAccountability: vi.fn(),
+  useBacktestReport: vi.fn(),
 }));
+vi.mock('@servicehub/ui-shared/hooks/useMe', () => ({ useMe: vi.fn() }));
+vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({ useNamespaces: vi.fn() }));
+vi.mock('@servicehub/ui-shared/lib/demo/DemoContext', () => ({ useDemoContext: vi.fn() }));
 
-const mockUsePlaybookEntries = usePlaybookEntries as ReturnType<typeof vi.fn>;
-const mockUsePlaybookEntry = usePlaybookEntry as ReturnType<typeof vi.fn>;
-const mockUseMarkUnderReview = useMarkPlaybookEntryUnderReview as ReturnType<typeof vi.fn>;
-const mockUseDisposition = useDispositionPlaybookEntry as ReturnType<typeof vi.fn>;
-const mockUseCorrelationAccountability = useCorrelationAccountability as ReturnType<typeof vi.fn>;
-const mockUseBacktestReport = useBacktestReport as ReturnType<typeof vi.fn>;
+const m = <T,>(fn: T) => fn as unknown as ReturnType<typeof vi.fn>;
 
-function renderPage(initialEntry = '/playbook') {
-  return render(
-    <MemoryRouter initialEntries={[initialEntry]}>
-      <PlaybookLedgerPage />
-    </MemoryRouter>,
-  );
-}
-
-const sampleEntry = {
+const anomaly = {
   id: 'entry-1',
   pillarKind: 'Investigate' as const,
   proposalKind: 'AnomalyFlag',
-  evidenceRefJson: '{"anomalyId":"abc-123"}',
-  proposalJson: '{"severity":80}',
-  proposedAt: '2026-08-29T09:00:00Z',
+  evidenceRefJson: '{"AnomalyId":"abc-123"}',
+  proposalJson: JSON.stringify({ EntityName: 'orders', Type: 'DlqGrowthSpike', Severity: 80, Description: 'DLQ grew 4x in 10 minutes', RecommendedActions: ['Check the consumer'] }),
+  proposedAt: '2026-09-10T09:00:00Z',
   proposerIdentity: 'System:AnomalyDetectionWorker',
   proposerKind: 'System' as const,
   signatureHashSnapshot: null,
@@ -50,237 +39,186 @@ const sampleEntry = {
   providerSnapshot: 'azure',
   environmentSnapshot: 'prod',
   relatedRecoveryOperationId: null,
-  expiresAt: '2026-09-05T09:00:00Z',
+  expiresAt: '2026-09-17T09:00:00Z',
   state: 'Proposed' as const,
   disposition: null,
   closedAt: null,
 };
 
+const correlation = {
+  ...anomaly,
+  id: 'entry-2',
+  pillarKind: 'Correlate' as const,
+  proposalKind: 'CorrelationHypothesis',
+  proposalJson: JSON.stringify({ Providers: ['Azure', 'Aws'], Members: [{ EntityName: 'orders' }, { EntityName: 'payments' }] }),
+  namespaceId: null,
+  namespaceNameSnapshot: null,
+  providerSnapshot: null,
+  environmentSnapshot: null,
+  state: 'Approved' as const,
+  disposition: 'Approved' as const,
+};
+
+const preventionRule = {
+  ...anomaly,
+  id: 'entry-3',
+  pillarKind: 'Prevent' as const,
+  proposalKind: 'PreventionRuleProposal',
+  proposalJson: JSON.stringify({ Name: 'Retry storm', EntityName: 'orders' }),
+};
+
+const disposition = vi.fn();
+const markUnderReview = vi.fn();
+
+function setup(entries: object[] | undefined, extra: object = {}) {
+  m(usePlaybookEntries).mockReturnValue({ data: entries, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false, ...extra });
+}
+
+function renderPage(url = '/playbook') {
+  return render(
+    <MemoryRouter initialEntries={[url]}>
+      <PlaybookLedgerPage />
+    </MemoryRouter>,
+  );
+}
+
+const table = () => screen.getByRole('table', { name: 'Playbook Ledger entries' });
+
 describe('PlaybookLedgerPage', () => {
-  it('shows a loading state', () => {
-    mockUsePlaybookEntries.mockReturnValue({ data: undefined, isLoading: true, isError: false, refetch: vi.fn(), isFetching: true });
+  beforeEach(() => {
+    disposition.mockReset();
+    markUnderReview.mockReset();
+    m(useDemoContext).mockReturnValue({ isDemoMode: false, cloudProvider: null });
+    m(usePlaybookEntry).mockReturnValue({ data: { entry: anomaly, events: [] }, isLoading: false });
+    m(useMarkPlaybookEntryUnderReview).mockReturnValue({ mutate: markUnderReview, isPending: false });
+    m(useDispositionPlaybookEntry).mockReturnValue({ mutate: disposition, isPending: false });
+    m(useCorrelationAccountability).mockReturnValue({ data: undefined });
+    m(useBacktestReport).mockReturnValue({ data: undefined });
+    m(useMe).mockReturnValue({ data: { ownerId: 'o', authMethod: 'ApiKey', governanceRole: 'Admin' } });
+    m(useNamespaces).mockReturnValue({ data: [] });
+  });
+
+  it('shows a loading state under the page title', () => {
+    setup(undefined, { isLoading: true, isFetching: true });
     renderPage();
-    expect(screen.getByText('Playbook Ledger')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Playbook Ledger' })).toBeInTheDocument();
+    expect(screen.getByText('Loading proposals…')).toBeInTheDocument();
   });
 
-  it('pre-selects the pillar filter from a ?pillar= deep link (e.g. from the Autonomy page)', () => {
-    mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
-    renderPage('/playbook?pillar=Correlate');
-    expect(screen.getByLabelText('Filter by pillar')).toHaveValue('Correlate');
-    expect(mockUsePlaybookEntries).toHaveBeenLastCalledWith({ pillarKind: 'Correlate', state: undefined });
-  });
-
-  it('ignores an invalid ?pillar= value and falls back to "All Pillars"', () => {
-    mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
-    renderPage('/playbook?pillar=NotAPillar');
-    expect(screen.getByLabelText('Filter by pillar')).toHaveValue('');
-  });
-
-  it('shows the empty state when there are no entries', () => {
-    mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
-    renderPage();
-    expect(screen.getByText('No proposals recorded')).toBeInTheDocument();
-  });
-
-  it('renders an entry row with pillar, proposal kind, and namespace', () => {
-    mockUsePlaybookEntries.mockReturnValue({ data: [sampleEntry], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
-    renderPage();
-    const table = screen.getByRole('table', { name: 'Playbook Ledger entries' });
-    expect(screen.getByText('AnomalyFlag')).toBeInTheDocument();
-    expect(within(table).getByText('Investigate')).toBeInTheDocument();
-    expect(screen.getByText('contoso-prod')).toBeInTheDocument();
-    expect(within(table).getByText('Proposed')).toBeInTheDocument();
-  });
-
-  it('shows "Fleet-wide" for a correlation hypothesis with no namespace', () => {
-    mockUsePlaybookEntries.mockReturnValue({
-      data: [{ ...sampleEntry, namespaceId: null, namespaceNameSnapshot: null, providerSnapshot: null, environmentSnapshot: null }],
-      isLoading: false,
-      isError: false,
-      refetch: vi.fn(),
-      isFetching: false,
-    });
-    renderPage();
-    expect(screen.getByText('Fleet-wide')).toBeInTheDocument();
-  });
-
-  it('shows an "AI suggestion" badge for a reasoning-companion-authored proposal, and not for a system one', () => {
-    mockUsePlaybookEntries.mockReturnValue({
-      data: [
-        sampleEntry,
-        {
-          ...sampleEntry,
-          id: 'entry-2',
-          proposalKind: 'ReasoningCompanionObservation',
-          proposerIdentity: 'ReasoningAgent:services/agent',
-          proposerKind: 'ReasoningAgent' as const,
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: vi.fn(),
-      isFetching: false,
-    });
-    renderPage();
-    expect(screen.getAllByText('AI suggestion')).toHaveLength(1);
-  });
-
-  it('renders the reasoning-companion summary and considerations as text, not raw JSON, when expanded', () => {
-    const reasoningEntry = {
-      ...sampleEntry,
-      id: 'entry-3',
-      proposalKind: 'ReasoningCompanionObservation',
-      proposalJson: JSON.stringify({
-        Summary: 'Failures cluster around a single downstream dependency timeout.',
-        Considerations: ['Recurred 3 times in the last 24h', 'No recent recovery attempt'],
-      }),
-      proposerIdentity: 'ReasoningAgent:services/agent',
-      proposerKind: 'ReasoningAgent' as const,
-    };
-    mockUsePlaybookEntries.mockReturnValue({ data: [reasoningEntry], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
-    mockUsePlaybookEntry.mockReturnValue({ data: { entry: reasoningEntry, events: [] }, isLoading: false });
-
-    renderPage();
-    fireEvent.click(screen.getByText('ReasoningCompanionObservation'));
-
-    expect(screen.getByText('Failures cluster around a single downstream dependency timeout.')).toBeInTheDocument();
-    expect(screen.getByText('Recurred 3 times in the last 24h')).toBeInTheDocument();
-  });
-
-  it('shows an error state with a retry option', () => {
-    mockUsePlaybookEntries.mockReturnValue({ data: undefined, isLoading: false, isError: true, refetch: vi.fn(), isFetching: false });
+  it('shows an error state', () => {
+    setup(undefined, { isError: true });
     renderPage();
     expect(screen.getByText('Failed to load Playbook Ledger entries')).toBeInTheDocument();
   });
 
-  it('expands a row on click to show evidence/proposal JSON and disposition actions', () => {
-    mockUsePlaybookEntries.mockReturnValue({ data: [sampleEntry], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
-    mockUsePlaybookEntry.mockReturnValue({
-      data: {
-        entry: sampleEntry,
-        events: [{
-          id: 'evt-1', seq: 1, entryId: 'entry-1', eventType: 'Proposed', occurredAt: '2026-08-29T09:00:00Z',
-          actorIdentity: 'System:AnomalyDetectionWorker', actorKind: 'System', detailJson: null,
-          prevHash: '0'.repeat(64), entryHash: 'abc', schemaVersion: 1,
-        }],
-      },
-      isLoading: false,
-    });
+  it('shows the empty state when there are no entries', () => {
+    setup([]);
     renderPage();
-
-    fireEvent.click(screen.getByText('AnomalyFlag'));
-
-    expect(screen.getByText('Approve')).toBeInTheDocument();
-    expect(screen.getByText('Reject')).toBeInTheDocument();
-    expect(screen.getByText('Mark under review')).toBeInTheDocument();
+    expect(screen.getByText('No proposals recorded')).toBeInTheDocument();
   });
 
-  it('calls the mark-under-review mutation when clicked', () => {
-    const mutate = vi.fn();
-    mockUsePlaybookEntries.mockReturnValue({ data: [sampleEntry], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
-    mockUsePlaybookEntry.mockReturnValue({ data: { entry: sampleEntry, events: [] }, isLoading: false });
-    mockUseMarkUnderReview.mockReturnValue({ mutate, isPending: false });
-
+  it('renders a plain-language title instead of the raw proposal kind', () => {
+    setup([anomaly]);
     renderPage();
-    fireEvent.click(screen.getByText('AnomalyFlag'));
-    fireEvent.click(screen.getByText('Mark under review'));
-
-    expect(mutate).toHaveBeenCalledWith('entry-1');
+    expect(within(table()).getByText('DLQ growth spike on orders')).toBeInTheDocument();
+    expect(within(table()).getByText('Anomaly')).toBeInTheDocument();
+    expect(within(table()).getByText('contoso-prod')).toBeInTheDocument();
+    expect(within(table()).getByText('Awaiting decision')).toBeInTheDocument();
   });
 
-  it('calls the disposition mutation with Approved when Approve is clicked', () => {
-    const mutate = vi.fn();
-    mockUsePlaybookEntries.mockReturnValue({ data: [sampleEntry], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
-    mockUsePlaybookEntry.mockReturnValue({ data: { entry: sampleEntry, events: [] }, isLoading: false });
-    mockUseDisposition.mockReturnValue({ mutate, isPending: false });
-
+  it('shows "Fleet-wide" for a correlation hypothesis with no namespace', () => {
+    setup([correlation]);
     renderPage();
-    fireEvent.click(screen.getByText('AnomalyFlag'));
-    fireEvent.click(screen.getByText('Approve'));
-
-    expect(mutate).toHaveBeenCalledWith({ entryId: 'entry-1', disposition: 'Approved' });
+    expect(within(table()).getByText('2 related failures across Azure and Aws')).toBeInTheDocument();
+    expect(within(table()).getByText('Fleet-wide')).toBeInTheDocument();
   });
 
-  describe('correlation accountability strip', () => {
-    it('shows "no hypotheses proposed yet" when the report is all zeros', () => {
-      mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
-      mockUseCorrelationAccountability.mockReturnValue({
-        data: {
-          generatedAt: '2026-08-29T09:00:00Z', totalHypotheses: 0, proposedCount: 0, underReviewCount: 0,
-          approvedCount: 0, rejectedCount: 0, expiredCount: 0, supersededCount: 0, approvalRate: null,
-        },
-        isLoading: false,
-      });
-      renderPage();
-      expect(screen.getByText(/no correlation hypotheses proposed yet/)).toBeInTheDocument();
-    });
-
-    it('shows "not enough evidence yet" when nothing has reached a terminal disposition', () => {
-      mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
-      mockUseCorrelationAccountability.mockReturnValue({
-        data: {
-          generatedAt: '2026-08-29T09:00:00Z', totalHypotheses: 2, proposedCount: 2, underReviewCount: 0,
-          approvedCount: 0, rejectedCount: 0, expiredCount: 0, supersededCount: 0, approvalRate: null,
-        },
-        isLoading: false,
-      });
-      renderPage();
-      expect(screen.getByText(/not enough evidence yet/)).toBeInTheDocument();
-    });
-
-    it('shows "not enough evidence yet" (not NaN%) when approvalRate is omitted from the response, not just when it is null', () => {
-      // Regression test: the API omits null fields entirely (JsonIgnoreCondition.WhenWritingNull
-      // or equivalent) rather than serializing an explicit `"approvalRate": null` — so the field
-      // arrives as `undefined` in JS, not `null`. A strict `!== null` check treated `undefined`
-      // as "a real rate", producing `Math.round(undefined * 100)` = "NaN% approved (0 of 0
-      // dispositioned)" in production even though every other test here (which mocks an explicit
-      // `approvalRate: null`) passed. This mock reproduces the real shape by omitting the field.
-      mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
-      mockUseCorrelationAccountability.mockReturnValue({
-        data: {
-          generatedAt: '2026-08-29T09:00:00Z', totalHypotheses: 16, proposedCount: 16, underReviewCount: 0,
-          approvedCount: 0, rejectedCount: 0, expiredCount: 0, supersededCount: 0,
-        },
-        isLoading: false,
-      });
-      renderPage();
-      expect(screen.getByText(/not enough evidence yet/)).toBeInTheDocument();
-      expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
-    });
-
-    it('shows the computed approval rate once hypotheses have been dispositioned', () => {
-      mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
-      mockUseCorrelationAccountability.mockReturnValue({
-        data: {
-          generatedAt: '2026-08-29T09:00:00Z', totalHypotheses: 3, proposedCount: 1, underReviewCount: 0,
-          approvedCount: 1, rejectedCount: 1, expiredCount: 0, supersededCount: 0, approvalRate: 0.5,
-        },
-        isLoading: false,
-      });
-      renderPage();
-      expect(screen.getByText(/50% approved \(1 of 2 dispositioned\)/)).toBeInTheDocument();
-    });
+  it('pre-selects the pillar from a ?pillar= deep link and filters to it', () => {
+    setup([anomaly, correlation]);
+    renderPage('/playbook?pillar=Correlate');
+    expect(screen.getByRole('tab', { name: /Correlate/ })).toHaveAttribute('aria-selected', 'true');
+    expect(within(table()).queryByText('DLQ growth spike on orders')).not.toBeInTheDocument();
+    expect(screen.getByText(/share a cause/)).toBeInTheDocument();
   });
 
-  describe('backtest strip', () => {
-    it('shows "no dispositioned findings" when nothing has been backtested', () => {
-      mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
-      mockUseBacktestReport.mockReturnValue({
-        data: { generatedAt: '2026-08-29T09:00:00Z', totalBacktested: 0, corroboratedCount: 0, corroborationRate: null, entries: [] },
-        isLoading: false,
-      });
-      renderPage();
-      expect(screen.getByText(/no dispositioned findings to backtest yet/)).toBeInTheDocument();
-    });
+  it('ignores an invalid ?pillar= value and shows all proposals', () => {
+    setup([anomaly, correlation]);
+    renderPage('/playbook?pillar=NotAPillar');
+    expect(screen.getByRole('tab', { name: /All proposals/ })).toHaveAttribute('aria-selected', 'true');
+    expect(within(table()).getAllByRole('row')).toHaveLength(3); // header + 2
+  });
 
-    it('shows the computed corroboration rate once findings have been backtested', () => {
-      mockUsePlaybookEntries.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
-      mockUseBacktestReport.mockReturnValue({
-        data: { generatedAt: '2026-08-29T09:00:00Z', totalBacktested: 4, corroboratedCount: 3, corroborationRate: 0.75, entries: [] },
-        isLoading: false,
-      });
-      renderPage();
-      expect(screen.getByText(/75% corroborated \(3 of 4\)/)).toBeInTheDocument();
-    });
+  it('filters to proposals awaiting a decision from ?state=awaiting', () => {
+    setup([anomaly, correlation]);
+    renderPage('/playbook?state=awaiting');
+    expect(within(table()).getByText('DLQ growth spike on orders')).toBeInTheDocument();
+    expect(within(table()).queryByText('2 related failures across Azure and Aws')).not.toBeInTheDocument();
+  });
+
+  it('shows an "AI suggestion" badge only for reasoning-companion proposals', () => {
+    setup([anomaly, { ...anomaly, id: 'entry-ai', proposalKind: 'ReasoningCompanionObservation', proposalJson: '{"Summary":"Consumer looks stalled","Considerations":["Check deploy"]}', proposerKind: 'ReasoningAgent' }]);
+    renderPage();
+    expect(within(table()).getAllByText('AI suggestion')).toHaveLength(1);
+    expect(within(table()).getByText('Consumer looks stalled')).toBeInTheDocument();
+  });
+
+  it('reports approval rate and backtest corroboration honestly', () => {
+    m(useBacktestReport).mockReturnValue({ data: { totalBacktested: 4, corroboratedCount: 3, corroborationRate: 0.75, entries: [] } });
+    setup([anomaly, correlation, { ...anomaly, id: 'r', state: 'Rejected', disposition: 'Rejected' }]);
+    renderPage();
+    expect(screen.getByText('50% of 2 decided')).toBeInTheDocument();
+    expect(screen.getByText('3/4')).toBeInTheDocument();
+  });
+
+  it('opens the detail panel, explains what approving means, and approves', () => {
+    setup([anomaly]);
+    renderPage();
+    fireEvent.click(within(table()).getByText('DLQ growth spike on orders'));
+    const panel = screen.getByRole('complementary', { name: 'Details' });
+    expect(within(panel).getByText('What approving means')).toBeInTheDocument();
+    expect(within(panel).getByText(/never triggers a replay or purge/)).toBeInTheDocument();
+    expect(within(panel).getByText('Suggested next step')).toBeInTheDocument();
+    expect(within(panel).getAllByText('Check the consumer').length).toBeGreaterThan(0);
+    expect(within(panel).getByText('80/100')).toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole('button', { name: /Approve/ }));
+    expect(disposition).toHaveBeenCalledWith({ entryId: 'entry-1', disposition: 'Approved' });
+  });
+
+  it('requires a reason to reject', () => {
+    setup([anomaly]);
+    renderPage('/playbook?entry=entry-1');
+    fireEvent.click(screen.getByRole('button', { name: /Reject/ }));
+    const confirm = screen.getByRole('button', { name: 'Confirm reject' });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Rejection reason'), { target: { value: 'Known deploy blip' } });
+    fireEvent.click(confirm);
+    expect(disposition).toHaveBeenCalledWith({ entryId: 'entry-1', disposition: 'Rejected', reason: 'Known deploy blip' }, expect.anything());
+  });
+
+  it('marks a proposal under review', () => {
+    setup([anomaly]);
+    renderPage('/playbook?entry=entry-1');
+    fireEvent.click(screen.getByRole('button', { name: /Reviewing/ }));
+    expect(markUnderReview).toHaveBeenCalledWith('entry-1');
+  });
+
+  it('offers no decision on a proposal that is already decided', () => {
+    setup([correlation]);
+    renderPage('/playbook?entry=entry-2');
+    expect(screen.getByRole('complementary', { name: 'Details' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Approve/ })).not.toBeInTheDocument();
+  });
+
+  it('says approving a prevention rule makes it observe-only', () => {
+    setup([preventionRule]);
+    renderPage('/playbook?entry=entry-3');
+    expect(screen.getByText(/active, observe-only prevention rule/)).toBeInTheDocument();
+  });
+
+  it('warns a caller whose fleet-wide role is below Approver that the server may refuse', () => {
+    m(useMe).mockReturnValue({ data: { ownerId: 'o', authMethod: 'ApiKey', governanceRole: 'Viewer' } });
+    setup([anomaly]);
+    renderPage('/playbook?entry=entry-1');
+    expect(screen.getByText(/Deciding needs the Approver role/)).toBeInTheDocument();
   });
 });

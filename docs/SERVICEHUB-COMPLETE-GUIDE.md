@@ -64,22 +64,22 @@ history; and a troubleshooting FAQ.
       - [Namespace Overview](#namespace-overview)
       - [Incident Center](#incident-center)
       - [Fleet Health](#fleet-health)
-    - [Browse across clouds](#browse-across-clouds)
+    - [Observe](#observe)
       - [Active Messages / Dead-Letter](#active-messages--dead-letter)
       - [Live Tail](#live-tail)
       - [Scheduled Messages](#scheduled-messages)
       - [Cloud Bridge](#cloud-bridge)
       - [Connect](#connect)
       - [Messages (drill-down)](#messages-drill-down)
-    - [Diagnose \& automate](#diagnose--automate)
       - [DLQ Intelligence](#dlq-intelligence)
-      - [Auto-Replay Rules](#auto-replay-rules)
-      - [Approval Queue](#approval-queue)
       - [Proactive Insights](#proactive-insights)
       - [Multi-Cloud Trace](#multi-cloud-trace)
       - [Failure Signatures](#failure-signatures)
-    - [Advanced ServiceHub](#advanced-servicehub)
-      - [Autonomy](#autonomy)
+    - [Recover](#recover)
+      - [Auto-Replay Rules](#auto-replay-rules)
+      - [Approval Queue](#approval-queue)
+    - [Autonomous ServiceHub](#autonomous-servicehub)
+      - [Autonomy Control Center](#autonomy-control-center)
       - [Recovery Evidence](#recovery-evidence)
       - [Recovery Ageing Report](#recovery-ageing-report)
       - [Playbook Ledger](#playbook-ledger)
@@ -88,9 +88,8 @@ history; and a troubleshooting FAQ.
       - [System Health](#system-health)
       - [Audit Trail](#audit-trail)
       - [Security \& Privacy](#security--privacy)
-    - [Learn ServiceHub](#learn-servicehub)
-      - [Advanced ServiceHub (education page)](#advanced-servicehub-education-page)
     - [Support](#support)
+      - [Advanced ServiceHub (education page)](#advanced-servicehub-education-page)
       - [Help \& Guide](#help--guide)
   - [v4.0.0 Capabilities With No Dedicated Screen Yet](#v400-capabilities-with-no-dedicated-screen-yet)
     - [Production Namespaces and Elevation](#production-namespaces-and-elevation)
@@ -263,15 +262,17 @@ in this guide:
 
 1. **Icon Rail** (the thin strip at the far left edge) — five always-visible, icon-only shortcuts
    to the busiest destinations: **Home, Incident Center, Namespace Overview, Approval Queue,
-   Recovery Evidence** — chosen to cover the loop "something broke → look → approve → verified."
+   Autonomy Control Center** — chosen to cover the loop "something broke → look → approve → what
+   may ServiceHub do on its own."
    Below the five icons sits a **More** (`···`) button that opens the same command palette
    described below, so every other destination stays one click away even though it doesn't have a
    permanent icon. As of v4.0.0 this rail deliberately shows *fewer* destinations than it used to
    — nothing was removed from the product, only from what earns a permanent pixel in a 56px-wide
    strip. Quick Access and the command palette both still reach everything.
 2. **Quick Access** (next to the Icon Rail) — the fastest way to any destination in the product,
-   grouped by workflow stage: *Overview → Browse across clouds → Diagnose & automate → Advanced
-   ServiceHub → Platform → Learn ServiceHub → Support*. This is the same grouping this guide's
+   grouped by the operator's actual loop: *Overview → Observe → Recover → Autonomous ServiceHub →
+   Platform → Support*. The **Autonomy Control Center** carries a *Start here* badge — it's the
+   front door of the Autonomous ServiceHub section. This is the same grouping this guide's
    [Page Reference](#complete-page-reference) follows, on purpose. Collapsible (the **«** icon).
 3. **Namespaces / Connections** (next to Quick Access) — a live tree of every connected
    namespace, its queues, topics, and subscriptions, with real-time active/dead-letter counts.
@@ -301,33 +302,72 @@ real screenshot, captured fresh for this guide.
 
 #### Home
 
-![Home page showing the "This week" outcomes strip (94 recovered, 0 written off, median time to recovered, 0 needing no human approval, bad replays refused) above three real ranked attention cards, each with a severity badge, a pending-decision count, and a Recommended action](screenshots/complete-guide/home/home-overview.jpg)
+Home is the operational front door, and — as of the v4.0.0 Home redesign — it has three levels.
+It never blends Azure, AWS, and GCP data into one dashboard; each level is either a picker
+between clouds or a view scoped to exactly one.
 
-- **What is it?** The landing page. A ranked "what needs you right now" queue — at most three
-  cards, across *every* namespace you own, ordered by severity, blast radius, recurrence, and
-  whether a human decision is actively blocking progress — with a "This week" outcomes strip
-  above it (new in v4.0.0) reporting what the fleet actually achieved.
-- **Why does it exist?** Because "check every namespace one by one" doesn't scale past two or
-  three connections. Home answers "where should I look first?" in one glance, without you having
-  to know which namespace is on fire — and, since v4.0.0, "did any of this actually help?" without
-  a separate report.
-- **"This week" strip** (new in v4.0.0, sits directly under the page title) — five tiles read
-  straight from the Recovery Evidence Ledger over a trailing 7-day window: **Recovered** (messages
-  verified back to work), **Written off** (messages explicitly abandoned), **Median time to
-  recovered** (dead-letter → verified recovery), **No human approval needed** (recoveries an
-  earned autonomy grant executed unattended), and **Bad replays refused** (Eligibility Gate
-  denials that stopped a replay before it reached a provider). Every number traces to a ledger
-  row — the strip renders nothing at all, not even a zero row, until the fleet has actually
-  recovered or refused something, so a brand-new install doesn't read as broken.
-- **The buttons:**
-  - **Refresh** — re-pulls the attention queue on demand; it also spins while fetching.
-  - Each **card** is itself a button — clicking it takes you straight to that failure's
-    [Incident Center](#incident-center) detail view, with the right namespace pre-selected.
-  - Within a card, the **severity badge** (Critical/Warning/Healthy), the **pending-decisions
-    badge**, and the **Recommended** line tell you at a glance whether this needs a human right
-    now or is just informational.
-- **When it's empty:** a calm "Everything looks healthy" state — Home never invents urgency that
-  isn't there.
+**Level 0 — the cloud picker.** Shown only when more than one provider is connected (a
+single-provider installation skips straight to Level 1, since there's nothing to pick).
+
+![Home's cloud picker showing one card per connected provider — AWS with 316 active dead-letter messages, GCP with 30, Azure with none — each linking to "Open X Home"](screenshots/complete-guide/home/home-cloud-picker.jpg)
+
+- **What is it?** One card per connected cloud, each showing its namespace count and active
+  dead-letter total, with an **Open [Provider] Home** link.
+- **Why does it exist?** So the very first screen states plainly which clouds you have and
+  roughly how urgent each one is — before committing to one.
+
+**Level 1 — Cloud Home**, e.g. **AWS Home**. Everything on this page is scoped to that one
+provider — no Azure or GCP number ever appears here.
+
+![AWS Home showing real KPI tiles (Active messages, DLQ messages, Queues monitored, Topics monitored), a Namespaces list, a "This week" outcomes strip, and three ranked "Needs your attention" cards, all scoped to AWS only](screenshots/complete-guide/home/home-cloud-home-aws.jpg)
+
+- **What is it?** This cloud's own operational summary: KPI tiles (capability-gated — a provider
+  with no live count API, like GCP Pub/Sub, shows **—** instead of a fabricated 0), the list of
+  this cloud's connected namespaces (click one to drill into its Namespace Home), a "This week"
+  outcomes strip, a ranked "Needs your attention" queue (at most three signatures, scored and
+  capped *within this provider* — not a client-side filter of a cross-cloud ranking, so a real
+  AWS problem is never hidden behind a worse Azure one), recent DLQ activity across this cloud's
+  namespaces, and Quick Actions honest to what this provider actually supports (Live Tail is
+  simply absent for AWS and GCP — see [Live Tail](#live-tail)).
+- **"This week" strip** — five tiles read straight from the Recovery Evidence Ledger over a
+  trailing 7-day window, scoped to this provider: **Recovered**, **Written off**, **Median time
+  to recovered**, **No human approval needed**, and **Bad replays refused**. Renders nothing at
+  all, not even a zero row, until this cloud has actually recovered or refused something.
+- **Switch cloud** (top right, only when ≥2 providers are connected) — jumps directly to another
+  cloud's Home, clearing any namespace you'd drilled into so nothing from the old cloud lingers.
+
+**Level 2 — Namespace Home**, e.g. **DEVAWS** inside AWS. The operational workspace for exactly
+one namespace — reached by clicking a namespace on its Cloud Home.
+
+![DEVAWS Namespace Home showing region, connection status, five KPI tiles, a real 7-day DLQ trend chart (New vs Resolved), Top failure signatures with AI explanations, Recent activity from the Audit Trail, and capability-gated Quick Actions](screenshots/complete-guide/home/home-namespace-home-aws.jpg)
+
+- **What is it?** Everything about this one namespace: connection status and region/project,
+  five KPI tiles (Active, DLQ, Queues, Topics, Subscriptions), a real 7-day DLQ trend chart (new
+  vs. resolved — the same `/dlq/trend` data [DLQ Intelligence](#dlq-intelligence) charts, not a
+  fabricated series), this namespace's top failure signatures with AI-clustered explanations,
+  recent dead-letter messages, recent activity pulled from the [Audit Trail](#audit-trail), and
+  a **Provider limitations** panel that only appears when this provider genuinely falls short of
+  something (Azure shows only its Purge gap; GCP shows several — see
+  [Multi-Cloud Support At A Glance](#multi-cloud-support-at-a-glance)).
+
+  ![GCPDev Namespace Home showing honest dashes for Active/DLQ messages (Pub/Sub has no count API), real recent DLQ messages, and Live Tail correctly absent from Quick Actions](screenshots/complete-guide/home/home-namespace-home-gcp.jpg)
+
+- **Why does it exist?** It's the primary working surface once you know which namespace needs
+  you — "where am I, is it healthy, what failed, what can I safely do, what happened recently,
+  where's the evidence" answered on one page, without re-fetching the same namespace's data on
+  four different pages.
+- **Back to [Provider] Home** (top left) returns to Level 1.
+- **When it's empty:** each section has its own honest empty state — "No recurring failure
+  patterns detected," "No dead-letter messages recorded" — never a fabricated zero or a
+  decorative chart with no data behind it.
+
+**Back/Forward and refresh** all work across every level — the whole three-level journey (cloud
+picker → Cloud Home → Namespace Home → an incident, and back) is encoded in the URL
+(`?cloud=` and `?namespace=`), so ServiceHub's own Back/Forward strip (see
+[Back / Forward navigation](quick-access-guide.md#back--forward-navigation)) and a browser
+refresh both land you exactly where you were — and a namespace id that doesn't belong to the
+active cloud silently falls back to that cloud's Home rather than ever rendering under the wrong
+heading.
 
 #### Namespace Overview
 
@@ -429,7 +469,7 @@ its own real, live screenshot, not a mockup of what the filter "would" show:
 
 ---
 
-### Browse across clouds
+### Observe
 
 #### Active Messages / Dead-Letter
 
@@ -604,10 +644,6 @@ which is exactly why it's worth three separate screenshots.
     confirmed facts, and should be verified in the provider's own console before acting on them
     at scale.
 
----
-
-### Diagnose & automate
-
 #### DLQ Intelligence
 
 **Applies to:** Azure ✅ · AWS ✅ · GCP ✅ — history and trend tracking work the same way on all
@@ -636,61 +672,6 @@ three; only the underlying message counts each provider can supply differ (see
   **preview** of exactly what will be affected before you confirm, and a second, explicit
   confirmation step before anything executes — there is no single click that mutates hundreds of
   messages.
-
-#### Auto-Replay Rules
-
-![Auto-Replay Rules page: Generate Intelligent Rules / Browse Templates / Create Rule controls at top, and a grid of real AI-generated rules (Auto: DeserializationError, Auto: DataQuality failures, etc.) each showing live Pending/Replayed/Success/Limit stats with Test/Replay All/Edit buttons](screenshots/complete-guide/rules/auto-replay-rules.jpg)
-
-- **What is it?** Define rules that automatically replay dead-lettered messages matching
-  specific conditions — this is where "automation" in ServiceHub actually lives.
-- **Why does it exist?** Manually replaying the same known-transient failure every time it
-  recurs doesn't scale. A rule lets you say "if you see this again, handle it the same way" —
-  with hard limits so it can never run away.
-- **The buttons:**
-  - **Generate Intelligent Rules** — ServiceHub proposes rules based on patterns it's already
-    detected in your DLQ, rather than asking you to write matching conditions from scratch.
-  - **Browse Templates** — start from a known-good pattern instead of a blank rule.
-  - **Create Rule** — build one by hand: conditions (entity/reason/category match), an action
-    (auto-replay after a configurable delay), and a per-rule hourly limit.
-  - Per rule: **Test** (dry-run against current DLQ contents with no side effect), **Replay All**
-    (execute now, against everything currently matching), **Edit**, and delete.
-  - Every rule card shows **Pending / Replayed / Success rate / Limit per hour** — live,
-    real numbers, not estimates.
-- **The safety net underneath every rule:** a rule match doesn't always execute immediately —
-  the **Eligibility Gate** can escalate a match to the [Approval Queue](#approval-queue) instead
-  (for example, if the message has recurred past the automatic-replay cap), and a **circuit
-  breaker** automatically disables any rule whose recent success rate falls below a floor. Rules
-  do not run at all on production namespaces.
-
-#### Approval Queue
-
-![Approval Queue: a real proposal screen — "Proposal — replay 1 message" with Scope & Sample, Stop Condition, and "Why the gate escalated this" sections, plus Cancel and Confirm & Replay buttons — shown before the message is actually replayed](screenshots/complete-guide/approval-queue/approval-queue-proposal.jpg)
-
-![Approval Queue after confirming: a "Just approved" panel showing the real, honest outcome — both replays Failed (message not found in dead-letter queue, since the background monitor had already reconciled them) — with a link to the Recovery Ledger for the eventual verified outcome](screenshots/complete-guide/approval-queue/approval-queue-just-approved.jpg)
-
-- **What is it?** Auto-replay rule matches that the Eligibility Gate escalated for manual
-  review — messages a rule *would* have replayed automatically, except a safety condition said
-  "have a human look at this first."
-- **Why does it exist?** Not every "known pattern" match should run unattended forever. This
-  queue is the deliberate off-ramp between full automation and full manual work: approving one
-  entry replays it exactly as if you'd clicked Replay by hand — nothing more.
-- **The buttons and flow, in order:**
-  - Select one or more rows via checkbox, then **Review & Approve (N)** — this does **not**
-    replay anything yet.
-  - A **proposal** appears first (first screenshot above): the exact scope and sample, a
-    plain-language **stop condition** ("approving does not grant future unattended trust — the
-    next match escalates again the same way"), and the specific reason the gate escalated this
-    batch.
-  - Only **Confirm & Replay N**, the second explicit click, actually executes.
-  - After execution, entries move into a **"Just approved"** list showing the real outcome —
-    **Accepted for replay** or **Failed** — never a blanket success toast. As the second
-    screenshot shows, ServiceHub reports a real failure honestly (here, both messages had already
-    been reconciled by the time the approval executed) rather than claiming success it can't
-    verify.
-  - **View in Recovery Ledger →** — the actual Recovered/Returned/Unverified verification appears
-    there once the observation window closes; it's never claimed on this page before it's real.
-- **Demo Mode note:** approving requires a live connection, so this queue is always empty in
-  Demo Mode — shown as an explicit notice, not a silent empty state.
 
 #### Proactive Insights
 
@@ -789,70 +770,163 @@ recover unattended?" verdict shown on each one differs by provider (see the call
 
 ---
 
-### Advanced ServiceHub
+### Recover
+
+#### Auto-Replay Rules
+
+![Auto-Replay Rules page: Generate Intelligent Rules / Browse Templates / Create Rule controls at top, and a grid of real AI-generated rules (Auto: DeserializationError, Auto: DataQuality failures, etc.) each showing live Pending/Replayed/Success/Limit stats with Test/Replay All/Edit buttons](screenshots/complete-guide/rules/auto-replay-rules.jpg)
+
+- **What is it?** Define rules that automatically replay dead-lettered messages matching
+  specific conditions — this is where "automation" in ServiceHub actually lives.
+- **Why does it exist?** Manually replaying the same known-transient failure every time it
+  recurs doesn't scale. A rule lets you say "if you see this again, handle it the same way" —
+  with hard limits so it can never run away.
+- **The buttons:**
+  - **Generate Intelligent Rules** — ServiceHub proposes rules based on patterns it's already
+    detected in your DLQ, rather than asking you to write matching conditions from scratch.
+  - **Browse Templates** — start from a known-good pattern instead of a blank rule.
+  - **Create Rule** — build one by hand: conditions (entity/reason/category match), an action
+    (auto-replay after a configurable delay), and a per-rule hourly limit.
+  - Per rule: **Test** (dry-run against current DLQ contents with no side effect), **Replay All**
+    (execute now, against everything currently matching), **Edit**, and delete.
+  - Every rule card shows **Pending / Replayed / Success rate / Limit per hour** — live,
+    real numbers, not estimates.
+- **The safety net underneath every rule:** a rule match doesn't always execute immediately —
+  the **Eligibility Gate** can escalate a match to the [Approval Queue](#approval-queue) instead
+  (for example, if the message has recurred past the automatic-replay cap), and a **circuit
+  breaker** automatically disables any rule whose recent success rate falls below a floor. Rules
+  do not run at all on production namespaces.
+
+#### Approval Queue
+
+![Approval Queue: a real proposal screen — "Proposal — replay 1 message" with Scope & Sample, Stop Condition, and "Why the gate escalated this" sections, plus Cancel and Confirm & Replay buttons — shown before the message is actually replayed](screenshots/complete-guide/approval-queue/approval-queue-proposal.jpg)
+
+![Approval Queue after confirming: a "Just approved" panel showing the real, honest outcome — both replays Failed (message not found in dead-letter queue, since the background monitor had already reconciled them) — with a link to the Recovery Ledger for the eventual verified outcome](screenshots/complete-guide/approval-queue/approval-queue-just-approved.jpg)
+
+- **What is it?** Auto-replay rule matches that the Eligibility Gate escalated for manual
+  review — messages a rule *would* have replayed automatically, except a safety condition said
+  "have a human look at this first."
+- **Why does it exist?** Not every "known pattern" match should run unattended forever. This
+  queue is the deliberate off-ramp between full automation and full manual work: approving one
+  entry replays it exactly as if you'd clicked Replay by hand — nothing more.
+- **The buttons and flow, in order:**
+  - Select one or more rows via checkbox, then **Review & Approve (N)** — this does **not**
+    replay anything yet.
+  - A **proposal** appears first (first screenshot above): the exact scope and sample, a
+    plain-language **stop condition** ("approving does not grant future unattended trust — the
+    next match escalates again the same way"), and the specific reason the gate escalated this
+    batch.
+  - Only **Confirm & Replay N**, the second explicit click, actually executes.
+  - After execution, entries move into a **"Just approved"** list showing the real outcome —
+    **Accepted for replay** or **Failed** — never a blanket success toast. As the second
+    screenshot shows, ServiceHub reports a real failure honestly (here, both messages had already
+    been reconciled by the time the approval executed) rather than claiming success it can't
+    verify.
+  - **View in Recovery Ledger →** — the actual Recovered/Returned/Unverified verification appears
+    there once the observation window closes; it's never claimed on this page before it's real.
+- **Demo Mode note:** approving requires a live connection, so this queue is always empty in
+  Demo Mode — shown as an explicit notice, not a silent empty state.
+
+---
+
+### Autonomous ServiceHub
 
 *(If any of this section feels dense, read [Advanced ServiceHub — the education page](#advanced-servicehub-education-page)
 first — it's the plain-language explanation of everything below it.)*
 
-#### Autonomy
+Four pages, one mental model:
+
+| Page | The question it answers |
+|---|---|
+| [Autonomy Control Center](#autonomy-control-center) | What can ServiceHub safely do on its own — and why? |
+| [Recovery Evidence](#recovery-evidence) | What actually happened, and can we prove it? |
+| [Playbook Ledger](#playbook-ledger) | What has ServiceHub noticed, learned and proposed? |
+| [Governance](#governance) | Who is allowed to approve and manage decisions? |
+
+The [Audit Trail](#audit-trail) is deliberately *not* one of these. It is the complete
+accountability and security record for every action in the product — not just autonomy
+decisions — so it lives under [Platform](#platform).
+
+#### Autonomy Control Center
 
 **Applies to:** Azure ✅ Can reach Standing (L4) / Unattended (L5) · AWS ⚠️ Permanently capped at
 Approve (L3) · GCP ⚠️ Permanently capped at Approve (L3)
 
-![Autonomy page: real per-pillar counts across Recover/Investigate/Correlate/Prevent, a "What's automatic vs. what waits for you" grid (Automatic detection, Recommendation/proposal, Human-approved action, Earned unattended execution, ObserveOnly prevention, and AI-suggested observation)](screenshots/complete-guide/autonomy/autonomy-overview.jpg)
+![Autonomy Control Center: at-a-glance outcome tiles, the Current autonomy card with the L0–L5 ladder and a "Why this level?" explanation, and the Safety & guardrails card](screenshots/complete-guide/autonomy/autonomy-overview.jpg)
 
-![Autonomy page, scrolled down: a real per-provider "Provider constraints" table — Azure can prove DLQ absence and can reach Standing/Unattended, AWS and GCP are permanently capped at Approve — plus the Evidence & safety floors explanation](screenshots/complete-guide/autonomy/autonomy-provider-constraints.jpg)
+![Autonomy Control Center, scrolled down: how a failure moves through ServiceHub (Automatic / Human / Human-or-earned), what runs automatically versus what always waits for a person, and the per-provider boundaries table](screenshots/complete-guide/autonomy/autonomy-provider-constraints.jpg)
 
-- **What is it?** How autonomous ServiceHub *actually* is, right now — read directly from the
-  Recovery Evidence Ledger, the Playbook Ledger, and Governance, never from a marketing claim.
-- **Why does it exist?** "Is this AI?" is the most common question a new operator asks. This page
-  answers it precisely: **no reasoning model is in the execution path today** (ADR-0005), every
-  number here is a deterministic read from real evidence, and there is no control anywhere in
-  ServiceHub — including on this page — that lets a human simply switch autonomy on.
-  - **How autonomous is ServiceHub right now** — one card per pillar (Recover, Investigate,
-    Correlate, Prevent), each showing real counts of what's awaiting a human decision versus
-    already agreed-sound.
-  - **What's automatic vs. what waits for you** — a six-step verb taxonomy from *automatic
-    detection* (always on, no approval needed) through *recommendation*, *human-approved
-    action*, *earned unattended execution* (Recover pillar only, today), *ObserveOnly
-    prevention*, up to *AI-suggested observation* — the optional, self-hosted reasoning companion
-    (disabled by default) that reads payload-free evidence and writes proposals into the Playbook
-    Ledger for a human to approve or reject. It cannot execute, approve, or promote anything; see
-    [Playbook Ledger](#playbook-ledger) for the badge that marks its output distinctly.
-  - **Provider constraints table** — the single most important table in this guide for
-    understanding multi-cloud limits: Azure can prove DLQ absence and can therefore earn Standing
-    (L4) / Unattended (L5) trust; **AWS and GCP are permanently capped at Approve (L3)** — a real
-    provider fact (neither can prove a replayed message never returned to the DLQ), not a
-    maturity gap ServiceHub will eventually close.
-  - **Evidence & safety floors** — the actual promotion math: L3→L4 requires 10+ verified
-    outcomes at 95%+ success; L4→L5 requires 30+ at 99%+; two consecutive failures or a
-    duplicate-business-effect flag demotes immediately. **Trust is earned automatically from
-    ledger evidence — it cannot be granted directly by any user, ever.**
-  - **Signature standings** and **Recent promotions & demotions** — the actual, per-signature
-    ledger of what's happened.
-  - **Governance, and what you can configure yourself** — the honest boundary: you can create/
-    enable rules, grant/revoke Governance roles, and review Playbook proposals — but you cannot
-    set a signature's autonomy level directly, ever.
+- **What is it?** The front door of Autonomous ServiceHub (`/autonomy`; the old
+  `/autonomy-dashboard` link redirects here). It answers, top to bottom: what autonomy level is
+  active, what ServiceHub does automatically, what needs a human, why the level is limited, which
+  guardrails protect execution, what the evidence says, and what to do next.
+- **What's on it:**
+  - **At a glance** — messages recovered, messages recovered *unattended*, what's waiting for a
+    human (Approval Queue replays plus undecided proposals), unsafe attempts the Eligibility Gate
+    refused, and a safety status (emergency stop / tripped circuit breakers / guardrails on). A
+    7- or 30-day window selector applies to the outcome figures. A figure that couldn't load shows
+    "—", never a fabricated 0.
+  - **Current autonomy** — the highest level any failure signature has earned (Approve (L3) until
+    one earns more), on the real six-level ladder: L0 Observe, L1 Explain and L2 Recommend always
+    run and never execute anything; **L3 Approve is the permanent floor**; L4 Standing and L5
+    Unattended are earned *per failure signature* — L3→L4 needs at least 10 verified outcomes at a
+    95%+ success rate, L4→L5 needs 30 at 99%+, and two consecutive failures demote immediately.
+    **Why this level?** is composed from live facts — emergency stop, tripped circuit breakers,
+    provider caps for the providers you've actually connected, and the evidence bar — and
+    signatures that have earned trust are listed with a link to their detail.
+  - **Safety & guardrails** — emergency stop, circuit breakers, the Eligibility Gate (runs on
+    every replay and purge), the production floor (a time-boxed, approved elevation is required
+    on Production namespaces), purge (never automated), and the AI companion (advisory only — it
+    can propose, never execute, approve or promote; the card shows how many AI proposals the
+    ledger actually holds).
+  - **How a failure moves through ServiceHub** — Detect → Investigate → Correlate → Propose →
+    Decide → Recover → Verify → Learn, each step tagged *Automatic*, *Human*, or *Human or earned*.
+  - **Automatic vs. waits for you** — two plain lists, with live counts of what's waiting.
+  - **Provider boundaries** — per provider: whether you've connected it, whether it can prove DLQ
+    absence, and the highest level it can ever reach. A provider that doesn't report the
+    capability shows **Not reported** — never "Yes".
+  - **Pillar summaries** for Recovery Evidence, Playbook Ledger and Governance, **Recent autonomy
+    activity** (promotions, demotions, recoveries, proposal decisions — with a link to the Audit
+    Trail for the full record), and **Next steps** (e.g. "Review 2 escalated replays").
+- **What it deliberately doesn't have:** a global autonomy on/off switch, or any control that sets
+  a level. **Trust is earned automatically from ledger evidence — no user, role or AI can grant
+  it.** No reasoning model is in the execution path (ADR-0005).
 
 #### Recovery Evidence
 
-![Recovery Evidence Ledger: a real list of recovery operations, each showing Opened time, Actor (here a named AutoRule), Kind, Scope, Cloud/Env, and Target count, with an All Kinds filter — a manual (human-triggered) replay looks identical except its Actor reads `__spa__`](screenshots/complete-guide/recovery/recovery-evidence-ledger.jpg)
+![Recovery Evidence: headline outcome tiles and the evidence-integrity check, filters, and the recovery ledger with a selected recovery's "What happened" story (Detect → Diagnose → Propose → Approve → Execute → Verify) open in the side panel](screenshots/complete-guide/recovery/recovery-evidence-ledger.jpg)
 
-- **What is it?** Every recovery decision ServiceHub has ever made — who (or what) acted, what it
-  asked the provider to do, and what was subsequently, independently observed to happen.
+- **What is it?** The proof center for every recovery ServiceHub has executed — who (or what)
+  decided, what it asked the provider to do, and what was subsequently, independently observed.
 - **Why does it exist?** This is ServiceHub's core promise made concrete: a **tamper-evident,
   append-only, hash-chained** record, so six months from now you (or an auditor) can verify
   exactly what happened, not just trust a log line that could have been edited. The three
   underlying database tables reject any delete or out-of-allowlist modification at the
   persistence layer itself — independent of any application code's discipline.
-  - **All Kinds filter** — narrow to Replay or Purge operations only.
-  - Each row's **Actor** shows exactly who or what triggered it: a human (`__spa__`, meaning "via
-    the single-page app," i.e. a person clicked a button), or a specific named `AutoRule`.
-  - **Scope** shows the exact entity/rule/signature that was the trigger; **Targets** is the real
-    count of messages this operation touched.
-  - Full detail (click a row) shows the verification chain: what was asked, what was observed
-    afterward, and the resulting **Recovered / Returned / Unverified** status once the
-    observation window closes — never claimed before it's actually known.
+- **What's on it:**
+  - **Headline numbers** from the most recent 500 ledger entries — recoveries, recovered (with the
+    *verified recovery rate*: recovered ÷ (recovered + failed/returned), so unverified messages
+    are never silently counted either way), failed or returned, in progress, and **unverified**
+    (for example AWS and GCP, which cannot prove a replayed message stayed out of the DLQ).
+  - **Evidence integrity** — **Verify chain** recomputes the owner-wide hash chain on demand.
+    It says "Not verified this session" until you run it; it is never shown as verified by
+    default. Tamper-evident, not tamper-proof.
+  - **Filters** — search (actor, scope, reason, namespace, ID), outcome, kind, provider, actor
+    (people and API keys vs. automation), and namespace.
+  - **The ledger** — each recovery's outcome is derived from its entries' recorded states:
+    *Recovered*, *Partial*, *Failed*, *In progress*, *Unverified*, *Blocked by gate*, or *Purged*.
+    If not all of a recovery's entries are loaded on the page it says **See details** rather than
+    guessing.
+  - **Select a row** to open its story in the side panel (a slide-over on smaller screens; the
+    selection is in the URL as `?op=`, so it's shareable): **What happened** walks Detect →
+    Diagnose → Propose → Approve → Execute → Verify from recorded facts only, marks any step the
+    ledger has no record of as not applicable, and ends with the final outcome and the standing
+    limitation — *ServiceHub observes the queue, not your consumer*. **Messages** lists each entry;
+    **Evidence** shows the operation facts, **Verify chain**, and **Export JSON/CSV**.
+  - **Open full evidence record** goes to the operation detail page, which keeps per-entry
+    **Rehearse** (ask the gate what it would decide now) and **Write off**.
+  - With nothing selected, the side column shows **What keeps needing recovery** (the most common
+    recorded dead-letter reasons) and links to the Recovery Ageing Report and Approval Queue.
 - See `docs/RECOVERY-EVIDENCE.md` in the repository for the complete hash-chain and verification
   model, written for someone verifying a chain from an export alone, independent of ServiceHub
   itself.
@@ -898,52 +972,75 @@ differs is how they eventually close — see [Multi-Cloud Support](#multi-cloud-
 
 #### Playbook Ledger
 
-![Playbook Ledger: real entries across Correlate and Investigate pillars from Azure namespaces, each row showing Proposed At, Pillar, Proposal type, Namespace, State, and Disposition, with the Correlation accountability and Backtesting accountability strips at top and Pillar/State filters above the table](screenshots/complete-guide/playbook/playbook-ledger.jpg)
+![Playbook Ledger: proposal outcome tiles, the learning loop with live counts, the four pillars phrased as questions, and the proposal list with a selected proposal's detail — summary, what approving means, evidence, history and the Approve/Reject actions](screenshots/complete-guide/playbook/playbook-ledger.jpg)
 
-- **What is it?** What ServiceHub's detection workers (anomaly, drift, correlation) believed was
-  worth a human's attention, and what a human decided about it. **Nothing here ever authorizes a
-  replay or purge** — approving an entry means "a human agrees this finding is sound," full stop.
-- **Why does it exist?** It's the accountability trail for ServiceHub's own judgment, separate
-  from the Recovery Evidence Ledger's accountability trail for its *actions*. Two different
-  questions: "was this a good call?" versus "what actually happened?"
-  - **Correlation accountability** and **Backtesting** strips — a running scorecard of how often
-    ServiceHub's own correlation hypotheses and anomaly/drift findings were later approved by a
-    human, or corroborated by what actually happened. An honest "not enough evidence yet" shows
-    when there's too little data for a real rate.
-  - **Pillar / State filters** — narrow by Investigate/Correlate/Prevent/Recover and by lifecycle
-    state (Proposed, UnderReview, Approved, Rejected, Expired, Superseded, Revoked).
-  - Click a row to expand: the raw **Evidence** and **Proposal** JSON, the full **event chain**,
-    and — while the entry is still open — **Mark under review**, **Approve**, or **Reject** (with
-    a required reason).
-  - **AI suggestion badge** — appears only on proposals from the optional, self-hosted reasoning
-    companion (disabled by default). It marks the observation distinctly so a reviewer never
-    mistakes an AI-generated suggestion for a deterministic worker's finding — this service has no
-    access to any ledger or broker and can only ever land here as a proposal, like any other.
+- **What is it?** What ServiceHub noticed and proposed, what a person decided, and whether later
+  evidence bore it out. **Nothing here ever authorizes a replay or purge** — approving means "a
+  person agrees this is sound," full stop.
+- **Why does it exist?** It's the accountability trail for ServiceHub's own *judgment*, separate
+  from the Recovery Evidence Ledger's trail for its *actions*. Two different questions: "was this
+  a good call?" versus "what actually happened?"
+- **What's on it:**
+  - **Headline numbers** — proposals, awaiting a decision, approved (with the approval rate of
+    decided proposals), rejected, and **borne out later** (backtesting: whether decided anomaly
+    and drift findings were followed by real recovery activity). Each shows an honest "none yet"
+    until there's data.
+  - **The learning loop** — Incident → Observation → Pattern → Proposal → Human decision →
+    Corroborated → Better decisions, with the live count at each step.
+  - **The four pillars, as questions** — *Investigate: what looks unusual?* · *Correlate: which
+    failures are related?* · *Prevent: what could stop this recurring?* (prevention rules are
+    observe-only — they record recurrences and never act) · *Recover: which replays need a
+    human?* Click one to filter; `?pillar=` deep-links it.
+  - **Filters** — search, state (awaiting / approved / rejected / expired, superseded or revoked;
+    `?state=awaiting` deep-links it), proposer (detection workers vs. AI companion), namespace.
+  - **The list** shows each proposal in plain language (e.g. "DLQ growth spike on orders",
+    "2 related failures across Azure and Aws") rather than a raw proposal type. The **AI
+    suggestion** badge marks proposals from the optional, self-hosted reasoning companion
+    (disabled by default), so a reviewer never mistakes one for a deterministic worker's finding.
+  - **Select a proposal** (`?entry=`) for its summary, the detector's own severity and suggested
+    next steps (verbatim — ServiceHub never invents a confidence score), **What approving means**
+    for that specific proposal, the evidence with links to the related recovery and failure
+    signature, the full proposal details (collapsed), and its history. While it's undecided:
+    **Reviewing**, **Reject** (a reason is required), or **Approve**. Deciding needs the Approver
+    role for that proposal's namespace and pillar; if your fleet-wide role is lower the panel says
+    so up front, and the server makes the final call.
 
 #### Governance
 
-![Governance page: a real active grant (User, Admin role, Fleet-wide, All pillars) plus the expanded New Grant form — Grantee identity, Role, Pillar, and Namespace fields](screenshots/complete-guide/governance/governance-grants.jpg)
+![Governance: your role and grant tiles beside the "Governance does not grant autonomy" principle, the People & access table, and a selected identity's Can / Cannot breakdown](screenshots/complete-guide/governance/governance-grants.jpg)
 
-- **What is it?** Who holds which role, scoped to which namespace and which pillar. A grant with
-  no namespace is fleet-wide; a grant with no pillar covers all four (Recover/Investigate/
-  Correlate/Prevent).
-- **Why does it exist?** Not every operator should be able to approve replays, and not every
-  approver should have admin rights everywhere. Governance is the RBAC layer that makes "who is
-  allowed to do what, where" an explicit, auditable fact instead of an assumption.
-  - **New grant** — expands the form: **Grantee identity** (an Entra object ID, an API key name,
-    or an owner ID), **Grantee kind** (User/ApiKey), **Role** (Viewer/Operator/Approver/Admin),
-    **Pillar** (optional — blank means all four), and **Namespace** (optional — blank means
-    fleet-wide).
-  - **Create grant** takes effect on the very next request — no restart required, since this is
-    the same table `GovernanceAuthorizationFilter` reads at request time.
-  - **Revoke** on any active grant — revoked grants stay visible (greyed out) rather than
-    disappearing, so the history is never lost.
-  - **Until the first grant exists, every caller has unrestricted access** — an explicit empty
-    state says so, rather than silently behaving as if governance were already locked down.
+- **What is it?** Who may do what, where, and for which pillar. A grant with no namespace is
+  fleet-wide; a grant with no pillar covers all four (Recover/Investigate/Correlate/Prevent).
+- **Governance does not grant autonomy.** A role lets a person *take part* in the autonomy
+  lifecycle — replay, approve, decide proposals, manage grants. Autonomy itself is earned per
+  failure signature from verified evidence, and no role can set it.
+- **What's on it:**
+  - **Your fleet-wide role**, people & keys with a grant, active grants (and how many fleet-wide
+    Admins), and namespace-scoped grants.
+  - **People & access** — grants grouped by identity (user or API key) with highest role, where
+    and which pillars. Select one to see exactly what they **can** and **cannot** do, derived from
+    the same rules the server enforces. "Set or raise a signature's autonomy level" and "Bypass
+    the Eligibility Gate, circuit breakers or production floor" are always under *Cannot* — no
+    role can.
+  - **Grants** — the flat list, with namespace names rather than IDs. **Revoke** asks for
+    confirmation first (and warns if it might be your own Admin grant); it takes effect on the
+    next request.
+  - **Roles & permissions** — the role × action matrix (Viewer < Operator < Approver < Admin,
+    cumulative), with the endpoint that enforces each row.
+  - **New grant** — who, identity type, role (with its meaning), where (fleet-wide or one
+    namespace) and pillar. Takes effect on the next request, no restart.
+- **Not an Admin?** Listing and changing grants needs the admin API-key scope and the Admin role.
+  Anyone else sees their own role and the permission matrix, and an explanation — not an error.
+- **Until the first grant exists, every caller has unrestricted access.** The page says so
+  explicitly, and the New grant dialog warns that the first grant switches Governance on — grant
+  yourself Admin too, or you can lose access.
 
 ---
 
 ### Platform
+
+Everything about ServiceHub itself rather than any one namespace or recovery decision: the
+server's own health, the accountability record, and its security/data-handling posture.
 
 #### System Health
 
@@ -979,6 +1076,10 @@ differs is how they eventually close — see [Multi-Cloud Support](#multi-cloud-
     (In the screenshot above, the Failures count includes two real replay failures triggered
     earlier in this exact session from the Approval Queue — the audit trail doesn't
     editorialize a failure into a success.)
+- **Why is it under Platform?** It records *every* action in the product — not only autonomy
+  decisions — so it sits beside System Health and Security rather than among the autonomy
+  pillars. The Autonomy Control Center shows a short recent-activity summary and links here for
+  the full record.
 
 #### Security & Privacy
 
@@ -1005,14 +1106,16 @@ differs is how they eventually close — see [Multi-Cloud Support](#multi-cloud-
 
 ---
 
-### Learn ServiceHub
+### Support
+
+Help, and the plain-language explanation of the autonomy model.
 
 #### Advanced ServiceHub (education page)
 
 ![Advanced ServiceHub education page: the hero explanation and a "How to read this page" legend defining four badges — CURRENT (implemented and operating today), BOUNDED (available only once evidence/governance/a safety gate allows it), HUMAN REQUIRED (requires a human's approval, by design), FUTURE (not implemented, deliberately gated, not hidden)](screenshots/complete-guide/advanced-servicehub/advanced-servicehub-education.jpg)
 
 - **What is it?** The canonical, plain-language explanation of what the four *Advanced
-  ServiceHub* pages ([Autonomy](#autonomy), [Recovery Evidence](#recovery-evidence),
+  ServiceHub* pages ([Autonomy Control Center](#autonomy-control-center), [Recovery Evidence](#recovery-evidence),
   [Playbook Ledger](#playbook-ledger), [Governance](#governance)) actually are and why they're
   grouped together. **Purely static and educational** — it makes no API calls, so nothing on it
   can drift out of sync with live data, because it never shows any; every specific number lives
@@ -1035,10 +1138,6 @@ differs is how they eventually close — see [Multi-Cloud Support](#multi-cloud-
   automatically today versus what still waits for a human; what "autonomous" explicitly does
   *not* mean; why there is no global "Enable Autonomous" switch anywhere in the product; and what
   a future Reasoning Companion is (and isn't) today.
-
----
-
-### Support
 
 #### Help & Guide
 

@@ -11,11 +11,10 @@ import { ResizablePanel } from './ResizablePanel';
 // Section order — every entry's `quickAccess.group` must be one of these, in this order.
 const GROUP_ORDER: NavGroup[] = [
   'Overview',
-  'Browse across clouds',
-  'Diagnose & automate',
-  'Advanced ServiceHub',
+  'Observe',
+  'Recover',
+  'Autonomous ServiceHub',
   'Platform',
-  'Learn ServiceHub',
   'Support',
 ];
 
@@ -85,6 +84,8 @@ const COLOR_STYLES: Record<NavColor, { icon: string; active: string; inactive: s
 // "All Namespaces" vs "All Clouds") are computed by the component below and passed in.
 const STATIC_BADGES: Record<string, { text: string; className: string }> = {
   incidents: { text: 'Ops', className: 'text-xs text-red-600 font-medium' },
+  // The front door of the Autonomous ServiceHub section — the other three pillars all link back to it.
+  autonomy: { text: 'Start here', className: 'text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-semibold' },
   fleet: { text: 'All NS', className: 'text-xs text-indigo-600 font-medium' },
   'dlq-history': { text: 'History', className: 'text-xs text-purple-600 font-medium' },
   health: { text: 'Status', className: 'text-xs text-emerald-600 font-medium' },
@@ -115,23 +116,21 @@ const QUICK_ACCESS_ENTRIES = NAV_ENTRIES.filter((entry) => entry.quickAccess);
  * shared nav definition (`@/nav/navigation`) Icon Rail, the command palette, and the workspace
  * toolbar all read from — no independently-maintained item list here (roadmap W2.4).
  *
- * Sections, in order: Overview → Browse across clouds → Diagnose & automate → Advanced
- * ServiceHub → Platform → Learn ServiceHub → Support. Collapsible, draggable, and independently
- * resizable.
+ * Sections, in order: Overview → Observe → Recover → Autonomous ServiceHub → Platform → Support.
+ * Collapsible, draggable, and independently resizable. Nothing was removed in the regroup: every
+ * destination is still here, under a name that matches where it sits in the operator's loop.
  *
- * Advanced ServiceHub groups the pages that explain and govern ServiceHub's own autonomy —
- * Autonomy (the "how autonomous is this, and why" page), the Recovery and Playbook ledgers, and
- * Governance/RBAC — separate from the daily Diagnose & automate loop (DLQ Intelligence,
- * Auto-Replay Rules, Approval Queue, Proactive Insights, Multi-Cloud Trace), which stays put
- * since Approval Queue is a live, time-sensitive queue tied directly to Auto-Replay Rules, not a
- * governance surface.
- *
- * Learn ServiceHub is deliberately a separate, single-item section, not folded into Advanced
- * ServiceHub or Support: it's neither an operational feature (Advanced ServiceHub's four pages
- * all do something) nor a support resource (Help & Guide answers "how do I do X"). It's pure
- * architecture explanation — "what is Advanced ServiceHub and why does it exist" — so it gets its
- * own section, placed directly above Support since that's the other "understand the product"
- * destination.
+ * Overview is the "look" surfaces (Home, Namespace Overview, Incident Center, Fleet Health).
+ * Observe is everywhere an operator browses or diagnoses without changing state (message
+ * browsing, Live Tail, Cloud Bridge, DLQ Intelligence, Proactive Insights, Multi-Cloud Trace).
+ * Recover is deliberately narrow — only Auto-Replay Rules and Approval Queue, the two surfaces
+ * that actually change queue state or a pending decision. Autonomous ServiceHub is the four
+ * pillars of the autonomy model, led by the Autonomy Control Center (what may ServiceHub do on
+ * its own?), then Recovery Evidence (what happened, proven), Playbook Ledger (what it learned and
+ * proposed) and Governance (who may decide). Platform is ServiceHub's own health, accountability
+ * and security — Audit Trail sits here, independent of the autonomy pillars, because it records
+ * every action in the product, not just autonomy decisions. Support is help and the autonomy
+ * explainer.
  */
 export function QuickAccessPanel() {
   const location = useLocation();

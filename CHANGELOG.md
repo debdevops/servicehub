@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Home redesign: a three-level operational front door, one cloud at a time.** Home no longer
+  blends Azure/AWS/GCP into one cross-cloud dashboard. A cloud picker (Level 0, skipped when only
+  one provider is connected) leads into each cloud's own **Cloud Home** (Level 1 — KPI tiles,
+  this provider's namespace list, a ranked "needs attention" queue scored *within* that provider
+  rather than a client-side filter of the fleet-wide top-3, recent DLQ activity, and
+  capability-gated Quick Actions), which drills into a **Namespace Home** (Level 2 — one
+  namespace's own KPIs, a real 7-day DLQ trend chart, top failure signatures, recent DLQ
+  messages, recent Audit Trail activity, and an honest "Provider limitations" panel sourced
+  directly from `ProviderCapabilities`). The attention-queue and outcome-metrics APIs gained an
+  optional `provider` filter that scores and caps within that provider's own namespaces, rather
+  than post-hoc filtering a global top-3 that could otherwise go empty for a cloud with real,
+  unranked problems. Every level is URL-driven (`?cloud=`, `?namespace=`), so ServiceHub's
+  in-app Back/Forward and a browser refresh both preserve context, and a namespace id from the
+  wrong provider silently falls back to that cloud's Home rather than ever rendering under the
+  wrong heading.
+- **Quick Access regrouped around the operator's loop.** *Overview → Observe → Recover →
+  Autonomous ServiceHub → Platform → Support*. The four autonomy pillars — Autonomy Control
+  Center, Recovery Evidence, Playbook Ledger, Governance — now form their own section, led by the
+  Autonomy Control Center (marked *Start here*, and one of the Icon Rail's five shortcuts in place
+  of Recovery Evidence). **Audit Trail moved to Platform**: it is the accountability record for
+  every action in the product, not part of the autonomy model. Nothing was removed — every
+  destination is still reachable in Quick Access and the command palette.
+- **Autonomous ServiceHub redesign.** The four pillar pages share one visual language (header,
+  stat tiles, filters, list + detail panel) and each answers one question:
+  - **Autonomy Control Center** (`/autonomy`, renamed from *Autonomy*) — outcome tiles, the current
+    level on the real L0–L5 ladder with a *Why this level?* composed from live facts (emergency
+    stop, tripped circuit breakers, provider caps, the evidence bar), safety guardrails, the
+    failure lifecycle tagged Automatic/Human, provider boundaries (an unreported capability shows
+    "Not reported", never "Yes"), pillar summaries, recent autonomy activity linking to the Audit
+    Trail, and next steps. Still no global switch and no way to set a level.
+  - **Recovery Evidence** — headline outcomes with a *verified* recovery rate that never counts
+    unverified messages either way, an on-demand hash-chain check, search and filters, a per-row
+    outcome derived from ledger entries (or "See details" when not all entries are loaded), and a
+    side panel telling each recovery's Detect → Diagnose → Propose → Approve → Execute → Verify
+    story from recorded facts only, with export. Selection is URL-driven (`?op=`).
+  - **Playbook Ledger** — the learning loop with live counts, pillars phrased as questions,
+    plain-language proposal titles instead of raw proposal types, and a detail panel stating what
+    approving that specific proposal does (and doesn't) do. Deep links: `?pillar=`,
+    `?state=awaiting`, `?entry=`.
+  - **Governance** — "Governance does not grant autonomy" up front; people & access grouped by
+    identity with a Can/Cannot breakdown mirroring server enforcement; a role × action matrix;
+    revoke now asks for confirmation; the first grant warns it will switch Governance on; a
+    non-Admin sees their role and the matrix instead of an error.
+
 ## [4.0.0] — 2026-09-06
 
 Everything since v3.7.0: the four-pillar autonomy loop (Observe → Investigate → Correlate →
