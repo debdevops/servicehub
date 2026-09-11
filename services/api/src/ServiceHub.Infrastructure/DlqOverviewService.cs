@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
@@ -26,6 +27,17 @@ public sealed class DlqOverviewService : IDlqOverviewService
     private const int MinWindowDays = 1;
     private const int MaxWindowDays = 90;
     private const int MaxTopReasons = 5;
+    private const int MaxRecurringPatterns = 25;
+    private const string UnclassifiedRootCause = "Unclassified";
+
+    /// <summary>Severity order for picking a pattern's worst-case replay safety — a mixed group
+    /// is reported at its least-safe member's level, never averaged away.</summary>
+    private static readonly Dictionary<string, int> ReplaySafetySeverity = new()
+    {
+        [ReplaySafetyLevels.Unsafe] = 2,
+        [ReplaySafetyLevels.RequiresReview] = 1,
+        [ReplaySafetyLevels.Safe] = 0,
+    };
 
     private readonly DlqDbContext _dbContext;
     private readonly INamespaceRepository _namespaceRepository;
@@ -74,20 +86,33 @@ public sealed class DlqOverviewService : IDlqOverviewService
             // Bounded projection: only rows that can affect the overview, already restricted to
             // the resolved namespace scope and the reason filter (both server-side translatable).
             List<RelevantRow> rows;
+            int totalObserved;
             if (namespaceIds.Count == 0)
             {
                 rows = [];
+                totalObserved = 0;
             }
             else
             {
-                rows = await _dbContext.DlqMessages.AsNoTracking()
+                var scopedMessages = _dbContext.DlqMessages.AsNoTracking()
                     .Where(m => m.OwnerId == ownerId)
                     .Where(m => namespaceIds.Contains(m.NamespaceId))
                     .Where(m => filter.Reason == null || m.FailureCategory == filter.Reason)
+                    .Where(m => filter.Status == null || m.Status == filter.Status)
+                    .Where(m => filter.ReplaySafety == null || m.ReplaySafety == filter.ReplaySafety)
+                    .Where(m => filter.EntityName == null || EF.Functions.Like(m.EntityName, $"%{filter.EntityName}%"));
+
+                // Lifetime count across the resolved scope — deliberately unbounded by the trend
+                // window (unlike every other metric below), so "Total Observed" answers "how much
+                // has this fleet ever dead-lettered", not "...in the selected window".
+                totalObserved = await scopedMessages.CountAsync(cancellationToken);
+
+                rows = await scopedMessages
                     .Where(m => m.Status == DlqMessageStatus.Active
                         || m.DetectedAtUtc >= startCutoff
                         || (m.ReplayedAt != null && m.ReplayedAt >= startCutoff)
-                        || (m.ResolvedAt != null && m.ResolvedAt >= startCutoff))
+                        || (m.ResolvedAt != null && m.ResolvedAt >= startCutoff)
+                        || (m.ArchivedAt != null && m.ArchivedAt >= startCutoff))
                     .Select(m => new RelevantRow(
                         m.NamespaceId,
                         m.CloudProvider,
@@ -98,7 +123,12 @@ public sealed class DlqOverviewService : IDlqOverviewService
                         m.Status,
                         m.DetectedAtUtc,
                         m.ReplayedAt,
-                        m.ResolvedAt))
+                        m.ResolvedAt,
+                        m.ArchivedAt,
+                        m.ReplaySafety,
+                        m.ForensicRootCause,
+                        m.DeadLetterReason,
+                        m.CategoryConfidence))
                     .ToListAsync(cancellationToken);
             }
 
@@ -112,6 +142,13 @@ public sealed class DlqOverviewService : IDlqOverviewService
 
             var totalTrend = BuildTrend(rows, startDate, today);
             var totalDeadLettered = providers.Sum(p => p.TotalDeadLettered);
+
+            var replayedRows = rows.Where(r => r.Status == DlqMessageStatus.Replayed && r.ReplayedAt >= startCutoff).ToList();
+            var replayedTrend = BuildCumulativeTrend(rows, startDate, today, r => r.Status == DlqMessageStatus.Replayed && r.ReplayedAt is not null, r => r.ReplayedAt!.Value);
+            var archivedCount = rows.Count(r => r.Status == DlqMessageStatus.Archived && r.ArchivedAt >= startCutoff);
+
+            var recurringPatterns = BuildRecurringPatterns(rows, totalDeadLettered);
+
             var totals = new DlqOverviewTotals(
                 TotalDeadLettered: totalDeadLettered,
                 ChangePercent: totalTrend.Count > 0 ? PercentChange(totalTrend[0].Count, totalDeadLettered) : null,
@@ -122,13 +159,20 @@ public sealed class DlqOverviewService : IDlqOverviewService
                 OldestMessageDetectedAt: rows
                     .Where(r => r.Status == DlqMessageStatus.Active)
                     .Select(r => (DateTimeOffset?)r.DetectedAtUtc)
-                    .Min());
+                    .Min(),
+                ReplayedCount: replayedRows.Count,
+                ReplayedChangePercent: replayedTrend.Count > 0 ? PercentChange(replayedTrend[0].Count, replayedTrend[^1].Count) : null,
+                ArchivedCount: archivedCount,
+                TotalObserved: totalObserved,
+                RecurringPatternCount: recurringPatterns.Count(p => p.Occurrences >= 2),
+                NeedsInvestigationCount: recurringPatterns.Count(p => p.ReplaySafety != ReplaySafetyLevels.Safe));
 
             return new DlqOverview(
                 GeneratedAt: now,
                 WindowDays: days,
                 Totals: totals,
-                Providers: providers);
+                Providers: providers,
+                RecurringPatterns: recurringPatterns);
         }
         catch (Exception ex)
         {
@@ -234,6 +278,34 @@ public sealed class DlqOverviewService : IDlqOverviewService
         return trend;
     }
 
+    /// <summary>
+    /// Cumulative count, per day in <c>[startDate, today]</c>, of rows matching
+    /// <paramref name="predicate"/> whose <paramref name="dateSelector"/> falls on or before that
+    /// day — a monotonically increasing line, unlike <see cref="BuildTrend"/>'s reconstructed
+    /// backlog. Used for activity counters (e.g. replays) where "how many so far" is the
+    /// meaningful comparison, not "how many are currently outstanding".
+    /// </summary>
+    private static List<DlqOverviewTrendPoint> BuildCumulativeTrend(
+        List<RelevantRow> rows,
+        DateTime startDate,
+        DateTime today,
+        Func<RelevantRow, bool> predicate,
+        Func<RelevantRow, DateTimeOffset> dateSelector)
+    {
+        var days = (int)(today - startDate).TotalDays + 1;
+        var trend = new List<DlqOverviewTrendPoint>(days);
+        var matching = rows.Where(predicate).ToList();
+
+        for (var i = 0; i < days; i++)
+        {
+            var day = startDate.AddDays(i);
+            var count = matching.Count(r => dateSelector(r).UtcDateTime.Date <= day);
+            trend.Add(new DlqOverviewTrendPoint(new DateTimeOffset(day, TimeSpan.Zero), count));
+        }
+
+        return trend;
+    }
+
     private static double? PercentChange(int from, int to)
     {
         if (from == 0)
@@ -241,6 +313,78 @@ public sealed class DlqOverviewService : IDlqOverviewService
 
         return Math.Round((to - from) / (double)from * 100.0, 1);
     }
+
+    /// <summary>
+    /// Groups the fleet's currently-active dead letters by (category, root-cause text) — see the
+    /// <see cref="DlqRecurringPattern"/> doc comment for why this, and not the AI clustering
+    /// pipeline, is the right basis for a fleet-wide rollup.
+    /// </summary>
+    private static List<DlqRecurringPattern> BuildRecurringPatterns(
+        List<RelevantRow> rows,
+        int totalDeadLettered)
+    {
+        var activeRows = rows.Where(r => r.Status == DlqMessageStatus.Active).ToList();
+
+        return activeRows
+            .GroupBy(r => (r.FailureCategory, RootCause: r.ForensicRootCause ?? r.DeadLetterReason ?? UnclassifiedRootCause))
+            .Select(g =>
+            {
+                var occurrences = g.Count();
+                var worstSafety = g
+                    .Select(r => r.ReplaySafety ?? ReplaySafetyLevels.RequiresReview)
+                    .OrderByDescending(s => ReplaySafetySeverity.GetValueOrDefault(s, 1))
+                    .First();
+                var averageConfidence = g.Average(r => r.CategoryConfidence);
+                var representative = g
+                    .GroupBy(r => (r.NamespaceId, r.EntityName))
+                    .OrderByDescending(grp => grp.Count())
+                    .First().Key;
+
+                return new DlqRecurringPattern(
+                    PatternKey: $"{g.Key.FailureCategory}:{g.Key.RootCause}",
+                    RootCauseSummary: g.Key.RootCause,
+                    Category: g.Key.FailureCategory,
+                    Occurrences: occurrences,
+                    PercentOfTotal: totalDeadLettered > 0 ? Math.Round(100.0 * occurrences / totalDeadLettered, 1) : 0,
+                    AffectedProviders: g.Select(r => r.CloudProvider).Distinct().OrderBy(p => p).ToList(),
+                    NamespaceCount: g.Select(r => r.NamespaceId).Distinct().Count(),
+                    FirstSeenAt: g.Min(r => r.DetectedAtUtc),
+                    LastSeenAt: g.Max(r => r.DetectedAtUtc),
+                    Confidence: ConfidenceBucket(averageConfidence),
+                    AverageConfidence: Math.Round(averageConfidence, 2),
+                    ReplaySafety: worstSafety,
+                    SuggestedAction: BuildSuggestedAction(worstSafety),
+                    RepresentativeNamespaceId: representative.NamespaceId,
+                    RepresentativeEntityName: representative.EntityName);
+            })
+            .OrderByDescending(p => p.Occurrences)
+            .ThenBy(p => p.RootCauseSummary, StringComparer.OrdinalIgnoreCase)
+            .Take(MaxRecurringPatterns)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Buckets a signature's average per-message classification confidence (0.0–1.0, as recorded
+    /// by the forensic engine — see <c>DlqMessage.CategoryConfidence</c>) into a coarse label. A
+    /// qualitative bucket, not a fabricated precision score: the underlying pipeline itself only
+    /// ever produces a small number of distinct confidence values per rule
+    /// (<see cref="ServiceHub.Infrastructure.AI.DeterministicClassifier"/>,
+    /// <see cref="ServiceHub.Infrastructure.AI.HeuristicAnalyser"/>), so presenting it as a single
+    /// precise percentage across a mixed group would overstate what is actually known.
+    /// </summary>
+    private static string ConfidenceBucket(double averageConfidence) => averageConfidence switch
+    {
+        >= 0.85 => "High",
+        >= 0.6 => "Medium",
+        _ => "Low",
+    };
+
+    private static string BuildSuggestedAction(string replaySafety) => replaySafety switch
+    {
+        ReplaySafetyLevels.Safe => "Safe to auto-replay",
+        ReplaySafetyLevels.Unsafe => "Fix the root cause before replaying",
+        _ => "Review a sample before replaying",
+    };
 
     private sealed record RelevantRow(
         Guid NamespaceId,
@@ -252,5 +396,10 @@ public sealed class DlqOverviewService : IDlqOverviewService
         DlqMessageStatus Status,
         DateTimeOffset DetectedAtUtc,
         DateTimeOffset? ReplayedAt,
-        DateTimeOffset? ResolvedAt);
+        DateTimeOffset? ResolvedAt,
+        DateTimeOffset? ArchivedAt,
+        string? ReplaySafety,
+        string? ForensicRootCause,
+        string? DeadLetterReason,
+        double CategoryConfidence);
 }

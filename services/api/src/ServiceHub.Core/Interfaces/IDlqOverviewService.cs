@@ -28,14 +28,18 @@ public sealed record DlqOverviewFilter(
     CloudProviderType? Provider = null,
     EnvironmentType? Environment = null,
     Guid? NamespaceId = null,
-    FailureCategory? Reason = null);
+    FailureCategory? Reason = null,
+    string? EntityName = null,
+    DlqMessageStatus? Status = null,
+    string? ReplaySafety = null);
 
 /// <summary>Cross-cloud dead-letter snapshot, grouped by provider.</summary>
 public sealed record DlqOverview(
     DateTimeOffset GeneratedAt,
     int WindowDays,
     DlqOverviewTotals Totals,
-    IReadOnlyList<DlqProviderOverview> Providers);
+    IReadOnlyList<DlqProviderOverview> Providers,
+    IReadOnlyList<DlqRecurringPattern> RecurringPatterns);
 
 /// <summary>Fleet-wide totals rolled up across every provider included in the response.</summary>
 public sealed record DlqOverviewTotals(
@@ -45,7 +49,13 @@ public sealed record DlqOverviewTotals(
     int NamespacesTotal,
     int AffectedQueues,
     int AffectedTopics,
-    DateTimeOffset? OldestMessageDetectedAt);
+    DateTimeOffset? OldestMessageDetectedAt,
+    int ReplayedCount,
+    double? ReplayedChangePercent,
+    int ArchivedCount,
+    int TotalObserved,
+    int RecurringPatternCount,
+    int NeedsInvestigationCount);
 
 /// <summary>
 /// One cloud provider's active dead-letter backlog: current size, trend, top failure reasons, and
@@ -83,3 +93,33 @@ public sealed record DlqOverviewNamespace(
     int TopicsWithDlq,
     int DlqCount,
     DateTimeOffset? OldestDetectedAt);
+
+/// <summary>
+/// A recurring failure pattern observed across the fleet: active messages sharing the same
+/// <see cref="Category"/> and forensic root-cause explanation, grouped without regard to
+/// provider or namespace. Deliberately built from already-computed, per-message fields
+/// (<c>FailureCategory</c>, <c>ForensicRootCause</c>, <c>CategoryConfidence</c>,
+/// <c>ReplaySafety</c>) rather than the AI clustering pipeline behind the per-namespace Failure
+/// Signatures view — that view re-clusters one namespace's messages live and needs an AI-service
+/// round trip per namespace; a fleet-wide overview cannot afford an AI call per connected
+/// namespace on every load. <see cref="RepresentativeNamespaceId"/> and
+/// <see cref="RepresentativeEntityName"/> are the pattern's single largest contributor, used only
+/// to build a working "Investigate" deep link into that namespace's DLQ history, pre-filtered to
+/// this pattern's category.
+/// </summary>
+public sealed record DlqRecurringPattern(
+    string PatternKey,
+    string RootCauseSummary,
+    FailureCategory Category,
+    int Occurrences,
+    double PercentOfTotal,
+    IReadOnlyList<CloudProviderType> AffectedProviders,
+    int NamespaceCount,
+    DateTimeOffset FirstSeenAt,
+    DateTimeOffset LastSeenAt,
+    string Confidence,
+    double AverageConfidence,
+    string ReplaySafety,
+    string SuggestedAction,
+    Guid RepresentativeNamespaceId,
+    string RepresentativeEntityName);

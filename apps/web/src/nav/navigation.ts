@@ -6,7 +6,6 @@ import {
   Layers,
   Database,
   Radio,
-  AlertCircle,
   Clock,
   Cloud,
   BarChart3,
@@ -25,6 +24,7 @@ import {
   MessageSquare,
   Plug,
   FileSearch,
+  History,
 } from 'lucide-react';
 
 /**
@@ -201,15 +201,15 @@ export const NAV_ENTRIES: NavEntry[] = [
   {
     id: 'messages-deadletter',
     basePath: 'dlq-overview',
-    label: 'Dead-Letter',
-    icon: AlertCircle,
+    label: 'DLQ Intelligence',
+    icon: BarChart3,
     to: withPrefix('/dlq-overview'),
     quickAccess: { group: 'Observe', color: 'red' },
     commandPalette: {
-      description: 'Cross-cloud dead-letter triage: which cloud, which reasons, which namespaces',
-      keywords: 'dlq dead letter overview triage reasons queues topics',
+      description: 'Cross-cloud dead-letter investigation: trends, recurring signatures, which cloud, which reasons',
+      keywords: 'dlq dead letter overview triage reasons queues topics signatures intelligence',
     },
-    toolbarLabel: 'Dead-Letter Overview',
+    toolbarLabel: 'DLQ Intelligence',
   },
   {
     id: 'scheduled',
@@ -234,12 +234,12 @@ export const NAV_ENTRIES: NavEntry[] = [
   {
     id: 'dlq-history',
     basePath: 'dlq-history',
-    label: 'DLQ Intelligence',
-    icon: BarChart3,
+    label: 'DLQ Message History',
+    icon: History,
     to: withNamespace('/dlq-history'),
     quickAccess: { group: 'Observe', color: 'purple' },
-    commandPalette: { description: 'Dead-letter queue audit trail', keywords: 'dead letter poisoned failed' },
-    toolbarLabel: 'DLQ Intelligence',
+    commandPalette: { description: 'Per-namespace dead-letter message audit trail', keywords: 'dead letter poisoned failed history audit' },
+    toolbarLabel: 'DLQ Message History',
   },
   {
     id: 'rules',

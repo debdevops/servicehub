@@ -380,7 +380,7 @@ export function DlqHistoryPage() {
       <div className="bg-white border-b border-gray-200 px-6 py-4 shrink-0">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">DLQ Intelligence</h1>
+            <h1 className="text-xl font-bold text-gray-900">DLQ Message History</h1>
             <p className="text-sm text-gray-500 mt-0.5">
               Dead-letter queue message history and monitoring
               <HelpTooltip {...tooltips.dlqHistory.trendChart} position="right" className="ml-1" />

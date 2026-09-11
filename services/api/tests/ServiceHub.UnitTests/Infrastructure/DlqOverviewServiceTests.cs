@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
@@ -57,7 +58,12 @@ public class DlqOverviewServiceTests : IDisposable
         ServiceBusEntityType entityType = ServiceBusEntityType.Queue,
         string? topicName = null,
         DateTimeOffset? detectedAt = null,
-        DateTimeOffset? replayedAt = null)
+        DateTimeOffset? replayedAt = null,
+        DateTimeOffset? archivedAt = null,
+        string? replaySafety = null,
+        string? forensicRootCause = null,
+        string? deadLetterReason = null,
+        double categoryConfidence = 0.9)
         => new()
         {
             MessageId = $"m-{seq}",
@@ -75,7 +81,12 @@ public class DlqOverviewServiceTests : IDisposable
             MessageSize = 128,
             FailureCategory = category,
             Status = status,
-            ReplayedAt = replayedAt
+            ReplayedAt = replayedAt,
+            ArchivedAt = archivedAt,
+            ReplaySafety = replaySafety,
+            ForensicRootCause = forensicRootCause,
+            DeadLetterReason = deadLetterReason,
+            CategoryConfidence = categoryConfidence
         };
 
     [Fact]
@@ -239,5 +250,125 @@ public class DlqOverviewServiceTests : IDisposable
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Providers.Single().ChangePercent.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_TotalObserved_CountsLifetimeRegardlessOfWindow()
+    {
+        var ns = CreateNamespace("test-ns");
+        SetOwnedNamespaces(ns);
+
+        // Resolved long before the window and never touched again — excluded from the bounded
+        // `rows` fetch, but must still count toward the lifetime total.
+        _dbContext.DlqMessages.AddRange(
+            Msg(ns.Id, 1, CloudProviderType.Azure, status: DlqMessageStatus.Resolved,
+                detectedAt: DateTimeOffset.UtcNow.AddDays(-60)),
+            Msg(ns.Id, 2, CloudProviderType.Azure, status: DlqMessageStatus.Active));
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetOverviewAsync(TestConstants.TestOwnerId, new DlqOverviewFilter(Days: 7));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Totals.TotalObserved.Should().Be(2);
+        result.Value.Totals.TotalDeadLettered.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_ReplayedAndArchivedWithinWindow_AreCountedSeparatelyFromActive()
+    {
+        var ns = CreateNamespace("test-ns");
+        SetOwnedNamespaces(ns);
+
+        _dbContext.DlqMessages.AddRange(
+            Msg(ns.Id, 1, CloudProviderType.Azure, status: DlqMessageStatus.Replayed, replayedAt: DateTimeOffset.UtcNow),
+            Msg(ns.Id, 2, CloudProviderType.Azure, status: DlqMessageStatus.Archived, archivedAt: DateTimeOffset.UtcNow),
+            Msg(ns.Id, 3, CloudProviderType.Azure, status: DlqMessageStatus.Active));
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetOverviewAsync(TestConstants.TestOwnerId, new DlqOverviewFilter(Days: 7));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Totals.ReplayedCount.Should().Be(1);
+        result.Value.Totals.ArchivedCount.Should().Be(1);
+        result.Value.Totals.TotalDeadLettered.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_EntityNameFilter_NarrowsToMatchingEntity()
+    {
+        var ns = CreateNamespace("test-ns");
+        SetOwnedNamespaces(ns);
+
+        _dbContext.DlqMessages.AddRange(
+            Msg(ns.Id, 1, CloudProviderType.Azure, entity: "orders-queue"),
+            Msg(ns.Id, 2, CloudProviderType.Azure, entity: "payments-queue"));
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetOverviewAsync(
+            TestConstants.TestOwnerId,
+            new DlqOverviewFilter(EntityName: "orders"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Totals.TotalDeadLettered.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_StatusAndReplaySafetyFilters_ApplyTogether()
+    {
+        var ns = CreateNamespace("test-ns");
+        SetOwnedNamespaces(ns);
+
+        _dbContext.DlqMessages.AddRange(
+            Msg(ns.Id, 1, CloudProviderType.Azure, status: DlqMessageStatus.Active, replaySafety: ReplaySafetyLevels.Safe),
+            Msg(ns.Id, 2, CloudProviderType.Azure, status: DlqMessageStatus.Active, replaySafety: ReplaySafetyLevels.Unsafe));
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetOverviewAsync(
+            TestConstants.TestOwnerId,
+            new DlqOverviewFilter(Status: DlqMessageStatus.Active, ReplaySafety: ReplaySafetyLevels.Unsafe));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Totals.TotalDeadLettered.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_RecurringPattern_GroupsByCategoryAndRootCauseAcrossProvidersAndNamespaces()
+    {
+        var awsNs = CreateNamespace("aws-ns", CloudProviderType.Aws);
+        var azureNs = CreateNamespace("azure-ns", CloudProviderType.Azure);
+        SetOwnedNamespaces(awsNs, azureNs);
+
+        _dbContext.DlqMessages.AddRange(
+            Msg(awsNs.Id, 1, CloudProviderType.Aws, category: FailureCategory.Transient,
+                forensicRootCause: "SQL query timed out during message processing.",
+                replaySafety: ReplaySafetyLevels.Safe, categoryConfidence: 0.92),
+            Msg(azureNs.Id, 2, CloudProviderType.Azure, category: FailureCategory.Transient,
+                forensicRootCause: "SQL query timed out during message processing.",
+                replaySafety: ReplaySafetyLevels.RequiresReview, categoryConfidence: 0.88),
+            Msg(azureNs.Id, 3, CloudProviderType.Azure, category: FailureCategory.DataQuality,
+                forensicRootCause: "JSON deserialization failed — likely schema mismatch.",
+                replaySafety: ReplaySafetyLevels.Unsafe, categoryConfidence: 0.5));
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetOverviewAsync(TestConstants.TestOwnerId, new DlqOverviewFilter());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.RecurringPatterns.Should().HaveCount(2);
+
+        var timeoutPattern = result.Value.RecurringPatterns.Single(p => p.Category == FailureCategory.Transient);
+        timeoutPattern.Occurrences.Should().Be(2);
+        timeoutPattern.NamespaceCount.Should().Be(2);
+        timeoutPattern.AffectedProviders.Should().BeEquivalentTo([CloudProviderType.Aws, CloudProviderType.Azure]);
+        // Worst-case, not averaged away: one Safe + one RequiresReview reports RequiresReview.
+        timeoutPattern.ReplaySafety.Should().Be(ReplaySafetyLevels.RequiresReview);
+        timeoutPattern.Confidence.Should().Be("High");
+
+        var dataQualityPattern = result.Value.RecurringPatterns.Single(p => p.Category == FailureCategory.DataQuality);
+        dataQualityPattern.Occurrences.Should().Be(1);
+        dataQualityPattern.ReplaySafety.Should().Be(ReplaySafetyLevels.Unsafe);
+        dataQualityPattern.Confidence.Should().Be("Low");
+
+        result.Value.Totals.RecurringPatternCount.Should().Be(1); // only the timeout pattern recurs (2+ occurrences)
+        result.Value.Totals.NeedsInvestigationCount.Should().Be(2); // neither pattern's worst case is Safe
     }
 }

@@ -44,6 +44,8 @@ import type {
   DlqReasonBreakdown,
   DlqFailureCategory,
   DlqOverviewEnvironment,
+  DlqRecurringPattern,
+  DlqReplaySafety,
 } from '../api/dlqOverview';
 import type { RuleResponse } from '../api/rules';
 import type {
@@ -1044,6 +1046,39 @@ export function getMockDlqOverview(provider: CloudProviderType): DlqOverview {
     namespaces: activeCount > 0 ? [namespaceRow] : [],
   };
 
+  // One pattern per curated demo signature — unlike the live query (which groups raw messages
+  // by category + root cause), demo fixtures already are distinct, named signatures, so no
+  // re-grouping is needed. Demo Mode is single-provider/single-namespace, so AffectedProviders
+  // and NamespaceCount are always trivially [provider] / 1 here — a real fleet's cross-provider
+  // spread only ever appears against live data.
+  const recurringPatterns: DlqRecurringPattern[] = activeClusters
+    .map((c) => {
+      const category = demoReasonToDlqCategory(c.dominantDeadletterReason);
+      const replaySafety = DEMO_CATEGORY_TO_REPLAY_SAFETY[category];
+      return {
+        patternKey: c.signatureHash,
+        rootCauseSummary: c.explanation,
+        category,
+        occurrences: c.size,
+        percentOfTotal: activeCount > 0 ? Math.round((c.size / activeCount) * 1000) / 10 : 0,
+        affectedProviders: [provider],
+        namespaceCount: 1,
+        firstSeenAt: c.firstSeenAt,
+        lastSeenAt: c.windowEnd,
+        confidence: 'High' as const,
+        averageConfidence: 0.9,
+        replaySafety,
+        suggestedAction: demoSuggestedAction(replaySafety),
+        representativeNamespaceId: namespace.id,
+        representativeEntityName: c.dominantEntity,
+      };
+    })
+    .sort((a, b) => b.occurrences - a.occurrences);
+
+  const replayedCount = clusters.filter((c) => c.status === 'Resolved').reduce((sum, c) => sum + c.size, 0);
+  const archivedCount = clusters.filter((c) => c.status === 'Archived').reduce((sum, c) => sum + c.size, 0);
+  const totalObserved = clusters.reduce((sum, c) => sum + c.size, 0);
+
   return {
     generatedAt: new Date().toISOString(),
     windowDays: days,
@@ -1055,8 +1090,15 @@ export function getMockDlqOverview(provider: CloudProviderType): DlqOverview {
       affectedQueues,
       affectedTopics: 0,
       oldestMessageDetectedAt: oldestActive?.firstSeenAt ?? null,
+      replayedCount,
+      replayedChangePercent: null,
+      archivedCount,
+      totalObserved,
+      recurringPatternCount: recurringPatterns.filter((p) => p.occurrences >= 2).length,
+      needsInvestigationCount: recurringPatterns.filter((p) => p.replaySafety !== 'Safe').length,
     },
     providers: [providerOverview],
+    recurringPatterns,
   };
 }
 
@@ -1075,6 +1117,32 @@ const DEMO_REASON_TO_CATEGORY: Record<string, DlqFailureCategory> = {
 
 function demoReasonToDlqCategory(value: string): DlqFailureCategory {
   return DEMO_REASON_TO_CATEGORY[value] ?? 'unknown';
+}
+
+// Mirrors ReplaySafetyClassifier's category-level rules (backend, ReplaySafetyClassifier.cs) —
+// the delivery-count nuance on Transient/MaxDelivery doesn't apply at this fleet-wide, per-
+// category granularity, so this takes each rule's non-discounted branch.
+const DEMO_CATEGORY_TO_REPLAY_SAFETY: Record<DlqFailureCategory, DlqReplaySafety> = {
+  unknown: 'RequiresReview',
+  transient: 'Safe',
+  maxDelivery: 'RequiresReview',
+  expired: 'Unsafe',
+  dataQuality: 'Unsafe',
+  authorization: 'Unsafe',
+  processingError: 'RequiresReview',
+  resourceNotFound: 'RequiresReview',
+  quotaExceeded: 'RequiresReview',
+};
+
+function demoSuggestedAction(safety: DlqReplaySafety): string {
+  switch (safety) {
+    case 'Safe':
+      return 'Safe to auto-replay';
+    case 'Unsafe':
+      return 'Fix the root cause before replaying';
+    default:
+      return 'Review a sample before replaying';
+  }
 }
 
 // ─── Investigation Center (Incident Center) ─────────────────────────────────

@@ -30,6 +30,9 @@ public sealed class DlqOverviewController : ApiControllerBase
     /// <param name="environment">Optional environment filter.</param>
     /// <param name="namespaceId">Optional single-namespace filter.</param>
     /// <param name="reason">Optional failure-category filter.</param>
+    /// <param name="entityName">Optional entity-name substring filter.</param>
+    /// <param name="status">Optional message-status filter.</param>
+    /// <param name="replaySafety">Optional replay-safety filter (Safe, RequiresReview, Unsafe).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The cross-cloud DLQ overview snapshot.</returns>
     [HttpGet("overview")]
@@ -41,9 +44,12 @@ public sealed class DlqOverviewController : ApiControllerBase
         [FromQuery] EnvironmentType? environment = null,
         [FromQuery] Guid? namespaceId = null,
         [FromQuery] FailureCategory? reason = null,
+        [FromQuery] string? entityName = null,
+        [FromQuery] DlqMessageStatus? status = null,
+        [FromQuery] string? replaySafety = null,
         CancellationToken cancellationToken = default)
     {
-        var filter = new DlqOverviewFilter(days, cloud, environment, namespaceId, reason);
+        var filter = new DlqOverviewFilter(days, cloud, environment, namespaceId, reason, entityName, status, replaySafety);
         var result = await _overviewService.GetOverviewAsync(OwnerId, filter, cancellationToken);
         return ToActionResult(result);
     }

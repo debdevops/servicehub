@@ -17,7 +17,7 @@ const WORKSPACE_ROUTES: Array<{ path: string; label: string }> = [
   { path: '/incidents', label: 'Incident Center' },
   { path: '/fleet', label: 'Fleet Overview' },
   { path: '/cloud-bridge', label: 'Cloud Bridge' },
-  { path: '/dlq-history', label: 'DLQ Intelligence' },
+  { path: '/dlq-history', label: 'DLQ Message History' },
   { path: '/signatures', label: 'Failure Signatures' },
   { path: '/rules', label: 'Auto-Replay Rules' },
   { path: '/approval-queue', label: 'Approval Queue' },

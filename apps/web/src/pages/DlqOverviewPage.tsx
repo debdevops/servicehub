@@ -5,11 +5,11 @@ import {
   Layers,
   Boxes,
   Radio,
-  Clock,
   RefreshCw,
   Search,
   X,
   ChevronDown,
+  ChevronUp,
   Download,
   ExternalLink,
   Lightbulb,
@@ -17,6 +17,12 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Mail,
+  Archive,
+  Eye,
+  BarChart3,
+  Shield,
+  ShieldAlert,
+  Globe2,
 } from 'lucide-react';
 import { LineChart, Line, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDlqOverview } from '@servicehub/ui-shared/hooks/useDlqOverview';
@@ -24,12 +30,16 @@ import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { ProviderBadge, getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
 import { EnvironmentBadge } from '@/components/EnvironmentBadge';
+import { CategoryBadge } from '@/components/dlq';
 import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import type {
   DlqFailureCategory,
   DlqOverviewEnvironment,
   DlqOverviewNamespace,
   DlqProviderOverview,
+  DlqOverviewStatus,
+  DlqReplaySafety,
+  DlqRecurringPattern,
 } from '@servicehub/ui-shared/lib/api/dlqOverview';
 
 const DAYS_OPTIONS = [
@@ -71,7 +81,52 @@ const PROVIDER_HEX: Record<CloudProviderType, string> = {
   gcp: '#34A853',
 };
 
-const REASON_BAR_HEX = ['#ef4444', '#f59e0b', '#8b5cf6', '#0ea5e9', '#10b981'];
+const REASON_BAR_HEX = ['#ef4444', '#f59e0b', '#8b5cf6', '#0ea5e9', '#10b981', '#9ca3af'];
+
+// The backend's category query param binds an enum by name (case-insensitively), not the
+// camelCase JSON wire value — this recovers the PascalCase form for deep links into DLQ Message
+// History's category filter, and for CategoryBadge (which every other DLQ surface feeds PascalCase).
+const CATEGORY_WIRE_TO_PASCAL: Record<DlqFailureCategory, string> = {
+  unknown: 'Unknown',
+  transient: 'Transient',
+  maxDelivery: 'MaxDelivery',
+  expired: 'Expired',
+  dataQuality: 'DataQuality',
+  authorization: 'Authorization',
+  processingError: 'ProcessingError',
+  resourceNotFound: 'ResourceNotFound',
+  quotaExceeded: 'QuotaExceeded',
+};
+
+const STATUS_OPTIONS: DlqOverviewStatus[] = ['active', 'replayed', 'archived', 'discarded', 'replayFailed', 'resolved'];
+const STATUS_LABELS: Record<DlqOverviewStatus, string> = {
+  active: 'Active',
+  replayed: 'Replayed',
+  archived: 'Archived',
+  discarded: 'Discarded',
+  replayFailed: 'Replay Failed',
+  resolved: 'Resolved',
+};
+
+const REPLAY_SAFETY_OPTIONS: DlqReplaySafety[] = ['Safe', 'RequiresReview', 'Unsafe'];
+const REPLAY_SAFETY_LABELS: Record<DlqReplaySafety, string> = {
+  Safe: 'Safe',
+  RequiresReview: 'Requires Review',
+  Unsafe: 'Unsafe',
+};
+const REPLAY_SAFETY_STYLES: Record<DlqReplaySafety, string> = {
+  Safe: 'bg-green-50 text-green-700',
+  RequiresReview: 'bg-amber-50 text-amber-700',
+  Unsafe: 'bg-red-50 text-red-700',
+};
+
+const CONFIDENCE_STYLES: Record<string, string> = {
+  High: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  Medium: 'bg-amber-50 text-amber-700 border-amber-200',
+  Low: 'bg-gray-100 text-gray-500 border-gray-200',
+};
+
+const INITIAL_PATTERN_ROWS = 5;
 
 function formatAge(iso: string | null): string {
   if (!iso) return '—';
@@ -104,7 +159,11 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
   URL.revokeObjectURL(url);
 }
 
-function ChangeBadge({ percent }: { percent: number | null }) {
+// `goodDirection` says which direction of change is favorable — 'down' for backlog-shaped
+// metrics (fewer active dead letters is good, the default) and 'up' for activity-shaped ones
+// (more replays completed is good). The arrow always shows the real direction; only its color
+// flips.
+function ChangeBadge({ percent, goodDirection = 'down' }: { percent: number | null; goodDirection?: 'up' | 'down' }) {
   if (percent === null) {
     return <span className="text-[11px] font-semibold text-gray-400">New</span>;
   }
@@ -112,8 +171,9 @@ function ChangeBadge({ percent }: { percent: number | null }) {
     return <span className="text-[11px] font-semibold text-gray-400">flat</span>;
   }
   const up = percent > 0;
+  const isGood = up ? goodDirection === 'up' : goodDirection === 'down';
   return (
-    <span className={`inline-flex items-center gap-0.5 text-[11px] font-semibold ${up ? 'text-red-600' : 'text-emerald-600'}`}>
+    <span className={`inline-flex items-center gap-0.5 text-[11px] font-semibold ${isGood ? 'text-emerald-600' : 'text-red-600'}`}>
       {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
       {Math.abs(percent).toFixed(percent % 1 === 0 ? 0 : 1)}%
     </span>
@@ -142,6 +202,134 @@ function StatTile({
           {sub}
         </div>
         <div className="text-xs text-gray-500 mt-1 truncate">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Compact "what am I looking at" line — the provider/namespace/message counts the top-level
+ * KPI grid used to carry as its own tile before this page grew a Recurring Signatures section
+ * that needed the room more. */
+function ScopeStrip({
+  providerCount,
+  namespaceCount,
+  totalDeadLettered,
+}: {
+  providerCount: number;
+  namespaceCount: number;
+  totalDeadLettered: number;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-sm text-gray-600 bg-white border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm w-fit">
+      <Globe2 className="w-4 h-4 text-primary-500 shrink-0" />
+      <span className="font-medium text-gray-900">All connected namespaces</span>
+      <span className="text-gray-300">·</span>
+      <span>{providerCount} provider{providerCount === 1 ? '' : 's'}</span>
+      <span className="text-gray-300">·</span>
+      <span>{namespaceCount} namespace{namespaceCount === 1 ? '' : 's'}</span>
+      <span className="text-gray-300">·</span>
+      <span>{totalDeadLettered.toLocaleString()} DLQ messages</span>
+    </div>
+  );
+}
+
+/** All-providers trend + top-reasons rollup, summed client-side from each provider's own
+ * (already-fetched) daily trend and reason breakdown — no separate backend query, since the
+ * per-provider numbers already partition the fleet total. */
+function AllProvidersRollup({ providers }: { providers: DlqProviderOverview[] }) {
+  const trend = useMemo(() => {
+    const byDate = new Map<string, number>();
+    for (const p of providers) {
+      for (const point of p.dailyTrend) {
+        byDate.set(point.date, (byDate.get(point.date) ?? 0) + point.count);
+      }
+    }
+    return [...byDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, count]) => ({ date, count }));
+  }, [providers]);
+
+  const reasons = useMemo(() => {
+    const byCategory = new Map<DlqFailureCategory, number>();
+    let total = 0;
+    for (const p of providers) {
+      for (const r of p.topReasons) {
+        byCategory.set(r.category, (byCategory.get(r.category) ?? 0) + r.count);
+        total += r.count;
+      }
+    }
+    const sorted = [...byCategory.entries()].sort((a, b) => b[1] - a[1]);
+    const top = sorted.slice(0, 5);
+    const othersCount = sorted.slice(5).reduce((sum, [, count]) => sum + count, 0);
+    const rows = top.map(([category, count]) => ({
+      label: REASON_LABELS[category],
+      count,
+      percent: total > 0 ? Math.round((count / total) * 1000) / 10 : 0,
+    }));
+    if (othersCount > 0) {
+      rows.push({ label: 'Others', count: othersCount, percent: total > 0 ? Math.round((othersCount / total) * 1000) / 10 : 0 });
+    }
+    return rows;
+  }, [providers]);
+
+  const maxReasonCount = reasons[0]?.count ?? 0;
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+          <BarChart3 className="w-4 h-4 text-gray-400" />
+          DLQ Trend (All Providers)
+        </h3>
+        {trend.length > 0 ? (
+          <div style={{ width: '100%', height: 160 }}>
+            <ResponsiveContainer>
+              <LineChart data={trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={(d: string) => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                  tick={{ fontSize: 10, fill: '#9ca3af' }}
+                />
+                <Tooltip
+                  labelFormatter={(d) => new Date(d as string).toLocaleDateString()}
+                  formatter={(value) => [value as number, 'Active backlog']}
+                />
+                <Line type="monotone" dataKey="count" stroke="#dc2626" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400 italic py-10 text-center">No trend data for this window</p>
+        )}
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+          <AlertTriangle className="w-4 h-4 text-gray-400" />
+          Top Failure Reasons (All Providers)
+        </h3>
+        {reasons.length > 0 ? (
+          <div className="space-y-2.5">
+            {reasons.map((reason, i) => (
+              <div key={reason.label} className="flex items-center gap-2 text-xs">
+                <span className="w-28 shrink-0 text-gray-600 truncate">{reason.label}</span>
+                <div className="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: maxReasonCount > 0 ? `${(reason.count / maxReasonCount) * 100}%` : '0%',
+                      backgroundColor: REASON_BAR_HEX[i % REASON_BAR_HEX.length],
+                    }}
+                  />
+                </div>
+                <span className="w-12 shrink-0 text-right font-semibold text-gray-700">{reason.count.toLocaleString()}</span>
+                <span className="w-10 shrink-0 text-right text-gray-400">{reason.percent}%</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400 italic py-10 text-center">No dead-lettered messages</p>
+        )}
       </div>
     </div>
   );
@@ -317,6 +505,150 @@ function ProviderSection({
   );
 }
 
+/**
+ * Fleet-wide recurring failure patterns — see `DlqRecurringPattern`'s backend doc comment for why
+ * this is grouped by (category, root cause) rather than the AI signature-clustering pipeline: an
+ * overview page cannot afford one AI round trip per connected namespace on every load.
+ * "Investigate" deep-links into DLQ Message History for the pattern's single largest namespace,
+ * pre-filtered to its category — a real, working destination, not a fabricated signature page.
+ */
+function RecurringPatternsPanel({
+  patterns,
+  navPrefix,
+}: {
+  patterns: DlqRecurringPattern[];
+  navPrefix: string;
+}) {
+  const navigate = useNavigate();
+  const [expanded, setExpanded] = useState(false);
+
+  if (patterns.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center text-sm text-gray-400">
+        No recurring failure patterns in the current backlog.
+      </div>
+    );
+  }
+
+  const visible = expanded ? patterns : patterns.slice(0, INITIAL_PATTERN_ROWS);
+
+  const investigate = (p: DlqRecurringPattern) =>
+    navigate(
+      `${navPrefix}/dlq-history?namespace=${p.representativeNamespaceId}&category=${CATEGORY_WIRE_TO_PASCAL[p.category]}`,
+    );
+
+  return (
+    <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-gray-200">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Recurring Failure Signatures (All Providers)</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Patterns detected across every connected provider and namespace</p>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-[11px] text-gray-500">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium">#</th>
+              <th className="px-3 py-2 text-left font-medium">Signature / Pattern</th>
+              <th className="px-3 py-2 text-left font-medium">Providers</th>
+              <th className="px-3 py-2 text-left font-medium">Namespaces</th>
+              <th className="px-3 py-2 text-right font-medium">Occurrences</th>
+              <th className="px-3 py-2 text-right font-medium">% of Total</th>
+              <th className="px-3 py-2 text-left font-medium">First Seen</th>
+              <th className="px-3 py-2 text-left font-medium">Last Seen</th>
+              <th className="px-3 py-2 text-left font-medium">Confidence</th>
+              <th className="px-3 py-2 text-left font-medium">Category</th>
+              <th className="px-3 py-2 text-left font-medium">Replay Safety</th>
+              <th className="px-3 py-2 text-left font-medium">Suggested Action</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((p, i) => (
+              <tr key={p.patternKey} className="border-t border-gray-100 hover:bg-gray-50 align-top">
+                <td className="px-3 py-2.5 text-gray-400">{i + 1}</td>
+                <td className="px-3 py-2.5 font-medium text-gray-900 max-w-xs">{p.rootCauseSummary}</td>
+                <td className="px-3 py-2.5">
+                  <div className="flex items-center gap-1">
+                    {p.affectedProviders.map((prov) => (
+                      <ProviderBadge key={prov} provider={prov} />
+                    ))}
+                  </div>
+                </td>
+                <td className="px-3 py-2.5 text-gray-600">{p.namespaceCount}</td>
+                <td className="px-3 py-2.5 text-right font-semibold text-gray-900">{p.occurrences.toLocaleString()}</td>
+                <td className="px-3 py-2.5 text-right text-gray-500">{p.percentOfTotal}%</td>
+                <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">{new Date(p.firstSeenAt).toLocaleDateString()}</td>
+                <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">{new Date(p.lastSeenAt).toLocaleDateString()}</td>
+                <td className="px-3 py-2.5">
+                  <span
+                    className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium border ${CONFIDENCE_STYLES[p.confidence]}`}
+                    title={`Based on ${p.occurrences} occurrence(s) across ${p.namespaceCount} namespace(s) — not an AI-generated score`}
+                  >
+                    {p.confidence} ({Math.round(p.averageConfidence * 100)}%)
+                  </span>
+                </td>
+                <td className="px-3 py-2.5">
+                  <CategoryBadge category={CATEGORY_WIRE_TO_PASCAL[p.category]} />
+                </td>
+                <td className="px-3 py-2.5">
+                  <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${REPLAY_SAFETY_STYLES[p.replaySafety]}`}>
+                    {p.replaySafety === 'Unsafe' ? <ShieldAlert className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
+                    {REPLAY_SAFETY_LABELS[p.replaySafety]}
+                  </span>
+                </td>
+                <td className="px-3 py-2.5 text-gray-600 max-w-[200px]">{p.suggestedAction}</td>
+                <td className="px-3 py-2.5">
+                  <div className="flex items-center gap-1.5 justify-end">
+                    <button
+                      onClick={() => investigate(p)}
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 border border-primary-200 rounded-md transition-colors whitespace-nowrap"
+                    >
+                      <Eye className="w-3 h-3" />
+                      Investigate
+                    </button>
+                    <button
+                      onClick={() => navigate(`${navPrefix}/rules`)}
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md transition-colors whitespace-nowrap"
+                      title="Open Auto-Replay Rules to build a rule for this pattern"
+                    >
+                      <Zap className="w-3 h-3" />
+                      Create Rule
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {patterns.length > INITIAL_PATTERN_ROWS && (
+        <div className="border-t border-gray-100 px-5 py-2.5">
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="flex items-center gap-1 text-xs font-medium text-primary-700 hover:text-primary-800"
+          >
+            {expanded ? (
+              <>
+                <ChevronUp className="w-3.5 h-3.5" />
+                Show fewer
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-3.5 h-3.5" />
+                Show all {patterns.length} signatures
+              </>
+            )}
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function DlqOverviewPage() {
   const navigate = useNavigate();
   const { isDemoMode, cloudProvider } = useDemoContext();
@@ -326,6 +658,9 @@ export default function DlqOverviewPage() {
   const [environment, setEnvironment] = useState<DlqOverviewEnvironment | 'all'>('all');
   const [namespaceId, setNamespaceId] = useState('');
   const [reason, setReason] = useState<DlqFailureCategory | 'all'>('all');
+  const [entityName, setEntityName] = useState('');
+  const [status, setStatus] = useState<DlqOverviewStatus | 'all'>('all');
+  const [replaySafety, setReplaySafety] = useState<DlqReplaySafety | 'all'>('all');
   const [search, setSearch] = useState('');
 
   const { data: namespaces } = useNamespaces();
@@ -336,15 +671,29 @@ export default function DlqOverviewPage() {
     environment: environment === 'all' ? undefined : environment,
     namespaceId: namespaceId || undefined,
     reason: reason === 'all' ? undefined : reason,
+    entityName: entityName || undefined,
+    status: status === 'all' ? undefined : status,
+    replaySafety: replaySafety === 'all' ? undefined : replaySafety,
   });
 
-  const filtersActive = cloud !== 'all' || environment !== 'all' || namespaceId !== '' || reason !== 'all' || search !== '';
+  const filtersActive =
+    cloud !== 'all' ||
+    environment !== 'all' ||
+    namespaceId !== '' ||
+    reason !== 'all' ||
+    entityName !== '' ||
+    status !== 'all' ||
+    replaySafety !== 'all' ||
+    search !== '';
 
   const clearFilters = () => {
     setCloud('all');
     setEnvironment('all');
     setNamespaceId('');
     setReason('all');
+    setEntityName('');
+    setStatus('all');
+    setReplaySafety('all');
     setSearch('');
   };
 
@@ -383,9 +732,9 @@ export default function DlqOverviewPage() {
               <AlertTriangle className="w-5 h-5 text-red-600" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Dead-Letter Overview</h1>
+              <h1 className="text-xl font-bold text-gray-900">DLQ Intelligence</h1>
               <p className="text-sm text-gray-500">
-                Investigate and resolve dead-lettered messages (DLQ) across all clouds. Grouped by provider and namespace.
+                Analyze dead-letter messages across all connected namespaces. Identify recurring patterns and take action.
               </p>
             </div>
           </div>
@@ -440,40 +789,56 @@ export default function DlqOverviewPage() {
 
         {data && (
           <>
+            <ScopeStrip
+              providerCount={data.providers.length}
+              namespaceCount={data.totals.namespacesTotal}
+              totalDeadLettered={data.totals.totalDeadLettered}
+            />
+
             {/* Key metrics */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <StatTile
                 icon={<Mail className="w-5 h-5 text-red-600" />}
-                label="Total Dead-Lettered"
+                label="Active in DLQ"
                 value={data.totals.totalDeadLettered.toLocaleString()}
                 tone="bg-red-50"
                 sub={<ChangeBadge percent={data.totals.changePercent} />}
               />
               <StatTile
-                icon={<Layers className="w-5 h-5 text-indigo-600" />}
-                label="Namespaces with DLQ"
-                value={`${data.totals.namespacesWithDlq} / ${data.totals.namespacesTotal}`}
+                icon={<RefreshCw className="w-5 h-5 text-emerald-600" />}
+                label="Replayed"
+                value={data.totals.replayedCount.toLocaleString()}
+                tone="bg-emerald-50"
+                sub={<ChangeBadge percent={data.totals.replayedChangePercent} goodDirection="up" />}
+              />
+              <StatTile
+                icon={<Archive className="w-5 h-5 text-gray-500" />}
+                label="Archived"
+                value={data.totals.archivedCount.toLocaleString()}
+                tone="bg-gray-100"
+              />
+              <StatTile
+                icon={<BarChart3 className="w-5 h-5 text-indigo-600" />}
+                label="Total Observed"
+                value={data.totals.totalObserved.toLocaleString()}
                 tone="bg-indigo-50"
               />
               <StatTile
-                icon={<Boxes className="w-5 h-5 text-amber-600" />}
-                label="Affected Queues"
-                value={data.totals.affectedQueues}
-                tone="bg-amber-50"
-              />
-              <StatTile
-                icon={<Radio className="w-5 h-5 text-purple-600" />}
-                label="Affected Topics"
-                value={data.totals.affectedTopics}
+                icon={<Layers className="w-5 h-5 text-purple-600" />}
+                label="Recurring Signatures"
+                value={data.totals.recurringPatternCount.toLocaleString()}
                 tone="bg-purple-50"
               />
               <StatTile
-                icon={<Clock className="w-5 h-5 text-gray-600" />}
-                label="Oldest Message"
-                value={formatAge(data.totals.oldestMessageDetectedAt)}
-                tone="bg-gray-100"
+                icon={<Eye className="w-5 h-5 text-amber-600" />}
+                label="Needs Investigation"
+                value={data.totals.needsInvestigationCount.toLocaleString()}
+                tone="bg-amber-50"
               />
             </div>
+
+            {/* All-providers trend + top failure reasons */}
+            <AllProvidersRollup providers={data.providers} />
 
             {/* Search + filters */}
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-3 flex flex-wrap items-center gap-2">
@@ -557,6 +922,43 @@ export default function DlqOverviewPage() {
                 ))}
               </select>
 
+              <input
+                type="text"
+                value={entityName}
+                onChange={(e) => setEntityName(e.target.value)}
+                placeholder="Entity name…"
+                aria-label="Filter by entity name"
+                className="w-32 px-3 py-2 rounded-lg text-sm border border-gray-300 text-gray-700 placeholder-gray-400 bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
+              />
+
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as DlqOverviewStatus | 'all')}
+                aria-label="Filter by status"
+                className="px-3 py-2 rounded-lg text-sm border border-gray-300 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
+              >
+                <option value="all">All Statuses</option>
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {STATUS_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={replaySafety}
+                onChange={(e) => setReplaySafety(e.target.value as DlqReplaySafety | 'all')}
+                aria-label="Filter by replay safety"
+                className="px-3 py-2 rounded-lg text-sm border border-gray-300 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
+              >
+                <option value="all">All Replay Safety</option>
+                {REPLAY_SAFETY_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {REPLAY_SAFETY_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+
               {filtersActive && (
                 <button
                   onClick={clearFilters}
@@ -593,6 +995,9 @@ export default function DlqOverviewPage() {
                 ))}
               </div>
             )}
+
+            {/* Recurring failure signatures */}
+            <RecurringPatternsPanel patterns={data.recurringPatterns} navPrefix={navPrefix} />
 
             {/* Guidance banner */}
             <div className="flex flex-wrap items-center gap-4 bg-amber-50 border border-amber-200 rounded-xl p-4">

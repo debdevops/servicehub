@@ -9,7 +9,7 @@ import { getMockDlqOverview } from '../lib/demo/mockProviders';
  */
 export function useDlqOverview(params: DlqOverviewParams = {}, enabled = true) {
   const { isDemoMode, cloudProvider } = useDemoContext();
-  const { days = 7, cloud, environment, namespaceId, reason } = params;
+  const { days = 7, cloud, environment, namespaceId, reason, entityName, status, replaySafety } = params;
 
   const options: UseQueryOptions<DlqOverview> =
     isDemoMode && cloudProvider
@@ -18,7 +18,7 @@ export function useDlqOverview(params: DlqOverviewParams = {}, enabled = true) {
           queryFn: (): Promise<DlqOverview> => Promise.resolve(getMockDlqOverview(cloudProvider)),
         }
       : {
-          queryKey: ['dlq-overview', days, cloud, environment, namespaceId, reason],
+          queryKey: ['dlq-overview', days, cloud, environment, namespaceId, reason, entityName, status, replaySafety],
           queryFn: () => dlqOverviewApi.getOverview(params),
           enabled: !isDemoMode && enabled,
           staleTime: 15_000,
