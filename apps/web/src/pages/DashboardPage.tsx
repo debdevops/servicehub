@@ -1080,7 +1080,7 @@ export function DashboardPage() {
               className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-sm font-medium transition-colors"
             >
               <Activity className="w-4 h-4" />
-              Fleet Health
+              Fleet Overview
             </button>
             <button
               onClick={handleRefresh}
@@ -1172,7 +1172,7 @@ export function DashboardPage() {
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors"
               >
                 <Activity className="w-3.5 h-3.5" />
-                Fleet Health
+                Fleet Overview
               </button>
             </div>
 

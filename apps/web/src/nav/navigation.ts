@@ -168,12 +168,12 @@ export const NAV_ENTRIES: NavEntry[] = [
   {
     id: 'fleet',
     basePath: 'fleet',
-    label: 'Fleet Health',
+    label: 'Fleet Overview',
     icon: Layers,
     to: withPrefix('/fleet'),
     quickAccess: { group: 'Overview', color: 'indigo' },
-    commandPalette: { description: 'Dead-letter health across every namespace', keywords: 'fleet operations overnight' },
-    toolbarLabel: 'Fleet Health',
+    commandPalette: { description: 'Dead-letter health across every namespace', keywords: 'fleet operations overnight health' },
+    toolbarLabel: 'Fleet Overview',
   },
   {
     id: 'messages-active',

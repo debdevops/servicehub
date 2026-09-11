@@ -35,7 +35,7 @@ describe('IconRail', () => {
     // F5's old regression target, Live Tail, and a handful of others: still reachable via Quick
     // Access and the command palette, just no longer a permanent icon in this 56px rail.
     expect(screen.queryByLabelText('Live Tail')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Fleet Health')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Fleet Overview')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Auto-Replay Rules')).not.toBeInTheDocument();
   });
 

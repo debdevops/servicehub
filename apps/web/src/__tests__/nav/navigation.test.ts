@@ -118,7 +118,7 @@ describe('navigation registry (W2.4 — one nav definition)', () => {
       ['/scheduled', 'namespace=ns1', 'Scheduled Messages'],
       ['/dashboard', '', 'Namespace Overview'],
       ['/incidents', '', 'Incident Center'],
-      ['/fleet', '', 'Fleet Health'],
+      ['/fleet', '', 'Fleet Overview'],
       ['/cloud-bridge', '', 'Cloud Bridge'],
       ['/dlq-history', '', 'DLQ Intelligence'],
       ['/signatures', '', 'Failure Signatures'],

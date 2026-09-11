@@ -56,7 +56,7 @@ describe('QuickAccessPanel', () => {
     expect(screen.getByText('Live Tail')).toBeInTheDocument();
     expect(screen.getByText('Dead-Letter')).toBeInTheDocument();
     expect(screen.getByText('Namespace Overview')).toBeInTheDocument();
-    expect(screen.getByText('Fleet Health')).toBeInTheDocument();
+    expect(screen.getByText('Fleet Overview')).toBeInTheDocument();
     expect(screen.getByText('DLQ Intelligence')).toBeInTheDocument();
     expect(screen.getByText('Auto-Replay Rules')).toBeInTheDocument();
     expect(screen.getByText('Scheduled Messages')).toBeInTheDocument();

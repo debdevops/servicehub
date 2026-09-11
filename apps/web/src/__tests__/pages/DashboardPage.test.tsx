@@ -421,10 +421,10 @@ describe('DashboardPage', () => {
   });
 
   describe('fleet-level panels', () => {
-    it('header exposes Fleet Health and Add Namespace actions', () => {
+    it('header exposes Fleet Overview and Add Namespace actions', () => {
       render(<DashboardPage />, { wrapper: createWrapper() });
-      // "Fleet Health" appears twice: once in the header, once in Quick Actions.
-      expect(screen.getAllByRole('button', { name: /fleet health/i }).length).toBeGreaterThanOrEqual(2);
+      // "Fleet Overview" appears twice: once in the header, once in Quick Actions.
+      expect(screen.getAllByRole('button', { name: /fleet overview/i }).length).toBeGreaterThanOrEqual(2);
       expect(screen.getByRole('button', { name: /add namespace/i })).toBeInTheDocument();
     });
 
@@ -434,9 +434,9 @@ describe('DashboardPage', () => {
       expect(mockNavigate).toHaveBeenCalledWith('/connect');
     });
 
-    it('Fleet Health header button navigates to /fleet', () => {
+    it('Fleet Overview header button navigates to /fleet', () => {
       render(<DashboardPage />, { wrapper: createWrapper() });
-      const [headerButton] = screen.getAllByRole('button', { name: /fleet health/i });
+      const [headerButton] = screen.getAllByRole('button', { name: /fleet overview/i });
       fireEvent.click(headerButton);
       expect(mockNavigate).toHaveBeenCalledWith('/fleet');
     });

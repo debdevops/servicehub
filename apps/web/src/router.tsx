@@ -398,7 +398,7 @@ export const router = createBrowserRouter([
   // MainLayout with all feature routes — no DemoModeProvider, uses real API.
   // Reuses sharedChildren (same route list the /demo/* trees use) rather than a
   // hand-duplicated copy — a prior hand-duplicated copy had silently dropped the
-  // 'fleet' route, so the sidebar's Fleet Operations link 404'd to /welcome.
+  // 'fleet' route, so the sidebar's Fleet Overview link 404'd to /welcome.
   // Layout is lazy-loaded to defer MainLayout dependencies from initial bundle.
   {
     path: '/',

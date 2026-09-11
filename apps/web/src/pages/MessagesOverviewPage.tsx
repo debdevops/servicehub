@@ -1,8 +1,27 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Inbox, AlertTriangle, Globe, Plus, MessageSquare, Radio, Search, X, ChevronDown, RefreshCw } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  Inbox,
+  AlertTriangle,
+  Globe,
+  Plus,
+  MessageSquare,
+  Radio,
+  Search,
+  X,
+  ChevronDown,
+  ChevronRight,
+  RefreshCw,
+  ArrowLeft,
+  Layers,
+  Hash,
+  MoreVertical,
+  Copy,
+  Clock,
+} from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
-import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useQueues, useAllNamespacesQueues } from '@servicehub/ui-shared/hooks/useQueues';
 import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
 import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
@@ -11,22 +30,23 @@ import { EmptyState } from '@/components/EmptyState';
 import { setThemeProvider } from '@servicehub/ui-shared/lib/providerTheme';
 import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
-import type { Namespace } from '@servicehub/ui-shared/lib/api/types';
+import type { Namespace, CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 
 // ============================================================================
 // MessagesOverviewPage — multi-cloud entry point for Active / Dead-Letter
 // browsing. Shows every registered namespace (Azure, AWS, GCP) with its
-// queues and topic subscriptions as clickable widgets; clicking one jumps
+// queues and topic subscriptions in a scannable table; clicking one jumps
 // straight into that entity's message view with the right provider theme.
 // Reached from Quick Access "Active Messages" and "Dead-Letter".
 //
 // Built to stay usable at scale: sections are collapsible, entities are
 // sorted by message count (busiest first), each grid scrolls inside a capped
-// height, and a global search narrows every section — so even hundreds of
-// queues fit in a single window.
+// height, and cloud/namespace/entity-type filters plus a global search narrow
+// every section — so even hundreds of queues fit in a single window.
 // ============================================================================
 
 type OverviewTab = 'active' | 'deadletter';
+type EntityTypeFilter = 'all' | 'queues' | 'topics';
 
 // unsupported = the provider has no message-count API (e.g. GCP Pub/Sub) — the raw value is
 // always 0 regardless of real backlog, so a dash is shown instead of a misleading "0".
@@ -83,6 +103,153 @@ function CountBadge({
   );
 }
 
+function StatTile({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: number | string;
+  tone: string;
+}) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-center gap-3">
+      <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${tone}`}>{icon}</div>
+      <div className="min-w-0">
+        <div className="text-2xl font-semibold text-gray-900 leading-none">{value}</div>
+        <div className="text-xs text-gray-500 mt-1 truncate">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Row action menu (kebab) ───────────────────────────────────────────────
+
+interface RowMenuAction {
+  label: string;
+  icon?: ReactNode;
+  onClick: () => void;
+}
+
+function RowMenu({ actions, onClose, anchorRect }: { actions: RowMenuAction[]; onClose: () => void; anchorRect: DOMRect }) {
+  const top = anchorRect.bottom + 4;
+  const right = window.innerWidth - anchorRect.right;
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div
+        role="menu"
+        style={{ position: 'fixed', top, right }}
+        className="z-50 w-52 bg-white border border-gray-200 rounded-lg shadow-lg py-1"
+      >
+        {actions.map((action) => (
+          <button
+            key={action.label}
+            role="menuitem"
+            onClick={() => {
+              action.onClick();
+              onClose();
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50"
+          >
+            {action.icon}
+            {action.label}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function QueueRow({
+  namespace,
+  queue,
+  tab,
+  isAws,
+  onOpen,
+}: {
+  namespace: Namespace;
+  queue: { name: string; activeMessageCount: number; deadLetterMessageCount: number; scheduledMessageCount: number; status: string; deadLetterTargetQueue?: string | null };
+  tab: OverviewTab;
+  isAws: boolean;
+  onOpen: () => void;
+}) {
+  const navigate = useNavigate();
+  const { data: capabilitiesMap } = useProviderCapabilities();
+  const supportsCounts = getProviderCapabilities(capabilitiesMap, namespace.cloudProvider)?.supportsMessageCounts ?? true;
+  const [menuOpen, setMenuOpen] = useState<DOMRect | null>(null);
+  const count = tab === 'deadletter' ? queue.deadLetterMessageCount : queue.activeMessageCount;
+
+  return (
+    <tr
+      className="border-b border-gray-50 hover:bg-gray-50/80"
+      title={tab === 'deadletter' && queue.deadLetterTargetQueue ? `DLQ: ${queue.deadLetterTargetQueue}` : undefined}
+    >
+      <td className="px-3 py-2">
+        <span className="text-sm font-medium text-gray-800 truncate">{queue.name}</span>
+      </td>
+      <td className="px-3 py-2">
+        <CountBadge value={count} tab={tab} unsupported={!supportsCounts} approximate={isAws} />
+      </td>
+      <td className="px-3 py-2 text-xs text-gray-500">
+        {supportsCounts && queue.scheduledMessageCount > 0 ? queue.scheduledMessageCount.toLocaleString() : '—'}
+      </td>
+      <td className="px-3 py-2 text-xs text-gray-500">{queue.status || '—'}</td>
+      <td className="px-3 py-2">
+        <div className="flex items-center justify-end gap-1">
+          <button
+            onClick={onOpen}
+            className="px-2.5 py-1 text-xs font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-lg transition-colors"
+          >
+            View Messages
+          </button>
+          <button
+            onClick={(e) => setMenuOpen((e.currentTarget as HTMLElement).getBoundingClientRect())}
+            aria-label={`More actions for ${queue.name}`}
+            className="p-1 text-gray-400 hover:text-gray-700 rounded"
+          >
+            <MoreVertical className="w-4 h-4" />
+          </button>
+          {menuOpen && (
+            <RowMenu
+              anchorRect={menuOpen}
+              onClose={() => setMenuOpen(null)}
+              actions={[
+                {
+                  label: 'Copy queue name',
+                  icon: <Copy className="w-3.5 h-3.5" />,
+                  onClick: () => navigator.clipboard?.writeText(queue.name),
+                },
+                ...(queue.scheduledMessageCount > 0
+                  ? [
+                      {
+                        label: 'View scheduled',
+                        icon: <Clock className="w-3.5 h-3.5" />,
+                        onClick: () =>
+                          navigate(`/scheduled?namespace=${namespace.id}&queue=${encodeURIComponent(queue.name)}`),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 function TopicSubscriptions({
   namespace,
   topicName,
@@ -95,7 +262,6 @@ function TopicSubscriptions({
   navPrefix: string;
 }) {
   const navigate = useNavigate();
-  const style = getProviderStyle(namespace.cloudProvider);
   const { data: subscriptions } = useSubscriptions(namespace.id, topicName, false);
   const { data: capabilitiesMap } = useProviderCapabilities();
   const supportsCounts = getProviderCapabilities(capabilitiesMap, namespace.cloudProvider)?.supportsMessageCounts ?? true;
@@ -109,27 +275,100 @@ function TopicSubscriptions({
   }
 
   return (
-    <div className="space-y-1">
-      {subscriptions.map((sub) => (
-        <button
-          key={sub.name}
-          onClick={() => {
-            setThemeProvider(namespace.cloudProvider);
-            navigate(
-              `${navPrefix}/messages?namespace=${namespace.id}&topic=${encodeURIComponent(topicName)}&subscription=${encodeURIComponent(sub.name)}&queueType=${tab}`,
-            );
-          }}
-          className={`w-full flex items-center justify-between gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-left transition-colors ${style.cardHover}`}
-        >
-          <span className="text-sm text-gray-700 truncate">↳ {sub.name}</span>
-          <CountBadge
-            value={tab === 'deadletter' ? sub.deadLetterMessageCount : sub.activeMessageCount}
-            tab={tab}
-            unsupported={!supportsCounts}
-          />
-        </button>
-      ))}
-    </div>
+    <table className="w-full text-sm">
+      <tbody>
+        {subscriptions.map((sub) => (
+          <tr key={sub.name} className="border-t border-gray-100">
+            <td className="pl-6 pr-3 py-1.5 text-sm text-gray-600 truncate">↳ {sub.name}</td>
+            <td className="px-3 py-1.5">
+              <CountBadge
+                value={tab === 'deadletter' ? sub.deadLetterMessageCount : sub.activeMessageCount}
+                tab={tab}
+                unsupported={!supportsCounts}
+              />
+            </td>
+            <td className="px-3 py-1.5 text-right">
+              <button
+                onClick={() => {
+                  setThemeProvider(namespace.cloudProvider);
+                  navigate(
+                    `${navPrefix}/messages?namespace=${namespace.id}&topic=${encodeURIComponent(topicName)}&subscription=${encodeURIComponent(sub.name)}&queueType=${tab}`,
+                  );
+                }}
+                className="px-2.5 py-1 text-xs font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-lg transition-colors"
+              >
+                View Messages
+              </button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function TopicRow({
+  namespace,
+  topic,
+  tab,
+  navPrefix,
+}: {
+  namespace: Namespace;
+  topic: { name: string; subscriptionCount: number };
+  tab: OverviewTab;
+  navPrefix: string;
+}) {
+  const navigate = useNavigate();
+  const isAws = namespace.cloudProvider === 'aws';
+  const [expanded, setExpanded] = useState(false);
+
+  if (isAws) {
+    return (
+      <tr className="border-b border-gray-50 hover:bg-gray-50/80">
+        <td className="px-3 py-2" colSpan={3}>
+          <span className="text-sm font-medium text-gray-800 truncate">📢 {topic.name}</span>
+        </td>
+        <td className="px-3 py-2 text-right">
+          <button
+            onClick={() => {
+              setThemeProvider(namespace.cloudProvider);
+              navigate(`${navPrefix}/messages?namespace=${namespace.id}&topic=${encodeURIComponent(topic.name)}`);
+            }}
+            className="px-2.5 py-1 text-xs font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-lg transition-colors"
+          >
+            Fan-out →
+          </button>
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <>
+      <tr className="border-b border-gray-50 hover:bg-gray-50/80">
+        <td className="px-3 py-2" colSpan={2}>
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="flex items-center gap-1.5 text-sm font-medium text-gray-800 truncate"
+          >
+            {expanded ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}
+            📢 {topic.name}
+          </button>
+        </td>
+        <td className="px-3 py-2 text-xs text-gray-500">
+          {topic.subscriptionCount} sub{topic.subscriptionCount === 1 ? '' : 's'}
+        </td>
+        <td></td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={4} className="bg-gray-50/50 p-0">
+            <TopicSubscriptions namespace={namespace} topicName={topic.name} tab={tab} navPrefix={navPrefix} />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -138,11 +377,13 @@ function NamespaceEntitiesSection({
   tab,
   navPrefix,
   filter,
+  entityTypeFilter,
 }: {
   namespace: Namespace;
   tab: OverviewTab;
   navPrefix: string;
   filter: string;
+  entityTypeFilter: EntityTypeFilter;
 }) {
   const navigate = useNavigate();
   const style = getProviderStyle(namespace.cloudProvider);
@@ -150,6 +391,15 @@ function NamespaceEntitiesSection({
   const { data: topics } = useTopics(namespace.id, false);
   const isAws = namespace.cloudProvider === 'aws';
   const [collapsed, setCollapsed] = useState(false);
+
+  // A namespace-name match means the whole namespace is what the operator is looking for —
+  // show everything inside it rather than requiring every entity name to also match (a
+  // search for "orders-prod" used to hide the very namespace it named, because the filter
+  // only ever matched against queue/topic names).
+  const namespaceLabel = (namespace.displayName || namespace.name).toLowerCase();
+  const namespaceMatches = filter !== '' && namespaceLabel.includes(filter);
+  const effectiveFilter = namespaceMatches ? '' : filter;
+
   // While searching, every section stays open so matches are never hidden.
   const isOpen = filter ? true : !collapsed;
 
@@ -161,18 +411,27 @@ function NamespaceEntitiesSection({
   const countOf = (q: { activeMessageCount: number; deadLetterMessageCount: number }) =>
     tab === 'deadletter' ? q.deadLetterMessageCount : q.activeMessageCount;
 
+  const showQueues = entityTypeFilter !== 'topics';
+  const showTopics = entityTypeFilter !== 'queues';
+
   // Busiest entities first, so the ones that matter are visible without scrolling.
-  const visibleQueues = (queues ?? [])
-    .filter((q) => !dlqTargets.has(q.name))
-    .filter((q) => !filter || q.name.toLowerCase().includes(filter))
-    .sort((a, b) => countOf(b) - countOf(a) || a.name.localeCompare(b.name));
+  const visibleQueues = showQueues
+    ? (queues ?? [])
+        .filter((q) => !dlqTargets.has(q.name))
+        .filter((q) => !effectiveFilter || q.name.toLowerCase().includes(effectiveFilter))
+        .sort((a, b) => countOf(b) - countOf(a) || a.name.localeCompare(b.name))
+    : [];
 
   // SNS topics have no DLQ of their own — hide them on the dead-letter tab.
-  const visibleTopics = (isAws && tab === 'deadletter' ? [] : (topics ?? [])).filter(
-    (t) => !filter || t.name.toLowerCase().includes(filter),
-  );
+  const visibleTopics = showTopics
+    ? (isAws && tab === 'deadletter' ? [] : (topics ?? [])).filter(
+        (t) => !effectiveFilter || t.name.toLowerCase().includes(effectiveFilter),
+      )
+    : [];
 
-  const totalCount = visibleQueues.reduce((sum, q) => sum + countOf(q), 0);
+  const totalCount = (queues ?? [])
+    .filter((q) => !dlqTargets.has(q.name))
+    .reduce((sum, q) => sum + countOf(q), 0);
   const entityCount = visibleQueues.length + visibleTopics.length;
 
   const openQueue = (queueName: string) => {
@@ -180,11 +439,6 @@ function NamespaceEntitiesSection({
     navigate(
       `${navPrefix}/messages?namespace=${namespace.id}&queue=${encodeURIComponent(queueName)}&queueType=${tab}`,
     );
-  };
-
-  const openTopic = (topicName: string) => {
-    setThemeProvider(namespace.cloudProvider);
-    navigate(`${navPrefix}/messages?namespace=${namespace.id}&topic=${encodeURIComponent(topicName)}`);
   };
 
   if (filter && entityCount === 0 && !queuesLoading && !queuesError) {
@@ -238,24 +492,30 @@ function NamespaceEntitiesSection({
                     <MessageSquare className="w-3.5 h-3.5" /> Queues ({visibleQueues.length})
                   </h3>
                   {/* Capped height + inner scroll: many queues never blow up the page */}
-                  <div className="max-h-56 overflow-y-auto pr-1">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-                      {visibleQueues.map((queue) => (
-                        <button
-                          key={queue.name}
-                          onClick={() => openQueue(queue.name)}
-                          className={`flex items-center justify-between gap-2 px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-left transition-colors ${style.cardHover}`}
-                          title={
-                            tab === 'deadletter' && queue.deadLetterTargetQueue
-                              ? `DLQ: ${queue.deadLetterTargetQueue}`
-                              : undefined
-                          }
-                        >
-                          <span className="text-sm font-medium text-gray-800 truncate">{queue.name}</span>
-                          <CountBadge value={countOf(queue)} tab={tab} approximate={isAws} />
-                        </button>
-                      ))}
-                    </div>
+                  <div className="max-h-64 overflow-y-auto border border-gray-100 rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 bg-gray-50 text-[11px] text-gray-500">
+                        <tr>
+                          <th className="px-3 py-1.5 text-left font-medium">Name</th>
+                          <th className="px-3 py-1.5 text-left font-medium">{tab === 'deadletter' ? 'Dead-Letter' : 'Active'}</th>
+                          <th className="px-3 py-1.5 text-left font-medium">Scheduled</th>
+                          <th className="px-3 py-1.5 text-left font-medium">Status</th>
+                          <th className="px-3 py-1.5"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleQueues.map((queue) => (
+                          <QueueRow
+                            key={queue.name}
+                            namespace={namespace}
+                            queue={queue}
+                            tab={tab}
+                            isAws={isAws}
+                            onOpen={() => openQueue(queue.name)}
+                          />
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}
@@ -265,30 +525,14 @@ function NamespaceEntitiesSection({
                   <h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
                     <Radio className="w-3.5 h-3.5" /> Topics ({visibleTopics.length})
                   </h3>
-                  <div className="max-h-64 overflow-y-auto pr-1 space-y-3">
-                    {visibleTopics.map((topic) => (
-                      <div key={topic.name} className="border border-gray-100 rounded-lg p-2 bg-gray-50/50">
-                        {isAws ? (
-                          <button
-                            onClick={() => openTopic(topic.name)}
-                            className={`w-full flex items-center justify-between gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-left transition-colors ${style.cardHover}`}
-                          >
-                            <span className="text-sm font-medium text-gray-800 truncate">📢 {topic.name}</span>
-                            <span className={`text-xs font-medium ${style.accentText}`}>Fan-out →</span>
-                          </button>
-                        ) : (
-                          <>
-                            <p className="text-sm font-medium text-gray-800 px-1 pb-1.5 truncate">📢 {topic.name}</p>
-                            <TopicSubscriptions
-                              namespace={namespace}
-                              topicName={topic.name}
-                              tab={tab}
-                              navPrefix={navPrefix}
-                            />
-                          </>
-                        )}
-                      </div>
-                    ))}
+                  <div className="max-h-64 overflow-y-auto border border-gray-100 rounded-lg">
+                    <table className="w-full text-sm">
+                      <tbody>
+                        {visibleTopics.map((topic) => (
+                          <TopicRow key={topic.name} namespace={namespace} topic={topic} tab={tab} navPrefix={navPrefix} />
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}
@@ -303,11 +547,15 @@ function NamespaceEntitiesSection({
 export function MessagesOverviewPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { data: namespaces, isLoading } = useNamespaces();
+  const queryClient = useQueryClient();
+  const { data: namespaces, isLoading, isFetching, dataUpdatedAt } = useNamespaces();
   const { isDemoMode, cloudProvider } = useDemoContext();
   const navPrefix = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
   const [search, setSearch] = useState('');
   const filter = search.trim().toLowerCase();
+  const [providerFilter, setProviderFilter] = useState<CloudProviderType | 'all'>('all');
+  const [namespaceFilter, setNamespaceFilter] = useState<string>('');
+  const [entityTypeFilter, setEntityTypeFilter] = useState<EntityTypeFilter>('all');
 
   const tab: OverviewTab = searchParams.get('tab') === 'deadletter' ? 'deadletter' : 'active';
 
@@ -317,6 +565,49 @@ export function MessagesOverviewPage() {
 
   const isDeadLetter = tab === 'deadletter';
 
+  const visibleNamespaces = useMemo(
+    () =>
+      (namespaces ?? []).filter((ns) => {
+        if (providerFilter !== 'all' && ns.cloudProvider !== providerFilter) return false;
+        if (namespaceFilter && ns.id !== namespaceFilter) return false;
+        return true;
+      }),
+    [namespaces, providerFilter, namespaceFilter],
+  );
+
+  // Fleet-wide rollup for the metrics row — shares the same cached ['queues', id] /
+  // ['namespace-stats', id] queries every NamespaceEntitiesSection below already fetches, so
+  // this adds no extra network cost.
+  const liveStats = useAllNamespacesQueues((namespaces ?? []).map((ns) => ns.id), false);
+  const aggregate = useMemo(() => {
+    let totalMessages = 0;
+    let totalQueues = 0;
+    let totalTopics = 0;
+    let namespacesWithMessages = 0;
+    for (const s of liveStats) {
+      const relevant = tab === 'deadletter' ? s.totalDlq : s.totalActive;
+      totalMessages += relevant;
+      totalQueues += s.totalQueues;
+      totalTopics += s.totalTopics;
+      if (relevant > 0) namespacesWithMessages++;
+    }
+    return { totalMessages, totalQueues, totalTopics, namespacesWithMessages };
+  }, [liveStats, tab]);
+
+  const clearFilters = () => {
+    setSearch('');
+    setProviderFilter('all');
+    setNamespaceFilter('');
+    setEntityTypeFilter('all');
+  };
+  const filtersActive = search !== '' || providerFilter !== 'all' || namespaceFilter !== '' || entityTypeFilter !== 'all';
+
+  const handleRefresh = () => {
+    for (const key of ['queues', 'namespace-stats', 'topics', 'subscriptions']) {
+      queryClient.invalidateQueries({ queryKey: [key], refetchType: 'active' });
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
@@ -325,7 +616,20 @@ export function MessagesOverviewPage() {
           isDeadLetter ? 'from-red-600 to-red-500' : 'from-sky-600 to-sky-500'
         }`}
       >
-        <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 mb-1">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-1 text-xs font-medium text-white/80 hover:text-white"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Back
+          </button>
+          <span className="text-white/40 text-xs">/</span>
+          <span className="text-xs text-white/70">Overview</span>
+          <span className="text-white/40 text-xs">/</span>
+          <span className="text-xs text-white font-medium">{isDeadLetter ? 'Dead-Letter' : 'Active Messages'}</span>
+        </div>
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
             {isDeadLetter ? (
               <AlertTriangle className="w-6 h-6 text-white/80" />
@@ -342,49 +646,41 @@ export function MessagesOverviewPage() {
             </div>
           </div>
 
-          {/* Tab toggle */}
-          <div className="flex rounded-lg overflow-hidden border border-white/30">
+          <div className="flex items-center gap-3">
+            {dataUpdatedAt > 0 && (
+              <span className="text-xs text-white/70 hidden md:inline">
+                Last updated: {new Date(dataUpdatedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
             <button
-              onClick={() => setTab('active')}
-              className={`px-4 py-1.5 text-sm font-medium transition-colors ${
-                !isDeadLetter ? 'bg-white text-sky-700' : 'bg-white/10 text-white hover:bg-white/20'
-              }`}
+              onClick={handleRefresh}
+              disabled={isFetching}
+              aria-label="Refresh"
+              title="Refresh"
+              className="flex items-center gap-2 p-1.5 bg-white/20 hover:bg-white/30 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
             >
-              Active
+              <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
             </button>
-            <button
-              onClick={() => setTab('deadletter')}
-              className={`px-4 py-1.5 text-sm font-medium transition-colors ${
-                isDeadLetter ? 'bg-white text-red-700' : 'bg-white/10 text-white hover:bg-white/20'
-              }`}
-            >
-              Dead-Letter
-            </button>
+            {/* Tab toggle */}
+            <div className="flex rounded-lg overflow-hidden border border-white/30">
+              <button
+                onClick={() => setTab('active')}
+                className={`px-4 py-1.5 text-sm font-medium transition-colors ${
+                  !isDeadLetter ? 'bg-white text-sky-700' : 'bg-white/10 text-white hover:bg-white/20'
+                }`}
+              >
+                Active
+              </button>
+              <button
+                onClick={() => setTab('deadletter')}
+                className={`px-4 py-1.5 text-sm font-medium transition-colors ${
+                  isDeadLetter ? 'bg-white text-red-700' : 'bg-white/10 text-white hover:bg-white/20'
+                }`}
+              >
+                Dead-Letter
+              </button>
+            </div>
           </div>
-        </div>
-      </div>
-
-      {/* Search bar — narrows every namespace section at once */}
-      <div className="bg-white border-b border-gray-200 px-6 py-2.5 shrink-0">
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search queues and topics across all clouds…"
-            aria-label="Search entities"
-            className="w-full pl-9 pr-8 py-2 rounded-lg text-sm bg-white border border-gray-300 text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch('')}
-              aria-label="Clear search"
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
         </div>
       </div>
 
@@ -404,15 +700,153 @@ export function MessagesOverviewPage() {
           />
         ) : (
           <div className="space-y-5 max-w-5xl mx-auto">
-            {namespaces.map((ns) => (
-              <NamespaceEntitiesSection
-                key={ns.id}
-                namespace={ns}
-                tab={tab}
-                navPrefix={navPrefix}
-                filter={filter}
+            {/* Key metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <StatTile
+                icon={isDeadLetter ? <AlertTriangle className="w-5 h-5 text-red-600" /> : <Inbox className="w-5 h-5 text-sky-600" />}
+                label={isDeadLetter ? 'Total Dead-Letter Messages' : 'Total Active Messages'}
+                value={aggregate.totalMessages.toLocaleString()}
+                tone={isDeadLetter ? 'bg-red-50' : 'bg-sky-50'}
               />
-            ))}
+              <StatTile
+                icon={<MessageSquare className="w-5 h-5 text-indigo-600" />}
+                label="Queues"
+                value={aggregate.totalQueues}
+                tone="bg-indigo-50"
+              />
+              <StatTile
+                icon={<Radio className="w-5 h-5 text-purple-600" />}
+                label="Topics"
+                value={aggregate.totalTopics}
+                tone="bg-purple-50"
+              />
+              <StatTile
+                icon={<Layers className="w-5 h-5 text-emerald-600" />}
+                label="Namespaces with Messages"
+                value={`${aggregate.namespacesWithMessages} / ${namespaces.length}`}
+                tone="bg-emerald-50"
+              />
+            </div>
+
+            {/* Search + filters */}
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-3 flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[220px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search queues, topics or namespaces…"
+                  aria-label="Search entities"
+                  className="w-full pl-9 pr-8 py-2 rounded-lg text-sm bg-white border border-gray-300 text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+                />
+                {search && (
+                  <button
+                    onClick={() => setSearch('')}
+                    aria-label="Clear search"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              <select
+                value={providerFilter}
+                onChange={(e) => {
+                  const next = e.target.value as CloudProviderType | 'all';
+                  setProviderFilter(next);
+                  // A namespace selected under the old cloud filter may no longer be an
+                  // option in the dropdown above — drop it rather than leaving the page
+                  // stuck filtered to a namespace it no longer lets the user pick.
+                  const selectedNs = namespaces?.find((ns) => ns.id === namespaceFilter);
+                  if (selectedNs && next !== 'all' && selectedNs.cloudProvider !== next) {
+                    setNamespaceFilter('');
+                  }
+                }}
+                aria-label="Filter by cloud"
+                className="px-3 py-2 rounded-lg text-sm border border-gray-300 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+              >
+                <option value="all">All Clouds</option>
+                <option value="azure">Azure</option>
+                <option value="aws">AWS</option>
+                <option value="gcp">GCP</option>
+              </select>
+
+              <select
+                value={namespaceFilter}
+                onChange={(e) => setNamespaceFilter(e.target.value)}
+                aria-label="Filter by namespace"
+                className="px-3 py-2 rounded-lg text-sm border border-gray-300 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 max-w-[200px]"
+              >
+                <option value="">All Namespaces</option>
+                {namespaces
+                  .filter((ns) => providerFilter === 'all' || ns.cloudProvider === providerFilter)
+                  .map((ns) => (
+                    <option key={ns.id} value={ns.id}>
+                      {ns.displayName || ns.name}
+                    </option>
+                  ))}
+              </select>
+
+              <select
+                value={entityTypeFilter}
+                onChange={(e) => setEntityTypeFilter(e.target.value as EntityTypeFilter)}
+                aria-label="Filter by entity type"
+                className="px-3 py-2 rounded-lg text-sm border border-gray-300 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+              >
+                <option value="all">All Entity Types</option>
+                <option value="queues">Queues only</option>
+                <option value="topics">Topics only</option>
+              </select>
+
+              {filtersActive && (
+                <button
+                  onClick={clearFilters}
+                  className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Clear filters
+                </button>
+              )}
+            </div>
+
+            {visibleNamespaces.length === 0 ? (
+              <div className="bg-white border border-gray-200 rounded-xl p-8 text-center text-sm text-gray-400">
+                No namespaces match the current cloud/namespace filter.
+              </div>
+            ) : (
+              visibleNamespaces.map((ns) => (
+                <NamespaceEntitiesSection
+                  key={ns.id}
+                  namespace={ns}
+                  tab={tab}
+                  navPrefix={navPrefix}
+                  filter={filter}
+                  entityTypeFilter={entityTypeFilter}
+                />
+              ))
+            )}
+
+            {/* Guidance footer */}
+            <div className="flex flex-wrap items-center justify-between gap-4 bg-sky-50 border border-sky-100 rounded-xl px-5 py-4">
+              <div className="flex items-center gap-3">
+                <Hash className="w-5 h-5 text-sky-500 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-sky-900">Monitor your live messages</p>
+                  <p className="text-xs text-sky-700">
+                    Track message buildup, identify hotspots and take action before it impacts your applications.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate('/fleet')}
+                className="shrink-0 flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-lg transition-colors"
+              >
+                Go to Fleet Overview
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         )}
       </div>

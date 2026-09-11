@@ -5,7 +5,7 @@ import { resolveWorkspaceLabel } from '@/nav/navigation';
 
 /**
  * Browser-like Back/Forward for every Quick Access destination (Namespace
- * Overview, Incident Center, Fleet Health, Active Messages, Live Tail,
+ * Overview, Incident Center, Fleet Overview, Active Messages, Live Tail,
  * Dead-Letter, Scheduled Messages, Cloud Bridge, DLQ Intelligence, Failure
  * Signatures, Auto-Replay Rules, Approval Queue, Autonomy, Proactive
  * Insights, Multi-Cloud Trace, System Health, Audit Trail, Recovery

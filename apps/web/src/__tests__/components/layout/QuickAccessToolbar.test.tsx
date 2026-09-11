@@ -15,7 +15,7 @@ const WORKSPACE_ROUTES: Array<{ path: string; label: string }> = [
   { path: '/scheduled?namespace=ns1', label: 'Scheduled Messages' },
   { path: '/dashboard', label: 'Namespace Overview' },
   { path: '/incidents', label: 'Incident Center' },
-  { path: '/fleet', label: 'Fleet Health' },
+  { path: '/fleet', label: 'Fleet Overview' },
   { path: '/cloud-bridge', label: 'Cloud Bridge' },
   { path: '/dlq-history', label: 'DLQ Intelligence' },
   { path: '/signatures', label: 'Failure Signatures' },

@@ -395,7 +395,7 @@ function CloudHome({ provider, namespaces, navPrefix, otherProviders, onSwitch, 
       : []),
     { label: 'Auto-Replay Rules', to: `${navPrefix}/rules`, icon: Zap },
     { label: 'Approval Queue', to: `${navPrefix}/approval-queue`, icon: CheckCircle },
-    { label: 'Fleet Health', to: `${navPrefix}/fleet`, icon: Layers },
+    { label: 'Fleet Overview', to: `${navPrefix}/fleet`, icon: Layers },
   ];
 
   const isDemoRoute = navPrefix.startsWith('/demo/');

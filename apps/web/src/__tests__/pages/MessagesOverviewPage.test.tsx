@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MessagesOverviewPage } from '@/pages/MessagesOverviewPage';
 
 vi.mock('@servicehub/ui-shared/hooks/useNamespaces', () => ({ useNamespaces: vi.fn() }));
-vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({ useQueues: vi.fn() }));
+vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({ useQueues: vi.fn(), useAllNamespacesQueues: vi.fn() }));
 vi.mock('@servicehub/ui-shared/hooks/useTopics', () => ({ useTopics: vi.fn() }));
 vi.mock('@servicehub/ui-shared/hooks/useSubscriptions', () => ({ useSubscriptions: vi.fn() }));
+vi.mock('@servicehub/ui-shared/hooks/useCloudBridge', () => ({ useProviderCapabilities: vi.fn() }));
 
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async () => {
@@ -16,14 +17,17 @@ vi.mock('react-router-dom', async () => {
 });
 
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
-import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useQueues, useAllNamespacesQueues } from '@servicehub/ui-shared/hooks/useQueues';
 import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
 import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;
+const mockUseAllNamespacesQueues = useAllNamespacesQueues as ReturnType<typeof vi.fn>;
 const mockUseTopics = useTopics as ReturnType<typeof vi.fn>;
 const mockUseSubscriptions = useSubscriptions as ReturnType<typeof vi.fn>;
+const mockUseProviderCapabilities = useProviderCapabilities as ReturnType<typeof vi.fn>;
 
 const azureNs = {
   id: 'ns-azure',
@@ -71,22 +75,22 @@ function renderPage(initialEntry = '/messages-overview') {
 describe('MessagesOverviewPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseNamespaces.mockReturnValue({ data: [azureNs, awsNs], isLoading: false });
+    mockUseNamespaces.mockReturnValue({ data: [azureNs, awsNs], isLoading: false, isFetching: false, dataUpdatedAt: 0 });
     mockUseQueues.mockImplementation((id: string) => ({
       data: id === 'ns-aws' ? awsQueues : azureQueues,
       isLoading: false,
       isError: false,
     }));
+    mockUseAllNamespacesQueues.mockReturnValue([]);
     mockUseTopics.mockReturnValue({ data: [], isLoading: false });
     mockUseSubscriptions.mockReturnValue({ data: [], isLoading: false });
+    mockUseProviderCapabilities.mockReturnValue({ data: undefined });
   });
 
   it('renders a section per namespace across providers', () => {
     renderPage();
-    expect(screen.getByText('Dev SB')).toBeInTheDocument();
-    expect(screen.getByText('DevAWS')).toBeInTheDocument();
-    expect(screen.getByText('Azure')).toBeInTheDocument();
-    expect(screen.getByText('AWS')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Dev SB' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'DevAWS' })).toBeInTheDocument();
   });
 
   it('hides AWS companion DLQ queues as standalone widgets', () => {
@@ -95,9 +99,10 @@ describe('MessagesOverviewPage', () => {
     expect(screen.queryByText('sqs-orders-dlq')).not.toBeInTheDocument();
   });
 
-  it('navigates to the queue messages view on widget click (active tab)', () => {
+  it('navigates to the queue messages view on "View Messages" click (active tab)', () => {
     renderPage();
-    fireEvent.click(screen.getByText('orders'));
+    const row = screen.getByText('orders').closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'View Messages' }));
     expect(mockNavigate).toHaveBeenCalledWith(
       '/messages?namespace=ns-azure&queue=orders&queueType=active',
     );
@@ -105,7 +110,8 @@ describe('MessagesOverviewPage', () => {
 
   it('navigates with deadletter queueType when the dead-letter tab is selected', () => {
     renderPage('/messages-overview?tab=deadletter');
-    fireEvent.click(screen.getByText('sqs-orders'));
+    const row = screen.getByText('sqs-orders').closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'View Messages' }));
     expect(mockNavigate).toHaveBeenCalledWith(
       '/messages?namespace=ns-aws&queue=sqs-orders&queueType=deadletter',
     );
@@ -117,7 +123,7 @@ describe('MessagesOverviewPage', () => {
   });
 
   it('shows connect CTA when no namespaces exist', () => {
-    mockUseNamespaces.mockReturnValue({ data: [], isLoading: false });
+    mockUseNamespaces.mockReturnValue({ data: [], isLoading: false, isFetching: false, dataUpdatedAt: 0 });
     renderPage();
     expect(screen.getByText('No namespaces connected')).toBeInTheDocument();
   });
@@ -131,19 +137,19 @@ describe('MessagesOverviewPage', () => {
       sizeInBytes: 0,
       status: 'Active',
     }));
-    mockUseNamespaces.mockReturnValue({ data: [azureNs], isLoading: false });
+    mockUseNamespaces.mockReturnValue({ data: [azureNs], isLoading: false, isFetching: false, dataUpdatedAt: 0 });
     mockUseQueues.mockReturnValue({ data: manyQueues, isLoading: false, isError: false });
 
     const { container } = renderPage();
 
     // Busiest queue (q-29) renders before the quietest (q-0)
-    const labels = Array.from(container.querySelectorAll('section button span')).map(
+    const labels = Array.from(container.querySelectorAll('table tbody tr td:first-child span')).map(
       (el) => el.textContent,
     );
     expect(labels.indexOf('q-29')).toBeGreaterThan(-1);
     expect(labels.indexOf('q-29')).toBeLessThan(labels.indexOf('q-0'));
     // Grid scrolls inside a capped container instead of growing the page
-    expect(container.querySelector('.max-h-56.overflow-y-auto')).toBeTruthy();
+    expect(container.querySelector('.max-h-64.overflow-y-auto')).toBeTruthy();
     expect(screen.getByText('Queues (30)')).toBeInTheDocument();
   });
 
@@ -152,17 +158,66 @@ describe('MessagesOverviewPage', () => {
     fireEvent.change(screen.getByLabelText('Search entities'), { target: { value: 'sqs' } });
     expect(screen.getByText('sqs-orders')).toBeInTheDocument();
     // Azure namespace has no matching entities → its whole section disappears
-    expect(screen.queryByText('Dev SB')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Dev SB' })).not.toBeInTheDocument();
     expect(screen.queryByText('orders')).not.toBeInTheDocument();
   });
 
+  it('shows every entity in a namespace when the search matches the namespace name itself', () => {
+    renderPage();
+    fireEvent.change(screen.getByLabelText('Search entities'), { target: { value: 'dev sb' } });
+    expect(screen.getByRole('heading', { name: 'Dev SB' })).toBeInTheDocument();
+    expect(screen.getByText('orders')).toBeInTheDocument();
+  });
+
   it('sections collapse and expand from the header', () => {
-    mockUseNamespaces.mockReturnValue({ data: [azureNs], isLoading: false });
+    mockUseNamespaces.mockReturnValue({ data: [azureNs], isLoading: false, isFetching: false, dataUpdatedAt: 0 });
     renderPage();
     expect(screen.getByText('orders')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Dev SB/ }));
     expect(screen.queryByText('orders')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Dev SB/ }));
     expect(screen.getByText('orders')).toBeInTheDocument();
+  });
+
+  it('filters sections by cloud provider', () => {
+    renderPage();
+    fireEvent.change(screen.getByLabelText('Filter by cloud'), { target: { value: 'aws' } });
+    expect(screen.getByRole('heading', { name: 'DevAWS' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Dev SB' })).not.toBeInTheDocument();
+  });
+
+  it('filters sections down to a single selected namespace', () => {
+    renderPage();
+    fireEvent.change(screen.getByLabelText('Filter by namespace'), { target: { value: 'ns-azure' } });
+    expect(screen.getByRole('heading', { name: 'Dev SB' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'DevAWS' })).not.toBeInTheDocument();
+  });
+
+  it('hides queues when the entity type filter is set to Topics only', () => {
+    mockUseNamespaces.mockReturnValue({ data: [azureNs], isLoading: false, isFetching: false, dataUpdatedAt: 0 });
+    mockUseTopics.mockReturnValue({ data: [{ name: 'orders-topic', subscriptionCount: 1, sizeInBytes: 0, status: 'Active' }], isLoading: false });
+    renderPage();
+    fireEvent.change(screen.getByLabelText('Filter by entity type'), { target: { value: 'topics' } });
+    expect(screen.queryByText('orders')).not.toBeInTheDocument();
+    expect(screen.getByText(/orders-topic/)).toBeInTheDocument();
+  });
+
+  it('clears all active filters', () => {
+    renderPage();
+    fireEvent.change(screen.getByLabelText('Search entities'), { target: { value: 'sqs' } });
+    expect(screen.getByRole('button', { name: /clear filters/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /clear filters/i }));
+    expect(screen.getByRole('heading', { name: 'Dev SB' })).toBeInTheDocument();
+  });
+
+  it('shows aggregate key metrics for the active tab', () => {
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns-azure', totalActive: 4, totalDlq: 1, totalScheduled: 0, totalQueues: 1, totalTopics: 0, totalSubscriptions: 0, isLoading: false, isError: false },
+      { namespaceId: 'ns-aws', totalActive: 2, totalDlq: 3, totalScheduled: 0, totalQueues: 2, totalTopics: 0, totalSubscriptions: 0, isLoading: false, isError: false },
+    ]);
+    renderPage();
+    expect(screen.getByText('Total Active Messages')).toBeInTheDocument();
+    expect(screen.getByText('6')).toBeInTheDocument(); // 4 + 2
+    expect(screen.getByText('2 / 2')).toBeInTheDocument(); // namespaces with messages
   });
 });

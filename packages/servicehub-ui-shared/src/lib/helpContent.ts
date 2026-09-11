@@ -523,9 +523,9 @@ export const helpSections: HelpSection[] = [
           'Rolls up every Failure Signature across every connected namespace into one "what needs attention right now" screen.',
       },
       {
-        question: 'Fleet Health',
+        question: 'Fleet Overview',
         answer:
-          'Cross-namespace dead-letter health at a glance — total active backlog, what changed in the last 24h–7d, and a worst-first namespace table.',
+          'Cross-namespace dead-letter health at a glance — total active backlog, what changed in the last 24h–30d, and a worst-first namespace table.',
       },
       {
         question: 'Live Tail',

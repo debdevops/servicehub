@@ -151,20 +151,21 @@ describe('FleetPage', () => {
     mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
     renderPage();
 
-    expect(screen.getByText('Fleet Operations')).toBeInTheDocument();
-    expect(screen.getByText('12')).toBeInTheDocument(); // total active
+    expect(screen.getByText('Fleet Overview')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument(); // total active dead-letters
     expect(screen.getByText('orders-prod')).toBeInTheDocument();
     expect(screen.getByText('reporting-dev')).toBeInTheDocument();
     expect(screen.getByText('events-dev')).toBeInTheDocument();
-    // "at risk" tile = 2 (critical + warning namespaces)
-    expect(screen.getByText(/Namespaces at risk/i)).toBeInTheDocument();
+    // "at risk" count (critical + warning) shown alongside the namespace count tile
+    expect(screen.getByText(/2 at risk/i)).toBeInTheDocument();
   });
 
-  it('navigates to DLQ history when a namespace row is clicked', () => {
+  it('navigates to DLQ history when a row\'s View button is clicked', () => {
     mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
     renderPage();
 
-    fireEvent.click(screen.getByText('orders-prod'));
+    const row = screen.getByText('orders-prod').closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'View' }));
     expect(mockNavigate).toHaveBeenCalledWith('/dlq-history?namespace=ns-critical');
   });
 
@@ -199,9 +200,6 @@ describe('FleetPage', () => {
 
   it('never renders "Healthy" (emerald) styling for a provider with 0 namespaces (flag on, unconnected)', () => {
     mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
-    // Both checks report Healthy ("No namespaces configured" is still a Healthy result
-    // from AwsHealthCheck) but this operator has 0 namespaces for either — must not
-    // read as connected/emerald just because the raw health-check status says Healthy.
     mockUseNamespaces.mockReturnValue({ data: [] });
     mockUseHealthReport.mockReturnValue({
       data: {
@@ -240,7 +238,7 @@ describe('FleetPage', () => {
     mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
     renderPage();
 
-    fireEvent.click(screen.getByRole('button', { name: 'AWS' }));
+    fireEvent.click(screen.getByRole('button', { name: /^AWS \(1\)$/ }));
 
     expect(screen.getByText('reporting-dev')).toBeInTheDocument();
     expect(screen.queryByText('orders-prod')).not.toBeInTheDocument();
@@ -257,62 +255,82 @@ describe('FleetPage', () => {
     expect(screen.queryByText('orders-prod')).not.toBeInTheDocument();
   });
 
-  it('shows a bulk-actions deep link for at-risk, non-prod namespaces only', () => {
+  it('opens the row menu and offers bulk replay/purge only for at-risk, non-prod namespaces', () => {
     mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
     renderPage();
 
-    const bulkLinks = screen.getAllByTitle('Open bulk replay/purge for this namespace');
-    expect(bulkLinks).toHaveLength(1); // only events-dev: non-prod with active DLQ messages
+    const row = screen.getByText('events-dev').closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByLabelText('More actions for events-dev'));
 
-    fireEvent.click(bulkLinks[0]);
+    const bulkItem = screen.getByRole('menuitem', { name: 'Open bulk replay/purge' });
+    expect(bulkItem).not.toBeDisabled();
+    fireEvent.click(bulkItem);
     expect(mockNavigate).toHaveBeenCalledWith('/dlq-history?namespace=ns-dev-active&openBulk=true');
   });
 
-  it('shows per-namespace resolved count and top entity', () => {
+  it('disables bulk replay/purge in the row menu for a prod namespace', () => {
     mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
     renderPage();
+
+    const row = screen.getByText('orders-prod').closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByLabelText('More actions for orders-prod'));
+
+    expect(screen.getByRole('menuitem', { name: 'Open bulk replay/purge' })).toBeDisabled();
+  });
+
+  it('expands a namespace row to show new/resolved/total/top-category detail', () => {
+    mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    renderPage();
+
+    expect(screen.queryByText('orders (40)')).not.toBeInTheDocument();
+    const row = screen.getByText('orders-prod').closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByLabelText('Expand details'));
 
     expect(screen.getByText('orders (40)')).toBeInTheDocument();
-    expect(screen.getByText('events (5)')).toBeInTheDocument();
-
-    const ordersRow = screen.getByText('orders-prod').closest('tr');
-    expect(ordersRow).not.toBeNull();
-    expect(within(ordersRow as HTMLElement).getByText('1')).toBeInTheDocument(); // resolvedInWindow
-
-    const healthyRow = screen.getByText('reporting-dev').closest('tr');
-    expect(healthyRow).not.toBeNull();
-    // resolvedInWindow (0) and topEntity (null) both render as '—' for this namespace
-    expect(within(healthyRow as HTMLElement).getAllByText('—').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('100')).toBeInTheDocument(); // total (all-time)
   });
 
-  it('shows the all-time total DLQ count per namespace', () => {
+  it('shows the namespace health distribution counts', () => {
     mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
     renderPage();
 
-    const headers = screen.getAllByRole('columnheader');
-    const totalColumnIndex = headers.findIndex((h) => h.textContent === 'Total');
-    expect(totalColumnIndex).toBeGreaterThan(-1);
-
-    const ordersRow = screen.getByText('orders-prod').closest('tr') as HTMLElement;
-    expect(within(ordersRow).getAllByRole('cell')[totalColumnIndex]).toHaveTextContent('100');
-
-    const healthyRow = screen.getByText('reporting-dev').closest('tr') as HTMLElement;
-    expect(within(healthyRow).getAllByRole('cell')[totalColumnIndex]).toHaveTextContent('0');
+    expect(screen.getByText('Namespace health')).toBeInTheDocument();
+    expect(screen.getAllByText('Critical').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Needs Attention').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Healthy').length).toBeGreaterThan(0);
   });
 
-  it('links back to the per-namespace dashboard', () => {
+  it('links back to the namespace overview page', () => {
     mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
     renderPage();
 
-    expect(screen.getByRole('link', { name: /per-namespace details/i })).toHaveAttribute('href', '/dashboard');
+    expect(screen.getByRole('link', { name: /namespace overview/i })).toHaveAttribute('href', '/dashboard');
   });
 
-  it('never shows a Healthy dot for an unmonitored namespace with zero known dead-letters', () => {
+  it('never shows a Healthy badge for an unmonitored namespace with zero known dead-letters', () => {
     mockUseFleetOverview.mockReturnValue({ data: unmonitoredOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
     renderPage();
 
     const row = screen.getByText('acme-aws-prod').closest('tr') as HTMLElement;
-    expect(within(row).queryByTitle('Healthy')).not.toBeInTheDocument();
+    expect(within(row).getByText('Not monitored')).toBeInTheDocument();
     expect(within(row).getByTitle('AWS SQS has no non-destructive peek.')).toBeInTheDocument();
+  });
+
+  it('exports selected namespaces to CSV', () => {
+    mockUseFleetOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, refetch: vi.fn(), isFetching: false });
+    const createObjectURL = vi.fn().mockReturnValue('blob:mock');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
+    renderPage();
+
+    const row = screen.getByText('orders-prod').closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByLabelText('Select orders-prod'));
+
+    expect(screen.getByText('1 selected')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /bulk actions/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Export selected (CSV)' }));
+
+    expect(createObjectURL).toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });

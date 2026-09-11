@@ -120,7 +120,7 @@ const QUICK_ACCESS_ENTRIES = NAV_ENTRIES.filter((entry) => entry.quickAccess);
  * Collapsible, draggable, and independently resizable. Nothing was removed in the regroup: every
  * destination is still here, under a name that matches where it sits in the operator's loop.
  *
- * Overview is the "look" surfaces (Home, Namespace Overview, Incident Center, Fleet Health).
+ * Overview is the "look" surfaces (Home, Namespace Overview, Incident Center, Fleet Overview).
  * Observe is everywhere an operator browses or diagnoses without changing state (message
  * browsing, Live Tail, Cloud Bridge, DLQ Intelligence, Proactive Insights, Multi-Cloud Trace).
  * Recover is deliberately narrow — only Auto-Replay Rules and Approval Queue, the two surfaces

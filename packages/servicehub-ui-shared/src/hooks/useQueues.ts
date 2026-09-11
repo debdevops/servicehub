@@ -56,6 +56,11 @@ export interface NamespaceQueueStats {
   totalScheduled: number;
   totalQueues: number;
   totalTopics: number;
+  totalSubscriptions: number;
+  /** When this namespace's queue list last settled (client fetch time — a freshness signal
+   * for "last updated" displays, not a server-side scan timestamp). Undefined until the
+   * first successful fetch. */
+  dataUpdatedAt: number | undefined;
   isLoading: boolean;
   isError: boolean;
 }
@@ -166,6 +171,8 @@ export function useAllNamespacesQueues(
       totalScheduled: stats?.totalScheduled ?? queues?.reduce((s, q) => s + q.scheduledMessageCount, 0) ?? 0,
       totalQueues: stats?.totalQueues ?? queues?.length ?? 0,
       totalTopics: stats?.totalTopics ?? 0,
+      totalSubscriptions: stats?.totalSubscriptions ?? 0,
+      dataUpdatedAt: result.dataUpdatedAt || undefined,
       isLoading: result.isLoading || (statsResults[i]?.isLoading ?? false),
       isError: result.isError,
     };
