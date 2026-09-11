@@ -19,6 +19,7 @@ const severityStyles: Record<FleetHealthSeverity, { dot: string; text: string; b
 
 interface FleetHealthSectionProps {
   fleetHealth: FleetHealthSummary | null | undefined;
+  navPrefix: string;
 }
 
 /**
@@ -26,14 +27,14 @@ interface FleetHealthSectionProps {
  * data FleetPage renders, capped server-side to the worst-N namespaces. Answers "which
  * namespaces require attention" inside Incident Center, without duplicating FleetPage's table.
  */
-export function FleetHealthSection({ fleetHealth }: FleetHealthSectionProps) {
+export function FleetHealthSection({ fleetHealth, navPrefix }: FleetHealthSectionProps) {
   const navigate = useNavigate();
 
   if (!fleetHealth) return null;
 
   const { namespaceCount, totalActive, topUnhealthyNamespaces } = fleetHealth;
 
-  const goToNamespace = (n: FleetNamespaceHealth) => navigate(`/dlq-history?namespace=${n.namespaceId}`);
+  const goToNamespace = (n: FleetNamespaceHealth) => navigate(`${navPrefix}/dlq-history?namespace=${n.namespaceId}`);
 
   return (
     <div className="mb-6">
@@ -42,7 +43,7 @@ export function FleetHealthSection({ fleetHealth }: FleetHealthSectionProps) {
           <Layers className="w-4 h-4" /> Fleet Health
         </h2>
         <Link
-          to="/fleet"
+          to={`${navPrefix}/fleet`}
           className="text-xs font-medium text-blue-700 hover:text-blue-900 inline-flex items-center gap-1"
         >
           View all fleet health

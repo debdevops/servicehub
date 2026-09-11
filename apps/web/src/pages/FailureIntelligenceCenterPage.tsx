@@ -9,6 +9,7 @@ import {
   type NewSignatureItem,
 } from '@servicehub/ui-shared/hooks/useInvestigationQueue';
 import { formatRelativeTime } from '@servicehub/ui-shared/lib/utils';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { JOB_STATUS_STYLES } from '@/components/dlq/replayStatusStyles';
 import { FleetHealthSection } from '@/components/dlq/FleetHealthSection';
 
@@ -92,7 +93,7 @@ function MetricsHeader({ metrics }: { metrics: CompactMetricsSummary | undefined
   );
 }
 
-function HighestPriorityBanner({ item }: { item: InvestigationQueueItem }) {
+function HighestPriorityBanner({ item, navPrefix }: { item: InvestigationQueueItem; navPrefix: string }) {
   const navigate = useNavigate();
   const { color } = getPriorityLevel(item.priorityScore);
 
@@ -120,7 +121,7 @@ function HighestPriorityBanner({ item }: { item: InvestigationQueueItem }) {
       </div>
       <div className="flex gap-2 flex-wrap">
         <button
-          onClick={() => navigate(`/signatures/${item.signatureHash}?namespace=${item.namespaceId}`)}
+          onClick={() => navigate(`${navPrefix}/incidents/${item.signatureHash}?namespace=${item.namespaceId}`)}
           className={`inline-flex items-center gap-1 text-xs px-3 py-2 font-medium rounded-md transition-colors border ${color.border} ${color.bg} ${color.text} hover:opacity-75`}
           aria-label="Investigate incident"
         >
@@ -129,7 +130,7 @@ function HighestPriorityBanner({ item }: { item: InvestigationQueueItem }) {
         </button>
         {item.isEscalating && (
           <button
-            onClick={() => navigate(`/signatures/${item.signatureHash}?namespace=${item.namespaceId}&tab=replay`)}
+            onClick={() => navigate(`${navPrefix}/incidents/${item.signatureHash}?namespace=${item.namespaceId}&tab=recovery`)}
             className="inline-flex items-center gap-1 text-xs px-3 py-2 font-medium rounded-md bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 transition-colors"
             aria-label="Preview replay"
           >
@@ -142,7 +143,7 @@ function HighestPriorityBanner({ item }: { item: InvestigationQueueItem }) {
   );
 }
 
-function InvestigationQueueSection({ items }: { items: InvestigationQueueItem[] | undefined }) {
+function InvestigationQueueSection({ items, navPrefix }: { items: InvestigationQueueItem[] | undefined; navPrefix: string }) {
   const navigate = useNavigate();
 
   if (!items || items.length === 0) {
@@ -160,7 +161,7 @@ function InvestigationQueueSection({ items }: { items: InvestigationQueueItem[] 
 
   return (
     <>
-      <HighestPriorityBanner item={highestPriority} />
+      <HighestPriorityBanner item={highestPriority} navPrefix={navPrefix} />
 
       {remainingItems.length > 0 && (
         <div className="mb-6">
@@ -184,7 +185,7 @@ function InvestigationQueueSection({ items }: { items: InvestigationQueueItem[] 
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   <button
-                    onClick={() => navigate(`/signatures/${item.signatureHash}?namespace=${item.namespaceId}`)}
+                    onClick={() => navigate(`${navPrefix}/incidents/${item.signatureHash}?namespace=${item.namespaceId}`)}
                     className="text-xs px-3 py-1.5 bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 transition-colors font-medium"
                     aria-label={`Investigate ${item.displayName}`}
                   >
@@ -192,7 +193,7 @@ function InvestigationQueueSection({ items }: { items: InvestigationQueueItem[] 
                     Investigate
                   </button>
                   <button
-                    onClick={() => navigate(`/signatures/${item.signatureHash}?namespace=${item.namespaceId}&tab=knowledge`)}
+                    onClick={() => navigate(`${navPrefix}/signatures/${item.signatureHash}?namespace=${item.namespaceId}`)}
                     className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors font-medium"
                     aria-label={`Review knowledge for ${item.displayName}`}
                   >
@@ -200,7 +201,7 @@ function InvestigationQueueSection({ items }: { items: InvestigationQueueItem[] 
                     Knowledge
                   </button>
                   <button
-                    onClick={() => navigate(`/signatures/${item.signatureHash}?namespace=${item.namespaceId}&tab=replay`)}
+                    onClick={() => navigate(`${navPrefix}/incidents/${item.signatureHash}?namespace=${item.namespaceId}&tab=recovery`)}
                     className="text-xs px-3 py-1.5 bg-amber-50 text-amber-700 rounded-md hover:bg-amber-100 transition-colors font-medium"
                     aria-label={`Preview replay for ${item.displayName}`}
                   >
@@ -220,7 +221,7 @@ function InvestigationQueueSection({ items }: { items: InvestigationQueueItem[] 
   );
 }
 
-function KnowledgeReviewSection({ items }: { items: KnowledgeReviewItem[] | undefined }) {
+function KnowledgeReviewSection({ items, navPrefix }: { items: KnowledgeReviewItem[] | undefined; navPrefix: string }) {
   const navigate = useNavigate();
 
   if (!items || items.length === 0) {
@@ -259,7 +260,7 @@ function KnowledgeReviewSection({ items }: { items: KnowledgeReviewItem[] | unde
             </div>
             <div className="flex gap-2 flex-wrap">
               <button
-                onClick={() => navigate(`/signatures/${item.signatureHash}?namespace=${item.namespaceId}&tab=knowledge`)}
+                onClick={() => navigate(`${navPrefix}/signatures/${item.signatureHash}?namespace=${item.namespaceId}`)}
                 className="text-xs px-3 py-1.5 bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 transition-colors font-medium"
                 aria-label={`${item.hasKnowledge ? 'Update' : 'Add'} knowledge for ${item.displayName}`}
               >
@@ -267,7 +268,7 @@ function KnowledgeReviewSection({ items }: { items: KnowledgeReviewItem[] | unde
                 {item.hasKnowledge ? 'Update Knowledge' : 'Add Knowledge'}
               </button>
               <button
-                onClick={() => navigate(`/signatures/${item.signatureHash}?namespace=${item.namespaceId}`)}
+                onClick={() => navigate(`${navPrefix}/incidents/${item.signatureHash}?namespace=${item.namespaceId}`)}
                 className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors font-medium"
                 aria-label={`Investigate ${item.displayName}`}
               >
@@ -282,7 +283,7 @@ function KnowledgeReviewSection({ items }: { items: KnowledgeReviewItem[] | unde
   );
 }
 
-function NewSignaturesSection({ items }: { items: NewSignatureItem[] | undefined }) {
+function NewSignaturesSection({ items, navPrefix }: { items: NewSignatureItem[] | undefined; navPrefix: string }) {
   const navigate = useNavigate();
 
   if (!items || items.length === 0) {
@@ -316,7 +317,7 @@ function NewSignaturesSection({ items }: { items: NewSignatureItem[] | undefined
             </div>
             <div className="flex gap-2 flex-wrap">
               <button
-                onClick={() => navigate(`/signatures/${item.signatureHash}?namespace=${item.namespaceId}&tab=knowledge`)}
+                onClick={() => navigate(`${navPrefix}/signatures/${item.signatureHash}?namespace=${item.namespaceId}`)}
                 className="text-xs px-3 py-1.5 bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 transition-colors font-medium"
                 aria-label={`Add knowledge for ${item.displayName}`}
               >
@@ -324,7 +325,7 @@ function NewSignaturesSection({ items }: { items: NewSignatureItem[] | undefined
                 Add Knowledge
               </button>
               <button
-                onClick={() => navigate(`/signatures/${item.signatureHash}?namespace=${item.namespaceId}`)}
+                onClick={() => navigate(`${navPrefix}/incidents/${item.signatureHash}?namespace=${item.namespaceId}`)}
                 className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors font-medium"
                 aria-label={`Investigate ${item.displayName}`}
               >
@@ -339,7 +340,7 @@ function NewSignaturesSection({ items }: { items: NewSignatureItem[] | undefined
   );
 }
 
-function FailedReplaysSection({ items }: { items: FailedReplayItem[] | undefined }) {
+function FailedReplaysSection({ items, navPrefix }: { items: FailedReplayItem[] | undefined; navPrefix: string }) {
   const navigate = useNavigate();
 
   if (!items || items.length === 0) {
@@ -382,7 +383,7 @@ function FailedReplaysSection({ items }: { items: FailedReplayItem[] | undefined
               </div>
               <div className="flex gap-2 flex-wrap">
                 <button
-                  onClick={() => navigate(`/signatures/${item.signatureHash}?namespace=${item.namespaceId}&tab=replay`)}
+                  onClick={() => navigate(`${navPrefix}/incidents/${item.signatureHash}?namespace=${item.namespaceId}&tab=recovery`)}
                   className="text-xs px-3 py-1.5 bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 transition-colors font-medium"
                   aria-label={`View details for ${item.signatureName}`}
                 >
@@ -403,6 +404,8 @@ function FailedReplaysSection({ items }: { items: FailedReplayItem[] | undefined
 
 export function FailureIntelligenceCenterPage() {
   const { data, isLoading, error, refetch } = useInvestigationQueue();
+  const { isDemoMode, cloudProvider } = useDemoContext();
+  const navPrefix = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
 
   if (isLoading) {
     return (
@@ -455,11 +458,11 @@ export function FailureIntelligenceCenterPage() {
       {data && (
         <>
           <MetricsHeader metrics={data.metrics} />
-          <FleetHealthSection fleetHealth={data.fleetHealth} />
-          <InvestigationQueueSection items={data.investigationQueue} />
-          <FailedReplaysSection items={data.failedReplays} />
-          <KnowledgeReviewSection items={data.knowledgeReview} />
-          <NewSignaturesSection items={data.newSignatures} />
+          <FleetHealthSection fleetHealth={data.fleetHealth} navPrefix={navPrefix} />
+          <InvestigationQueueSection items={data.investigationQueue} navPrefix={navPrefix} />
+          <FailedReplaysSection items={data.failedReplays} navPrefix={navPrefix} />
+          <KnowledgeReviewSection items={data.knowledgeReview} navPrefix={navPrefix} />
+          <NewSignaturesSection items={data.newSignatures} navPrefix={navPrefix} />
         </>
       )}
     </div>
