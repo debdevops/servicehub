@@ -36,6 +36,15 @@ import type {
 } from '../api/recovery';
 import type { AuditLogItem, AuditPageResponse } from '../api/audit';
 import type { FleetOverview, FleetNamespaceHealth, FleetHealthSeverity } from '../api/fleet';
+import type {
+  DlqOverview,
+  DlqProviderOverview,
+  DlqOverviewNamespace,
+  DlqOverviewTrendPoint,
+  DlqReasonBreakdown,
+  DlqFailureCategory,
+  DlqOverviewEnvironment,
+} from '../api/dlqOverview';
 import type { RuleResponse } from '../api/rules';
 import type {
   InvestigationCenterResponse,
@@ -959,6 +968,113 @@ export function getMockFleetOverview(provider: CloudProviderType): FleetOverview
     topCategories,
     dailyTrend: [],
   };
+}
+
+/**
+ * Get the mock cross-cloud DLQ overview for the standalone DLQ Overview page. Demo Mode is
+ * single-provider (one namespace per cloud), so this always returns exactly one provider
+ * section, built from the same curated cluster fixtures as Fleet/DLQ Intelligence so the three
+ * surfaces never disagree in demo mode.
+ */
+export function getMockDlqOverview(provider: CloudProviderType): DlqOverview {
+  const clusters = getDemoClusters();
+  const activeClusters = clusters.filter((c) => c.status === 'Active' || c.status === 'Reopened');
+  const activeCount = activeClusters.reduce((sum, c) => sum + c.size, 0);
+  const namespace = getMockNamespaces(provider)[0];
+  const days = 7;
+
+  // Group by the mapped FailureCategory (not the raw fixture string) — several demo reasons
+  // (e.g. PoisonMessage and DuplicateMessage) map to the same real category and must merge into
+  // one bar, not render as duplicate rows under the same label.
+  const reasonCounts = activeClusters.reduce<Partial<Record<DlqFailureCategory, number>>>((acc, c) => {
+    const category = demoReasonToDlqCategory(c.dominantDeadletterReason);
+    acc[category] = (acc[category] ?? 0) + c.size;
+    return acc;
+  }, {});
+  const topReasons: DlqReasonBreakdown[] = Object.entries(reasonCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([category, count]) => ({
+      category: category as DlqFailureCategory,
+      count,
+      percent: activeCount > 0 ? Math.round((count / activeCount) * 1000) / 10 : 0,
+    }));
+
+  // Cluster fixtures don't distinguish queue vs. topic entities — demo mode attributes every
+  // affected entity to "queues" for simplicity; this only affects the illustrative counts shown
+  // in Demo Mode, never the live-cloud page.
+  const affectedQueues = new Set(activeClusters.map((c) => c.dominantEntity)).size;
+
+  const oldestActive = [...activeClusters].sort(
+    (a, b) => new Date(a.firstSeenAt).getTime() - new Date(b.firstSeenAt).getTime(),
+  )[0];
+
+  // No real day-by-day history in demo fixtures — simulate a steady ramp into the current total
+  // so the trend line reads naturally instead of a flat/empty line.
+  const dailyTrend: DlqOverviewTrendPoint[] = Array.from({ length: days }, (_, i) => {
+    const date = new Date();
+    date.setUTCDate(date.getUTCDate() - (days - 1 - i));
+    date.setUTCHours(0, 0, 0, 0);
+    return {
+      date: date.toISOString(),
+      count: Math.round((activeCount * (i + 1)) / days),
+    };
+  });
+
+  const namespaceRow: DlqOverviewNamespace = {
+    namespaceId: namespace.id,
+    namespaceName: namespace.displayName ?? namespace.name,
+    environment: (namespace.environment ?? 'prod') as DlqOverviewEnvironment,
+    queuesWithDlq: affectedQueues,
+    topicsWithDlq: 0,
+    dlqCount: activeCount,
+    oldestDetectedAt: oldestActive?.firstSeenAt ?? null,
+  };
+
+  const providerOverview: DlqProviderOverview = {
+    provider,
+    totalDeadLettered: activeCount,
+    changePercent: null,
+    namespacesWithDlq: activeCount > 0 ? 1 : 0,
+    namespacesTotal: 1,
+    affectedQueues,
+    affectedTopics: 0,
+    dailyTrend,
+    topReasons,
+    namespaces: activeCount > 0 ? [namespaceRow] : [],
+  };
+
+  return {
+    generatedAt: new Date().toISOString(),
+    windowDays: days,
+    totals: {
+      totalDeadLettered: activeCount,
+      changePercent: null,
+      namespacesWithDlq: providerOverview.namespacesWithDlq,
+      namespacesTotal: 1,
+      affectedQueues,
+      affectedTopics: 0,
+      oldestMessageDetectedAt: oldestActive?.firstSeenAt ?? null,
+    },
+    providers: [providerOverview],
+  };
+}
+
+/**
+ * Maps a demo cluster's free-form `dominantDeadletterReason` (DEMO_SIGNATURE_DEFS' human-readable
+ * strings, e.g. "PoisonMessage") to the real backend's FailureCategory taxonomy, so the DLQ
+ * Overview page's reason breakdown reads the same way in Demo Mode as it does against live data.
+ */
+const DEMO_REASON_TO_CATEGORY: Record<string, DlqFailureCategory> = {
+  MaxDeliveryCountExceeded: 'maxDelivery',
+  PoisonMessage: 'processingError',
+  DeserializationError: 'dataQuality',
+  AuthenticationFailure: 'authorization',
+  DuplicateMessage: 'processingError',
+};
+
+function demoReasonToDlqCategory(value: string): DlqFailureCategory {
+  return DEMO_REASON_TO_CATEGORY[value] ?? 'unknown';
 }
 
 // ─── Investigation Center (Incident Center) ─────────────────────────────────

@@ -200,13 +200,16 @@ export const NAV_ENTRIES: NavEntry[] = [
   },
   {
     id: 'messages-deadletter',
-    basePath: 'messages-overview',
+    basePath: 'dlq-overview',
     label: 'Dead-Letter',
     icon: AlertCircle,
-    to: withPrefix('/messages-overview?tab=deadletter'),
-    isActive: (searchParams) => searchParams.get('tab') === 'deadletter',
+    to: withPrefix('/dlq-overview'),
     quickAccess: { group: 'Observe', color: 'red' },
-    toolbarLabel: messagesOverviewToolbarLabel,
+    commandPalette: {
+      description: 'Cross-cloud dead-letter triage: which cloud, which reasons, which namespaces',
+      keywords: 'dlq dead letter overview triage reasons queues topics',
+    },
+    toolbarLabel: 'Dead-Letter Overview',
   },
   {
     id: 'scheduled',

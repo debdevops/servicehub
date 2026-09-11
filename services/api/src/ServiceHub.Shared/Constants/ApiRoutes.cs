@@ -379,6 +379,11 @@ public static class ApiRoutes
         public const string Summary = $"{Base}/summary";
 
         /// <summary>
+        /// Route for the cross-cloud, provider-grouped DLQ overview.
+        /// </summary>
+        public const string Overview = $"{Base}/overview";
+
+        /// <summary>
         /// Route for a namespace's DLQ error-cluster signatures. Namespace-scoped (route
         /// parameter named <c>namespaceId</c>, not <c>id</c>) so the ownership-enforcement
         /// action filter picks it up.

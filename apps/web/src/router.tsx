@@ -21,6 +21,7 @@ const DemoGcpLayoutLazy = lazy(() => import('./layouts/AppLayouts').then(m => ({
 const DashboardPageLazy = lazy(() => import('./pages/DashboardPage'));
 const HomePageLazy = lazy(() => import('./pages/HomePage').then(m => ({ default: m.HomePage })));
 const FleetPageLazy = lazy(() => import('./pages/FleetPage'));
+const DlqOverviewPageLazy = lazy(() => import('./pages/DlqOverviewPage'));
 const DlqHistoryPageLazy = lazy(() => import('./pages/DlqHistoryPage'));
 const SignatureListPageLazy = lazy(() => import('./pages/SignatureListPage'));
 const SignatureDetailsPageLazy = lazy(() => import('./pages/SignatureDetailsPage'));
@@ -201,6 +202,14 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <FleetPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'dlq-overview',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <DlqOverviewPageLazy />
       </Suspense>
     ),
   },

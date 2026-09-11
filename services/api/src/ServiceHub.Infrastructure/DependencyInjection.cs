@@ -464,6 +464,10 @@ public static class DependencyInjection
 
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
 
+        // Cross-cloud DLQ overview (provider-grouped triage dashboard) — read-only aggregation
+        // over DlqMessages, independent of IFleetOverviewService's flat per-namespace rollup.
+        services.TryAddScoped<IDlqOverviewService, DlqOverviewService>();
+
         // Fleet-wide autonomy dashboard (roadmap §11 item 5, §15 item 9) — read-only aggregation
         // over AutonomyGrants/AutoReplayRules/RecoveryEvents; never writes, never grants autonomy.
         services.TryAddScoped<IAutonomyDashboardService, AutonomyDashboardService>();

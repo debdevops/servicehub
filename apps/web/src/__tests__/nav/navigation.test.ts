@@ -87,18 +87,17 @@ describe('navigation registry (W2.4 — one nav definition)', () => {
       expect(isNavEntryActive(dashboard, '/demo/azure/dashboard', sp())).toBe(true);
     });
 
-    it('differentiates Active Messages from Dead-Letter on the shared messages-overview basePath', () => {
+    it('only highlights Active Messages when the tab query param says so', () => {
       expect(isNavEntryActive(messagesActive, '/messages-overview', sp('tab=active'))).toBe(true);
       expect(isNavEntryActive(messagesActive, '/messages-overview', sp('tab=deadletter'))).toBe(false);
-      expect(isNavEntryActive(messagesDeadletter, '/messages-overview', sp('tab=deadletter'))).toBe(true);
-      expect(isNavEntryActive(messagesDeadletter, '/messages-overview', sp('tab=active'))).toBe(false);
+      // Previously matched simultaneously with Dead-Letter under plain pathname-only matching
+      // (both shared the messages-overview basePath) — the exact bug this predicate exists to fix.
+      expect(isNavEntryActive(messagesActive, '/messages-overview', sp())).toBe(false);
     });
 
-    it('does not highlight either Active Messages or Dead-Letter when the URL carries no tab', () => {
-      // Both previously matched simultaneously under plain pathname-only matching — the exact
-      // bug this predicate exists to fix.
-      expect(isNavEntryActive(messagesActive, '/messages-overview', sp())).toBe(false);
-      expect(isNavEntryActive(messagesDeadletter, '/messages-overview', sp())).toBe(false);
+    it('Dead-Letter lives on its own basePath (dlq-overview), not the shared messages-overview one', () => {
+      expect(isNavEntryActive(messagesDeadletter, '/dlq-overview', sp())).toBe(true);
+      expect(isNavEntryActive(messagesDeadletter, '/messages-overview', sp('tab=deadletter'))).toBe(false);
     });
   });
 
@@ -119,6 +118,7 @@ describe('navigation registry (W2.4 — one nav definition)', () => {
       ['/dashboard', '', 'Namespace Overview'],
       ['/incidents', '', 'Incident Center'],
       ['/fleet', '', 'Fleet Overview'],
+      ['/dlq-overview', '', 'Dead-Letter Overview'],
       ['/cloud-bridge', '', 'Cloud Bridge'],
       ['/dlq-history', '', 'DLQ Intelligence'],
       ['/signatures', '', 'Failure Signatures'],

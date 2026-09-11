@@ -211,9 +211,9 @@ describe('QuickAccessPanel', () => {
       expect(screen.getByText('Dead-Letter').closest('a')).not.toHaveClass('bg-red-50');
     });
 
-    it('highlights only Dead-Letter, not Active Messages, on the deadletter tab', () => {
-      window.history.pushState({}, '', '/messages-overview?tab=deadletter');
-      const Wrapper = createWrapper(['/messages-overview?tab=deadletter']);
+    it('highlights only Dead-Letter, not Active Messages, on /dlq-overview', () => {
+      window.history.pushState({}, '', '/dlq-overview');
+      const Wrapper = createWrapper(['/dlq-overview']);
       render(<Wrapper><QuickAccessPanel /></Wrapper>);
       expect(screen.getByText('Dead-Letter').closest('a')).toHaveClass('bg-red-50');
       expect(screen.getByText('Active Messages').closest('a')).not.toHaveClass('bg-sky-50');
