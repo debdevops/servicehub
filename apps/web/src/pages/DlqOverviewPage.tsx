@@ -161,11 +161,13 @@ function ChangeBadge({
   goodDirection = 'down',
   title,
 }: {
-  percent: number | null;
+  percent: number | null | undefined;
   goodDirection?: 'up' | 'down';
   title?: string;
 }) {
-  if (percent === null) {
+  // The API omits null fields from the wire entirely (DefaultIgnoreCondition.WhenWritingNull),
+  // so a "no prior period to compare" percent arrives as `undefined`, not a literal `null`.
+  if (percent === null || percent === undefined) {
     return (
       <span title={title} className="text-[11px] font-semibold text-gray-400">
         New
