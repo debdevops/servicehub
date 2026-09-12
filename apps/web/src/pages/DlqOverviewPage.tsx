@@ -746,13 +746,6 @@ export default function DlqOverviewPage() {
                 })}
               </span>
             )}
-            <button
-              onClick={() => refetch()}
-              className="p-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
-              aria-label="Refresh DLQ overview"
-            >
-              <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
-            </button>
             <select
               value={days}
               onChange={(e) => setDays(Number(e.target.value))}
@@ -765,6 +758,30 @@ export default function DlqOverviewPage() {
                 </option>
               ))}
             </select>
+            <button
+              onClick={() => refetch()}
+              className="p-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
+              aria-label="Refresh DLQ overview"
+              title="Refresh"
+            >
+              <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
+            </button>
+            <button
+              onClick={exportCsv}
+              disabled={!data}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              Export
+            </button>
+            <button
+              onClick={() => refetch()}
+              title="Re-scan the current data — refreshes every metric, chart and signature on this page"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+            >
+              <Zap className="w-4 h-4" />
+              Scan Now
+            </button>
           </div>
         </div>
 
@@ -962,20 +979,12 @@ export default function DlqOverviewPage() {
               {filtersActive && (
                 <button
                   onClick={clearFilters}
-                  className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700"
+                  className="ml-auto flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700"
                 >
                   <X className="w-3.5 h-3.5" />
                   Clear filters
                 </button>
               )}
-
-              <button
-                onClick={exportCsv}
-                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 border border-gray-200 rounded-lg transition-colors"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Export
-              </button>
             </div>
 
             {/* Provider sections */}

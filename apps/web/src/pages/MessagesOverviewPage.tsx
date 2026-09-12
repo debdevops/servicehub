@@ -13,12 +13,13 @@ import {
   ChevronDown,
   ChevronRight,
   RefreshCw,
-  ArrowLeft,
   Layers,
   Hash,
   MoreVertical,
   Copy,
   Clock,
+  Download,
+  Zap,
 } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useQueues, useAllNamespacesQueues } from '@servicehub/ui-shared/hooks/useQueues';
@@ -47,6 +48,37 @@ import type { Namespace, CloudProviderType } from '@servicehub/ui-shared/lib/api
 
 type OverviewTab = 'active' | 'deadletter';
 type EntityTypeFilter = 'all' | 'queues' | 'topics';
+
+// The Azure Service Bus SDK's real EntityStatus values — the only provider whose queues/topics
+// carry a meaningful status string. AWS/GCP entities report an empty status and simply won't
+// match a specific filter here (they always show under "All Status").
+const ENTITY_STATUS_OPTIONS = ['Active', 'Disabled', 'SendDisabled', 'ReceiveDisabled'];
+
+// Mirrors HomePage's NamespaceRow connection pill so "Connected" here means the same thing it
+// means everywhere else in the app — the namespace's last real connection test, not a guess.
+function connectionStatus(namespace: Namespace): { label: string; dot: string } {
+  if (!namespace.isActive) return { label: 'Inactive', dot: 'bg-gray-300' };
+  if (namespace.lastConnectionTestSucceeded === false) return { label: 'Connection issue', dot: 'bg-amber-500' };
+  return { label: 'Connected', dot: 'bg-green-500' };
+}
+
+function csvCell(value: string | number): string {
+  const s = String(value);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function downloadCsv(filename: string, rows: (string | number)[][]) {
+  const content = rows.map((row) => row.map(csvCell).join(',')).join('\n');
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 // unsupported = the provider has no message-count API (e.g. GCP Pub/Sub) — the raw value is
 // always 0 regardless of real backlog, so a dash is shown instead of a misleading "0".
@@ -314,7 +346,7 @@ function TopicRow({
   navPrefix,
 }: {
   namespace: Namespace;
-  topic: { name: string; subscriptionCount: number };
+  topic: { name: string; subscriptionCount: number; status: string };
   tab: OverviewTab;
   navPrefix: string;
 }) {
@@ -325,9 +357,11 @@ function TopicRow({
   if (isAws) {
     return (
       <tr className="border-b border-gray-50 hover:bg-gray-50/80">
-        <td className="px-3 py-2" colSpan={3}>
+        <td className="px-3 py-2">
           <span className="text-sm font-medium text-gray-800 truncate">📢 {topic.name}</span>
         </td>
+        <td className="px-3 py-2 text-xs text-gray-500">{topic.subscriptionCount}</td>
+        <td className="px-3 py-2 text-xs text-gray-500">{topic.status || '—'}</td>
         <td className="px-3 py-2 text-right">
           <button
             onClick={() => {
@@ -346,7 +380,7 @@ function TopicRow({
   return (
     <>
       <tr className="border-b border-gray-50 hover:bg-gray-50/80">
-        <td className="px-3 py-2" colSpan={2}>
+        <td className="px-3 py-2">
           <button
             onClick={() => setExpanded((v) => !v)}
             aria-expanded={expanded}
@@ -356,10 +390,17 @@ function TopicRow({
             📢 {topic.name}
           </button>
         </td>
-        <td className="px-3 py-2 text-xs text-gray-500">
-          {topic.subscriptionCount} sub{topic.subscriptionCount === 1 ? '' : 's'}
+        <td className="px-3 py-2 text-xs text-gray-500">{topic.subscriptionCount}</td>
+        <td className="px-3 py-2 text-xs text-gray-500">{topic.status || '—'}</td>
+        <td className="px-3 py-2 text-right">
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="px-2.5 py-1 text-xs font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-lg transition-colors"
+          >
+            {expanded ? 'Hide subscriptions' : 'Fan-out →'}
+          </button>
         </td>
-        <td></td>
       </tr>
       {expanded && (
         <tr>
@@ -378,12 +419,14 @@ function NamespaceEntitiesSection({
   navPrefix,
   filter,
   entityTypeFilter,
+  statusFilter,
 }: {
   namespace: Namespace;
   tab: OverviewTab;
   navPrefix: string;
   filter: string;
   entityTypeFilter: EntityTypeFilter;
+  statusFilter: string;
 }) {
   const navigate = useNavigate();
   const style = getProviderStyle(namespace.cloudProvider);
@@ -419,14 +462,15 @@ function NamespaceEntitiesSection({
     ? (queues ?? [])
         .filter((q) => !dlqTargets.has(q.name))
         .filter((q) => !effectiveFilter || q.name.toLowerCase().includes(effectiveFilter))
+        .filter((q) => statusFilter === 'all' || q.status === statusFilter)
         .sort((a, b) => countOf(b) - countOf(a) || a.name.localeCompare(b.name))
     : [];
 
   // SNS topics have no DLQ of their own — hide them on the dead-letter tab.
   const visibleTopics = showTopics
-    ? (isAws && tab === 'deadletter' ? [] : (topics ?? [])).filter(
-        (t) => !effectiveFilter || t.name.toLowerCase().includes(effectiveFilter),
-      )
+    ? (isAws && tab === 'deadletter' ? [] : (topics ?? []))
+        .filter((t) => !effectiveFilter || t.name.toLowerCase().includes(effectiveFilter))
+        .filter((t) => statusFilter === 'all' || t.status === statusFilter)
     : [];
 
   const totalCount = (queues ?? [])
@@ -463,9 +507,15 @@ function NamespaceEntitiesSection({
         <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-white/70 text-gray-500 border border-gray-200">
           {entityCount} entit{entityCount === 1 ? 'y' : 'ies'}
         </span>
-        <span className={`ml-auto text-xs font-semibold ${tab === 'deadletter' && totalCount > 0 ? 'text-red-700' : style.accentText}`}>
-          {totalCount.toLocaleString()} {tab === 'deadletter' ? 'dead-lettered' : 'active'}
-        </span>
+        <div className="ml-auto flex items-center gap-3">
+          <span className={`text-xs font-semibold ${tab === 'deadletter' && totalCount > 0 ? 'text-red-700' : style.accentText}`}>
+            {totalCount.toLocaleString()} {tab === 'deadletter' ? 'dead-lettered' : 'active'}
+          </span>
+          <span className="hidden sm:flex items-center gap-1.5 text-xs text-gray-500">
+            <span className={`w-1.5 h-1.5 rounded-full ${connectionStatus(namespace).dot}`} aria-hidden="true" />
+            {connectionStatus(namespace).label}
+          </span>
+        </div>
       </button>
 
       {isOpen && (
@@ -527,6 +577,14 @@ function NamespaceEntitiesSection({
                   </h3>
                   <div className="max-h-64 overflow-y-auto border border-gray-100 rounded-lg">
                     <table className="w-full text-sm">
+                      <thead className="sticky top-0 bg-gray-50 text-[11px] text-gray-500">
+                        <tr>
+                          <th className="px-3 py-1.5 text-left font-medium">Name</th>
+                          <th className="px-3 py-1.5 text-left font-medium">Subscribers</th>
+                          <th className="px-3 py-1.5 text-left font-medium">Status</th>
+                          <th className="px-3 py-1.5"></th>
+                        </tr>
+                      </thead>
                       <tbody>
                         {visibleTopics.map((topic) => (
                           <TopicRow key={topic.name} namespace={namespace} topic={topic} tab={tab} navPrefix={navPrefix} />
@@ -556,6 +614,7 @@ export function MessagesOverviewPage() {
   const [providerFilter, setProviderFilter] = useState<CloudProviderType | 'all'>('all');
   const [namespaceFilter, setNamespaceFilter] = useState<string>('');
   const [entityTypeFilter, setEntityTypeFilter] = useState<EntityTypeFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const tab: OverviewTab = searchParams.get('tab') === 'deadletter' ? 'deadletter' : 'active';
 
@@ -599,8 +658,10 @@ export function MessagesOverviewPage() {
     setProviderFilter('all');
     setNamespaceFilter('');
     setEntityTypeFilter('all');
+    setStatusFilter('all');
   };
-  const filtersActive = search !== '' || providerFilter !== 'all' || namespaceFilter !== '' || entityTypeFilter !== 'all';
+  const filtersActive =
+    search !== '' || providerFilter !== 'all' || namespaceFilter !== '' || entityTypeFilter !== 'all' || statusFilter !== 'all';
 
   const handleRefresh = () => {
     for (const key of ['queues', 'namespace-stats', 'topics', 'subscriptions']) {
@@ -608,65 +669,61 @@ export function MessagesOverviewPage() {
     }
   };
 
+  const exportCsv = () => {
+    const header = ['Provider', 'Namespace', 'Queues', 'Topics', isDeadLetter ? 'Dead-Letter' : 'Active', 'Connection'];
+    const rows = visibleNamespaces.map((ns) => {
+      const stats = liveStats.find((s) => s.namespaceId === ns.id);
+      return [
+        getProviderStyle(ns.cloudProvider).label,
+        ns.displayName || ns.name,
+        stats?.totalQueues ?? 0,
+        stats?.totalTopics ?? 0,
+        (isDeadLetter ? stats?.totalDlq : stats?.totalActive) ?? 0,
+        connectionStatus(ns).label,
+      ];
+    });
+    downloadCsv(`${isDeadLetter ? 'dead-letter' : 'active-messages'}-overview-${new Date().toISOString().slice(0, 10)}.csv`, [
+      header,
+      ...rows,
+    ]);
+  };
+
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Header */}
-      <div
-        className={`px-6 py-4 shrink-0 bg-gradient-to-r ${
-          isDeadLetter ? 'from-red-600 to-red-500' : 'from-sky-600 to-sky-500'
-        }`}
-      >
-        <div className="flex items-center gap-2 mb-1">
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-1 text-xs font-medium text-white/80 hover:text-white"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Back
-          </button>
-          <span className="text-white/40 text-xs">/</span>
-          <span className="text-xs text-white/70">Overview</span>
-          <span className="text-white/40 text-xs">/</span>
-          <span className="text-xs text-white font-medium">{isDeadLetter ? 'Dead-Letter' : 'Active Messages'}</span>
-        </div>
-        <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className="flex-1 overflow-y-auto min-w-0">
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            {isDeadLetter ? (
-              <AlertTriangle className="w-6 h-6 text-white/80" />
-            ) : (
-              <Inbox className="w-6 h-6 text-white/80" />
-            )}
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${isDeadLetter ? 'bg-red-50' : 'bg-sky-50'}`}>
+              {isDeadLetter ? (
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              ) : (
+                <Inbox className="w-5 h-5 text-sky-600" />
+              )}
+            </div>
             <div>
-              <h1 className="text-xl font-semibold text-white">
+              <p className="text-xs text-gray-400 mb-0.5">Messages / {isDeadLetter ? 'Dead-Letter' : 'Active Messages'}</p>
+              <h1 className="text-xl font-bold text-gray-900">
                 {isDeadLetter ? 'Dead-Letter Overview' : 'Active Messages Overview'}
               </h1>
-              <p className={`text-sm ${isDeadLetter ? 'text-red-100' : 'text-sky-100'}`}>
+              <p className="text-sm text-gray-500">
                 All connected clouds — pick an entity to open its {isDeadLetter ? 'DLQ' : 'messages'}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
             {dataUpdatedAt > 0 && (
-              <span className="text-xs text-white/70 hidden md:inline">
+              <span className="text-xs text-gray-400 hidden md:inline">
                 Last updated: {new Date(dataUpdatedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
-            <button
-              onClick={handleRefresh}
-              disabled={isFetching}
-              aria-label="Refresh"
-              title="Refresh"
-              className="flex items-center gap-2 p-1.5 bg-white/20 hover:bg-white/30 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
-            </button>
             {/* Tab toggle */}
-            <div className="flex rounded-lg overflow-hidden border border-white/30">
+            <div className="flex rounded-lg overflow-hidden border border-gray-300">
               <button
                 onClick={() => setTab('active')}
                 className={`px-4 py-1.5 text-sm font-medium transition-colors ${
-                  !isDeadLetter ? 'bg-white text-sky-700' : 'bg-white/10 text-white hover:bg-white/20'
+                  !isDeadLetter ? 'bg-sky-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
                 }`}
               >
                 Active
@@ -674,20 +731,43 @@ export function MessagesOverviewPage() {
               <button
                 onClick={() => setTab('deadletter')}
                 className={`px-4 py-1.5 text-sm font-medium transition-colors ${
-                  isDeadLetter ? 'bg-white text-red-700' : 'bg-white/10 text-white hover:bg-white/20'
+                  isDeadLetter ? 'bg-red-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
                 }`}
               >
                 Dead-Letter
               </button>
             </div>
+            <button
+              onClick={handleRefresh}
+              disabled={isFetching}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            <button
+              onClick={exportCsv}
+              disabled={!namespaces || namespaces.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              Export
+            </button>
+            <button
+              onClick={handleRefresh}
+              title="Re-scan the current data — refreshes every queue, topic and namespace count on this page"
+              className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-white rounded-lg transition-colors ${
+                isDeadLetter ? 'bg-red-600 hover:bg-red-700' : 'bg-sky-600 hover:bg-sky-700'
+              }`}
+            >
+              <Zap className="w-4 h-4" />
+              Scan Now
+            </button>
           </div>
         </div>
-      </div>
 
-      {/* Body */}
-      <div className="flex-1 overflow-auto bg-gray-50 p-6">
         {isLoading ? (
-          <div className="flex items-center justify-center h-full text-gray-500 gap-2 text-sm">
+          <div className="flex items-center justify-center py-20 text-gray-500 gap-2 text-sm">
             <RefreshCw className="w-4 h-4 animate-spin" />
             Loading namespaces…
           </div>
@@ -699,7 +779,7 @@ export function MessagesOverviewPage() {
             action={{ label: 'Connect a namespace', icon: Plus, onClick: () => navigate('/connect') }}
           />
         ) : (
-          <div className="space-y-5 max-w-5xl mx-auto">
+          <>
             {/* Key metrics */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <StatTile
@@ -800,6 +880,21 @@ export function MessagesOverviewPage() {
                 <option value="topics">Topics only</option>
               </select>
 
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                aria-label="Filter by status"
+                title="Azure reports a real entity status; AWS and GCP entities have none and always match All Status"
+                className="px-3 py-2 rounded-lg text-sm border border-gray-300 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+              >
+                <option value="all">All Status</option>
+                {ENTITY_STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+
               {filtersActive && (
                 <button
                   onClick={clearFilters}
@@ -824,6 +919,7 @@ export function MessagesOverviewPage() {
                   navPrefix={navPrefix}
                   filter={filter}
                   entityTypeFilter={entityTypeFilter}
+                  statusFilter={statusFilter}
                 />
               ))
             )}
@@ -847,7 +943,7 @@ export function MessagesOverviewPage() {
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
-          </div>
+          </>
         )}
       </div>
     </div>
