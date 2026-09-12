@@ -83,6 +83,12 @@ export function MainLayout() {
   const topicName = searchParams.get('topic');
   const subscriptionName = searchParams.get('subscription');
   const isMessagesPage = window.location.pathname === '/messages';
+  // Incident Center's redesign uses the full content width for its table + detail panel layout
+  // — the Namespaces/Connections panel doesn't apply here (it's a fleet-wide, cross-namespace
+  // view), so it's hidden on this route only. `endsWith` covers both '/incidents' and demo mode's
+  // '/demo/<provider>/incidents' while excluding '/incidents/:signatureHash' (the per-incident
+  // workspace, which keeps the panel).
+  const isIncidentCenterPage = window.location.pathname.endsWith('/incidents');
 
   // Resolve current namespace to check environment and permissions
   const { data: namespaces } = useNamespaces();
@@ -149,8 +155,9 @@ export function MainLayout() {
         {/* Quick Access — first panel, collapsible/resizable/draggable */}
         <QuickAccessPanel />
 
-        {/* Namespaces / Connections — second panel, independently resizable */}
-        <NamespacesPanel />
+        {/* Namespaces / Connections — second panel, independently resizable. Hidden on the
+            Incident Center route so its redesigned table + detail panel get full width. */}
+        {!isIncidentCenterPage && <NamespacesPanel />}
 
         {/* Content */}
         <main className="flex-1 overflow-hidden flex flex-col min-w-0">

@@ -20,4 +20,19 @@ public interface IFailureIntelligenceCenterService
     Task<Result<InvestigationCenterResponse>> GetInvestigationCenterAsync(
         string ownerId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the Incident Center's fleet-wide incident list: every failure signature the owner
+    /// has (any lifecycle status), plus fleet-wide metrics, a trend chart, and a category
+    /// breakdown. Filtering, sorting, and pagination for display are the caller's
+    /// responsibility, mirroring how <c>DlqOverviewPage</c>/<c>SignatureListPage</c> already
+    /// handle fleet-sized datasets client-side.
+    /// </summary>
+    /// <param name="ownerId">Owner for multi-tenant isolation.</param>
+    /// <param name="trendDays">Trend window: 1 (hourly buckets), 7, or 30 (daily buckets).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<Result<IncidentListResponse>> GetIncidentsListAsync(
+        string ownerId,
+        int trendDays,
+        CancellationToken cancellationToken = default);
 }

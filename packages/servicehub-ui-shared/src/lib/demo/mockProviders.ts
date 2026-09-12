@@ -58,6 +58,7 @@ import type {
 } from '../../hooks/useInvestigationQueue';
 import type { AttentionQueueResponse, AttentionQueueItem } from '../api/attentionQueue';
 import type { IncidentDetailResponse } from '../api/incidents';
+import type { IncidentListResponse, IncidentListItem, IncidentListMetrics, IncidentSeverity } from '../api/incidentsList';
 
 // ─── Namespace IDs ──────────────────────────────────────────────────────────
 // Stable IDs used in URL query params and as namespace identifiers in demo mode
@@ -1256,6 +1257,113 @@ export function getMockInvestigationQueue(provider: CloudProviderType): Investig
       totalResolvedInWindow: nsHealth.resolvedInWindow,
       topUnhealthyNamespaces: nsHealth.severity === 'healthy' ? [] : [nsHealth],
     },
+  };
+}
+
+/** Mirrors the backend's severity thresholds (FailureIntelligenceCenterService.ComputeSeverityScore/Level). */
+function demoSeverity(cluster: DlqClusterSignature): IncidentSeverity {
+  let score = 0;
+  if (cluster.trend === 'Escalating') score += 10;
+  if (!cluster.knowledge) score += 5;
+  if (cluster.occurrenceCount > 10) score += 3;
+  if (Date.now() - new Date(cluster.firstSeenAt).getTime() < 24 * 60 * 60 * 1000) score += 2;
+  if (score >= 15) return 'Critical';
+  if (score >= 10) return 'High';
+  if (score >= 5) return 'Medium';
+  return 'Low';
+}
+
+/**
+ * Get the mock Incident Center list payload — same curated `DEMO_SIGNATURE_DEFS` fixtures as
+ * `getMockInvestigationQueue`, but including every lifecycle status (not just Active/Reopened),
+ * since the Incident Center's status tabs need to count and list Resolved/Suppressed/Archived
+ * signatures too.
+ */
+export function getMockIncidentsList(provider: CloudProviderType, days: number): IncidentListResponse {
+  const namespaceId = DEMO_NAMESPACE_IDS[provider];
+  const clusters = getDemoClusters();
+  const nsHealth = buildDemoFleetNamespaceHealth(provider);
+
+  const metrics: IncidentListMetrics = {
+    totalSignatures: clusters.length,
+    // Mirrors the backend's ComputeMetrics exactly: Active and Reopened both count toward
+    // requiresAction, but only Active counts as activeSignatures.
+    activeSignatures: clusters.filter((c) => c.status === 'Active').length,
+    resolvedSignatures: clusters.filter((c) => c.status === 'Resolved').length,
+    suppressedSignatures: clusters.filter((c) => c.status === 'Suppressed').length,
+    archivedSignatures: clusters.filter((c) => c.status === 'Archived').length,
+    requiresAction: clusters.filter((c) => c.status === 'Active' || c.status === 'Reopened').length,
+  };
+
+  const items: IncidentListItem[] = clusters.map((c) => {
+    const isActionable = c.status === 'Active' || c.status === 'Reopened';
+    const isEscalating = c.trend === 'Escalating';
+    return {
+      signatureHash: c.signatureHash,
+      namespaceId,
+      namespaceName: nsHealth.namespaceName,
+      cloudProvider: provider,
+      environment: nsHealth.environment,
+      displayName: `${c.dominantDeadletterReason} (ID: ${c.signatureHash.slice(0, 8)})`,
+      category: c.dominantDeadletterReason,
+      severity: demoSeverity(c),
+      status: c.status,
+      isEscalating,
+      messageCount: c.size,
+      firstSeenAt: c.firstSeenAt,
+      lastSeenAt: c.windowEnd,
+      hasKnowledge: c.knowledge != null,
+      owner: c.knowledge?.owner ?? null,
+      recommendedNextAction: !isActionable
+        ? null
+        : isEscalating
+          ? 'Review Escalation'
+          : c.knowledge == null
+            ? 'Add Knowledge'
+            : 'Investigate',
+    };
+  });
+
+  const totalOccurrences = clusters.reduce((sum, c) => sum + c.occurrenceCount, 0);
+  const byCategory = new Map<string, number>();
+  for (const c of clusters) {
+    byCategory.set(c.dominantDeadletterReason, (byCategory.get(c.dominantDeadletterReason) ?? 0) + c.occurrenceCount);
+  }
+  const topCategories = [...byCategory.entries()]
+    .sort(([, a], [, b]) => b - a)
+    .map(([category, count]) => ({
+      category,
+      count,
+      percent: totalOccurrences > 0 ? Math.round((count / totalOccurrences) * 1000) / 10 : 0,
+    }));
+
+  // A small, honest trend derived from the curated fixtures' own real timestamps — bucketed the
+  // same way the backend does (hourly for a 1-day window, daily otherwise).
+  const hourly = days <= 1;
+  const bucketCount = hourly ? 24 : Math.min(days, 30);
+  const bucketSpanMs = (hourly ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000);
+  const windowStart = Date.now() - bucketSpanMs * bucketCount;
+  const trend = Array.from({ length: bucketCount }, (_, i) => {
+    const bucketStart = windowStart + bucketSpanMs * i;
+    const bucketEnd = bucketStart + bucketSpanMs;
+    const inBucket = (iso: string) => {
+      const t = new Date(iso).getTime();
+      return t >= bucketStart && t < bucketEnd;
+    };
+    return {
+      bucketStart: new Date(bucketStart).toISOString(),
+      active: clusters.filter((c) => inBucket(c.windowEnd) && (c.status === 'Active' || c.status === 'Reopened')).length,
+      resolved: clusters.filter((c) => c.status === 'Resolved' && inBucket(c.windowEnd)).length,
+      new: clusters.filter((c) => inBucket(c.firstSeenAt)).length,
+    };
+  });
+
+  return {
+    metrics,
+    trend,
+    topCategories,
+    items,
+    generatedAt: new Date().toISOString(),
   };
 }
 

@@ -661,6 +661,10 @@ public static class ApiRoutes
 
         /// <summary>Route for the investigation center aggregated data.</summary>
         public const string InvestigationCenter = $"{Base}/investigation-center";
+
+        /// <summary>Route for the Incident Center's fleet-wide incident list (roadmap: Incident
+        /// Center redesign) — every signature, plus trend and category rollups.</summary>
+        public const string IncidentsList = $"{Base}/incidents";
     }
 
     /// <summary>

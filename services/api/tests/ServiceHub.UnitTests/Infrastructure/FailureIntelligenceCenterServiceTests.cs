@@ -266,6 +266,96 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
         result.Value.FleetHealth.Should().BeNull();
     }
 
+    [Fact]
+    public async Task GetIncidentsListAsync_IncludesSignaturesOfEveryLifecycleStatus()
+    {
+        var namespaceId = Guid.NewGuid();
+        _dbContext.NamespaceSignatures.Add(MakeSignature(namespaceId, "hash-active"));
+        _dbContext.NamespaceSignatures.Add(MakeSignature(namespaceId, "hash-resolved"));
+        _dbContext.SignatureLifecycleStates.Add(new SignatureLifecycleState
+        {
+            OwnerId = OwnerId,
+            NamespaceId = namespaceId,
+            SignatureHash = "hash-resolved",
+            Status = SignatureLifecycleStatus.Resolved,
+            PreviousStatus = SignatureLifecycleStatus.Active,
+            TransitionedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _sut.GetIncidentsListAsync(OwnerId, trendDays: 7);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Items.Should().HaveCount(2);
+        result.Value.Items.Should().Contain(i => i.SignatureHash == "hash-active" && i.Status == "Active");
+        result.Value.Items.Should().Contain(i => i.SignatureHash == "hash-resolved" && i.Status == "Resolved");
+    }
+
+    [Fact]
+    public async Task GetIncidentsListAsync_SignatureNamespaceNoLongerRegistered_ExcludesOrphanedSignature()
+    {
+        var deletedNamespaceId = Guid.NewGuid();
+        var liveNamespaceId = Guid.NewGuid();
+        _dbContext.NamespaceSignatures.Add(MakeSignature(deletedNamespaceId, "hash-orphaned"));
+        _dbContext.NamespaceSignatures.Add(MakeSignature(liveNamespaceId, "hash-live"));
+        await _dbContext.SaveChangesAsync();
+
+        _namespaceRepositoryMock
+            .Setup(r => r.GetByOwnerAsync(OwnerId, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(
+                new List<Namespace> { MakeNamespace(liveNamespaceId) }));
+
+        var result = await _sut.GetIncidentsListAsync(OwnerId, trendDays: 7);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Items.Should().NotContain(i => i.NamespaceId == deletedNamespaceId);
+        result.Value.Items.Should().Contain(i => i.NamespaceId == liveNamespaceId);
+    }
+
+    [Fact]
+    public async Task GetIncidentsListAsync_ComputesTopCategoriesByOccurrenceCount()
+    {
+        var namespaceId = Guid.NewGuid();
+        var high = MakeSignature(namespaceId, "hash-high");
+        high.OccurrenceCount = 20;
+        _dbContext.NamespaceSignatures.Add(high);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _sut.GetIncidentsListAsync(OwnerId, trendDays: 7);
+
+        result.Value.TopCategories.Should().ContainSingle();
+        result.Value.TopCategories[0].Category.Should().Be("MaxDeliveryCountExceeded");
+        result.Value.TopCategories[0].Count.Should().Be(20);
+        result.Value.TopCategories[0].Percent.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task GetIncidentsListAsync_TrendCountsNewSignatureInTodaysBucket()
+    {
+        var namespaceId = Guid.NewGuid();
+        var sig = new NamespaceSignature
+        {
+            NamespaceId = namespaceId,
+            OwnerId = OwnerId,
+            SignatureHash = "hash-new",
+            HashKind = SignatureHashKind.Fingerprint,
+            FirstSeenAt = DateTimeOffset.UtcNow.AddMinutes(-30),
+            LastSeenAt = DateTimeOffset.UtcNow.AddMinutes(-30),
+            OccurrenceCount = 1,
+            DominantDeadletterReason = "MaxDeliveryCountExceeded",
+            TopTermsJson = "[\"timeout\"]",
+        };
+        _dbContext.NamespaceSignatures.Add(sig);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _sut.GetIncidentsListAsync(OwnerId, trendDays: 7);
+
+        result.Value.Trend.Should().NotBeEmpty();
+        result.Value.Trend.Sum(t => t.New).Should().Be(1);
+        result.Value.Trend.Sum(t => t.Active).Should().Be(1);
+    }
+
     private static FleetNamespaceHealth MakeNamespaceHealth(string name, FleetHealthSeverity severity) => new(
         NamespaceId: Guid.NewGuid(),
         NamespaceName: name,

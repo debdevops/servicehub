@@ -412,4 +412,208 @@ public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCente
         if (!hasKnowledge) return "Add Knowledge";
         return "Investigate";
     }
+
+    /// <inheritdoc />
+    public async Task<Result<IncidentListResponse>> GetIncidentsListAsync(
+        string ownerId,
+        int trendDays,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(ownerId);
+
+        var registeredNamespacesResult = await _namespaceRepository.GetByOwnerAsync(
+            ownerId, allowedNamespaceIds: null, cancellationToken).ConfigureAwait(false);
+        var namespacesById = registeredNamespacesResult.IsSuccess
+            ? registeredNamespacesResult.Value.ToDictionary(n => n.Id)
+            : new Dictionary<Guid, Namespace>();
+
+        var signatures = await _dbContext.NamespaceSignatures
+            .AsNoTracking()
+            .Where(s => s.OwnerId == ownerId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // Same orphaned-namespace filtering as GetInvestigationCenterAsync — a deleted
+        // namespace's signature rows are not cascade-deleted.
+        if (registeredNamespacesResult.IsSuccess)
+        {
+            signatures = signatures.Where(s => namespacesById.ContainsKey(s.NamespaceId)).ToList();
+        }
+
+        var lifecycleByHash = await _dbContext.SignatureLifecycleStates
+            .AsNoTracking()
+            .Where(s => s.OwnerId == ownerId)
+            .ToDictionaryAsync(
+                s => (s.NamespaceId, s.SignatureHash),
+                s => new SignatureLifecycleSnapshot(s.Status, s.PreviousStatus, s.TransitionedAt, s.Notes),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var allKnowledge = await _dbContext.FailureKnowledgeEntities
+            .AsNoTracking()
+            .Where(k => k.OwnerId == ownerId)
+            .ToDictionaryAsync(k => (k.NamespaceId, k.SignatureHash), cancellationToken)
+            .ConfigureAwait(false);
+
+        var metrics = ComputeMetrics(signatures, lifecycleByHash);
+        var items = BuildIncidentListItems(signatures, lifecycleByHash, allKnowledge, namespacesById);
+        var topCategories = BuildTopCategories(signatures);
+        var trend = await BuildTrendAsync(ownerId, signatures, lifecycleByHash, namespacesById.Keys.ToHashSet(), trendDays, cancellationToken)
+            .ConfigureAwait(false);
+
+        return Result.Success(new IncidentListResponse(metrics, trend, topCategories, items, DateTimeOffset.UtcNow));
+    }
+
+    private static List<IncidentListItem> BuildIncidentListItems(
+        IReadOnlyList<NamespaceSignature> signatures,
+        Dictionary<(Guid, string), SignatureLifecycleSnapshot> lifecycleByHash,
+        Dictionary<(Guid, string), FailureKnowledgeEntity> allKnowledge,
+        Dictionary<Guid, Namespace> namespacesById)
+    {
+        var items = new List<IncidentListItem>(signatures.Count);
+
+        foreach (var sig in signatures)
+        {
+            var key = (sig.NamespaceId, sig.SignatureHash);
+            var lifecycle = lifecycleByHash.TryGetValue(key, out var ls)
+                ? ls
+                : new SignatureLifecycleSnapshot(SignatureLifecycleStatus.Active, null, null, null);
+
+            var hasKnowledge = allKnowledge.TryGetValue(key, out var knowledge);
+            var isEscalating = lifecycle.PreviousStatus == SignatureLifecycleStatus.Resolved;
+            var isActionable = lifecycle.Status is SignatureLifecycleStatus.Active or SignatureLifecycleStatus.Reopened;
+            var recommendedAction = isActionable ? DetermineRecommendedAction(hasKnowledge, isEscalating) : null;
+            var severity = ComputeSeverityLevel(ComputeSeverityScore(isEscalating, hasKnowledge, sig.OccurrenceCount, sig.LastSeenAt));
+
+            namespacesById.TryGetValue(sig.NamespaceId, out var ns);
+
+            items.Add(new IncidentListItem(
+                sig.SignatureHash,
+                sig.NamespaceId,
+                ns?.DisplayName ?? ns?.Name,
+                ns?.Provider,
+                ns?.Environment,
+                $"{sig.DominantDeadletterReason} (ID: {sig.SignatureHash[..8]})",
+                sig.DominantDeadletterReason,
+                severity,
+                lifecycle.Status.ToString(),
+                isEscalating,
+                sig.OccurrenceCount,
+                sig.FirstSeenAt,
+                sig.LastSeenAt,
+                hasKnowledge,
+                hasKnowledge ? knowledge!.Owner : null,
+                recommendedAction));
+        }
+
+        return items.OrderByDescending(i => i.LastSeenAt).ToList();
+    }
+
+    /// <summary>
+    /// Same priority heuristic <see cref="BuildInvestigationQueue"/> uses (escalating +10, no
+    /// knowledge +5, high occurrence count +3, seen in the last day +2), applied to every
+    /// signature regardless of lifecycle status — severity is a quality-of-the-failure signal,
+    /// not an actionability one.
+    /// </summary>
+    private static double ComputeSeverityScore(bool isEscalating, bool hasKnowledge, int occurrenceCount, DateTimeOffset lastSeenAt)
+    {
+        var score = 0.0;
+        if (isEscalating) score += 10;
+        if (!hasKnowledge) score += 5;
+        if (occurrenceCount > 10) score += 3;
+        if ((DateTimeOffset.UtcNow - lastSeenAt).TotalDays < 1) score += 2;
+        return score;
+    }
+
+    /// <summary>Mirrors the frontend's <c>getPriorityLevel</c> thresholds (FailureIntelligenceCenterPage) so the
+    /// server-computed severity always agrees with how the UI would have classified the same score.</summary>
+    private static string ComputeSeverityLevel(double score) => score switch
+    {
+        >= 15 => "Critical",
+        >= 10 => "High",
+        >= 5 => "Medium",
+        _ => "Low",
+    };
+
+    /// <summary>
+    /// Total message occurrences (not signature count) per dominant deadletter reason, top 5 plus
+    /// an "Others" bucket for the rest — mirrors <c>DlqOverviewPage</c>'s client-side top-reasons
+    /// rollup, computed here instead since it folds over the full fleet-wide signature set.
+    /// </summary>
+    private static List<IncidentCategoryBreakdown> BuildTopCategories(IReadOnlyList<NamespaceSignature> signatures)
+    {
+        var total = signatures.Sum(s => s.OccurrenceCount);
+        if (total == 0) return [];
+
+        var grouped = signatures
+            .GroupBy(s => s.DominantDeadletterReason)
+            .Select(g => (Category: g.Key, Count: g.Sum(s => s.OccurrenceCount)))
+            .OrderByDescending(g => g.Count)
+            .ToList();
+
+        const int topN = 5;
+        var top = grouped.Take(topN)
+            .Select(g => new IncidentCategoryBreakdown(g.Category, g.Count, Math.Round(g.Count * 100.0 / total, 1)))
+            .ToList();
+
+        var othersCount = grouped.Skip(topN).Sum(g => g.Count);
+        if (othersCount > 0)
+        {
+            top.Add(new IncidentCategoryBreakdown("Others", othersCount, Math.Round(othersCount * 100.0 / total, 1)));
+        }
+
+        return top;
+    }
+
+    /// <summary>
+    /// See <see cref="IncidentTrendPoint"/> for exactly what each series means and why — this
+    /// buckets real timestamps (signature first-seen, lifecycle-history transitions, signature
+    /// last-seen) rather than reconstructing a historical point-in-time status index.
+    /// </summary>
+    private async Task<List<IncidentTrendPoint>> BuildTrendAsync(
+        string ownerId,
+        IReadOnlyList<NamespaceSignature> signatures,
+        Dictionary<(Guid, string), SignatureLifecycleSnapshot> lifecycleByHash,
+        HashSet<Guid> registeredNamespaceIds,
+        int trendDays,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var hourly = trendDays <= 1;
+        var bucketCount = hourly ? 24 : Math.Clamp(trendDays, 1, 30);
+        var bucketSpan = hourly ? TimeSpan.FromHours(1) : TimeSpan.FromDays(1);
+        var windowStart = now - TimeSpan.FromTicks(bucketSpan.Ticks * bucketCount);
+
+        var resolvedTransitions = await _dbContext.SignatureLifecycleHistory
+            .AsNoTracking()
+            .Where(h => h.OwnerId == ownerId
+                && h.ToStatus == SignatureLifecycleStatus.Resolved
+                && h.Timestamp >= windowStart)
+            .Select(h => new { h.NamespaceId, h.Timestamp })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var resolvedInWindow = resolvedTransitions.Where(h => registeredNamespaceIds.Contains(h.NamespaceId)).ToList();
+
+        var points = new List<IncidentTrendPoint>(bucketCount);
+        for (var i = 0; i < bucketCount; i++)
+        {
+            var bucketStart = windowStart + TimeSpan.FromTicks(bucketSpan.Ticks * i);
+            var bucketEnd = bucketStart + bucketSpan;
+
+            var newCount = signatures.Count(s => s.FirstSeenAt >= bucketStart && s.FirstSeenAt < bucketEnd);
+            var resolvedCount = resolvedInWindow.Count(h => h.Timestamp >= bucketStart && h.Timestamp < bucketEnd);
+            var activeCount = signatures.Count(s =>
+            {
+                if (s.LastSeenAt < bucketStart || s.LastSeenAt >= bucketEnd) return false;
+                var status = lifecycleByHash.TryGetValue((s.NamespaceId, s.SignatureHash), out var ls)
+                    ? ls.Status
+                    : SignatureLifecycleStatus.Active;
+                return status is SignatureLifecycleStatus.Active or SignatureLifecycleStatus.Reopened;
+            });
+
+            points.Add(new IncidentTrendPoint(bucketStart, activeCount, resolvedCount, newCount));
+        }
+
+        return points;
+    }
 }

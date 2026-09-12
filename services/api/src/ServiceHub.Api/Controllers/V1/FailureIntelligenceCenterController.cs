@@ -38,4 +38,21 @@ public sealed class FailureIntelligenceCenterController : ApiControllerBase
         var result = await _centerService.GetInvestigationCenterAsync(OwnerId, cancellationToken);
         return ToActionResult(result);
     }
+
+    /// <summary>
+    /// Gets the Incident Center's fleet-wide incident list: every failure signature the owner
+    /// has, plus fleet-wide metrics, a trend chart, and a category breakdown.
+    /// </summary>
+    /// <param name="days">Trend window in days: 1 (hourly buckets), 7, or 30. Defaults to 7.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpGet("incidents")]
+    [RequireScope(ApiKeyScopes.DlqRead)]
+    [ProducesResponseType(typeof(IncidentListResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IncidentListResponse>> GetIncidentsListAsync(
+        [FromQuery] int days = 7,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _centerService.GetIncidentsListAsync(OwnerId, days, cancellationToken);
+        return ToActionResult(result);
+    }
 }
