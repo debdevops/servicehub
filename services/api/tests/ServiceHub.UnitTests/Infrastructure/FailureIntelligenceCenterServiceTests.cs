@@ -72,12 +72,13 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
         _dbContext.Dispose();
     }
 
-    private static NamespaceSignature MakeSignature(Guid namespaceId, string hash) => new()
+    private static NamespaceSignature MakeSignature(
+        Guid namespaceId, string hash, SignatureHashKind hashKind = SignatureHashKind.Fingerprint) => new()
     {
         NamespaceId = namespaceId,
         OwnerId = OwnerId,
         SignatureHash = hash,
-        HashKind = SignatureHashKind.Fingerprint,
+        HashKind = hashKind,
         FirstSeenAt = DateTimeOffset.UtcNow.AddDays(-10),
         LastSeenAt = DateTimeOffset.UtcNow.AddDays(-1),
         OccurrenceCount = 4,
@@ -128,6 +129,30 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
         result.IsSuccess.Should().BeTrue();
         result.Value.InvestigationQueue.Should().NotContain(i => i.NamespaceId == deletedNamespaceId);
         result.Value.InvestigationQueue.Should().Contain(i => i.NamespaceId == liveNamespaceId);
+    }
+
+    // Full E2E pass, 2026-09-12: reproduced live with a real flood-seeded signature — Incident
+    // Center's "Investigate" link opened IncidentReadModelService.GetIncidentAsync, which (per its
+    // own ADR-0009 comment, mirrored by AttentionQueueService) only ever resolves a Fingerprint-
+    // kind row. This query had no HashKind filter at all, so a Cluster-kind row for the very same
+    // real failure (written by the DLQ Intelligence clustering path) surfaced here as its own
+    // "incident" whose "Investigate" link 404'd — confirmed live via
+    // GET /api/v1/namespaces/{id}/incidents/{hash} against a real Cluster-kind row.
+    [Fact]
+    public async Task GetInvestigationCenterAsync_ClusterKindSignature_ExcludedFromInvestigationQueue()
+    {
+        var namespaceId = Guid.NewGuid();
+        var fingerprintSignature = MakeSignature(namespaceId, "hash-fingerprint");
+        var clusterSignature = MakeSignature(namespaceId, "hash-cluster", SignatureHashKind.Cluster);
+        _dbContext.NamespaceSignatures.Add(fingerprintSignature);
+        _dbContext.NamespaceSignatures.Add(clusterSignature);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _sut.GetInvestigationCenterAsync(OwnerId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.InvestigationQueue.Should().Contain(i => i.SignatureHash == "hash-fingerprint");
+        result.Value.InvestigationQueue.Should().NotContain(i => i.SignatureHash == "hash-cluster");
     }
 
     [Fact]
@@ -311,6 +336,23 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
         result.IsSuccess.Should().BeTrue();
         result.Value.Items.Should().NotContain(i => i.NamespaceId == deletedNamespaceId);
         result.Value.Items.Should().Contain(i => i.NamespaceId == liveNamespaceId);
+    }
+
+    [Fact]
+    public async Task GetIncidentsListAsync_ClusterKindSignature_ExcludedFromList()
+    {
+        var namespaceId = Guid.NewGuid();
+        var fingerprintSignature = MakeSignature(namespaceId, "hash-fingerprint");
+        var clusterSignature = MakeSignature(namespaceId, "hash-cluster", SignatureHashKind.Cluster);
+        _dbContext.NamespaceSignatures.Add(fingerprintSignature);
+        _dbContext.NamespaceSignatures.Add(clusterSignature);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _sut.GetIncidentsListAsync(OwnerId, trendDays: 7);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Items.Should().Contain(i => i.SignatureHash == "hash-fingerprint");
+        result.Value.Items.Should().NotContain(i => i.SignatureHash == "hash-cluster");
     }
 
     [Fact]

@@ -47,10 +47,16 @@ public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCente
     {
         ArgumentException.ThrowIfNullOrEmpty(ownerId);
 
-        // Get all signatures for this owner across all namespaces
+        // Fingerprint-space only (M1.4, ADR-0009): Incident Center's "Investigate" deep link
+        // opens IncidentReadModelService.GetIncidentAsync, which only ever resolves a Fingerprint-
+        // kind row (the identity AutonomyGrants and the attention queue key on) — mirrors
+        // AttentionQueueService's identical filter for the identical reason. Without this filter,
+        // a Cluster-kind row for the same real failure (written by the DLQ Intelligence
+        // clustering path, `GET /api/v1/.../dlq/signatures`) surfaces here as an "incident" whose
+        // own "Investigate" link 404s.
         var signatures = await _dbContext.NamespaceSignatures
             .AsNoTracking()
-            .Where(s => s.OwnerId == ownerId)
+            .Where(s => s.OwnerId == ownerId && s.HashKind == SignatureHashKind.Fingerprint)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -427,9 +433,11 @@ public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCente
             ? registeredNamespacesResult.Value.ToDictionary(n => n.Id)
             : new Dictionary<Guid, Namespace>();
 
+        // Fingerprint-space only (M1.4, ADR-0009) — see GetInvestigationCenterAsync's identical
+        // filter for why: this list feeds the same "Investigate" deep link.
         var signatures = await _dbContext.NamespaceSignatures
             .AsNoTracking()
-            .Where(s => s.OwnerId == ownerId)
+            .Where(s => s.OwnerId == ownerId && s.HashKind == SignatureHashKind.Fingerprint)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 

@@ -26,6 +26,10 @@ vi.mock('@servicehub/ui-shared/hooks/useAudit', () => ({
   useAuditLogs: vi.fn(),
 }));
 
+vi.mock('@servicehub/ui-shared/hooks/useDlqOverview', () => ({
+  useDlqOverview: vi.fn(),
+}));
+
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -37,6 +41,7 @@ import { useQueues, useAllNamespacesQueues, useNamespaceStats } from '@servicehu
 import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 import { useFleetOverview } from '@servicehub/ui-shared/hooks/useFleet';
 import { useAuditLogs } from '@servicehub/ui-shared/hooks/useAudit';
+import { useDlqOverview } from '@servicehub/ui-shared/hooks/useDlqOverview';
 
 const mockUseProviderCapabilities = useProviderCapabilities as ReturnType<typeof vi.fn>;
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
@@ -45,6 +50,7 @@ const mockUseAllNamespacesQueues = useAllNamespacesQueues as ReturnType<typeof v
 const mockUseNamespaceStats = useNamespaceStats as ReturnType<typeof vi.fn>;
 const mockUseFleetOverview = useFleetOverview as ReturnType<typeof vi.fn>;
 const mockUseAuditLogs = useAuditLogs as ReturnType<typeof vi.fn>;
+const mockUseDlqOverview = useDlqOverview as ReturnType<typeof vi.fn>;
 
 const mockNamespace = {
   id: 'ns1',
@@ -113,6 +119,7 @@ describe('DashboardPage', () => {
     ]);
     mockUseFleetOverview.mockReturnValue({ data: undefined, isLoading: false });
     mockUseAuditLogs.mockReturnValue({ data: undefined, isLoading: false });
+    mockUseDlqOverview.mockReturnValue({ data: undefined, isLoading: false });
   });
 
   it('renders page title', () => {
@@ -312,6 +319,58 @@ describe('DashboardPage', () => {
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(await screen.findByText('—')).toBeInTheDocument();
+  });
+
+  // Full E2E pass, 2026-09-12: the top "Dead Letter" aggregate summed each namespace's live
+  // provider query, so once every namespace's live request had settled (succeeded OR failed),
+  // `isLoading` went false and the sum of the failed namespaces' 0s displayed as a confirmed
+  // "0" — reproduced live with 30+ unreachable namespaces after a `/api/v1/namespaces/stats/batch`
+  // timeout. The persisted ledger (`useDlqOverview`) already knows the real total regardless of
+  // live connectivity — same fix already applied to the Dead-Letter tab's KPI tiles.
+  it('sources the "Dead Letter" aggregate from the DB-backed overview, not live per-namespace stats', async () => {
+    mockUseNamespaces.mockReturnValue({
+      data: [mockNamespace, { ...mockNamespace, id: 'ns2' }],
+      isLoading: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    // Both namespaces' live stats are 0 — as they would be while a request is still failing.
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns1', queues: [], totalActive: 0, totalDlq: 0, totalScheduled: 0, totalQueues: 0, isLoading: false, isError: true },
+      { namespaceId: 'ns2', queues: [], totalActive: 0, totalDlq: 0, totalScheduled: 0, totalQueues: 0, isLoading: false, isError: true },
+    ]);
+    // The persisted DLQ ledger knows the real total regardless of live connectivity.
+    mockUseDlqOverview.mockReturnValue({
+      data: { totals: { totalDeadLettered: 14210, namespacesWithDlq: 35, namespacesTotal: 36 } },
+      isLoading: false,
+    });
+
+    render(<DashboardPage />, { wrapper: createWrapper() });
+
+    expect(await screen.findByText('Dead Letter')).toBeInTheDocument();
+    // The misleading-zero regression this guards against: the live aggregate for these two
+    // namespaces is 0, and that must not be what "Dead Letter" shows.
+    expect(screen.getByText('14,210')).toBeInTheDocument();
+  });
+
+  it('shows a loading placeholder, not a bare zero, while the DB-backed dead-letter overview is on its first fetch', async () => {
+    mockUseNamespaces.mockReturnValue({
+      data: [mockNamespace, { ...mockNamespace, id: 'ns2' }],
+      isLoading: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns1', queues: [], totalActive: 5, totalDlq: 0, totalScheduled: 0, totalQueues: 1, isLoading: false, isError: false },
+      { namespaceId: 'ns2', queues: [], totalActive: 3, totalDlq: 0, totalScheduled: 0, totalQueues: 1, isLoading: false, isError: false },
+    ]);
+    mockUseDlqOverview.mockReturnValue({ data: undefined, isLoading: true });
+
+    render(<DashboardPage />, { wrapper: createWrapper() });
+
+    const deadLetterLabel = await screen.findByText('Dead Letter');
+    const cell = deadLetterLabel.closest('div')!.parentElement as HTMLElement;
+    expect(within(cell).getByText('…')).toBeInTheDocument();
   });
 
   // F3 — "Refresh" used to refetch only the namespace list while resetting the "Live · just now"

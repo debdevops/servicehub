@@ -26,6 +26,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { LineChart, Line, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useQueues, useAllNamespacesQueues, useNamespaceStats, NamespaceQueueStats } from '@servicehub/ui-shared/hooks/useQueues';
+import { useDlqOverview } from '@servicehub/ui-shared/hooks/useDlqOverview';
 import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
 import { useEventStream } from '@servicehub/ui-shared/hooks/useEventStream';
 import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
@@ -101,6 +102,9 @@ interface AggregateStats {
   totalScheduled: number;
   spikeCount: number;
   isLoading: boolean;
+  /** True only on the DB-backed dead-letter total's first fetch — gates the "Dead Letter" cell
+   * specifically, since it no longer shares `isLoading`'s live per-namespace fan-out timing. */
+  dlqLoading: boolean;
 }
 
 function AggregateSummaryBar({ stats }: { stats: AggregateStats }) {
@@ -122,7 +126,7 @@ function AggregateSummaryBar({ stats }: { stats: AggregateStats }) {
     {
       icon: <AlertTriangle className="w-4 h-4 text-red-400" />,
       label: 'Dead Letter',
-      value: stats.isLoading ? '…' : stats.totalDlq.toLocaleString(),
+      value: stats.dlqLoading ? '…' : stats.totalDlq.toLocaleString(),
       colorClass: stats.totalDlq > 0 ? 'text-red-700 font-bold' : 'text-gray-500',
       bg: stats.totalDlq > 0 ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-100',
     },
@@ -853,6 +857,16 @@ export function DashboardPage() {
   );
   const statsLoading = allStats.some(s => s.isLoading);
 
+  // The "Dead Letter" aggregate must NOT be derived purely from `allStats`: those are live
+  // per-namespace provider queries, and a namespace whose live connection is degraded,
+  // unreachable, or slow to respond silently contributes 0 to the sum — collapsing a real,
+  // already-known DLQ total to a misleading zero once every namespace's request has settled
+  // (succeeded or failed), since `statsLoading` only tracks whether requests are still in
+  // flight, not whether they succeeded. /api/v1/dlq/overview reads the persisted ledger (the
+  // same source Fleet Overview, DLQ Intelligence and the Dead-Letter tab already use) and stays
+  // correct regardless of live connectivity — same fix as the Dead-Letter tab's KPI tiles.
+  const { data: dlqOverview, isLoading: isDlqOverviewLoading } = useDlqOverview();
+
   // "Refresh" previously refetched only the namespace list, so every number on this page —
   // queue counts, the stats rollup behind each card's Active/DLQ/Sched cells, the DLQ trend
   // sparklines — kept whatever value it had while the badge reset to "Live · just now". The
@@ -902,10 +916,11 @@ export function DashboardPage() {
       totalNamespaces: namespaces?.length ?? 0,
       loadedNamespaces: allStats.filter((s) => !s.isLoading && !s.isError).length,
       totalActive: allStats.reduce((sum, s) => sum + s.totalActive, 0),
-      totalDlq: allStats.reduce((sum, s) => sum + s.totalDlq, 0),
+      totalDlq: dlqOverview ? dlqOverview.totals.totalDeadLettered : allStats.reduce((sum, s) => sum + s.totalDlq, 0),
       totalScheduled: allStats.reduce((sum, s) => sum + s.totalScheduled, 0),
       spikeCount: allStats.filter((s) => s.totalDlq > DLQ_SPIKE_THRESHOLD).length,
       isLoading: allStats.some((s) => s.isLoading),
+      dlqLoading: isDlqOverviewLoading,
     };
 
     // DLQ hot spots: namespaces with spikes, ranked by DLQ count descending
@@ -1031,7 +1046,7 @@ export function DashboardPage() {
       topCategories,
       namespaceNameById,
     };
-  }, [namespaces, allStats, fleetOverview]);
+  }, [namespaces, allStats, fleetOverview, dlqOverview, isDlqOverviewLoading]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">

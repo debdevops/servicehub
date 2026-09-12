@@ -141,17 +141,25 @@ function StatTile({
   label,
   value,
   tone,
+  loading,
 }: {
   icon: ReactNode;
   label: string;
   value: number | string;
   tone: string;
+  /** True while the value's backing query is on its first fetch — shows a placeholder instead
+   * of the value so a still-loading tile can't be misread as a confirmed zero. */
+  loading?: boolean;
 }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-center gap-3">
       <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${tone}`}>{icon}</div>
       <div className="min-w-0">
-        <div className="text-2xl font-semibold text-gray-900 leading-none">{value}</div>
+        {loading ? (
+          <div className="h-7 w-12 rounded bg-gray-200 animate-pulse" aria-label="Loading" />
+        ) : (
+          <div className="text-2xl font-semibold text-gray-900 leading-none">{value}</div>
+        )}
         <div className="text-xs text-gray-500 mt-1 truncate">{label}</div>
       </div>
     </div>
@@ -651,7 +659,13 @@ export function MessagesOverviewPage() {
   // unknown. /api/v1/dlq/overview reads the persisted DLQ ledger (the same source DLQ
   // Intelligence, Incident Center and Fleet Overview already use) and stays correct regardless
   // of live connectivity. Queues/Topics counts have no ledger equivalent and stay live-derived.
-  const { data: dlqOverview } = useDlqOverview({}, isDeadLetter);
+  const { data: dlqOverview, isLoading: isDlqOverviewLoading } = useDlqOverview({}, isDeadLetter);
+  // True only on the DB-backed overview's first fetch (React Query v5 `isLoading` semantics) —
+  // the ledger-backed KPIs below must show a loading placeholder during that window rather than
+  // the live per-namespace fallback, which starts at 0 and fills in slowly under fleet-scale
+  // fan-out (see useAllNamespacesQueues) and would otherwise reproduce the exact "misleading
+  // zero" this DB-backed source was introduced to prevent — just narrowed to the loading window.
+  const dlqOverviewLoading = isDeadLetter && isDlqOverviewLoading;
 
   const aggregate = useMemo(() => {
     let totalQueues = 0;
@@ -808,6 +822,7 @@ export function MessagesOverviewPage() {
                 label={isDeadLetter ? 'Total Dead-Letter Messages' : 'Total Active Messages'}
                 value={aggregate.totalMessages.toLocaleString()}
                 tone={isDeadLetter ? 'bg-red-50' : 'bg-sky-50'}
+                loading={dlqOverviewLoading}
               />
               <StatTile
                 icon={<MessageSquare className="w-5 h-5 text-indigo-600" />}
@@ -826,6 +841,7 @@ export function MessagesOverviewPage() {
                 label="Namespaces with Messages"
                 value={`${aggregate.namespacesWithMessages} / ${namespaces.length}`}
                 tone="bg-emerald-50"
+                loading={dlqOverviewLoading}
               />
             </div>
 

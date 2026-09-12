@@ -253,6 +253,27 @@ describe('MessagesOverviewPage', () => {
     expect(screen.getByText('35 / 2')).toBeInTheDocument(); // numerator from the ledger, denominator from the page's own namespace list
   });
 
+  // Flood-scale finding, session 2: even after sourcing the KPIs from the DB-backed overview,
+  // the tiles rendered a bare "0" (indistinguishable from a real zero) for however long that
+  // request's first fetch took — which under fleet-scale live-namespace fan-out (this same
+  // page's own Queues/Topics counts) can be many seconds. A tile must show a loading placeholder
+  // during that window, not a number that looks confirmed.
+  it('shows a loading placeholder, not a bare zero, while the DB-backed overview is on its first fetch', () => {
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns-azure', totalActive: 0, totalDlq: 0, totalScheduled: 0, totalQueues: 1, totalTopics: 0, totalSubscriptions: 0, isLoading: true, isError: false },
+      { namespaceId: 'ns-aws', totalActive: 0, totalDlq: 0, totalScheduled: 0, totalQueues: 2, totalTopics: 0, totalSubscriptions: 0, isLoading: true, isError: false },
+    ]);
+    mockUseDlqOverview.mockReturnValue({ data: undefined, isLoading: true });
+
+    renderPage('/messages-overview?tab=deadletter');
+
+    const totalTile = screen.getByText('Total Dead-Letter Messages').closest('div.flex') as HTMLElement;
+    const namespacesTile = screen.getByText('Namespaces with Messages').closest('div.flex') as HTMLElement;
+    expect(within(totalTile).queryByText('0')).not.toBeInTheDocument();
+    expect(within(namespacesTile).queryByText(/0 \/ /)).not.toBeInTheDocument();
+    expect(screen.getAllByLabelText('Loading')).toHaveLength(2); // Total Dead-Letter Messages + Namespaces with Messages
+  });
+
   it('falls back to the live aggregate for the dead-letter KPIs while the DB-backed overview has not loaded yet', () => {
     mockUseAllNamespacesQueues.mockReturnValue([
       { namespaceId: 'ns-azure', totalActive: 0, totalDlq: 1, totalScheduled: 0, totalQueues: 1, totalTopics: 0, totalSubscriptions: 0, isLoading: false, isError: false },

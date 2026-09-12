@@ -157,4 +157,34 @@ describe('CommandPalette', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/?namespace=ns-1');
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  // ── Per-namespace "Browse DLQ" actions ────────────────────────────────────────
+  // Full E2E pass, 2026-09-12: every namespace's "Browse DLQ" action navigated to the same
+  // unscoped '/messages-overview?tab=deadletter' regardless of which namespace was clicked —
+  // the label promised per-namespace scoping the destination page couldn't provide. Fixed to
+  // use DLQ Message History, the one DLQ surface actually driven by a `?namespace=` URL param.
+
+  // HighlightMatch splits the matched label into per-character <mark> nodes, so a literal
+  // getByText(full label) won't match — find the option by its full textContent instead (same
+  // workaround the file's "filters items when user types" test notes above).
+  function findOption(text: string): HTMLElement {
+    const option = screen.getAllByRole('option').find((el) => el.textContent?.includes(text));
+    if (!option) throw new Error(`No option found containing "${text}"`);
+    return option;
+  }
+
+  it('scopes "Browse DLQ" to the clicked namespace, not a shared unscoped URL', async () => {
+    const { onClose } = renderOpen();
+    await userEvent.type(screen.getByPlaceholderText('Search pages, namespaces, actions…'), 'Browse DLQ');
+    await userEvent.click(findOption('Browse DLQ — Production Bus'));
+    expect(mockNavigate).toHaveBeenCalledWith('/dlq-history?namespace=ns-1');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives each namespace its own distinct "Browse DLQ" destination', async () => {
+    renderOpen();
+    await userEvent.type(screen.getByPlaceholderText('Search pages, namespaces, actions…'), 'Browse DLQ');
+    await userEvent.click(findOption('Browse DLQ — Dev Bus'));
+    expect(mockNavigate).toHaveBeenCalledWith('/dlq-history?namespace=ns-2');
+  });
 });

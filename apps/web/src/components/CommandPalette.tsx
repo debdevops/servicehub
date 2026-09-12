@@ -139,10 +139,12 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         icon: <AlertCircle className="w-4 h-4 text-red-500" />,
         keywords: 'dead letter queue',
         action: () => {
-          // MessagesOverviewPage lists dead-letter messages across every namespace (no
-          // per-namespace URL scoping) — the same destination the sidebar's own
-          // "Dead-Letter" quick-access link uses.
-          navigate('/messages-overview?tab=deadletter');
+          // DLQ Message History is the one DLQ surface that's actually namespace-scoped via the
+          // URL (`?namespace=`) — matches the nav registry's own 'dlq-history' entry. Previously
+          // this navigated to the unscoped `/messages-overview?tab=deadletter`, so every
+          // namespace's "Browse DLQ" entry did the exact same thing regardless of which
+          // namespace was clicked.
+          navigate(`${navPrefix}/dlq-history?namespace=${ns.id}`);
           onClose();
         },
       },
