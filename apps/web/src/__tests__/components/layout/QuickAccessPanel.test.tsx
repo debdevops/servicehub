@@ -54,7 +54,7 @@ describe('QuickAccessPanel', () => {
     render(<Wrapper><QuickAccessPanel /></Wrapper>);
     expect(screen.getByText('Active Messages')).toBeInTheDocument();
     expect(screen.getByText('Live Tail')).toBeInTheDocument();
-    expect(screen.getByText('DLQ Intelligence')).toBeInTheDocument();
+    expect(screen.getByText('Dead-Letter')).toBeInTheDocument();
     expect(screen.getByText('Namespace Overview')).toBeInTheDocument();
     expect(screen.getByText('Fleet Overview')).toBeInTheDocument();
     expect(screen.getByText('DLQ Message History')).toBeInTheDocument();
@@ -68,10 +68,10 @@ describe('QuickAccessPanel', () => {
     expect(screen.getByText('Help & Guide')).toBeInTheDocument();
   });
 
-  it('places Live Tail between Active Messages and DLQ Intelligence', () => {
+  it('places Live Tail between Active Messages and Dead-Letter', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><QuickAccessPanel /></Wrapper>);
-    const labels = ['Active Messages', 'Live Tail', 'DLQ Intelligence', 'Scheduled Messages', 'Cloud Bridge'];
+    const labels = ['Active Messages', 'Live Tail', 'Dead-Letter', 'Scheduled Messages', 'Cloud Bridge'];
     for (let i = 0; i < labels.length - 1; i++) {
       const current = screen.getByText(labels[i]);
       const next = screen.getByText(labels[i + 1]);
@@ -200,7 +200,7 @@ describe('QuickAccessPanel', () => {
       window.history.pushState({}, '', '/');
     });
 
-    it('highlights only Active Messages, not DLQ Intelligence, on the active-messages tab', () => {
+    it('highlights only Active Messages, not Dead-Letter, on the active-messages tab', () => {
       // MemoryRouter tracks its own in-memory location and never touches jsdom's
       // window.location — but the component reads window.location.search directly
       // (same pattern as NamespacesPanel.tsx), so the test URL must be synced too.
@@ -208,14 +208,14 @@ describe('QuickAccessPanel', () => {
       const Wrapper = createWrapper(['/messages-overview?tab=active']);
       render(<Wrapper><QuickAccessPanel /></Wrapper>);
       expect(screen.getByText('Active Messages').closest('a')).toHaveClass('bg-sky-50');
-      expect(screen.getByText('DLQ Intelligence').closest('a')).not.toHaveClass('bg-red-50');
+      expect(screen.getByText('Dead-Letter').closest('a')).not.toHaveClass('bg-red-50');
     });
 
-    it('highlights only DLQ Intelligence, not Active Messages, on /dlq-overview', () => {
+    it('highlights only Dead-Letter, not Active Messages, on /dlq-overview', () => {
       window.history.pushState({}, '', '/dlq-overview');
       const Wrapper = createWrapper(['/dlq-overview']);
       render(<Wrapper><QuickAccessPanel /></Wrapper>);
-      expect(screen.getByText('DLQ Intelligence').closest('a')).toHaveClass('bg-red-50');
+      expect(screen.getByText('Dead-Letter').closest('a')).toHaveClass('bg-red-50');
       expect(screen.getByText('Active Messages').closest('a')).not.toHaveClass('bg-sky-50');
     });
 

@@ -74,7 +74,7 @@ export interface NavLinkContext {
    * deliberately always leaves Demo Mode, matching IconRail's settings-gear affordance. */
   navPrefix: string;
   /** The namespace currently selected in the URL, if any — only entries that pre-select a
-   * namespace in their own link (Live Tail, DLQ Intelligence) read this. */
+   * namespace in their own link (Live Tail, DLQ Message History) read this. */
   currentNamespaceId?: string;
 }
 
@@ -201,15 +201,18 @@ export const NAV_ENTRIES: NavEntry[] = [
   {
     id: 'messages-deadletter',
     basePath: 'dlq-overview',
-    label: 'DLQ Intelligence',
+    label: 'Dead-Letter',
     icon: BarChart3,
     to: withPrefix('/dlq-overview'),
     quickAccess: { group: 'Observe', color: 'red' },
     commandPalette: {
-      description: 'Cross-cloud dead-letter investigation: trends, recurring signatures, which cloud, which reasons',
-      keywords: 'dlq dead letter overview triage reasons queues topics signatures intelligence',
+      // Forensic pattern/signature investigation lives in Incident Center now — this page owns
+      // current DLQ state (counts, trend, top reasons) only, so the description shouldn't imply
+      // overlap with it.
+      description: 'Current dead-letter state across every connected namespace: counts, trend, and top reasons',
+      keywords: 'dlq dead letter overview triage reasons queues topics',
     },
-    toolbarLabel: 'DLQ Intelligence',
+    toolbarLabel: 'Dead-Letter',
   },
   {
     id: 'scheduled',
