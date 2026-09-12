@@ -664,6 +664,198 @@ public class NamespacesControllerTests
 
     #endregion
 
+    #region GetStatsBatch Tests
+
+    private static QueueRuntimePropertiesDto CreateTestQueue(
+        string name, long active = 0, long dlq = 0, long scheduled = 0)
+    {
+        return new QueueRuntimePropertiesDto(
+            Name: name,
+            ActiveMessageCount: active,
+            DeadLetterMessageCount: dlq,
+            ScheduledMessageCount: scheduled,
+            TransferMessageCount: 0,
+            TransferDeadLetterMessageCount: 0,
+            SizeInBytes: 0,
+            Status: "Active",
+            CreatedAt: DateTimeOffset.UtcNow,
+            UpdatedAt: DateTimeOffset.UtcNow,
+            AccessedAt: DateTimeOffset.UtcNow,
+            RequiresSession: false,
+            RequiresDuplicateDetection: false,
+            EnablePartitioning: false,
+            EnableBatchedOperations: true,
+            MaxSizeInMegabytes: 1024,
+            MaxDeliveryCount: 10,
+            DefaultMessageTimeToLive: TimeSpan.FromDays(14),
+            LockDuration: TimeSpan.FromSeconds(30),
+            AutoDeleteOnIdle: TimeSpan.MaxValue);
+    }
+
+    private void SetUpAzureWrapper(
+        Namespace ns,
+        IReadOnlyList<QueueRuntimePropertiesDto> queues,
+        Func<CancellationToken, Task<Result<IReadOnlyList<QueueRuntimePropertiesDto>>>>? getQueues = null)
+    {
+        _connectionStringProtector.Setup(p => p.Unprotect(It.IsAny<string>()))
+            .Returns(Result<string>.Success("unprotected"));
+
+        var wrapper = new Mock<IServiceBusClientWrapper>();
+        if (getQueues is not null)
+        {
+            wrapper.Setup(w => w.GetQueuesAsync(It.IsAny<CancellationToken>())).Returns(getQueues);
+        }
+        else
+        {
+            wrapper.Setup(w => w.GetQueuesAsync(It.IsAny<CancellationToken>()))
+                .ReturnsAsync(Result<IReadOnlyList<QueueRuntimePropertiesDto>>.Success(queues));
+        }
+        wrapper.Setup(w => w.GetTopicsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<TopicRuntimePropertiesDto>>.Success(new List<TopicRuntimePropertiesDto>()));
+
+        _clientCache.Setup(c => c.GetOrCreate(ns.Id, It.IsAny<string>())).Returns(wrapper.Object);
+    }
+
+    [Fact]
+    public async Task GetStatsBatch_EmptyRequest_ReturnsEmptyArrayWithoutRepositoryCalls()
+    {
+        var result = await _controller.GetStatsBatch(new NamespaceStatsBatchRequest([]));
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var entries = okResult.Value.Should().BeAssignableTo<IReadOnlyList<NamespaceStatsBatchEntry>>().Subject;
+        entries.Should().BeEmpty();
+        _namespaceRepository.Verify(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetStatsBatch_MultipleOwnedAzureNamespaces_ReturnsStatsAndNamesForEach()
+    {
+        var ns1 = CreateTestNamespace("ns-one");
+        var ns2 = CreateTestNamespace("ns-two");
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns1.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns1));
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns2.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns2));
+
+        SetUpAzureWrapper(ns1, [CreateTestQueue("orders", active: 5, dlq: 1)]);
+        SetUpAzureWrapper(ns2, [CreateTestQueue("billing", active: 2, scheduled: 3)]);
+
+        var result = await _controller.GetStatsBatch(new NamespaceStatsBatchRequest([ns1.Id, ns2.Id]));
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var entries = okResult.Value.Should().BeAssignableTo<IReadOnlyList<NamespaceStatsBatchEntry>>().Subject;
+        entries.Should().HaveCount(2);
+
+        var entry1 = entries.Single(e => e.NamespaceId == ns1.Id);
+        entry1.Stats.TotalActive.Should().Be(5);
+        entry1.Stats.TotalDlq.Should().Be(1);
+        entry1.QueueNames.Should().BeEquivalentTo(["orders"]);
+
+        var entry2 = entries.Single(e => e.NamespaceId == ns2.Id);
+        entry2.Stats.TotalScheduled.Should().Be(3);
+        entry2.QueueNames.Should().BeEquivalentTo(["billing"]);
+    }
+
+    /// <summary>
+    /// Same "not found vs. inaccessible are indistinguishable" posture as
+    /// <see cref="GetOwnedNamespaceAsync"/> for a single namespace — applied per item so one
+    /// foreign/bad ID in a batch doesn't fail the whole request or leak which IDs exist.
+    /// </summary>
+    [Fact]
+    public async Task GetStatsBatch_ForeignNamespaceId_IsSilentlyDroppedNotErrored()
+    {
+        var owned = CreateTestNamespace("owned-ns");
+        var foreign = Namespace.Create(
+            "foreign-ns",
+            "Endpoint=sb://foreign.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
+            "Foreign NS",
+            ownerId: "someone-else").Value;
+
+        _namespaceRepository.Setup(r => r.GetByIdAsync(owned.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(owned));
+        _namespaceRepository.Setup(r => r.GetByIdAsync(foreign.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(foreign));
+
+        SetUpAzureWrapper(owned, [CreateTestQueue("q1", active: 1)]);
+
+        var result = await _controller.GetStatsBatch(new NamespaceStatsBatchRequest([owned.Id, foreign.Id]));
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var entries = okResult.Value.Should().BeAssignableTo<IReadOnlyList<NamespaceStatsBatchEntry>>().Subject;
+        entries.Should().ContainSingle();
+        entries[0].NamespaceId.Should().Be(owned.Id);
+    }
+
+    [Fact]
+    public async Task GetStatsBatch_DuplicateIds_AreDeduplicatedToOneEntry()
+    {
+        var ns = CreateTestNamespace("dup-ns");
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+        SetUpAzureWrapper(ns, [CreateTestQueue("q1")]);
+
+        var result = await _controller.GetStatsBatch(new NamespaceStatsBatchRequest([ns.Id, ns.Id, ns.Id]));
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var entries = okResult.Value.Should().BeAssignableTo<IReadOnlyList<NamespaceStatsBatchEntry>>().Subject;
+        entries.Should().ContainSingle();
+        _namespaceRepository.Verify(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetStatsBatch_ExceedsMaxBatchSize_ReturnsValidationError()
+    {
+        var tooMany = Enumerable.Range(0, 501).Select(_ => Guid.NewGuid()).ToList();
+
+        var result = await _controller.GetStatsBatch(new NamespaceStatsBatchRequest(tooMany));
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+        _namespaceRepository.Verify(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetStatsBatch_ManyNamespaces_ComputesWithBoundedConcurrencyNotSequentially()
+    {
+        // Same fleet-scale finding as ServiceBusHealthCheck's own concurrency regression test:
+        // a sequential foreach loop over N namespaces, each a slow live-provider round trip,
+        // scales linearly with fleet size. Bounded concurrent computation (10 at a time) must
+        // finish in a small fraction of the sequential time.
+        const int namespaceCount = 20;
+        var delay = TimeSpan.FromMilliseconds(150);
+        var namespaces = Enumerable.Range(0, namespaceCount)
+            .Select(i => CreateTestNamespace($"ns-{i}"))
+            .ToArray();
+
+        foreach (var ns in namespaces)
+        {
+            _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(Result<Namespace>.Success(ns));
+            SetUpAzureWrapper(ns, [], getQueues: async ct =>
+            {
+                await Task.Delay(delay, ct);
+                return Result<IReadOnlyList<QueueRuntimePropertiesDto>>.Success(
+                    new List<QueueRuntimePropertiesDto> { CreateTestQueue("q1", active: 1) });
+            });
+        }
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await _controller.GetStatsBatch(
+            new NamespaceStatsBatchRequest(namespaces.Select(n => n.Id).ToList()));
+        stopwatch.Stop();
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var entries = okResult.Value.Should().BeAssignableTo<IReadOnlyList<NamespaceStatsBatchEntry>>().Subject;
+        entries.Should().HaveCount(namespaceCount);
+
+        // Sequential would take >= namespaceCount * delay (3000ms). Bounded concurrency (10 at a
+        // time) takes roughly ceil(20/10) * 150ms = 300ms. A generous ceiling comfortably
+        // separates "parallel" from "sequential" without being flaky under CI load.
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2),
+            "namespace stats must be computed with bounded concurrency, not sequentially");
+    }
+
+    #endregion
+
     #region Delete Tests
 
     [Fact]

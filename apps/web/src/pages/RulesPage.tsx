@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useQueries } from '@tanstack/react-query';
 import { Plus, Zap, RefreshCw, ToggleLeft, ToggleRight, Pencil, Trash2, FlaskConical, Play, AlertTriangle, X, Shield, Brain, Globe2 } from 'lucide-react';
 import { RuleBuilderDialog, TemplateGalleryDialog, RuleTestDialog } from '@/components/rules';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -9,11 +8,8 @@ import { EnvironmentBadge } from '@/components/EnvironmentBadge';
 import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useAllNamespacesQueues } from '@servicehub/ui-shared/hooks/useQueues';
-import { apiClient } from '@servicehub/ui-shared/lib/api/client';
-import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { findRuleEntityWarnings, type KnownEntities } from '@servicehub/ui-shared/lib/ruleValidation';
 import { ProviderBadge, getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
-import type { Topic, ApiError } from '@servicehub/ui-shared/lib/api/types';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 import { useEventStream } from '@servicehub/ui-shared/hooks/useEventStream';
 import {
@@ -36,7 +32,6 @@ import type {
 
 export function RulesPage() {
   const { data: rules, isLoading, isError, refetch, isFetching } = useRules();
-  const { isDemoMode } = useDemoContext();
   // Live-refreshes the rules list when a circuit-breaker trip (or any other rule change)
   // happens elsewhere, rather than waiting for the existing 30s poll.
   useEventStream();
@@ -45,37 +40,17 @@ export function RulesPage() {
   // rules whose entity references no longer exist anywhere.
   const { data: namespaces } = useNamespaces();
   const namespaceIds = useMemo(() => namespaces?.map((ns) => ns.id) ?? [], [namespaces]);
+  // Both queue and topic names now come from the same batched namespace-stats fetch (see
+  // useAllNamespacesQueues) — this used to be a separate N-namespace `/topics` fan-out on top
+  // of that hook's own fan-out, tripling the live-provider request count on this page alone.
   const allQueueStats = useAllNamespacesQueues(namespaceIds, false);
-  const topicResults = useQueries({
-    queries: namespaceIds.map((id) => ({
-      queryKey: ['topics', id] as const,
-      queryFn: async (): Promise<Topic[]> => {
-        const response = await apiClient.get<Topic[]>(`/namespaces/${id}/topics`, { _silent: true });
-        return response.data;
-      },
-      enabled: !isDemoMode && !!id,
-      staleTime: 60_000,
-      refetchIntervalInBackground: false,
-      // Same status-aware retry suppression as useQueues' queuesQueryOptions — retrying a
-      // non-retryable 404/429/5xx just doubles the time a rule card sits at "Resolving scope…"
-      // for a namespace whose topics endpoint isn't going to succeed.
-      retry: (failureCount: number, error: ApiError) => {
-        const status = error?.response?.status ?? 0;
-        if (status === 404 || status === 429 || status >= 500) return false;
-        return failureCount < 1;
-      },
-    })),
-  });
   const knownEntities: KnownEntities = useMemo(
     () => ({
       queues: allQueueStats.flatMap((s) => s.queues?.map((q) => q.name) ?? []),
-      topics: topicResults.flatMap((r) => r.data?.map((t) => t.name) ?? []),
-      loaded:
-        namespaceIds.length > 0 &&
-        allQueueStats.every((s) => !s.isLoading) &&
-        topicResults.every((r) => !r.isLoading),
+      topics: allQueueStats.flatMap((s) => s.topicNames ?? []),
+      loaded: namespaceIds.length > 0 && allQueueStats.every((s) => !s.isLoading),
     }),
-    [allQueueStats, topicResults, namespaceIds.length],
+    [allQueueStats, namespaceIds.length],
   );
 
   const createMutation = useCreateRule();

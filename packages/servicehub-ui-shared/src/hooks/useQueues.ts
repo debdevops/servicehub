@@ -2,7 +2,7 @@ import { useQuery, useQueries, UseQueryOptions } from '@tanstack/react-query';
 import { apiClient } from '../lib/api/client';
 import { Queue, ApiError } from '../lib/api/types';
 import { useDemoContext } from '../lib/demo/DemoContext';
-import { getMockQueues, getMockStats } from '../lib/demo/mockProviders';
+import { getMockQueues, getMockStats, getMockTopics } from '../lib/demo/mockProviders';
 
 const queuesQueryOptions = (
   namespaceId: string,
@@ -51,6 +51,8 @@ export function useQueues(namespaceId: string, autoRefresh: boolean = true, refe
 export interface NamespaceQueueStats {
   namespaceId: string;
   queues: Queue[] | undefined;
+  /** Every topic name in the namespace — entity-picker use cases (e.g. RulesPage's scope validation). */
+  topicNames: string[] | undefined;
   totalActive: number;
   totalDlq: number;
   totalScheduled: number;
@@ -72,22 +74,43 @@ export interface NamespaceStatsData {
   totalActive: number;
   totalDlq: number;
   totalScheduled: number;
+  /** Every queue name in the namespace — entity-picker use cases (e.g. RulesPage's scope validation). */
+  queueNames: string[];
+  /** Every topic name in the namespace — entity-picker use cases (e.g. RulesPage's scope validation). */
+  topicNames: string[];
 }
 
 export interface NamespaceStatsResult {
   namespaceId: string;
   data: NamespaceStatsData | undefined;
+  dataUpdatedAt: number | undefined;
   isLoading: boolean;
   isError: boolean;
 }
 
+interface NamespaceStatsBatchEntry {
+  namespaceId: string;
+  stats: Omit<NamespaceStatsData, 'queueNames' | 'topicNames'>;
+  queueNames: string[];
+  topicNames: string[];
+}
+
 /**
- * Fetches `/namespaces/{id}/stats` (queue/topic/subscription/message-count rollup) for many
- * namespaces in parallel, sharing the `['namespace-stats', id]` query cache with every other
- * consumer — the same cached query `Header`, `QuickAccessPanel`, `CloudBridgePage`, and
- * `useAllNamespacesQueues` all warm, so calling this from multiple places adds no extra
- * network cost. Centralizing it here (rather than each caller hand-rolling its own
- * `useQueries` block) keeps the retry-suppression policy consistent everywhere.
+ * Fetches queue/topic/subscription/message-count rollups for many namespaces in ONE request
+ * to `POST /namespaces/stats/batch`, sharing the `['namespace-stats-batch', ids]` query cache
+ * with every other consumer requesting the same namespace set — `Header`, `QuickAccessPanel`,
+ * `CloudBridgePage`, and `useAllNamespacesQueues` all warm it, so calling this from multiple
+ * places adds no extra network cost.
+ *
+ * Fleet-scale finding: this used to be `N` parallel `GET .../stats` requests (one `useQueries`
+ * entry per namespace). `Header` and `QuickAccessPanel` call this hook with the *full* namespace
+ * list on effectively every page, so at 30+ namespaces every page load fired 30+ concurrent live
+ * provider round-trips — enough to starve the connection pool and delay unrelated requests
+ * (observed: proxy timeouts under a 36-namespace fleet). The backend computes all of them with
+ * its own bounded concurrency (`NamespacesController.GetStatsBatch`, mirroring
+ * `ServiceBusHealthCheck`'s pattern) — bounding it server-side, not client-side, because the
+ * provider connection pool is shared across every concurrent caller/operator, not just one
+ * browser tab.
  */
 export function useNamespaceStats(
   namespaceIds: string[],
@@ -96,84 +119,115 @@ export function useNamespaceStats(
 ): NamespaceStatsResult[] {
   const { isDemoMode, cloudProvider } = useDemoContext();
 
-  const statsResults = useQueries({
-    queries: namespaceIds.map((id) =>
-      isDemoMode && cloudProvider
-        ? {
-            queryKey: ['namespace-stats', 'demo', cloudProvider, id] as const,
-            queryFn: (): Promise<NamespaceStatsData> => Promise.resolve(getMockStats(cloudProvider)),
-            staleTime: Infinity,
-          }
-        : {
-            queryKey: ['namespace-stats', id] as const,
-            queryFn: async (): Promise<NamespaceStatsData> => {
-              const response = await apiClient.get<NamespaceStatsData>(`/namespaces/${id}/stats`, {
-                _silent: true,
-              });
-              return response.data;
-            },
-            enabled: !!id,
-            staleTime: 30_000,
-            refetchInterval: autoRefresh ? refetchMs : (false as const),
-            refetchIntervalInBackground: false,
-            retry: (failureCount: number, error: ApiError) => {
-              if (error?.response?.status === 404) return false;
-              if (error?.response?.status === 429) return false;
-              if ((error?.response?.status ?? 0) >= 500) return false;
-              return failureCount < 2;
-            },
-          },
-    ),
+  // Demo mode never touches the network — mock stats resolve instantly and per-namespace, so
+  // there's no fan-out to collapse; keep it as independent per-id queries.
+  const demoResults = useQueries({
+    queries: isDemoMode && cloudProvider
+      ? namespaceIds.map((id) => ({
+          queryKey: ['namespace-stats', 'demo', cloudProvider, id] as const,
+          queryFn: (): Promise<NamespaceStatsData> =>
+            Promise.resolve({
+              ...getMockStats(cloudProvider),
+              queueNames: getMockQueues(cloudProvider).map((q) => q.name),
+              topicNames: getMockTopics(cloudProvider).map((t) => t.name),
+            }),
+          staleTime: Infinity,
+        }))
+      : [],
   });
 
-  return statsResults.map((result, i) => ({
-    namespaceId: namespaceIds[i],
-    data: result.data,
-    isLoading: result.isLoading,
-    isError: result.isError,
+  const sortedIds = [...namespaceIds].sort();
+
+  const batchQuery = useQuery({
+    queryKey: ['namespace-stats-batch', sortedIds] as const,
+    queryFn: async (): Promise<Record<string, NamespaceStatsData>> => {
+      const response = await apiClient.post<NamespaceStatsBatchEntry[]>(
+        '/namespaces/stats/batch',
+        { namespaceIds: sortedIds },
+        { _silent: true },
+      );
+      const byId: Record<string, NamespaceStatsData> = {};
+      for (const entry of response.data) {
+        byId[entry.namespaceId] = { ...entry.stats, queueNames: entry.queueNames, topicNames: entry.topicNames };
+      }
+      return byId;
+    },
+    enabled: !(isDemoMode && cloudProvider) && sortedIds.length > 0,
+    staleTime: 30_000,
+    refetchInterval: autoRefresh ? refetchMs : (false as const),
+    refetchIntervalInBackground: false,
+    retry: (failureCount: number, error: ApiError) => {
+      if (error?.response?.status === 404) return false;
+      if (error?.response?.status === 429) return false;
+      if ((error?.response?.status ?? 0) >= 500) return false;
+      return failureCount < 2;
+    },
+  });
+
+  if (isDemoMode && cloudProvider) {
+    return demoResults.map((result, i) => ({
+      namespaceId: namespaceIds[i],
+      data: result.data,
+      dataUpdatedAt: result.dataUpdatedAt || undefined,
+      isLoading: result.isLoading,
+      isError: result.isError,
+    }));
+  }
+
+  return namespaceIds.map((id) => ({
+    namespaceId: id,
+    data: batchQuery.data?.[id],
+    dataUpdatedAt: batchQuery.dataUpdatedAt || undefined,
+    isLoading: batchQuery.isLoading,
+    isError: batchQuery.isError,
   }));
 }
 
 /**
- * Fetches queue data for multiple namespaces in parallel using shared query cache.
- * Cards using useQueues() will hit the same cache — no duplicate requests.
+ * Aggregate queue/topic/subscription stats for multiple namespaces, plus each namespace's
+ * queue names (`.queues`, name-only — no per-queue detail is available from this hook; use
+ * `useQueues(namespaceId)` for that) for entity-picker use cases like RulesPage's scope
+ * validation.
+ *
+ * Fleet-scale finding: this used to run its own `N`-namespace `useQueries` fan-out to
+ * `GET .../queues` *in addition to* `useNamespaceStats`'s own `N`-namespace fan-out to
+ * `GET .../stats` — 2N live provider round-trips for what a single namespace stats fetch
+ * already computes internally (it calls the same provider APIs to derive its totals). Now
+ * backed entirely by `useNamespaceStats`'s one batched request; see its docs for the full
+ * fan-out story. This also removes the stale "loading" window where the two independent
+ * fetches settled at different times — the P1 misleading-zero bug class this fleet was
+ * already bitten by once.
  */
 export function useAllNamespacesQueues(
   namespaceIds: string[],
   autoRefresh: boolean = true,
-  intervals?: { queuesMs?: number; statsMs?: number },
+  intervals?: { statsMs?: number },
 ): NamespaceQueueStats[] {
-  const { isDemoMode, cloudProvider } = useDemoContext();
-
-  const results = useQueries({
-    queries: namespaceIds.map((id) =>
-      isDemoMode && cloudProvider
-        ? {
-            queryKey: ['queues', 'demo', cloudProvider, id] as const,
-            queryFn: (): Promise<Queue[]> => Promise.resolve(getMockQueues(cloudProvider)),
-            staleTime: Infinity,
-          }
-        : queuesQueryOptions(id, autoRefresh, intervals?.queuesMs),
-    ),
-  });
-
-  // Also fetch stats (with subscription DLQs) for each namespace
   const statsResults = useNamespaceStats(namespaceIds, autoRefresh, intervals?.statsMs ?? 60_000);
 
-  return results.map((result, i) => {
-    const queues = result.data;
-    const stats = statsResults[i]?.data;
+  return statsResults.map((result) => {
+    const stats = result.data;
+    const queues: Queue[] | undefined = stats?.queueNames.map((name) => ({
+      name,
+      activeMessageCount: 0,
+      deadLetterMessageCount: 0,
+      scheduledMessageCount: 0,
+      maxSizeInMegabytes: 0,
+      sizeInBytes: 0,
+      status: 'Active',
+    }));
     return {
-      namespaceId: namespaceIds[i],
+      namespaceId: result.namespaceId,
       queues,
-      totalActive: stats?.totalActive ?? queues?.reduce((s, q) => s + q.activeMessageCount, 0) ?? 0,
-      totalDlq: stats?.totalDlq ?? queues?.reduce((s, q) => s + q.deadLetterMessageCount, 0) ?? 0,
-      totalScheduled: stats?.totalScheduled ?? queues?.reduce((s, q) => s + q.scheduledMessageCount, 0) ?? 0,
-      totalQueues: stats?.totalQueues ?? queues?.length ?? 0,
+      topicNames: stats?.topicNames,
+      totalActive: stats?.totalActive ?? 0,
+      totalDlq: stats?.totalDlq ?? 0,
+      totalScheduled: stats?.totalScheduled ?? 0,
+      totalQueues: stats?.totalQueues ?? 0,
       totalTopics: stats?.totalTopics ?? 0,
       totalSubscriptions: stats?.totalSubscriptions ?? 0,
-      dataUpdatedAt: result.dataUpdatedAt || undefined,
-      isLoading: result.isLoading || (statsResults[i]?.isLoading ?? false),
+      dataUpdatedAt: result.dataUpdatedAt,
+      isLoading: result.isLoading,
       isError: result.isError,
     };
   });

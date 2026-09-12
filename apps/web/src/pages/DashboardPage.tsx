@@ -849,9 +849,7 @@ export function DashboardPage() {
   const allStats: NamespaceQueueStats[] = useAllNamespacesQueues(
     namespaces?.map(ns => ns.id) ?? [],
     true,
-    sseConnected
-      ? { queuesMs: QUEUES_POLL_MS.relaxed, statsMs: STATS_POLL_MS.relaxed }
-      : undefined,
+    sseConnected ? { statsMs: STATS_POLL_MS.relaxed } : undefined,
   );
   const statsLoading = allStats.some(s => s.isLoading);
 
