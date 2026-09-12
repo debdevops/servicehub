@@ -30,8 +30,11 @@ const sampleOverview = {
     changePercent: 18,
     namespacesWithDlq: 2,
     namespacesTotal: 3,
+    namespacesWithDlqChangePercent: 25,
     affectedQueues: 12,
+    affectedQueuesChangePercent: 9,
     affectedTopics: 8,
+    affectedTopicsChangePercent: 14,
     oldestMessageDetectedAt: '2026-09-05T10:24:00Z',
     replayedCount: 45,
     replayedChangePercent: 12,
@@ -79,25 +82,7 @@ const sampleOverview = {
       ],
     },
   ],
-  recurringPatterns: [
-    {
-      patternKey: 'processingError:Downstream timeout',
-      rootCauseSummary: 'Downstream timeout',
-      category: 'processingError',
-      occurrences: 120,
-      percentOfTotal: 38,
-      affectedProviders: ['aws'],
-      namespaceCount: 1,
-      firstSeenAt: '2026-09-05T10:24:00Z',
-      lastSeenAt: '2026-09-11T10:24:00Z',
-      confidence: 'High',
-      averageConfidence: 0.92,
-      replaySafety: 'RequiresReview',
-      suggestedAction: 'Review a sample before replaying',
-      representativeNamespaceId: 'ns-devaws',
-      representativeEntityName: 'orders-queue',
-    },
-  ],
+  recurringPatterns: [],
 };
 
 function renderPage() {
@@ -132,11 +117,24 @@ describe('DlqOverviewPage', () => {
   it('renders the KPI strip from the totals', () => {
     mockUseDlqOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, isFetching: false, refetch: vi.fn() });
     renderPage();
-    expect(screen.getByText('Active in DLQ')).toBeInTheDocument();
+    expect(screen.getByText('Total Dead-Lettered')).toBeInTheDocument();
+    expect(screen.getByText('Namespaces with DLQ')).toBeInTheDocument();
+    expect(screen.getByText('Affected Queues')).toBeInTheDocument();
+    expect(screen.getByText('Affected Topics')).toBeInTheDocument();
+    expect(screen.getByText('Oldest Message')).toBeInTheDocument();
     expect(screen.getAllByText('320').length).toBeGreaterThan(0);
-    expect(screen.getByText('45')).toBeInTheDocument();
-    expect(screen.getByText('5')).toBeInTheDocument();
-    expect(screen.getByText('400')).toBeInTheDocument();
+    expect(screen.getByText('2 / 3')).toBeInTheDocument();
+  });
+
+  it('renders the page title, breadcrumb, and view toggle', () => {
+    mockUseDlqOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, isFetching: false, refetch: vi.fn() });
+    renderPage();
+    expect(screen.getByText('Dead-Letter Overview')).toBeInTheDocument();
+    expect(screen.getByText('Fleet Overview')).toBeInTheDocument();
+    expect(screen.getByText('Messages')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Active'));
+    expect(mockNavigate).toHaveBeenCalledWith('/messages-overview?tab=active');
   });
 
   it('renders a provider section with its reasons and namespace table', () => {
@@ -147,7 +145,14 @@ describe('DlqOverviewPage', () => {
     expect(screen.getByText('OrdersNS')).toBeInTheDocument();
   });
 
-  it('navigates to DLQ Intelligence for a namespace when View is clicked', () => {
+  it('navigates a provider section "View All" into Messages Overview filtered by cloud', () => {
+    mockUseDlqOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, isFetching: false, refetch: vi.fn() });
+    renderPage();
+    fireEvent.click(screen.getByText('View All'));
+    expect(mockNavigate).toHaveBeenCalledWith('/messages-overview?tab=deadletter&cloud=aws');
+  });
+
+  it('navigates to DLQ Message History for a namespace when View is clicked', () => {
     mockUseDlqOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, isFetching: false, refetch: vi.fn() });
     renderPage();
     const row = screen.getByText('DEVAWS').closest('tr')!;
@@ -175,19 +180,11 @@ describe('DlqOverviewPage', () => {
     expect(screen.getByText(/No namespaces match the current filters/i)).toBeInTheDocument();
   });
 
-  it('renders recurring failure signatures and investigates into DLQ Message History', () => {
-    mockUseDlqOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, isFetching: false, refetch: vi.fn() });
-    renderPage();
-    expect(screen.getByText('Recurring Failure Signatures (All Providers)')).toBeInTheDocument();
-    expect(screen.getByText('Downstream timeout')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Investigate'));
-    expect(mockNavigate).toHaveBeenCalledWith('/dlq-history?namespace=ns-devaws&category=ProcessingError');
-  });
-
-  it('passes the entity, status, and replay-safety filters through to the query', () => {
+  it('passes the entity, status, and replay-safety filters through to the query once revealed', () => {
     mockUseDlqOverview.mockReturnValue({ data: sampleOverview, isLoading: false, isError: false, isFetching: false, refetch: vi.fn() });
     renderPage();
 
+    fireEvent.click(screen.getByLabelText('More filters'));
     fireEvent.change(screen.getByPlaceholderText(/Entity name/i), { target: { value: 'orders-queue' } });
     fireEvent.change(screen.getByLabelText('Filter by status'), { target: { value: 'archived' } });
     fireEvent.change(screen.getByLabelText('Filter by replay safety'), { target: { value: 'Unsafe' } });

@@ -371,4 +371,31 @@ public class DlqOverviewServiceTests : IDisposable
         result.Value.Totals.RecurringPatternCount.Should().Be(1); // only the timeout pattern recurs (2+ occurrences)
         result.Value.Totals.NeedsInvestigationCount.Should().Be(2); // neither pattern's worst case is Safe
     }
+
+    [Fact]
+    public async Task GetOverviewAsync_NamespaceAndQueueFootprintGrowsWithinWindow_ChangePercentsReflectGrowth()
+    {
+        var oldNs = CreateNamespace("old-ns");
+        var newNs = CreateNamespace("new-ns");
+        SetOwnedNamespaces(oldNs, newNs);
+
+        // Already active before the window opened and still active today — counts toward both
+        // the start-of-window snapshot and today's totals.
+        _dbContext.DlqMessages.Add(
+            Msg(oldNs.Id, 1, CloudProviderType.Azure, entity: "orders-queue", detectedAt: DateTimeOffset.UtcNow.AddDays(-10)));
+        // Detected inside the window — a namespace and a queue that weren't part of the backlog
+        // at the start of the window.
+        _dbContext.DlqMessages.Add(
+            Msg(newNs.Id, 2, CloudProviderType.Azure, entity: "payments-queue", detectedAt: DateTimeOffset.UtcNow));
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetOverviewAsync(TestConstants.TestOwnerId, new DlqOverviewFilter(Days: 7));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Totals.NamespacesWithDlq.Should().Be(2);
+        result.Value.Totals.NamespacesWithDlqChangePercent.Should().Be(100.0); // 1 -> 2
+        result.Value.Totals.AffectedQueues.Should().Be(2);
+        result.Value.Totals.AffectedQueuesChangePercent.Should().Be(100.0); // 1 -> 2
+        result.Value.Totals.AffectedTopicsChangePercent.Should().Be(0); // 0 -> 0, flat
+    }
 }

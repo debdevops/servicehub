@@ -149,13 +149,21 @@ public sealed class DlqOverviewService : IDlqOverviewService
 
             var recurringPatterns = BuildRecurringPatterns(rows, totalDeadLettered);
 
+            var namespacesWithDlqTotal = providers.Sum(p => p.NamespacesWithDlq);
+            var affectedQueuesTotal = providers.Sum(p => p.AffectedQueues);
+            var affectedTopicsTotal = providers.Sum(p => p.AffectedTopics);
+            var startSnapshot = SnapshotCountsAsOf(rows, startDate);
+
             var totals = new DlqOverviewTotals(
                 TotalDeadLettered: totalDeadLettered,
                 ChangePercent: totalTrend.Count > 0 ? PercentChange(totalTrend[0].Count, totalDeadLettered) : null,
-                NamespacesWithDlq: providers.Sum(p => p.NamespacesWithDlq),
+                NamespacesWithDlq: namespacesWithDlqTotal,
                 NamespacesTotal: providers.Sum(p => p.NamespacesTotal),
-                AffectedQueues: providers.Sum(p => p.AffectedQueues),
-                AffectedTopics: providers.Sum(p => p.AffectedTopics),
+                NamespacesWithDlqChangePercent: PercentChange(startSnapshot.Namespaces, namespacesWithDlqTotal),
+                AffectedQueues: affectedQueuesTotal,
+                AffectedQueuesChangePercent: PercentChange(startSnapshot.Queues, affectedQueuesTotal),
+                AffectedTopics: affectedTopicsTotal,
+                AffectedTopicsChangePercent: PercentChange(startSnapshot.Topics, affectedTopicsTotal),
                 OldestMessageDetectedAt: rows
                     .Where(r => r.Status == DlqMessageStatus.Active)
                     .Select(r => (DateTimeOffset?)r.DetectedAtUtc)
@@ -304,6 +312,29 @@ public sealed class DlqOverviewService : IDlqOverviewService
         }
 
         return trend;
+    }
+
+    /// <summary>
+    /// Distinct namespace/queue/topic counts still "active" (detected on/before <paramref
+    /// name="day"/>, not yet resolved by day's end) — the same boundary <see cref="BuildTrend"/>
+    /// uses for its backlog line, reused here to compare today's fleet-wide namespace/queue/topic
+    /// footprint against its size at the start of the window.
+    /// </summary>
+    private static (int Namespaces, int Queues, int Topics) SnapshotCountsAsOf(List<RelevantRow> rows, DateTime day)
+    {
+        var asOf = rows.Where(r =>
+        {
+            if (r.DetectedAtUtc.UtcDateTime.Date > day)
+                return false;
+
+            var resolved = r.ResolvedAt ?? r.ReplayedAt;
+            return resolved is null || resolved.Value.UtcDateTime.Date > day;
+        }).ToList();
+
+        return (
+            Namespaces: asOf.Select(r => r.NamespaceId).Distinct().Count(),
+            Queues: asOf.Where(r => r.EntityType == ServiceBusEntityType.Queue).Select(r => r.EntityName).Distinct().Count(),
+            Topics: asOf.Where(r => r.EntityType == ServiceBusEntityType.Subscription).Select(r => r.TopicName ?? r.EntityName).Distinct().Count());
     }
 
     private static double? PercentChange(int from, int to)

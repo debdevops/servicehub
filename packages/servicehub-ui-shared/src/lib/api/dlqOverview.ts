@@ -74,8 +74,11 @@ export interface DlqOverviewTotals {
   changePercent: number | null;
   namespacesWithDlq: number;
   namespacesTotal: number;
+  namespacesWithDlqChangePercent: number | null;
   affectedQueues: number;
+  affectedQueuesChangePercent: number | null;
   affectedTopics: number;
+  affectedTopicsChangePercent: number | null;
   oldestMessageDetectedAt: string | null;
   replayedCount: number;
   replayedChangePercent: number | null;

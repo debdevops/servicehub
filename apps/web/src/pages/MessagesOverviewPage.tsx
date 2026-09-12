@@ -611,7 +611,11 @@ export function MessagesOverviewPage() {
   const navPrefix = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
   const [search, setSearch] = useState('');
   const filter = search.trim().toLowerCase();
-  const [providerFilter, setProviderFilter] = useState<CloudProviderType | 'all'>('all');
+  // Seeded once from ?cloud= so a deep link (e.g. DLQ Overview's per-provider "View All") lands
+  // already filtered — mirrors how `tab` is read from the URL just below.
+  const [providerFilter, setProviderFilter] = useState<CloudProviderType | 'all'>(
+    (searchParams.get('cloud') as CloudProviderType | null) ?? 'all',
+  );
   const [namespaceFilter, setNamespaceFilter] = useState<string>('');
   const [entityTypeFilter, setEntityTypeFilter] = useState<EntityTypeFilter>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
