@@ -87,6 +87,11 @@ if (builder.Configuration.GetValue("CloudProviders:Gcp:Enabled", false))
 // whichever ICloudMessagingProvider set is active for this host.
 builder.Services.AddBackgroundWorkers();
 
+// Local test infrastructure for the high-volume/flood verification pass (see
+// FloodSeedController). Registration is inert unless invoked, and the controller itself refuses
+// every request outside Development — safe to register unconditionally.
+builder.Services.AddScoped<ServiceHub.Infrastructure.Testing.FloodSeedService>();
+
 var app = builder.Build();
 
 // Enforce the single-instance invariant the recovery evidence ledger's hash chain depends on

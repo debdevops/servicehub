@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useQueues, useAllNamespacesQueues } from '@servicehub/ui-shared/hooks/useQueues';
+import { useDlqOverview } from '@servicehub/ui-shared/hooks/useDlqOverview';
 import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
 import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
@@ -642,20 +643,36 @@ export function MessagesOverviewPage() {
   // ['namespace-stats', id] queries every NamespaceEntitiesSection below already fetches, so
   // this adds no extra network cost.
   const liveStats = useAllNamespacesQueues((namespaces ?? []).map((ns) => ns.id), false);
+
+  // The Dead-Letter tab's headline KPIs (Total Dead-Letter Messages, Namespaces with Messages)
+  // must NOT be derived purely from liveStats: those are per-namespace live provider queries,
+  // and any namespace whose live connection is degraded/unreachable silently contributes 0 —
+  // collapsing a real, already-known DLQ total to a misleading zero instead of reporting it as
+  // unknown. /api/v1/dlq/overview reads the persisted DLQ ledger (the same source DLQ
+  // Intelligence, Incident Center and Fleet Overview already use) and stays correct regardless
+  // of live connectivity. Queues/Topics counts have no ledger equivalent and stay live-derived.
+  const { data: dlqOverview } = useDlqOverview({}, isDeadLetter);
+
   const aggregate = useMemo(() => {
-    let totalMessages = 0;
     let totalQueues = 0;
     let totalTopics = 0;
-    let namespacesWithMessages = 0;
+    let liveTotalMessages = 0;
+    let liveNamespacesWithMessages = 0;
     for (const s of liveStats) {
       const relevant = tab === 'deadletter' ? s.totalDlq : s.totalActive;
-      totalMessages += relevant;
+      liveTotalMessages += relevant;
       totalQueues += s.totalQueues;
       totalTopics += s.totalTopics;
-      if (relevant > 0) namespacesWithMessages++;
+      if (relevant > 0) liveNamespacesWithMessages++;
     }
+
+    const totalMessages =
+      isDeadLetter && dlqOverview ? dlqOverview.totals.totalDeadLettered : liveTotalMessages;
+    const namespacesWithMessages =
+      isDeadLetter && dlqOverview ? dlqOverview.totals.namespacesWithDlq : liveNamespacesWithMessages;
+
     return { totalMessages, totalQueues, totalTopics, namespacesWithMessages };
-  }, [liveStats, tab]);
+  }, [liveStats, tab, isDeadLetter, dlqOverview]);
 
   const clearFilters = () => {
     setSearch('');

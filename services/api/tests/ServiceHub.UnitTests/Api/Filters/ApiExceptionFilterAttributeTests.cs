@@ -13,7 +13,7 @@ namespace ServiceHub.UnitTests.Api.Filters;
 
 public sealed class ApiExceptionFilterAttributeTests
 {
-    private static ExceptionContext CreateContext(Exception exception, bool isDevelopment = false)
+    private static ExceptionContext CreateContext(Exception exception, bool isDevelopment = false, bool requestAborted = false)
     {
         var mockEnv = new Mock<IHostEnvironment>();
         mockEnv.Setup(e => e.EnvironmentName)
@@ -32,6 +32,13 @@ public sealed class ApiExceptionFilterAttributeTests
         {
             RequestServices = serviceProvider
         };
+
+        if (requestAborted)
+        {
+            var cts = new CancellationTokenSource();
+            cts.Cancel();
+            httpContext.RequestAborted = cts.Token;
+        }
 
         var actionContext = new ActionContext(
             httpContext,
@@ -137,6 +144,42 @@ public sealed class ApiExceptionFilterAttributeTests
         new ApiExceptionFilterAttribute().OnException(context);
         var result = context.Result as ObjectResult;
         result!.Value.Should().BeOfType<ProblemDetails>();
+    }
+
+    // ── Client-cancelled requests (flood-scale finding) ──────────────
+    //
+    // Under a high-namespace-count flood, many concurrent in-flight requests get cancelled by
+    // the client (navigation, connection-pool pressure). ErrorHandlingMiddleware already treats
+    // this correctly (Debug log, 499, no body). Before this fix, this filter — which intercepts
+    // OperationCanceledException first, inside the MVC pipeline — logged it as a full-stack-trace
+    // ERROR and mapped it to 400, both wrong for a client that has already disconnected.
+
+    [Fact]
+    public void OnException_OperationCanceledException_RequestAborted_Sets499()
+    {
+        var context = CreateContext(new TaskCanceledException(), requestAborted: true);
+        new ApiExceptionFilterAttribute().OnException(context);
+        context.HttpContext.Response.StatusCode.Should().Be(499);
+    }
+
+    [Fact]
+    public void OnException_OperationCanceledException_RequestAborted_SetsExceptionHandledWithoutWritingProblemDetails()
+    {
+        var context = CreateContext(new TaskCanceledException(), requestAborted: true);
+        new ApiExceptionFilterAttribute().OnException(context);
+        context.ExceptionHandled.Should().BeTrue();
+        context.Result.Should().BeNull("a disconnected client has nothing to read a response body from");
+    }
+
+    [Fact]
+    public void OnException_OperationCanceledException_RequestNotAborted_StillMapsAsBeforeNotAsClientCancellation()
+    {
+        // Only a genuinely client-aborted request gets the 499 short-circuit — an
+        // OperationCanceledException from some other cause (e.g. a server-side timeout token,
+        // request still live) must keep going through the normal mapping path.
+        var context = CreateContext(new OperationCanceledException(), requestAborted: false);
+        new ApiExceptionFilterAttribute().OnException(context);
+        GetStatusCode(context).Should().Be(StatusCodes.Status400BadRequest);
     }
 
     [Fact]

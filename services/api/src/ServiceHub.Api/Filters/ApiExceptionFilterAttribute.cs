@@ -24,6 +24,22 @@ public sealed class ApiExceptionFilterAttribute : ExceptionFilterAttribute
         var environment = context.HttpContext.RequestServices.GetService<IHostEnvironment>();
         var correlationId = context.HttpContext.Items["CorrelationId"]?.ToString() ?? "unknown";
 
+        // A client-cancelled request (navigated away, tab closed, connection pool pressure —
+        // observed under a high-namespace-count flood: many concurrent in-flight requests get
+        // aborted) surfaces here as OperationCanceledException before it would otherwise reach
+        // ErrorHandlingMiddleware, which already treats this case correctly (Debug log, 499, no
+        // body — there's no client left to read it). Without this same guard here, MVC's action
+        // pipeline intercepts it first and this filter logged it as a full-stack-trace ERROR and
+        // tried to write a "the operation was cancelled" 400 to an already-disconnected socket —
+        // pure log noise that, at flood scale, can bury genuine errors under routine cancellations.
+        if (context.Exception is OperationCanceledException && context.HttpContext.RequestAborted.IsCancellationRequested)
+        {
+            logger?.LogDebug("Request was cancelled by client. CorrelationId: {CorrelationId}", correlationId);
+            context.HttpContext.Response.StatusCode = 499; // Client Closed Request
+            context.ExceptionHandled = true;
+            return;
+        }
+
         logger?.LogError(context.Exception,
             "Unhandled exception in action filter. CorrelationId: {CorrelationId}",
             correlationId);

@@ -9,6 +9,7 @@ vi.mock('@servicehub/ui-shared/hooks/useQueues', () => ({ useQueues: vi.fn(), us
 vi.mock('@servicehub/ui-shared/hooks/useTopics', () => ({ useTopics: vi.fn() }));
 vi.mock('@servicehub/ui-shared/hooks/useSubscriptions', () => ({ useSubscriptions: vi.fn() }));
 vi.mock('@servicehub/ui-shared/hooks/useCloudBridge', () => ({ useProviderCapabilities: vi.fn() }));
+vi.mock('@servicehub/ui-shared/hooks/useDlqOverview', () => ({ useDlqOverview: vi.fn() }));
 
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async () => {
@@ -21,6 +22,7 @@ import { useQueues, useAllNamespacesQueues } from '@servicehub/ui-shared/hooks/u
 import { useTopics } from '@servicehub/ui-shared/hooks/useTopics';
 import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
 import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { useDlqOverview } from '@servicehub/ui-shared/hooks/useDlqOverview';
 
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;
@@ -28,6 +30,7 @@ const mockUseAllNamespacesQueues = useAllNamespacesQueues as ReturnType<typeof v
 const mockUseTopics = useTopics as ReturnType<typeof vi.fn>;
 const mockUseSubscriptions = useSubscriptions as ReturnType<typeof vi.fn>;
 const mockUseProviderCapabilities = useProviderCapabilities as ReturnType<typeof vi.fn>;
+const mockUseDlqOverview = useDlqOverview as ReturnType<typeof vi.fn>;
 
 const azureNs = {
   id: 'ns-azure',
@@ -85,6 +88,7 @@ describe('MessagesOverviewPage', () => {
     mockUseTopics.mockReturnValue({ data: [], isLoading: false });
     mockUseSubscriptions.mockReturnValue({ data: [], isLoading: false });
     mockUseProviderCapabilities.mockReturnValue({ data: undefined });
+    mockUseDlqOverview.mockReturnValue({ data: undefined });
   });
 
   it('renders a section per namespace across providers', () => {
@@ -219,5 +223,45 @@ describe('MessagesOverviewPage', () => {
     expect(screen.getByText('Total Active Messages')).toBeInTheDocument();
     expect(screen.getByText('6')).toBeInTheDocument(); // 4 + 2
     expect(screen.getByText('2 / 2')).toBeInTheDocument(); // namespaces with messages
+  });
+
+  // Flood-scale finding: at fleet scale, live per-namespace provider queries (useAllNamespacesQueues)
+  // can still be loading/failing for some namespaces when the KPI tiles render — contributing 0 for
+  // those namespaces even though their dead-letter history is fully known in the persisted ledger
+  // (the same ledger DLQ Intelligence/Incident Center/Fleet Overview already read correctly). The
+  // dead-letter tab's headline KPIs must come from the DB-backed /api/v1/dlq/overview (useDlqOverview),
+  // not the live aggregate, specifically so this can never silently collapse to a misleading zero.
+  it('sources the dead-letter tab KPIs from the DB-backed overview, not live per-namespace stats', () => {
+    // Live stats report 0 for every namespace (as they would while still loading, or if the
+    // namespace's live connection is degraded) — this must NOT be what the KPI tiles show.
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns-azure', totalActive: 0, totalDlq: 0, totalScheduled: 0, totalQueues: 1, totalTopics: 0, totalSubscriptions: 0, isLoading: true, isError: false },
+      { namespaceId: 'ns-aws', totalActive: 0, totalDlq: 0, totalScheduled: 0, totalQueues: 2, totalTopics: 0, totalSubscriptions: 0, isLoading: true, isError: false },
+    ]);
+    // The persisted DLQ ledger knows the real total regardless of live connectivity.
+    mockUseDlqOverview.mockReturnValue({
+      data: { totals: { totalDeadLettered: 14210, namespacesWithDlq: 35, namespacesTotal: 36 } },
+    });
+
+    renderPage('/messages-overview?tab=deadletter');
+
+    expect(screen.getByText('Total Dead-Letter Messages')).toBeInTheDocument();
+    // The misleading-zero regression this guards against: the live aggregate for these two
+    // namespaces is 0, and that must not be what "Total Dead-Letter Messages" shows — it must
+    // show the ledger's real total instead.
+    expect(screen.getByText('14,210')).toBeInTheDocument();
+    expect(screen.getByText('35 / 2')).toBeInTheDocument(); // numerator from the ledger, denominator from the page's own namespace list
+  });
+
+  it('falls back to the live aggregate for the dead-letter KPIs while the DB-backed overview has not loaded yet', () => {
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns-azure', totalActive: 0, totalDlq: 1, totalScheduled: 0, totalQueues: 1, totalTopics: 0, totalSubscriptions: 0, isLoading: false, isError: false },
+      { namespaceId: 'ns-aws', totalActive: 0, totalDlq: 3, totalScheduled: 0, totalQueues: 2, totalTopics: 0, totalSubscriptions: 0, isLoading: false, isError: false },
+    ]);
+    mockUseDlqOverview.mockReturnValue({ data: undefined });
+
+    renderPage('/messages-overview?tab=deadletter');
+
+    expect(screen.getByText('4')).toBeInTheDocument(); // 1 + 3, the live fallback
   });
 });

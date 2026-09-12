@@ -12,6 +12,8 @@ namespace ServiceHub.Infrastructure.ServiceBus;
 /// </summary>
 public sealed class ServiceBusHealthCheck : IHealthCheck
 {
+    private const int MaxConcurrentChecks = 10;
+
     private readonly IServiceBusClientCache _clientCache;
     private readonly INamespaceRepository _namespaceRepository;
     private readonly IConnectionStringProtector _connectionStringProtector;
@@ -64,36 +66,40 @@ public sealed class ServiceBusHealthCheck : IHealthCheck
                     data: data);
             }
 
-            var healthyCount = 0;
-            var skippedCount = 0;
-            var unhealthyNamespaces = new List<string>();
+            // AWS/GCP namespaces use provider-specific connectivity and must not be tested with
+            // the Azure SDK client cache — doing so throws FormatException on non-Azure
+            // connection strings.
+            var azureNamespaces = namespaces.Where(ns => ns.Provider == ServiceHub.Core.Enums.CloudProviderType.Azure).ToList();
+            var skippedCount = namespaces.Count - azureNamespaces.Count;
 
-            foreach (var ns in namespaces)
+            // Checked with bounded concurrency, not sequentially: a fleet with several unreachable
+            // namespaces (stale credentials, a deleted resource group) previously made this check's
+            // total duration scale linearly with namespace count — one real dev fleet with 10 stale
+            // registrations turned a sub-second check into a 60+ second one, which is bad for an
+            // endpoint operators and orchestrators alike expect to answer quickly. Mirrors
+            // DlqMonitorWorker's own bounded-parallel-scan pattern for the same class of problem.
+            using var semaphore = new SemaphoreSlim(MaxConcurrentChecks);
+            var checkTasks = azureNamespaces.Select(async ns =>
             {
-                // Only Azure Service Bus namespaces are checked here.
-                // AWS/GCP namespaces use provider-specific connectivity and
-                // must not be tested with the Azure SDK client cache —
-                // doing so throws FormatException on non-Azure connection strings.
-                if (ns.Provider != ServiceHub.Core.Enums.CloudProviderType.Azure)
+                await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
                 {
-                    skippedCount++;
-                    continue;
+                    var result = await CheckNamespaceHealthAsync(ns.Id, ns.ConnectionString, cancellationToken)
+                        .ConfigureAwait(false);
+                    return (ns.Name, IsHealthy: result.IsSuccess && result.Value);
                 }
-
-                var result = await CheckNamespaceHealthAsync(ns.Id, ns.ConnectionString, cancellationToken)
-                    .ConfigureAwait(false);
-
-                if (result.IsSuccess && result.Value)
+                finally
                 {
-                    healthyCount++;
+                    semaphore.Release();
                 }
-                else
-                {
-                    unhealthyNamespaces.Add(ns.Name);
-                }
-            }
+            });
 
-            var azureNamespaceCount = namespaces.Count - skippedCount;
+            var checkResults = await Task.WhenAll(checkTasks).ConfigureAwait(false);
+
+            var healthyCount = checkResults.Count(r => r.IsHealthy);
+            var unhealthyNamespaces = checkResults.Where(r => !r.IsHealthy).Select(r => r.Name).ToList();
+
+            var azureNamespaceCount = azureNamespaces.Count;
 
             data["HealthyNamespaces"] = healthyCount;
             data["UnhealthyNamespaces"] = unhealthyNamespaces.Count;
