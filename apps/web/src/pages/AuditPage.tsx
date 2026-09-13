@@ -529,7 +529,7 @@ export function AuditPage() {
                   {' – '}
                   {new Date(customRange.to).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   <button
-                    onClick={() => { setCustomRange(null); setPage(1); }}
+                    onClick={() => { setCustomRange(null); setSelectedPreset(168); setPage(1); }}
                     aria-label="Clear custom date range"
                     className="hover:opacity-75"
                   >
@@ -626,7 +626,7 @@ export function AuditPage() {
               </p>
               {customRange && (
                 <button
-                  onClick={() => { setCustomRange(null); setPage(1); }}
+                  onClick={() => { setCustomRange(null); setSelectedPreset(168); setPage(1); }}
                   className="mt-3 px-4 py-2 text-sm text-primary-600 hover:text-primary-700 border border-primary-300 rounded-lg hover:bg-primary-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
                 >
                   See all audit events
@@ -644,6 +644,7 @@ export function AuditPage() {
                 <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Action</th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Resource</th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-24">Outcome</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-20">Details</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -687,6 +688,14 @@ export function AuditPage() {
                   </td>
                   <td className="px-4 py-3">
                     <OutcomeBadge outcome={entry.outcome} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setSelectedEntry(entry); }}
+                      className="text-xs font-medium text-primary-600 hover:text-primary-700 hover:underline focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 rounded"
+                    >
+                      View
+                    </button>
                   </td>
                 </tr>
               ))}
